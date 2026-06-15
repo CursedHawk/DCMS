@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Respawn" />
+    <PackageReference Include="Testcontainers.Minio" />
+    <PackageReference Include="Testcontainers.Nats" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Testcontainers.Redis" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Services\Dcms.AdminApi\Dcms.AdminApi.csproj" Aliases="AdminApiApp" />
+    <ProjectReference Include="..\..\src\Services\Dcms.AiGateway\Dcms.AiGateway.csproj" Aliases="AiGatewayApp" />
+    <ProjectReference Include="..\..\src\Services\Dcms.ContentApi\Dcms.ContentApi.csproj" />
+    <ProjectReference Include="..\..\src\Services\Dcms.Identity\Dcms.Identity.csproj" Aliases="IdentityApp" />
+    <ProjectReference Include="..\..\src\Services\Dcms.MediaWorker\Dcms.MediaWorker.csproj" Aliases="MediaWorkerApp" />
+    <ProjectReference Include="..\..\src\Services\Dcms.SiteBuilder\Dcms.SiteBuilder.csproj" Aliases="SiteBuilderApp" />
+    <ProjectReference Include="..\..\src\Services\Dcms.SiteHost\Dcms.SiteHost.csproj" Aliases="SiteHostApp" />
+    <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Media\Dcms.Shared.Media.csproj" />
+  </ItemGroup>
+
+</Project>

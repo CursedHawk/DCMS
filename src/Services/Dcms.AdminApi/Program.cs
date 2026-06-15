@@ -1,0 +1,133 @@
+using System.Security.Claims;
+using Dcms.AdminApi.Ai;
+using Dcms.AdminApi.Analytics;
+using Dcms.AdminApi.Chat;
+using Dcms.AdminApi.Cms;
+using Dcms.AdminApi.Media;
+using Dcms.AdminApi.Plugins;
+using Dcms.AdminApi.Tenancy;
+using Dcms.Plugins.All;
+using Dcms.PluginSdk.Runtime;
+using Dcms.Shared.Caching;
+using Dcms.AdminApi.Sites;
+using Dcms.Shared.Data.Ai;
+using Dcms.Shared.Data.Analytics;
+using Dcms.Shared.Data.Cms;
+using Dcms.Shared.Data.Media;
+using Dcms.Shared.Data.Chat;
+using Dcms.Shared.Data.Search;
+using Dcms.Shared.Data.Sites;
+using Dcms.Shared.Data.Tenancy;
+using Dcms.Shared.Data.Visitors;
+using Dcms.Shared.Hosting;
+using Dcms.Shared.Media;
+using Dcms.Shared.Messaging;
+using Dcms.Shared.Security;
+using Dcms.Shared.Security.Authorization;
+using Dcms.Shared.Storage;
+using Dcms.Shared.Vault;
+using Finbuckle.MultiTenant.AspNetCore.Extensions;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.AddDcmsServiceDefaults("admin-api");
+builder.Services.AddDcmsMessaging(builder.Configuration);
+builder.Services.AddDcmsCaching(builder.Configuration);
+builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
+
+// Tenancy: shared TenancyDbContext + header-based tenant resolution.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddDcmsObjectStorage(builder.Configuration);
+builder.Services.AddDcmsTenancyData(builder.Configuration);
+builder.Services.AddDcmsCmsData(builder.Configuration);
+builder.Services.AddDcmsMediaData(builder.Configuration);
+builder.Services.AddDcmsSitesData(builder.Configuration);
+builder.Services.AddDcmsAiData(builder.Configuration);
+builder.Services.AddDcmsSearchData(builder.Configuration);
+builder.Services.AddDcmsAnalyticsData(builder.Configuration);
+builder.Services.AddDcmsVisitorsData(builder.Configuration);
+builder.Services.AddDcmsChatData(builder.Configuration);
+builder.Services.AddDcmsVaultTransit();
+builder.Services.AddScoped<AiPromptBuilder>();
+builder.Services.AddSingleton<MediaSanitizer>();
+builder.Services.AddDcmsTenantResolutionByHeader();
+builder.Services.AddScoped<CurrentUser>();
+builder.Services.AddScoped<TenantProvisioning>();
+builder.Services.AddHostedService<TenancyMigrator>();
+
+// Plugin catalog (manifests only — no plugin runtime services) + config validation.
+builder.Services.AddDcmsPluginCatalog(plugins => plugins.AddAll());
+builder.Services.AddSingleton<PluginConfigValidator>();
+
+// Permission evaluation: dynamic policy + tenancy-backed, Redis-cached resolver.
+builder.Services.AddDcmsPermissionAuthorization();
+builder.Services.AddScoped<TenancyPermissionResolver>();
+builder.Services.AddScoped<IPermissionResolver>(sp => sp.GetRequiredService<TenancyPermissionResolver>());
+
+builder.Services.AddSingleton<IDnsTxtLookup, DnsTxtLookup>();
+builder.Services.AddHostedService<MembershipChangedConsumer>();
+builder.Services.AddHostedService<OutboxDispatcher>();
+builder.Services.AddHostedService<ScheduledPublishWorker>();
+builder.Services.AddHostedService<AnalyticsConsumer>();
+builder.Services.AddHostedService<ChatFanoutConsumer>();
+
+// Outbound client-credentials token provider for calling ai-gateway.
+builder.Services.Configure<ServiceClientOptions>(builder.Configuration.GetSection(ServiceClientOptions.SectionName));
+builder.Services.AddHttpClient<IServiceTokenProvider, ServiceTokenClient>();
+builder.Services.AddHttpClient("ai-gateway", (sp, client) =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Services:AiGateway"] ?? "http://localhost:5007";
+    client.BaseAddress = new Uri(baseUrl);
+});
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseMultiTenant();
+app.UseAuthorization();
+
+app.MapDcmsDefaultEndpoints();
+app.MapTenancyEndpoints();
+app.MapInvitationEndpoints();
+app.MapDomainEndpoints();
+app.MapPluginEndpoints();
+app.MapContentEndpoints();
+app.MapMediaEndpoints();
+app.MapSiteEndpoints();
+app.MapAiSettingsEndpoints();
+app.MapAiGenerationEndpoints();
+app.MapAnalyticsDashboard();
+app.MapChatConsole();
+app.MapGet("/", () => Results.Ok(new { service = "admin-api" }));
+
+// Current admin identity — proves the SPA's access token validates here.
+app.MapGet("/api/admin/me", (ClaimsPrincipal user) => Results.Ok(new
+{
+    sub = user.FindFirstValue("sub"),
+    name = user.FindFirstValue("name"),
+    email = user.FindFirstValue("email"),
+    roles = user.FindAll("role").Select(c => c.Value),
+})).RequireAuthorization();
+
+// Proves the service-to-service client-credentials flow end to end:
+// admin-api obtains a dcms.ai token and calls ai-gateway's protected ping.
+app.MapGet("/api/admin/ai/ping", async (
+    IServiceTokenProvider tokens,
+    IHttpClientFactory httpClientFactory,
+    CancellationToken ct) =>
+{
+    var token = await tokens.GetTokenAsync(DcmsScopes.Ai, ct);
+    var client = httpClientFactory.CreateClient("ai-gateway");
+    client.DefaultRequestHeaders.Authorization = new("Bearer", token);
+    var response = await client.GetAsync("/internal/ping", ct);
+    var body = await response.Content.ReadAsStringAsync(ct);
+    return Results.Content(body, "application/json", statusCode: (int)response.StatusCode);
+}).RequireAuthorization();
+
+app.Run();
+
+public partial class Program;
+
+/// <summary>Scope names requested for outbound service calls.</summary>
+file static class DcmsScopes
+{
+    public const string Ai = "dcms.ai";
+}

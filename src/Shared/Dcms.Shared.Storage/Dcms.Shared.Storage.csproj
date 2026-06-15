@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Minio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dcms.Shared.Kernel\Dcms.Shared.Kernel.csproj" />
+  </ItemGroup>
+
+</Project>

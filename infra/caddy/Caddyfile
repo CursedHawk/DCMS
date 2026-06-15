@@ -1,0 +1,27 @@
+# Production edge for tenant custom domains. Caddy terminates TLS and reverse-
+# proxies everything to site-host, which resolves the Host header to a tenant's
+# active site build (and proxies /api + /hub on to content-api internally).
+#
+# On-demand TLS issues a certificate the first time a hostname is requested, but
+# ONLY after the `ask` endpoint approves it. site-host exposes
+# GET /internal/tls-allowed?domain=<host> returning 200 for verified+linked
+# domains and 404 otherwise, so Caddy never mints certs for unverified hosts.
+
+{
+	# Email for the ACME account (Let's Encrypt). Override via env in compose.
+	email {$ACME_EMAIL:admin@example.com}
+
+	on_demand_tls {
+		ask http://site-host:8080/internal/tls-allowed
+		interval 2m
+		burst 5
+	}
+}
+
+# Catch-all site: any hostname, certificate issued on demand once approved.
+https:// {
+	tls {
+		on_demand
+	}
+	reverse_proxy site-host:8080
+}

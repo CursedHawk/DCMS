@@ -1,0 +1,32 @@
+# .NET
+bin/
+obj/
+artifacts/
+*.user
+.vs/
+TestResults/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+coverage/
+
+# Environment / secrets
+.env
+.env.local
+*.local.json
+!appsettings.*.json
+
+# IDE
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Playwright
+tests/e2e/playwright-report/
+tests/e2e/test-results/

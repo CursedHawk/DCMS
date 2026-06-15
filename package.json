@@ -1,0 +1,11 @@
+{
+  "name": "baas-dcms",
+  "private": true,
+  "packageManager": "pnpm@11.6.0",
+  "scripts": {
+    "dev:admin": "pnpm --filter @dcms/admin dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint"
+  }
+}

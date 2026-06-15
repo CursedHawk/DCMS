@@ -1,0 +1,9 @@
+{
+  "name": "@dcms/site-template-react",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "echo 'Mode B template; materialized per site by site-builder (Phase 10)'"
+  }
+}

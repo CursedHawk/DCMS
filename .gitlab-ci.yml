@@ -1,0 +1,44 @@
+stages:
+  - build
+  - test
+
+variables:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+
+dotnet:
+  stage: build
+  image: mcr.microsoft.com/dotnet/sdk:10.0
+  script:
+    - dotnet build Dcms.sln -c Release
+    - dotnet test Dcms.sln -c Release --no-build --logger "junit;LogFilePath=./TestResults/{assembly}.xml" || dotnet test Dcms.sln -c Release --no-build
+  artifacts:
+    when: always
+    reports:
+      junit: "**/TestResults/*.xml"
+    expire_in: 1 week
+
+frontend:
+  stage: build
+  image: node:24-alpine
+  before_script:
+    - npm install -g pnpm
+  script:
+    - pnpm install --frozen-lockfile
+    - pnpm -r build
+
+# Integration tests need Docker-in-Docker (Testcontainers); enabled on runners
+# that support it.
+integration:
+  stage: test
+  image: mcr.microsoft.com/dotnet/sdk:10.0
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - dotnet test tests/Dcms.IntegrationTests -c Release
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

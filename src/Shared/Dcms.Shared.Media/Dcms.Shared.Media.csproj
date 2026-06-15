@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="SixLabors.ImageSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dcms.Shared.Contracts\Dcms.Shared.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,15 @@
+{
+  "name": "@dcms/api-client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "generate": "echo 'Phase 7: openapi-typescript against admin-api and content-api specs'"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Shared\Dcms.Shared.Caching\Dcms.Shared.Caching.csproj" />
+    <ProjectReference Include="..\..\Shared\Dcms.Shared.Contracts\Dcms.Shared.Contracts.csproj" />
+    <ProjectReference Include="..\..\Shared\Dcms.Shared.Messaging\Dcms.Shared.Messaging.csproj" />
+    <ProjectReference Include="..\..\Shared\Dcms.Shared.Security\Dcms.Shared.Security.csproj" />
+  </ItemGroup>
+
+</Project>

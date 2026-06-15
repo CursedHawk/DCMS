@@ -1,0 +1,122 @@
+# Production profile overlay. Use WITHOUT the dev override:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Differences from dev:
+#   * Caddy terminates TLS for tenant custom domains (on-demand TLS, gated by
+#     site-host's /internal/tls-allowed) and is the only public ingress.
+#   * Vault runs in real server mode (file storage, no dev root token); the app
+#     refuses to start against a dev token (DCMS_REFUSE_DEV_VAULT=true).
+#   * All secrets come from the host environment (POSTGRES_PASSWORD, MINIO_*,
+#     VAULT_TOKEN, service client secrets) — no dev defaults baked in.
+#   * Services run in the Production environment with HTTPS metadata required.
+#
+# Required env (e.g. via a .env file next to this compose):
+#   POSTGRES_PASSWORD, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD, VAULT_TOKEN,
+#   ADMIN_API_CLIENT_SECRET, ACME_EMAIL, PUBLIC_BASE_URL
+
+x-prod-env: &prod-env
+  ASPNETCORE_ENVIRONMENT: "Production"
+  DOTNET_ENVIRONMENT: "Production"
+  DCMS_REFUSE_DEV_VAULT: "true"
+  ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=${POSTGRES_PASSWORD}"
+  ConnectionStrings__Redis: "redis:6379"
+  Nats__Url: "nats://nats:4222"
+  Storage__Endpoint: "minio:9000"
+  Storage__AccessKey: "${MINIO_ROOT_USER}"
+  Storage__SecretKey: "${MINIO_ROOT_PASSWORD}"
+  VAULT_ADDR: "http://vault:8200"
+  VAULT_TOKEN: "${VAULT_TOKEN}"
+
+services:
+  postgres:
+    environment:
+      POSTGRES_DB: dcms
+      POSTGRES_USER: dcms
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+
+  minio:
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+
+  # Real Vault server (sealed on first boot; operator runs init + unseal).
+  vault:
+    command: ["vault", "server", "-config=/vault/config/config.hcl"]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ""
+      VAULT_ADDR: "http://0.0.0.0:8200"
+    volumes:
+      - ./infra/vault/config.hcl:/vault/config/config.hcl:ro
+      - vault-data:/vault/data
+
+  # The dev seeding job is a no-op in prod; secrets are provisioned by the operator.
+  vault-init:
+    entrypoint: ["/bin/true"]
+    environment:
+      VAULT_TOKEN: ""
+
+  identity:
+    environment:
+      <<: *prod-env
+      Identity__Issuer: "${PUBLIC_BASE_URL}/"
+      Identity__AllowInsecureHttp: "false"
+
+  admin-api:
+    environment:
+      <<: *prod-env
+      Auth__Authority: "http://identity:8080/"
+      Auth__RequireHttpsMetadata: "true"
+      ServiceClient__TokenEndpoint: "http://identity:8080/connect/token"
+      ServiceClient__ClientId: "dcms-admin-api"
+      ServiceClient__ClientSecret: "${ADMIN_API_CLIENT_SECRET}"
+      Services__AiGateway: "http://ai-gateway:8080"
+
+  content-api:
+    environment:
+      <<: *prod-env
+      Auth__Authority: "http://identity:8080/"
+      Auth__RequireHttpsMetadata: "true"
+      Cors__AllowedOrigins__0: "${PUBLIC_BASE_URL}"
+
+  media-worker:
+    environment:
+      <<: *prod-env
+
+  site-builder:
+    environment:
+      <<: *prod-env
+
+  site-host:
+    environment:
+      <<: *prod-env
+      Services__ContentApi: "http://content-api:8080"
+
+  ai-gateway:
+    environment:
+      <<: *prod-env
+      Auth__Authority: "http://identity:8080/"
+      Auth__Audience: "dcms-ai-gateway"
+      Auth__RequireHttpsMetadata: "true"
+
+  # Public TLS edge for tenant domains.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      site-host:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      ACME_EMAIL: "${ACME_EMAIL}"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  vault-data:
+  caddy-data:
+  caddy-config:

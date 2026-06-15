@@ -1,0 +1,65 @@
+# Development overrides: host ports, verbose logging. Applied automatically by
+# `docker compose up`. Production deployments use docker-compose.yml alone
+# (plus a prod profile added in Phase 12).
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  nats:
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  vault:
+    ports:
+      - "8200:8200"
+
+  mailpit:
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
+  identity:
+    ports:
+      - "5001:8080"
+      # OIDC issuer host port: with a "127.0.0.1 dcms-identity" hosts entry the
+      # browser reaches the same http://dcms-identity:8080 the services use.
+      - "8080:8080"
+
+  admin-api:
+    ports:
+      - "5002:8080"
+
+  content-api:
+    ports:
+      - "5003:8080"
+
+  media-worker:
+    ports:
+      - "5004:8080"
+
+  site-builder:
+    ports:
+      - "5005:8080"
+
+  site-host:
+    ports:
+      - "5006:8080"
+
+  ai-gateway:
+    ports:
+      - "5007:8080"
+
+  admin-spa:
+    ports:
+      - "5000:80"
