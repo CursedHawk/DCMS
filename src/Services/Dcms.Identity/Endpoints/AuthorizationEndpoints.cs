@@ -29,7 +29,8 @@ public static class AuthorizationEndpoints
     private static async Task<IResult> AuthorizeAsync(
         HttpContext context,
         UserManager<DcmsUser> userManager,
-        SignInManager<DcmsUser> signInManager)
+        SignInManager<DcmsUser> signInManager,
+        IOpenIddictScopeManager scopeManager)
     {
         var request = context.GetOpenIddictServerRequest()
                       ?? throw new InvalidOperationException("OpenIddict request not found.");
@@ -47,13 +48,14 @@ public static class AuthorizationEndpoints
         var user = await userManager.GetUserAsync(result.Principal)
                    ?? throw new InvalidOperationException("Authenticated user not found.");
 
-        var principal = await BuildUserPrincipalAsync(user, userManager, request.GetScopes());
+        var principal = await BuildUserPrincipalAsync(user, userManager, scopeManager, request.GetScopes());
         return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
     private static async Task<IResult> ExchangeAsync(
         HttpContext context,
-        UserManager<DcmsUser> userManager)
+        UserManager<DcmsUser> userManager,
+        IOpenIddictScopeManager scopeManager)
     {
         var request = context.GetOpenIddictServerRequest()
                       ?? throw new InvalidOperationException("OpenIddict request not found.");
@@ -70,6 +72,7 @@ public static class AuthorizationEndpoints
 
             var principal = new ClaimsPrincipal(identity);
             principal.SetScopes(request.GetScopes());
+            await SetResourcesAsync(principal, scopeManager);
             return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         }
 
@@ -88,7 +91,7 @@ public static class AuthorizationEndpoints
                     }));
             }
 
-            var principal = await BuildUserPrincipalAsync(user, userManager, result.Principal!.GetScopes());
+            var principal = await BuildUserPrincipalAsync(user, userManager, scopeManager, result.Principal!.GetScopes());
             return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         }
 
@@ -132,7 +135,8 @@ public static class AuthorizationEndpoints
     /// absent — resource servers resolve permissions per request (Phase 3).
     /// </summary>
     private static async Task<ClaimsPrincipal> BuildUserPrincipalAsync(
-        DcmsUser user, UserManager<DcmsUser> userManager, IEnumerable<string> scopes)
+        DcmsUser user, UserManager<DcmsUser> userManager,
+        IOpenIddictScopeManager scopeManager, IEnumerable<string> scopes)
     {
         var identity = new ClaimsIdentity(
             OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
@@ -157,6 +161,22 @@ public static class AuthorizationEndpoints
 
         var principal = new ClaimsPrincipal(identity);
         principal.SetScopes(scopes);
+        await SetResourcesAsync(principal, scopeManager);
         return principal;
+    }
+
+    /// <summary>
+    /// Stamps the access-token audiences (<c>aud</c>) from the granted scopes'
+    /// registered resources. Without this the issued JWT carries no audience and
+    /// resource servers (audience-validating JwtBearer) reject it with 401.
+    /// </summary>
+    private static async Task SetResourcesAsync(ClaimsPrincipal principal, IOpenIddictScopeManager scopeManager)
+    {
+        var resources = new List<string>();
+        await foreach (var resource in scopeManager.ListResourcesAsync(principal.GetScopes()))
+        {
+            resources.Add(resource);
+        }
+        principal.SetResources(resources);
     }
 }
