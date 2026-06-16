@@ -104,7 +104,18 @@ builder.Services
 builder.Services.AddAuthorization();
 builder.Services.AddHostedService<IdentitySeeder>();
 
+// The admin SPA (oidc-client-ts) fetches the discovery document, JWKS and token
+// endpoint cross-origin, which requires CORS on those responses. Origins are the
+// SPA hosts; prod overrides via Cors__AllowedOrigins__0 = PUBLIC_BASE_URL.
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? ["http://localhost:5173", "http://localhost:5000"];
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
+    .WithOrigins(corsOrigins)
+    .AllowAnyHeader()
+    .AllowAnyMethod()));
+
 var app = builder.Build();
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 
