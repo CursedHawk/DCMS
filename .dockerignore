@@ -1,0 +1,16 @@
+# Keep the Docker build context small and host-OS-agnostic. The .NET Dockerfiles
+# rebuild from source (dotnet publish) and the admin SPA runs `pnpm install`, so
+# none of these are needed in the context — shipping them only slows the build
+# and risks leaking Windows-built artifacts into Linux images.
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/TestResults/
+.git/
+.vs/
+.vscode/
+*.user
+*.suo
+# local deploy secrets must never enter an image layer
+.env

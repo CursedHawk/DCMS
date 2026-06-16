@@ -68,6 +68,7 @@ const rootRoute = createRootRoute({
             {user ? (
               <nav className="flex gap-3 text-sm text-slate-600">
                 <Link to="/" className="hover:text-slate-900">Dashboard</Link>
+                <Link to="/tenants" className="hover:text-slate-900">Tenants</Link>
                 <Link to="/sites" className="hover:text-slate-900">Sites</Link>
                 <Link to="/chat" className="hover:text-slate-900">Chat</Link>
               </nav>
@@ -147,6 +148,98 @@ const indexRoute = createRoute({
   component: Dashboard,
 });
 
+interface TenantRow {
+  tenantId: string;
+  slug: string;
+  name: string;
+  status?: string;
+}
+
+// Platform SuperAdmin: provision and list tenants. Every other admin screen is
+// tenant-scoped (selected via the header TenantSwitcher), so the first tenant
+// has to be created here before sites/content/plugins can be used.
+function TenantsPage() {
+  const qc = useQueryClient();
+  const [slug, setSlug] = useState('');
+  const [name, setName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const tenants = useQuery({
+    queryKey: ['tenants'],
+    queryFn: async (): Promise<TenantRow[]> => {
+      const res = await fetch(`${adminApiBase}/admin/tenants`, { headers: await adminHeaders() });
+      if (res.status === 403) throw new Error('Only the platform SuperAdmin can manage tenants.');
+      if (!res.ok) throw new Error(`tenants failed: ${res.status}`);
+      return res.json();
+    },
+  });
+
+  async function create() {
+    setError(null);
+    const s = slug.trim();
+    if (!s) return;
+    const res = await fetch(`${adminApiBase}/admin/tenants`, {
+      method: 'POST',
+      headers: { ...(await adminHeaders()), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: s, name: name.trim() || s }),
+    });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      setError(detail.error ?? `Create failed (${res.status})`);
+      return;
+    }
+    setSlug('');
+    setName('');
+    // The creator becomes the tenant owner — refresh both the platform list and
+    // the header switcher, then select the new tenant so tenant-scoped screens work.
+    setCurrentTenantSlug(s);
+    await qc.invalidateQueries({ queryKey: ['tenants'] });
+    await qc.invalidateQueries({ queryKey: ['me-tenants'] });
+  }
+
+  return (
+    <section>
+      <h1 className="text-2xl font-bold">Tenants</h1>
+      <p className="mt-1 text-sm text-slate-600">
+        Create a tenant, then pick it in the header switcher to manage its sites and content.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="slug (kebab-case)"
+          className="rounded border border-slate-300 px-2 py-1" />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Display name"
+          className="rounded border border-slate-300 px-2 py-1" />
+        <button type="button" onClick={create} className="rounded bg-slate-900 px-3 py-1 text-white">Create tenant</button>
+      </div>
+      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+      {tenants.isError ? (
+        <p className="mt-4 text-sm text-red-600">{(tenants.error as Error).message}</p>
+      ) : (
+        <ul className="mt-4 space-y-2">
+          {(tenants.data ?? []).map((t) => (
+            <li key={t.tenantId} className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => { setCurrentTenantSlug(t.slug); window.location.reload(); }}
+                className="rounded border border-slate-300 px-2 py-1 text-sm hover:bg-slate-100"
+              >
+                Use
+              </button>
+              <span className="font-medium">{t.name}</span>
+              <span className="text-xs text-slate-400">{t.slug}{t.status ? ` · ${t.status}` : ''}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+const tenantsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/tenants',
+  component: TenantsPage,
+});
+
 // OIDC redirect target: completes the code exchange then returns home.
 const callbackRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -220,7 +313,7 @@ const chatRoute = createRoute({
   component: AgentConsole,
 });
 
-export const routeTree = rootRoute.addChildren([indexRoute, callbackRoute, sitesRoute, editorRoute, chatRoute]);
+export const routeTree = rootRoute.addChildren([indexRoute, tenantsRoute, callbackRoute, sitesRoute, editorRoute, chatRoute]);
 
 // Exported for potential route guards in later phases.
 export function requireAuthLoader() {

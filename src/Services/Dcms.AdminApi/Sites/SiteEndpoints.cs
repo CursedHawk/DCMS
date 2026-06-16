@@ -33,6 +33,10 @@ public static class SiteEndpoints
         app.MapPost("/api/admin/sites", async (
             CreateSiteRequest body, SitesDbContext db, ITenantContext tenant, CancellationToken ct) =>
         {
+            if (!tenant.HasTenant)
+            {
+                return Results.BadRequest(new { error = "Select a tenant first (X-Dcms-Tenant header required)." });
+            }
             var mode = Enum.TryParse<SiteRenderMode>(body.RenderMode, ignoreCase: true, out var m)
                 ? m : SiteRenderMode.StaticPrerender;
             var site = new Site

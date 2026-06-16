@@ -1,0 +1,118 @@
+# vps1 deployment overlay. Use AFTER the base and prod profiles:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.vps.yml up -d
+#
+# It layers three host-specific concerns on top of the generic prod profile:
+#
+#  1. Persistence — every stateful volume is bind-mounted under
+#     /home/cursedhawk/dcms-data (Postgres, Redis, NATS, MinIO, Vault, Caddy),
+#     so all data lives in one operator-visible directory instead of anonymous
+#     Docker volumes.
+#
+#  2. Edge-TLS auth wiring — Caddy terminates TLS and reaches identity over
+#     plain HTTP on the internal network, while tokens are issued under the
+#     public HTTPS issuer (https://admin.highgeek.eu/). Resource servers must
+#     therefore discover metadata at the *internal* http URL but validate the
+#     *public* https issuer; identity disables OpenIddict's transport-security
+#     requirement because TLS is already terminated at the edge. (The generic
+#     prod profile leaves these at values that assume HTTPS all the way to
+#     identity, which does not hold for a single-host Caddy edge.)
+#
+#  3. Seeding/secrets that the prod profile sets on the consumer but not the
+#     issuer: the confidential admin-api client secret and the SuperAdmin login
+#     are seeded into identity here, and the admin SPA gets the public OIDC
+#     authority baked into its bundle.
+
+x-vps-resource-auth: &vps-resource-auth
+  # Discover the OIDC metadata internally over HTTP (no public DNS / TLS needed
+  # inside the compose network), but accept only tokens whose issuer is the
+  # public HTTPS value that identity actually stamps onto them.
+  Auth__Authority: "https://admin.highgeek.eu/"
+  Auth__MetadataAddress: "http://identity:8080/.well-known/openid-configuration"
+  Auth__Issuer: "https://admin.highgeek.eu/"
+  Auth__RequireHttpsMetadata: "false"
+
+services:
+  # Vault writes to a bind-mounted dir owned by the deploy user (cursedhawk,
+  # uid 1001); run the process as that uid so it can write without a root chown.
+  # The image entrypoint only drops privileges when started as root, so setting
+  # the user here means Vault runs directly as 1001 (mlock is disabled in
+  # config.hcl, which it must be since a non-root process has no CAP_IPC_LOCK).
+  vault:
+    user: "1001:1001"
+
+  # The prod profile overrides the MinIO server credentials but not the one-shot
+  # bucket provisioner, which would otherwise authenticate with the dev password
+  # and fail. Point it at the real credentials too.
+  minio-init:
+    environment:
+      MINIO_URL: "http://minio:9000"
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+
+  identity:
+    environment:
+      # Public issuer (matches PUBLIC_BASE_URL). TLS is terminated at Caddy, so
+      # identity itself speaks HTTP on the internal network — disable the
+      # transport-security requirement (there is no ForwardedHeaders middleware).
+      Identity__Issuer: "https://admin.highgeek.eu/"
+      Identity__AllowInsecureHttp: "true"
+      # Seed the confidential client secret that admin-api presents for
+      # client-credentials (must equal admin-api's ServiceClient__ClientSecret).
+      Identity__AdminApiService__Secret: "${ADMIN_API_CLIENT_SECRET}"
+      # Platform SuperAdmin login (first-boot seed only).
+      Identity__SuperAdmin__Email: "${SUPERADMIN_EMAIL}"
+      Identity__SuperAdmin__Password: "${SUPERADMIN_PASSWORD}"
+      # SPA redirect/sign-out URIs registered for the public admin host.
+      Identity__Spa__RedirectUris: "https://admin.highgeek.eu/auth/callback"
+      Identity__Spa__PostLogoutUris: "https://admin.highgeek.eu/"
+
+  admin-api:
+    environment:
+      <<: *vps-resource-auth
+      Auth__Audience: "dcms-admin-api"
+
+  content-api:
+    environment:
+      <<: *vps-resource-auth
+      # content-api validates platform tokens for chat agents (aud dcms-admin-api).
+      Auth__Audience: "dcms-admin-api"
+
+  ai-gateway:
+    environment:
+      <<: *vps-resource-auth
+      Auth__Audience: "dcms-ai-gateway"
+
+  admin-spa:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      args:
+        # Baked into the static bundle: the SPA fetches OIDC discovery from here.
+        VITE_OIDC_AUTHORITY: "https://admin.highgeek.eu"
+
+# Re-point every named volume from the prod profile at a bind mount under
+# /home/cursedhawk/dcms-data. The host directories are created (with the right
+# ownership for each container) before `up` — see the deploy steps.
+volumes:
+  postgres-data:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/postgres }
+  redis-data:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/redis }
+  nats-data:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/nats }
+  minio-data:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/minio }
+  vault-data:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/vault }
+  caddy-data:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/caddy-data }
+  caddy-config:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/caddy-config }

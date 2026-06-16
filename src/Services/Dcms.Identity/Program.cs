@@ -5,6 +5,7 @@ using Dcms.Identity.Endpoints;
 using Dcms.Identity.Seeding;
 using Dcms.Shared.Hosting;
 using Dcms.Shared.Messaging;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using static OpenIddict.Abstractions.OpenIddictConstants;
@@ -115,6 +116,22 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
     .AllowAnyMethod()));
 
 var app = builder.Build();
+
+// Behind the Caddy TLS edge, requests reach identity over plain HTTP on the
+// internal network. Honour X-Forwarded-Proto/Host so OpenIddict emits https://
+// absolute URLs in the discovery document (authorize/token/jwks) — otherwise the
+// SPA's token POST would be blocked as mixed content. Identity is only reachable
+// through Caddy on the internal network, so all proxies are trusted.
+var forwardedHeaders = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor
+        | ForwardedHeaders.XForwardedProto
+        | ForwardedHeaders.XForwardedHost,
+};
+forwardedHeaders.KnownIPNetworks.Clear();
+forwardedHeaders.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeaders);
+
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
