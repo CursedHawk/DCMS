@@ -1,0 +1,13 @@
+# This repository is built and run entirely in Linux containers. Force LF on
+# checkout for all text files so shell scripts, Dockerfiles and container
+# entrypoints aren't broken by CRLF on Windows working copies (a CRLF `set -e`
+# makes /bin/sh fail with "illegal option").
+* text=auto eol=lf
+
+# Windows-only tooling that genuinely wants CRLF.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Explicit: infra provisioning scripts are POSIX sh, always LF.
+*.sh text eol=lf

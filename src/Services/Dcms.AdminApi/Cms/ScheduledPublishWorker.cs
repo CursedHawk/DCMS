@@ -42,11 +42,13 @@ public sealed class ScheduledPublishWorker(
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
         // Claim due rows; SKIP LOCKED lets sibling replicas grab disjoint sets.
+        // Columns are EF's default PascalCase identifiers (only the table name is
+        // snake_cased), so they must be double-quoted in raw SQL.
         var due = await db.ScheduledPublishes.FromSqlRaw(
             """
             SELECT * FROM cms.scheduled_publishes
-            WHERE status = 'Pending' AND publish_at <= now()
-            ORDER BY publish_at
+            WHERE "Status" = 'Pending' AND "PublishAt" <= now()
+            ORDER BY "PublishAt"
             FOR UPDATE SKIP LOCKED
             LIMIT 50
             """).ToListAsync(ct);
