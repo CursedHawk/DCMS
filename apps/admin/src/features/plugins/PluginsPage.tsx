@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../components/ui/dialog';
-import { Input } from '../../components/ui/input';
+import { Input, Textarea } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { Switch } from '../../components/ui/switch';
@@ -73,6 +73,9 @@ export function PluginsPage() {
                       <p className="truncate text-xs text-muted-foreground">
                         /{inst.slug} · {inst.pluginId}
                       </p>
+                      {inst.description ? (
+                        <p className="truncate text-xs text-muted-foreground">{inst.description}</p>
+                      ) : null}
                     </div>
                     <Button size="icon" variant="ghost" onClick={() => setEditing(inst)}>
                       <Settings2 className="h-4 w-4" />
@@ -161,8 +164,12 @@ function InstallDialog({
   const { t } = useTranslation();
   const [slug, setSlug] = useState('');
   const [name, setName] = useState(manifest.name);
+  const [description, setDescription] = useState('');
   const [config, setConfig] = useState<unknown>({});
   const schema = parseConfigSchema(manifest.configJsonSchema);
+  // For multi-instance plugins the description distinguishes each instance's
+  // purpose in the generated OpenAPI document, so it is required there.
+  const descriptionRequired = manifest.allowMultipleInstances;
 
   const create = useMutation({
     mutationFn: () =>
@@ -170,6 +177,7 @@ function InstallDialog({
         pluginId: manifest.id,
         slug: slug.trim(),
         name: name.trim(),
+        description: description.trim() || undefined,
         config: JSON.stringify(config ?? {}),
       }),
     onSuccess: () => {
@@ -199,6 +207,18 @@ function InstallDialog({
               <Input value={name} onChange={(e) => setName(e.target.value)} />
             </div>
           </div>
+          <div className="space-y-1.5">
+            <Label>
+              {t('plugins.description')}
+              {descriptionRequired ? <span className="ml-1 text-destructive">*</span> : null}
+            </Label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={t('plugins.descriptionPlaceholder')}
+            />
+            <p className="text-xs text-muted-foreground">{t('plugins.descriptionHint')}</p>
+          </div>
           {Object.keys(schema).length > 0 ? (
             <div>
               <Label className="mb-2 block">{t('plugins.configuration')}</Label>
@@ -210,7 +230,12 @@ function InstallDialog({
           <Button variant="outline" onClick={onClose}>
             {t('actions.cancel')}
           </Button>
-          <Button disabled={!slug.trim() || create.isPending} onClick={() => create.mutate()}>
+          <Button
+            disabled={
+              !slug.trim() || (descriptionRequired && !description.trim()) || create.isPending
+            }
+            onClick={() => create.mutate()}
+          >
             {t('plugins.install')}
           </Button>
         </DialogFooter>
@@ -232,13 +257,16 @@ function ConfigDialog({
 }) {
   const { t } = useTranslation();
   const [name, setName] = useState(instance.name);
+  const [description, setDescription] = useState(instance.description ?? '');
   const [config, setConfig] = useState<unknown>({});
   const schema = manifest ? parseConfigSchema(manifest.configJsonSchema) : {};
+  const descriptionRequired = manifest?.allowMultipleInstances ?? false;
 
   const save = useMutation({
     mutationFn: () =>
       api.put(`/admin/plugins/instances/${instance.id}`, {
         name: name.trim(),
+        description: description.trim() || undefined,
         config: JSON.stringify(config ?? {}),
       }),
     onSuccess: () => {
@@ -259,6 +287,18 @@ function ConfigDialog({
             <Label>{t('common.name')}</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </div>
+          <div className="space-y-1.5">
+            <Label>
+              {t('plugins.description')}
+              {descriptionRequired ? <span className="ml-1 text-destructive">*</span> : null}
+            </Label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={t('plugins.descriptionPlaceholder')}
+            />
+            <p className="text-xs text-muted-foreground">{t('plugins.descriptionHint')}</p>
+          </div>
           {Object.keys(schema).length > 0 ? (
             <div>
               <Label className="mb-2 block">{t('plugins.configuration')}</Label>
@@ -270,7 +310,10 @@ function ConfigDialog({
           <Button variant="outline" onClick={onClose}>
             {t('actions.cancel')}
           </Button>
-          <Button disabled={save.isPending} onClick={() => save.mutate()}>
+          <Button
+            disabled={(descriptionRequired && !description.trim()) || save.isPending}
+            onClick={() => save.mutate()}
+          >
             {t('actions.save')}
           </Button>
         </DialogFooter>

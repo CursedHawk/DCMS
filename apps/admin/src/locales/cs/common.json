@@ -126,7 +126,10 @@
     "install": "Nainstalovat plugin",
     "configuration": "Konfigurace",
     "singleInstance": "Jedna instance",
-    "multiInstance": "Povoleno více instancí"
+    "multiInstance": "Povoleno více instancí",
+    "description": "Popis",
+    "descriptionPlaceholder": "K čemu tato instance slouží (např. „Firemní blog s novinkami“)",
+    "descriptionHint": "Odlišuje tuto instanci ve vygenerované API dokumentaci použité pro tvorbu webů. Povinné, pokud má plugin více instancí."
   },
   "content": {
     "title": "Obsah",

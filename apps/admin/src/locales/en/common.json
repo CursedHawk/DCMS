@@ -126,7 +126,10 @@
     "install": "Install plugin",
     "configuration": "Configuration",
     "singleInstance": "Single instance",
-    "multiInstance": "Multiple instances allowed"
+    "multiInstance": "Multiple instances allowed",
+    "description": "Description",
+    "descriptionPlaceholder": "What this instance is for (e.g. \"Company news blog\")",
+    "descriptionHint": "Distinguishes this instance in the generated API docs used to build websites. Required when a plugin has multiple instances."
   },
   "content": {
     "title": "Content",
