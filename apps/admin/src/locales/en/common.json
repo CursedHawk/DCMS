@@ -142,6 +142,10 @@
     "ready": "Ready",
     "failed": "Failed",
     "pick": "Select media",
+    "addImages": "Add images",
+    "noImages": "No images selected",
+    "imagesCount": "{{count}} selected",
+    "done": "Done",
     "size": "Size"
   },
   "sites": {

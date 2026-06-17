@@ -142,6 +142,10 @@
     "ready": "Připraveno",
     "failed": "Selhalo",
     "pick": "Vybrat média",
+    "addImages": "Přidat obrázky",
+    "noImages": "Nevybrány žádné obrázky",
+    "imagesCount": "Vybráno: {{count}}",
+    "done": "Hotovo",
     "size": "Velikost"
   },
   "sites": {

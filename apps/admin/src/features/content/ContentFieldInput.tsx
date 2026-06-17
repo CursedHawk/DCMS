@@ -2,8 +2,23 @@ import { Input, Textarea } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Switch } from '../../components/ui/switch';
 import type { MediaCategory } from '../media/api';
+import { MediaMultiPicker } from '../media/MediaMultiPicker';
 import { MediaPicker } from '../media/MediaPicker';
 import type { ContentFieldDef } from '../plugins/api';
+
+/** Coerce a stored value (array, JSON string, or empty) into a list of ids. */
+function toIdList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string');
+  if (typeof value === 'string' && value.trim().startsWith('[')) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 
 /** Renders the right control for a plugin content field type, bound to data[name]. */
 export function ContentFieldInput({
@@ -34,6 +49,17 @@ export function ContentFieldInput({
           />
         );
       case 'Json':
+        // A JSON field that references media (e.g. a gallery's images) is edited
+        // as an ordered list of assets picked from the library, not raw JSON.
+        if (field.reference?.mediaCategory) {
+          return (
+            <MediaMultiPicker
+              value={toIdList(value)}
+              onChange={(ids) => onChange(ids)}
+              category={field.reference.mediaCategory as MediaCategory}
+            />
+          );
+        }
         return (
           <Textarea
             rows={4}
