@@ -214,7 +214,46 @@
       });
   }
 
+  // Anonymous pageview beacon. Posts to the same-origin collect endpoint, which
+  // resolves the tenant (host) and its analytics instance server-side; it 202s
+  // even when analytics is disabled, so this never surfaces an error. A per-tab
+  // session id lets the backend derive a (hashed) visitor without cookies.
+  function sessionId() {
+    try {
+      var k = 'dcms-sid';
+      var v = sessionStorage.getItem(k);
+      if (!v) {
+        v = (Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+        sessionStorage.setItem(k, v);
+      }
+      return v;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function sendPageview() {
+    var payload = {
+      type: 'pageview',
+      path: location.pathname || '/',
+      referrer: document.referrer || null,
+      sessionId: sessionId(),
+    };
+    try {
+      fetch('/api/collect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'same-origin',
+        keepalive: true,
+      }).catch(function () {});
+    } catch (e) {
+      /* best-effort */
+    }
+  }
+
   function run() {
+    sendPageview();
     var nodes = document.querySelectorAll('[data-dcms-component]');
     for (var i = 0; i < nodes.length; i++) hydrate(nodes[i]);
   }
