@@ -49,4 +49,26 @@ public class OpenApiAssemblerTests
         doc["paths"]!.AsObject().Should().BeEmpty();
         doc["tags"]!.AsArray().Should().BeEmpty();
     }
+
+    [Fact]
+    public void Defaults_to_relative_server_when_no_urls_given()
+    {
+        var assembler = new OpenApiAssembler(new PluginRegistry([new BlogPlugin()]));
+
+        var servers = assembler.Build("Acme", []).AsObject()["servers"]!.AsArray();
+
+        servers.Should().HaveCount(1);
+        servers[0]!["url"]!.GetValue<string>().Should().Be("/");
+    }
+
+    [Fact]
+    public void Emits_supplied_server_urls_for_the_try_it_pipeline()
+    {
+        var assembler = new OpenApiAssembler(new PluginRegistry([new BlogPlugin()]));
+
+        var doc = assembler.Build("Acme", [], ["https://acme.example", "https://www.acme.example"]);
+
+        var urls = doc["servers"]!.AsArray().Select(s => s!["url"]!.GetValue<string>()).ToList();
+        urls.Should().Equal("https://acme.example", "https://www.acme.example");
+    }
 }

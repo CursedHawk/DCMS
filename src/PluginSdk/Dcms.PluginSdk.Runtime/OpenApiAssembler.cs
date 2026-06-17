@@ -17,7 +17,15 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
         "{ items, page, pageSize, totalCount } and accept ?page & ?pageSize. Media fields hold asset " +
         "ids served at /api/media/{assetId}/{variant} (images: webp-320..1920, thumb; video: hls-master).";
 
-    public JsonObject Build(string tenantName, IReadOnlyList<PluginInstanceContext> instances)
+    /// <param name="serverUrls">
+    /// Base URLs to advertise as OpenAPI <c>servers</c> (e.g. the tenant's verified
+    /// domains), so a docs "try it" call targets a real host. When null/empty the
+    /// spec uses a relative <c>"/"</c> server (correct when served from that host).
+    /// </param>
+    public JsonObject Build(
+        string tenantName,
+        IReadOnlyList<PluginInstanceContext> instances,
+        IReadOnlyList<string>? serverUrls = null)
     {
         var paths = new JsonObject();
         var tags = new JsonArray();
@@ -48,6 +56,19 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
             }
         }
 
+        var servers = new JsonArray();
+        if (serverUrls is { Count: > 0 })
+        {
+            foreach (var url in serverUrls)
+            {
+                servers.Add(new JsonObject { ["url"] = url });
+            }
+        }
+        else
+        {
+            servers.Add(new JsonObject { ["url"] = "/" });
+        }
+
         return new JsonObject
         {
             ["openapi"] = "3.1.0",
@@ -57,7 +78,7 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
                 ["version"] = "1.0.0",
                 ["description"] = Preamble,
             },
-            ["servers"] = new JsonArray { new JsonObject { ["url"] = "/" } },
+            ["servers"] = servers,
             ["tags"] = tags,
             ["paths"] = paths,
             ["components"] = new JsonObject { ["schemas"] = schemas },

@@ -3,6 +3,7 @@ using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Runtime;
 using Dcms.Shared.Caching;
 using Dcms.Shared.Data.Cms;
+using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,7 +20,7 @@ public static class OpenApiPreviewEndpoints
     public static IEndpointRouteBuilder MapOpenApiPreview(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/admin/openapi.json", async (
-            HttpContext http, ITenantContext tenant, CmsDbContext db,
+            HttpContext http, ITenantContext tenant, CmsDbContext db, TenancyDbContext tenancy,
             OpenApiAssembler assembler, ICacheService cache, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
@@ -32,7 +33,19 @@ public static class OpenApiPreviewEndpoints
                 .OrderBy(p => p.Slug)
                 .ToListAsync(ct);
 
-            var hash = ConfigHash(instances);
+            // Advertise the tenant's verified, site-linked domains as servers so the
+            // docs "try it" pipeline calls the real content endpoints (site-host
+            // proxies /api on those hosts). Primary first. TenancyDbContext is
+            // tenant-scoped, so this is already limited to the current tenant.
+            var hostnames = await tenancy.Domains.AsNoTracking()
+                .Where(d => d.VerifiedAt != null && d.SiteId != null)
+                .OrderByDescending(d => d.IsPrimary)
+                .ThenBy(d => d.Hostname)
+                .Select(d => d.Hostname)
+                .ToListAsync(ct);
+            var servers = hostnames.Select(h => $"https://{h}").ToList();
+
+            var hash = ConfigHash(instances, servers);
             var cacheKey = $"t:{tenantId}:openapi-admin:{hash}";
             var cached = await cache.GetAsync<string>(cacheKey, ct);
             if (cached is not null)
@@ -45,7 +58,7 @@ public static class OpenApiPreviewEndpoints
                 p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description,
                 JsonDocument.Parse(string.IsNullOrWhiteSpace(p.ConfigJson) ? "{}" : p.ConfigJson))).ToList();
 
-            var doc = assembler.Build(tenant.TenantSlug ?? tenantId.ToString(), contexts);
+            var doc = assembler.Build(tenant.TenantSlug ?? tenantId.ToString(), contexts, servers);
             var json = doc.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
             await cache.SetAsync(cacheKey, json, TimeSpan.FromHours(24), ct);
 
@@ -56,7 +69,7 @@ public static class OpenApiPreviewEndpoints
         return app;
     }
 
-    private static string ConfigHash(IEnumerable<PluginInstance> instances)
+    private static string ConfigHash(IEnumerable<PluginInstance> instances, IEnumerable<string> servers)
     {
         var sb = new System.Text.StringBuilder();
         foreach (var p in instances.OrderBy(i => i.Id))
@@ -64,6 +77,12 @@ public static class OpenApiPreviewEndpoints
             sb.Append(p.Id).Append('|').Append(p.Slug).Append('|').Append(p.PluginId)
               .Append('|').Append(p.PluginVersion).Append('|').Append(p.Name)
               .Append('|').Append(p.Description).Append('|').Append(p.ConfigJson).Append(';');
+        }
+        // Servers affect the emitted spec, so they must affect the cache key/ETag.
+        sb.Append("servers:");
+        foreach (var s in servers)
+        {
+            sb.Append(s).Append(',');
         }
         return Convert.ToHexStringLower(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(sb.ToString())))[..16];
