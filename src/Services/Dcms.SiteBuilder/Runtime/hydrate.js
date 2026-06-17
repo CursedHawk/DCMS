@@ -16,11 +16,23 @@
   'use strict';
 
   var GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  var TITLE_KEYS = ['title', 'name', 'heading', 'headline', 'label'];
+  // Fallback content type per data-bound component (mirrors the site-components
+  // registry) for bindings saved before the query carried contentType.
+  var CONTENT_TYPE = {
+    BlogList: 'post',
+    ArticleView: 'article',
+    GalleryGrid: 'gallery',
+    CarouselView: 'slide',
+    VideoPlayer: 'video',
+    AudioPlayer: 'track',
+    DownloadList: 'file',
+    SearchBox: 'result',
+  };
+  var TITLE_KEYS = ['title', 'name', 'heading', 'headline', 'label', 'artist'];
   var BODY_KEYS = ['excerpt', 'summary', 'description', 'body', 'content', 'text', 'caption'];
-  var IMAGE_KEYS = ['image', 'cover', 'thumbnail', 'thumb', 'photo', 'poster', 'src'];
-  var MEDIA_KEYS = ['url', 'src', 'file', 'audio', 'video', 'track', 'asset', 'media', 'href'];
-  var LINK_KEYS = ['href', 'url', 'link'];
+  var IMAGE_KEYS = ['coverImage', 'heroImage', 'image', 'images', 'cover', 'thumbnail', 'thumb', 'photo', 'poster', 'src'];
+  var MEDIA_KEYS = ['source', 'asset', 'url', 'src', 'file', 'audio', 'video', 'track', 'media', 'href'];
+  var LINK_KEYS = ['linkUrl', 'href', 'url', 'link'];
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -37,11 +49,13 @@
     }
   }
 
-  // Resolve a media reference: a bare asset GUID maps to the delivery endpoint,
-  // anything else is assumed to already be a URL.
+  // Resolve a media reference to a URL. Accepts a bare asset GUID (→ delivery
+  // endpoint), an existing URL, an array (→ first element), or an object holding
+  // a media key / id / url.
   function mediaUrl(ref) {
     if (!ref) return '';
-    if (typeof ref === 'object') ref = pick(ref, MEDIA_KEYS) || ref.id || '';
+    if (Array.isArray(ref)) return ref.length ? mediaUrl(ref[0]) : '';
+    if (typeof ref === 'object') ref = pick(ref, MEDIA_KEYS) || ref.id || ref.assetId || '';
     ref = String(ref);
     return GUID.test(ref) ? '/api/media/' + ref + '/original' : ref;
   }
@@ -158,10 +172,10 @@
     el.setAttribute('data-dcms-hydrated', 'true');
   }
 
-  function fetchBinding(binding) {
+  function fetchBinding(binding, type) {
     var slug = binding.instanceSlug || (binding.source && binding.source.instanceSlug);
     var query = binding.query || (binding.source && binding.source.query) || {};
-    var contentType = query.contentType || query.type;
+    var contentType = query.contentType || query.type || CONTENT_TYPE[type];
     if (!slug || !contentType) return Promise.resolve([]);
 
     var url = '/api/' + encodeURIComponent(slug) + '/' + encodeURIComponent(contentType);
@@ -188,7 +202,7 @@
     var bindings = parseJSON(el.getAttribute('data-dcms-bindings'), []);
     if (!bindings.length) return;
 
-    fetchBinding(bindings[0])
+    fetchBinding(bindings[0], type)
       .then(function (items) {
         render(el, type, props, items);
       })

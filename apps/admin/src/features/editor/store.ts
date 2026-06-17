@@ -211,9 +211,12 @@ export const useEditor = create<EditorState>((set, get) => {
       if (!page) return;
       const apply = (n: ComponentNode): ComponentNode => {
         if (n.id === id) {
-          return instanceSlug
-            ? { ...n, bindings: [{ propPath, source: { instanceSlug, query: {} } }] }
-            : { ...n, bindings: [] };
+          if (!instanceSlug) return { ...n, bindings: [] };
+          // Persist the registry's contentType into the query — the published-site
+          // hydrator builds the delivery URL (/api/{slug}/{contentType}) from it.
+          const contentType = findRegistration(n.type)?.binding?.contentType;
+          const query = contentType ? { contentType } : {};
+          return { ...n, bindings: [{ propPath, source: { instanceSlug, query } }] };
         }
         return n.children ? { ...n, children: n.children.map(apply) } : n;
       };
