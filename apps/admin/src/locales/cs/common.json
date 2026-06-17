@@ -112,7 +112,12 @@
     "txtRecordHint": "Přidejte tento TXT záznam u svého DNS poskytovatele a poté ověřte.",
     "recordName": "Název záznamu",
     "recordValue": "Hodnota",
-    "linkSite": "Propojit s webem"
+    "linkSite": "Propojit s webem",
+    "provided": "Poskytnutá subdoména",
+    "custom": "Vlastní doména",
+    "providedHint": "Získejte připravenou adresu pod dcms.highgeek.eu — bez nastavení DNS, ověřeno okamžitě.",
+    "getSubdomain": "Získat subdoménu",
+    "providedBadge": "Poskytnutá"
   },
   "plugins": {
     "title": "Pluginy",

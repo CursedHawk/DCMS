@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import { CenteredSpinner } from '../../components/ui/spinner';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { ApiError, api } from '../../lib/api';
 
 interface Domain {
@@ -33,6 +34,7 @@ interface Domain {
   hostname: string;
   verified: boolean;
   isPrimary: boolean;
+  managed: boolean;
   txtRecord: string;
   txtValue: string;
 }
@@ -55,6 +57,16 @@ export function DomainsPage() {
       toast.success(t('common.saved'));
       setOpen(false);
       setHostname('');
+      await qc.invalidateQueries({ queryKey: ['domains'] });
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+  });
+
+  const provision = useMutation({
+    mutationFn: () => api.post('/admin/domains/provisioned'),
+    onSuccess: async () => {
+      toast.success(t('common.saved'));
+      setOpen(false);
       await qc.invalidateQueries({ queryKey: ['domains'] });
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
@@ -110,6 +122,7 @@ export function DomainsPage() {
                     </Badge>
                   )}
                   {d.isPrimary ? <Badge tone="default">{t('domains.primary')}</Badge> : null}
+                  {d.managed ? <Badge tone="secondary">{t('domains.providedBadge')}</Badge> : null}
                   <div className="flex-1" />
                   {!d.verified ? (
                     <Button size="sm" disabled={verify.isPending} onClick={() => verify.mutate(d.id)}>
@@ -165,18 +178,47 @@ export function DomainsPage() {
           <DialogHeader>
             <DialogTitle>{t('domains.addDomain')}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-1.5">
-            <Label>{t('domains.hostname')}</Label>
-            <Input value={hostname} onChange={(e) => setHostname(e.target.value)} placeholder="www.example.com" />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              {t('actions.cancel')}
-            </Button>
-            <Button disabled={!hostname.trim() || add.isPending} onClick={() => add.mutate()}>
-              {t('actions.add')}
-            </Button>
-          </DialogFooter>
+          <Tabs defaultValue="provided">
+            <TabsList className="w-full">
+              <TabsTrigger value="provided" className="flex-1">
+                {t('domains.provided')}
+              </TabsTrigger>
+              <TabsTrigger value="custom" className="flex-1">
+                {t('domains.custom')}
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="provided" className="space-y-4">
+              <p className="text-sm text-muted-foreground">{t('domains.providedHint')}</p>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setOpen(false)}>
+                  {t('actions.cancel')}
+                </Button>
+                <Button disabled={provision.isPending} onClick={() => provision.mutate()}>
+                  <Globe className="h-4 w-4" /> {t('domains.getSubdomain')}
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+
+            <TabsContent value="custom" className="space-y-4">
+              <div className="space-y-1.5">
+                <Label>{t('domains.hostname')}</Label>
+                <Input
+                  value={hostname}
+                  onChange={(e) => setHostname(e.target.value)}
+                  placeholder="www.example.com"
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setOpen(false)}>
+                  {t('actions.cancel')}
+                </Button>
+                <Button disabled={!hostname.trim() || add.isPending} onClick={() => add.mutate()}>
+                  {t('actions.add')}
+                </Button>
+              </DialogFooter>
+            </TabsContent>
+          </Tabs>
         </DialogContent>
       </Dialog>
     </Page>

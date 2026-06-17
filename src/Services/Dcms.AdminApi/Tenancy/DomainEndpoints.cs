@@ -12,6 +12,9 @@ public static class DomainEndpoints
 {
     public const string TxtPrefix = "_dcms-verify";
 
+    /// <summary>Zone the platform owns; provisioned subdomains live under it.</summary>
+    public const string DefaultManagedZone = "dcms.highgeek.eu";
+
     public static IEndpointRouteBuilder MapDomainEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/admin/domains", async (TenancyDbContext db, CancellationToken ct) =>
@@ -23,6 +26,7 @@ public static class DomainEndpoints
                     hostname = d.Hostname,
                     verified = d.VerifiedAt != null,
                     isPrimary = d.IsPrimary,
+                    managed = d.VerificationToken == "dcms-managed",
                     txtRecord = $"{TxtPrefix}.{d.Hostname}",
                     txtValue = d.VerificationToken,
                 })
@@ -59,6 +63,47 @@ public static class DomainEndpoints
                 hostname = domain.Hostname,
                 txtRecord = $"{TxtPrefix}.{domain.Hostname}",
                 txtValue = domain.VerificationToken,
+            });
+        }).RequirePermission(PlatformPermissions.DomainsManage);
+
+        // Provision a managed subdomain under the platform-owned zone
+        // ({domainId}.dcms.highgeek.eu). The platform controls the zone (wildcard
+        // DNS + on-demand TLS), so there is no TXT challenge — it's verified on
+        // creation and ready to link to a site immediately.
+        app.MapPost("/api/admin/domains/provisioned", async (
+            TenancyDbContext db, ITenantContext tenant, IConfiguration config,
+            IEventPublisher events, CancellationToken ct) =>
+        {
+            if (tenant.TenantId is not { } tenantId)
+            {
+                return Results.BadRequest(new { error = "Select a tenant first." });
+            }
+
+            var zone = (config["Domains:ManagedZone"] ?? DefaultManagedZone).Trim().Trim('.').ToLowerInvariant();
+            var domainId = Guid.NewGuid();
+            var hostname = $"{domainId:N}.{zone}";
+
+            var domain = new Domain
+            {
+                Id = domainId,
+                TenantId = tenantId,
+                Hostname = hostname,
+                VerificationToken = "dcms-managed",
+                VerifiedAt = DateTimeOffset.UtcNow,
+                IsPrimary = !await db.Domains.AnyAsync(d => d.IsPrimary, ct),
+            };
+            db.Domains.Add(domain);
+            await db.SaveChangesAsync(ct);
+
+            await events.PublishAsync(Subjects.TenantDomainVerified,
+                new TenantDomainVerified(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, domain.Id, domain.Hostname), ct);
+
+            return Results.Created($"/api/admin/domains/{domain.Id}", new
+            {
+                id = domain.Id,
+                hostname = domain.Hostname,
+                verified = true,
+                isPrimary = domain.IsPrimary,
             });
         }).RequirePermission(PlatformPermissions.DomainsManage);
 

@@ -112,7 +112,12 @@
     "txtRecordHint": "Add this TXT record at your DNS provider, then verify.",
     "recordName": "Record name",
     "recordValue": "Value",
-    "linkSite": "Link to site"
+    "linkSite": "Link to site",
+    "provided": "Provided subdomain",
+    "custom": "Custom domain",
+    "providedHint": "Get a ready-to-use address under dcms.highgeek.eu — no DNS setup, verified instantly.",
+    "getSubdomain": "Get subdomain",
+    "providedBadge": "Provided"
   },
   "plugins": {
     "title": "Plugins",
