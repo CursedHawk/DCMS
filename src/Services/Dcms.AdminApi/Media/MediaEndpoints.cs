@@ -136,6 +136,41 @@ public static class MediaEndpoints
                 });
         }).RequirePermission(PlatformPermissions.MediaRead);
 
+        // Streams the original (or a named variant, e.g. ?variant=thumb / webp-640)
+        // so the admin SPA can render previews behind the bearer token. No public
+        // MinIO; bytes flow through admin-api like the content-api delivery path.
+        app.MapGet("/api/admin/media/{id:guid}/content", async (
+            Guid id, string? variant, MediaDbContext db, IObjectStorage storage,
+            IOptions<StorageOptions> storageOptions, CancellationToken ct) =>
+        {
+            var asset = await db.Assets.Include(a => a.Variants).FirstOrDefaultAsync(a => a.Id == id, ct);
+            if (asset is null)
+            {
+                return Results.NotFound();
+            }
+
+            string key;
+            string contentType;
+            if (!string.IsNullOrEmpty(variant))
+            {
+                var v = asset.Variants.FirstOrDefault(x => x.Kind == variant);
+                if (v is null)
+                {
+                    return Results.NotFound();
+                }
+                key = v.ObjectKey;
+                contentType = v.ContentType;
+            }
+            else
+            {
+                key = asset.OriginalKey;
+                contentType = asset.ContentType;
+            }
+
+            var stream = await storage.GetAsync(storageOptions.Value.MediaBucket, key, ct);
+            return Results.Stream(stream, contentType, enableRangeProcessing: true);
+        }).RequirePermission(PlatformPermissions.MediaRead);
+
         return app;
     }
 }

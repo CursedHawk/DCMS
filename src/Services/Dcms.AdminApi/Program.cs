@@ -4,6 +4,7 @@ using Dcms.AdminApi.Analytics;
 using Dcms.AdminApi.Chat;
 using Dcms.AdminApi.Cms;
 using Dcms.AdminApi.Media;
+using Dcms.AdminApi.Openapi;
 using Dcms.AdminApi.Plugins;
 using Dcms.AdminApi.Tenancy;
 using Dcms.Plugins.All;
@@ -96,6 +97,7 @@ app.MapAiSettingsEndpoints();
 app.MapAiGenerationEndpoints();
 app.MapAnalyticsDashboard();
 app.MapChatConsole();
+app.MapOpenApiPreview();
 app.MapGet("/", () => Results.Ok(new { service = "admin-api" }));
 
 // Current admin identity — proves the SPA's access token validates here.

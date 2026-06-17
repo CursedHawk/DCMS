@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -10,11 +11,24 @@ public sealed record RenderedPage(string FileName, string Html);
 /// <summary>
 /// Mode A prerenderer: walks the component tree to static HTML, one file per
 /// page. Layout primitives render directly; plugin/data-bound components emit a
-/// placeholder element carrying their bindings for client-side hydration (the
-/// hydration runtime is wired in a later phase). No Node dependency.
+/// placeholder element carrying their bindings for client-side hydration.
+///
+/// Pages with a <see cref="SitePage.Canvas"/> use the free-canvas (Wix-style)
+/// model: the page body is a positioned stage and every node carries an absolute
+/// <see cref="NodeLayout"/> (left/top/width/height/z-index) emitted as inline
+/// styles, with per-breakpoint overrides collected into a page stylesheet. Pages
+/// without a canvas keep the original flow layout (back-compat with AI/legacy
+/// definitions that omit layout). No Node dependency.
 /// </summary>
 public sealed class SiteRenderer
 {
+    // Editor breakpoint keys → max-width media queries.
+    private static readonly (string Key, int MaxWidth)[] Breakpoints =
+    [
+        ("tablet", 1024),
+        ("mobile", 640),
+    ];
+
     public IReadOnlyList<RenderedPage> Render(SiteDefinition definition)
     {
         var pages = new List<RenderedPage>();
@@ -39,12 +53,30 @@ public sealed class SiteRenderer
     private string RenderPage(SiteDefinition definition, SitePage page)
     {
         var body = new StringBuilder();
+        var responsiveCss = new StringBuilder();
         RenderNav(definition, body);
-        if (page.Root is not null)
+
+        if (page.Canvas is { } canvas)
         {
-            RenderNode(page.Root, body);
+            // Free-canvas: positioned stage; render the root's children as absolute
+            // siblings anchored to the stage.
+            body.Append(CultureInfo.InvariantCulture,
+                $"<div class=\"dcms-canvas\" style=\"position:relative;width:{Num(canvas.Width)}px;min-height:{Num(canvas.MinHeight)}px;margin:0 auto;\">");
+            if (page.Root is not null)
+            {
+                foreach (var child in page.Root.Children)
+                {
+                    RenderNode(child, body, responsiveCss, absolute: true);
+                }
+            }
+            body.Append("</div>");
         }
-        return Document(page.Seo, definition.Theme, body.ToString());
+        else if (page.Root is not null)
+        {
+            RenderNode(page.Root, body, responsiveCss, absolute: false);
+        }
+
+        return Document(page.Seo, definition.Theme, body.ToString(), responsiveCss.ToString());
     }
 
     private void RenderNav(SiteDefinition definition, StringBuilder sb)
@@ -56,25 +88,46 @@ public sealed class SiteRenderer
         sb.Append("<nav class=\"dcms-nav\">");
         foreach (var item in definition.Nav)
         {
-            sb.Append($"<a href=\"{Attr(item.Path)}\">{Text(item.Label)}</a>");
+            sb.Append(CultureInfo.InvariantCulture, $"<a href=\"{Attr(item.Path)}\">{Text(item.Label)}</a>");
         }
         sb.Append("</nav>");
     }
 
-    private void RenderNode(ComponentNode node, StringBuilder sb)
+    private void RenderNode(ComponentNode node, StringBuilder sb, StringBuilder css, bool absolute)
+    {
+        // Absolute mode: wrap the node in a positioned box and collect its
+        // responsive overrides. The wrapper is itself a containing block, so any
+        // absolutely positioned children anchor to it.
+        if (absolute && node.Layout is { } layout)
+        {
+            var cls = "n-" + Sanitize(node.Id);
+            var z = layout.Z is { } zi ? $"z-index:{zi.ToString(CultureInfo.InvariantCulture)};" : string.Empty;
+            sb.Append(CultureInfo.InvariantCulture,
+                $"<div class=\"dcms-node {cls}\" style=\"position:absolute;left:{Num(layout.X)}px;top:{Num(layout.Y)}px;width:{Num(layout.W)}px;height:{Num(layout.H)}px;{z}\">");
+            CollectBreakpointCss(css, cls, layout);
+            RenderInner(node, sb, css, absolute: true);
+            sb.Append("</div>");
+            return;
+        }
+
+        RenderInner(node, sb, css, absolute);
+    }
+
+    private void RenderInner(ComponentNode node, StringBuilder sb, StringBuilder css, bool absolute)
     {
         // Data-bound or plugin components render as hydration placeholders.
         if (node.Bindings.Count > 0)
         {
-            sb.Append($"<div data-dcms-component=\"{Attr(node.Type)}\" data-dcms-bindings=\"{Attr(SerializeBindings(node))}\"></div>");
+            sb.Append(CultureInfo.InvariantCulture,
+                $"<div data-dcms-component=\"{Attr(node.Type)}\" data-dcms-bindings=\"{Attr(SerializeBindings(node))}\"></div>");
             return;
         }
 
         switch (node.Type)
         {
             case "Section" or "Container" or "Stack" or "Grid":
-                sb.Append($"<section class=\"dcms-{node.Type.ToLowerInvariant()}\">");
-                RenderChildren(node, sb);
+                sb.Append(CultureInfo.InvariantCulture, $"<section class=\"dcms-{node.Type.ToLowerInvariant()}\">");
+                RenderChildren(node, sb, css, absolute);
                 sb.Append("</section>");
                 break;
             case "Text" or "Heading":
@@ -83,52 +136,85 @@ public sealed class SiteRenderer
                 {
                     tag = "p";
                 }
-                sb.Append($"<{tag}>{Text(Prop(node, "text") ?? string.Empty)}</{tag}>");
+                sb.Append(CultureInfo.InvariantCulture, $"<{tag}>{Text(Prop(node, "text") ?? string.Empty)}</{tag}>");
                 break;
             case "Image":
-                sb.Append($"<img src=\"{Attr(Prop(node, "src") ?? string.Empty)}\" alt=\"{Attr(Prop(node, "alt") ?? string.Empty)}\" />");
+                sb.Append(CultureInfo.InvariantCulture,
+                    $"<img src=\"{Attr(Prop(node, "src") ?? string.Empty)}\" alt=\"{Attr(Prop(node, "alt") ?? string.Empty)}\" />");
                 break;
             case "Button":
-                sb.Append($"<a class=\"dcms-button\" href=\"{Attr(Prop(node, "href") ?? "#")}\">{Text(Prop(node, "label") ?? "Button")}</a>");
+                sb.Append(CultureInfo.InvariantCulture,
+                    $"<a class=\"dcms-button\" href=\"{Attr(Prop(node, "href") ?? "#")}\">{Text(Prop(node, "label") ?? "Button")}</a>");
                 break;
             case "Hero":
                 sb.Append("<section class=\"dcms-hero\">");
-                sb.Append($"<h1>{Text(Prop(node, "title") ?? string.Empty)}</h1>");
+                sb.Append(CultureInfo.InvariantCulture, $"<h1>{Text(Prop(node, "title") ?? string.Empty)}</h1>");
                 if (Prop(node, "subtitle") is { } sub)
                 {
-                    sb.Append($"<p>{Text(sub)}</p>");
+                    sb.Append(CultureInfo.InvariantCulture, $"<p>{Text(sub)}</p>");
                 }
-                RenderChildren(node, sb);
+                RenderChildren(node, sb, css, absolute);
                 sb.Append("</section>");
                 break;
             default:
-                sb.Append($"<div data-component=\"{Attr(node.Type)}\">");
-                RenderChildren(node, sb);
+                sb.Append(CultureInfo.InvariantCulture, $"<div data-component=\"{Attr(node.Type)}\">");
+                RenderChildren(node, sb, css, absolute);
                 sb.Append("</div>");
                 break;
         }
     }
 
-    private void RenderChildren(ComponentNode node, StringBuilder sb)
+    private void RenderChildren(ComponentNode node, StringBuilder sb, StringBuilder css, bool absolute)
     {
         foreach (var child in node.Children)
         {
-            RenderNode(child, sb);
+            RenderNode(child, sb, css, absolute);
         }
     }
 
-    private static string Document(SeoMeta seo, ThemeTokens theme, string body)
+    private static void CollectBreakpointCss(StringBuilder css, string cls, NodeLayout layout)
+    {
+        if (layout.Breakpoints is null)
+        {
+            return;
+        }
+        foreach (var (key, maxWidth) in Breakpoints)
+        {
+            if (!layout.Breakpoints.TryGetValue(key, out var bp) || bp is null)
+            {
+                continue;
+            }
+            var rule = new StringBuilder();
+            if (bp.X is { } x) rule.Append(CultureInfo.InvariantCulture, $"left:{Num(x)}px;");
+            if (bp.Y is { } y) rule.Append(CultureInfo.InvariantCulture, $"top:{Num(y)}px;");
+            if (bp.W is { } w) rule.Append(CultureInfo.InvariantCulture, $"width:{Num(w)}px;");
+            if (bp.H is { } h) rule.Append(CultureInfo.InvariantCulture, $"height:{Num(h)}px;");
+            if (bp.Z is { } z) rule.Append(CultureInfo.InvariantCulture, $"z-index:{z.ToString(CultureInfo.InvariantCulture)};");
+            if (rule.Length > 0)
+            {
+                css.Append(CultureInfo.InvariantCulture, $"@media (max-width:{maxWidth}px){{.{cls}{{{rule}}}}}");
+            }
+        }
+    }
+
+    private static string Document(SeoMeta seo, ThemeTokens theme, string body, string responsiveCss)
     {
         var css = new StringBuilder(":root{");
         foreach (var (k, v) in theme.Colors)
         {
-            css.Append($"--color-{Css(k)}:{Css(v)};");
+            css.Append(CultureInfo.InvariantCulture, $"--color-{Css(k)}:{Css(v)};");
         }
         foreach (var (k, v) in theme.Fonts)
         {
-            css.Append($"--font-{Css(k)}:{Css(v)};");
+            css.Append(CultureInfo.InvariantCulture, $"--font-{Css(k)}:{Css(v)};");
+        }
+        if (theme.Radius is { } radius)
+        {
+            css.Append(CultureInfo.InvariantCulture, $"--radius:{Css(radius)};");
         }
         css.Append('}');
+        css.Append("*{box-sizing:border-box;}.dcms-node{overflow:hidden;}");
+        css.Append(responsiveCss);
 
         var description = seo.Description is null ? string.Empty : $"<meta name=\"description\" content=\"{Attr(seo.Description)}\" />";
         return $"""
@@ -147,13 +233,25 @@ public sealed class SiteRenderer
     }
 
     private static string EmptyShell(SiteDefinition definition)
-        => Document(new SeoMeta { Title = "Untitled site" }, definition.Theme, "<main></main>");
+        => Document(new SeoMeta { Title = "Untitled site" }, definition.Theme, "<main></main>", string.Empty);
 
     private static string? Prop(ComponentNode node, string name)
         => node.Props.TryGetValue(name, out var v) ? v.AsString() : null;
 
     private static string SerializeBindings(ComponentNode node)
         => JsonSerializer.Serialize(node.Bindings.Select(b => new { b.PropPath, b.Source.InstanceSlug }));
+
+    private static string Num(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    private static string Sanitize(string id)
+    {
+        var sb = new StringBuilder(id.Length);
+        foreach (var c in id)
+        {
+            sb.Append(char.IsAsciiLetterOrDigit(c) || c is '-' or '_' ? c : '-');
+        }
+        return sb.Length == 0 ? "x" : sb.ToString();
+    }
 
     private static string Text(string value) => WebUtility.HtmlEncode(value);
     private static string Attr(string value) => WebUtility.HtmlEncode(value);

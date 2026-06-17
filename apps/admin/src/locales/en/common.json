@@ -1,0 +1,213 @@
+{
+  "app": {
+    "name": "DCMS Admin",
+    "tagline": "Manage tenants, plugins, content and sites."
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "tenants": "Tenants",
+    "members": "Members",
+    "roles": "Roles",
+    "domains": "Domains",
+    "plugins": "Plugins",
+    "content": "Content",
+    "media": "Media",
+    "sites": "Sites",
+    "openapi": "API Docs",
+    "ai": "AI",
+    "analytics": "Analytics",
+    "chat": "Chat",
+    "settings": "Settings"
+  },
+  "actions": {
+    "create": "Create",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "remove": "Remove",
+    "publish": "Publish",
+    "unpublish": "Unpublish",
+    "schedule": "Schedule",
+    "verify": "Verify",
+    "copy": "Copy",
+    "copied": "Copied",
+    "close": "Close",
+    "upload": "Upload",
+    "search": "Search",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "retry": "Retry",
+    "enable": "Enable",
+    "disable": "Disable",
+    "install": "Install",
+    "open": "Open",
+    "download": "Download"
+  },
+  "common": {
+    "loading": "Loading…",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "noResults": "No results.",
+    "required": "Required",
+    "optional": "optional",
+    "name": "Name",
+    "slug": "Slug",
+    "status": "Status",
+    "actions": "Actions",
+    "updated": "Updated",
+    "all": "All",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "toggle": "Toggle theme"
+  },
+  "auth": {
+    "welcome": "Welcome to DCMS",
+    "signInPrompt": "Sign in to manage tenants, plugins and content.",
+    "signedInAs": "Signed in as {{email}}",
+    "completing": "Completing sign-in…"
+  },
+  "tenant": {
+    "switcher": "Tenant",
+    "selectFirst": "Select or create a tenant to continue.",
+    "createTenant": "Create tenant",
+    "displayName": "Display name",
+    "use": "Use",
+    "superAdminOnly": "Only the platform SuperAdmin can manage tenants."
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome back",
+    "quickActions": "Quick actions"
+  },
+  "members": {
+    "title": "Members",
+    "email": "Email",
+    "roles": "Roles",
+    "invite": "Invite member",
+    "inviteSent": "Invitation created",
+    "noRoles": "No roles"
+  },
+  "roles": {
+    "title": "Roles",
+    "createRole": "Create role",
+    "permissions": "Permissions",
+    "system": "System",
+    "permissionMatrix": "Permission matrix",
+    "platform": "Platform"
+  },
+  "domains": {
+    "title": "Domains",
+    "addDomain": "Add domain",
+    "hostname": "Hostname",
+    "verified": "Verified",
+    "pending": "Pending",
+    "primary": "Primary",
+    "txtRecordHint": "Add this TXT record at your DNS provider, then verify.",
+    "recordName": "Record name",
+    "recordValue": "Value",
+    "linkSite": "Link to site"
+  },
+  "plugins": {
+    "title": "Plugins",
+    "catalog": "Catalog",
+    "installed": "Installed",
+    "install": "Install plugin",
+    "configuration": "Configuration",
+    "singleInstance": "Single instance",
+    "multiInstance": "Multiple instances allowed"
+  },
+  "content": {
+    "title": "Content",
+    "newItem": "New item",
+    "contentType": "Content type",
+    "versions": "Versions",
+    "version": "Version",
+    "published": "Published",
+    "draft": "Draft",
+    "publishAt": "Publish at",
+    "selectInstance": "Select a plugin instance to manage its content."
+  },
+  "media": {
+    "title": "Media library",
+    "upload": "Upload files",
+    "dropHere": "Drop files here or click to upload",
+    "processing": "Processing",
+    "ready": "Ready",
+    "failed": "Failed",
+    "pick": "Select media",
+    "size": "Size"
+  },
+  "sites": {
+    "title": "Sites",
+    "newSite": "New site",
+    "renderMode": "Render mode",
+    "editor": "Editor",
+    "openEditor": "Open editor"
+  },
+  "editor": {
+    "pages": "Pages",
+    "layers": "Layers",
+    "inspect": "Inspect",
+    "theme": "Theme",
+    "addPage": "Add page",
+    "breakpoint": "Breakpoint",
+    "desktop": "Desktop",
+    "tablet": "Tablet",
+    "mobile": "Mobile",
+    "position": "Position",
+    "size": "Size",
+    "bringToFront": "Bring to front",
+    "sendToBack": "Send to back",
+    "duplicate": "Duplicate",
+    "aiAssist": "AI assist",
+    "generateComponent": "Generate component",
+    "generateSite": "Generate site",
+    "instruction": "Instruction",
+    "brief": "Brief",
+    "dataSource": "Data source",
+    "publishQueued": "Publish queued"
+  },
+  "openapi": {
+    "title": "API documentation",
+    "copyForAi": "Copy for AI",
+    "downloadJson": "Download JSON",
+    "noInstances": "Enable plugins to generate API documentation."
+  },
+  "ai": {
+    "title": "AI settings",
+    "provider": "Provider",
+    "model": "Model",
+    "baseUrl": "Base URL",
+    "apiKey": "API key",
+    "apiKeySet": "A key is configured",
+    "clearKey": "Clear key"
+  },
+  "analytics": {
+    "title": "Analytics",
+    "pageviews": "Events",
+    "topPaths": "Top paths",
+    "byType": "By type",
+    "range": "Range",
+    "days": "{{count}} days"
+  },
+  "chat": {
+    "title": "Live chat",
+    "conversations": "Conversations",
+    "noConversation": "Select a conversation",
+    "send": "Send",
+    "message": "Message"
+  },
+  "errors": {
+    "generic": "Something went wrong.",
+    "forbidden": "You don't have permission to do that.",
+    "notFound": "Not found.",
+    "loadFailed": "Failed to load."
+  }
+}

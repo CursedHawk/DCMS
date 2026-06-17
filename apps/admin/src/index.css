@@ -1,1 +1,271 @@
 @import 'tailwindcss';
+
+/* Dark mode driven by a `.dark` class on <html> (toggled by ThemeProvider). */
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens (shadcn-style) as HSL triplets so they can be themed per mode
+ * and consumed through Tailwind utilities (bg-background, text-foreground, …).
+ */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 243 75% 59%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 9% 46%;
+  --accent: 243 75% 96%;
+  --accent-foreground: 243 75% 40%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 142 71% 45%;
+  --warning: 38 92% 50%;
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+  --ring: 243 75% 59%;
+  --radius: 0.65rem;
+
+  --sidebar: 222 47% 11%;
+  --sidebar-foreground: 220 14% 96%;
+  --sidebar-muted: 220 9% 60%;
+  --sidebar-accent: 243 75% 59%;
+}
+
+.dark {
+  --background: 222 47% 7%;
+  --foreground: 210 20% 96%;
+  --card: 222 40% 10%;
+  --card-foreground: 210 20% 96%;
+  --popover: 222 40% 10%;
+  --popover-foreground: 210 20% 96%;
+  --primary: 243 75% 66%;
+  --primary-foreground: 222 47% 7%;
+  --secondary: 217 33% 17%;
+  --secondary-foreground: 210 20% 96%;
+  --muted: 217 33% 15%;
+  --muted-foreground: 217 11% 65%;
+  --accent: 243 40% 22%;
+  --accent-foreground: 243 75% 85%;
+  --destructive: 0 63% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 142 64% 48%;
+  --warning: 38 92% 55%;
+  --border: 217 33% 20%;
+  --input: 217 33% 22%;
+  --ring: 243 75% 66%;
+
+  --sidebar: 222 47% 5%;
+  --sidebar-foreground: 210 20% 96%;
+  --sidebar-muted: 217 11% 55%;
+  --sidebar-accent: 243 75% 66%;
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-muted: hsl(var(--sidebar-muted));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Smooth color transition when toggling themes. */
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+}
+
+/* Thin, theme-aware scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+
+/* react-jsonschema-form: minimal theming to match the design system. */
+.dcms-rjsf .form-group {
+  margin-bottom: 0.85rem;
+}
+.dcms-rjsf label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.dcms-rjsf input[type='text'],
+.dcms-rjsf input[type='number'],
+.dcms-rjsf input[type='url'],
+.dcms-rjsf input[type='email'],
+.dcms-rjsf select,
+.dcms-rjsf textarea {
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid hsl(var(--input));
+  background: hsl(var(--background));
+  padding: 0.4rem 0.65rem;
+  font-size: 0.875rem;
+  color: hsl(var(--foreground));
+}
+.dcms-rjsf input:focus,
+.dcms-rjsf select:focus,
+.dcms-rjsf textarea:focus {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 0;
+}
+.dcms-rjsf .field-description,
+.dcms-rjsf .help-block {
+  margin-top: 0.2rem;
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+}
+.dcms-rjsf fieldset {
+  border: 0;
+  padding: 0;
+}
+.dcms-rjsf .checkbox label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.dcms-rjsf .array-item {
+  display: flex;
+  gap: 0.5rem;
+  align-items: start;
+  margin-bottom: 0.4rem;
+}
+.dcms-rjsf .btn {
+  border-radius: var(--radius-md);
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8125rem;
+}
+.dcms-rjsf .text-danger {
+  color: hsl(var(--destructive));
+  font-size: 0.75rem;
+}
+
+/* Radix open/close animations (self-contained — no plugin dependency). */
+@keyframes dcms-enter {
+  from {
+    opacity: 0;
+    transform: translateY(2px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes dcms-exit {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@keyframes dcms-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes dcms-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.dcms-pop[data-state='open'] {
+  animation: dcms-enter 0.16s ease-out;
+}
+.dcms-pop[data-state='closed'] {
+  animation: dcms-exit 0.12s ease-in forwards;
+}
+.dcms-overlay[data-state='open'] {
+  animation: dcms-fade-in 0.16s ease-out;
+}
+.dcms-overlay[data-state='closed'] {
+  animation: dcms-fade-out 0.12s ease-in forwards;
+}
+
+/* Dialog content is centered via translate(-50%,-50%); keep that during animation. */
+.dcms-pop[role='dialog'][data-state='open'] {
+  animation: dcms-dialog-enter 0.18s ease-out;
+}
+.dcms-pop[role='dialog'][data-state='closed'] {
+  animation: dcms-dialog-exit 0.14s ease-in forwards;
+}
+@keyframes dcms-dialog-enter {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+@keyframes dcms-dialog-exit {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.97);
+  }
+}

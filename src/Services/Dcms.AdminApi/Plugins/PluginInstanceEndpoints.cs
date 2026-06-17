@@ -146,7 +146,26 @@ public static class PluginInstanceEndpoints
         allowMultipleInstances = m.AllowMultipleInstances,
         configJsonSchema = m.ConfigJsonSchema,
         permissions = m.Permissions.Select(p => new { p.Action, p.DisplayName }),
-        contentTypes = m.ContentTypes.Select(t => new { t.Name, t.Searchable, t.SlugField }),
+        contentTypes = m.ContentTypes.Select(t => new
+        {
+            t.Name,
+            t.Searchable,
+            t.SlugField,
+            // Field definitions drive the schema-driven content editor in the SPA.
+            fields = t.Fields.Select(f => new
+            {
+                f.Name,
+                type = f.Type.ToString(),
+                f.Required,
+                f.Description,
+                reference = f.Reference is null ? null : new
+                {
+                    f.Reference.TargetPluginId,
+                    f.Reference.ContentType,
+                    mediaCategory = f.Reference.MediaCategory?.ToString(),
+                },
+            }),
+        }),
     };
 
     private static bool IsSlug(string value) =>

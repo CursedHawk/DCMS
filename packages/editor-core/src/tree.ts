@@ -1,4 +1,4 @@
-import type { ComponentNode, SiteDefinition } from './schema';
+import type { Breakpoint, ComponentNode, NodeLayout, SiteDefinition } from './schema';
 
 /** Immutable component-tree operations. Each returns a new tree; inputs are never mutated. */
 
@@ -44,6 +44,30 @@ export function removeNode(root: ComponentNode, id: string): ComponentNode {
 
 export function updateProps(root: ComponentNode, id: string, props: Record<string, unknown>): ComponentNode {
   return mapNode(root, (n) => (n.id === id ? { ...n, props: { ...n.props, ...props } } : n));
+}
+
+type LayoutPatch = Partial<Pick<NodeLayout, 'x' | 'y' | 'w' | 'h' | 'z'>>;
+
+/**
+ * Merge an absolute-layout patch into a node. On the desktop breakpoint the patch
+ * updates the base box; on tablet/mobile it accumulates a per-breakpoint override.
+ */
+export function updateLayout(
+  root: ComponentNode,
+  id: string,
+  patch: LayoutPatch,
+  breakpoint: Breakpoint = 'desktop',
+): ComponentNode {
+  return mapNode(root, (n) => {
+    if (n.id !== id) return n;
+    const base: NodeLayout = n.layout ?? { x: 0, y: 0, w: 200, h: 80 };
+    if (breakpoint === 'desktop') {
+      return { ...n, layout: { ...base, ...patch } };
+    }
+    const breakpoints = { ...(base.breakpoints ?? {}) };
+    breakpoints[breakpoint] = { ...(breakpoints[breakpoint] ?? {}), ...patch };
+    return { ...n, layout: { ...base, breakpoints } };
+  });
 }
 
 export function replaceNode(root: ComponentNode, id: string, replacement: ComponentNode): ComponentNode {

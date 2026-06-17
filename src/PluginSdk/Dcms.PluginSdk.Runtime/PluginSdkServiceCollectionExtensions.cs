@@ -44,7 +44,12 @@ public static class PluginSdkServiceCollectionExtensions
     public static IServiceCollection AddDcmsPluginCatalog(this IServiceCollection services, Action<PluginRegistryBuilder> configure)
     {
         var registry = BuildRegistry(configure);
+        services.AddSingleton(registry);
         services.AddSingleton<IPluginCatalog>(registry);
+        // The assembler only reads manifests + builds fragments (pure functions),
+        // so it is safe to offer here without hosting plugin runtime services —
+        // admin-api uses it to render the per-tenant OpenAPI preview.
+        services.AddSingleton<OpenApiAssembler>();
         return services;
     }
 

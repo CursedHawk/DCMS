@@ -29,6 +29,15 @@ public sealed class SitePage
     public string Title { get; set; } = string.Empty;
     public SeoMeta Seo { get; set; } = new();
     public ComponentNode? Root { get; set; }
+
+    /// <summary>Free-canvas dimensions; when present, nodes use absolute layout.</summary>
+    public CanvasConfig? Canvas { get; set; }
+}
+
+public sealed class CanvasConfig
+{
+    public double Width { get; set; } = 1200;
+    public double MinHeight { get; set; } = 800;
 }
 
 public sealed class SeoMeta
@@ -51,6 +60,29 @@ public sealed class ComponentNode
     public Dictionary<string, JsonElementValue> Props { get; set; } = [];
     public List<DataBinding> Bindings { get; set; } = [];
     public List<ComponentNode> Children { get; set; } = [];
+
+    /// <summary>Absolute position/size for free-canvas pages; null = flow layout.</summary>
+    public NodeLayout? Layout { get; set; }
+}
+
+/// <summary>Absolute layout box (px) with optional per-breakpoint overrides.</summary>
+public sealed class NodeLayout
+{
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double W { get; set; }
+    public double H { get; set; }
+    public int? Z { get; set; }
+    public Dictionary<string, BreakpointLayout>? Breakpoints { get; set; }
+}
+
+public sealed class BreakpointLayout
+{
+    public double? X { get; set; }
+    public double? Y { get; set; }
+    public double? W { get; set; }
+    public double? H { get; set; }
+    public int? Z { get; set; }
 }
 
 public sealed class DataBinding

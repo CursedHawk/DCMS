@@ -17,12 +17,38 @@ export const dataBindingSchema = z.object({
   }),
 });
 
+/** A single responsive override (any subset of the base layout box). */
+export const breakpointLayoutSchema = z
+  .object({
+    x: z.number(),
+    y: z.number(),
+    w: z.number(),
+    h: z.number(),
+    z: z.number().int(),
+  })
+  .partial();
+
+/** Absolute layout box (px) for free-canvas pages, with optional per-breakpoint overrides. */
+export const nodeLayoutSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+  z: z.number().int().optional(),
+  breakpoints: z.record(z.string(), breakpointLayoutSchema).optional(),
+});
+
+export type BreakpointLayout = z.infer<typeof breakpointLayoutSchema>;
+export type NodeLayout = z.infer<typeof nodeLayoutSchema>;
+export type Breakpoint = 'desktop' | 'tablet' | 'mobile';
+
 export interface ComponentNode {
   id: string;
   type: string;
   props: Record<string, unknown>;
   bindings?: z.infer<typeof dataBindingSchema>[];
   children?: ComponentNode[];
+  layout?: NodeLayout;
 }
 
 export const componentNodeSchema: z.ZodType<ComponentNode> = z.lazy(() =>
@@ -32,13 +58,27 @@ export const componentNodeSchema: z.ZodType<ComponentNode> = z.lazy(() =>
     props: z.record(z.string(), z.unknown()),
     bindings: z.array(dataBindingSchema).optional(),
     children: z.array(componentNodeSchema).optional(),
+    layout: nodeLayoutSchema.optional(),
   }),
 );
+
+/** Resolve a node's effective box for a breakpoint (base merged with overrides). */
+export function effectiveLayout(node: ComponentNode, breakpoint: Breakpoint): NodeLayout | undefined {
+  if (!node.layout) return undefined;
+  if (breakpoint === 'desktop') return node.layout;
+  const override = node.layout.breakpoints?.[breakpoint] ?? {};
+  return { ...node.layout, ...override };
+}
 
 export const seoMetaSchema = z.object({
   title: z.string(),
   description: z.string().optional(),
   ogImage: z.string().optional(),
+});
+
+export const canvasConfigSchema = z.object({
+  width: z.number().default(1200),
+  minHeight: z.number().default(800),
 });
 
 export const pageSchema = z.object({
@@ -47,7 +87,11 @@ export const pageSchema = z.object({
   title: z.string(),
   seo: seoMetaSchema,
   root: componentNodeSchema,
+  /** Present on free-canvas pages: nodes use absolute layout against this stage. */
+  canvas: canvasConfigSchema.optional(),
 });
+
+export type CanvasConfig = z.infer<typeof canvasConfigSchema>;
 
 export const themeTokensSchema = z.object({
   colors: z.record(z.string(), z.string()).default({}),

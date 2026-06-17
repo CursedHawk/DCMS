@@ -1,9 +1,11 @@
+using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Security;
+using Dcms.Shared.Security.Authorization;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Tenancy;
@@ -36,6 +38,25 @@ public static class TenancyEndpoints
                     name = tenants[m.TenantId].Name,
                 });
             return Results.Ok(result);
+        }).RequireAuthorization();
+
+        // The caller's effective permissions in the selected tenant — drives the
+        // SPA's permission-filtered navigation and action gating. SuperAdmins see
+        // the full platform set; with no tenant selected the set is empty.
+        app.MapGet("/api/admin/me/permissions", async (
+            CurrentUser me, ITenantContext tenant, IPermissionResolver resolver, CancellationToken ct) =>
+        {
+            var userId = me.RequireUserId();
+            if (me.IsSuperAdmin)
+            {
+                return Results.Ok(new { isSuperAdmin = true, permissions = PlatformPermissions.All });
+            }
+            if (tenant.TenantId is not { } tenantId)
+            {
+                return Results.Ok(new { isSuperAdmin = false, permissions = Array.Empty<string>() });
+            }
+            var permissions = await resolver.GetPermissionsAsync(tenantId, userId, ct);
+            return Results.Ok(new { isSuperAdmin = false, permissions });
         }).RequireAuthorization();
 
         // ---- Tenant provisioning (platform SuperAdmin only) ----
@@ -121,6 +142,62 @@ public static class TenancyEndpoints
             return Results.Created($"/api/admin/roles/{role.Id}", new { id = role.Id });
         }).RequirePermission(PlatformPermissions.RolesManage);
 
+        // Update a role's name and replace its permission set wholesale. System
+        // roles keep their name fixed but their permissions may still be tuned.
+        app.MapPut("/api/admin/roles/{id:guid}", async (
+            Guid id, UpdateRoleRequest body, TenancyDbContext db, ITenantContext tenant,
+            CancellationToken ct) =>
+        {
+            var tenantId = tenant.TenantId!.Value;
+            var role = await db.TenantRoles.Include(r => r.Permissions)
+                .FirstOrDefaultAsync(r => r.Id == id, ct);
+            if (role is null)
+            {
+                return Results.NotFound();
+            }
+            if (!role.IsSystem && !string.IsNullOrWhiteSpace(body.Name))
+            {
+                role.Name = body.Name;
+            }
+            db.TenantRolePermissions.RemoveRange(role.Permissions);
+            role.Permissions.Clear();
+            foreach (var permission in body.Permissions.Distinct())
+            {
+                role.Permissions.Add(new TenantRolePermission
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenantId,
+                    TenantRoleId = role.Id,
+                    Permission = permission,
+                });
+            }
+            await db.SaveChangesAsync(ct);
+            // Members holding this role get fresh permissions on next resolve (5-min
+            // TTL); role edits are infrequent so we let the cache lapse naturally.
+            return Results.NoContent();
+        }).RequirePermission(PlatformPermissions.RolesManage);
+
+        app.MapDelete("/api/admin/roles/{id:guid}", async (
+            Guid id, TenancyDbContext db, CancellationToken ct) =>
+        {
+            var role = await db.TenantRoles.Include(r => r.Permissions)
+                .FirstOrDefaultAsync(r => r.Id == id, ct);
+            if (role is null)
+            {
+                return Results.NotFound();
+            }
+            if (role.IsSystem)
+            {
+                return Results.BadRequest(new { error = "System roles cannot be deleted." });
+            }
+            var assignments = await db.MemberRoles.Where(m => m.TenantRoleId == id).ToListAsync(ct);
+            db.MemberRoles.RemoveRange(assignments);
+            db.TenantRolePermissions.RemoveRange(role.Permissions);
+            db.TenantRoles.Remove(role);
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        }).RequirePermission(PlatformPermissions.RolesManage);
+
         // ---- Tenant-scoped: members ----
         app.MapGet("/api/admin/members", async (TenancyDbContext db, CancellationToken ct) =>
         {
@@ -168,8 +245,71 @@ public static class TenancyEndpoints
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.MembersManage);
 
+        app.MapDelete("/api/admin/members/{membershipId:guid}/roles/{roleId:guid}", async (
+            Guid membershipId, Guid roleId, TenancyDbContext db, ITenantContext tenant,
+            IEventPublisher events, TenancyPermissionResolver permissions, CancellationToken ct) =>
+        {
+            var tenantId = tenant.TenantId!.Value;
+            var membership = await db.Memberships.Include(m => m.Roles)
+                .FirstOrDefaultAsync(m => m.Id == membershipId, ct);
+            if (membership is null)
+            {
+                return Results.NotFound();
+            }
+            var assignment = membership.Roles.FirstOrDefault(r => r.TenantRoleId == roleId);
+            if (assignment is not null)
+            {
+                db.MemberRoles.Remove(assignment);
+                await db.SaveChangesAsync(ct);
+                await permissions.InvalidateAsync(tenantId, membership.UserId, ct);
+                await events.PublishAsync(Subjects.MembershipChanged,
+                    new MembershipChanged(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, membership.UserId), ct);
+            }
+            return Results.NoContent();
+        }).RequirePermission(PlatformPermissions.MembersManage);
+
+        // Effective permission catalog: platform keys ∪ installed plugins' manifest
+        // permissions, each with a display name and group — drives the role matrix.
+        app.MapGet("/api/admin/permissions/catalog", (IPluginCatalog catalog) =>
+        {
+            var platform = PlatformPermissions.All.Select(k => new
+            {
+                key = k,
+                displayName = PlatformPermissionName(k),
+                group = "Platform",
+            });
+            var plugin = catalog.Manifests.SelectMany(m => m.Permissions.Select(p => new
+            {
+                key = PlatformPermissions.ForPlugin(m.Id, p.Action),
+                displayName = p.DisplayName,
+                group = m.Name,
+            }));
+            return Results.Ok(platform.Concat(plugin));
+        }).RequireAuthorization();
+
         return app;
     }
+
+    private static string PlatformPermissionName(string key) => key switch
+    {
+        PlatformPermissions.TenantSettings => "Manage tenant settings",
+        PlatformPermissions.MembersManage => "Manage members",
+        PlatformPermissions.RolesManage => "Manage roles",
+        PlatformPermissions.DomainsManage => "Manage domains",
+        PlatformPermissions.PluginsManage => "Manage plugins",
+        PlatformPermissions.MediaRead => "View media",
+        PlatformPermissions.MediaWrite => "Upload media",
+        PlatformPermissions.SiteEdit => "Edit sites",
+        PlatformPermissions.SitePublish => "Publish sites",
+        PlatformPermissions.AiSettings => "Manage AI settings",
+        PlatformPermissions.AnalyticsRead => "View analytics",
+        PlatformPermissions.ContentRead => "View content",
+        PlatformPermissions.ContentWrite => "Edit content",
+        PlatformPermissions.ContentPublish => "Publish content",
+        PlatformPermissions.ChatRead => "View chat",
+        PlatformPermissions.ChatManage => "Manage chat",
+        _ => key,
+    };
 
     private static bool IsSlug(string value) =>
         value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')
@@ -177,5 +317,6 @@ public static class TenancyEndpoints
 
     private sealed record CreateTenantRequest(string Slug, string? Name, Guid? OwnerUserId, string? OwnerEmail);
     private sealed record CreateRoleRequest(string Name, string[] Permissions);
+    private sealed record UpdateRoleRequest(string? Name, string[] Permissions);
     private sealed record AssignRoleRequest(Guid RoleId);
 }

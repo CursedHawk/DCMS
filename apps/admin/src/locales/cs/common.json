@@ -1,0 +1,213 @@
+{
+  "app": {
+    "name": "DCMS Admin",
+    "tagline": "Spravujte nájemce, pluginy, obsah a weby."
+  },
+  "nav": {
+    "dashboard": "Přehled",
+    "tenants": "Nájemci",
+    "members": "Členové",
+    "roles": "Role",
+    "domains": "Domény",
+    "plugins": "Pluginy",
+    "content": "Obsah",
+    "media": "Média",
+    "sites": "Weby",
+    "openapi": "API dokumentace",
+    "ai": "AI",
+    "analytics": "Analytika",
+    "chat": "Chat",
+    "settings": "Nastavení"
+  },
+  "actions": {
+    "create": "Vytvořit",
+    "save": "Uložit",
+    "cancel": "Zrušit",
+    "delete": "Smazat",
+    "edit": "Upravit",
+    "add": "Přidat",
+    "remove": "Odebrat",
+    "publish": "Publikovat",
+    "unpublish": "Zrušit publikaci",
+    "schedule": "Naplánovat",
+    "verify": "Ověřit",
+    "copy": "Kopírovat",
+    "copied": "Zkopírováno",
+    "close": "Zavřít",
+    "upload": "Nahrát",
+    "search": "Hledat",
+    "signIn": "Přihlásit se",
+    "signOut": "Odhlásit se",
+    "retry": "Zkusit znovu",
+    "enable": "Zapnout",
+    "disable": "Vypnout",
+    "install": "Nainstalovat",
+    "open": "Otevřít",
+    "download": "Stáhnout"
+  },
+  "common": {
+    "loading": "Načítání…",
+    "saving": "Ukládání…",
+    "saved": "Uloženo",
+    "noResults": "Žádné výsledky.",
+    "required": "Povinné",
+    "optional": "volitelné",
+    "name": "Název",
+    "slug": "Slug",
+    "status": "Stav",
+    "actions": "Akce",
+    "updated": "Aktualizováno",
+    "all": "Vše",
+    "yes": "Ano",
+    "no": "Ne"
+  },
+  "theme": {
+    "light": "Světlý",
+    "dark": "Tmavý",
+    "system": "Systémový",
+    "toggle": "Přepnout motiv"
+  },
+  "auth": {
+    "welcome": "Vítejte v DCMS",
+    "signInPrompt": "Přihlaste se pro správu nájemců, pluginů a obsahu.",
+    "signedInAs": "Přihlášen jako {{email}}",
+    "completing": "Dokončování přihlášení…"
+  },
+  "tenant": {
+    "switcher": "Nájemce",
+    "selectFirst": "Vyberte nebo vytvořte nájemce pro pokračování.",
+    "createTenant": "Vytvořit nájemce",
+    "displayName": "Zobrazovaný název",
+    "use": "Použít",
+    "superAdminOnly": "Nájemce může spravovat pouze platformový SuperAdmin."
+  },
+  "dashboard": {
+    "title": "Přehled",
+    "welcome": "Vítejte zpět",
+    "quickActions": "Rychlé akce"
+  },
+  "members": {
+    "title": "Členové",
+    "email": "E-mail",
+    "roles": "Role",
+    "invite": "Pozvat člena",
+    "inviteSent": "Pozvánka vytvořena",
+    "noRoles": "Žádné role"
+  },
+  "roles": {
+    "title": "Role",
+    "createRole": "Vytvořit roli",
+    "permissions": "Oprávnění",
+    "system": "Systémová",
+    "permissionMatrix": "Matice oprávnění",
+    "platform": "Platforma"
+  },
+  "domains": {
+    "title": "Domény",
+    "addDomain": "Přidat doménu",
+    "hostname": "Hostname",
+    "verified": "Ověřeno",
+    "pending": "Čeká se",
+    "primary": "Primární",
+    "txtRecordHint": "Přidejte tento TXT záznam u svého DNS poskytovatele a poté ověřte.",
+    "recordName": "Název záznamu",
+    "recordValue": "Hodnota",
+    "linkSite": "Propojit s webem"
+  },
+  "plugins": {
+    "title": "Pluginy",
+    "catalog": "Katalog",
+    "installed": "Nainstalované",
+    "install": "Nainstalovat plugin",
+    "configuration": "Konfigurace",
+    "singleInstance": "Jedna instance",
+    "multiInstance": "Povoleno více instancí"
+  },
+  "content": {
+    "title": "Obsah",
+    "newItem": "Nová položka",
+    "contentType": "Typ obsahu",
+    "versions": "Verze",
+    "version": "Verze",
+    "published": "Publikováno",
+    "draft": "Koncept",
+    "publishAt": "Publikovat v",
+    "selectInstance": "Vyberte instanci pluginu pro správu jejího obsahu."
+  },
+  "media": {
+    "title": "Knihovna médií",
+    "upload": "Nahrát soubory",
+    "dropHere": "Přetáhněte soubory sem nebo klikněte pro nahrání",
+    "processing": "Zpracovává se",
+    "ready": "Připraveno",
+    "failed": "Selhalo",
+    "pick": "Vybrat média",
+    "size": "Velikost"
+  },
+  "sites": {
+    "title": "Weby",
+    "newSite": "Nový web",
+    "renderMode": "Režim vykreslení",
+    "editor": "Editor",
+    "openEditor": "Otevřít editor"
+  },
+  "editor": {
+    "pages": "Stránky",
+    "layers": "Vrstvy",
+    "inspect": "Vlastnosti",
+    "theme": "Motiv",
+    "addPage": "Přidat stránku",
+    "breakpoint": "Breakpoint",
+    "desktop": "Počítač",
+    "tablet": "Tablet",
+    "mobile": "Mobil",
+    "position": "Pozice",
+    "size": "Velikost",
+    "bringToFront": "Do popředí",
+    "sendToBack": "Do pozadí",
+    "duplicate": "Duplikovat",
+    "aiAssist": "AI asistent",
+    "generateComponent": "Vygenerovat komponentu",
+    "generateSite": "Vygenerovat web",
+    "instruction": "Instrukce",
+    "brief": "Zadání",
+    "dataSource": "Zdroj dat",
+    "publishQueued": "Publikace zařazena"
+  },
+  "openapi": {
+    "title": "API dokumentace",
+    "copyForAi": "Kopírovat pro AI",
+    "downloadJson": "Stáhnout JSON",
+    "noInstances": "Zapněte pluginy pro vygenerování API dokumentace."
+  },
+  "ai": {
+    "title": "Nastavení AI",
+    "provider": "Poskytovatel",
+    "model": "Model",
+    "baseUrl": "Základní URL",
+    "apiKey": "API klíč",
+    "apiKeySet": "Klíč je nastaven",
+    "clearKey": "Vymazat klíč"
+  },
+  "analytics": {
+    "title": "Analytika",
+    "pageviews": "Události",
+    "topPaths": "Nejčastější cesty",
+    "byType": "Podle typu",
+    "range": "Rozsah",
+    "days": "{{count}} dní"
+  },
+  "chat": {
+    "title": "Živý chat",
+    "conversations": "Konverzace",
+    "noConversation": "Vyberte konverzaci",
+    "send": "Odeslat",
+    "message": "Zpráva"
+  },
+  "errors": {
+    "generic": "Něco se pokazilo.",
+    "forbidden": "Nemáte oprávnění to provést.",
+    "notFound": "Nenalezeno.",
+    "loadFailed": "Načtení selhalo."
+  }
+}
