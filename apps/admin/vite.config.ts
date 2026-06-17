@@ -27,6 +27,12 @@ export default defineConfig({
         target: 'http://localhost:5002',
         changeOrigin: true,
       },
+      // Dev: the chat SignalR hub lives on content-api (5003); ws:true upgrades.
+      '/hub': {
+        target: 'http://localhost:5003',
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
 });

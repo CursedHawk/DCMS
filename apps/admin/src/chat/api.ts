@@ -2,8 +2,13 @@ import { adminHeaders } from '../tenants';
 
 const base = import.meta.env.VITE_ADMIN_API_BASE ?? '/api';
 
-/** Origin of content-api, which hosts the chat SignalR hub. */
-export const contentApiBase = import.meta.env.VITE_CONTENT_API_BASE ?? 'http://localhost:5003';
+/**
+ * Base for the chat SignalR hub (hosted by content-api). Reached same-origin in
+ * every deployment — Vite proxies /hub in dev, Caddy routes /hub/* to content-api
+ * in prod — so the default is relative. Override with VITE_CONTENT_API_BASE only
+ * to point at a content-api on a different origin.
+ */
+export const contentApiBase = import.meta.env.VITE_CONTENT_API_BASE ?? '';
 
 export interface ChatConversation {
   id: string;

@@ -32,6 +32,11 @@ admin.highgeek.eu {
 	handle /api/* {
 		reverse_proxy admin-api:8080
 	}
+	# Live-chat SignalR hub (hosted by content-api). Same-origin so the SPA's
+	# negotiate + WebSocket avoid CORS; Caddy upgrades the WebSocket automatically.
+	handle /hub/* {
+		reverse_proxy content-api:8080
+	}
 	# Everything else is the static admin SPA (nginx does SPA fallback).
 	handle {
 		reverse_proxy admin-spa:80
