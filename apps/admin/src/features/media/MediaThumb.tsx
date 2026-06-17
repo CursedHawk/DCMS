@@ -1,16 +1,24 @@
 import { FileAudio, FileVideo, File as FileIcon } from 'lucide-react';
 import { AuthedImage } from '../../components/AuthedImage';
 import { cn } from '../../lib/cn';
-import type { MediaCategory } from './api';
+import type { MediaCategory, MediaStatus } from './api';
 
-/** Square media preview: image thumbnail (authed) or a type icon. */
+/**
+ * Square media preview: image thumbnail (authed) or a type icon. Images render
+ * the lightweight 160px WebP `thumb` variant rather than the full original, so
+ * grids of many assets stay fast; AuthedImage falls back to the original if the
+ * variant isn't there yet. While an image is still processing its variants don't
+ * exist, so we show the icon until it's Ready.
+ */
 export function MediaThumb({
   id,
   category,
+  status,
   className,
 }: {
   id: string;
   category: MediaCategory;
+  status?: MediaStatus;
   className?: string;
 }) {
   const Icon = category === 'Video' ? FileVideo : category === 'Audio' ? FileAudio : FileIcon;
@@ -20,8 +28,8 @@ export function MediaThumb({
     </div>
   );
 
-  if (category === 'Image') {
-    return <AuthedImage id={id} className={cn('h-full w-full object-cover', className)} fallback={iconBox} />;
+  if (category !== 'Image' || (status && status !== 'Ready')) {
+    return iconBox;
   }
-  return iconBox;
+  return <AuthedImage id={id} variant="thumb" className={cn('h-full w-full object-cover', className)} fallback={iconBox} />;
 }

@@ -33,7 +33,7 @@ export function MediaPage() {
           {media.data.map((a) => (
             <div key={a.id} className="group overflow-hidden rounded-lg border bg-card">
               <div className="aspect-square overflow-hidden">
-                <MediaThumb id={a.id} category={a.category} />
+                <MediaThumb id={a.id} category={a.category} status={a.status} />
               </div>
               <div className="space-y-1 p-2.5">
                 <p className="truncate text-xs font-medium" title={a.fileName}>

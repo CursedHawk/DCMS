@@ -140,7 +140,7 @@ public static class MediaEndpoints
         // so the admin SPA can render previews behind the bearer token. No public
         // MinIO; bytes flow through admin-api like the content-api delivery path.
         app.MapGet("/api/admin/media/{id:guid}/content", async (
-            Guid id, string? variant, MediaDbContext db, IObjectStorage storage,
+            Guid id, string? variant, HttpContext http, MediaDbContext db, IObjectStorage storage,
             IOptions<StorageOptions> storageOptions, CancellationToken ct) =>
         {
             var asset = await db.Assets.Include(a => a.Variants).FirstOrDefaultAsync(a => a.Id == id, ct);
@@ -167,6 +167,9 @@ public static class MediaEndpoints
                 contentType = asset.ContentType;
             }
 
+            // Bytes are content-addressed by asset id (+ variant kind), so they're
+            // immutable — let the browser cache repeats. Private: it's bearer-gated.
+            http.Response.Headers.CacheControl = "private, max-age=86400, immutable";
             var stream = await storage.GetAsync(storageOptions.Value.MediaBucket, key, ct);
             return Results.Stream(stream, contentType, enableRangeProcessing: true);
         }).RequirePermission(PlatformPermissions.MediaRead);

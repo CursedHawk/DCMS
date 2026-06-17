@@ -24,16 +24,31 @@ export function AuthedImage({
     let active = true;
     let obj: string | undefined;
     setFailed(false);
+
+    const accept = (u: string) => {
+      if (!active) {
+        URL.revokeObjectURL(u);
+        return true;
+      }
+      obj = u;
+      setUrl(u);
+      return true;
+    };
+
+    // Prefer the requested variant (e.g. the small WebP thumb); if it isn't
+    // available yet, fall back to the original so something still renders.
     fetchObjectUrl(mediaContentPath(id, variant))
-      .then((u) => {
-        if (active) {
-          obj = u;
-          setUrl(u);
-        } else {
-          URL.revokeObjectURL(u);
+      .then(accept)
+      .catch(() => {
+        if (!active || !variant) {
+          if (active) setFailed(true);
+          return;
         }
-      })
-      .catch(() => active && setFailed(true));
+        fetchObjectUrl(mediaContentPath(id))
+          .then(accept)
+          .catch(() => active && setFailed(true));
+      });
+
     return () => {
       active = false;
       if (obj) URL.revokeObjectURL(obj);

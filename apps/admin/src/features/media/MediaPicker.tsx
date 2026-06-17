@@ -72,7 +72,7 @@ export function MediaPicker({
                     value === a.id && 'ring-2 ring-primary',
                   )}
                 >
-                  <MediaThumb id={a.id} category={a.category} />
+                  <MediaThumb id={a.id} category={a.category} status={a.status} />
                 </button>
               ))}
             </div>
