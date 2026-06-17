@@ -1,6 +1,8 @@
 extern alias SiteBuilderApp;
+using System.Text;
 using System.Text.Json;
 using Dcms.Shared.Data.Sites;
+using HydrateRuntime = SiteBuilderApp::Dcms.SiteBuilder.Runtime.HydrateRuntime;
 using SiteRenderer = SiteBuilderApp::Dcms.SiteBuilder.SiteRenderer;
 
 namespace Dcms.IntegrationTests.Sites;
@@ -45,6 +47,44 @@ public class SiteRendererTests
         // The data-bound component renders as a hydration placeholder.
         html.Should().Contain("data-dcms-component=\"BlogList\"");
         html.Should().Contain("news");
+    }
+
+    [Fact]
+    public void Binding_placeholder_carries_props_query_and_references_hydrate_script()
+    {
+        var definition = JsonSerializer.Deserialize<SiteDefinition>(
+            """
+            {
+              "version": 1, "theme": { "colors": {}, "fonts": {} }, "nav": [],
+              "pages": [{
+                "id": "home", "path": "/", "title": "Home", "seo": { "title": "Home" },
+                "root": {
+                  "id": "root", "type": "Section", "props": {}, "bindings": [], "children": [
+                    { "id": "b", "type": "BlogList", "props": { "heading": "Latest" }, "children": [],
+                      "bindings": [{ "propPath": "items",
+                        "source": { "instanceSlug": "blog", "query": { "contentType": "post", "pageSize": 6 } } }] }
+                  ]
+                }
+              }]
+            }
+            """, new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+
+        var html = new SiteRenderer().Render(definition)[0].Html;
+
+        // The script tag must be present and hydrate.js must build the delivery URL,
+        // so the placeholder needs the contentType (in the query) and the heading prop.
+        html.Should().Contain("/_dcms/hydrate.js");
+        html.Should().Contain("data-dcms-props=");
+        html.Should().Contain("contentType");   // survives serialization (was previously dropped)
+        html.Should().Contain("post");
+        html.Should().Contain("Latest");
+    }
+
+    [Fact]
+    public void Hydrate_runtime_is_embedded_and_non_empty()
+    {
+        HydrateRuntime.Bytes.Should().NotBeEmpty();
+        Encoding.UTF8.GetString(HydrateRuntime.Bytes).Should().Contain("data-dcms-component");
     }
 
     [Theory]

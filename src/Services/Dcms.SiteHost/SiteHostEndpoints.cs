@@ -24,9 +24,16 @@ public static class SiteHostEndpoints
 
             var fileName = MapPathToFile(path);
             var bucket = storageOptions.Value.SitesBucket;
+            // A request for a concrete asset (it carries an extension) must resolve
+            // to that asset or 404 — never the SPA index.html, which would be served
+            // with the asset's content-type (e.g. a missing .js → HTML parsed as JS).
+            var isAsset = !string.IsNullOrWhiteSpace(path) && Path.HasExtension(path);
 
-            var bytes = await TryGet(storage, bucket, $"{route.ArtifactPrefix}/{fileName}", ct)
-                        ?? await TryGet(storage, bucket, $"{route.ArtifactPrefix}/index.html", ct);
+            var bytes = await TryGet(storage, bucket, $"{route.ArtifactPrefix}/{fileName}", ct);
+            if (bytes is null && !isAsset)
+            {
+                bytes = await TryGet(storage, bucket, $"{route.ArtifactPrefix}/index.html", ct);
+            }
             if (bytes is null)
             {
                 return Results.NotFound();

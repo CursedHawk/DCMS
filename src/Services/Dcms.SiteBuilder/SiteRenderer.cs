@@ -115,11 +115,12 @@ public sealed class SiteRenderer
 
     private void RenderInner(ComponentNode node, StringBuilder sb, StringBuilder css, bool absolute)
     {
-        // Data-bound or plugin components render as hydration placeholders.
+        // Data-bound or plugin components render as hydration placeholders carrying
+        // their type, props (e.g. heading) and bindings for /_dcms/hydrate.js.
         if (node.Bindings.Count > 0)
         {
             sb.Append(CultureInfo.InvariantCulture,
-                $"<div data-dcms-component=\"{Attr(node.Type)}\" data-dcms-bindings=\"{Attr(SerializeBindings(node))}\"></div>");
+                $"<div data-dcms-component=\"{Attr(node.Type)}\" data-dcms-props=\"{Attr(SerializeProps(node))}\" data-dcms-bindings=\"{Attr(SerializeBindings(node))}\"></div>");
             return;
         }
 
@@ -140,7 +141,7 @@ public sealed class SiteRenderer
                 break;
             case "Image":
                 sb.Append(CultureInfo.InvariantCulture,
-                    $"<img src=\"{Attr(Prop(node, "src") ?? string.Empty)}\" alt=\"{Attr(Prop(node, "alt") ?? string.Empty)}\" />");
+                    $"<img src=\"{Attr(MediaUrl(Prop(node, "src") ?? string.Empty))}\" alt=\"{Attr(Prop(node, "alt") ?? string.Empty)}\" />");
                 break;
             case "Button":
                 sb.Append(CultureInfo.InvariantCulture,
@@ -238,8 +239,27 @@ public sealed class SiteRenderer
     private static string? Prop(ComponentNode node, string name)
         => node.Props.TryGetValue(name, out var v) ? v.AsString() : null;
 
+    // A bare media asset id maps to the tenant delivery endpoint; anything else
+    // (an absolute/relative URL) is left untouched. Mirrors hydrate.js's mediaUrl.
+    private static string MediaUrl(string reference)
+        => MediaIdPattern.IsMatch(reference) ? $"/api/media/{reference}/original" : reference;
+
+    private static readonly System.Text.RegularExpressions.Regex MediaIdPattern =
+        new("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    // Serialize bindings with their query intact — hydrate.js needs the
+    // contentType (held in the query) to build the delivery URL.
     private static string SerializeBindings(ComponentNode node)
-        => JsonSerializer.Serialize(node.Bindings.Select(b => new { b.PropPath, b.Source.InstanceSlug }));
+        => JsonSerializer.Serialize(node.Bindings.Select(b => new
+        {
+            propPath = b.PropPath,
+            instanceSlug = b.Source.InstanceSlug,
+            query = b.Source.Query,
+        }));
+
+    private static string SerializeProps(ComponentNode node)
+        => JsonSerializer.Serialize(node.Props);
 
     private static string Num(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
 

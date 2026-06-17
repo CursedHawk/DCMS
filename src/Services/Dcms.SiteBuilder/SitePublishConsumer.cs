@@ -5,6 +5,7 @@ using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
+using Dcms.SiteBuilder.Runtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NATS.Client.JetStream;
@@ -135,6 +136,12 @@ public sealed class SitePublishConsumer(
             await using var stream = new MemoryStream(bytes);
             await storage.PutAsync(Bucket, $"{artifactPrefix}/{page.FileName}", stream, bytes.Length, "text/html; charset=utf-8", ct);
         }
+
+        // The pages reference /_dcms/hydrate.js (it populates data-bound/plugin
+        // placeholders client-side). Ship the runtime with every Mode A build.
+        var hydrate = HydrateRuntime.Bytes;
+        await using var hydrateStream = new MemoryStream(hydrate);
+        await storage.PutAsync(Bucket, $"{artifactPrefix}/_dcms/hydrate.js", hydrateStream, hydrate.Length, "text/javascript", ct);
     }
 
     // Mode B: materialize the AI/editor file map and run a sandboxed vite build.
