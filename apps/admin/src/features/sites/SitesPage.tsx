@@ -84,8 +84,9 @@ export function SitesPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="StaticPrerender">Static prerender</SelectItem>
-                      <SelectItem value="ReactApp">React app</SelectItem>
+                      <SelectItem value="StaticPrerender">{t('sites.modeStaticPrerender')}</SelectItem>
+                      <SelectItem value="ReactApp">{t('sites.modeReactApp')}</SelectItem>
+                      <SelectItem value="StaticFiles">{t('sites.modeStaticFiles')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

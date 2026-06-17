@@ -17,6 +17,13 @@ public static class AnalyticsIngestEndpoints
 {
     private const string AnalyticsPluginId = "analytics";
 
+    /// <summary>
+    /// CORS policy for the anonymous collect beacon: any origin may POST events
+    /// (no credentials), so externally hosted sites can use the documented API.
+    /// Registered in content-api's Program.cs.
+    /// </summary>
+    public const string CollectCorsPolicy = "analytics-collect";
+
     public static IEndpointRouteBuilder MapAnalyticsIngest(this IEndpointRouteBuilder app)
     {
         // Slug-addressed beacon (explicit analytics instance).
@@ -37,7 +44,7 @@ public static class AnalyticsIngestEndpoints
 
             await PublishAsync(events, tenantId, body, ct);
             return Results.Accepted();
-        });
+        }).RequireCors(CollectCorsPolicy);
 
         // Slug-less beacon fired by the published-site runtime (hydrate.js). The
         // runtime doesn't know the analytics instance slug, so we resolve the
@@ -58,7 +65,7 @@ public static class AnalyticsIngestEndpoints
                 await PublishAsync(events, tenantId, body, ct);
             }
             return Results.Accepted();
-        });
+        }).RequireCors(CollectCorsPolicy);
 
         return app;
     }

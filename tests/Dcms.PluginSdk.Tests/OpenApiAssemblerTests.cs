@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Runtime;
+using Dcms.Plugins.Analytics;
 using Dcms.Plugins.Articles;
 using Dcms.Plugins.Blog;
 
@@ -36,6 +37,34 @@ public class OpenApiAssemblerTests
         tagNames.Should().Contain(["Company News", "Dev Blog"]);
 
         doc["info"]!["title"]!.GetValue<string>().Should().Be("Acme Content API");
+    }
+
+    [Fact]
+    public void Documents_analytics_collect_as_a_post_with_body_and_tenant_header()
+    {
+        var registry = new PluginRegistry([new AnalyticsPlugin()]);
+        var assembler = new OpenApiAssembler(registry);
+
+        var doc = assembler.Build("Acme", [
+            Instance("analytics", "stats", "Site Analytics", "Traffic for the marketing site."),
+        ]);
+
+        // The ingest beacon is mounted under /api/{slug}/collect as a POST.
+        var collect = doc["paths"]!["/api/stats/collect"]!["post"]!.AsObject();
+        collect.Should().ContainKey("requestBody");
+        collect["requestBody"]!["content"]!["application/json"]!["schema"]!["properties"]!
+            .AsObject().Should().ContainKey("type");
+
+        // External callers must identify their tenant via the X-Dcms-Tenant header.
+        var header = collect["parameters"]!.AsArray()
+            .Single(p => p!["in"]!.GetValue<string>() == "header")!;
+        header["name"]!.GetValue<string>().Should().Be("X-Dcms-Tenant");
+        header["required"]!.GetValue<bool>().Should().BeTrue();
+
+        // Fire-and-forget: success is an empty 202.
+        var responses = collect["responses"]!.AsObject();
+        responses.Should().ContainKey("202");
+        responses["202"]!.AsObject().Should().NotContainKey("content");
     }
 
     [Fact]

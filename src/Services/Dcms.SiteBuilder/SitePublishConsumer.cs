@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using Dcms.Shared.Contracts.Events;
@@ -106,6 +107,10 @@ public sealed class SitePublishConsumer(
         {
             await BuildReactAppAsync(build.DefinitionSnapshotJson, build.ArtifactPrefix, ct);
         }
+        else if (string.Equals(job.RenderMode, SiteRenderMode.StaticFiles.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            await ExtractStaticBundleAsync(build.DefinitionSnapshotJson, build.ArtifactPrefix, ct);
+        }
         else
         {
             await PrerenderAsync(build.DefinitionSnapshotJson, build.ArtifactPrefix, ct);
@@ -142,6 +147,44 @@ public sealed class SitePublishConsumer(
         var hydrate = HydrateRuntime.Bytes;
         await using var hydrateStream = new MemoryStream(hydrate);
         await storage.PutAsync(Bucket, $"{artifactPrefix}/_dcms/hydrate.js", hydrateStream, hydrate.Length, "text/javascript", ct);
+    }
+
+    // Mode C: extract the staged, pre-sanitized upload bundle into the build's
+    // artifact prefix, one object per file. The snapshot carries the bundle key.
+    private async Task ExtractStaticBundleAsync(string snapshotJson, string artifactPrefix, CancellationToken ct)
+    {
+        using var snapshot = JsonDocument.Parse(snapshotJson);
+        if (!snapshot.RootElement.TryGetProperty("bundleKey", out var keyProp) ||
+            keyProp.GetString() is not { Length: > 0 } bundleKey)
+        {
+            throw new InvalidOperationException("Static-files build snapshot is missing a bundle key.");
+        }
+
+        byte[] zipBytes;
+        await using (var download = await storage.GetAsync(Bucket, bundleKey, ct))
+        using (var ms = new MemoryStream())
+        {
+            await download.CopyToAsync(ms, ct);
+            zipBytes = ms.ToArray();
+        }
+
+        using var archive = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
+        foreach (var entry in archive.Entries)
+        {
+            ct.ThrowIfCancellationRequested();
+            // The bundle was sanitized at upload, but re-validate defensively.
+            var path = StaticSiteFiles.NormalizeEntryPath(entry.FullName);
+            if (path is null)
+            {
+                continue;
+            }
+            await using var es = entry.Open();
+            using var buffer = new MemoryStream();
+            await es.CopyToAsync(buffer, ct);
+            buffer.Position = 0;
+            await storage.PutAsync(Bucket, $"{artifactPrefix}/{path}", buffer, buffer.Length,
+                StaticSiteFiles.ContentTypeFor(path), ct);
+        }
     }
 
     // Mode B: materialize the AI/editor file map and run a sandboxed vite build.

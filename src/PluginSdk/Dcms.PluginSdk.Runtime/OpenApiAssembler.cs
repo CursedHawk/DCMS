@@ -87,24 +87,48 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
 
     private static JsonObject BuildOperation(string tag, OpenApiPathFragment path)
     {
-        var responseSchema = path.ResponseSchema?.DeepClone() ?? new JsonObject { ["type"] = "object" };
-        return new JsonObject
+        var operation = new JsonObject
         {
             ["tags"] = new JsonArray { tag },
             ["operationId"] = path.OperationId,
             ["summary"] = path.Summary,
             ["description"] = path.Description,
-            ["responses"] = new JsonObject
-            {
-                ["200"] = new JsonObject
-                {
-                    ["description"] = "Success",
-                    ["content"] = new JsonObject
-                    {
-                        ["application/json"] = new JsonObject { ["schema"] = responseSchema },
-                    },
-                },
-            },
         };
+
+        if (path.Parameters is { Count: > 0 })
+        {
+            var parameters = new JsonArray();
+            foreach (var parameter in path.Parameters)
+            {
+                parameters.Add(parameter.DeepClone());
+            }
+            operation["parameters"] = parameters;
+        }
+
+        if (path.RequestBodySchema is { } requestSchema)
+        {
+            operation["requestBody"] = new JsonObject
+            {
+                ["required"] = true,
+                ["content"] = new JsonObject
+                {
+                    ["application/json"] = new JsonObject { ["schema"] = requestSchema.DeepClone() },
+                },
+            };
+        }
+
+        // The success response carries a JSON body only when a schema is supplied
+        // (reads); write beacons like analytics collect return an empty 202.
+        var response = new JsonObject { ["description"] = "Success" };
+        if (path.ResponseSchema is { } responseSchema)
+        {
+            response["content"] = new JsonObject
+            {
+                ["application/json"] = new JsonObject { ["schema"] = responseSchema.DeepClone() },
+            };
+        }
+        operation["responses"] = new JsonObject { [path.SuccessStatus] = response };
+
+        return operation;
     }
 }

@@ -7,6 +7,9 @@ public enum SiteRenderMode
 
     /// <summary>Mode B: AI/editor-generated React app built to a static bundle.</summary>
     ReactApp,
+
+    /// <summary>Mode C: user-uploaded, pre-built static files served as-is.</summary>
+    StaticFiles,
 }
 
 public enum SiteBuildStatus
@@ -29,6 +32,14 @@ public sealed class Site : TenantEntity
 
     /// <summary>The editable site definition (component tree) as JSON.</summary>
     public string DraftDefinitionJson { get; set; } = "{}";
+
+    // --- StaticFiles mode (Mode C): the currently staged upload ready to publish. ---
+    /// <summary>Object-storage key of the staged bundle zip, or null if nothing uploaded yet.</summary>
+    public string? StaticBundleKey { get; set; }
+    public string? StaticBundleName { get; set; }
+    public long? StaticBundleSize { get; set; }
+    public int? StaticBundleFileCount { get; set; }
+    public DateTimeOffset? StaticBundleUploadedAt { get; set; }
 
     public Guid? ActiveBuildId { get; set; }
     public int DefinitionVersion { get; set; }

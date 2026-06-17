@@ -6,7 +6,10 @@ using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Security;
+using Dcms.Shared.Storage;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Dcms.AdminApi.Sites;
 
@@ -66,8 +69,138 @@ public static class SiteEndpoints
                 renderMode = site.RenderMode.ToString(),
                 activeBuildId = site.ActiveBuildId,
                 definition = JsonDocument.Parse(site.DraftDefinitionJson).RootElement,
+                staticBundle = site.StaticBundleKey is null ? null : new
+                {
+                    name = site.StaticBundleName,
+                    size = site.StaticBundleSize,
+                    fileCount = site.StaticBundleFileCount,
+                    uploadedAt = site.StaticBundleUploadedAt,
+                },
             });
         }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        // Upload a pre-built static bundle (Mode C): one .zip and/or loose files
+        // (incl. a folder upload carrying relative paths). The files are sanitized
+        // and normalized into a staged bundle; publishing snapshots it into a build.
+        app.MapPost("/api/admin/sites/{id:guid}/upload", async (
+            Guid id, HttpRequest request, SitesDbContext db, ITenantContext tenant,
+            IObjectStorage storage, IOptions<StorageOptions> storageOptions, CancellationToken ct) =>
+        {
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site is null)
+            {
+                return Results.NotFound();
+            }
+            if (site.RenderMode != SiteRenderMode.StaticFiles)
+            {
+                return Results.BadRequest(new { error = "This site is not in static-files mode." });
+            }
+            if (!request.HasFormContentType)
+            {
+                return Results.BadRequest(new { error = "Expected a multipart file upload." });
+            }
+
+            // Raise the body-size ceiling for this endpoint only (default Kestrel is
+            // ~30 MB). Must be set before the body is read.
+            var sizeFeature = request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
+            if (sizeFeature is { IsReadOnly: false })
+            {
+                sizeFeature.MaxRequestBodySize = StaticSiteFiles.MaxUploadBytes;
+            }
+
+            var form = await request.ReadFormAsync(ct);
+            if (form.Files.Count == 0)
+            {
+                return Results.BadRequest(new { error = "No files were uploaded." });
+            }
+
+            StaticBundleBuilder.Result bundle;
+            try
+            {
+                bundle = await StaticBundleBuilder.BuildAsync(form.Files, ct);
+            }
+            catch (StaticBundleException ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+            catch (InvalidDataException)
+            {
+                return Results.BadRequest(new { error = "A .zip file could not be read." });
+            }
+
+            var tenantId = tenant.TenantId!.Value;
+            var uploadId = Guid.NewGuid();
+            var key = StorageKeys.SiteBundleStaging(tenantId, site.Id, uploadId);
+            await using (var upload = new MemoryStream(bundle.ZipBytes))
+            {
+                await storage.PutAsync(storageOptions.Value.SitesBucket, key, upload, bundle.ZipBytes.Length, "application/zip", ct);
+            }
+
+            site.StaticBundleKey = key;
+            site.StaticBundleName = bundle.RootName ?? form.Files[0].FileName;
+            site.StaticBundleSize = bundle.TotalBytes;
+            site.StaticBundleFileCount = bundle.FileCount;
+            site.StaticBundleUploadedAt = DateTimeOffset.UtcNow;
+            site.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(new
+            {
+                fileCount = bundle.FileCount,
+                size = bundle.TotalBytes,
+                name = site.StaticBundleName,
+                hasIndex = bundle.HasIndex,
+            });
+        }).RequirePermission(PlatformPermissions.SiteEdit).DisableAntiforgery();
+
+        // Build history for a site (status + which one is live), drives the rollback UI.
+        app.MapGet("/api/admin/sites/{id:guid}/builds", async (Guid id, SitesDbContext db, CancellationToken ct) =>
+        {
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site is null)
+            {
+                return Results.NotFound();
+            }
+            var builds = await db.Builds
+                .Where(b => b.SiteId == id)
+                .OrderByDescending(b => b.CreatedAt)
+                .Select(b => new
+                {
+                    id = b.Id,
+                    status = b.Status.ToString(),
+                    error = b.Error,
+                    createdAt = b.CreatedAt,
+                    completedAt = b.CompletedAt,
+                    isActive = site.ActiveBuildId == b.Id,
+                })
+                .ToListAsync(ct);
+            return Results.Ok(builds);
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        // Roll back / forward: re-activate a previously succeeded build. Its artifacts
+        // still live under their own prefix, so this is a pointer switch.
+        app.MapPost("/api/admin/sites/{id:guid}/builds/{buildId:guid}/activate", async (
+            Guid id, Guid buildId, SitesDbContext db, CancellationToken ct) =>
+        {
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site is null)
+            {
+                return Results.NotFound();
+            }
+            var build = await db.Builds.FirstOrDefaultAsync(b => b.Id == buildId && b.SiteId == id, ct);
+            if (build is null)
+            {
+                return Results.NotFound();
+            }
+            if (build.Status != SiteBuildStatus.Succeeded)
+            {
+                return Results.BadRequest(new { error = "Only a succeeded build can be activated." });
+            }
+            site.ActiveBuildId = build.Id;
+            site.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        }).RequirePermission(PlatformPermissions.SitePublish);
 
         app.MapPut("/api/admin/sites/{id:guid}/definition", async (
             Guid id, JsonElement definition, SitesDbContext db, CancellationToken ct) =>
@@ -92,6 +225,28 @@ public static class SiteEndpoints
             {
                 return Results.NotFound();
             }
+            // StaticFiles publishes the staged upload; the snapshot records which
+            // bundle to extract so the build is self-contained (race-free rollback).
+            string snapshot;
+            if (site.RenderMode == SiteRenderMode.StaticFiles)
+            {
+                if (site.StaticBundleKey is null)
+                {
+                    return Results.BadRequest(new { error = "Upload your website files before publishing." });
+                }
+                snapshot = JsonSerializer.Serialize(new
+                {
+                    bundleKey = site.StaticBundleKey,
+                    name = site.StaticBundleName,
+                    size = site.StaticBundleSize,
+                    fileCount = site.StaticBundleFileCount,
+                });
+            }
+            else
+            {
+                snapshot = site.DraftDefinitionJson;
+            }
+
             var tenantId = tenant.TenantId!.Value;
             var build = new SiteBuild
             {
@@ -99,7 +254,7 @@ public static class SiteEndpoints
                 TenantId = tenantId,
                 SiteId = site.Id,
                 Status = SiteBuildStatus.Queued,
-                DefinitionSnapshotJson = site.DraftDefinitionJson,
+                DefinitionSnapshotJson = snapshot,
             };
             build.ArtifactPrefix = $"{tenantId}/{site.Id}/{build.Id}";
             db.Builds.Add(build);

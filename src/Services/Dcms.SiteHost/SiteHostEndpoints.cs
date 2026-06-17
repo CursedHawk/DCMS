@@ -39,7 +39,7 @@ public static class SiteHostEndpoints
                 return Results.NotFound();
             }
 
-            var contentType = ContentTypeFor(fileName);
+            var contentType = StaticSiteFiles.ContentTypeFor(fileName);
             http.Response.Headers.CacheControl = "public, max-age=60";
             return Results.Bytes(bytes, contentType);
         });
@@ -71,17 +71,4 @@ public static class SiteHostEndpoints
             return null;
         }
     }
-
-    private static string ContentTypeFor(string file) => Path.GetExtension(file).ToLowerInvariant() switch
-    {
-        ".html" => "text/html; charset=utf-8",
-        ".js" => "text/javascript",
-        ".css" => "text/css",
-        ".json" => "application/json",
-        ".svg" => "image/svg+xml",
-        ".png" => "image/png",
-        ".jpg" or ".jpeg" => "image/jpeg",
-        ".webp" => "image/webp",
-        _ => "application/octet-stream",
-    };
 }

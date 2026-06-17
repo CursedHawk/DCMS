@@ -22,4 +22,8 @@ public static class StorageKeys
 
     public static string SiteArtifact(Guid tenantId, Guid siteId, Guid buildId, string relativePath)
         => $"{tenantId}/{siteId}/{buildId}/{relativePath}";
+
+    /// <summary>Key for a staged static-files upload (Mode C), referenced by a build at publish time.</summary>
+    public static string SiteBundleStaging(Guid tenantId, Guid siteId, Guid uploadId)
+        => $"{tenantId}/{siteId}/_staging/{uploadId}.zip";
 }

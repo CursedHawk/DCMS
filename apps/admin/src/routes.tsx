@@ -18,11 +18,11 @@ import { MembersPage } from './features/members/MembersPage';
 import { PluginsPage } from './features/plugins/PluginsPage';
 import { RolesPage } from './features/roles/RolesPage';
 import { SitesPage } from './features/sites/SitesPage';
+import { SiteWorkspace } from './features/sites/SiteWorkspace';
 import { TenantsPage } from './features/tenants/TenantsPage';
 import { userManager } from './auth';
 
 // Heavy, route-specific pages are loaded on demand to keep the initial bundle lean.
-const EditorPage = lazy(() => import('./features/editor/EditorPage').then((m) => ({ default: m.EditorPage })));
 const OpenApiPage = lazy(() => import('./features/openapi/OpenApiPage').then((m) => ({ default: m.OpenApiPage })));
 const AnalyticsPage = lazy(() => import('./features/analytics/AnalyticsPage').then((m) => ({ default: m.AnalyticsPage })));
 const ChatPage = lazy(() => import('./features/chat/ChatPage').then((m) => ({ default: m.ChatPage })));
@@ -77,7 +77,7 @@ const editorRoute = createRoute({
   path: '/sites/$siteId',
   component: function Editor() {
     const { siteId } = useParams({ strict: false });
-    return <EditorPage siteId={siteId as string} />;
+    return <SiteWorkspace siteId={siteId as string} />;
   },
 });
 

@@ -74,11 +74,20 @@ builder.Services.AddDcmsRateLimiting(builder.Configuration);
 // credentialed token requires explicit origins + AllowCredentials).
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? ["http://localhost:5173", "http://localhost:5000"];
-builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
-    .WithOrigins(corsOrigins)
-    .AllowAnyHeader()
-    .AllowAnyMethod()
-    .AllowCredentials()));
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy => policy
+        .WithOrigins(corsOrigins)
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials());
+    // Anonymous analytics beacon: any origin may POST events (no credentials),
+    // so externally hosted sites can use the documented collect API.
+    options.AddPolicy(AnalyticsIngestEndpoints.CollectCorsPolicy, policy => policy
+        .AllowAnyOrigin()
+        .AllowAnyHeader()
+        .WithMethods("POST"));
+});
 
 builder.Services.AddDcmsPlugins(plugins => plugins.AddAll());
 builder.Services.AddScoped<PublishedContentReader>();
