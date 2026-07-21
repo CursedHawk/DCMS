@@ -30,3 +30,6 @@ Thumbs.db
 # Playwright
 tests/e2e/playwright-report/
 tests/e2e/test-results/
+
+#Graphify
+graphify-out/

@@ -25,6 +25,19 @@ export function logout(): Promise<void> {
   return userManager.signoutRedirect();
 }
 
+// signinRedirectCallback() exchanges the single-use authorization code for
+// tokens. Under React StrictMode the callback effect mounts twice, so a naive
+// call runs the exchange twice; the second attempt reuses the same code, which
+// OpenIddict rejects as a replay AND revokes the tokens just issued to the first
+// call — leaving the user signed out even though the identity cookie was set.
+// Memoise so the exchange runs exactly once and both mounts await one result.
+let signinCallback: Promise<User> | null = null;
+
+export function completeSignin(): Promise<User> {
+  signinCallback ??= userManager.signinRedirectCallback();
+  return signinCallback;
+}
+
 export function getUser(): Promise<User | null> {
   return userManager.getUser();
 }

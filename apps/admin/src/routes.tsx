@@ -20,7 +20,7 @@ import { RolesPage } from './features/roles/RolesPage';
 import { SitesPage } from './features/sites/SitesPage';
 import { SiteWorkspace } from './features/sites/SiteWorkspace';
 import { TenantsPage } from './features/tenants/TenantsPage';
-import { userManager } from './auth';
+import { completeSignin } from './auth';
 
 // Heavy, route-specific pages are loaded on demand to keep the initial bundle lean.
 const OpenApiPage = lazy(() => import('./features/openapi/OpenApiPage').then((m) => ({ default: m.OpenApiPage })));
@@ -38,9 +38,8 @@ const callbackRoute = createRoute({
     const navigate = useNavigate();
     const { t } = useTranslation();
     useEffect(() => {
-      userManager
-        .signinRedirectCallback()
-        .catch(() => undefined)
+      completeSignin()
+        .catch((err) => console.error('OIDC sign-in callback failed', err))
         .finally(() => void navigate({ to: '/' }));
     }, [navigate]);
     return <p className="p-10 text-center text-sm text-muted-foreground">{t('auth.completing')}</p>;

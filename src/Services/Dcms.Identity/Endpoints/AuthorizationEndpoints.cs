@@ -39,10 +39,19 @@ public static class AuthorizationEndpoints
         var result = await context.AuthenticateAsync(IdentityConstants.ApplicationScheme);
         if (!result.Succeeded || result.Principal?.Identity?.IsAuthenticated != true)
         {
+            // Redirect straight to the interactive login form, carrying the full
+            // authorize request as returnUrl so we resume it after sign-in.
+            //
+            // Do NOT use Results.Challenge here: the cookie handler treats
+            // AuthenticationProperties.RedirectUri as the *value* of its
+            // ReturnUrlParameter and nests it under LoginPath, producing
+            // /Account/Login?ReturnUrl=<our /account/login?returnUrl=...>. That
+            // double-wraps the URL, so the post-login redirect lands back on the
+            // login page instead of /connect/authorize — the user must sign in
+            // twice before any authorization code is issued. A plain redirect
+            // goes straight to the form with the correct returnUrl.
             var returnUrl = context.Request.PathBase + context.Request.Path + context.Request.QueryString;
-            return Results.Challenge(
-                new AuthenticationProperties { RedirectUri = "/account/login?returnUrl=" + Uri.EscapeDataString(returnUrl) },
-                [IdentityConstants.ApplicationScheme]);
+            return Results.Redirect("/account/login?returnUrl=" + Uri.EscapeDataString(returnUrl));
         }
 
         var user = await userManager.GetUserAsync(result.Principal)
