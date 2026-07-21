@@ -1,10 +1,14 @@
 stages:
   - build
   - test
+  - images
 
 variables:
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+  # Baked into the admin SPA bundle at image-build time (Vite). Points at the
+  # public, same-origin OIDC authority. Override in CI/CD settings per environment.
+  VITE_OIDC_AUTHORITY: "https://admin.highgeek.eu"
 
 dotnet:
   stage: build
@@ -42,3 +46,79 @@ integration:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# ---------------------------------------------------------------------------
+# Build a Docker image per service and push it to this project's GitLab
+# Container Registry ($CI_REGISTRY_IMAGE, e.g. registry.gitlab.highgeek.eu/
+# cursedhawk/baas-dcms/<service>). Every service builds from the repo root as
+# its Docker context, matching docker-compose.yml.
+#
+# Tags pushed:
+#   <short-sha>         always (immutable, traceable to the commit)
+#   latest              on the default branch
+#   <git-tag>           on tag pipelines (e.g. v1.2.3)
+#
+# Runs only on the default branch and on tags, and only after build + test pass.
+# ---------------------------------------------------------------------------
+.build-image:
+  stage: images
+  image: docker:27-cli
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_BUILDKIT: "1"
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - IMAGE="$CI_REGISTRY_IMAGE/$SERVICE"
+    # admin-spa is the only image that takes a build arg (the OIDC authority
+    # baked into the static bundle).
+    - EXTRA_ARGS=""
+    - if [ "$SERVICE" = "admin-spa" ]; then EXTRA_ARGS="--build-arg VITE_OIDC_AUTHORITY=$VITE_OIDC_AUTHORITY"; fi
+    # Warm the layer cache from the previous latest (best-effort).
+    - docker pull "$IMAGE:latest" || true
+    - >
+      docker build
+      --file "$DOCKERFILE"
+      --cache-from "$IMAGE:latest"
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      $EXTRA_ARGS
+      --tag "$IMAGE:$CI_COMMIT_SHORT_SHA"
+      .
+    - docker push "$IMAGE:$CI_COMMIT_SHORT_SHA"
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        docker tag "$IMAGE:$CI_COMMIT_SHORT_SHA" "$IMAGE:$CI_COMMIT_TAG"
+        docker push "$IMAGE:$CI_COMMIT_TAG"
+      fi
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        docker tag "$IMAGE:$CI_COMMIT_SHORT_SHA" "$IMAGE:latest"
+        docker push "$IMAGE:latest"
+      fi
+  rules:
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+build-image:
+  extends: .build-image
+  parallel:
+    matrix:
+      - SERVICE: identity
+        DOCKERFILE: src/Services/Dcms.Identity/Dockerfile
+      - SERVICE: admin-api
+        DOCKERFILE: src/Services/Dcms.AdminApi/Dockerfile
+      - SERVICE: content-api
+        DOCKERFILE: src/Services/Dcms.ContentApi/Dockerfile
+      - SERVICE: media-worker
+        DOCKERFILE: src/Services/Dcms.MediaWorker/Dockerfile
+      - SERVICE: site-builder
+        DOCKERFILE: src/Services/Dcms.SiteBuilder/Dockerfile
+      - SERVICE: site-host
+        DOCKERFILE: src/Services/Dcms.SiteHost/Dockerfile
+      - SERVICE: ai-gateway
+        DOCKERFILE: src/Services/Dcms.AiGateway/Dockerfile
+      - SERVICE: admin-spa
+        DOCKERFILE: apps/admin/Dockerfile
