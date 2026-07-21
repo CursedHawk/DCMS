@@ -210,6 +210,8 @@
     "title": "API documentation",
     "copyForAi": "Copy for AI",
     "downloadJson": "Download JSON",
+    "downloadClient": "Download React client",
+    "downloadStarter": "Download React starter",
     "noInstances": "Enable plugins to generate API documentation."
   },
   "ai": {

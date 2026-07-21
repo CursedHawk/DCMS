@@ -210,6 +210,8 @@
     "title": "API dokumentace",
     "copyForAi": "Kopírovat pro AI",
     "downloadJson": "Stáhnout JSON",
+    "downloadClient": "Stáhnout React klienta",
+    "downloadStarter": "Stáhnout React šablonu",
     "noInstances": "Zapněte pluginy pro vygenerování API dokumentace."
   },
   "ai": {

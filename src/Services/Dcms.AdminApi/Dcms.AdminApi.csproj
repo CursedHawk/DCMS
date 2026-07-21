@@ -5,6 +5,23 @@
     <PackageReference Include="JsonSchema.Net" />
   </ItemGroup>
 
+  <!-- Vendor the @dcms/api-client runtime source into the downloadable client zip. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\packages\api-client\src\index.ts" LogicalName="Dcms.AdminApi.ApiClientGen.Runtime.index.ts" />
+    <EmbeddedResource Include="..\..\..\packages\api-client\src\types.ts" LogicalName="Dcms.AdminApi.ApiClientGen.Runtime.types.ts" />
+  </ItemGroup>
+
+  <!-- Embed the site-template-react scaffold for the downloadable starter. Targeted
+       globs (src + explicit root files) avoid walking node_modules/dist. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\packages\site-template-react\src\**\*.*">
+      <LogicalName>Dcms.AdminApi.SiteTemplate/src/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\..\packages\site-template-react\package.json;..\..\..\packages\site-template-react\tsconfig.json;..\..\..\packages\site-template-react\vite.config.ts;..\..\..\packages\site-template-react\index.html;..\..\..\packages\site-template-react\.env.example;..\..\..\packages\site-template-react\.gitignore;..\..\..\packages\site-template-react\README.md">
+      <LogicalName>Dcms.AdminApi.SiteTemplate/%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.All\Dcms.Plugins.All.csproj" />

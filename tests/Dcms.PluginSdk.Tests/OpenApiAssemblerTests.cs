@@ -40,6 +40,75 @@ public class OpenApiAssemblerTests
     }
 
     [Fact]
+    public void Types_the_item_data_schema_from_the_content_type_fields()
+    {
+        var assembler = new OpenApiAssembler(new PluginRegistry([new BlogPlugin()]));
+
+        var doc = assembler.Build("Acme", [
+            Instance("blog", "devblog", "Dev Blog", "Engineering deep dives."),
+        ]);
+
+        var schemas = doc["components"]!["schemas"]!.AsObject();
+        schemas.Should().ContainKey("devblog_post");
+        schemas.Should().ContainKey("devblog_post_list");
+
+        // Blog's "post" fields become typed properties on data, not a bare object.
+        var data = schemas["devblog_post"]!["properties"]!["data"]!.AsObject();
+        var props = data["properties"]!.AsObject();
+        props.Should().ContainKeys("title", "excerpt", "body", "coverImage", "tags");
+        props["title"]!["type"]!.GetValue<string>().Should().Be("string");
+        props["body"]!["x-dcms-format"]!.GetValue<string>().Should().Be("richtext");
+        props["coverImage"]!["format"]!.GetValue<string>().Should().Be("uuid");
+        props["coverImage"]!["x-dcms-media-category"]!.GetValue<string>().Should().Be("image");
+        props["tags"]!["type"]!.GetValue<string>().Should().Be("array");
+
+        // Required fields are declared (title and body on a blog post).
+        var required = data["required"]!.AsArray().Select(r => r!.GetValue<string>()).ToList();
+        required.Should().Contain(["title", "body"]);
+    }
+
+    [Fact]
+    public void List_returns_the_paged_envelope_and_get_returns_the_item()
+    {
+        var assembler = new OpenApiAssembler(new PluginRegistry([new BlogPlugin()]));
+
+        var doc = assembler.Build("Acme", [
+            Instance("blog", "devblog", "Dev Blog", "Engineering deep dives."),
+        ]);
+
+        string ResponseRef(string path) => doc["paths"]![path]!["get"]!["responses"]!["200"]!
+            ["content"]!["application/json"]!["schema"]!["$ref"]!.GetValue<string>();
+
+        ResponseRef("/api/devblog/post").Should().Be("#/components/schemas/devblog_post_list");
+        ResponseRef("/api/devblog/post/{slug}").Should().Be("#/components/schemas/devblog_post");
+
+        // The envelope wraps an array of the item schema.
+        var envelope = doc["components"]!["schemas"]!["devblog_post_list"]!["properties"]!.AsObject();
+        envelope.Should().ContainKeys("items", "page", "pageSize", "totalCount");
+        envelope["items"]!["items"]!["$ref"]!.GetValue<string>()
+            .Should().Be("#/components/schemas/devblog_post");
+    }
+
+    [Fact]
+    public void Declares_paging_query_params_on_list_and_a_slug_path_param_on_get()
+    {
+        var assembler = new OpenApiAssembler(new PluginRegistry([new BlogPlugin()]));
+
+        var doc = assembler.Build("Acme", [
+            Instance("blog", "devblog", "Dev Blog", "Engineering deep dives."),
+        ]);
+
+        var listParams = doc["paths"]!["/api/devblog/post"]!["get"]!["parameters"]!.AsArray()
+            .Select(p => p!["name"]!.GetValue<string>()).ToList();
+        listParams.Should().Contain(["page", "pageSize"]);
+
+        var getParam = doc["paths"]!["/api/devblog/post/{slug}"]!["get"]!["parameters"]!.AsArray().Single()!;
+        getParam["name"]!.GetValue<string>().Should().Be("slug");
+        getParam["in"]!.GetValue<string>().Should().Be("path");
+        getParam["required"]!.GetValue<bool>().Should().BeTrue();
+    }
+
+    [Fact]
     public void Documents_analytics_collect_as_a_post_with_body_and_tenant_header()
     {
         var registry = new PluginRegistry([new AnalyticsPlugin()]);

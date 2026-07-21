@@ -4,6 +4,20 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "echo 'Mode B template; materialized per site by site-builder (Phase 10)'"
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@dcms/api-client": "workspace:*",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5",
+    "typescript": "^5",
+    "vite": "^7"
   }
 }

@@ -56,6 +56,14 @@ export const api = {
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   /** Multipart upload (no JSON content-type; browser sets the boundary). */
   upload: <T>(path: string, form: FormData) => request<T>(path, { method: 'POST', body: form }),
+  /** Fetches a binary response (e.g. a generated zip) as a Blob. */
+  downloadBlob: async (path: string): Promise<Blob> => {
+    const res = await fetch(`${base}${path}`, { headers: await adminHeaders() });
+    if (!res.ok) {
+      throw new ApiError(res.status, `GET ${path} → ${res.status}`);
+    }
+    return res.blob();
+  },
 };
 
 /** API path (relative to base) for a media asset's bytes / a named variant. */

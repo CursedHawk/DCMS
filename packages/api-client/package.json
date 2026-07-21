@@ -5,9 +5,17 @@
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
   "scripts": {
-    "build": "tsc -b",
-    "generate": "echo 'Phase 7: openapi-typescript against admin-api and content-api specs'"
+    "build": "tsc -b"
   },
   "devDependencies": {
     "typescript": "^5"

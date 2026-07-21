@@ -1,6 +1,6 @@
 import { ApiReferenceReact } from '@scalar/api-reference-react';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Copy, Download, FileJson } from 'lucide-react';
+import { Check, Code2, Copy, Download, FileJson, Rocket } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Page, PageHeader } from '../../components/Page';
@@ -18,6 +18,8 @@ export function OpenApiPage() {
   const { t } = useTranslation();
   const { resolved } = useTheme();
   const [copied, setCopied] = useState(false);
+  const [downloadingClient, setDownloadingClient] = useState(false);
+  const [downloadingStarter, setDownloadingStarter] = useState(false);
 
   const spec = useQuery({
     queryKey: ['openapi-spec'],
@@ -33,14 +35,35 @@ export function OpenApiPage() {
     setTimeout(() => setCopied(false), 1500);
   }
 
-  function download() {
-    const blob = new Blob([JSON.stringify(spec.data, null, 2)], { type: 'application/json' });
+  function saveBlob(blob: Blob, filename: string) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'openapi.json';
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function download() {
+    saveBlob(new Blob([JSON.stringify(spec.data, null, 2)], { type: 'application/json' }), 'openapi.json');
+  }
+
+  async function downloadClient() {
+    setDownloadingClient(true);
+    try {
+      saveBlob(await api.downloadBlob('/admin/api-client.zip'), 'api-client.zip');
+    } finally {
+      setDownloadingClient(false);
+    }
+  }
+
+  async function downloadStarter() {
+    setDownloadingStarter(true);
+    try {
+      saveBlob(await api.downloadBlob('/admin/site-starter.zip'), 'site-starter.zip');
+    } finally {
+      setDownloadingStarter(false);
+    }
   }
 
   return (
@@ -56,6 +79,12 @@ export function OpenApiPage() {
               </Button>
               <Button variant="outline" onClick={download}>
                 <Download className="h-4 w-4" /> {t('openapi.downloadJson')}
+              </Button>
+              <Button variant="outline" onClick={downloadClient} disabled={downloadingClient}>
+                <Code2 className="h-4 w-4" /> {t('openapi.downloadClient')}
+              </Button>
+              <Button variant="outline" onClick={downloadStarter} disabled={downloadingStarter}>
+                <Rocket className="h-4 w-4" /> {t('openapi.downloadStarter')}
               </Button>
             </div>
           ) : undefined
