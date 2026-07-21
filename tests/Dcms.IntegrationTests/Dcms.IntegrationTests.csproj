@@ -13,6 +13,8 @@
     <PackageReference Include="Testcontainers.Nats" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.Redis" />
+    <!-- Not used directly: forces the patched transitive version. See Directory.Packages.props. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
