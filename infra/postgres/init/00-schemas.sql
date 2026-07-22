@@ -10,6 +10,7 @@ CREATE SCHEMA IF NOT EXISTS search;
 CREATE SCHEMA IF NOT EXISTS analytics;
 CREATE SCHEMA IF NOT EXISTS chat;
 CREATE SCHEMA IF NOT EXISTS visitors;
+CREATE SCHEMA IF NOT EXISTS forms;
 CREATE SCHEMA IF NOT EXISTS ai;
 
 -- Sitewide search needs trigram matching for typeahead (Phase 11).

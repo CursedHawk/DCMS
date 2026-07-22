@@ -10,6 +10,7 @@ import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -26,6 +27,7 @@ import {
   type PluginInstance,
   type PluginManifest,
   parseConfigSchema,
+  parseInstanceConfig,
   usePluginCatalog,
   usePluginInstances,
 } from './api';
@@ -196,7 +198,7 @@ function InstallDialog({
           </DialogTitle>
           <DialogDescription>{manifest.description}</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
+        <DialogBody className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>{t('common.slug')}</Label>
@@ -225,7 +227,7 @@ function InstallDialog({
               <SchemaForm schema={schema} formData={config} onChange={setConfig} />
             </div>
           ) : null}
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             {t('actions.cancel')}
@@ -258,7 +260,9 @@ function ConfigDialog({
   const { t } = useTranslation();
   const [name, setName] = useState(instance.name);
   const [description, setDescription] = useState(instance.description ?? '');
-  const [config, setConfig] = useState<unknown>({});
+  // Seeded from what is stored: the form posts the whole config back, so starting
+  // empty would wipe it on save.
+  const [config, setConfig] = useState<unknown>(() => parseInstanceConfig(instance.config));
   const schema = manifest ? parseConfigSchema(manifest.configJsonSchema) : {};
   const descriptionRequired = manifest?.allowMultipleInstances ?? false;
 
@@ -282,7 +286,7 @@ function ConfigDialog({
         <DialogHeader>
           <DialogTitle>{instance.name}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <DialogBody className="space-y-4">
           <div className="space-y-1.5">
             <Label>{t('common.name')}</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -305,7 +309,7 @@ function ConfigDialog({
               <SchemaForm schema={schema} formData={config} onChange={setConfig} />
             </div>
           ) : null}
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             {t('actions.cancel')}

@@ -38,11 +38,38 @@ export function completeSignin(): Promise<User> {
   return signinCallback;
 }
 
-export function getUser(): Promise<User | null> {
-  return userManager.getUser();
+// automaticSilentRenew only schedules a renewal while the app is running: it
+// hangs off the "access token expiring" timer, which never fires for a token
+// that was already expired when the page loaded. So after the tab has been
+// closed longer than the access-token lifetime, getUser() hands back a stale
+// user — the shell renders "signed in" off the ID-token profile while every API
+// call 401s. Renew on read instead, using the refresh token (offline_access).
+let renewal: Promise<User | null> | null = null;
+
+export function renewSilently(): Promise<User | null> {
+  renewal ??= userManager
+    .signinSilent()
+    .catch(async (err: unknown) => {
+      // Refresh token expired/revoked, or no session at the identity server:
+      // drop the stale user so the UI falls back to the sign-in screen.
+      console.warn('OIDC silent renew failed; signing out locally.', err);
+      await userManager.removeUser();
+      return null;
+    })
+    .finally(() => {
+      renewal = null;
+    });
+  return renewal;
+}
+
+/** The current user, silently renewed first if its access token has expired. */
+export async function getUser(): Promise<User | null> {
+  const user = await userManager.getUser();
+  if (!user || !user.expired) return user;
+  return renewSilently();
 }
 
 export async function getAccessToken(): Promise<string | undefined> {
-  const user = await userManager.getUser();
+  const user = await getUser();
   return user?.access_token;
 }

@@ -140,7 +140,22 @@
     "published": "Published",
     "draft": "Draft",
     "publishAt": "Publish at",
-    "selectInstance": "Select a plugin instance to manage its content."
+    "selectInstance": "Select a plugin instance to manage its content.",
+    "performers": {
+      "empty": "No performers in the line-up yet",
+      "addCrewMember": "Add roster member",
+      "noneAvailable": "All roster members added",
+      "noRoster": "No roster linked",
+      "addGuest": "Add guest",
+      "guest": "Guest",
+      "guestName": "Performer name",
+      "role": "Role",
+      "visible": "Visible"
+    },
+    "customFields": {
+      "title": "Custom fields",
+      "empty": "This instance defines no custom fields yet — add them in the plugin's configuration."
+    }
   },
   "media": {
     "title": "Media library",

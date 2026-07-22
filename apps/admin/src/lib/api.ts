@@ -1,3 +1,4 @@
+import { renewSilently } from '../auth';
 import { adminHeaders } from '../tenants';
 
 const base = import.meta.env.VITE_ADMIN_API_BASE ?? '/api';
@@ -13,11 +14,22 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${base}${path}`, {
+async function send(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${base}${path}`, {
     ...init,
     headers: { ...(await adminHeaders()), ...init?.headers },
   });
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let res = await send(path, init);
+
+  // The token can go stale between the header read and the server's clock (or
+  // be revoked outright). Renew once and replay before treating it as an error;
+  // a failed renewal clears the user, which drops the UI to the sign-in screen.
+  if (res.status === 401 && (await renewSilently())) {
+    res = await send(path, init);
+  }
 
   if (!res.ok) {
     let detail: unknown;

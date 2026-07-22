@@ -17,14 +17,18 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PluginSdk\Dcms.PluginSdk.Runtime\Dcms.PluginSdk.Runtime.csproj" />
+    <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.All\Dcms.Plugins.All.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Articles\Dcms.Plugins.Articles.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.AudioLibrary\Dcms.Plugins.AudioLibrary.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Analytics\Dcms.Plugins.Analytics.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Blog\Dcms.Plugins.Blog.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Carousel\Dcms.Plugins.Carousel.csproj" />
+    <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Events\Dcms.Plugins.Events.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.FileDownloads\Dcms.Plugins.FileDownloads.csproj" />
+    <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Forms\Dcms.Plugins.Forms.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.ImageGallery\Dcms.Plugins.ImageGallery.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.LiveChat\Dcms.Plugins.LiveChat.csproj" />
+    <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Roster\Dcms.Plugins.Roster.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Search\Dcms.Plugins.Search.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.VideoGallery\Dcms.Plugins.VideoGallery.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.VideoStreaming\Dcms.Plugins.VideoStreaming.csproj" />

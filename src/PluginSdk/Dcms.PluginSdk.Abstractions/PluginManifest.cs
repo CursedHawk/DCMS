@@ -9,7 +9,12 @@ public sealed record PluginManifest(
     string ConfigJsonSchema,            // JSON Schema driving the admin config form
     IReadOnlyList<PermissionDefinition> Permissions,
     IReadOnlyList<ContentTypeDefinition> ContentTypes,
-    IReadOnlyList<PluginDependency> Dependencies)
+    IReadOnlyList<PluginDependency> Dependencies,
+    // Config keys a public site may read via GET /api/{slug}/_config. This is an
+    // allow-list rather than a flag on purpose: instance config is tenant-private
+    // by default, so adding a credential to a plugin's schema later cannot make
+    // it public by accident.
+    IReadOnlyList<string> PublicConfigKeys)
 {
     public static PluginManifest Create(
         string id,
@@ -19,7 +24,8 @@ public sealed record PluginManifest(
         string configJsonSchema = "{}",
         IReadOnlyList<PermissionDefinition>? permissions = null,
         IReadOnlyList<ContentTypeDefinition>? contentTypes = null,
-        IReadOnlyList<PluginDependency>? dependencies = null)
+        IReadOnlyList<PluginDependency>? dependencies = null,
+        IReadOnlyList<string>? publicConfigKeys = null)
         => new(
             id,
             name,
@@ -29,7 +35,8 @@ public sealed record PluginManifest(
             configJsonSchema,
             permissions ?? [],
             contentTypes ?? [],
-            dependencies ?? []);
+            dependencies ?? [],
+            publicConfigKeys ?? []);
 }
 
 /// <summary>Effective permission key: plugin:{pluginId}:{Action}.</summary>

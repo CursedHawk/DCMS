@@ -1,6 +1,11 @@
 packages:
   - apps/*
   - packages/*
+  # The Mode B dependency palette is never installed for development — it is
+  # fetched straight into the site-builder image's offline store.
+  - '!packages/site-builder-toolchain'
 allowBuilds:
+  # Tailwind v4's native oxide binary; needed to build the tenant sites.
+  '@tailwindcss/oxide': true
   esbuild: true
   vue-demi: true

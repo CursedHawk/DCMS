@@ -26,13 +26,21 @@ export function useAuth(): AuthState {
 
     const onLoaded = (u: User) => setUser(u);
     const onUnloaded = () => setUser(null);
+    // A background renewal that fails leaves an unusable token in the store;
+    // drop it so the shell shows the sign-in screen instead of 401-ing forever.
+    const onRenewError = (err: unknown) => {
+      console.warn('OIDC silent renew failed; signing out locally.', err);
+      void userManager.removeUser();
+    };
     userManager.events.addUserLoaded(onLoaded);
     userManager.events.addUserUnloaded(onUnloaded);
+    userManager.events.addSilentRenewError(onRenewError);
 
     return () => {
       active = false;
       userManager.events.removeUserLoaded(onLoaded);
       userManager.events.removeUserUnloaded(onUnloaded);
+      userManager.events.removeSilentRenewError(onRenewError);
     };
   }, []);
 

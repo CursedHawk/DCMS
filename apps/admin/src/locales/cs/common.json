@@ -140,7 +140,22 @@
     "published": "Publikováno",
     "draft": "Koncept",
     "publishAt": "Publikovat v",
-    "selectInstance": "Vyberte instanci pluginu pro správu jejího obsahu."
+    "selectInstance": "Vyberte instanci pluginu pro správu jejího obsahu.",
+    "performers": {
+      "empty": "V sestavě zatím nejsou žádní účinkující",
+      "addCrewMember": "Přidat člena seznamu",
+      "noneAvailable": "Všichni členové seznamu jsou přidáni",
+      "noRoster": "Není propojen žádný seznam",
+      "addGuest": "Přidat hosta",
+      "guest": "Host",
+      "guestName": "Jméno účinkujícího",
+      "role": "Role",
+      "visible": "Viditelný"
+    },
+    "customFields": {
+      "title": "Vlastní pole",
+      "empty": "Tato instance zatím nemá žádná vlastní pole — přidejte je v konfiguraci pluginu."
+    }
   },
   "media": {
     "title": "Knihovna médií",

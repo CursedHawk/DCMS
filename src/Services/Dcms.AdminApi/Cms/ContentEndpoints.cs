@@ -19,11 +19,19 @@ public static class ContentEndpoints
 {
     public static IEndpointRouteBuilder MapContentEndpoints(this IEndpointRouteBuilder app)
     {
+        // includeDraft lets an editor pick items of another content type by their
+        // authored fields (e.g. a gig's line-up listing crew members by name),
+        // without a round trip per item.
         app.MapGet("/api/admin/content", async (
-            Guid instanceId, CmsDbContext db, CancellationToken ct) =>
+            Guid instanceId, string? contentType, bool? includeDraft, CmsDbContext db, CancellationToken ct) =>
         {
-            var items = await db.ContentItems
-                .Where(c => c.PluginInstanceId == instanceId)
+            var query = db.ContentItems.Where(c => c.PluginInstanceId == instanceId);
+            if (!string.IsNullOrWhiteSpace(contentType))
+            {
+                query = query.Where(c => c.ContentType == contentType);
+            }
+
+            var rows = await query
                 .OrderByDescending(c => c.UpdatedAt)
                 .Select(c => new
                 {
@@ -33,9 +41,22 @@ public static class ContentEndpoints
                     status = c.Status.ToString(),
                     updatedAt = c.UpdatedAt,
                     publishedAt = c.PublishedAt,
+                    draftJson = includeDraft == true
+                        ? c.Versions.Where(v => v.Id == c.CurrentDraftVersionId).Select(v => v.DataJson).FirstOrDefault()
+                        : null,
                 })
                 .ToListAsync(ct);
-            return Results.Ok(items);
+
+            return Results.Ok(rows.Select(r => new
+            {
+                r.id,
+                r.contentType,
+                r.slug,
+                r.status,
+                r.updatedAt,
+                r.publishedAt,
+                draft = r.draftJson is null ? (JsonElement?)null : JsonDocument.Parse(r.draftJson).RootElement,
+            }));
         }).RequirePermission(PlatformPermissions.ContentRead);
 
         app.MapGet("/api/admin/content/{id:guid}", async (Guid id, CmsDbContext db, CancellationToken ct) =>
@@ -104,7 +125,12 @@ public static class ContentEndpoints
             }
             var nextNo = item.Versions.Count == 0 ? 1 : item.Versions.Max(v => v.VersionNo) + 1;
             var version = NewVersion(item, nextNo, body.Data, me.UserId);
-            item.Versions.Add(version);
+            // Added through the set, not through item.Versions: the key is assigned
+            // here rather than by the store, so a new version reached via a tracked
+            // entity's navigation is attached as an existing row and saved as an
+            // UPDATE that matches nothing. (The create path gets away with the
+            // navigation because db.ContentItems.Add cascades Added to the graph.)
+            db.ContentVersions.Add(version);
             item.CurrentDraftVersionId = version.Id;
             item.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);

@@ -30,6 +30,10 @@ public static class PluginInstanceEndpoints
                     name = p.Name,
                     description = p.Description,
                     enabled = p.Enabled,
+                    // The config drives more than its own edit form: a content type
+                    // with admin-defined fields keeps their definitions here, and
+                    // Events resolves its Roster instance through rosterSlug.
+                    config = p.ConfigJson,
                 })
                 .ToListAsync(ct);
             return Results.Ok(instances);
@@ -146,11 +150,20 @@ public static class PluginInstanceEndpoints
         allowMultipleInstances = m.AllowMultipleInstances,
         configJsonSchema = m.ConfigJsonSchema,
         permissions = m.Permissions.Select(p => new { p.Action, p.DisplayName }),
+        dependencies = m.Dependencies.Select(d => new { d.PluginId, d.Optional }),
+        publicConfigKeys = m.PublicConfigKeys,
         contentTypes = m.ContentTypes.Select(t => new
         {
             t.Name,
             t.Searchable,
             t.SlugField,
+            // Tells the editor to render the admin-defined fields declared in the
+            // instance config alongside the plugin's own.
+            customFields = t.CustomFields is null ? null : new
+            {
+                t.CustomFields.ValuesField,
+                t.CustomFields.ConfigKey,
+            },
             // Field definitions drive the schema-driven content editor in the SPA.
             fields = t.Fields.Select(f => new
             {

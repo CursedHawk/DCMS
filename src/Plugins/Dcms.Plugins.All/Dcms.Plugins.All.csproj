@@ -7,9 +7,12 @@
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.AudioLibrary\Dcms.Plugins.AudioLibrary.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Blog\Dcms.Plugins.Blog.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Carousel\Dcms.Plugins.Carousel.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Events\Dcms.Plugins.Events.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.FileDownloads\Dcms.Plugins.FileDownloads.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Forms\Dcms.Plugins.Forms.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.ImageGallery\Dcms.Plugins.ImageGallery.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.LiveChat\Dcms.Plugins.LiveChat.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Roster\Dcms.Plugins.Roster.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Search\Dcms.Plugins.Search.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.VideoGallery\Dcms.Plugins.VideoGallery.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.VideoStreaming\Dcms.Plugins.VideoStreaming.csproj" />

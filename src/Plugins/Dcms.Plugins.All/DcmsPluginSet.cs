@@ -3,9 +3,12 @@ using Dcms.Plugins.Articles;
 using Dcms.Plugins.AudioLibrary;
 using Dcms.Plugins.Blog;
 using Dcms.Plugins.Carousel;
+using Dcms.Plugins.Events;
 using Dcms.Plugins.FileDownloads;
+using Dcms.Plugins.Forms;
 using Dcms.Plugins.ImageGallery;
 using Dcms.Plugins.LiveChat;
+using Dcms.Plugins.Roster;
 using Dcms.Plugins.Search;
 using Dcms.Plugins.VideoGallery;
 using Dcms.Plugins.VideoStreaming;
@@ -23,9 +26,12 @@ public static class DcmsPluginSet
         .Add<AudioLibraryPlugin>()
         .Add<BlogPlugin>()
         .Add<CarouselPlugin>()
+        .Add<EventsPlugin>()
         .Add<FileDownloadsPlugin>()
+        .Add<FormsPlugin>()
         .Add<ImageGalleryPlugin>()
         .Add<LiveChatPlugin>()
+        .Add<RosterPlugin>()
         .Add<SearchPlugin>()
         .Add<VideoGalleryPlugin>()
         .Add<VideoStreamingPlugin>()

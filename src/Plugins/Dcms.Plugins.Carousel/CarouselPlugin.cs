@@ -23,6 +23,9 @@ public sealed class CarouselPlugin : IPlugin
         description: "Rotating image and content carousel for landing pages.",
         allowMultipleInstances: true,
         configJsonSchema: ConfigSchema,
+        // Playback behaviour is presentation-only, so a site may read it and
+        // drive the carousel entirely from the instance config.
+        publicConfigKeys: ["autoplay", "intervalMs"],
         permissions:
         [
             new PermissionDefinition("read", "View carousel slides"),

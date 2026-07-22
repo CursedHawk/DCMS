@@ -5,6 +5,7 @@ import type { MediaCategory } from '../media/api';
 import { MediaMultiPicker } from '../media/MediaMultiPicker';
 import { MediaPicker } from '../media/MediaPicker';
 import type { ContentFieldDef } from '../plugins/api';
+import { PerformerPicker } from './PerformerPicker';
 
 /** Coerce a stored value (array, JSON string, or empty) into a list of ids. */
 function toIdList(value: unknown): string[] {
@@ -25,10 +26,16 @@ export function ContentFieldInput({
   field,
   value,
   onChange,
+  instanceConfig,
 }: {
   field: ContentFieldDef;
   value: unknown;
   onChange: (v: unknown) => void;
+  /**
+   * Config of the instance the item belongs to — where a field referencing
+   * another plugin names the instance it points at.
+   */
+  instanceConfig: Record<string, unknown>;
 }) {
   const label = (
     <Label className="flex items-center gap-1">
@@ -57,6 +64,21 @@ export function ContentFieldInput({
               value={toIdList(value)}
               onChange={(ids) => onChange(ids)}
               category={field.reference.mediaCategory as MediaCategory}
+            />
+          );
+        }
+        // A JSON field referencing roster members is the gig line-up. The roster
+        // is a separate instance, named by this one's config; without it the
+        // picker still takes performers by name.
+        if (field.reference?.targetPluginId === 'roster') {
+          return (
+            <PerformerPicker
+              rosterSlug={
+                typeof instanceConfig.rosterSlug === 'string' ? instanceConfig.rosterSlug : null
+              }
+              contentType={field.reference.contentType ?? 'member'}
+              value={value}
+              onChange={(list) => onChange(list)}
             />
           );
         }

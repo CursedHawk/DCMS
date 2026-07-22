@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -16,9 +17,43 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { ApiError, api } from '../../lib/api';
-import type { ContentTypeDef } from '../plugins/api';
+import {
+  type ContentFieldDef,
+  type ContentTypeDef,
+  type CustomFieldDef,
+  customFieldsOf,
+  parseInstanceConfig,
+  usePluginInstances,
+} from '../plugins/api';
 import { ContentFieldInput } from './ContentFieldInput';
 import { useContentItem } from './api';
+
+/**
+ * Present a tenant-defined field as a plugin field, so admin-defined and built-in
+ * fields go through one renderer instead of two that drift apart.
+ */
+function asFieldDef(custom: CustomFieldDef): ContentFieldDef {
+  const type = (
+    {
+      text: 'Text',
+      longText: 'RichText',
+      number: 'Number',
+      boolean: 'Boolean',
+      date: 'DateTime',
+      tags: 'Tags',
+      url: 'Text',
+      image: 'MediaRef',
+    } as const
+  )[custom.type];
+
+  return {
+    name: custom.label,
+    type: type ?? 'Text',
+    required: custom.required ?? false,
+    description: custom.description,
+    reference: custom.type === 'image' ? { mediaCategory: 'Image' } : undefined,
+  };
+}
 
 export function ContentEditor({
   instanceId,
@@ -51,6 +86,21 @@ export function ContentEditor({
   }, [detail.data]);
 
   const setField = (name: string, v: unknown) => setData((d) => ({ ...d, [name]: v }));
+
+  // The instance config both declares this type's tenant-defined fields and,
+  // for a gig, names the Roster instance its line-up is picked from.
+  const instances = usePluginInstances();
+  const instance = instances.data?.find((i) => i.id === instanceId);
+  const instanceConfig = parseInstanceConfig(instance?.config);
+
+  const valuesField = contentType.customFields?.valuesField;
+  const customFields = customFieldsOf(contentType, instanceConfig);
+  const customValues = (valuesField ? data[valuesField] : null) as Record<string, unknown> | null;
+  const setCustom = (key: string, v: unknown) =>
+    setData((d) => ({
+      ...d,
+      [valuesField!]: { ...((d[valuesField!] as Record<string, unknown>) ?? {}), [key]: v },
+    }));
 
   const invalidate = async () => {
     await qc.invalidateQueries({ queryKey: ['content', instanceId] });
@@ -97,7 +147,7 @@ export function ContentEditor({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent wide className="max-h-[88vh] overflow-y-auto">
+      <DialogContent wide>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isNew ? t('content.newItem') : slug}
@@ -112,7 +162,7 @@ export function ContentEditor({
         {!isNew && detail.isLoading ? (
           <CenteredSpinner />
         ) : (
-          <div className="space-y-4">
+          <DialogBody className="space-y-4">
             <div className="space-y-1.5">
               <Label>{t('common.slug')}</Label>
               <Input
@@ -123,14 +173,39 @@ export function ContentEditor({
               />
             </div>
 
-            {contentType.fields.map((f) => (
-              <ContentFieldInput
-                key={f.name}
-                field={f}
-                value={data[f.name]}
-                onChange={(v) => setField(f.name, v)}
-              />
-            ))}
+            {contentType.fields
+              // The custom values are edited field by field below, never as raw JSON.
+              .filter((f) => f.name !== valuesField)
+              .map((f) => (
+                <ContentFieldInput
+                  key={f.name}
+                  field={f}
+                  instanceConfig={instanceConfig}
+                  value={data[f.name]}
+                  onChange={(v) => setField(f.name, v)}
+                />
+              ))}
+
+            {valuesField ? (
+              <div className="space-y-4 rounded-md border p-3">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {t('content.customFields.title')}
+                </p>
+                {customFields.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t('content.customFields.empty')}</p>
+                ) : (
+                  customFields.map((f) => (
+                    <ContentFieldInput
+                      key={f.key}
+                      field={asFieldDef(f)}
+                      instanceConfig={instanceConfig}
+                      value={customValues?.[f.key]}
+                      onChange={(v) => setCustom(f.key, v)}
+                    />
+                  ))
+                )}
+              </div>
+            ) : null}
 
             {!isNew ? (
               <div className="rounded-md border p-3">
@@ -182,7 +257,7 @@ export function ContentEditor({
                 </Button>
               </div>
             ) : null}
-          </div>
+          </DialogBody>
         )}
 
         <DialogFooter className="flex-wrap">

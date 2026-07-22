@@ -43,6 +43,7 @@ public static class RlsConfigurator
         ("visitors", "visitor_refresh_tokens"),
         ("chat", "conversations"),
         ("chat", "messages"),
+        ("forms", "form_submissions"),
     ];
 
     public static async Task ApplyAsync(DbContext context, ILogger logger, CancellationToken ct = default)

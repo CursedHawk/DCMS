@@ -8,6 +8,8 @@ export interface ContentItem {
   status: string;
   updatedAt: string;
   publishedAt?: string;
+  /** Only present when the list was requested with the draft data included. */
+  draft?: Record<string, unknown> | null;
 }
 
 export interface ContentVersion {
@@ -31,6 +33,21 @@ export function useContentItems(instanceId: string | undefined) {
     queryKey: ['content', instanceId],
     enabled: !!instanceId,
     queryFn: () => api.get<ContentItem[]>(`/admin/content?instanceId=${instanceId}`),
+  });
+}
+
+/**
+ * Items of one content type in an instance, with their draft data — used by
+ * editors that reference other content (e.g. picking crew members for a gig).
+ */
+export function useContentItemsOfType(instanceId: string | undefined, contentType: string | undefined) {
+  return useQuery({
+    queryKey: ['content', instanceId, contentType, 'with-draft'],
+    enabled: !!instanceId && !!contentType,
+    queryFn: () =>
+      api.get<ContentItem[]>(
+        `/admin/content?instanceId=${instanceId}&contentType=${encodeURIComponent(contentType!)}&includeDraft=true`,
+      ),
   });
 }
 

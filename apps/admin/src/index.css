@@ -173,11 +173,42 @@
   align-items: center;
   gap: 0.4rem;
 }
+/*
+ * RJSF lays arrays out with Bootstrap grid classes (col-xs-9 / col-xs-3) that
+ * carry no meaning here, so the row is rebuilt with flexbox: the field takes the
+ * free space and the toolbar keeps its natural width instead of being squeezed
+ * to nothing. min-width:0 stops a long input from pushing the toolbar off.
+ */
 .dcms-rjsf .array-item {
   display: flex;
   gap: 0.5rem;
   align-items: start;
+  /* Boxed: several multi-field entries in a row are unreadable without a
+     boundary showing where one ends and the next begins. */
+  margin-bottom: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-md);
+}
+.dcms-rjsf .array-item > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dcms-rjsf .array-item-toolbox {
+  flex: 0 0 auto;
+}
+.dcms-rjsf .array-item-toolbox .btn-group {
+  display: flex;
+  gap: 0.25rem;
+}
+/* Array/object items nest several levels deep; a rule keeps the grouping legible. */
+.dcms-rjsf .array-item > :first-child > .form-group {
+  margin-bottom: 0.5rem;
+}
+.dcms-rjsf legend {
   margin-bottom: 0.4rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 .dcms-rjsf .btn {
   border-radius: var(--radius-md);
