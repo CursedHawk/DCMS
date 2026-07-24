@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Dcms.Shared.Data.Chat;
 
@@ -24,16 +25,19 @@ public enum ChatConversationStatus
 /// The visitor may be authenticated (VisitorId set) or anonymous (identified
 /// only by the client-supplied display name + the SignalR connection).
 /// </summary>
-public sealed class ChatConversation : TenantEntity
+public sealed class ChatConversation : TenantEntity, ISandboxScoped
 {
     public Guid? VisitorId { get; set; }
     public string VisitorName { get; set; } = "Visitor";
     public ChatConversationStatus Status { get; set; } = ChatConversationStatus.Open;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset LastMessageAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>True for conversations started from a site preview's sandbox.</summary>
+    public bool IsSandbox { get; set; }
 }
 
-public sealed class ChatMessage : TenantEntity
+public sealed class ChatMessage : TenantEntity, ISandboxScoped
 {
     public Guid ConversationId { get; set; }
     public ChatSender Sender { get; set; }
@@ -43,15 +47,18 @@ public sealed class ChatMessage : TenantEntity
     public string Body { get; set; } = string.Empty;
     public DateTimeOffset SentAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ReadAt { get; set; }
+    public bool IsSandbox { get; set; }
 }
 
 /// <summary>Owns the "chat" schema. Read/written by content-api (visitor hub) and admin-api (agent console).</summary>
-public class ChatDbContext(DbContextOptions<ChatDbContext> options, ITenantContext tenantContext)
+public class ChatDbContext(
+    DbContextOptions<ChatDbContext> options, ITenantContext tenantContext, ISandboxContext sandboxContext)
     : DbContext(options)
 {
     public const string Schema = "chat";
 
     private Guid CurrentTenantId => tenantContext.TenantId ?? Guid.Empty;
+    private bool CurrentSandbox => sandboxContext.IsSandbox;
 
     public DbSet<ChatConversation> Conversations => Set<ChatConversation>();
     public DbSet<ChatMessage> Messages => Set<ChatMessage>();
@@ -67,8 +74,8 @@ public class ChatDbContext(DbContextOptions<ChatDbContext> options, ITenantConte
             e.HasKey(c => c.Id);
             e.Property(c => c.VisitorName).HasMaxLength(256).IsRequired();
             e.Property(c => c.Status).HasConversion<int>();
-            e.HasIndex(c => new { c.TenantId, c.Status, c.LastMessageAt });
-            e.HasQueryFilter(c => c.TenantId == CurrentTenantId);
+            e.HasIndex(c => new { c.TenantId, c.IsSandbox, c.Status, c.LastMessageAt });
+            e.HasQueryFilter(c => c.TenantId == CurrentTenantId && c.IsSandbox == CurrentSandbox);
         });
 
         builder.Entity<ChatMessage>(e =>
@@ -77,35 +84,44 @@ public class ChatDbContext(DbContextOptions<ChatDbContext> options, ITenantConte
             e.HasKey(m => m.Id);
             e.Property(m => m.Sender).HasConversion<int>();
             e.Property(m => m.Body).HasMaxLength(8000).IsRequired();
-            e.HasIndex(m => new { m.TenantId, m.ConversationId, m.SentAt });
-            e.HasQueryFilter(m => m.TenantId == CurrentTenantId);
+            e.HasIndex(m => new { m.TenantId, m.IsSandbox, m.ConversationId, m.SentAt });
+            e.HasQueryFilter(m => m.TenantId == CurrentTenantId && m.IsSandbox == CurrentSandbox);
         });
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        StampTenant();
+        Stamp();
         return base.SaveChangesAsync(cancellationToken);
     }
 
     public override int SaveChanges()
     {
-        StampTenant();
+        Stamp();
         return base.SaveChanges();
     }
 
-    private void StampTenant()
+    private void Stamp()
     {
         var tenantId = CurrentTenantId;
         if (tenantId == Guid.Empty)
         {
             return;
         }
+        var sandbox = CurrentSandbox;
         foreach (var entry in ChangeTracker.Entries<TenantEntity>())
         {
-            if (entry.State == EntityState.Added && entry.Entity.TenantId == Guid.Empty)
+            if (entry.State != EntityState.Added)
+            {
+                continue;
+            }
+            if (entry.Entity.TenantId == Guid.Empty)
             {
                 entry.Entity.TenantId = tenantId;
+            }
+            if (entry.Entity is ISandboxScoped sandboxed)
+            {
+                sandboxed.IsSandbox = sandbox;
             }
         }
     }
@@ -120,7 +136,7 @@ public sealed class ChatDbContextFactory : IDesignTimeDbContextFactory<ChatDbCon
                 "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev",
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", ChatDbContext.Schema))
             .Options;
-        return new ChatDbContext(options, new NullTenantContext());
+        return new ChatDbContext(options, new NullTenantContext(), Sandbox.DisabledSandboxContext.Instance);
     }
 
     private sealed class NullTenantContext : ITenantContext
@@ -141,6 +157,7 @@ public static class ChatServiceCollectionExtensions
             options.UseNpgsql(connectionString, npgsql =>
                 npgsql.MigrationsHistoryTable("__ef_migrations_history", ChatDbContext.Schema)));
 
+        services.TryAddScoped<ISandboxContext>(_ => Sandbox.DisabledSandboxContext.Instance);
         return services;
     }
 }

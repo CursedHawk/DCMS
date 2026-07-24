@@ -5,12 +5,15 @@ import { CenteredSpinner } from '../../components/ui/spinner';
 import { api } from '../../lib/api';
 import { StaticSitePage } from './StaticSitePage';
 
-// The canvas editor is heavy; keep it lazy and only load it for editor-backed sites.
+// The canvas editor and the code IDE are both heavy; keep them lazy and load
+// only the one this site's render mode needs.
 const EditorPage = lazy(() => import('../editor/EditorPage').then((m) => ({ default: m.EditorPage })));
+const IdePage = lazy(() => import('../ide/IdePage').then((m) => ({ default: m.IdePage })));
 
 /**
  * Entry point for /sites/$siteId. Static-files sites get the upload/publish
- * surface; StaticPrerender + ReactApp sites get the free-canvas editor.
+ * surface; ReactApp sites get the code IDE (file map editor); StaticPrerender
+ * sites get the free-canvas visual editor.
  */
 export function SiteWorkspace({ siteId }: { siteId: string }) {
   const { t } = useTranslation();
@@ -24,7 +27,11 @@ export function SiteWorkspace({ siteId }: { siteId: string }) {
 
   return (
     <Suspense fallback={<CenteredSpinner />}>
-      <EditorPage siteId={siteId} />
+      {site.data?.renderMode === 'ReactApp' ? (
+        <IdePage siteId={siteId} />
+      ) : (
+        <EditorPage siteId={siteId} />
+      )}
     </Suspense>
   );
 }

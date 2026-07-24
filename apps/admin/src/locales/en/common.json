@@ -221,6 +221,26 @@
     "dataSource": "Data source",
     "publishQueued": "Publish queued"
   },
+  "ide": {
+    "preview": "Preview",
+    "building": "Building preview…",
+    "previewPending": "Preview will appear here.",
+    "buildError": "Build error",
+    "showPreview": "Preview",
+    "hidePreview": "Hide preview",
+    "resetSandbox": "Reset sandbox",
+    "resetSandboxHint": "Clear the preview's test data (form submissions, sign-ups, chats). Live data is untouched.",
+    "sandboxReset": "Preview sandbox cleared",
+    "newFile": "New file",
+    "upload": "Upload files",
+    "download": "Download",
+    "downloadZip": "Download all as .zip",
+    "binaryFile": "Binary file",
+    "uploaded": "Uploaded {{count}} file",
+    "uploaded_other": "Uploaded {{count}} files",
+    "uploadSkipped": "Skipped {{count}} file",
+    "uploadSkipped_other": "Skipped {{count}} files"
+  },
   "openapi": {
     "title": "API documentation",
     "copyForAi": "Copy for AI",

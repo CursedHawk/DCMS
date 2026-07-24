@@ -23,6 +23,22 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
     /// </summary>
     private static readonly string[] ToolchainFiles = ["package.json", "pnpm-lock.yaml"];
 
+    /// <summary>
+    /// Extensions whose file-map value is base64-encoded raw bytes rather than
+    /// text. Must match the admin IDE (binary.ts BINARY_EXTENSIONS) and the
+    /// preview bundler so an upload round-trips losslessly. Everything else —
+    /// including SVG — is written as literal UTF-8 text.
+    /// </summary>
+    private static readonly HashSet<string> BinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".bmp",
+        ".woff", ".woff2", ".ttf", ".otf", ".eot",
+        ".mp3", ".mp4", ".webm", ".ogg", ".wav",
+        ".pdf",
+    };
+
+    private static bool IsBinaryPath(string path) => BinaryExtensions.Contains(Path.GetExtension(path));
+
     private static string ToolchainDir =>
         Environment.GetEnvironmentVariable("DCMS_TOOLCHAIN_DIR") ?? "/opt/dcms/toolchain";
 
@@ -51,7 +67,24 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
             }
             var target = Path.Combine(workDir, relative.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            await File.WriteAllTextAsync(target, content, ct);
+            if (IsBinaryPath(relative))
+            {
+                byte[] bytes;
+                try
+                {
+                    bytes = Convert.FromBase64String(content);
+                }
+                catch (FormatException)
+                {
+                    throw new InvalidOperationException(
+                        $"Binary file '{relative}' is not valid base64. Re-upload it in the site editor.");
+                }
+                await File.WriteAllBytesAsync(target, bytes, ct);
+            }
+            else
+            {
+                await File.WriteAllTextAsync(target, content, ct);
+            }
         }
 
         CopyToolchain(workDir);

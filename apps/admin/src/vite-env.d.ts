@@ -10,3 +10,10 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+// Palette type manifest produced by vite-plugin-palette-types (IDE ATA + preview).
+declare module 'virtual:dcms-palette-types' {
+  export const libs: { path: string; content: string }[];
+  export const ambientModules: string[];
+  export const versions: Record<string, string>;
+}

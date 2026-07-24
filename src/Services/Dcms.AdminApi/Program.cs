@@ -84,6 +84,14 @@ builder.Services.AddHttpClient("ai-gateway", (sp, client) =>
     client.BaseAddress = new Uri(baseUrl);
 });
 
+// Reverse-proxy target for the site preview (delivery API). Same content-api the
+// published site talks to; the preview proxy injects the tenant + sandbox headers.
+builder.Services.AddHttpClient("content-api", (sp, client) =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Services:ContentApi"] ?? "http://content-api:8080";
+    client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+});
+
 var app = builder.Build();
 app.UseAuthentication();
 app.UseMultiTenant();
@@ -97,6 +105,7 @@ app.MapPluginEndpoints();
 app.MapContentEndpoints();
 app.MapMediaEndpoints();
 app.MapSiteEndpoints();
+app.MapSitePreview();
 app.MapFormSubmissionEndpoints();
 app.MapAiSettingsEndpoints();
 app.MapAiGenerationEndpoints();

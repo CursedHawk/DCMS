@@ -28,7 +28,7 @@ public static class AnalyticsIngestEndpoints
     {
         // Slug-addressed beacon (explicit analytics instance).
         app.MapPost("/api/{slug}/collect", async (
-            string slug, CollectRequest body, ITenantContext tenant, CmsDbContext cms,
+            string slug, CollectRequest body, ITenantContext tenant, ISandboxContext sandbox, CmsDbContext cms,
             IEventPublisher events, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
@@ -42,7 +42,11 @@ public static class AnalyticsIngestEndpoints
                 return Results.NotFound();
             }
 
-            await PublishAsync(events, tenantId, body, ct);
+            // Preview sandbox: swallow the beacon so real analytics stay clean.
+            if (!sandbox.IsSandbox)
+            {
+                await PublishAsync(events, tenantId, body, ct);
+            }
             return Results.Accepted();
         }).RequireCors(CollectCorsPolicy);
 
@@ -51,7 +55,7 @@ public static class AnalyticsIngestEndpoints
         // tenant's single enabled analytics instance here. Returns 202 even when
         // analytics is disabled so the beacon never logs a client-side error.
         app.MapPost("/api/collect", async (
-            CollectRequest body, ITenantContext tenant, CmsDbContext cms,
+            CollectRequest body, ITenantContext tenant, ISandboxContext sandbox, CmsDbContext cms,
             IEventPublisher events, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
@@ -60,7 +64,7 @@ public static class AnalyticsIngestEndpoints
             }
             var enabled = await cms.PluginInstances.AsNoTracking()
                 .AnyAsync(p => p.PluginId == AnalyticsPluginId && p.Enabled, ct);
-            if (enabled)
+            if (enabled && !sandbox.IsSandbox)
             {
                 await PublishAsync(events, tenantId, body, ct);
             }

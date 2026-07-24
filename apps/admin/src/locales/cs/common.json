@@ -221,6 +221,28 @@
     "dataSource": "Zdroj dat",
     "publishQueued": "Publikace zařazena"
   },
+  "ide": {
+    "preview": "Náhled",
+    "building": "Sestavuji náhled…",
+    "previewPending": "Zde se zobrazí náhled.",
+    "buildError": "Chyba sestavení",
+    "showPreview": "Náhled",
+    "hidePreview": "Skrýt náhled",
+    "resetSandbox": "Vyčistit sandbox",
+    "resetSandboxHint": "Smaže testovací data náhledu (odeslané formuláře, registrace, chaty). Ostrá data zůstanou nedotčena.",
+    "sandboxReset": "Sandbox náhledu vyčištěn",
+    "newFile": "Nový soubor",
+    "upload": "Nahrát soubory",
+    "download": "Stáhnout",
+    "downloadZip": "Stáhnout vše jako .zip",
+    "binaryFile": "Binární soubor",
+    "uploaded": "Nahrán {{count}} soubor",
+    "uploaded_few": "Nahrány {{count}} soubory",
+    "uploaded_other": "Nahráno {{count}} souborů",
+    "uploadSkipped": "Přeskočen {{count}} soubor",
+    "uploadSkipped_few": "Přeskočeny {{count}} soubory",
+    "uploadSkipped_other": "Přeskočeno {{count}} souborů"
+  },
   "openapi": {
     "title": "API dokumentace",
     "copyForAi": "Kopírovat pro AI",

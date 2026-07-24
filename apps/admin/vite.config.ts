@@ -1,15 +1,20 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { paletteTypesPlugin } from './vite-plugin-palette-types';
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), paletteTypesPlugin()],
+  // esbuild-wasm ships a prebuilt .wasm that must not be pre-bundled/optimized.
+  optimizeDeps: { exclude: ['esbuild-wasm'] },
   build: {
     rollupOptions: {
       output: {
         // Split heavy, route-specific libraries so the initial bundle stays lean.
         manualChunks(id) {
           if (id.includes('@scalar')) return 'scalar';
+          if (id.includes('monaco-editor')) return 'monaco';
+          if (id.includes('esbuild-wasm')) return 'esbuild';
           if (id.includes('recharts') || id.includes('/d3') || id.includes('victory')) return 'charts';
           if (id.includes('@rjsf') || id.includes('/ajv')) return 'rjsf';
           if (id.includes('@microsoft/signalr')) return 'signalr';

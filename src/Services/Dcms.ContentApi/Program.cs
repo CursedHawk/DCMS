@@ -42,6 +42,11 @@ builder.Services.AddSingleton(sp =>
     new VisitorTokenService(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<VisitorTokenOptions>>().Value));
 builder.Services.AddDcmsTenantResolutionByHeader();
 
+// Preview sandbox: the admin-api preview proxy sets X-Dcms-Sandbox so a site
+// preview's writes (forms, visitors, chat) land in the per-tenant sandbox space.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<Dcms.Shared.Kernel.Abstractions.ISandboxContext, Dcms.ContentApi.HeaderSandboxContext>();
+
 // Platform-user authentication for the chat hub's agent role. Visitors connect
 // anonymously; only agents present a platform JWT (carried in the access_token
 // query string because WebSockets can't set custom headers).

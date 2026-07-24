@@ -3,6 +3,7 @@ using System;
 using Dcms.Shared.Data.Visitors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Dcms.Shared.Data.Migrations.Visitors
 {
     [DbContext(typeof(VisitorsDbContext))]
-    partial class VisitorsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260723212310_PreviewSandbox")]
+    partial class PreviewSandbox
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
