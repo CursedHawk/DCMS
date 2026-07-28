@@ -1,4 +1,7 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using Dcms.AdminApi.Tenancy;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Sites;
@@ -68,6 +71,11 @@ public static class SiteEndpoints
                 name = site.Name,
                 renderMode = site.RenderMode.ToString(),
                 activeBuildId = site.ActiveBuildId,
+                // Optimistic-concurrency baseline for the IDE: the version bumps on
+                // every save, and each file's hash lets a granular save detect that
+                // someone else changed that same file (see the PATCH endpoint below).
+                definitionVersion = site.DefinitionVersion,
+                definitionHashes = SiteFileMap.HashAll(SiteFileMap.Parse(site.DraftDefinitionJson)),
                 definition = JsonDocument.Parse(site.DraftDefinitionJson).RootElement,
                 staticBundle = site.StaticBundleKey is null ? null : new
                 {
@@ -202,29 +210,214 @@ public static class SiteEndpoints
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.SitePublish);
 
+        // Whole-map replace. Used for a full flush (publish) and as a fallback. An
+        // optional `If-Match: <version>` guards against overwriting a newer draft:
+        // the whole-map write clobbers every file, so it must lose to any change it
+        // has not seen. Granular edits go through PATCH .../definition/files instead.
         app.MapPut("/api/admin/sites/{id:guid}/definition", async (
-            Guid id, JsonElement definition, SitesDbContext db, CancellationToken ct) =>
+            Guid id, JsonElement definition, HttpRequest request,
+            SitesDbContext db, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null)
             {
                 return Results.NotFound();
+            }
+            if (request.Headers.TryGetValue("If-Match", out var ifMatch) &&
+                int.TryParse(ifMatch.ToString(), out var expected) &&
+                expected != site.DefinitionVersion)
+            {
+                return Results.Json(
+                    new { error = "conflict", version = site.DefinitionVersion },
+                    statusCode: StatusCodes.Status409Conflict);
             }
             site.DraftDefinitionJson = definition.GetRawText();
             site.DefinitionVersion++;
             site.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
-            return Results.NoContent();
+
+            var files = SiteFileMap.Parse(site.DraftDefinitionJson);
+            return Results.Ok(new { version = site.DefinitionVersion, hashes = SiteFileMap.HashAll(files) });
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        // Granular per-file save (Mode B IDE autosave). Instead of resending the whole
+        // file map — which makes two people editing different files clobber each other
+        // with their own stale snapshots — this merges only the named files into the
+        // CURRENT stored map. Each entry carries the hash the client last saw for that
+        // path; if the stored file has since changed (someone else saved it), that file
+        // is reported as a conflict (409) and nothing is written. Edits to other files
+        // never conflict, so concurrent work on separate files just merges.
+        // Load the current user's working draft for a branch (Mode B IDE). Drafts are
+        // per (site, user, branch): the "being worked on" version that autosaves flush
+        // into, decoupled from git — commits are explicit. A first open with no draft
+        // yet is seeded from the branch's git HEAD (recording BaseSha for divergence
+        // detection at commit time).
+        app.MapGet("/api/admin/sites/{id:guid}/ide", async (
+            Guid id, string? branch, SitesDbContext db, ITenantContext tenant, CurrentUser user,
+            Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+        {
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site is null) return Results.NotFound();
+            if (site.RenderMode != SiteRenderMode.ReactApp)
+                return Results.BadRequest(new { error = "The web IDE is only for ReactApp (Mode B) sites." });
+
+            // Provision the repo on first open (like GET /git) so a branch always exists.
+            if (site.GitRepoFullName is null && git.Enabled && !string.IsNullOrWhiteSpace(tenant.TenantSlug))
+            {
+                var seed = SiteFileMap.Parse(site.DraftDefinitionJson);
+                var info = await git.EnsureRepoAsync(tenant.TenantSlug!, site.Id, seed, null, null, ct);
+                site.GitRepoFullName = info.RepoFullName;
+                site.GitDefaultBranch = info.DefaultBranch;
+                site.GitProvisionedAt ??= DateTimeOffset.UtcNow;
+                site.UpdatedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(ct);
+            }
+
+            // Back-fill the release branch on repos provisioned before it existed.
+            if (site.GitRepoFullName is not null && git.Enabled)
+                await git.EnsureReleaseBranchAsync(site.GitRepoFullName, ct);
+
+            var userId = user.UserId ?? Guid.Empty;
+            var b = ResolveBranch(branch, site);
+            var draft = await db.Drafts.FirstOrDefaultAsync(
+                d => d.SiteId == id && d.UserId == userId && d.Branch == b, ct);
+
+            if (draft is null)
+            {
+                // Seed from git HEAD (or the legacy DB draft if the repo isn't ready).
+                var headSha = site.GitRepoFullName is not null
+                    ? await git.HeadShaAsync(site.GitRepoFullName, b, ct) : null;
+                var seeded = site.GitRepoFullName is not null && headSha is not null
+                    ? await git.ReadFilesAsync(site.GitRepoFullName, b, ct)
+                    : SiteFileMap.Parse(site.DraftDefinitionJson);
+                // A freshly auto-initialised repo has only the placeholder README; treat
+                // that as empty so the IDE seeds its React starter instead of showing it.
+                if (seeded.Count == 1 && seeded.ContainsKey("README.md")) seeded.Clear();
+                draft = new SiteDraft
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenant.TenantId ?? Guid.Empty,
+                    SiteId = id,
+                    UserId = userId,
+                    Branch = b,
+                    DefinitionJson = SiteFileMap.Serialize(seeded),
+                    BaseSha = headSha,
+                    Version = 0,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                };
+                db.Drafts.Add(draft);
+                await db.SaveChangesAsync(ct);
+            }
+
+            var files = SiteFileMap.Parse(draft.DefinitionJson);
+            return Results.Ok(new
+            {
+                branch = b,
+                baseSha = draft.BaseSha,
+                version = draft.Version,
+                files,
+                hashes = SiteFileMap.HashAll(files),
+            });
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        // Granular per-file save into the current user's working draft for a branch.
+        // Merges only the named files into the stored draft; each entry carries the
+        // hash the client last saw, so the same account editing the same file+branch
+        // from two tabs is reported as a conflict (409) instead of clobbering. Edits
+        // to different files just merge. No git write happens here — that's on commit.
+        app.MapPatch("/api/admin/sites/{id:guid}/ide/files", async (
+            Guid id, string? branch, SaveFilesRequest body,
+            SitesDbContext db, ITenantContext tenant, CurrentUser user, CancellationToken ct) =>
+        {
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site is null) return Results.NotFound();
+
+            var userId = user.UserId ?? Guid.Empty;
+            var b = ResolveBranch(branch, site);
+            var draft = await db.Drafts.FirstOrDefaultAsync(
+                d => d.SiteId == id && d.UserId == userId && d.Branch == b, ct);
+            if (draft is null)
+                return Results.BadRequest(new { error = "Open the branch before saving." });
+
+            var put = body.Put ?? new Dictionary<string, FileWrite>();
+            var del = body.Delete ?? [];
+
+            foreach (var path in put.Keys.Concat(del.Select(d => d.Path)))
+            {
+                if (!SiteFileMap.IsSafePath(path))
+                    return Results.BadRequest(new { error = $"Illegal path in file map: {path}" });
+                if (SiteFileMap.IsToolchainFile(path))
+                    return Results.BadRequest(new
+                    {
+                        error = $"'{path}' is provided by the platform toolchain and may not be edited.",
+                    });
+            }
+
+            var files = SiteFileMap.Parse(draft.DefinitionJson);
+
+            var conflicts = new List<object>();
+            foreach (var (path, write) in put)
+            {
+                var current = files.TryGetValue(path, out var c) ? SiteFileMap.Hash(c) : null;
+                if (write.BaseHash != current)
+                    conflicts.Add(new { path, current = files.GetValueOrDefault(path) });
+            }
+            foreach (var d in del)
+            {
+                var current = files.TryGetValue(d.Path, out var c) ? SiteFileMap.Hash(c) : null;
+                if (d.BaseHash != current)
+                    conflicts.Add(new { path = d.Path, current = files.GetValueOrDefault(d.Path) });
+            }
+            if (conflicts.Count > 0)
+                return Results.Json(
+                    new { error = "conflict", version = draft.Version, conflicts },
+                    statusCode: StatusCodes.Status409Conflict);
+
+            foreach (var (path, write) in put) files[path] = write.Content;
+            foreach (var d in del) files.Remove(d.Path);
+
+            draft.DefinitionJson = SiteFileMap.Serialize(files);
+            draft.Version++;
+            draft.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(new
+            {
+                version = draft.Version,
+                hashes = put.ToDictionary(kv => kv.Key, kv => SiteFileMap.Hash(kv.Value.Content)),
+            });
         }).RequirePermission(PlatformPermissions.SiteEdit);
 
         app.MapPost("/api/admin/sites/{id:guid}/publish", async (
-            Guid id, SitesDbContext db, ITenantContext tenant, IEventPublisher events, CancellationToken ct) =>
+            Guid id, string? branch, SitesDbContext db, ITenantContext tenant, IEventPublisher events,
+            CurrentUser user, Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null)
             {
                 return Results.NotFound();
             }
+
+            // Mode B (git-backed): publishing = commit the current user's working draft
+            // to the RELEASE branch. The push webhook then builds + deploys; no build is
+            // created here. (The proper feature→release merge flow supersedes this later.)
+            if (site.RenderMode == SiteRenderMode.ReactApp && site.GitRepoFullName is not null && git.Enabled)
+            {
+                var userId = user.UserId ?? Guid.Empty;
+                var sourceBranch = ResolveBranch(branch, site);
+                var draft = await db.Drafts.FirstOrDefaultAsync(
+                    d => d.SiteId == id && d.UserId == userId && d.Branch == sourceBranch, ct);
+                if (draft is null)
+                    return Results.BadRequest(new { error = "Open the site in the IDE before publishing." });
+
+                var release = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
+                await git.EnsureReleaseBranchAsync(site.GitRepoFullName, ct);
+                var sha = await git.SyncAsync(
+                    site.GitRepoFullName, release, SiteFileMap.Parse(draft.DefinitionJson),
+                    $"Publish from {sourceBranch}", user.Name, user.Email, ct);
+                return Results.Accepted($"/api/admin/sites/{site.Id}", new { released = true, sha, branch = release });
+            }
+
             // StaticFiles publishes the staged upload; the snapshot records which
             // bundle to extract so the build is self-contained (race-free rollback).
             string snapshot;
@@ -280,9 +473,447 @@ public static class SiteEndpoints
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.DomainsManage);
 
+        // --- Git backend (Forgejo): provision a repo for a Mode B site and seed it. ---
+        // Provisioning is idempotent: ensures the tenant org + site repo exist and, on
+        // first creation, commits the current draft file map as the initial history.
+        app.MapPost("/api/admin/sites/{id:guid}/git/provision", async (
+            Guid id, SitesDbContext db, ITenantContext tenant, Dcms.AdminApi.Sites.Git.SiteGitService git,
+            CancellationToken ct) =>
+        {
+            if (!git.Enabled) return Results.Problem("Git backend is not configured.", statusCode: 503);
+            if (!tenant.HasTenant || string.IsNullOrWhiteSpace(tenant.TenantSlug))
+                return Results.BadRequest(new { error = "Select a tenant first (X-Dcms-Tenant header required)." });
+
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site is null) return Results.NotFound();
+            if (site.RenderMode != SiteRenderMode.ReactApp)
+                return Results.BadRequest(new { error = "Git source is only available for ReactApp (Mode B) sites." });
+
+            var files = SiteFileMap.Parse(site.DraftDefinitionJson);
+            var info = await git.EnsureRepoAsync(tenant.TenantSlug!, site.Id, files, authorName: null, authorEmail: null, ct);
+
+            site.GitRepoFullName = info.RepoFullName;
+            site.GitDefaultBranch = info.DefaultBranch;
+            site.GitProvisionedAt ??= DateTimeOffset.UtcNow;
+            site.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(new
+            {
+                repo = info.RepoFullName,
+                branch = info.DefaultBranch,
+                head = info.HeadSha,
+                httpUrl = info.HttpCloneUrl,
+                sshUrl = info.SshCloneUrl,
+            });
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        // Git status for a Mode B site. Auto-provisions the repo on first open so the
+        // IDE never needs a manual provision step. Returns clone URLs for the panel.
+        app.MapGet("/api/admin/sites/{id:guid}/git", async (
+            Guid id, SitesDbContext db, ITenantContext tenant, Dcms.AdminApi.Sites.Git.SiteGitService git,
+            CancellationToken ct) =>
+        {
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site is null) return Results.NotFound();
+            if (site.RenderMode != SiteRenderMode.ReactApp || !git.Enabled)
+                return Results.Ok(new { enabled = false });
+
+            if (site.GitRepoFullName is null && !string.IsNullOrWhiteSpace(tenant.TenantSlug))
+            {
+                var files = SiteFileMap.Parse(site.DraftDefinitionJson);
+                var info = await git.EnsureRepoAsync(tenant.TenantSlug!, site.Id, files, null, null, ct);
+                site.GitRepoFullName = info.RepoFullName;
+                site.GitDefaultBranch = info.DefaultBranch;
+                site.GitProvisionedAt ??= DateTimeOffset.UtcNow;
+                site.UpdatedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(ct);
+            }
+            if (site.GitRepoFullName is null) return Results.Ok(new { enabled = true, provisioned = false });
+
+            var (http, ssh) = git.CloneUrls(site.GitRepoFullName);
+            return Results.Ok(new
+            {
+                enabled = true,
+                provisioned = true,
+                repo = site.GitRepoFullName,
+                branch = site.GitDefaultBranch ?? Dcms.AdminApi.Sites.Git.SiteGitService.DefaultBranch,
+                httpUrl = http,
+                sshUrl = ssh,
+                provisionedAt = site.GitProvisionedAt,
+            });
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        app.MapGet("/api/admin/sites/{id:guid}/git/branches", async (
+            Guid id, SitesDbContext db, Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+        {
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site?.GitRepoFullName is null) return Results.Ok(Array.Empty<object>());
+            var branches = await git.BranchesAsync(site.GitRepoFullName, ct);
+            return Results.Ok(branches.Select(b => new { name = b.Name, sha = b.Commit?.Id }));
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        app.MapGet("/api/admin/sites/{id:guid}/git/history", async (
+            Guid id, string? branch, int? limit, SitesDbContext db,
+            Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+        {
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site?.GitRepoFullName is null) return Results.Ok(Array.Empty<object>());
+            var b = branch ?? site.GitDefaultBranch ?? Dcms.AdminApi.Sites.Git.SiteGitService.DefaultBranch;
+            var commits = await git.HistoryAsync(site.GitRepoFullName, b, Math.Clamp(limit ?? 50, 1, 100), ct);
+            return Results.Ok(commits.Select(c => new
+            {
+                sha = c.Sha,
+                shortSha = c.Sha.Length >= 7 ? c.Sha[..7] : c.Sha,
+                message = c.Commit?.Message,
+                author = c.Commit?.Author?.Name,
+                date = c.Commit?.Author?.Date,
+                htmlUrl = c.HtmlUrl,
+                avatar = c.Author?.AvatarUrl,
+            }));
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        // Source-control "changes": the current user's working draft on a branch vs that
+        // branch's git HEAD. Drives the changed-files list and the per-file diff view.
+        // Content is included (both sides) so the frontend Monaco diff needs no extra
+        // round-trip; oversized/binary files return null content (marked truncated).
+        app.MapGet("/api/admin/sites/{id:guid}/git/changes", async (
+            Guid id, string? branch, SitesDbContext db, CurrentUser user,
+            Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+        {
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site?.GitRepoFullName is null || !git.Enabled) return Results.Ok(Array.Empty<object>());
+
+            var userId = user.UserId ?? Guid.Empty;
+            var b = ResolveBranch(branch, site);
+            var draft = await db.Drafts.FirstOrDefaultAsync(
+                d => d.SiteId == id && d.UserId == userId && d.Branch == b, ct);
+            var draftFiles = draft is null
+                ? new Dictionary<string, string>()
+                : SiteFileMap.Parse(draft.DefinitionJson);
+            var headFiles = await git.ReadFilesAsync(site.GitRepoFullName, b, ct);
+
+            const int maxDiffBytes = 512 * 1024;
+            static string? Cap(string? s) => s is not null && s.Length <= maxDiffBytes ? s : null;
+
+            var changes = new List<object>();
+            foreach (var path in draftFiles.Keys.Union(headFiles.Keys).OrderBy(p => p, StringComparer.Ordinal))
+            {
+                var inHead = headFiles.TryGetValue(path, out var headContent);
+                var inDraft = draftFiles.TryGetValue(path, out var draftContent);
+                string status;
+                if (inDraft && !inHead) status = "added";
+                else if (!inDraft && inHead) status = "deleted";
+                else if (headContent != draftContent) status = "modified";
+                else continue; // unchanged
+                changes.Add(new
+                {
+                    path,
+                    status,
+                    headContent = Cap(headContent),
+                    draftContent = Cap(draftContent),
+                    truncated = (inHead && headContent!.Length > maxDiffBytes)
+                                || (inDraft && draftContent!.Length > maxDiffBytes),
+                });
+            }
+            return Results.Ok(changes);
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        // Commit the current user's working draft (on `branch`) to git — to that same
+        // branch, an existing `targetBranch`, or a freshly created `newBranch`. The user
+        // is the git author; the platform is the committer. A commit to `release` fires
+        // the push webhook → build+deploy. Committing to the SAME branch after it moved
+        // underneath the draft returns 409 `branch-moved` (reconcile/reload; full merge
+        // is planned).
+        app.MapPost("/api/admin/sites/{id:guid}/git/commit", async (
+            Guid id, CommitRequest body, SitesDbContext db, ITenantContext tenant, CurrentUser user,
+            Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+        {
+            if (!git.Enabled) return Results.Problem("Git backend is not configured.", statusCode: 503);
+            if (string.IsNullOrWhiteSpace(body.Message))
+                return Results.BadRequest(new { error = "A commit message is required." });
+
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site is null) return Results.NotFound();
+            if (site.GitRepoFullName is null)
+                return Results.BadRequest(new { error = "This site has no git repository." });
+
+            var userId = user.UserId ?? Guid.Empty;
+            var sourceBranch = ResolveBranch(body.Branch, site);
+            var draft = await db.Drafts.FirstOrDefaultAsync(
+                d => d.SiteId == id && d.UserId == userId && d.Branch == sourceBranch, ct);
+            if (draft is null) return Results.BadRequest(new { error = "Nothing to commit — open the branch first." });
+
+            // Resolve the target branch (create it off the source branch if requested).
+            string target;
+            if (!string.IsNullOrWhiteSpace(body.NewBranch))
+            {
+                target = body.NewBranch!.Trim();
+                await git.CreateBranchAsync(site.GitRepoFullName, target, sourceBranch, ct);
+            }
+            else
+            {
+                target = string.IsNullOrWhiteSpace(body.TargetBranch) ? sourceBranch : body.TargetBranch!.Trim();
+            }
+
+            // Divergence guard only applies when writing back to the branch we based on.
+            if (target == sourceBranch && draft.BaseSha is not null)
+            {
+                var head = await git.HeadShaAsync(site.GitRepoFullName, target, ct);
+                if (head is not null && head != draft.BaseSha)
+                    return Results.Json(new { error = "branch-moved", head },
+                        statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var files = SiteFileMap.Parse(draft.DefinitionJson);
+            var message = string.IsNullOrWhiteSpace(body.Description)
+                ? body.Message!.Trim()
+                : body.Message!.Trim() + "\n\n" + body.Description!.Trim();
+            var sha = await git.SyncAsync(site.GitRepoFullName, target, files, message, user.Name, user.Email, ct);
+
+            if (target == sourceBranch)
+            {
+                // Draft content now equals the new HEAD — mark it clean at that sha.
+                draft.BaseSha = sha;
+            }
+            else
+            {
+                // Work moved onto `target`; the source branch reverts to its (unchanged)
+                // HEAD so its draft is clean again. The frontend switches to `target`.
+                var srcHead = await git.HeadShaAsync(site.GitRepoFullName, sourceBranch, ct);
+                draft.DefinitionJson = SiteFileMap.Serialize(
+                    await git.ReadFilesAsync(site.GitRepoFullName, sourceBranch, ct));
+                draft.BaseSha = srcHead;
+            }
+            draft.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(new { sha, branch = target });
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        // Create a branch off another (defaults to the site's default branch).
+        app.MapPost("/api/admin/sites/{id:guid}/git/branches", async (
+            Guid id, CreateBranchRequest body, SitesDbContext db,
+            Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+        {
+            if (!git.Enabled) return Results.Problem("Git backend is not configured.", statusCode: 503);
+            if (string.IsNullOrWhiteSpace(body.Name))
+                return Results.BadRequest(new { error = "A branch name is required." });
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site?.GitRepoFullName is null)
+                return Results.BadRequest(new { error = "This site has no git repository." });
+            var from = ResolveBranch(body.From, site);
+            await git.CreateBranchAsync(site.GitRepoFullName, body.Name!.Trim(), from, ct);
+            return Results.Ok(new { name = body.Name!.Trim(), from });
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        // Pre-merge review: what merging `head` into the release branch would bring
+        // (files changed + commit count).
+        app.MapGet("/api/admin/sites/{id:guid}/git/compare", async (
+            Guid id, string head, string? @base, SitesDbContext db,
+            Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+        {
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site?.GitRepoFullName is null || !git.Enabled || string.IsNullOrWhiteSpace(head))
+                return Results.Ok(new { totalCommits = 0, files = Array.Empty<object>() });
+            var b = string.IsNullOrWhiteSpace(@base)
+                ? Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch : @base!.Trim();
+            var cmp = await git.CompareAsync(site.GitRepoFullName, b, head.Trim(), ct);
+            return Results.Ok(new
+            {
+                totalCommits = cmp.TotalCommits,
+                files = (cmp.Files ?? []).Select(f => new { path = f.Filename, status = f.Status }),
+            });
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        // Merge `head` into the release branch (→ build + deploy). A clean merge returns
+        // { merged, sha }; a conflict returns { conflict, files:[{ path, releaseContent,
+        // branchContent }] } for file-level resolution via .../git/merge/resolve.
+        app.MapPost("/api/admin/sites/{id:guid}/git/merge", async (
+            Guid id, MergeRequest body, SitesDbContext db,
+            Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+        {
+            if (!git.Enabled) return Results.Problem("Git backend is not configured.", statusCode: 503);
+            if (string.IsNullOrWhiteSpace(body.Head))
+                return Results.BadRequest(new { error = "A source branch is required." });
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site?.GitRepoFullName is null)
+                return Results.BadRequest(new { error = "This site has no git repository." });
+
+            var style = body.Strategy is "squash" or "rebase" or "merge" ? body.Strategy : "merge";
+            var outcome = await git.MergeAsync(site.GitRepoFullName, body.Head!.Trim(), style, ct);
+            if (outcome.Merged || outcome.UpToDate)
+                return Results.Ok(new { merged = outcome.Merged, upToDate = outcome.UpToDate, sha = outcome.Sha });
+            return Results.Ok(new
+            {
+                merged = false,
+                conflict = true,
+                files = outcome.Conflicts.Select(f => new
+                {
+                    path = f.Path,
+                    releaseContent = f.ReleaseContent,
+                    branchContent = f.BranchContent,
+                }),
+            });
+        }).RequirePermission(PlatformPermissions.SitePublish);
+
+        // Complete a conflicted merge: apply the caller's per-file resolutions on top of
+        // the release tree and commit the result to release (→ build). A null resolution
+        // value deletes the file.
+        app.MapPost("/api/admin/sites/{id:guid}/git/merge/resolve", async (
+            Guid id, ResolveMergeRequest body, SitesDbContext db, CurrentUser user,
+            Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+        {
+            if (!git.Enabled) return Results.Problem("Git backend is not configured.", statusCode: 503);
+            if (string.IsNullOrWhiteSpace(body.Head))
+                return Results.BadRequest(new { error = "A source branch is required." });
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site?.GitRepoFullName is null)
+                return Results.BadRequest(new { error = "This site has no git repository." });
+
+            var resolutions = body.Resolutions ?? new Dictionary<string, string?>();
+            var sha = await git.ResolveMergeAsync(
+                site.GitRepoFullName, body.Head!.Trim(), resolutions, user.Name, user.Email, ct);
+            return Results.Ok(new { merged = true, sha });
+        }).RequirePermission(PlatformPermissions.SitePublish);
+
+        // Restore an earlier commit's tree into the current user's working draft on a
+        // branch (does not commit — the user reviews the diff and commits explicitly).
+        app.MapPost("/api/admin/sites/{id:guid}/git/restore", async (
+            Guid id, GitRestoreRequest body, string? branch, SitesDbContext db, ITenantContext tenant,
+            CurrentUser user, Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(body.Sha))
+                return Results.BadRequest(new { error = "A commit sha is required." });
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site is null) return Results.NotFound();
+            if (site.GitRepoFullName is null || !git.Enabled)
+                return Results.BadRequest(new { error = "This site has no git repository." });
+
+            var userId = user.UserId ?? Guid.Empty;
+            var b = ResolveBranch(branch, site);
+            var files = await git.ReadFilesAsync(site.GitRepoFullName, body.Sha, ct);
+
+            var draft = await db.Drafts.FirstOrDefaultAsync(
+                d => d.SiteId == id && d.UserId == userId && d.Branch == b, ct);
+            if (draft is null)
+            {
+                draft = new SiteDraft
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenant.TenantId ?? Guid.Empty,
+                    SiteId = id,
+                    UserId = userId,
+                    Branch = b,
+                    BaseSha = await git.HeadShaAsync(site.GitRepoFullName, b, ct),
+                };
+                db.Drafts.Add(draft);
+            }
+            draft.DefinitionJson = SiteFileMap.Serialize(files);
+            draft.Version++;
+            draft.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+
+            return Results.Ok(new
+            {
+                branch = b,
+                version = draft.Version,
+                files,
+                hashes = SiteFileMap.HashAll(files),
+            });
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        // Forgejo push webhook: builds+deploys the site on a push/merge to the RELEASE
+        // branch — this is what "publish" lands on. HMAC-verified (no user auth). Cross-
+        // tenant — Forgejo doesn't know tenants, so the site is resolved by repo name
+        // (owner role bypasses RLS). Any push to `release` builds (app commit, merge, or
+        // external `git push`); pushes to feature/dev branches never build.
+        app.MapPost("/api/internal/git/webhook", async (
+            HttpRequest request, SitesDbContext db, IEventPublisher events,
+            Dcms.AdminApi.Sites.Git.SiteGitService git,
+            IOptions<Dcms.AdminApi.Sites.Git.ForgejoOptions> gitOptions,
+            ILoggerFactory loggerFactory, CancellationToken ct) =>
+        {
+            var log = loggerFactory.CreateLogger("GitWebhook");
+            using var reader = new StreamReader(request.Body);
+            var raw = await reader.ReadToEndAsync(ct);
+
+            // Verify HMAC-SHA256(body, secret) against the signature header.
+            var signature = request.Headers["X-Gitea-Signature"].FirstOrDefault()
+                ?? request.Headers["X-Forgejo-Signature"].FirstOrDefault();
+            var expected = Convert.ToHexString(HMACSHA256.HashData(
+                Encoding.UTF8.GetBytes(gitOptions.Value.WebhookSecret), Encoding.UTF8.GetBytes(raw)))
+                .ToLowerInvariant();
+            if (signature is null || !CryptographicOperations.FixedTimeEquals(
+                    Encoding.ASCII.GetBytes(signature), Encoding.ASCII.GetBytes(expected)))
+            {
+                return Results.Unauthorized();
+            }
+
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("ref", out var refEl) ||
+                !root.TryGetProperty("repository", out var repoEl))
+            {
+                return Results.Ok(new { ignored = "not a push" });
+            }
+            var gitRef = refEl.GetString() ?? "";
+            var repoFull = repoEl.TryGetProperty("full_name", out var fn) ? fn.GetString() ?? "" : "";
+            var afterSha = root.TryGetProperty("after", out var af) ? af.GetString() : null;
+
+            var site = await db.Sites.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(s => s.GitRepoFullName == repoFull, ct);
+            if (site is null) return Results.Ok(new { ignored = "unknown repo" });
+
+            // Only pushes to the release (production) branch build+deploy.
+            var branch = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
+            if (gitRef != $"refs/heads/{branch}") return Results.Ok(new { ignored = "not release branch" });
+
+            // Coalesce: never stack builds for the same site.
+            var inFlight = await db.Builds.IgnoreQueryFilters().AnyAsync(
+                b => b.SiteId == site.Id &&
+                     (b.Status == SiteBuildStatus.Queued || b.Status == SiteBuildStatus.Building), ct);
+            if (inFlight) return Results.Ok(new { skipped = "build in flight" });
+
+            var files = await git.ReadFilesAsync(repoFull, afterSha ?? branch, ct);
+            var build = new SiteBuild
+            {
+                Id = Guid.NewGuid(),
+                TenantId = site.TenantId,
+                SiteId = site.Id,
+                Status = SiteBuildStatus.Queued,
+                DefinitionSnapshotJson = SiteFileMap.Serialize(files),
+                GitCommitSha = afterSha,
+            };
+            build.ArtifactPrefix = $"{site.TenantId}/{site.Id}/{build.Id}";
+            db.Builds.Add(build);
+            await db.SaveChangesAsync(ct);
+
+            await events.PublishAsync(Subjects.SitePublishRequested, new SitePublishRequested(
+                Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id, site.RenderMode.ToString()), ct);
+
+            log.LogInformation("Queued build {BuildId} from git push {Sha} to {Repo}", build.Id, afterSha, repoFull);
+            return Results.Ok(new { buildId = build.Id });
+        }).AllowAnonymous();
+
         return app;
     }
 
+    /// <summary>The effective branch for an IDE/git request: the given branch, else the
+    /// site's default branch, else <c>main</c>.</summary>
+    private static string ResolveBranch(string? branch, Site site) =>
+        string.IsNullOrWhiteSpace(branch)
+            ? (site.GitDefaultBranch ?? Dcms.AdminApi.Sites.Git.SiteGitService.DefaultBranch)
+            : branch.Trim();
+
     private sealed record CreateSiteRequest(string Name, string? RenderMode, string? Definition);
     private sealed record LinkSiteRequest(Guid SiteId);
+    private sealed record SaveFilesRequest(int? BaseVersion, Dictionary<string, FileWrite>? Put, DeleteEntry[]? Delete);
+    private sealed record FileWrite(string Content, string? BaseHash);
+    private sealed record DeleteEntry(string Path, string? BaseHash);
+    private sealed record GitRestoreRequest(string Sha);
+    private sealed record CommitRequest(string? Branch, string? TargetBranch, string? NewBranch, string Message, string? Description);
+    private sealed record CreateBranchRequest(string Name, string? From);
+    private sealed record MergeRequest(string Head, string? Strategy);
+    private sealed record ResolveMergeRequest(string Head, Dictionary<string, string?>? Resolutions);
 }

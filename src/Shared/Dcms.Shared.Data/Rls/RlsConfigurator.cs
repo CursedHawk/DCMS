@@ -35,6 +35,7 @@ public static class RlsConfigurator
         ("media", "media_variants"),
         ("sites", "sites"),
         ("sites", "site_builds"),
+        ("sites", "site_drafts"),
         ("ai", "tenant_ai_settings"),
         ("search", "search_documents"),
         ("analytics", "events"),

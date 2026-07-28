@@ -99,12 +99,26 @@ services:
       Auth__Audience: "dcms-ai-gateway"
       Auth__RequireHttpsMetadata: "true"
 
+  # Git server. Caddy terminates TLS for the HTTP git+web UI (git.highgeek.eu)
+  # over the internal network; the base file already publishes SSH on :2222 and
+  # binds HTTP to loopback. The clone/SSH URLs the UI hands out use the public host.
+  forgejo:
+    environment:
+      FORGEJO__server__DOMAIN: "git.highgeek.eu"
+      FORGEJO__server__ROOT_URL: "https://git.highgeek.eu/"
+      FORGEJO__server__SSH_DOMAIN: "git.highgeek.eu"
+      FORGEJO__server__SSH_PORT: "2222"
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+      FORGEJO__webhook__ALLOWED_HOST_LIST: "private,loopback"
+
   # Public TLS edge for tenant domains.
   caddy:
     image: caddy:2
     restart: unless-stopped
     depends_on:
       site-host:
+        condition: service_started
+      forgejo:
         condition: service_started
     ports:
       - "80:80"

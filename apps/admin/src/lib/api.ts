@@ -65,6 +65,12 @@ export const api = {
       headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     }),
+  patch: <T>(path: string, body?: unknown) =>
+    request<T>(path, {
+      method: 'PATCH',
+      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   /** Multipart upload (no JSON content-type; browser sets the boundary). */
   upload: <T>(path: string, form: FormData) => request<T>(path, { method: 'POST', body: form }),

@@ -16,6 +16,7 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options, ITenantCon
 
     public DbSet<Site> Sites => Set<Site>();
     public DbSet<SiteBuild> Builds => Set<SiteBuild>();
+    public DbSet<SiteDraft> Drafts => Set<SiteDraft>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -31,6 +32,8 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options, ITenantCon
             e.Property(s => s.DraftDefinitionJson).HasColumnType("jsonb");
             e.Property(s => s.StaticBundleKey).HasMaxLength(512);
             e.Property(s => s.StaticBundleName).HasMaxLength(512);
+            e.Property(s => s.GitRepoFullName).HasMaxLength(512);
+            e.Property(s => s.GitDefaultBranch).HasMaxLength(256);
             e.HasMany(s => s.Builds).WithOne().HasForeignKey(b => b.SiteId);
             e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
         });
@@ -43,8 +46,21 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options, ITenantCon
             e.Property(b => b.DefinitionSnapshotJson).HasColumnType("jsonb");
             e.Property(b => b.ArtifactPrefix).HasMaxLength(256);
             e.Property(b => b.LogObjectKey).HasMaxLength(256);
+            e.Property(b => b.GitCommitSha).HasMaxLength(64);
             e.HasIndex(b => new { b.SiteId, b.CreatedAt });
             e.HasQueryFilter(b => b.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<SiteDraft>(e =>
+        {
+            e.ToTable("site_drafts");
+            e.HasKey(d => d.Id);
+            e.Property(d => d.Branch).HasMaxLength(256);
+            e.Property(d => d.DefinitionJson).HasColumnType("jsonb");
+            e.Property(d => d.BaseSha).HasMaxLength(64);
+            // One working draft per (site, user, branch); the IDE loads/saves by this key.
+            e.HasIndex(d => new { d.TenantId, d.SiteId, d.UserId, d.Branch }).IsUnique();
+            e.HasQueryFilter(d => d.TenantId == CurrentTenantId);
         });
     }
 

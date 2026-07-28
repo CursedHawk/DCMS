@@ -3,6 +3,7 @@ using System;
 using Dcms.Shared.Data.Sites;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Dcms.Shared.Data.Migrations.Sites
 {
     [DbContext(typeof(SitesDbContext))]
-    partial class SitesDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260728150340_DropSiteRevisions")]
+    partial class DropSiteRevisions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -139,48 +142,6 @@ namespace Dcms.Shared.Data.Migrations.Sites
                     b.HasIndex("SiteId", "CreatedAt");
 
                     b.ToTable("site_builds", "sites");
-                });
-
-            modelBuilder.Entity("Dcms.Shared.Data.Sites.SiteDraft", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("BaseSha")
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<string>("Branch")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<string>("DefinitionJson")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<Guid>("SiteId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("TenantId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("Version")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TenantId", "SiteId", "UserId", "Branch")
-                        .IsUnique();
-
-                    b.ToTable("site_drafts", "sites");
                 });
 
             modelBuilder.Entity("Dcms.Shared.Data.Sites.SiteBuild", b =>

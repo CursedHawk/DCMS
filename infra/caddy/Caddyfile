@@ -43,6 +43,13 @@ admin.highgeek.eu {
 	}
 }
 
+# Git server (Forgejo) web UI + HTTP git transport. Normal ACME (this host's DNS
+# must point here). SSH git access is separate, on host port 2222. Large pushes
+# need a generous body limit; Caddy streams git's chunked responses fine.
+git.highgeek.eu {
+	reverse_proxy forgejo:3000
+}
+
 # Catch-all site: any other hostname (tenant custom domains), certificate issued
 # on demand once site-host approves it.
 https:// {

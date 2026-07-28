@@ -128,6 +128,47 @@ services:
   mailpit:
     image: axllent/mailpit:latest
 
+  # Self-hosted git server (Gitea community fork). Source of truth for Mode B
+  # (ReactApp) site source: one repo per site, edited in the web IDE and cloneable
+  # over HTTP/SSH with the git CLI. Metadata lives in an embedded SQLite DB inside
+  # the data volume; the git repositories live under /data/git. A push to a site's
+  # default branch fires a webhook back to admin-api to trigger the offline build.
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:11
+    restart: unless-stopped
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+      FORGEJO__database__DB_TYPE: "sqlite3"
+      FORGEJO__server__DOMAIN: "localhost"
+      FORGEJO__server__ROOT_URL: "http://localhost:3000/"
+      FORGEJO__server__HTTP_PORT: "3000"
+      # Git SSH: use the image's built-in openssh (listens on container :22). The
+      # advertised clone port is 2222 (host), published as 2222 -> 22 below, so
+      # clone URLs read git@git.highgeek.eu:2222. (Don't run Forgejo's own SSH
+      # server — it conflicts with the container's openssh.)
+      FORGEJO__server__START_SSH_SERVER: "false"
+      FORGEJO__server__SSH_PORT: "2222"
+      FORGEJO__server__SSH_LISTEN_PORT: "22"
+      # No public web installer: the server is provisioned headless (secrets are
+      # auto-generated on first boot when install is locked) and the first admin
+      # is created out-of-band via the CLI. Self-registration stays off so only
+      # platform-provisioned accounts exist.
+      FORGEJO__service__DISABLE_REGISTRATION: "true"
+      FORGEJO__security__INSTALL_LOCK: "true"
+      # Webhooks target admin-api on the internal docker network (a private host),
+      # which Forgejo's SSRF guard blocks by default — allow the internal range.
+      FORGEJO__webhook__ALLOWED_HOST_LIST: "private,loopback"
+    volumes:
+      - forgejo-data:/data
+    ports:
+      # HTTP/web UI on loopback only — in prod Caddy proxies it over the internal
+      # network and terminates TLS; in dev the developer reaches it at localhost.
+      - "127.0.0.1:3000:3000"
+      # Git SSH is published on all interfaces so `git clone ssh://…:2222` works
+      # from outside the host (host 2222 -> container openssh on 22).
+      - "2222:22"
+
   # ---------- application services ----------
   identity:
     build:
@@ -220,3 +261,4 @@ volumes:
   redis-data:
   nats-data:
   minio-data:
+  forgejo-data:

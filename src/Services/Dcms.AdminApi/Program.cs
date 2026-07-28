@@ -92,6 +92,20 @@ builder.Services.AddHttpClient("content-api", (sp, client) =>
     client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
 });
 
+// Forgejo git server: source of truth for Mode B site source. The machine token
+// arrives via Vault (secret/dcms/admin-api, Forgejo__Token); git operations are
+// no-ops until it's set (ForgejoOptions.Enabled).
+builder.Services.Configure<Dcms.AdminApi.Sites.Git.ForgejoOptions>(
+    builder.Configuration.GetSection(Dcms.AdminApi.Sites.Git.ForgejoOptions.SectionName));
+builder.Services.AddHttpClient<Dcms.AdminApi.Sites.Git.ForgejoClient>((sp, client) =>
+{
+    var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Dcms.AdminApi.Sites.Git.ForgejoOptions>>().Value;
+    client.BaseAddress = new Uri(opts.BaseUrl.TrimEnd('/') + "/");
+    if (!string.IsNullOrWhiteSpace(opts.Token))
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("token", opts.Token);
+});
+builder.Services.AddScoped<Dcms.AdminApi.Sites.Git.SiteGitService>();
+
 var app = builder.Build();
 app.UseAuthentication();
 app.UseMultiTenant();

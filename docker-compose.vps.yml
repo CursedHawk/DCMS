@@ -41,6 +41,15 @@ services:
   vault:
     user: "1001:1001"
 
+  # Forgejo's data dir is bind-mounted under the cursedhawk-owned dcms-data tree
+  # (uid 1001). The image creates its internal git user with USER_UID/USER_GID and
+  # runs as it, so align those to 1001 to match the host dir ownership (same
+  # pattern as vault above). The deploy step creates dcms-data/forgejo owned 1001.
+  forgejo:
+    environment:
+      USER_UID: "1001"
+      USER_GID: "1001"
+
   # The prod profile overrides the MinIO server credentials but not the one-shot
   # bucket provisioner, which would otherwise authenticate with the dev password
   # and fail. Point it at the real credentials too.
@@ -71,6 +80,18 @@ services:
     environment:
       <<: *vps-resource-auth
       Auth__Audience: "dcms-admin-api"
+      # Forgejo git backend (see [[vps1-forgejo]]). Token is delivered via .env
+      # (FORGEJO_TOKEN), the same way every other prod secret is — Vault KV is
+      # not used here. admin-api reaches Forgejo over the internal network; the
+      # public URLs are what the IDE shows users for clone.
+      Forgejo__BaseUrl: "http://forgejo:3000"
+      Forgejo__Token: "${FORGEJO_TOKEN}"
+      Forgejo__PublicUrl: "https://git.highgeek.eu"
+      Forgejo__SshHost: "git.highgeek.eu"
+      Forgejo__SshPort: "2222"
+      # HMAC secret for push webhooks (admin-api registers + verifies with it).
+      # Override with FORGEJO_WEBHOOK_SECRET in .env to harden; re-provision after.
+      Forgejo__WebhookSecret: "${FORGEJO_WEBHOOK_SECRET:-dcms-forgejo-webhook}"
 
   content-api:
     environment:
@@ -116,3 +137,6 @@ volumes:
   caddy-config:
     driver: local
     driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/caddy-config }
+  forgejo-data:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/forgejo }

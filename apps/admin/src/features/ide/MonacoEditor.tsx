@@ -14,10 +14,14 @@ export function MonacoEditor() {
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
   const modelsRef = useRef<Map<string, Monaco.editor.ITextModel>>(new Map());
+  // True while we're pushing store content into models (restore / conflict reload),
+  // so the resulting model-change events don't get written back as user edits.
+  const syncingRef = useRef(false);
   const { resolved } = useTheme();
 
   const activePath = useVfs((s) => s.activePath);
   const fileKeys = useVfs((s) => Object.keys(s.files).sort().join('\n'));
+  const generation = useVfs((s) => s.generation);
 
   // Create the editor once.
   useEffect(() => {
@@ -34,6 +38,7 @@ export function MonacoEditor() {
     applyEditorTheme(resolved);
 
     const sub = editor.onDidChangeModelContent(() => {
+      if (syncingRef.current) return;
       const model = editor.getModel();
       if (!model) return;
       const path = pathOfUri(model.uri.toString());
@@ -41,8 +46,37 @@ export function MonacoEditor() {
       useVfs.getState().writeFile(path, model.getValue());
     });
 
+    // Cross-file Ctrl+Click "go to definition". The standalone editor has no way to
+    // open a definition that lives in a *different* model, so navigation silently
+    // did nothing across files. Register a global opener: map the target file:/// URI
+    // back to a vfs file, open its tab, swap it into this editor and reveal the target
+    // location. Return false for URIs we don't own (e.g. bundled lib .d.ts) so Monaco
+    // keeps its default handling.
+    const opener = monaco.editor.registerEditorOpener({
+      openCodeEditor(source, resource, selectionOrPosition) {
+        const path = pathOfUri(resource.toString());
+        const model = modelsRef.current.get(path);
+        if (!model) return false;
+        useVfs.getState().open(path);
+        source.setModel(model);
+        source.updateOptions({ readOnly: isToolchainFile(path) });
+        if (selectionOrPosition) {
+          if ('startLineNumber' in selectionOrPosition) {
+            source.setSelection(selectionOrPosition);
+            source.revealRangeInCenterIfOutsideViewport(selectionOrPosition, monaco.editor.ScrollType.Smooth);
+          } else {
+            source.setPosition(selectionOrPosition);
+            source.revealPositionInCenterIfOutsideViewport(selectionOrPosition, monaco.editor.ScrollType.Smooth);
+          }
+        }
+        source.focus();
+        return true;
+      },
+    });
+
     return () => {
       sub.dispose();
+      opener.dispose();
       editor.dispose();
       editorRef.current = null;
       for (const model of modelsRef.current.values()) model.dispose();
@@ -71,6 +105,26 @@ export function MonacoEditor() {
       }
     }
   }, [fileKeys]);
+
+  // On a full (re)load — restore, or the conflict "reload latest" — the store
+  // replaces file contents in place. Existing models keep their own (now stale)
+  // text, so push the store's content back into each model. Guarded so these
+  // programmatic edits are not written back to the store as user edits.
+  useEffect(() => {
+    if (generation === 0) return;
+    const { files } = useVfs.getState();
+    syncingRef.current = true;
+    try {
+      for (const [path, model] of modelsRef.current) {
+        const content = files[path];
+        if (content != null && model.getValue() !== content) {
+          model.setValue(content);
+        }
+      }
+    } finally {
+      syncingRef.current = false;
+    }
+  }, [generation]);
 
   // Swap the active model into the editor.
   useEffect(() => {
