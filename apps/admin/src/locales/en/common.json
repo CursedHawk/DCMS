@@ -224,6 +224,9 @@
   "ide": {
     "preview": "Preview",
     "building": "Building preview…",
+    "refresh": "Refresh preview",
+    "resizeSidebar": "Drag to resize the sidebar (double-click to reset)",
+    "resizePreview": "Drag to resize the preview (double-click to reset)",
     "previewPending": "Preview will appear here.",
     "buildError": "Build error",
     "showPreview": "Preview",

@@ -19,6 +19,7 @@ export function IdeSidebar({
   onSwitchBranch,
   onReload,
   onRestored,
+  viewWidth,
 }: {
   siteId: string;
   branch: string;
@@ -27,6 +28,8 @@ export function IdeSidebar({
   onSwitchBranch: (branch: string) => void;
   onReload: () => void;
   onRestored: (files: Record<string, string>, version: number, hashes: Record<string, string>) => void;
+  /** Width (px) of the active-view panel; the activity rail stays fixed. */
+  viewWidth?: number;
 }) {
   const { t } = useTranslation();
   const changes = useQuery({
@@ -57,7 +60,10 @@ export function IdeSidebar({
       </div>
 
       {/* Active view */}
-      <div className="w-60 shrink-0 border-r bg-card">
+      <div
+        className="shrink-0 border-r bg-card"
+        style={{ width: viewWidth != null ? `${viewWidth}px` : '15rem' }}
+      >
         {view === 'files' ? (
           <FileTree />
         ) : (

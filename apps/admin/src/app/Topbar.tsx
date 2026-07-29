@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
-import { Hint } from '../components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { LANGUAGES, setLanguage } from '../lib/i18n';
 import { useTheme } from '../lib/theme';
 import { logout } from '../auth';
@@ -57,15 +57,21 @@ export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Theme */}
+      {/* Theme. The tooltip and dropdown share one trigger: both are `asChild`
+          Radix Slots nested onto the Button, so pointer handlers from both compose.
+          (Wrapping the Button in a plain <Hint> here would swallow the dropdown's
+          handlers and the menu would never open.) */}
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Hint label={t('theme.toggle')}>
-            <Button variant="ghost" size="icon" aria-label={t('theme.toggle')}>
-              {resolved === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-            </Button>
-          </Hint>
-        </DropdownMenuTrigger>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label={t('theme.toggle')}>
+                {resolved === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>{t('theme.toggle')}</TooltipContent>
+        </Tooltip>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={() => setTheme('light')} className={theme === 'light' ? 'text-primary' : ''}>
             <Sun className="h-4 w-4" /> {t('theme.light')}

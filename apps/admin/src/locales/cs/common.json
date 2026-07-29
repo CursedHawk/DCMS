@@ -224,6 +224,9 @@
   "ide": {
     "preview": "Náhled",
     "building": "Sestavuji náhled…",
+    "refresh": "Obnovit náhled",
+    "resizeSidebar": "Tažením změníte šířku postranního panelu (dvojklik obnoví výchozí)",
+    "resizePreview": "Tažením změníte šířku náhledu (dvojklik obnoví výchozí)",
     "previewPending": "Zde se zobrazí náhled.",
     "buildError": "Chyba sestavení",
     "showPreview": "Náhled",

@@ -69,6 +69,8 @@ interface VfsState {
   open: (path: string) => void;
   setActive: (path: string) => void;
   closeTab: (path: string) => void;
+  /** Restore a previously persisted set of open tabs (dropping any that no longer exist). */
+  restoreSession: (openTabs: string[], activePath: string | null) => void;
 
   /** Open (or focus) a diff tab in the editor area. */
   openDiff: (tab: DiffTab) => void;
@@ -177,6 +179,15 @@ export const useVfs = create<VfsState>((set, get) => ({
     })),
 
   setActive: (path) => set({ activePath: path, activeDiff: null }),
+
+  restoreSession: (openTabs, activePath) =>
+    set((s) => {
+      // Keep only tabs whose files still exist in the freshly loaded map.
+      const tabs = openTabs.filter((p) => s.files[p] != null);
+      if (tabs.length === 0) return s; // nothing to restore — keep the load() default
+      const active = activePath && tabs.includes(activePath) ? activePath : tabs[tabs.length - 1];
+      return { openTabs: tabs, activePath: active, activeDiff: null };
+    }),
 
   closeTab: (path) =>
     set((s) => {

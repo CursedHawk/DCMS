@@ -14,7 +14,9 @@ import { EditorTabs } from './EditorTabs';
 import { ideApi } from './ide';
 import { IdeSidebar, type SidebarView } from './IdeSidebar';
 import { MonacoEditor } from './MonacoEditor';
+import { loadOpenDocs, saveOpenDocs } from './openDocs';
 import { PreviewPane } from './PreviewPane';
+import { Resizer, useStoredWidth } from './Resizer';
 import { StatusBar } from './StatusBar';
 import { STARTER_FILES } from './starter';
 import { useVfs } from './vfs';
@@ -35,6 +37,7 @@ export function IdePage({ siteId }: { siteId: string }) {
   const dirty = useVfs((s) => s.dirty);
   const rev = useVfs((s) => s.rev);
   const branch = useVfs((s) => s.branch);
+  const openTabs = useVfs((s) => s.openTabs);
   const activePath = useVfs((s) => s.activePath);
   const activeDiff = useVfs((s) => s.activeDiff);
   const openDiffs = useVfs((s) => s.openDiffs);
@@ -45,7 +48,25 @@ export function IdePage({ siteId }: { siteId: string }) {
   const [ready, setReady] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
   const loadedFor = useRef<string | null>(null);
+  // Marks the site whose persisted tabs have been restored — gates tab autosave so
+  // we never write the previous site's tabs under a newly-selected site's key.
+  const restoredFor = useRef<string | null>(null);
   const activeDiffTab = activeDiff ? openDiffs.find((d) => d.path === activeDiff) : undefined;
+
+  // Resizable layout: the sidebar view and preview panels remember their width
+  // (px) in localStorage; double-clicking a divider restores the default.
+  const [sidebarWidth, setSidebarWidth, resetSidebarWidth] = useStoredWidth(
+    'dcms.ide.sidebarWidth',
+    240,
+    160,
+    520,
+  );
+  const [previewWidth, setPreviewWidth, resetPreviewWidth] = useStoredWidth(
+    'dcms.ide.previewWidth',
+    560,
+    320,
+    1100,
+  );
 
   const site = useQuery({
     queryKey: ['site', siteId],
@@ -64,6 +85,10 @@ export function IdePage({ siteId }: { siteId: string }) {
         useVfs.getState().seedStarter({ ...STARTER_FILES });
       }
       useVfs.getState().setBranch(data.branch);
+      // Reopen the documents that were open last time for this site.
+      const saved = loadOpenDocs(siteId);
+      if (saved) useVfs.getState().restoreSession(saved.openTabs, saved.activePath);
+      restoredFor.current = siteId;
       setReady(true);
     },
     onError: () => toast.error(t('errors.loadFailed')),
@@ -111,6 +136,13 @@ export function IdePage({ siteId }: { siteId: string }) {
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rev, dirty, conflict, ready]);
+
+  // Persist the open documents (per site) whenever the tab set or focus changes,
+  // but only once this site's own session has been restored (see restoredFor).
+  useEffect(() => {
+    if (!ready || restoredFor.current !== siteId) return;
+    saveOpenDocs(siteId, { openTabs, activePath });
+  }, [openTabs, activePath, ready, siteId]);
 
   // Wipe the tenant's preview sandbox (test form submissions, visitors, chats),
   // then force the iframe to rebuild so it reflects the cleared state.
@@ -188,7 +220,8 @@ export function IdePage({ siteId }: { siteId: string }) {
         </div>
       )}
 
-      {/* Workspace: sidebar (explorer / source control) | editor | preview */}
+      {/* Workspace: sidebar (explorer / source control) | editor | preview.
+          The dividers between panels are draggable; double-click resets a width. */}
       <div className="relative flex min-h-0 flex-1">
         <IdeSidebar
           siteId={siteId}
@@ -198,6 +231,12 @@ export function IdePage({ siteId }: { siteId: string }) {
           onSwitchBranch={(b) => loadBranch.mutate(b)}
           onReload={() => loadBranch.mutate(branch)}
           onRestored={(files, version, hashes) => useVfs.getState().load(files, version, hashes)}
+          viewWidth={sidebarWidth}
+        />
+        <Resizer
+          ariaLabel={t('ide.resizeSidebar')}
+          onDelta={(dx) => setSidebarWidth((w) => w + dx)}
+          onReset={resetSidebarWidth}
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <EditorTabs />
@@ -220,9 +259,16 @@ export function IdePage({ siteId }: { siteId: string }) {
           </div>
         </div>
         {showPreview && (
-          <div className="w-1/2 shrink-0 border-l">
-            <PreviewPane enabled={showPreview} siteId={siteId} refreshKey={previewNonce} />
-          </div>
+          <>
+            <Resizer
+              ariaLabel={t('ide.resizePreview')}
+              onDelta={(dx) => setPreviewWidth((w) => w - dx)}
+              onReset={resetPreviewWidth}
+            />
+            <div className="shrink-0 border-l" style={{ width: `${previewWidth}px` }}>
+              <PreviewPane enabled={showPreview} siteId={siteId} refreshKey={previewNonce} />
+            </div>
+          </>
         )}
       </div>
 
