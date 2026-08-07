@@ -123,10 +123,12 @@ app.MapSitePreview();
 app.MapFormSubmissionEndpoints();
 app.MapAiSettingsEndpoints();
 app.MapAiGenerationEndpoints();
+app.MapAiAgentEndpoints();
 app.MapAnalyticsDashboard();
 app.MapChatConsole();
 app.MapOpenApiPreview();
 app.MapApiClientDownload();
+app.MapSiteScaffoldEndpoints();
 app.MapGet("/", () => Results.Ok(new { service = "admin-api" }));
 
 // Current admin identity — proves the SPA's access token validates here.

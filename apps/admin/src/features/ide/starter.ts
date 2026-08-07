@@ -1,8 +1,30 @@
 // Minimal Mode B starter seeded when an empty ReactApp site is first opened.
-// package.json / pnpm-lock.yaml are intentionally omitted — the site-builder
-// owns those (ReactAppBuilder rejects site-supplied toolchain files).
+// A Mode B site is a complete, self-contained project, so this includes its own
+// package.json — the site-builder runs `npm install` (networked) + `vite build`.
 
 export const STARTER_FILES: Record<string, string> = {
+  'package.json': `{
+  "name": "my-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4",
+    "typescript": "^5",
+    "vite": "^6"
+  }
+}
+`,
   'index.html': `<!doctype html>
 <html lang="en">
   <head>

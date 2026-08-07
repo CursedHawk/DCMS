@@ -15,6 +15,7 @@ builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
 builder.Services.AddDcmsAiData(builder.Configuration);
 builder.Services.AddDcmsVaultTransit();
 builder.Services.AddScoped<AiProviderResolver>();
+builder.Services.AddHttpClient("anthropic");
 
 var app = builder.Build();
 app.UseAuthentication();
@@ -22,6 +23,7 @@ app.UseAuthorization();
 
 app.MapDcmsDefaultEndpoints();
 app.MapChatEndpoints();
+app.MapMessagesEndpoints();
 app.MapGet("/", () => Results.Ok(new { service = "ai-gateway" }));
 
 // Protected internal ping (used by admin-api to verify the service-to-service flow).

@@ -48,10 +48,10 @@ public static class ApiClientEndpoints
         return app;
     }
 
-    private sealed record Resolved(
+    internal sealed record Resolved(
         JsonObject Doc, List<GeneratedInstance> Instances, List<string> Servers, string TenantSlug);
 
-    private static async Task<Resolved?> ResolveAsync(
+    internal static async Task<Resolved?> ResolveAsync(
         ITenantContext tenant, CmsDbContext db, TenancyDbContext tenancy,
         OpenApiAssembler assembler, CancellationToken ct)
     {

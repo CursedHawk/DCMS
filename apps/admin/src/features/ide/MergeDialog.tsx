@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { GitMerge } from 'lucide-react';
+import { Eye, GitMerge } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -16,33 +16,37 @@ import { cn } from '../../lib/cn';
 import { RELEASE_BRANCH } from './constants';
 import type { MergeConflictFile } from './git';
 import { gitApi } from './git';
+import { useVfs } from './vfs';
 
 type Side = 'branch' | 'release';
 
-// Merge a feature branch into `release` (→ build + deploy). Shows a pre-merge
-// review (what the merge brings), performs the merge, and — when git reports a
-// conflict — lets the user resolve each differing file (keep the branch's version
-// or release's) before committing the merged result.
+// Merge `head` into `base` (default `release` → build + deploy). Shows a pre-merge
+// review (what the merge brings), performs a real 3-way merge, and — when git reports
+// a true conflict — lets the user view each conflicting file's two versions and pick
+// which to keep before committing the merged result.
 export function MergeDialog({
   siteId,
   head,
+  base = RELEASE_BRANCH,
   open,
   onOpenChange,
   onMerged,
 }: {
   siteId: string;
   head: string;
+  base?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onMerged: () => void;
 }) {
   const { t } = useTranslation();
+  const openDiff = useVfs((s) => s.openDiff);
   const [conflicts, setConflicts] = useState<MergeConflictFile[] | null>(null);
   const [choices, setChoices] = useState<Record<string, Side>>({});
 
   const compare = useQuery({
-    queryKey: ['git-compare', siteId, head],
-    queryFn: () => gitApi.compare(siteId, head),
+    queryKey: ['git-compare', siteId, head, base],
+    queryFn: () => gitApi.compare(siteId, head, base),
     enabled: open && !conflicts,
   });
 
@@ -59,7 +63,7 @@ export function MergeDialog({
   };
 
   const merge = useMutation({
-    mutationFn: () => gitApi.merge(siteId, head),
+    mutationFn: () => gitApi.merge(siteId, head, base),
     onSuccess: (res) => {
       if (res.conflict && res.files) {
         setConflicts(res.files);
@@ -78,11 +82,16 @@ export function MergeDialog({
       for (const f of conflicts ?? []) {
         resolutions[f.path] = choices[f.path] === 'release' ? f.releaseContent : f.branchContent;
       }
-      return gitApi.resolveMerge(siteId, head, resolutions);
+      return gitApi.resolveMerge(siteId, head, resolutions, base);
     },
     onSuccess: () => done(true),
     onError: () => toast.error(t('errors.generic')),
   });
+
+  // Open the two conflicting versions side-by-side in the editor: base/target ("ours")
+  // vs the incoming branch ("theirs"), so the user can see what differs before choosing.
+  const viewConflict = (f: MergeConflictFile) =>
+    openDiff({ path: f.path, status: 'modified', original: f.releaseContent, modified: f.branchContent });
 
   return (
     <Dialog
@@ -96,7 +105,7 @@ export function MergeDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitMerge className="h-4 w-4" />
-            {t('ide.git.mergeTitle', { head, base: RELEASE_BRANCH })}
+            {t('ide.git.mergeTitle', { head, base })}
           </DialogTitle>
         </DialogHeader>
 
@@ -131,9 +140,19 @@ export function MergeDialog({
             <ul className="space-y-2">
               {conflicts.map((f) => (
                 <li key={f.path} className="rounded border p-2">
-                  <p className="mb-1.5 truncate text-xs font-medium" title={f.path}>
-                    {f.path}
-                  </p>
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium" title={f.path}>
+                      {f.path}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => viewConflict(f)}
+                      title={t('ide.git.viewDiff')}
+                      className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   <div className="flex gap-1.5">
                     <SideButton
                       active={choices[f.path] !== 'release'}
@@ -145,7 +164,7 @@ export function MergeDialog({
                       active={choices[f.path] === 'release'}
                       onClick={() => setChoices((c) => ({ ...c, [f.path]: 'release' }))}
                     >
-                      {t('ide.git.useRelease')}
+                      {t('ide.git.useBranch', { branch: base })}
                     </SideButton>
                   </div>
                 </li>

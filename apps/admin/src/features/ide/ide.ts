@@ -27,4 +27,10 @@ export const ideApi = {
       `/admin/sites/${siteId}/ide/files${branchQuery(branch)}`,
       { put: delta.put, delete: delta.delete },
     ),
+
+  /** Tenant-generated starter files for a new React app (see StarterFlavor). */
+  scaffold: (siteId: string, flavor: 'openapi' | 'client' | 'starter') =>
+    api.get<{ files: Record<string, string> }>(
+      `/admin/sites/${siteId}/starter-files?flavor=${flavor}`,
+    ),
 };

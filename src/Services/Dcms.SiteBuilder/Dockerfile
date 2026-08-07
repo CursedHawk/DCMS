@@ -5,44 +5,25 @@ COPY src/ src/
 RUN dotnet publish src/Services/Dcms.SiteBuilder/Dcms.SiteBuilder.csproj -c Release -o /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
-# Node + pnpm power the Mode A prerender and Mode B vite builds. The build
-# step itself runs sandboxed (no network, resource limits) -- see Phase 8/10.
+# Node powers the Mode A prerender and Mode B builds. A Mode B site is a complete
+# front-end project that brings its own package.json + lockfile, so the build runs
+# the site's own package manager (npm / pnpm / yarn) with network access to fetch
+# its dependencies. The build runs non-root, in a per-build ephemeral work dir,
+# with hard time/resource limits (see ReactAppBuilder + compose). npm ships with
+# Node; corepack provides pnpm/yarn without a global install.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && apt-get install -y --no-install-recommends curl ca-certificates git \
     && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g pnpm@11.6.0 \
+    && corepack enable \
+    && corepack prepare pnpm@11.6.0 --activate \
+    && corepack prepare yarn@1.22.22 --activate \
     && rm -rf /var/lib/apt/lists/*
 
-# ---------------------------------------------------------------------------
-# Mode B offline dependency store.
-#
-# A Mode B build runs with no network, so every package it can resolve must
-# already be in the image. The toolchain package.json is the fixed palette of
-# dependencies a generated site may use; `pnpm fetch` populates the store from
-# the resolved lockfile without materializing node_modules.
-#
-# ReactAppBuilder copies this package.json + lockfile into each build's work
-# directory, so a site's file map can never introduce a dependency that is not
-# in the store — an added import simply fails to resolve at build time.
-#
-# The lockfile is resolved here rather than committed because the toolchain is
-# deliberately outside the pnpm workspace and never installed for development.
-# package.json pins every version exactly, so a rebuild resolves the same tree.
-# ---------------------------------------------------------------------------
-ENV DCMS_TOOLCHAIN_DIR=/opt/dcms/toolchain \
-    DCMS_PNPM_STORE_DIR=/opt/dcms/pnpm-store
-# The store location is passed as an explicit --store-dir flag. `pnpm config set
-# --global` refuses to run when pnpm's global bin directory is not on PATH (it
-# never is in a container), and pnpm ignores the npm_config_store_dir
-# environment variable — with neither, fetch silently populates a per-HOME
-# default store that the non-root runtime user cannot read. ReactAppBuilder
-# passes the same flag per build, so both sides agree on one mechanism.
-COPY packages/site-builder-toolchain/package.json ${DCMS_TOOLCHAIN_DIR}/package.json
-RUN cd ${DCMS_TOOLCHAIN_DIR} \
-    && pnpm install --lockfile-only \
-    && pnpm fetch --store-dir ${DCMS_PNPM_STORE_DIR} \
-    && chmod -R a+rX /opt/dcms
+# Shared, warm package cache to speed repeat installs. Only holds downloaded
+# tarballs (never a site's node_modules), and is mounted writable in compose.
+ENV DCMS_BUILD_CACHE_DIR=/var/cache/dcms-build
+RUN mkdir -p ${DCMS_BUILD_CACHE_DIR} && chmod -R a+rwX ${DCMS_BUILD_CACHE_DIR}
 
 WORKDIR /app
 COPY --from=build /app .

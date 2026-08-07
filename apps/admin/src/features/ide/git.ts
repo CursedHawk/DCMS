@@ -44,6 +44,9 @@ export interface CommitBody {
   description?: string;
   targetBranch?: string;
   newBranch?: string;
+  // How to resolve files changed on both sides when the branch moved: keep the
+  // draft's version ("mine") or the branch's ("theirs"). Omitted on the first try.
+  resolve?: 'mine' | 'theirs';
 }
 
 export interface GitCompare {
@@ -53,8 +56,12 @@ export interface GitCompare {
 
 export interface MergeConflictFile {
   path: string;
+  /** The base/target-branch version ("ours"). */
   releaseContent: string | null;
+  /** The incoming version ("theirs"). */
   branchContent: string | null;
+  /** The common ancestor, for a 3-way view (may be absent). */
+  baseContent?: string | null;
 }
 
 export interface MergeResult {
@@ -63,6 +70,20 @@ export interface MergeResult {
   sha?: string | null;
   conflict?: boolean;
   files?: MergeConflictFile[];
+}
+
+export type GitBuildStatus = 'Queued' | 'Building' | 'Succeeded' | 'Failed';
+
+export interface GitBuild {
+  id: string;
+  status: GitBuildStatus;
+  gitCommitSha?: string | null;
+  shortSha?: string | null;
+  error?: string | null;
+  hasLog: boolean;
+  createdAt: string;
+  completedAt?: string | null;
+  active: boolean;
 }
 
 export const gitApi = {
@@ -88,13 +109,24 @@ export const gitApi = {
       `/admin/sites/${siteId}/git/restore?branch=${encodeURIComponent(branch)}`,
       { sha },
     ),
-  // Pre-merge review: what merging `head` into the release branch would bring.
-  compare: (siteId: string, head: string) =>
-    api.get<GitCompare>(`/admin/sites/${siteId}/git/compare?head=${encodeURIComponent(head)}`),
-  // Merge `head` into release. Clean → { merged, sha }; conflict → { conflict, files }.
-  merge: (siteId: string, head: string, strategy?: string) =>
-    api.post<MergeResult>(`/admin/sites/${siteId}/git/merge`, { head, strategy }),
+  // Pre-merge review: what merging `head` into `base` (default release) would bring.
+  compare: (siteId: string, head: string, base?: string) => {
+    const qs = new URLSearchParams({ head });
+    if (base) qs.set('base', base);
+    return api.get<GitCompare>(`/admin/sites/${siteId}/git/compare?${qs}`);
+  },
+  // Merge `head` into `base` (default release). Clean → { merged, sha }; conflict → { conflict, files }.
+  merge: (siteId: string, head: string, base?: string) =>
+    api.post<MergeResult>(`/admin/sites/${siteId}/git/merge`, { head, base }),
   // Complete a conflicted merge with per-file resolved content (null = delete).
-  resolveMerge: (siteId: string, head: string, resolutions: Record<string, string | null>) =>
-    api.post<MergeResult>(`/admin/sites/${siteId}/git/merge/resolve`, { head, resolutions }),
+  resolveMerge: (siteId: string, head: string, resolutions: Record<string, string | null>, base?: string) =>
+    api.post<MergeResult>(`/admin/sites/${siteId}/git/merge/resolve`, { head, base, resolutions }),
+  // Recent builds (deployments) for a site, newest first.
+  builds: (siteId: string, limit = 20) =>
+    api.get<GitBuild[]>(`/admin/sites/${siteId}/builds?limit=${limit}`),
+  // Full build log (install + build output) as plain text.
+  buildLog: (siteId: string, buildId: string) =>
+    api.get<string>(`/admin/sites/${siteId}/builds/${buildId}/log`),
+  // Force a fresh build+deploy of the current release head (recovers a failed/wedged build).
+  rebuild: (siteId: string) => api.post<{ buildId: string }>(`/admin/sites/${siteId}/builds`, {}),
 };

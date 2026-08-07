@@ -2,8 +2,10 @@
 // backend's StaticSiteFiles.NormalizeEntryPath so a save is never rejected),
 // language-id mapping, and the file:/// URI scheme Monaco models live under.
 
-/** Files the platform toolchain owns — shown read-only in the tree. */
-export const TOOLCHAIN_FILES = new Set(['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']);
+// A Mode B site is a complete, self-contained project and owns its own package.json
+// + lockfile, so nothing is locked as "platform toolchain" anymore. Kept as an empty
+// set (rather than deleting the concept) so call sites stay simple.
+export const TOOLCHAIN_FILES = new Set<string>([]);
 
 /** Monaco language id for a file path, from its extension. */
 export function languageOf(path: string): string {

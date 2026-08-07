@@ -15,6 +15,7 @@ public class AiDbContext(DbContextOptions<AiDbContext> options) : DbContext(opti
     public const string Schema = "ai";
 
     public DbSet<TenantAiSettings> Settings => Set<TenantAiSettings>();
+    public DbSet<UserAiSettings> UserSettings => Set<UserAiSettings>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -25,6 +26,15 @@ public class AiDbContext(DbContextOptions<AiDbContext> options) : DbContext(opti
         {
             e.ToTable("tenant_ai_settings");
             e.HasKey(s => s.TenantId);
+            e.Property(s => s.Provider).HasConversion<string>().HasMaxLength(16);
+            e.Property(s => s.Model).HasMaxLength(128);
+            e.Property(s => s.BaseUrl).HasMaxLength(512);
+        });
+
+        builder.Entity<UserAiSettings>(e =>
+        {
+            e.ToTable("user_ai_settings");
+            e.HasKey(s => new { s.TenantId, s.UserId });
             e.Property(s => s.Provider).HasConversion<string>().HasMaxLength(16);
             e.Property(s => s.Model).HasMaxLength(128);
             e.Property(s => s.BaseUrl).HasMaxLength(512);

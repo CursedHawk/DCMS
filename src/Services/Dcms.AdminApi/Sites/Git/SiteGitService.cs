@@ -235,74 +235,58 @@ public sealed partial class SiteGitService(
         return forgejo.CompareAsync(org, repo, @base, head, ct);
     }
 
-    /// <summary>Merge <paramref name="head"/> into the release branch via a pull request
-    /// (real merge commit). On a clean merge the release branch advances (→ build). On a
-    /// conflict, no commit is made and the differing files are returned with both versions
-    /// so the caller can drive a file-level resolution (<see cref="ResolveMergeAsync"/>).</summary>
+    /// <summary>Merge <paramref name="head"/> into <paramref name="base"/> with a real 3-way
+    /// git merge. Clean changes on either side auto-merge; only files both sides changed to
+    /// different content are conflicts. A clean merge advances <paramref name="base"/> (a push
+    /// to <c>release</c> → build) and returns its sha; a conflict makes no commit and returns
+    /// the unmerged files with base/ours/theirs content for resolution
+    /// (<see cref="ResolveMergeAsync"/>).</summary>
     public async Task<MergeOutcome> MergeAsync(
-        string repoFullName, string head, string style, CancellationToken ct)
+        string repoFullName, string @base, string head, CancellationToken ct)
     {
         if (!Enabled) return new MergeOutcome(false, null, false, []);
-        var (org, repo) = Split(repoFullName);
-        var @base = ReleaseBranch;
-        await EnsureReleaseBranchAsync(repoFullName, ct);
+        if (string.Equals(@base, ReleaseBranch, StringComparison.Ordinal))
+            await EnsureReleaseBranchAsync(repoFullName, ct);
 
-        var pr = await forgejo.CreatePullAsync(org, repo, @base, head, $"Merge {head} into {@base}", null, ct);
-        if (pr is null)
-        {
-            // Nothing to merge — head is already contained in the release branch.
-            return new MergeOutcome(false, await forgejo.GetBranchHeadAsync(org, repo, @base, ct), true, []);
-        }
-
-        // `mergeable` is computed asynchronously by Forgejo — re-read briefly if unknown.
-        var mergeable = pr.Mergeable;
-        for (var i = 0; mergeable is null && i < 3; i++)
-        {
-            await Task.Delay(300, ct);
-            mergeable = (await forgejo.GetPullAsync(org, repo, pr.Number, ct))?.Mergeable;
-        }
-
-        if (mergeable == true && await forgejo.MergePullAsync(org, repo, pr.Number, style, ct))
-        {
-            return new MergeOutcome(true, await forgejo.GetBranchHeadAsync(org, repo, @base, ct), false, []);
-        }
-
-        // Conflict / merge blocked: surface the differing files and clean up the PR.
-        var conflicts = await DiffTreesAsync(org, repo, @base, head, ct);
-        await forgejo.ClosePullAsync(org, repo, pr.Number, ct);
-        return new MergeOutcome(false, null, false, conflicts);
+        var result = await MergeViaGitAsync(repoFullName, @base, head, resolutions: null, null, null, ct)
+            ?? new GitMergeResult(false, null, []);
+        if (result.UpToDate) return new MergeOutcome(false, await HeadShaAsync(repoFullName, @base, ct), true, []);
+        if (result.Sha is not null) return new MergeOutcome(true, result.Sha, false, []);
+        return new MergeOutcome(false, null, false, result.Conflicts);
     }
 
-    /// <summary>Complete a conflicted merge: reach the user-resolved tree and commit it to
-    /// release (→ build). Prefers a real <b>two-parent merge commit</b> (release + head) via
-    /// the git CLI so the feature branch's history joins release; falls back to a single-parent
-    /// tree-sync commit if the git CLI is unavailable or the push races. A null resolution
-    /// content deletes the file.</summary>
+    /// <summary>Complete a conflicted merge of <paramref name="head"/> into
+    /// <paramref name="base"/>: re-run the 3-way merge, overlay the caller's per-file
+    /// resolutions (null content = delete) onto the auto-merged tree, and commit the genuine
+    /// two-parent merge (→ build when base is <c>release</c>). Falls back to a single-parent
+    /// tree-sync commit only if the git CLI is unusable.</summary>
     public async Task<string?> ResolveMergeAsync(
-        string repoFullName, string head, IReadOnlyDictionary<string, string?> resolutions,
+        string repoFullName, string @base, string head, IReadOnlyDictionary<string, string?> resolutions,
         string? authorName, string? authorEmail, CancellationToken ct)
     {
         try
         {
-            var sha = await ResolveMergeWithGitAsync(repoFullName, head, resolutions, authorName, authorEmail, ct);
-            if (sha is not null) return sha;
+            var result = await MergeViaGitAsync(repoFullName, @base, head, resolutions, authorName, authorEmail, ct);
+            if (result?.Sha is not null) return result.Sha;
+            if (result?.UpToDate == true) return await HeadShaAsync(repoFullName, @base, ct);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex,
-                "Two-parent merge via git CLI failed for {Repo} ({Head}); falling back to tree-sync commit.",
-                repoFullName, head);
+                "Two-parent merge via git CLI failed for {Repo} ({Head}→{Base}); falling back to tree-sync commit.",
+                repoFullName, head, @base);
         }
-        return await ResolveMergeCore(repoFullName, head, resolutions, authorName, authorEmail, ct);
+        return await ResolveMergeCore(repoFullName, @base, head, resolutions, authorName, authorEmail, ct);
     }
 
     private async Task<string?> ResolveMergeCore(
-        string repoFullName, string head, IReadOnlyDictionary<string, string?> resolutions,
+        string repoFullName, string @base, string head, IReadOnlyDictionary<string, string?> resolutions,
         string? authorName, string? authorEmail, CancellationToken ct)
     {
         var (org, repo) = Split(repoFullName);
-        var @base = ReleaseBranch;
-        var result = await forgejo.ReadTreeAsync(org, repo, @base, ct);
+        // Best-effort fallback: start from the head tree (so head's changes are kept) and
+        // overlay the resolutions, then sync onto base. Loses two-parent topology but keeps content.
+        var result = await forgejo.ReadTreeAsync(org, repo, head, ct);
         foreach (var (path, content) in resolutions)
         {
             if (content is null) result.Remove(path);
@@ -311,18 +295,44 @@ public sealed partial class SiteGitService(
         return await SyncAsync(repoFullName, @base, result, $"Merge {head} into {@base} (resolved)", authorName, authorEmail, ct);
     }
 
-    private async Task<List<MergeFile>> DiffTreesAsync(string org, string repo, string @base, string head, CancellationToken ct)
+    /// <summary>Replay a working draft onto a branch whose HEAD has moved past
+    /// <paramref name="baseSha"/> (the sha the draft was based on), at file granularity —
+    /// the same model as <see cref="MergeAsync"/>. Starting from the current HEAD tree:
+    /// a file only the user changed is applied; a file only the branch changed is kept;
+    /// a file changed on both sides to <b>different</b> content is a conflict (both making
+    /// the same change is not). Returns the merged file map and any true conflicts, so a
+    /// commit onto a moved branch succeeds whenever the edits don't overlap.</summary>
+    public async Task<ReconcileResult> ReconcileAsync(
+        string repoFullName, string branch, string baseSha,
+        IReadOnlyDictionary<string, string> draft, CancellationToken ct)
     {
-        var baseTree = await forgejo.ReadTreeAsync(org, repo, @base, ct);
-        var headTree = await forgejo.ReadTreeAsync(org, repo, head, ct);
-        var files = new List<MergeFile>();
-        foreach (var path in baseTree.Keys.Union(headTree.Keys).OrderBy(p => p, StringComparer.Ordinal))
+        var (org, repo) = Split(repoFullName);
+        var baseTree = await forgejo.ReadTreeAsync(org, repo, baseSha, ct);
+        var headTree = await forgejo.ReadTreeAsync(org, repo, branch, ct);
+
+        var merged = new Dictionary<string, string>(headTree, StringComparer.Ordinal);
+        var conflicts = new List<MergeFile>();
+
+        var paths = baseTree.Keys
+            .Union(headTree.Keys, StringComparer.Ordinal)
+            .Union(draft.Keys, StringComparer.Ordinal);
+        foreach (var path in paths)
         {
-            baseTree.TryGetValue(path, out var bc);
-            headTree.TryGetValue(path, out var hc);
-            if (bc != hc) files.Add(new MergeFile(path, bc, hc));
+            baseTree.TryGetValue(path, out var b);
+            headTree.TryGetValue(path, out var h);
+            draft.TryGetValue(path, out var d);
+
+            if (d == b) continue;              // user didn't touch it → keep HEAD's version
+            if (h != b && h != d)              // both sides changed it, differently → conflict
+            {
+                conflicts.Add(new MergeFile(path, h, d, b));
+                continue;
+            }
+            if (d is null) merged.Remove(path); // user deleted it (branch didn't touch it)
+            else merged[path] = d;              // user's version is safe on top of HEAD
         }
-        return files;
+
+        return new ReconcileResult(merged, conflicts);
     }
 
     private static (string Org, string Repo) Split(string fullName)
@@ -343,9 +353,19 @@ public sealed partial class SiteGitService(
 public sealed record SiteRepoInfo(
     string RepoFullName, string DefaultBranch, string? HeadSha, string HttpCloneUrl, string SshCloneUrl);
 
-/// <summary>Result of a merge attempt into the release branch.</summary>
+/// <summary>Result of a merge attempt into the target (base) branch.</summary>
 public sealed record MergeOutcome(bool Merged, string? Sha, bool UpToDate, IReadOnlyList<MergeFile> Conflicts);
 
-/// <summary>A file that differs between release and the merged branch, with both versions
-/// (null = the file is absent on that side) for file-level conflict resolution.</summary>
-public sealed record MergeFile(string Path, string? ReleaseContent, string? BranchContent);
+/// <summary>Low-level result of the git-CLI merge (<see cref="SiteGitService.MergeViaGitAsync"/>).</summary>
+internal sealed record GitMergeResult(bool UpToDate, string? Sha, IReadOnlyList<MergeFile> Conflicts);
+
+/// <summary>A file in conflict, with each side's content (null = absent on that side):
+/// <paramref name="ReleaseContent"/> = the base/target-branch version ("ours"),
+/// <paramref name="BranchContent"/> = the incoming version ("theirs"),
+/// <paramref name="BaseContent"/> = the common ancestor (for a 3-way view).</summary>
+public sealed record MergeFile(string Path, string? ReleaseContent, string? BranchContent, string? BaseContent = null);
+
+/// <summary>Result of replaying a working draft onto a moved branch
+/// (<see cref="SiteGitService.ReconcileAsync"/>): the file map to commit, plus any files
+/// changed on both sides that need manual resolution.</summary>
+public sealed record ReconcileResult(IReadOnlyDictionary<string, string> Merged, IReadOnlyList<MergeFile> Conflicts);

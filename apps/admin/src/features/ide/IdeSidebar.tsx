@@ -1,18 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
-import { Files, GitBranch } from 'lucide-react';
+import { Files, GitBranch, Rocket, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/cn';
+import { AgentPanel } from './agent/AgentPanel';
+import { DeploymentsView } from './DeploymentsView';
 import { FileTree } from './FileTree';
 import { gitApi } from './git';
 import { SourceControlView } from './SourceControlView';
 
-export type SidebarView = 'files' | 'scm';
+export type SidebarView = 'files' | 'scm' | 'agent' | 'deploy';
 
 // VS Code-style left sidebar: a slim activity rail (Explorer / Source Control)
 // plus the active view. The Source Control icon carries a badge with the number
 // of pending changes on the current branch.
 export function IdeSidebar({
   siteId,
+  siteName,
   branch,
   view,
   onViewChange,
@@ -22,6 +25,7 @@ export function IdeSidebar({
   viewWidth,
 }: {
   siteId: string;
+  siteName?: string;
   branch: string;
   view: SidebarView;
   onViewChange: (v: SidebarView) => void;
@@ -57,6 +61,20 @@ export function IdeSidebar({
         >
           <GitBranch className="h-5 w-5" />
         </RailButton>
+        <RailButton
+          active={view === 'deploy'}
+          label={t('ide.deploy.title')}
+          onClick={() => onViewChange('deploy')}
+        >
+          <Rocket className="h-5 w-5" />
+        </RailButton>
+        <RailButton
+          active={view === 'agent'}
+          label={t('ide.agent.title', 'Assistant')}
+          onClick={() => onViewChange('agent')}
+        >
+          <Sparkles className="h-5 w-5" />
+        </RailButton>
       </div>
 
       {/* Active view */}
@@ -64,9 +82,8 @@ export function IdeSidebar({
         className="shrink-0 border-r bg-card"
         style={{ width: viewWidth != null ? `${viewWidth}px` : '15rem' }}
       >
-        {view === 'files' ? (
-          <FileTree />
-        ) : (
+        {view === 'files' && <FileTree />}
+        {view === 'scm' && (
           <SourceControlView
             siteId={siteId}
             branch={branch}
@@ -75,6 +92,8 @@ export function IdeSidebar({
             onRestored={onRestored}
           />
         )}
+        {view === 'deploy' && <DeploymentsView siteId={siteId} />}
+        {view === 'agent' && <AgentPanel siteId={siteId} siteName={siteName} />}
       </div>
     </div>
   );

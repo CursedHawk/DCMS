@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 namespace Dcms.SiteBuilder;
@@ -6,22 +7,25 @@ namespace Dcms.SiteBuilder;
 public sealed record BuiltArtifact(string RelativePath, string LocalPath, string ContentType);
 
 /// <summary>
-/// Mode B (generated React app): the site definition is a whitelisted file map
-/// ({ "files": { path: content } }). The files are materialized into a temp dir
-/// and built with a sandboxed, offline pnpm + vite build inside the site-builder
-/// container (which carries Node + pnpm). The build runs with no network and a
-/// time limit; the AI cannot add dependencies (the lockfile is pinned in the
-/// template). Returns the built static artifacts under dist/.
+/// Mode B (generated React app): the site definition is a file map
+/// ({ "files": { path: content } }) that is a complete, self-contained front-end
+/// project — including its own package.json and lockfile. The files are
+/// materialized into a temp dir and built with the site's own package manager
+/// (npm / pnpm / yarn, auto-detected from the lockfile), then `vite build`
+/// (or the project's own build script). Install runs with network access from a
+/// per-build, non-root, resource-limited work directory; the build itself already
+/// executes site-supplied code (vite.config), so install lifecycle scripts are in
+/// the same trust boundary. Returns the built static artifacts under dist/.
 /// </summary>
 public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
 {
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
-    /// <summary>
-    /// Files the platform owns. A site's file map may not supply these — the
-    /// dependency set is fixed by the image so an offline install always resolves.
-    /// </summary>
-    private static readonly string[] ToolchainFiles = ["package.json", "pnpm-lock.yaml"];
+    // Install can be slow on a cold cache (fetching from the registry); the build
+    // itself should be quick. Both are hard-capped so a hung step can't wedge the
+    // builder (a stuck build is also reaped server-side).
+    private static readonly TimeSpan InstallTimeout = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(8);
 
     /// <summary>
     /// Extensions whose file-map value is base64-encoded raw bytes rather than
@@ -39,31 +43,29 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
 
     private static bool IsBinaryPath(string path) => BinaryExtensions.Contains(Path.GetExtension(path));
 
-    private static string ToolchainDir =>
-        Environment.GetEnvironmentVariable("DCMS_TOOLCHAIN_DIR") ?? "/opt/dcms/toolchain";
+    /// <summary>Optional shared package-manager cache (warms repeat installs). Read-write
+    /// is fine — it only holds downloaded tarballs, never a site's node_modules.</summary>
+    private static string? CacheDir => Environment.GetEnvironmentVariable("DCMS_BUILD_CACHE_DIR");
 
-    private static string? StoreDir =>
-        Environment.GetEnvironmentVariable("DCMS_PNPM_STORE_DIR");
-
-    public async Task<IReadOnlyList<BuiltArtifact>> BuildAsync(string definitionSnapshotJson, string workDir, CancellationToken ct)
+    /// <summary>
+    /// Build the site. All step output (install + build) is appended to
+    /// <paramref name="log"/> so the caller can persist it whether the build
+    /// succeeds or fails — a failing build must be inspectable in the IDE.
+    /// </summary>
+    public async Task<IReadOnlyList<BuiltArtifact>> BuildAsync(
+        string definitionSnapshotJson, string workDir, StringBuilder log, CancellationToken ct)
     {
         var files = ParseFileMap(definitionSnapshotJson);
         if (files.Count == 0)
         {
-            throw new InvalidOperationException("React app definition contains no files.");
+            throw new InvalidOperationException("This site has no files to build. Add your React app source in the editor, then publish.");
         }
 
         foreach (var (relative, content) in files)
         {
-            if (relative.Contains("..", StringComparison.Ordinal))
+            if (relative.Contains("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
             {
                 throw new InvalidOperationException($"Illegal path in file map: {relative}");
-            }
-            if (ToolchainFiles.Contains(Path.GetFileName(relative), StringComparer.OrdinalIgnoreCase) &&
-                !relative.Contains('/'))
-            {
-                throw new InvalidOperationException(
-                    $"'{relative}' is provided by the platform toolchain and may not be set by a site definition.");
             }
             var target = Path.Combine(workDir, relative.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -87,20 +89,39 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
             }
         }
 
-        CopyToolchain(workDir);
+        if (!File.Exists(Path.Combine(workDir, "package.json")))
+        {
+            // Legacy site with no package.json (older sites relied on a platform-provided
+            // toolchain). Synthesize a sensible default so it still builds; the site can
+            // add its own package.json in the editor to control its dependencies.
+            log.AppendLine("› No package.json found — using a default React + Vite project.");
+            await File.WriteAllTextAsync(Path.Combine(workDir, "package.json"), DefaultPackageJson, ct);
+        }
 
-        // --store-dir must be passed explicitly: pnpm does not honour the
-        // npm_config_store_dir environment variable, so without the flag it
-        // falls back to a per-HOME default and the warmed store is not found.
-        var store = PrepareStore(workDir);
-        var storeArg = string.IsNullOrEmpty(store) ? string.Empty : $" --store-dir {store}";
-        await RunAsync("pnpm", $"install --offline --frozen-lockfile --ignore-scripts{storeArg}", workDir, ct);
-        await RunAsync("pnpm", "exec vite build", workDir, ct);
+        var pm = PackageManager.Detect(workDir);
+        log.AppendLine($"› Detected {pm.Name} project.");
+
+        try
+        {
+            await RunAsync(pm.Exe, pm.InstallArgs, workDir, "install dependencies", InstallTimeout, log, ct);
+        }
+        catch (InvalidOperationException) when (pm.InstallFallbackArgs is { } fallback)
+        {
+            // A strict install (frozen lockfile / npm ci) can fail when the lockfile is
+            // out of sync with package.json. Retry with a lenient install that updates it.
+            log.AppendLine("› Strict install failed — retrying with a lenient install.");
+            await RunAsync(pm.Exe, fallback, workDir, "install dependencies", InstallTimeout, log, ct);
+        }
+        await RunAsync(pm.Exe, pm.BuildArgs(workDir), workDir, "build", BuildTimeout, log, ct);
 
         var dist = Path.Combine(workDir, "dist");
         if (!Directory.Exists(dist))
         {
-            throw new InvalidOperationException("Build did not produce a dist/ directory.");
+            var produced = Directory.Exists(workDir)
+                ? string.Join(", ", Directory.EnumerateDirectories(workDir).Select(Path.GetFileName).Where(n => n != "node_modules"))
+                : "";
+            throw new InvalidOperationException(
+                $"The build did not produce a dist/ directory. Vite outputs dist/ by default — check your build script and vite.config. Top-level folders produced: {(produced.Length == 0 ? "(none)" : produced)}.");
         }
 
         return Directory.EnumerateFiles(dist, "*", SearchOption.AllDirectories)
@@ -111,68 +132,25 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
             .ToList();
     }
 
-    /// <summary>
-    /// Places the image's pinned package.json + lockfile into the build directory.
-    /// This is what makes `--offline --frozen-lockfile` resolvable: the lockfile
-    /// matches the store that was warmed at image build.
-    /// </summary>
-    private static void CopyToolchain(string workDir)
-    {
-        foreach (var file in ToolchainFiles)
+    // Fallback project for a site that shipped no package.json. No lockfile → the
+    // package manager resolves current matching versions from the registry.
+    private const string DefaultPackageJson = """
         {
-            var source = Path.Combine(ToolchainDir, file);
-            if (!File.Exists(source))
-            {
-                throw new InvalidOperationException(
-                    $"Site builder toolchain file '{file}' is missing from {ToolchainDir}. " +
-                    "The image was built without a warmed offline pnpm store.");
-            }
-            File.Copy(source, Path.Combine(workDir, file), overwrite: true);
+          "name": "site",
+          "private": true,
+          "type": "module",
+          "scripts": { "build": "vite build" },
+          "dependencies": {
+            "react": "^19",
+            "react-dom": "^19",
+            "react-router-dom": "^6"
+          },
+          "devDependencies": {
+            "@vitejs/plugin-react": "^4",
+            "vite": "^6"
+          }
         }
-    }
-
-    /// <summary>
-    /// Builds a per-build pnpm store that reuses the image's warmed content.
-    ///
-    /// The warmed store is owned by root and read-only to the build user, but
-    /// pnpm writes its SQLite index and project metadata even for an offline
-    /// install. Making the shared store writable instead would let one site's
-    /// build corrupt the dependencies served to every other tenant — a site
-    /// supplies its own vite.config.ts, which executes during `vite build`.
-    ///
-    /// So the large content-addressed `files` tree is shared through a symlink
-    /// (read-only in practice, since --offline never adds to it) while the index
-    /// and project metadata are per-build copies. The store lives inside the
-    /// work directory and is discarded with it; Directory.Delete does not
-    /// recurse through the symlink.
-    /// </summary>
-    private static string PrepareStore(string workDir)
-    {
-        if (string.IsNullOrEmpty(StoreDir) || !Directory.Exists(StoreDir))
-        {
-            return string.Empty;
-        }
-
-        // pnpm appends its own store-version directory (e.g. "v11") to --store-dir.
-        var source = Directory.EnumerateDirectories(StoreDir).SingleOrDefault()
-            ?? throw new InvalidOperationException(
-                $"Expected exactly one versioned store directory under {StoreDir}.");
-
-        var root = Path.Combine(workDir, ".pnpm-store");
-        var target = Path.Combine(root, Path.GetFileName(source));
-        Directory.CreateDirectory(target);
-
-        Directory.CreateSymbolicLink(Path.Combine(target, "files"), Path.Combine(source, "files"));
-
-        var index = Path.Combine(source, "index.db");
-        if (File.Exists(index))
-        {
-            File.Copy(index, Path.Combine(target, "index.db"));
-        }
-        Directory.CreateDirectory(Path.Combine(target, "projects"));
-
-        return root;
-    }
+        """;
 
     private static Dictionary<string, string> ParseFileMap(string snapshotJson)
     {
@@ -184,57 +162,141 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
         return files.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? string.Empty);
     }
 
-    private async Task RunAsync(string fileName, string arguments, string workDir, CancellationToken ct)
+    /// <summary>
+    /// Resolves which package manager to drive from the committed lockfile and
+    /// whether the project defines its own build script.
+    /// </summary>
+    private sealed record PackageManager(
+        string Name, string Exe, string InstallArgs, string? InstallFallbackArgs, Func<string, string> BuildArgs)
     {
-        using var process = new Process
+        public static PackageManager Detect(string workDir)
         {
-            StartInfo = new ProcessStartInfo(fileName, arguments)
+            bool Has(string f) => File.Exists(Path.Combine(workDir, f));
+            var hasBuildScript = HasBuildScript(workDir);
+
+            if (Has("pnpm-lock.yaml"))
             {
-                WorkingDirectory = workDir,
-                RedirectStandardError = true,
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                // No network: the offline pnpm store is pre-warmed in the image.
-                Environment =
-                {
-                    ["CI"] = "1",
-                    ["npm_config_offline"] = "true",
-                    // The container user does not own the image's HOME, and pnpm
-                    // writes its cache/state there. Keep that inside the (writable,
-                    // per-build, discarded) work directory.
-                    ["HOME"] = workDir,
-                },
+                return new PackageManager("pnpm", "pnpm",
+                    "install --frozen-lockfile", "install --no-frozen-lockfile",
+                    _ => hasBuildScript ? "run build" : "exec vite build");
+            }
+            if (Has("yarn.lock"))
+            {
+                return new PackageManager("yarn", "yarn",
+                    "install --frozen-lockfile", "install",
+                    _ => hasBuildScript ? "run build" : "exec vite build");
+            }
+            // Default to npm. `npm ci` requires a lockfile in sync; fall back to install.
+            var hasLock = Has("package-lock.json");
+            return new PackageManager("npm", "npm",
+                hasLock ? "ci --no-audit --no-fund" : "install --no-audit --no-fund",
+                hasLock ? "install --no-audit --no-fund" : null,
+                _ => hasBuildScript ? "run build" : "exec -- vite build");
+        }
+
+        private static bool HasBuildScript(string workDir)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(workDir, "package.json")));
+                return doc.RootElement.TryGetProperty("scripts", out var scripts) &&
+                       scripts.ValueKind == JsonValueKind.Object &&
+                       scripts.TryGetProperty("build", out var b) &&
+                       b.ValueKind == JsonValueKind.String &&
+                       !string.IsNullOrWhiteSpace(b.GetString());
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+
+    private async Task RunAsync(
+        string fileName, string arguments, string workDir, string label,
+        TimeSpan timeout, StringBuilder log, CancellationToken ct)
+    {
+        log.AppendLine($"$ {fileName} {arguments}");
+        var startInfo = new ProcessStartInfo(fileName, arguments)
+        {
+            WorkingDirectory = workDir,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            Environment =
+            {
+                ["CI"] = "1",
+                // The container user does not own the image's HOME, and the package
+                // managers write cache/state there. Keep that inside the (writable,
+                // per-build, discarded) work directory.
+                ["HOME"] = workDir,
+                ["npm_config_audit"] = "false",
+                ["npm_config_fund"] = "false",
+                ["npm_config_update_notifier"] = "false",
+                ["ADBLOCK"] = "1",
+                ["DISABLE_OPENCOLLECTIVE"] = "1",
             },
         };
+        var cache = CacheDir;
+        if (!string.IsNullOrEmpty(cache))
+        {
+            startInfo.Environment["npm_config_cache"] = cache;
+        }
+
+        using var process = new Process { StartInfo = startInfo };
         process.Start();
 
-        // Drain both pipes while the process runs — pnpm reports failures on
-        // stdout, and letting either buffer fill would deadlock the build.
+        // Drain both pipes while the process runs — package managers report failures
+        // on stdout, and letting either buffer fill would deadlock the build.
         var stdout = process.StandardOutput.ReadToEndAsync(ct);
         var stderr = process.StandardError.ReadToEndAsync(ct);
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromMinutes(5));
-        await process.WaitForExitAsync(timeout.Token);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutCts.CancelAfter(timeout);
+        try
+        {
+            await process.WaitForExitAsync(timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            var partial = string.Join('\n', (await stderr).Trim(), (await stdout).Trim()).Trim();
+            log.AppendLine(partial);
+            log.AppendLine($"✗ Timed out after {timeout.TotalMinutes:0} min during {label}.");
+            throw new InvalidOperationException($"Timed out after {timeout.TotalMinutes:0} minutes while trying to {label}.");
+        }
+
+        var output = string.Join('\n', (await stdout).Trim(), (await stderr).Trim()).Trim();
+        if (output.Length > 0) log.AppendLine(output);
+
         if (process.ExitCode != 0)
         {
-            var output = string.Join('\n', (await stderr).Trim(), (await stdout).Trim()).Trim();
             logger.LogWarning("Build step `{File} {Args}` failed: {Output}", fileName, arguments, output);
-            throw new InvalidOperationException($"Build step failed: {fileName} {arguments}\n{output}");
+            var tail = Tail(output, 1500);
+            throw new InvalidOperationException($"Failed to {label}.\n{tail}");
         }
     }
+
+    private static string Tail(string s, int max) =>
+        s.Length <= max ? s : "…" + s[^max..];
 
     private static string ContentTypeFor(string path) => Path.GetExtension(path).ToLowerInvariant() switch
     {
         ".html" => "text/html; charset=utf-8",
-        ".js" => "text/javascript",
+        ".js" or ".mjs" => "text/javascript",
         ".css" => "text/css",
         ".json" => "application/json",
         ".svg" => "image/svg+xml",
         ".png" => "image/png",
         ".jpg" or ".jpeg" => "image/jpeg",
         ".webp" => "image/webp",
+        ".gif" => "image/gif",
+        ".ico" => "image/x-icon",
+        ".woff" => "font/woff",
         ".woff2" => "font/woff2",
+        ".ttf" => "font/ttf",
+        ".map" => "application/json",
+        ".txt" => "text/plain; charset=utf-8",
         _ => "application/octet-stream",
     };
 }

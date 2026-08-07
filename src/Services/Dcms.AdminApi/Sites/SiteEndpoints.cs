@@ -161,28 +161,45 @@ public static class SiteEndpoints
             });
         }).RequirePermission(PlatformPermissions.SiteEdit).DisableAntiforgery();
 
-        // Build history for a site (status + which one is live), drives the rollback UI.
-        app.MapGet("/api/admin/sites/{id:guid}/builds", async (Guid id, SitesDbContext db, CancellationToken ct) =>
+        // Build history for a site (status, source commit, log availability, which one is
+        // live) — drives both the rollback UI and the IDE Deployments panel.
+        app.MapGet("/api/admin/sites/{id:guid}/builds", async (Guid id, int? limit, SitesDbContext db, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null)
             {
                 return Results.NotFound();
             }
+            var take = Math.Clamp(limit ?? 30, 1, 100);
             var builds = await db.Builds
                 .Where(b => b.SiteId == id)
                 .OrderByDescending(b => b.CreatedAt)
+                .Take(take)
                 .Select(b => new
                 {
                     id = b.Id,
                     status = b.Status.ToString(),
+                    gitCommitSha = b.GitCommitSha,
                     error = b.Error,
+                    hasLog = b.LogObjectKey != null,
                     createdAt = b.CreatedAt,
                     completedAt = b.CompletedAt,
-                    isActive = site.ActiveBuildId == b.Id,
                 })
                 .ToListAsync(ct);
-            return Results.Ok(builds);
+            return Results.Ok(builds.Select(b => new
+            {
+                b.id,
+                b.status,
+                b.gitCommitSha,
+                shortSha = b.gitCommitSha is { Length: >= 7 } ? b.gitCommitSha[..7] : b.gitCommitSha,
+                b.error,
+                b.hasLog,
+                b.createdAt,
+                b.completedAt,
+                // `active` for the IDE panel; `isActive` kept for the existing rollback UI.
+                active = site.ActiveBuildId == b.id,
+                isActive = site.ActiveBuildId == b.id,
+            }));
         }).RequirePermission(PlatformPermissions.SiteEdit);
 
         // Roll back / forward: re-activate a previously succeeded build. Its artifacts
@@ -344,13 +361,11 @@ public static class SiteEndpoints
 
             foreach (var path in put.Keys.Concat(del.Select(d => d.Path)))
             {
+                // A Mode B site is a complete, self-contained front-end project and owns
+                // its own package.json + lockfile, so nothing is off-limits here beyond
+                // path-safety (the build honors whatever the site commits).
                 if (!SiteFileMap.IsSafePath(path))
                     return Results.BadRequest(new { error = $"Illegal path in file map: {path}" });
-                if (SiteFileMap.IsToolchainFile(path))
-                    return Results.BadRequest(new
-                    {
-                        error = $"'{path}' is provided by the platform toolchain and may not be edited.",
-                    });
             }
 
             var files = SiteFileMap.Parse(draft.DefinitionJson);
@@ -398,24 +413,44 @@ public static class SiteEndpoints
                 return Results.NotFound();
             }
 
-            // Mode B (git-backed): publishing = commit the current user's working draft
-            // to the RELEASE branch. The push webhook then builds + deploys; no build is
-            // created here. (The proper feature→release merge flow supersedes this later.)
+            // Mode B (git-backed): release is a normal branch whose only special power is
+            // that a push to it builds+deploys. Publishing = merge the current branch into
+            // release. The frontend commits the working draft first, so this ships committed
+            // work. Publishing while already on release just (re)builds the release head.
             if (site.RenderMode == SiteRenderMode.ReactApp && site.GitRepoFullName is not null && git.Enabled)
             {
-                var userId = user.UserId ?? Guid.Empty;
-                var sourceBranch = ResolveBranch(branch, site);
-                var draft = await db.Drafts.FirstOrDefaultAsync(
-                    d => d.SiteId == id && d.UserId == userId && d.Branch == sourceBranch, ct);
-                if (draft is null)
-                    return Results.BadRequest(new { error = "Open the site in the IDE before publishing." });
-
                 var release = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
+                var sourceBranch = ResolveBranch(branch, site);
                 await git.EnsureReleaseBranchAsync(site.GitRepoFullName, ct);
-                var sha = await git.SyncAsync(
-                    site.GitRepoFullName, release, SiteFileMap.Parse(draft.DefinitionJson),
-                    $"Publish from {sourceBranch}", user.Name, user.Email, ct);
-                return Results.Accepted($"/api/admin/sites/{site.Id}", new { released = true, sha, branch = release });
+                try { await git.EnsureWebhookAsync(site.GitRepoFullName, ct); } catch { /* best effort */ }
+
+                if (sourceBranch == release)
+                {
+                    // Already on release: deploy the current release head (force a fresh build
+                    // even if the tree is unchanged — this is the "redeploy" affordance).
+                    var buildId = await EnqueueReleaseBuildAsync(db, events, git, site, ct);
+                    return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{buildId}", new { released = true, buildId });
+                }
+
+                var outcome = await git.MergeAsync(site.GitRepoFullName, release, sourceBranch, ct);
+                if (outcome.UpToDate)
+                    return Results.Ok(new { released = false, upToDate = true });
+                if (outcome.Merged)
+                    return Results.Accepted($"/api/admin/sites/{site.Id}", new { released = true, sha = outcome.Sha, branch = release });
+                return Results.Ok(new
+                {
+                    released = false,
+                    conflict = true,
+                    @base = release,
+                    head = sourceBranch,
+                    files = outcome.Conflicts.Select(f => new
+                    {
+                        path = f.Path,
+                        releaseContent = f.ReleaseContent,
+                        branchContent = f.BranchContent,
+                        baseContent = f.BaseContent,
+                    }),
+                });
             }
 
             // StaticFiles publishes the staged upload; the snapshot records which
@@ -656,24 +691,69 @@ public static class SiteEndpoints
                 target = string.IsNullOrWhiteSpace(body.TargetBranch) ? sourceBranch : body.TargetBranch!.Trim();
             }
 
-            // Divergence guard only applies when writing back to the branch we based on.
+            var draftFiles = SiteFileMap.Parse(draft.DefinitionJson);
+            IReadOnlyDictionary<string, string> toCommit = draftFiles;
+
+            // Divergence handling only applies when writing back to the branch we based on.
+            // If the branch moved under the draft (a concurrent commit, external push, …),
+            // replay the user's edits onto the new HEAD at file granularity: a file changed
+            // on both sides is the only real conflict. When those exist, the client must say
+            // how to resolve them (`resolve` = "mine" keeps the draft's version, "theirs"
+            // keeps the branch's) — otherwise we report them so it can ask.
             if (target == sourceBranch && draft.BaseSha is not null)
             {
                 var head = await git.HeadShaAsync(site.GitRepoFullName, target, ct);
                 if (head is not null && head != draft.BaseSha)
-                    return Results.Json(new { error = "branch-moved", head },
-                        statusCode: StatusCodes.Status409Conflict);
+                {
+                    var reconcile = await git.ReconcileAsync(site.GitRepoFullName, target, draft.BaseSha, draftFiles, ct);
+                    if (reconcile.Conflicts.Count > 0)
+                    {
+                        var resolve = body.Resolve?.Trim().ToLowerInvariant();
+                        if (resolve is not ("mine" or "theirs"))
+                            return Results.Json(
+                                new
+                                {
+                                    error = "branch-moved",
+                                    head,
+                                    files = reconcile.Conflicts.Select(f => new
+                                    {
+                                        path = f.Path,
+                                        // ReleaseContent = the branch's current version; BranchContent = your edit.
+                                        branchContent = f.ReleaseContent,
+                                        draftContent = f.BranchContent,
+                                        baseContent = f.BaseContent,
+                                    }),
+                                },
+                                statusCode: StatusCodes.Status409Conflict);
+
+                        // "theirs" is already reflected in reconcile.Merged (it holds HEAD's
+                        // version for conflicting files); "mine" overlays the draft's version.
+                        var merged = new Dictionary<string, string>(reconcile.Merged, StringComparer.Ordinal);
+                        if (resolve == "mine")
+                            foreach (var f in reconcile.Conflicts)
+                            {
+                                if (f.BranchContent is null) merged.Remove(f.Path);
+                                else merged[f.Path] = f.BranchContent;
+                            }
+                        toCommit = merged;
+                    }
+                    else
+                    {
+                        toCommit = reconcile.Merged;
+                    }
+                }
             }
 
-            var files = SiteFileMap.Parse(draft.DefinitionJson);
             var message = string.IsNullOrWhiteSpace(body.Description)
                 ? body.Message!.Trim()
                 : body.Message!.Trim() + "\n\n" + body.Description!.Trim();
-            var sha = await git.SyncAsync(site.GitRepoFullName, target, files, message, user.Name, user.Email, ct);
+            var sha = await git.SyncAsync(site.GitRepoFullName, target, toCommit, message, user.Name, user.Email, ct);
 
             if (target == sourceBranch)
             {
-                // Draft content now equals the new HEAD — mark it clean at that sha.
+                // Draft content now equals the new HEAD (including anything a reconcile
+                // pulled in) — persist the merged map and mark it clean at that sha.
+                draft.DefinitionJson = SiteFileMap.Serialize(toCommit);
                 draft.BaseSha = sha;
             }
             else
@@ -726,9 +806,10 @@ public static class SiteEndpoints
             });
         }).RequirePermission(PlatformPermissions.SiteEdit);
 
-        // Merge `head` into the release branch (→ build + deploy). A clean merge returns
-        // { merged, sha }; a conflict returns { conflict, files:[{ path, releaseContent,
-        // branchContent }] } for file-level resolution via .../git/merge/resolve.
+        // Merge `head` into `base` (defaults to release). A real 3-way merge: clean changes
+        // auto-merge, only true conflicts need resolution. A clean merge into release fires a
+        // build. Returns { merged, sha } | { upToDate } | { conflict, files:[{ path,
+        // releaseContent (base/ours), branchContent (incoming/theirs), baseContent }] }.
         app.MapPost("/api/admin/sites/{id:guid}/git/merge", async (
             Guid id, MergeRequest body, SitesDbContext db,
             Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
@@ -740,8 +821,14 @@ public static class SiteEndpoints
             if (site?.GitRepoFullName is null)
                 return Results.BadRequest(new { error = "This site has no git repository." });
 
-            var style = body.Strategy is "squash" or "rebase" or "merge" ? body.Strategy : "merge";
-            var outcome = await git.MergeAsync(site.GitRepoFullName, body.Head!.Trim(), style, ct);
+            var @base = string.IsNullOrWhiteSpace(body.Base)
+                ? Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch : body.Base!.Trim();
+            // Re-assert the build webhook when shipping to release (recovers a repo whose
+            // initial hook registration failed — otherwise the merge would never build).
+            if (@base == Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch)
+                try { await git.EnsureWebhookAsync(site.GitRepoFullName, ct); } catch { /* best effort */ }
+
+            var outcome = await git.MergeAsync(site.GitRepoFullName, @base, body.Head!.Trim(), ct);
             if (outcome.Merged || outcome.UpToDate)
                 return Results.Ok(new { merged = outcome.Merged, upToDate = outcome.UpToDate, sha = outcome.Sha });
             return Results.Ok(new
@@ -753,13 +840,14 @@ public static class SiteEndpoints
                     path = f.Path,
                     releaseContent = f.ReleaseContent,
                     branchContent = f.BranchContent,
+                    baseContent = f.BaseContent,
                 }),
             });
         }).RequirePermission(PlatformPermissions.SitePublish);
 
-        // Complete a conflicted merge: apply the caller's per-file resolutions on top of
-        // the release tree and commit the result to release (→ build). A null resolution
-        // value deletes the file.
+        // Complete a conflicted merge of `head` into `base` (defaults to release): apply the
+        // caller's per-file resolutions onto the auto-merged tree and commit the two-parent
+        // merge (→ build when base is release). A null resolution value deletes the file.
         app.MapPost("/api/admin/sites/{id:guid}/git/merge/resolve", async (
             Guid id, ResolveMergeRequest body, SitesDbContext db, CurrentUser user,
             Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
@@ -771,9 +859,11 @@ public static class SiteEndpoints
             if (site?.GitRepoFullName is null)
                 return Results.BadRequest(new { error = "This site has no git repository." });
 
+            var @base = string.IsNullOrWhiteSpace(body.Base)
+                ? Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch : body.Base!.Trim();
             var resolutions = body.Resolutions ?? new Dictionary<string, string?>();
             var sha = await git.ResolveMergeAsync(
-                site.GitRepoFullName, body.Head!.Trim(), resolutions, user.Name, user.Email, ct);
+                site.GitRepoFullName, @base, body.Head!.Trim(), resolutions, user.Name, user.Email, ct);
             return Results.Ok(new { merged = true, sha });
         }).RequirePermission(PlatformPermissions.SitePublish);
 
@@ -869,6 +959,11 @@ public static class SiteEndpoints
             var branch = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
             if (gitRef != $"refs/heads/{branch}") return Results.Ok(new { ignored = "not release branch" });
 
+            // Fail builds wedged in Queued/Building past the timeout so a crashed builder
+            // can't permanently block this site (the coalescing check below would skip
+            // forever otherwise).
+            await ReapStaleBuildsAsync(db, site.Id, ct);
+
             // Coalesce: never stack builds for the same site.
             var inFlight = await db.Builds.IgnoreQueryFilters().AnyAsync(
                 b => b.SiteId == site.Id &&
@@ -896,7 +991,91 @@ public static class SiteEndpoints
             return Results.Ok(new { buildId = build.Id });
         }).AllowAnonymous();
 
+        // Full step log (install + build output) for a build, as plain text. This is what
+        // lets a user see exactly why a build failed, inside the IDE.
+        app.MapGet("/api/admin/sites/{id:guid}/builds/{buildId:guid}/log", async (
+            Guid id, Guid buildId, SitesDbContext db, IObjectStorage storage,
+            IOptions<StorageOptions> storageOptions, CancellationToken ct) =>
+        {
+            var build = await db.Builds.FirstOrDefaultAsync(b => b.Id == buildId && b.SiteId == id, ct);
+            if (build is null) return Results.NotFound();
+            if (build.LogObjectKey is null)
+                return Results.Text(build.Error ?? "No build log is available for this build.", "text/plain");
+            try
+            {
+                await using var stream = await storage.GetAsync(storageOptions.Value.SitesBucket, build.LogObjectKey, ct);
+                using var mem = new MemoryStream();
+                await stream.CopyToAsync(mem, ct);
+                return Results.Text(Encoding.UTF8.GetString(mem.ToArray()), "text/plain; charset=utf-8");
+            }
+            catch
+            {
+                return Results.Text(build.Error ?? "The build log could not be retrieved.", "text/plain");
+            }
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
+        // Force a fresh build+deploy of the current release head, even if its tree is
+        // unchanged (recovers from a failed build or a wedged queue — the tree-diff no-op
+        // in the normal push path can't otherwise re-trigger).
+        app.MapPost("/api/admin/sites/{id:guid}/builds", async (
+            Guid id, SitesDbContext db, IEventPublisher events,
+            Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+        {
+            var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (site is null) return Results.NotFound();
+            if (site.RenderMode != SiteRenderMode.ReactApp || site.GitRepoFullName is null || !git.Enabled)
+                return Results.BadRequest(new { error = "This site has no git-backed release to rebuild." });
+            var buildId = await EnqueueReleaseBuildAsync(db, events, git, site, ct);
+            return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{buildId}", new { buildId });
+        }).RequirePermission(PlatformPermissions.SitePublish);
+
         return app;
+    }
+
+    /// <summary>Queue a build of the current <c>release</c> tree and request it. Reaps any
+    /// stale in-flight builds first so a wedged queue can't block the new one.</summary>
+    private static async Task<Guid> EnqueueReleaseBuildAsync(
+        SitesDbContext db, IEventPublisher events, Dcms.AdminApi.Sites.Git.SiteGitService git,
+        Site site, CancellationToken ct)
+    {
+        await ReapStaleBuildsAsync(db, site.Id, ct);
+        var release = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
+        var head = await git.HeadShaAsync(site.GitRepoFullName!, release, ct);
+        var files = await git.ReadFilesAsync(site.GitRepoFullName!, release, ct);
+        var build = new SiteBuild
+        {
+            Id = Guid.NewGuid(),
+            TenantId = site.TenantId,
+            SiteId = site.Id,
+            Status = SiteBuildStatus.Queued,
+            DefinitionSnapshotJson = SiteFileMap.Serialize(files),
+            GitCommitSha = head,
+        };
+        build.ArtifactPrefix = $"{site.TenantId}/{site.Id}/{build.Id}";
+        db.Builds.Add(build);
+        await db.SaveChangesAsync(ct);
+        await events.PublishAsync(Subjects.SitePublishRequested, new SitePublishRequested(
+            Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id, site.RenderMode.ToString()), ct);
+        return build.Id;
+    }
+
+    /// <summary>Mark builds stuck in Queued/Building past the timeout as Failed, so a crashed
+    /// builder or lost message can't permanently block a site's publishing.</summary>
+    private static async Task ReapStaleBuildsAsync(SitesDbContext db, Guid siteId, CancellationToken ct)
+    {
+        var cutoff = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(15);
+        var stale = await db.Builds.IgnoreQueryFilters()
+            .Where(b => b.SiteId == siteId
+                && (b.Status == SiteBuildStatus.Queued || b.Status == SiteBuildStatus.Building)
+                && b.CreatedAt < cutoff)
+            .ToListAsync(ct);
+        foreach (var b in stale)
+        {
+            b.Status = SiteBuildStatus.Failed;
+            b.Error ??= "Build timed out — no result within 15 minutes.";
+            b.CompletedAt = DateTimeOffset.UtcNow;
+        }
+        if (stale.Count > 0) await db.SaveChangesAsync(ct);
     }
 
     /// <summary>The effective branch for an IDE/git request: the given branch, else the
@@ -912,8 +1091,8 @@ public static class SiteEndpoints
     private sealed record FileWrite(string Content, string? BaseHash);
     private sealed record DeleteEntry(string Path, string? BaseHash);
     private sealed record GitRestoreRequest(string Sha);
-    private sealed record CommitRequest(string? Branch, string? TargetBranch, string? NewBranch, string Message, string? Description);
+    private sealed record CommitRequest(string? Branch, string? TargetBranch, string? NewBranch, string Message, string? Description, string? Resolve);
     private sealed record CreateBranchRequest(string Name, string? From);
-    private sealed record MergeRequest(string Head, string? Strategy);
-    private sealed record ResolveMergeRequest(string Head, Dictionary<string, string?>? Resolutions);
+    private sealed record MergeRequest(string Head, string? Base, string? Strategy);
+    private sealed record ResolveMergeRequest(string Head, string? Base, Dictionary<string, string?>? Resolutions);
 }

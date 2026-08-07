@@ -5,29 +5,58 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
+  Eye,
   FilePlus2,
   FileMinus2,
   FilePen,
+  GitBranch,
   GitCommitHorizontal,
   GitMerge,
   Plus,
   RotateCcw,
+  X,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '../../components/ui/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../components/ui/dropdown-menu';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { ApiError } from '../../lib/api';
 import { cn } from '../../lib/cn';
-import type { GitChange } from './git';
+import type { GitChange, GitCommit } from './git';
 import { gitApi } from './git';
 import { MergeDialog } from './MergeDialog';
 import { RELEASE_BRANCH } from './constants';
+import { useRelativeTime } from './useRelativeTime';
 import { useVfs } from './vfs';
 
+// A file in conflict when committing onto a branch that moved: the branch's current
+// version vs the user's edit (with the common ancestor for a 3-way view).
+interface CommitConflictFile {
+  path: string;
+  branchContent: string | null;
+  draftContent: string | null;
+  baseContent?: string | null;
+}
+
 // The Source Control view that lives in the IDE's left sidebar (VS Code style):
-// branch selector + create, a commit box, the working-draft changes list (clicking
+// a branch switcher + create, a commit box, the working-draft changes list (clicking
 // a file opens a diff tab in the editor), a "Merge into release" action, and the
 // git history + clone URLs.
 export function SourceControlView({
@@ -44,13 +73,17 @@ export function SourceControlView({
   onRestored: (files: Record<string, string>, version: number, hashes: Record<string, string>) => void;
 }) {
   const { t } = useTranslation();
+  const relative = useRelativeTime();
   const queryClient = useQueryClient();
   const openDiff = useVfs((s) => s.openDiff);
   const [message, setMessage] = useState('');
   const [description, setDescription] = useState('');
   const [newBranchName, setNewBranchName] = useState('');
   const [showNewBranch, setShowNewBranch] = useState(false);
+  const [creatingBranch, setCreatingBranch] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
+  const [conflict, setConflict] = useState<CommitConflictFile[] | null>(null);
   const [showHistory, setShowHistory] = useState(true);
   const [showClone, setShowClone] = useState(false);
 
@@ -83,22 +116,31 @@ export function SourceControlView({
   };
 
   const commit = useMutation({
-    mutationFn: (toNewBranch: boolean) =>
+    mutationFn: (v: { toNewBranch: boolean; resolve?: 'mine' | 'theirs' }) =>
       gitApi.commit(siteId, {
         branch,
         message: message.trim(),
         description: description.trim() || undefined,
-        newBranch: toNewBranch ? newBranchName.trim() : undefined,
+        newBranch: v.toNewBranch ? newBranchName.trim() : undefined,
+        resolve: v.resolve,
       }),
-    onSuccess: (res, toNewBranch) => {
+    onSuccess: (res, v) => {
       toast.success(t('ide.git.committed'));
+      setConflict(null);
       afterCommit();
-      if (toNewBranch) onSwitchBranch(res.branch);
+      if (v.toNewBranch) onSwitchBranch(res.branch);
       else onReload();
     },
     onError: (e) => {
-      if (e instanceof ApiError && e.status === 409) toast.error(t('ide.git.branchMoved'));
-      else toast.error(t('errors.generic'));
+      // The branch moved AND the same files were edited on both sides — the only case
+      // reconcile can't resolve alone. Ask the user which version to keep (showing content).
+      if (e instanceof ApiError && e.status === 409) {
+        const files = (e.detail as { files?: CommitConflictFile[] })?.files ?? [];
+        if (files.length) setConflict(files);
+        else toast.error(t('ide.git.branchMoved'));
+      } else {
+        toast.error(t('errors.generic'));
+      }
     },
   });
 
@@ -106,6 +148,8 @@ export function SourceControlView({
     mutationFn: (name: string) => gitApi.createBranch(siteId, name, branch),
     onSuccess: (res) => {
       toast.success(t('ide.git.branchCreated'));
+      setShowCreate(false);
+      setCreatingBranch('');
       queryClient.invalidateQueries({ queryKey: ['git-branches', siteId] });
       onSwitchBranch(res.name);
     },
@@ -125,6 +169,10 @@ export function SourceControlView({
   const openChangeDiff = (c: GitChange) =>
     openDiff({ path: c.path, status: c.status, original: c.headContent, modified: c.draftContent });
 
+  const askRestore = (c: GitCommit) => {
+    if (window.confirm(t('ide.git.restoreConfirm', { sha: c.shortSha }))) restore.mutate(c.sha);
+  };
+
   if (status.isLoading) return <CenteredSpinner label={t('common.loading')} />;
   const s = status.data;
   if (s && !s.enabled) return <p className="p-3 text-sm text-muted-foreground">{t('ide.git.disabled')}</p>;
@@ -132,36 +180,72 @@ export function SourceControlView({
     return <p className="p-3 text-sm text-muted-foreground">{t('ide.git.provisioning')}</p>;
 
   const changeList = changes.data ?? [];
+  const branchList = branches.data ?? [{ name: branch }];
   const onRelease = branch === RELEASE_BRANCH;
+  const submitCreate = () => {
+    const name = creatingBranch.trim();
+    if (name && !createBranch.isPending) createBranch.mutate(name);
+  };
 
   return (
     <div className="flex h-full flex-col overflow-auto">
       {/* Branch bar */}
-      <div className="flex shrink-0 items-center gap-1.5 border-b p-2">
-        <select
-          value={branch}
-          onChange={(e) => onSwitchBranch(e.target.value)}
-          className="min-w-0 flex-1 rounded border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-          title={t('ide.git.branch')}
-        >
-          {(branches.data ?? [{ name: branch }]).map((b) => (
-            <option key={b.name} value={b.name}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-        <Button
-          variant="ghost"
-          size="icon"
-          title={t('ide.git.createBranch')}
-          disabled={createBranch.isPending}
-          onClick={() => {
-            const name = window.prompt(t('ide.git.newBranchName'))?.trim();
-            if (name) createBranch.mutate(name);
-          }}
-        >
-          <Plus className="h-4 w-4" />
-        </Button>
+      <div className="shrink-0 border-b p-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="flex w-full items-center gap-2 rounded border bg-background px-2 py-1.5 text-left text-xs outline-none transition-colors hover:bg-accent focus:ring-1 focus:ring-ring"
+            title={t('ide.git.switchBranch')}
+          >
+            <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate font-medium">{branch}</span>
+            {onRelease && <BranchTag label={t('ide.git.production')} tone="release" />}
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-52">
+            <DropdownMenuLabel className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              {t('ide.git.branch')}
+            </DropdownMenuLabel>
+            {branchList.map((b) => (
+              <DropdownMenuItem
+                key={b.name}
+                onSelect={() => b.name !== branch && onSwitchBranch(b.name)}
+                className="text-xs"
+              >
+                <Check className={cn('h-3.5 w-3.5 shrink-0', b.name === branch ? 'opacity-100' : 'opacity-0')} />
+                <span className="min-w-0 flex-1 truncate">{b.name}</span>
+                {b.name === RELEASE_BRANCH && <BranchTag label={t('ide.git.production')} tone="release" />}
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => setShowCreate(true)} className="text-xs">
+              <Plus className="h-3.5 w-3.5 shrink-0" />
+              {t('ide.git.createBranchAction')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {showCreate && (
+          <div className="mt-2 flex items-center gap-1.5">
+            {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
+            <input
+              autoFocus
+              value={creatingBranch}
+              onChange={(e) => setCreatingBranch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitCreate();
+                if (e.key === 'Escape') setShowCreate(false);
+              }}
+              placeholder={t('ide.git.newBranchName')}
+              className="min-w-0 flex-1 rounded border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+            />
+            <Button size="icon" variant="ghost" title={t('ide.git.createBranch')} disabled={!creatingBranch.trim() || createBranch.isPending} onClick={submitCreate}>
+              <Check className="h-4 w-4" />
+            </Button>
+            <Button size="icon" variant="ghost" title={t('common.cancel')} onClick={() => setShowCreate(false)}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Commit box */}
@@ -192,7 +276,7 @@ export function SourceControlView({
             className="min-w-0 flex-1"
             size="sm"
             disabled={!message.trim() || commit.isPending || (showNewBranch && !newBranchName.trim())}
-            onClick={() => commit.mutate(showNewBranch)}
+            onClick={() => commit.mutate({ toNewBranch: showNewBranch })}
           >
             <GitCommitHorizontal className="h-4 w-4 shrink-0" />
             <span className="truncate">
@@ -200,12 +284,13 @@ export function SourceControlView({
             </span>
           </Button>
           <Button
-            variant="outline"
+            variant={showNewBranch ? 'default' : 'outline'}
             size="icon"
             title={t('ide.git.newBranch')}
+            aria-pressed={showNewBranch}
             onClick={() => setShowNewBranch((v) => !v)}
           >
-            <Plus className="h-4 w-4" />
+            <GitBranch className="h-4 w-4" />
           </Button>
         </div>
         {!onRelease && (
@@ -253,36 +338,44 @@ export function SourceControlView({
             {history.data?.length === 0 && (
               <p className="p-2 text-xs text-muted-foreground">{t('ide.git.noCommits')}</p>
             )}
-            {history.data?.map((c) => (
-              <li key={c.sha} className="flex items-start gap-1.5 px-2 py-1.5">
+            {history.data?.map((c, i) => (
+              <li key={c.sha} className="group flex items-start gap-1.5 px-2 py-1.5 hover:bg-accent/40">
                 <GitCommitHorizontal className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs">{(c.message ?? '').split('\n')[0]}</p>
-                  <p className="text-[10px] text-muted-foreground">
+                  <p className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                     <code>{c.shortSha}</code>
-                    {c.author ? ` · ${c.author}` : ''}
+                    {c.author ? <span className="truncate">· {c.author}</span> : null}
+                    {c.date ? (
+                      <span className="shrink-0" title={new Date(c.date).toLocaleString()}>
+                        · {relative(c.date)}
+                      </span>
+                    ) : null}
+                    {i === 0 && <BranchTag label={t('ide.git.current')} tone="current" />}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => restore.mutate(c.sha)}
-                  disabled={restore.isPending}
-                  title={t('ide.git.restore')}
-                  className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-50"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                </button>
-                {c.htmlUrl && (
-                  <a
-                    href={c.htmlUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    title={t('ide.git.viewInForgejo')}
-                    className="mt-0.5 text-muted-foreground hover:text-foreground"
+                <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => askRestore(c)}
+                    disabled={restore.isPending}
+                    title={t('ide.git.restore')}
+                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
                   >
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                )}
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </button>
+                  {c.htmlUrl && (
+                    <a
+                      href={c.htmlUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={t('ide.git.viewInForgejo')}
+                      className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
@@ -310,7 +403,79 @@ export function SourceControlView({
           queryClient.invalidateQueries({ queryKey: ['git-changes', siteId] });
         }}
       />
+
+      {/* Commit conflict: the branch moved and the same files were edited on both
+          sides. Everything else was merged automatically — the user just picks which
+          version wins for these files, then the commit goes through. */}
+      <Dialog open={!!conflict} onOpenChange={(o) => !o && setConflict(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('ide.git.conflictTitle')}</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {t('ide.git.conflictIntroCommit', { branch })}
+            </p>
+            <ul className="max-h-48 space-y-1 overflow-auto rounded border bg-muted/40 p-2">
+              {(conflict ?? []).map((f) => (
+                <li key={f.path} className="flex items-center gap-1.5 text-xs">
+                  <FilePen className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                  <span className="min-w-0 flex-1 truncate" title={f.path}>{f.path}</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openDiff({
+                        path: f.path,
+                        status: 'modified',
+                        original: f.branchContent,
+                        modified: f.draftContent,
+                      })
+                    }
+                    title={t('ide.git.viewDiff')}
+                    className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </DialogBody>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
+            <Button variant="ghost" onClick={() => setConflict(null)} disabled={commit.isPending}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => commit.mutate({ toNewBranch: false, resolve: 'theirs' })}
+              disabled={commit.isPending}
+            >
+              {t('ide.git.useBranchVersion', { branch })}
+            </Button>
+            <Button
+              onClick={() => commit.mutate({ toNewBranch: false, resolve: 'mine' })}
+              disabled={commit.isPending}
+            >
+              {t('ide.git.keepMyChanges')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function BranchTag({ label, tone }: { label: string; tone: 'release' | 'current' }) {
+  return (
+    <span
+      className={cn(
+        'shrink-0 rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide',
+        tone === 'release'
+          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+          : 'bg-primary/15 text-primary',
+      )}
+    >
+      {label}
+    </span>
   );
 }
 

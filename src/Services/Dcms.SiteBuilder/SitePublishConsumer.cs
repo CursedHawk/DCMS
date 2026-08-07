@@ -105,6 +105,7 @@ public sealed class SitePublishConsumer(
 
         if (string.Equals(job.RenderMode, SiteRenderMode.ReactApp.ToString(), StringComparison.OrdinalIgnoreCase))
         {
+            build.LogObjectKey = LogKey(build.ArtifactPrefix);
             await BuildReactAppAsync(build.DefinitionSnapshotJson, build.ArtifactPrefix, ct);
         }
         else if (string.Equals(job.RenderMode, SiteRenderMode.StaticFiles.ToString(), StringComparison.OrdinalIgnoreCase))
@@ -187,23 +188,47 @@ public sealed class SitePublishConsumer(
         }
     }
 
-    // Mode B: materialize the AI/editor file map and run a sandboxed vite build.
+    // Mode B: materialize the site's project and run its own package-manager
+    // install + build. The full step log is stored to object storage (under a
+    // deterministic key) whether the build succeeds or fails, so the IDE can show
+    // the user exactly why a build failed.
     private async Task BuildReactAppAsync(string definitionJson, string artifactPrefix, CancellationToken ct)
     {
         var workDir = Path.Combine(Path.GetTempPath(), $"dcms-react-{Guid.NewGuid():N}");
         Directory.CreateDirectory(workDir);
+        var log = new StringBuilder();
         try
         {
-            var artifacts = await reactBuilder.BuildAsync(definitionJson, workDir, ct);
+            var artifacts = await reactBuilder.BuildAsync(definitionJson, workDir, log, ct);
             foreach (var artifact in artifacts)
             {
                 await using var stream = File.OpenRead(artifact.LocalPath);
                 await storage.PutAsync(Bucket, $"{artifactPrefix}/{artifact.RelativePath}", stream, stream.Length, artifact.ContentType, ct);
             }
+            log.AppendLine($"✓ Build succeeded — {artifacts.Count} file(s) in dist/.");
         }
         finally
         {
+            await StoreLogAsync(artifactPrefix, log.ToString(), ct);
             try { Directory.Delete(workDir, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    // Deterministic per-build log key so both the success and failure paths (which
+    // run in different DB scopes) agree without threading the value between them.
+    private static string LogKey(string artifactPrefix) => $"{artifactPrefix}/_dcms-build.log";
+
+    private async Task StoreLogAsync(string artifactPrefix, string log, CancellationToken ct)
+    {
+        try
+        {
+            var bytes = Encoding.UTF8.GetBytes(log);
+            await using var stream = new MemoryStream(bytes);
+            await storage.PutAsync(Bucket, LogKey(artifactPrefix), stream, bytes.Length, "text/plain; charset=utf-8", ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed storing build log for {Prefix}", artifactPrefix);
         }
     }
 
@@ -218,6 +243,9 @@ public sealed class SitePublishConsumer(
             {
                 build.Status = SiteBuildStatus.Failed;
                 build.Error = error;
+                // The build log (if a React build got far enough to write one) lives at
+                // a deterministic key; point the build at it so the IDE can show it.
+                build.LogObjectKey ??= LogKey(build.ArtifactPrefix);
                 build.CompletedAt = DateTimeOffset.UtcNow;
                 await db.SaveChangesAsync(ct);
             }

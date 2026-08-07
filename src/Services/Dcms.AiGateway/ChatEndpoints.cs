@@ -19,7 +19,7 @@ public static class ChatEndpoints
                 return Results.BadRequest(new { error = "tenantId and prompt are required." });
             }
 
-            var resolved = await resolver.ResolveAsync(body.TenantId, ct);
+            var resolved = await resolver.ResolveAsync(body.TenantId, body.UserId, ct);
             var logger = loggerFactory.CreateLogger("ai-gateway");
             logger.LogInformation("Chat completion via {Provider}/{Model} for tenant {TenantId}",
                 resolved.Provider.ProviderId, resolved.Model, body.TenantId);
@@ -41,6 +41,6 @@ public static class ChatEndpoints
         return app;
     }
 
-    public sealed record ChatCompletionRequest(Guid TenantId, string Prompt, string? System, int? MaxTokens);
+    public sealed record ChatCompletionRequest(Guid TenantId, string Prompt, string? System, int? MaxTokens, Guid? UserId = null);
     public sealed record ChatCompletionResponse(string Provider, string Model, string Text);
 }
