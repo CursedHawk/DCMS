@@ -1,5 +1,6 @@
-import { Languages, LogOut, Monitor, Moon, Search, Sun } from 'lucide-react';
+import { Languages, LogOut, Monitor, Moon, Search, Settings, Sun } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from '@tanstack/react-router';
 import { Button } from '../components/ui/button';
 import {
   DropdownMenu,
@@ -20,6 +21,7 @@ export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const { theme, setTheme, resolved } = useTheme();
+  const navigate = useNavigate();
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur">
@@ -101,6 +103,9 @@ export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
             <p className="text-xs text-muted-foreground">{user?.profile.email}</p>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => void navigate({ to: '/account' as string })}>
+            <Settings className="h-4 w-4" /> {t('account.menuItem')}
+          </DropdownMenuItem>
           <DropdownMenuItem destructive onClick={() => void logout()}>
             <LogOut className="h-4 w-4" /> {t('actions.signOut')}
           </DropdownMenuItem>

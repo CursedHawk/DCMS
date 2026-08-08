@@ -39,6 +39,9 @@ import {
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { ApiError } from '../../lib/api';
 import { cn } from '../../lib/cn';
+import { can, repoRead, repoWrite, useMyPermissions } from '../../lib/permissions';
+import { useNavigate } from '@tanstack/react-router';
+import { accountApi } from '../account/accountApi';
 import type { GitChange, GitCommit } from './git';
 import { gitApi } from './git';
 import { MergeDialog } from './MergeDialog';
@@ -86,6 +89,19 @@ export function SourceControlView({
   const [conflict, setConflict] = useState<CommitConflictFile[] | null>(null);
   const [showHistory, setShowHistory] = useState(true);
   const [showClone, setShowClone] = useState(false);
+
+  const { data: me } = useMyPermissions(true);
+  // Whether the caller may clone/pull this site's repo with their own credentials.
+  const canClone = can(me, repoRead(siteId)) || can(me, repoWrite(siteId));
+  const navigate = useNavigate();
+  // Only fetch git-credential status once the clone panel is opened by a user who
+  // actually has repo access — used to nudge Google/no-password accounts.
+  const account = useQuery({
+    queryKey: ['account-me'],
+    queryFn: () => accountApi.me(),
+    enabled: showClone && canClone,
+  });
+  const needsGitCreds = account.data && !account.data.hasGitPassword;
 
   const status = useQuery({ queryKey: ['git-status', siteId], queryFn: () => gitApi.status(siteId) });
   const provisioned = !!status.data?.provisioned;
@@ -387,8 +403,23 @@ export function SourceControlView({
         <SectionHeader label={t('ide.git.clone')} open={showClone} onToggle={() => setShowClone((v) => !v)} />
         {showClone && s && (
           <div className="space-y-1.5 p-2">
-            <CopyRow label="HTTPS" value={s.httpUrl ?? ''} />
-            <CopyRow label="SSH" value={s.sshUrl ?? ''} />
+            {canClone ? (
+              <>
+                <CopyRow label="HTTPS" value={s.httpUrl ?? ''} />
+                <CopyRow label="SSH" value={s.sshUrl ?? ''} />
+                {needsGitCreds ? (
+                  <button
+                    type="button"
+                    onClick={() => void navigate({ to: '/account' as string })}
+                    className="mt-1 w-full rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-left text-xs text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
+                  >
+                    {t('ide.git.noGitPassword')}
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <p className="px-1 text-xs text-muted-foreground">{t('ide.git.noRepoAccess')}</p>
+            )}
           </div>
         )}
       </div>

@@ -27,6 +27,10 @@ export const Perm = {
   ChatManage: 'chat:manage',
 } as const;
 
+/** Per-site git repo permission keys (resource-scoped; mirrors PlatformPermissions). */
+export const repoRead = (siteId: string) => `repo:${siteId}:read`;
+export const repoWrite = (siteId: string) => `repo:${siteId}:write`;
+
 export function useMyPermissions(enabled: boolean) {
   // Re-fetch when the tenant changes (permissions are tenant-scoped).
   const tenant = getCurrentTenantSlug();

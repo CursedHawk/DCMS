@@ -1,6 +1,7 @@
 using Dcms.Identity;
 using Dcms.Identity.Data;
 using Dcms.Identity.Domain;
+using Dcms.Identity.Email;
 using Dcms.Identity.Endpoints;
 using Dcms.Identity.Seeding;
 using Dcms.Shared.Hosting;
@@ -8,6 +9,7 @@ using Dcms.Shared.Messaging;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -32,6 +34,24 @@ builder.Services
     })
     .AddEntityFrameworkStores<IdentityDbContext>()
     .AddDefaultTokenProviders();
+
+// Google SSO. Only wired up when credentials are configured, so dev environments
+// without a Google OAuth client keep working (the sign-in pages simply omit the
+// Google button). AddIdentity sets DefaultSignInScheme to the external cookie,
+// which is where Google deposits the external principal before we link/create the
+// local account. Configure via Authentication:Google:ClientId / :ClientSecret
+// (env: Authentication__Google__ClientId, Authentication__Google__ClientSecret).
+var googleClientId = builder.Configuration["Authentication:Google:ClientId"];
+var googleClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
+if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(googleClientSecret))
+{
+    builder.Services.AddAuthentication().AddGoogle(options =>
+    {
+        options.ClientId = googleClientId;
+        options.ClientSecret = googleClientSecret;
+        options.SignInScheme = IdentityConstants.ExternalScheme;
+    });
+}
 
 // Align Identity's claim names with the OpenIddict claim names so the issued
 // principal carries sub/name/role as expected by resource servers.
@@ -102,8 +122,37 @@ builder.Services
         options.UseAspNetCore();
     });
 
-builder.Services.AddAuthorization();
+// The account-settings API authenticates with OpenIddict-validated access tokens
+// (bearer), not the interactive Identity cookie — so require that scheme explicitly.
+builder.Services.AddAuthorization(options =>
+    options.AddPolicy(Dcms.Identity.Endpoints.AccountApiEndpoints.PolicyName, policy => policy
+        .AddAuthenticationSchemes(OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)
+        .RequireAuthenticatedUser()));
 builder.Services.AddHostedService<IdentitySeeder>();
+
+// Forgejo user mirror: provision a Forgejo account per DCMS user and keep the
+// login (email + password) in sync so users can clone/pull/push with their own
+// credentials. The admin token (write:admin) arrives via Forgejo__AdminToken;
+// provisioning is a no-op until it's set (ForgejoOptions.Enabled). Passwords that
+// can't be synced inline are queued encrypted (Vault Transit) and retried.
+builder.Services.Configure<Dcms.Identity.Forgejo.ForgejoOptions>(
+    builder.Configuration.GetSection(Dcms.Identity.Forgejo.ForgejoOptions.SectionName));
+builder.Services.AddHttpClient<Dcms.Identity.Forgejo.ForgejoAdminClient>((sp, client) =>
+{
+    var opts = sp.GetRequiredService<IOptions<Dcms.Identity.Forgejo.ForgejoOptions>>().Value;
+    client.BaseAddress = new Uri(opts.BaseUrl.TrimEnd('/') + "/");
+    if (!string.IsNullOrWhiteSpace(opts.AdminToken))
+    {
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("token", opts.AdminToken);
+    }
+});
+builder.Services.AddScoped<Dcms.Identity.Forgejo.ForgejoUserSync>();
+builder.Services.AddHostedService<Dcms.Identity.Forgejo.ForgejoSyncWorker>();
+
+// Email delivery for password-reset links (Email:* config; defaults to Mailpit).
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
+builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
 
 // The admin SPA (oidc-client-ts) fetches the discovery document, JWKS and token
 // endpoint cross-origin, which requires CORS on those responses. Origins are the
@@ -138,6 +187,7 @@ app.UseAuthorization();
 
 app.MapDcmsDefaultEndpoints();
 app.MapAccountEndpoints();
+app.MapAccountApiEndpoints();
 app.MapAuthorizationEndpoints();
 app.MapGet("/", () => Results.Ok(new { service = "identity" }));
 app.Run();

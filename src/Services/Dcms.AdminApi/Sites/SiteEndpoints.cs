@@ -547,7 +547,7 @@ public static class SiteEndpoints
         // IDE never needs a manual provision step. Returns clone URLs for the panel.
         app.MapGet("/api/admin/sites/{id:guid}/git", async (
             Guid id, SitesDbContext db, ITenantContext tenant, Dcms.AdminApi.Sites.Git.SiteGitService git,
-            CancellationToken ct) =>
+            CurrentUser user, Dcms.AdminApi.Sites.Git.RepoAccessReconciler repoAccess, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
@@ -565,6 +565,11 @@ public static class SiteEndpoints
                 await db.SaveChangesAsync(ct);
             }
             if (site.GitRepoFullName is null) return Results.Ok(new { enabled = true, provisioned = false });
+
+            // Self-heal: bring the caller's Forgejo collaborator access in line with
+            // their per-site repo permissions whenever they open the git panel.
+            if (tenant.TenantId is Guid tid && user.UserId is Guid uid && !string.IsNullOrWhiteSpace(user.Email))
+                await repoAccess.ReconcileUserSiteAsync(tid, uid, user.Email!, site, ct);
 
             var (http, ssh) = git.CloneUrls(site.GitRepoFullName);
             return Results.Ok(new

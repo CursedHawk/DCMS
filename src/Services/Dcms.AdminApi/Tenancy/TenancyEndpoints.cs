@@ -1,6 +1,7 @@
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
+using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Messaging;
@@ -146,6 +147,7 @@ public static class TenancyEndpoints
         // roles keep their name fixed but their permissions may still be tuned.
         app.MapPut("/api/admin/roles/{id:guid}", async (
             Guid id, UpdateRoleRequest body, TenancyDbContext db, ITenantContext tenant,
+            TenancyPermissionResolver permissions, Dcms.AdminApi.Sites.Git.RepoAccessReconciler repoAccess,
             CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;
@@ -172,8 +174,19 @@ public static class TenancyEndpoints
                 });
             }
             await db.SaveChangesAsync(ct);
-            // Members holding this role get fresh permissions on next resolve (5-min
-            // TTL); role edits are infrequent so we let the cache lapse naturally.
+
+            // Members holding this role: invalidate their cached permissions and
+            // reconcile Forgejo repo access so changed repo:{site} grants take effect
+            // immediately (not after the 5-min TTL).
+            var affected = await db.Memberships
+                .Where(m => m.Roles.Any(r => r.TenantRoleId == id))
+                .Select(m => new { m.UserId, m.Email })
+                .ToListAsync(ct);
+            foreach (var m in affected)
+            {
+                await permissions.InvalidateAsync(tenantId, m.UserId, ct);
+                await repoAccess.ReconcileUserAsync(tenantId, m.UserId, m.Email, ct);
+            }
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.RolesManage);
 
@@ -215,7 +228,8 @@ public static class TenancyEndpoints
 
         app.MapPost("/api/admin/members/{membershipId:guid}/roles", async (
             Guid membershipId, AssignRoleRequest body, TenancyDbContext db, ITenantContext tenant,
-            IEventPublisher events, TenancyPermissionResolver permissions, CancellationToken ct) =>
+            IEventPublisher events, TenancyPermissionResolver permissions,
+            Dcms.AdminApi.Sites.Git.RepoAccessReconciler repoAccess, CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;
             var membership = await db.Memberships.Include(m => m.Roles)
@@ -241,13 +255,16 @@ public static class TenancyEndpoints
                 await permissions.InvalidateAsync(tenantId, membership.UserId, ct);
                 await events.PublishAsync(Subjects.MembershipChanged,
                     new MembershipChanged(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, membership.UserId), ct);
+                // Sync the user's Forgejo repo access to their new permission set.
+                await repoAccess.ReconcileUserAsync(tenantId, membership.UserId, membership.Email, ct);
             }
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.MembersManage);
 
         app.MapDelete("/api/admin/members/{membershipId:guid}/roles/{roleId:guid}", async (
             Guid membershipId, Guid roleId, TenancyDbContext db, ITenantContext tenant,
-            IEventPublisher events, TenancyPermissionResolver permissions, CancellationToken ct) =>
+            IEventPublisher events, TenancyPermissionResolver permissions,
+            Dcms.AdminApi.Sites.Git.RepoAccessReconciler repoAccess, CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;
             var membership = await db.Memberships.Include(m => m.Roles)
@@ -264,13 +281,17 @@ public static class TenancyEndpoints
                 await permissions.InvalidateAsync(tenantId, membership.UserId, ct);
                 await events.PublishAsync(Subjects.MembershipChanged,
                     new MembershipChanged(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, membership.UserId), ct);
+                // Sync the user's Forgejo repo access to their reduced permission set.
+                await repoAccess.ReconcileUserAsync(tenantId, membership.UserId, membership.Email, ct);
             }
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.MembersManage);
 
         // Effective permission catalog: platform keys ∪ installed plugins' manifest
-        // permissions, each with a display name and group — drives the role matrix.
-        app.MapGet("/api/admin/permissions/catalog", (IPluginCatalog catalog) =>
+        // permissions ∪ per-site git repo permissions, each with a display name and
+        // group — drives the role matrix.
+        app.MapGet("/api/admin/permissions/catalog", async (
+            IPluginCatalog catalog, SitesDbContext sites, CancellationToken ct) =>
         {
             var platform = PlatformPermissions.All.Select(k => new
             {
@@ -284,7 +305,25 @@ public static class TenancyEndpoints
                 displayName = p.DisplayName,
                 group = m.Name,
             }));
-            return Results.Ok(platform.Concat(plugin));
+
+            // Per-site repo perms (Mode B sites): one read + one write key per site,
+            // so roles can grant pull/push on individual repositories.
+            var modeBSites = await sites.Sites
+                .Where(s => s.RenderMode == SiteRenderMode.ReactApp)
+                .OrderBy(s => s.Name)
+                .Select(s => new { s.Id, s.Name })
+                .ToListAsync(ct);
+            var repo = modeBSites.SelectMany(s =>
+            {
+                var name = string.IsNullOrWhiteSpace(s.Name) ? s.Id.ToString() : s.Name;
+                return new[]
+                {
+                    new { key = PlatformPermissions.RepoRead(s.Id), displayName = $"{name}: clone/pull", group = "Repositories" },
+                    new { key = PlatformPermissions.RepoWrite(s.Id), displayName = $"{name}: push", group = "Repositories" },
+                };
+            });
+
+            return Results.Ok(platform.Concat(plugin).Concat(repo));
         }).RequireAuthorization();
 
         return app;

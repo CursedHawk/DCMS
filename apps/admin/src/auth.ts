@@ -21,6 +21,13 @@ export function login(): Promise<void> {
   return userManager.signinRedirect();
 }
 
+// Same authorization-code flow as login(), but carries a hint so the identity
+// server lands the user on the sign-up form instead of the sign-in form. The
+// flag rides along as returnUrl and survives the round-trip back to /connect/authorize.
+export function register(): Promise<void> {
+  return userManager.signinRedirect({ extraQueryParams: { dcms_flow: 'register' } });
+}
+
 export function logout(): Promise<void> {
   return userManager.signoutRedirect();
 }

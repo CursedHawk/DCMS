@@ -75,6 +75,29 @@ services:
       # SPA redirect/sign-out URIs registered for the public admin host.
       Identity__Spa__RedirectUris: "https://admin.highgeek.eu/auth/callback"
       Identity__Spa__PostLogoutUris: "https://admin.highgeek.eu/"
+      # Google SSO. Left unset → the sign-in/up pages simply omit the Google
+      # button. Provide both in .env to enable it. The authorized redirect URI to
+      # register in the Google Cloud console is:
+      #   https://admin.highgeek.eu/signin-google
+      Authentication__Google__ClientId: "${GOOGLE_CLIENT_ID:-}"
+      Authentication__Google__ClientSecret: "${GOOGLE_CLIENT_SECRET:-}"
+      # Password-reset email. Defaults target the in-cluster Mailpit (captures mail,
+      # does not deliver — view it via the mailpit container). To deliver real mail,
+      # set Email__Host/Port/User/Password to an SMTP relay and Email__UseStartTls=true.
+      Email__FromAddress: "${EMAIL_FROM_ADDRESS:-no-reply@highgeek.eu}"
+      Email__FromName: "${EMAIL_FROM_NAME:-DCMS}"
+      Email__Host: "${EMAIL_HOST:-mailpit}"
+      Email__Port: "${EMAIL_PORT:-1025}"
+      Email__User: "${EMAIL_USER:-}"
+      Email__Password: "${EMAIL_PASSWORD:-}"
+      Email__UseStartTls: "${EMAIL_USE_STARTTLS:-false}"
+      # Forgejo user mirror: Identity provisions a Forgejo account per DCMS user and
+      # keeps email+password in sync so users can clone/pull/push with their own
+      # credentials. The admin token needs the write:admin scope (user provisioning);
+      # provisioning is a no-op until FORGEJO_ADMIN_TOKEN is set in .env.
+      Forgejo__BaseUrl: "http://forgejo:3000"
+      Forgejo__AdminToken: "${FORGEJO_ADMIN_TOKEN:-}"
+      Forgejo__PublicUrl: "https://git.highgeek.eu"
 
   admin-api:
     environment:
@@ -86,6 +109,9 @@ services:
       # public URLs are what the IDE shows users for clone.
       Forgejo__BaseUrl: "http://forgejo:3000"
       Forgejo__Token: "${FORGEJO_TOKEN}"
+      # Admin-scoped token (write:admin) for user/repo authorization (Phase 2 repo
+      # collaborator grants). Falls back to no-op until set in .env.
+      Forgejo__AdminToken: "${FORGEJO_ADMIN_TOKEN:-}"
       Forgejo__PublicUrl: "https://git.highgeek.eu"
       Forgejo__SshHost: "git.highgeek.eu"
       Forgejo__SshPort: "2222"

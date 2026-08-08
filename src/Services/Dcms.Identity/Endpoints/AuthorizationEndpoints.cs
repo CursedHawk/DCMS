@@ -51,7 +51,10 @@ public static class AuthorizationEndpoints
             // twice before any authorization code is issued. A plain redirect
             // goes straight to the form with the correct returnUrl.
             var returnUrl = context.Request.PathBase + context.Request.Path + context.Request.QueryString;
-            return Results.Redirect("/account/login?returnUrl=" + Uri.EscapeDataString(returnUrl));
+            // The SPA's register() sends dcms_flow=register so a new user lands on
+            // the sign-up form; everyone else gets the sign-in form.
+            var target = context.Request.Query["dcms_flow"] == "register" ? "/account/register" : "/account/login";
+            return Results.Redirect(target + "?returnUrl=" + Uri.EscapeDataString(returnUrl));
         }
 
         var user = await userManager.GetUserAsync(result.Principal)

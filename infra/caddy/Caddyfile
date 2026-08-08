@@ -21,10 +21,12 @@
 # the browser uses a single same-origin host for OIDC + API calls.
 admin.highgeek.eu {
 	# Identity-owned paths: OIDC discovery/JWKS, the connect/* protocol endpoints,
-	# and the interactive login UI. Matched case-insensitively because ASP.NET
-	# routing is case-insensitive and the cookie-auth challenge redirects to the
-	# capitalised "/Account/Login" while the endpoints are mapped lowercase.
-	@identity path_regexp (?i)^/(connect|account|\.well-known)(/|$)
+	# the interactive login UI, and the Google external-login callback
+	# (/signin-google, the GoogleHandler's default CallbackPath). Matched
+	# case-insensitively because ASP.NET routing is case-insensitive and the
+	# cookie-auth challenge redirects to the capitalised "/Account/Login" while
+	# the endpoints are mapped lowercase.
+	@identity path_regexp (?i)^/(connect|account|signin-google|\.well-known)(/|$)
 	handle @identity {
 		reverse_proxy identity:8080
 	}

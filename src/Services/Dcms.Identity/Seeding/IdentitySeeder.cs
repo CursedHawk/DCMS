@@ -80,6 +80,10 @@ public sealed class IdentitySeeder(
                 "Failed to seed SuperAdmin: " + string.Join("; ", result.Errors.Select(e => e.Description)));
         }
         await userManager.AddToRoleAsync(user, GlobalRoles.SuperAdmin);
+
+        // Mirror into Forgejo so the platform admin can use git with these credentials.
+        await sp.GetRequiredService<Forgejo.ForgejoUserSync>().EnsureAsync(user, password, CancellationToken.None);
+
         logger.LogInformation("Seeded SuperAdmin {Email}.", email);
     }
 

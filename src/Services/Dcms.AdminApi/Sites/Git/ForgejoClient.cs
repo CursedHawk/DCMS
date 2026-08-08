@@ -259,6 +259,47 @@ public sealed class ForgejoClient(HttpClient http, IOptions<ForgejoOptions> opti
         if (res.StatusCode != HttpStatusCode.Created) await ThrowFor(res, ct);
     }
 
+    // ---------- users / collaborators (repo authorization) ----------
+
+    /// <summary>Resolve a Forgejo username from an exact email match, or null if no
+    /// account has that email yet (e.g. the user hasn't been provisioned/logged in).</summary>
+    public async Task<string?> FindUsernameByEmailAsync(string email, CancellationToken ct)
+    {
+        var res = await http.GetFromJsonAsync<UserSearchResult>(
+            $"/api/v1/users/search?q={Uri.EscapeDataString(email)}&limit=50", Json, ct);
+        return res?.Data?.FirstOrDefault(u =>
+            string.Equals(u.Email, email, StringComparison.OrdinalIgnoreCase))?.Login;
+    }
+
+    /// <summary>Grant a user collaborator access to a repo at the given permission
+    /// ("read" | "write" | "admin"). Idempotent — re-adding updates the level.</summary>
+    public async Task AddCollaboratorAsync(string owner, string repo, string username, string permission, CancellationToken ct)
+    {
+        using var res = await http.PutAsJsonAsync(
+            $"/api/v1/repos/{owner}/{repo}/collaborators/{Uri.EscapeDataString(username)}",
+            new AddCollaboratorOption(permission), Json, ct);
+        if (res.StatusCode is not (HttpStatusCode.NoContent or HttpStatusCode.Created or HttpStatusCode.OK))
+            await ThrowFor(res, ct);
+    }
+
+    /// <summary>Revoke a user's collaborator access to a repo. A 404 (not a collaborator)
+    /// is treated as success so reconciliation is idempotent.</summary>
+    public async Task RemoveCollaboratorAsync(string owner, string repo, string username, CancellationToken ct)
+    {
+        using var res = await http.DeleteAsync(
+            $"/api/v1/repos/{owner}/{repo}/collaborators/{Uri.EscapeDataString(username)}", ct);
+        if (res.StatusCode is not (HttpStatusCode.NoContent or HttpStatusCode.NotFound))
+            await ThrowFor(res, ct);
+    }
+
+    /// <summary>List the current collaborator logins on a repo (excludes the owner org).</summary>
+    public async Task<IReadOnlyList<string>> ListCollaboratorLoginsAsync(string owner, string repo, CancellationToken ct)
+    {
+        var list = await http.GetFromJsonAsync<List<UserInfo>>(
+            $"/api/v1/repos/{owner}/{repo}/collaborators?limit=100", Json, ct);
+        return list?.Select(u => u.Login).ToList() ?? [];
+    }
+
     // ---------- clone URLs (for the IDE clone panel) ----------
 
     public string HttpCloneUrl(string owner, string repo) =>
@@ -324,6 +365,11 @@ public sealed class ForgejoClient(HttpClient http, IOptions<ForgejoOptions> opti
 
     private sealed record WebhookInfo(long Id, Dictionary<string, string>? Config);
     private sealed record CreateHookOption(string Type, bool Active, string[] Events, Dictionary<string, string> Config);
+
+    private sealed record UserSearchResult(List<UserInfo>? Data, bool Ok);
+    private sealed record UserInfo(long Id, string Login, string? Email);
+    private sealed record AddCollaboratorOption(
+        [property: JsonPropertyName("permission")] string Permission);
 }
 
 /// <summary>A single file operation in a <see cref="ForgejoClient.ChangeFilesAsync"/> batch.</summary>

@@ -8,6 +8,7 @@ import {
 import { lazy, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from './app/AppShell';
+import { AccountPage } from './features/account/AccountPage';
 import { AiSettingsPage } from './features/ai/AiSettingsPage';
 import { ContentPage } from './features/content/ContentPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
@@ -67,6 +68,7 @@ const mediaRoute = child('/media', MediaPage);
 const sitesRoute = child('/sites', SitesPage);
 const openapiRoute = child('/openapi', () => <OpenApiPage />);
 const aiRoute = child('/ai', AiSettingsPage);
+const accountRoute = child('/account', AccountPage);
 const analyticsRoute = child('/analytics', () => <AnalyticsPage />);
 const chatRoute = child('/chat', () => <ChatPage />);
 const inviteRoute = child('/invite/accept', InviteAcceptPage);
@@ -95,6 +97,7 @@ export const routeTree = rootRoute.addChildren([
     editorRoute,
     openapiRoute,
     aiRoute,
+    accountRoute,
     analyticsRoute,
     chatRoute,
     inviteRoute,

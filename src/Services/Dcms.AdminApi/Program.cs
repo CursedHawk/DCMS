@@ -105,6 +105,7 @@ builder.Services.AddHttpClient<Dcms.AdminApi.Sites.Git.ForgejoClient>((sp, clien
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("token", opts.Token);
 });
 builder.Services.AddScoped<Dcms.AdminApi.Sites.Git.SiteGitService>();
+builder.Services.AddScoped<Dcms.AdminApi.Sites.Git.RepoAccessReconciler>();
 
 var app = builder.Build();
 app.UseAuthentication();

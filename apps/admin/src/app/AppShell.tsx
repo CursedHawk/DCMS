@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button';
 import { CenteredSpinner } from '../components/ui/spinner';
 import { useMyPermissions } from '../lib/permissions';
-import { login } from '../auth';
+import { login, register } from '../auth';
 import { useAuth } from '../useAuth';
 import { CommandPalette } from './CommandPalette';
 import { Sidebar } from './Sidebar';
@@ -78,6 +78,16 @@ function SignIn() {
         <Button className="mt-6 w-full" size="lg" onClick={() => void login()}>
           {t('actions.signIn')}
         </Button>
+        <p className="mt-4 text-sm text-muted-foreground">
+          {t('auth.noAccount')}{' '}
+          <button
+            type="button"
+            onClick={() => void register()}
+            className="font-medium text-primary underline-offset-4 hover:underline"
+          >
+            {t('actions.signUp')}
+          </button>
+        </p>
       </motion.div>
     </div>
   );
