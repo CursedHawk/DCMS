@@ -1,12 +1,38 @@
-import { Image as ImageIcon } from 'lucide-react';
+import { FolderInput, Image as ImageIcon, Search, Trash2, UploadCloud, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { Page, PageHeader } from '../../components/Page';
 import { Badge } from '../../components/ui/badge';
+import { Button } from '../../components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../components/ui/dropdown-menu';
 import { EmptyState } from '../../components/ui/empty-state';
+import { Input } from '../../components/ui/input';
 import { CenteredSpinner } from '../../components/ui/spinner';
+import { cn } from '../../lib/cn';
+import { FolderRail } from './FolderRail';
+import { MediaDetailDialog } from './MediaDetailDialog';
 import { MediaThumb } from './MediaThumb';
 import { MediaUploader } from './MediaUploader';
-import { type MediaStatus, formatSize, useMedia } from './api';
+import { StorageMeter, categoryMeta } from './StorageMeter';
+import {
+  ROOT_FOLDER,
+  type MediaStatus,
+  formatDate,
+  formatSize,
+  useDeleteAssets,
+  useMedia,
+  useMediaFolders,
+  useMediaUsage,
+  useMoveAssets,
+} from './api';
 
 const statusTone: Record<MediaStatus, 'success' | 'warning' | 'destructive' | 'secondary'> = {
   Ready: 'success',
@@ -17,41 +43,234 @@ const statusTone: Record<MediaStatus, 'success' | 'warning' | 'destructive' | 's
 
 export function MediaPage() {
   const { t } = useTranslation();
-  const media = useMedia();
+  const [folder, setFolder] = useState<string | undefined>(undefined);
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [showUpload, setShowUpload] = useState(true);
+
+  const media = useMedia(folder);
+  const folders = useMediaFolders();
+  const usage = useMediaUsage();
+  const move = useMoveAssets();
+  const del = useDeleteAssets();
+
+  const folderList = folders.data ?? [];
+  const items = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const list = media.data ?? [];
+    return q ? list.filter((a) => a.fileName.toLowerCase().includes(q)) : list;
+  }, [media.data, search]);
+
+  // Clear selections that are no longer visible (folder switch / filter change).
+  const visibleIds = new Set(items.map((a) => a.id));
+  const activeSelection = [...selected].filter((id) => visibleIds.has(id));
+
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  const clearSelection = () => setSelected(new Set());
+
+  const bulkMove = (folderId: string | null) => {
+    if (activeSelection.length === 0) return;
+    move.mutate(
+      { ids: activeSelection, folderId },
+      { onSuccess: clearSelection, onError: () => toast.error(t('errors.generic')) },
+    );
+  };
+
+  const bulkDelete = () => {
+    if (activeSelection.length === 0) return;
+    if (!window.confirm(t('media.deleteManyConfirm', { count: activeSelection.length }))) return;
+    del.mutate(activeSelection, {
+      onSuccess: clearSelection,
+      onError: () => toast.error(t('errors.generic')),
+    });
+  };
+
+  const currentFolderName =
+    folder === undefined
+      ? t('media.folders.all')
+      : folder === ROOT_FOLDER
+        ? t('media.folders.unfiled')
+        : (folderList.find((f) => f.id === folder)?.name ?? t('media.folders.all'));
+
+  const hasSelection = activeSelection.length > 0;
 
   return (
-    <Page>
-      <PageHeader title={t('media.title')} />
-      <div className="mb-6">
-        <MediaUploader />
+    <Page className="max-w-7xl">
+      <PageHeader
+        title={t('media.title')}
+        description={t('media.subtitle')}
+        actions={
+          <Button variant={showUpload ? 'secondary' : 'default'} onClick={() => setShowUpload((s) => !s)}>
+            <UploadCloud className="h-4 w-4" /> {t('media.upload')}
+          </Button>
+        }
+      />
+
+      <div className="mb-5">
+        <StorageMeter usage={usage.data} isLoading={usage.isLoading} />
       </div>
 
-      {media.isLoading ? (
-        <CenteredSpinner />
-      ) : media.data && media.data.length > 0 ? (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-          {media.data.map((a) => (
-            <div key={a.id} className="group overflow-hidden rounded-lg border bg-card">
-              <div className="aspect-square overflow-hidden">
-                <MediaThumb id={a.id} category={a.category} status={a.status} />
-              </div>
-              <div className="space-y-1 p-2.5">
-                <p className="truncate text-xs font-medium" title={a.fileName}>
-                  {a.fileName}
-                </p>
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-muted-foreground">{formatSize(a.sizeBytes)}</span>
-                  <Badge tone={statusTone[a.status]} className="text-[10px]">
-                    {t(`media.${a.status.toLowerCase()}`, a.status)}
-                  </Badge>
-                </div>
+      <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <aside className="lg:sticky lg:top-6 lg:self-start">
+          {folders.isLoading ? (
+            <CenteredSpinner />
+          ) : (
+            <FolderRail
+              folders={folderList}
+              value={folder}
+              onSelect={(v) => {
+                setFolder(v);
+                clearSelection();
+              }}
+              totalCount={usage.data?.assetCount ?? 0}
+            />
+          )}
+        </aside>
+
+        <section className="min-w-0 space-y-4">
+          {showUpload ? <MediaUploader folderId={folder && folder !== ROOT_FOLDER ? folder : null} /> : null}
+
+          {/* Toolbar: title of current view + search, or the bulk-action bar. */}
+          {hasSelection ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-accent/40 px-3 py-2">
+              <span className="text-sm font-medium">
+                {t('media.selectedCount', { count: activeSelection.length })}
+              </span>
+              <div className="ml-auto flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <FolderInput className="h-4 w-4" /> {t('media.moveTo')}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>{t('media.moveTo')}</DropdownMenuLabel>
+                    <DropdownMenuItem onSelect={() => bulkMove(null)}>{t('media.folders.unfiled')}</DropdownMenuItem>
+                    {folderList.length > 0 ? <DropdownMenuSeparator /> : null}
+                    {folderList.map((f) => (
+                      <DropdownMenuItem key={f.id} onSelect={() => bulkMove(f.id)}>
+                        {f.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button size="sm" variant="destructive" onClick={bulkDelete} disabled={del.isPending}>
+                  <Trash2 className="h-4 w-4" /> {t('common.delete')}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={clearSelection}>
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
             </div>
-          ))}
-        </div>
-      ) : (
-        <EmptyState icon={ImageIcon} title={t('media.title')} description={t('media.dropHere')} />
-      )}
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">
+                {currentFolderName}
+                <span className="ml-2 font-normal text-muted-foreground">{items.length}</span>
+              </h2>
+              <div className="relative w-full max-w-xs">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('media.searchPlaceholder')}
+                  className="h-9 pl-8"
+                />
+              </div>
+            </div>
+          )}
+
+          {media.isLoading ? (
+            <CenteredSpinner />
+          ) : items.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+              {items.map((a) => {
+                const isSelected = selected.has(a.id);
+                const CatIcon = categoryMeta[a.category].icon;
+                const saved =
+                  a.variantBytes > 0 && a.variantBytes < a.sizeBytes
+                    ? Math.round((1 - a.variantBytes / a.sizeBytes) * 100)
+                    : 0;
+                return (
+                  <div
+                    key={a.id}
+                    className={cn(
+                      'group relative overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md',
+                      isSelected && 'ring-2 ring-primary',
+                    )}
+                  >
+                    {/* Selection checkbox — always visible once anything is selected. */}
+                    <button
+                      type="button"
+                      onClick={() => toggle(a.id)}
+                      aria-label={t('media.select')}
+                      className={cn(
+                        'absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border bg-background/90 transition-opacity',
+                        isSelected
+                          ? 'border-primary bg-primary text-primary-foreground opacity-100'
+                          : 'opacity-0 group-hover:opacity-100',
+                      )}
+                    >
+                      {isSelected ? <span className="text-[11px] font-bold">✓</span> : null}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDetailId(a.id)}
+                      className="block aspect-square w-full overflow-hidden"
+                    >
+                      <MediaThumb id={a.id} category={a.category} status={a.status} />
+                    </button>
+
+                    <div className="space-y-1 p-2.5">
+                      <p className="flex items-center gap-1 truncate text-xs font-medium" title={a.fileName}>
+                        <CatIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{a.fileName}</span>
+                      </p>
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>{formatDate(a.createdAt)}</span>
+                        <span className="tabular-nums">{formatSize(a.sizeBytes)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <Badge tone={statusTone[a.status]} className="text-[10px]">
+                          {t(`media.${a.status.toLowerCase()}`, a.status)}
+                        </Badge>
+                        {saved > 0 ? (
+                          <span
+                            className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+                            title={t('media.optimizedHint')}
+                          >
+                            −{saved}%
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState
+              icon={ImageIcon}
+              title={search ? t('media.noResults') : t('media.emptyTitle')}
+              description={search ? t('media.noResultsHint') : t('media.dropHere')}
+            />
+          )}
+        </section>
+      </div>
+
+      <MediaDetailDialog
+        assetId={detailId}
+        folders={folderList}
+        onOpenChange={(open) => !open && setDetailId(null)}
+        onDeleted={() => setDetailId(null)}
+      />
     </Page>
   );
 }

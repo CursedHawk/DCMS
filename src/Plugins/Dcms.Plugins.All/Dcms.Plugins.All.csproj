@@ -6,6 +6,7 @@
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Articles\Dcms.Plugins.Articles.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.AudioLibrary\Dcms.Plugins.AudioLibrary.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Blog\Dcms.Plugins.Blog.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Branding\Dcms.Plugins.Branding.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Carousel\Dcms.Plugins.Carousel.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Events\Dcms.Plugins.Events.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.FileDownloads\Dcms.Plugins.FileDownloads.csproj" />

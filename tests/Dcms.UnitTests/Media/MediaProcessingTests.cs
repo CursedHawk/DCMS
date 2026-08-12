@@ -1,3 +1,4 @@
+using System.Text;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Media;
 using SixLabors.ImageSharp;
@@ -88,4 +89,69 @@ public class MediaProcessingTests
     [Fact]
     public void Sniffer_returns_null_for_unknown_bytes()
         => ContentSniffer.Sniff([0x00, 0x01, 0x02, 0x03]).Should().BeNull();
+
+    [Theory]
+    [InlineData("<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>")]
+    [InlineData("<?xml version=\"1.0\"?>\n<!-- a logo -->\n<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>")]
+    [InlineData("﻿<svg xmlns=\"http://www.w3.org/2000/svg\"/>")]
+    public void Sniffer_detects_svg(string markup)
+    {
+        var result = ContentSniffer.Sniff(Encoding.UTF8.GetBytes(markup));
+
+        result.Should().NotBeNull();
+        result!.Category.Should().Be(MediaCategory.Image);
+        result.ContentType.Should().Be("image/svg+xml");
+    }
+
+    [Fact]
+    public void Sniffer_does_not_treat_html_with_inline_svg_as_svg()
+    {
+        var html = "<!DOCTYPE html><html><body><svg></svg></body></html>"u8.ToArray();
+
+        ContentSniffer.Sniff(html).Should().BeNull();
+    }
+
+    [Fact]
+    public void SvgSanitizer_strips_scripts_handlers_and_javascript_uris_but_keeps_geometry()
+    {
+        var dirty = """
+            <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="24" height="24">
+              <script>alert(1)</script>
+              <rect width="24" height="24" onload="steal()" fill="#1d4ed8"/>
+              <a xlink:href="javascript:alert(2)"><circle cx="12" cy="12" r="6"/></a>
+            </svg>
+            """u8.ToArray();
+
+        var clean = Encoding.UTF8.GetString(SvgSanitizer.Sanitize(dirty));
+
+        clean.Should().NotContain("<script");
+        clean.Should().NotContain("onload");
+        clean.Should().NotContain("javascript:");
+        // Legitimate drawing survives.
+        clean.Should().Contain("<rect");
+        clean.Should().Contain("#1d4ed8");
+        clean.Should().Contain("<circle");
+    }
+
+    [Fact]
+    public void SvgSanitizer_tolerates_a_doctype_without_resolving_entities()
+    {
+        var withDoctype = """
+            <?xml version="1.0"?>
+            <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+            <svg xmlns="http://www.w3.org/2000/svg"><rect width="4" height="4"/></svg>
+            """u8.ToArray();
+
+        var act = () => SvgSanitizer.Sanitize(withDoctype);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void SvgSanitizer_rejects_non_svg_input()
+    {
+        var act = () => SvgSanitizer.Sanitize("not xml at all"u8.ToArray());
+
+        act.Should().Throw<MediaSanitizationException>();
+    }
 }

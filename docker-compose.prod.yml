@@ -34,6 +34,10 @@ services:
       POSTGRES_DB: dcms
       POSTGRES_USER: dcms
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      # Password for the least-privilege builder role, created by
+      # infra/postgres/init/02-service-roles.sh on first init. On an already-initialised
+      # cluster the script does not re-run — provision the role manually (see runbook).
+      SITEBUILDER_DB_PASSWORD: "${SITEBUILDER_DB_PASSWORD:-dcms-sitebuilder-dev}"
 
   minio:
     environment:
@@ -78,14 +82,61 @@ services:
       Auth__Authority: "http://identity:8080/"
       Auth__RequireHttpsMetadata: "true"
       Cors__AllowedOrigins__0: "${PUBLIC_BASE_URL}"
+      # AI Chatbot: content-api calls ai-gateway for visitor replies, reusing the
+      # shared dcms.ai service client (same secret as admin-api).
+      ServiceClient__TokenEndpoint: "http://identity:8080/connect/token"
+      ServiceClient__ClientId: "dcms-admin-api"
+      ServiceClient__ClientSecret: "${ADMIN_API_CLIENT_SECRET}"
+      Services__AiGateway: "http://ai-gateway:8080"
 
   media-worker:
     environment:
       <<: *prod-env
 
+  # The site-builder deliberately does NOT inherit *prod-env (no root MinIO creds,
+  # no Vault token, no broad DB user). It gets least-privilege scoped credentials
+  # and runs every untrusted build in an isolated sandbox container launched over a
+  # restricted Docker API (docker-socket-proxy), never in this process.
   site-builder:
     environment:
-      <<: *prod-env
+      ASPNETCORE_ENVIRONMENT: "Production"
+      DOTNET_ENVIRONMENT: "Production"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_sitebuilder;Password=${SITEBUILDER_DB_PASSWORD:-dcms-sitebuilder-dev}"
+      ConnectionStrings__Redis: "redis:6379"
+      Nats__Url: "nats://nats:4222"
+      Storage__Endpoint: "minio:9000"
+      Storage__AccessKey: "${SITEBUILDER_MINIO_USER:-dcms-sitebuilder}"
+      Storage__SecretKey: "${SITEBUILDER_MINIO_PASSWORD:-dcms-sitebuilder-dev}"
+      # Sandbox each untrusted build. WORK_HOST_ROOT (the host path backing
+      # /var/build-work) is host-specific and set in the vps overlay; without it the
+      # builder refuses to run (DCMS_BUILD_REQUIRE_SANDBOX) rather than run unsafely.
+      DOCKER_HOST: "tcp://docker-socket-proxy:2375"
+      DCMS_BUILD_SANDBOX_IMAGE: "dcms/site-build-sandbox:latest"
+      DCMS_BUILD_REQUIRE_SANDBOX: "true"
+      DCMS_BUILD_WORK_DIR: "/var/build-work"
+      DCMS_BUILD_NETWORK_BUILD: "none"
+    depends_on:
+      docker-socket-proxy:
+        condition: service_started
+    volumes:
+      - build-work:/var/build-work
+
+  # Least-privilege Docker API so the site-builder can launch per-build sandbox
+  # containers WITHOUT mounting the raw (root-equivalent) docker socket itself.
+  # Exposes only the container/image operations `docker run --rm` needs; the real
+  # socket is mounted read-only here and nowhere else.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    privileged: true
+    environment:
+      CONTAINERS: "1"
+      IMAGES: "1"
+      NETWORKS: "1"
+      VERSION: "1"
+      POST: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
   site-host:
     environment:
@@ -134,3 +185,8 @@ volumes:
   vault-data:
   caddy-data:
   caddy-config:
+  # Per-build work area. The site-builder writes each build's files here and the
+  # sandbox container bind-mounts them by host path (see DCMS_BUILD_WORK_HOST_ROOT,
+  # set in the vps overlay). Anonymous named volume by default; re-pointed to a bind
+  # mount on hosts that need a known host path for the nested docker run.
+  build-work:

@@ -7,6 +7,7 @@ using Dcms.Shared.Media;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Security;
 using Dcms.Shared.Storage;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,9 +20,9 @@ public static class MediaEndpoints
     public static IEndpointRouteBuilder MapMediaEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/admin/media", async (
-            IFormFile file, MediaSanitizer sanitizer, MediaDbContext db, IObjectStorage storage,
-            IOptions<StorageOptions> storageOptions, IEventPublisher events, ITenantContext tenant,
-            CurrentUser me, CancellationToken ct) =>
+            IFormFile file, [FromForm] Guid? folderId, MediaSanitizer sanitizer, MediaDbContext db,
+            IObjectStorage storage, IOptions<StorageOptions> storageOptions, IEventPublisher events,
+            ITenantContext tenant, CurrentUser me, CancellationToken ct) =>
         {
             if (file.Length == 0)
             {
@@ -32,31 +33,53 @@ public static class MediaEndpoints
                 return Results.BadRequest(new { error = "File exceeds the 50 MB inline upload limit." });
             }
 
+            // A folder id, if given, must be one of the tenant's own folders.
+            if (folderId is { } fid && !await db.Folders.AnyAsync(f => f.Id == fid, ct))
+            {
+                return Results.BadRequest(new { error = "Unknown folder." });
+            }
+
             await using var buffer = new MemoryStream();
             await file.CopyToAsync(buffer, ct);
             var bytes = buffer.ToArray();
 
-            var sniff = ContentSniffer.Sniff(bytes.AsSpan(0, Math.Min(bytes.Length, 32)));
+            // A wider header than a magic number needs, so a text SVG with an
+            // <?xml …?> prolog or a leading comment is still recognisable.
+            var sniff = ContentSniffer.Sniff(bytes.AsSpan(0, Math.Min(bytes.Length, 1024)));
             if (sniff is null)
             {
                 return Results.BadRequest(new { error = "Unsupported or unrecognized file type." });
             }
 
             var contentType = sniff.ContentType;
-            // Re-encode images to strip metadata / neutralize polyglots.
+            // Re-encode images to strip metadata / neutralize polyglots. SVG can't
+            // be raster-re-encoded, so it takes the XML-sanitizer path (strips
+            // scripts, event handlers and dangerous URIs) instead.
+            var isSvg = contentType == "image/svg+xml";
             if (sniff.Category == MediaCategory.Image)
             {
                 try
                 {
-                    var sanitized = sanitizer.SanitizeImage(bytes);
-                    bytes = sanitized.Data;
-                    contentType = sanitized.ContentType;
+                    if (isSvg)
+                    {
+                        bytes = SvgSanitizer.Sanitize(bytes);
+                    }
+                    else
+                    {
+                        var sanitized = sanitizer.SanitizeImage(bytes);
+                        bytes = sanitized.Data;
+                        contentType = sanitized.ContentType;
+                    }
                 }
                 catch (MediaSanitizationException ex)
                 {
                     return Results.BadRequest(new { error = ex.Message });
                 }
             }
+
+            // SVG is a vector image with no derived renditions: like a File, it is
+            // Ready on upload and never dispatched to the raster worker.
+            var hasDerivedRenditions = sniff.Category != MediaCategory.File && !isSvg;
 
             var tenantId = tenant.TenantId!.Value;
             var assetId = Guid.NewGuid();
@@ -78,7 +101,8 @@ public static class MediaEndpoints
                 SizeBytes = bytes.Length,
                 Sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)),
                 OriginalKey = key,
-                Status = sniff.Category == MediaCategory.File ? MediaStatus.Ready : MediaStatus.Uploaded,
+                FolderId = folderId,
+                Status = hasDerivedRenditions ? MediaStatus.Uploaded : MediaStatus.Ready,
                 CreatedBy = me.UserId,
             };
             db.Assets.Add(asset);
@@ -86,7 +110,7 @@ public static class MediaEndpoints
 
             // Dispatch async processing for media that has derived renditions.
             var subject = MediaExtensions.ProcessSubject(sniff.Category);
-            if (!string.IsNullOrEmpty(subject))
+            if (hasDerivedRenditions && !string.IsNullOrEmpty(subject))
             {
                 asset.Status = MediaStatus.Processing;
                 await db.SaveChangesAsync(ct);
@@ -103,9 +127,19 @@ public static class MediaEndpoints
             });
         }).RequirePermission(PlatformPermissions.MediaWrite).DisableAntiforgery();
 
-        app.MapGet("/api/admin/media", async (MediaDbContext db, CancellationToken ct) =>
+        app.MapGet("/api/admin/media", async (Guid? folderId, MediaDbContext db, CancellationToken ct) =>
         {
-            var assets = await db.Assets
+            var query = db.Assets.AsQueryable();
+            // folderId omitted → whole library; folderId=<empty guid> → unfiled only;
+            // otherwise the given folder. (The SPA uses Guid.Empty as the "root/unfiled" tab.)
+            if (folderId is { } fid)
+            {
+                query = fid == Guid.Empty
+                    ? query.Where(a => a.FolderId == null)
+                    : query.Where(a => a.FolderId == fid);
+            }
+
+            var assets = await query
                 .OrderByDescending(a => a.CreatedAt)
                 .Select(a => new
                 {
@@ -114,10 +148,134 @@ public static class MediaEndpoints
                     fileName = a.FileName,
                     status = a.Status.ToString(),
                     sizeBytes = a.SizeBytes,
+                    folderId = a.FolderId,
+                    createdAt = a.CreatedAt,
+                    // "Compressed" footprint: total bytes of derived renditions.
+                    variantBytes = a.Variants.Sum(v => (long?)v.SizeBytes) ?? 0,
+                    variantCount = a.Variants.Count,
+                    width = a.Variants.OrderByDescending(v => v.Width).Select(v => v.Width).FirstOrDefault(),
+                    height = a.Variants.OrderByDescending(v => v.Width).Select(v => v.Height).FirstOrDefault(),
                 })
                 .ToListAsync(ct);
             return Results.Ok(assets);
         }).RequirePermission(PlatformPermissions.MediaRead);
+
+        // Aggregate storage footprint for the whole tenant (originals + renditions),
+        // with a per-category breakdown for the usage panel.
+        app.MapGet("/api/admin/media/usage", async (MediaDbContext db, CancellationToken ct) =>
+        {
+            var originalBytes = await db.Assets.SumAsync(a => (long?)a.SizeBytes, ct) ?? 0;
+            var variantBytes = await db.Variants.SumAsync(v => (long?)v.SizeBytes, ct) ?? 0;
+            var assetCount = await db.Assets.CountAsync(ct);
+            var folderCount = await db.Folders.CountAsync(ct);
+
+            var byCategory = await db.Assets
+                .GroupBy(a => a.Category)
+                .Select(g => new
+                {
+                    category = g.Key.ToString(),
+                    count = g.Count(),
+                    originalBytes = g.Sum(a => (long?)a.SizeBytes) ?? 0,
+                })
+                .ToListAsync(ct);
+
+            return Results.Ok(new
+            {
+                originalBytes,
+                variantBytes,
+                totalBytes = originalBytes + variantBytes,
+                assetCount,
+                folderCount,
+                byCategory,
+            });
+        }).RequirePermission(PlatformPermissions.MediaRead);
+
+        // ---- Folders ----------------------------------------------------------
+
+        app.MapGet("/api/admin/media/folders", async (MediaDbContext db, CancellationToken ct) =>
+        {
+            var folders = await db.Folders
+                .OrderBy(f => f.Name)
+                .Select(f => new
+                {
+                    id = f.Id,
+                    name = f.Name,
+                    parentId = f.ParentId,
+                    createdAt = f.CreatedAt,
+                    assetCount = db.Assets.Count(a => a.FolderId == f.Id),
+                })
+                .ToListAsync(ct);
+            return Results.Ok(folders);
+        }).RequirePermission(PlatformPermissions.MediaRead);
+
+        app.MapPost("/api/admin/media/folders", async (
+            CreateFolderRequest body, MediaDbContext db, CurrentUser me, CancellationToken ct) =>
+        {
+            var name = body.Name?.Trim();
+            if (string.IsNullOrEmpty(name))
+            {
+                return Results.BadRequest(new { error = "A folder name is required." });
+            }
+            if (name.Length > 200)
+            {
+                name = name[..200];
+            }
+            if (body.ParentId is { } pid && !await db.Folders.AnyAsync(f => f.Id == pid, ct))
+            {
+                return Results.BadRequest(new { error = "Unknown parent folder." });
+            }
+
+            var folder = new MediaFolder
+            {
+                Id = Guid.NewGuid(),
+                Name = name,
+                ParentId = body.ParentId,
+                CreatedBy = me.UserId,
+            };
+            db.Folders.Add(folder);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { id = folder.Id, name = folder.Name, parentId = folder.ParentId, createdAt = folder.CreatedAt, assetCount = 0 });
+        }).RequirePermission(PlatformPermissions.MediaWrite);
+
+        app.MapPatch("/api/admin/media/folders/{id:guid}", async (
+            Guid id, UpdateFolderRequest body, MediaDbContext db, CancellationToken ct) =>
+        {
+            var folder = await db.Folders.FirstOrDefaultAsync(f => f.Id == id, ct);
+            if (folder is null)
+            {
+                return Results.NotFound();
+            }
+            if (!string.IsNullOrWhiteSpace(body.Name))
+            {
+                folder.Name = body.Name.Trim().Length > 200 ? body.Name.Trim()[..200] : body.Name.Trim();
+            }
+            // A folder cannot be reparented under itself.
+            if (body.ParentId != folder.Id)
+            {
+                folder.ParentId = body.ParentId;
+            }
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        }).RequirePermission(PlatformPermissions.MediaWrite);
+
+        // Deleting a folder keeps its assets — they fall back to "unfiled" — and
+        // reparents any child folders to the root so nothing is orphaned.
+        app.MapDelete("/api/admin/media/folders/{id:guid}", async (
+            Guid id, MediaDbContext db, CancellationToken ct) =>
+        {
+            var folder = await db.Folders.FirstOrDefaultAsync(f => f.Id == id, ct);
+            if (folder is null)
+            {
+                return Results.NotFound();
+            }
+            await db.Assets.Where(a => a.FolderId == id).ExecuteUpdateAsync(s => s.SetProperty(a => a.FolderId, (Guid?)null), ct);
+            await db.Folders.Where(f => f.ParentId == id).ExecuteUpdateAsync(s => s.SetProperty(f => f.ParentId, (Guid?)null), ct);
+            db.Folders.Remove(folder);
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        }).RequirePermission(PlatformPermissions.MediaWrite);
+
+        // ---- Asset detail / edit / delete ------------------------------------
 
         app.MapGet("/api/admin/media/{id:guid}", async (Guid id, MediaDbContext db, CancellationToken ct) =>
         {
@@ -132,9 +290,88 @@ public static class MediaEndpoints
                     contentType = asset.ContentType,
                     status = asset.Status.ToString(),
                     error = asset.Error,
-                    variants = asset.Variants.Select(v => new { v.Kind, v.Width, v.Height, v.SizeBytes }),
+                    sizeBytes = asset.SizeBytes,
+                    folderId = asset.FolderId,
+                    createdAt = asset.CreatedAt,
+                    variants = asset.Variants
+                        .OrderBy(v => v.SizeBytes)
+                        .Select(v => new { v.Kind, v.Width, v.Height, v.SizeBytes, v.ContentType }),
                 });
         }).RequirePermission(PlatformPermissions.MediaRead);
+
+        // Rename an asset (its display file name). Move is a separate bulk endpoint.
+        app.MapPatch("/api/admin/media/{id:guid}", async (
+            Guid id, RenameAssetRequest body, MediaDbContext db, CancellationToken ct) =>
+        {
+            var asset = await db.Assets.FirstOrDefaultAsync(a => a.Id == id, ct);
+            if (asset is null)
+            {
+                return Results.NotFound();
+            }
+            var name = body.FileName?.Trim();
+            if (string.IsNullOrEmpty(name))
+            {
+                return Results.BadRequest(new { error = "A file name is required." });
+            }
+            asset.FileName = Path.GetFileName(name).Length > 512 ? name[..512] : Path.GetFileName(name);
+            asset.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        }).RequirePermission(PlatformPermissions.MediaWrite);
+
+        // Move one or many assets into a folder (null folderId = back to unfiled).
+        app.MapPost("/api/admin/media/move", async (
+            MoveAssetsRequest body, MediaDbContext db, CancellationToken ct) =>
+        {
+            if (body.Ids is null || body.Ids.Count == 0)
+            {
+                return Results.BadRequest(new { error = "No assets specified." });
+            }
+            if (body.FolderId is { } fid && !await db.Folders.AnyAsync(f => f.Id == fid, ct))
+            {
+                return Results.BadRequest(new { error = "Unknown folder." });
+            }
+            var moved = await db.Assets
+                .Where(a => body.Ids.Contains(a.Id))
+                .ExecuteUpdateAsync(s => s.SetProperty(a => a.FolderId, body.FolderId), ct);
+            return Results.Ok(new { moved });
+        }).RequirePermission(PlatformPermissions.MediaWrite);
+
+        // Delete one or many assets: their DB rows (variants cascade) and every
+        // stored object (original + renditions). Storage deletes are best-effort.
+        app.MapPost("/api/admin/media/delete", async (
+            DeleteAssetsRequest body, MediaDbContext db, IObjectStorage storage,
+            IOptions<StorageOptions> storageOptions, ILoggerFactory loggers, CancellationToken ct) =>
+        {
+            if (body.Ids is null || body.Ids.Count == 0)
+            {
+                return Results.BadRequest(new { error = "No assets specified." });
+            }
+            var logger = loggers.CreateLogger("MediaDelete");
+            var bucket = storageOptions.Value.MediaBucket;
+            var assets = await db.Assets.Include(a => a.Variants)
+                .Where(a => body.Ids.Contains(a.Id))
+                .ToListAsync(ct);
+
+            foreach (var asset in assets)
+            {
+                foreach (var key in asset.Variants.Select(v => v.ObjectKey).Append(asset.OriginalKey))
+                {
+                    try
+                    {
+                        await storage.DeleteAsync(bucket, key, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to delete media object {Key}", key);
+                    }
+                }
+            }
+
+            db.Assets.RemoveRange(assets);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { deleted = assets.Count });
+        }).RequirePermission(PlatformPermissions.MediaWrite);
 
         // Streams the original (or a named variant, e.g. ?variant=thumb / webp-640)
         // so the admin SPA can render previews behind the bearer token. No public
@@ -176,4 +413,10 @@ public static class MediaEndpoints
 
         return app;
     }
+
+    private sealed record CreateFolderRequest(string? Name, Guid? ParentId);
+    private sealed record UpdateFolderRequest(string? Name, Guid? ParentId);
+    private sealed record RenameAssetRequest(string? FileName);
+    private sealed record MoveAssetsRequest(List<Guid>? Ids, Guid? FolderId);
+    private sealed record DeleteAssetsRequest(List<Guid>? Ids);
 }

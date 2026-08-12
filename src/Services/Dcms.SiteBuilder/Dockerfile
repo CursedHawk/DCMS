@@ -5,25 +5,26 @@ COPY src/ src/
 RUN dotnet publish src/Services/Dcms.SiteBuilder/Dcms.SiteBuilder.csproj -c Release -o /app
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
-# Node powers the Mode A prerender and Mode B builds. A Mode B site is a complete
-# front-end project that brings its own package.json + lockfile, so the build runs
-# the site's own package manager (npm / pnpm / yarn) with network access to fetch
-# its dependencies. The build runs non-root, in a per-build ephemeral work dir,
-# with hard time/resource limits (see ReactAppBuilder + compose). npm ships with
-# Node; corepack provides pnpm/yarn without a global install.
+# Mode A prerender is pure C# (no Node). Mode B (untrusted React) builds no longer
+# run in this container at all — they run in an ephemeral, locked-down sandbox
+# container (see sandbox.Dockerfile) that this service launches over a restricted
+# Docker API (docker-socket-proxy). So the builder image only needs the `docker`
+# CLI to start those sandboxes — never a package manager or the untrusted code.
+ARG DOCKER_CLI_VERSION=27.5.1
+# curl is kept: the compose healthcheck (x-service-defaults) probes /health/live with it.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates git \
-    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && corepack enable \
-    && corepack prepare pnpm@11.6.0 --activate \
-    && corepack prepare yarn@1.22.22 --activate \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && arch="$(dpkg --print-architecture)" \
+    && case "$arch" in \
+         amd64) dl=x86_64 ;; \
+         arm64) dl=aarch64 ;; \
+         *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL "https://download.docker.com/linux/static/stable/${dl}/docker-${DOCKER_CLI_VERSION}.tgz" -o /tmp/docker.tgz \
+    && tar -xzf /tmp/docker.tgz -C /tmp \
+    && mv /tmp/docker/docker /usr/local/bin/docker \
+    && rm -rf /tmp/docker.tgz /tmp/docker \
     && rm -rf /var/lib/apt/lists/*
-
-# Shared, warm package cache to speed repeat installs. Only holds downloaded
-# tarballs (never a site's node_modules), and is mounted writable in compose.
-ENV DCMS_BUILD_CACHE_DIR=/var/cache/dcms-build
-RUN mkdir -p ${DCMS_BUILD_CACHE_DIR} && chmod -R a+rwX ${DCMS_BUILD_CACHE_DIR}
 
 WORKDIR /app
 COPY --from=build /app .

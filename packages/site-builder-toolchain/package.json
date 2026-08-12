@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "The fixed dependency palette every Mode B (generated React app) site build is compiled against. Baked into the site-builder image's offline pnpm store; site file maps may not add to it. Excluded from the pnpm workspace on purpose — it is never installed for development, only fetched into the builder image's store.",
+  "description": "The dependency palette the IDE surfaces for Mode B (generated React app) sites: it drives type hints / ATA (see apps/admin vite-plugin-palette-types) and the preview. It is NOT a build-time allowlist — each site brings its own package.json + lockfile and the sandboxed build fetches those from the registry (install runs --ignore-scripts; the build runs with no network). Excluded from the pnpm workspace on purpose — it is never installed for development.",
   "dependencies": {
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",

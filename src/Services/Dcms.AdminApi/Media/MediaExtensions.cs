@@ -10,6 +10,7 @@ internal static class MediaExtensions
         "image/png" => ".png",
         "image/gif" => ".gif",
         "image/webp" => ".webp",
+        "image/svg+xml" => ".svg",
         "video/mp4" => ".mp4",
         "audio/mpeg" => ".mp3",
         "audio/wav" => ".wav",

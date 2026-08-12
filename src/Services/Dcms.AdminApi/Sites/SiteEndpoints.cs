@@ -933,11 +933,20 @@ public static class SiteEndpoints
             using var reader = new StreamReader(request.Body);
             var raw = await reader.ReadToEndAsync(ct);
 
+            // Never authenticate against an unconfigured secret: HMAC over an empty
+            // key is predictable, so an empty secret would make the webhook forgeable.
+            var secret = gitOptions.Value.WebhookSecret;
+            if (string.IsNullOrWhiteSpace(secret))
+            {
+                log.LogWarning("Git webhook rejected: WebhookSecret is not configured.");
+                return Results.Unauthorized();
+            }
+
             // Verify HMAC-SHA256(body, secret) against the signature header.
             var signature = request.Headers["X-Gitea-Signature"].FirstOrDefault()
                 ?? request.Headers["X-Forgejo-Signature"].FirstOrDefault();
             var expected = Convert.ToHexString(HMACSHA256.HashData(
-                Encoding.UTF8.GetBytes(gitOptions.Value.WebhookSecret), Encoding.UTF8.GetBytes(raw)))
+                Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(raw)))
                 .ToLowerInvariant();
             if (signature is null || !CryptographicOperations.FixedTimeEquals(
                     Encoding.ASCII.GetBytes(signature), Encoding.ASCII.GetBytes(expected)))

@@ -1,3 +1,4 @@
+using System.Text;
 using Dcms.Shared.Contracts.Events;
 
 namespace Dcms.Shared.Media;
@@ -53,7 +54,38 @@ public static class ContentSniffer
         {
             return new SniffResult("application/zip", MediaCategory.File);
         }
+        // SVG is text, not a magic-number format, so it is checked last: an XML
+        // document whose root is <svg>. Callers pass a wider header (see below) so
+        // an <?xml …?> prolog or a comment before the root still fits the window.
+        if (LooksLikeSvg(header))
+        {
+            return new SniffResult("image/svg+xml", MediaCategory.Image);
+        }
         return null;
+    }
+
+    private static bool LooksLikeSvg(ReadOnlySpan<byte> header)
+    {
+        // Skip a UTF-8 BOM.
+        if (header.Length >= 3 && header[0] == 0xEF && header[1] == 0xBB && header[2] == 0xBF)
+        {
+            header = header[3..];
+        }
+
+        var text = Encoding.UTF8.GetString(header).TrimStart();
+        if (text.Length == 0 || text[0] != '<')
+        {
+            return false;
+        }
+
+        var lower = text.ToLowerInvariant();
+        // An HTML document may embed an inline <svg>; only treat a document whose
+        // markup opens as SVG (optionally after a prolog/comment) as an SVG file.
+        if (lower.StartsWith("<!doctype html", StringComparison.Ordinal) || lower.Contains("<html"))
+        {
+            return false;
+        }
+        return lower.Contains("<svg");
     }
 
     private static bool StartsWith(ReadOnlySpan<byte> data, ReadOnlySpan<byte> prefix)

@@ -17,6 +17,7 @@ public class MediaDbContext(DbContextOptions<MediaDbContext> options, ITenantCon
 
     public DbSet<MediaAsset> Assets => Set<MediaAsset>();
     public DbSet<MediaVariant> Variants => Set<MediaVariant>();
+    public DbSet<MediaFolder> Folders => Set<MediaFolder>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -35,8 +36,18 @@ public class MediaDbContext(DbContextOptions<MediaDbContext> options, ITenantCon
             e.Property(a => a.OriginalKey).HasMaxLength(512);
             e.Property(a => a.MetadataJson).HasColumnType("jsonb");
             e.HasIndex(a => new { a.TenantId, a.Category });
+            e.HasIndex(a => new { a.TenantId, a.FolderId });
             e.HasMany(a => a.Variants).WithOne().HasForeignKey(v => v.AssetId);
             e.HasQueryFilter(a => a.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<MediaFolder>(e =>
+        {
+            e.ToTable("media_folders");
+            e.HasKey(f => f.Id);
+            e.Property(f => f.Name).HasMaxLength(200);
+            e.HasIndex(f => new { f.TenantId, f.ParentId });
+            e.HasQueryFilter(f => f.TenantId == CurrentTenantId);
         });
 
         builder.Entity<MediaVariant>(e =>

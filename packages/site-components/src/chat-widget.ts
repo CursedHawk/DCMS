@@ -24,7 +24,7 @@ export interface ChatWidgetOptions {
 interface IncomingMessage {
   id: string;
   conversationId: string;
-  sender: 'Visitor' | 'Agent';
+  sender: 'Visitor' | 'Agent' | 'Bot';
   body: string;
   sentAt: string;
 }
@@ -61,6 +61,8 @@ export function createChatWidget(options: ChatWidgetOptions): ChatWidgetHandle {
 
   connection.on('ReceiveMessage', (m: IncomingMessage) => {
     if (m.conversationId === conversationId) {
+      // A reply (assistant or agent) ends the "typing…" state.
+      if (m.sender !== 'Visitor') hideTyping(log);
       appendMessage(log, m.sender, m.body);
     }
   });
@@ -84,6 +86,7 @@ export function createChatWidget(options: ChatWidgetOptions): ChatWidgetHandle {
     const id = await ensureConversation();
     await connection.invoke('SendMessage', id, body);
     input.value = '';
+    showTyping(log);
   }
 
   sendBtn.addEventListener('click', () => void send());
@@ -107,6 +110,31 @@ export function createChatWidget(options: ChatWidgetOptions): ChatWidgetHandle {
       root.remove();
     },
   };
+}
+
+let typingTimer: ReturnType<typeof setTimeout> | undefined;
+
+function showTyping(log: HTMLElement) {
+  if (log.querySelector('[data-typing]')) return;
+  const row = document.createElement('div');
+  row.setAttribute('data-typing', '');
+  row.style.cssText = 'margin:4px 0;display:flex';
+  const bubble = document.createElement('span');
+  bubble.textContent = '…';
+  bubble.style.cssText =
+    'padding:6px 12px;border-radius:10px;font-size:16px;letter-spacing:2px;background:#f1f5f9;color:#64748b';
+  row.appendChild(bubble);
+  log.appendChild(row);
+  log.scrollTop = log.scrollHeight;
+  // Give up waiting if no reply arrives (AI unconfigured, error, or a human agent
+  // will follow up later) so the dots never hang indefinitely.
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(() => hideTyping(log), 30_000);
+}
+
+function hideTyping(log: HTMLElement) {
+  clearTimeout(typingTimer);
+  log.querySelector('[data-typing]')?.remove();
 }
 
 function appendMessage(log: HTMLElement, sender: string, body: string) {

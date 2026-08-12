@@ -12,6 +12,9 @@ public enum ChatSender
 {
     Visitor = 0,
     Agent = 1,
+
+    /// <summary>The AI assistant. Stored as an int like the others — no schema change.</summary>
+    Bot = 2,
 }
 
 public enum ChatConversationStatus

@@ -1,3 +1,4 @@
+using Dcms.ContentApi.Branding;
 using Dcms.ContentApi.Chat;
 using Dcms.ContentApi.Delivery;
 using Dcms.ContentApi.Forms;
@@ -102,7 +103,24 @@ builder.Services.AddCors(options =>
         .AllowAnyOrigin()
         .AllowAnyHeader()
         .WithMethods("POST"));
+    // Public branding read: any origin may GET (no credentials), so externally
+    // hosted tenant sites can fetch their branding.
+    options.AddPolicy(BrandingEndpoints.ReadCorsPolicy, policy => policy
+        .AllowAnyOrigin()
+        .AllowAnyHeader()
+        .WithMethods("GET"));
 });
+
+// Outbound client-credentials token provider + ai-gateway client, used by the AI
+// Chatbot to generate visitor replies. Reuses the shared dcms.ai service client.
+builder.Services.Configure<ServiceClientOptions>(builder.Configuration.GetSection(ServiceClientOptions.SectionName));
+builder.Services.AddHttpClient<IServiceTokenProvider, ServiceTokenClient>();
+builder.Services.AddHttpClient("ai-gateway", (sp, client) =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Services:AiGateway"] ?? "http://localhost:5007";
+    client.BaseAddress = new Uri(baseUrl);
+});
+builder.Services.AddSingleton<ChatBotResponder>();
 
 builder.Services.AddDcmsPlugins(plugins => plugins.AddAll());
 builder.Services.AddScoped<PublishedContentReader>();
@@ -122,6 +140,7 @@ app.MapDcmsPlugins();
 app.MapSearchDelivery();
 app.MapAnalyticsIngest();
 app.MapFormSubmissions();
+app.MapBranding();
 app.MapPluginConfig();
 app.MapVisitorAuth();
 app.MapChatDelivery();

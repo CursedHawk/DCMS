@@ -22,13 +22,15 @@ namespace Dcms.ContentApi.Chat;
 public sealed class ChatHub(
     IServiceProvider services,
     IEventPublisher events,
+    ChatBotResponder botResponder,
     ILogger<ChatHub> logger) : Hub
 {
     private const string TenantItemKey = "dcms.tenantId";
     private const string RoleItemKey = "dcms.role";
 
-    private static string ConversationGroup(Guid conversationId) => $"conv:{conversationId}";
-    private static string AgentGroup(Guid tenantId) => $"agents:{tenantId}";
+    // Public so the out-of-band bot responder can fan replies into the same groups.
+    public static string ConversationGroup(Guid conversationId) => $"conv:{conversationId}";
+    public static string AgentGroup(Guid tenantId) => $"agents:{tenantId}";
 
     private Guid TenantId => (Guid)Context.Items[TenantItemKey]!;
     private bool IsAgent => Context.Items.TryGetValue(RoleItemKey, out var role) && (string?)role == "agent";
@@ -194,7 +196,8 @@ public sealed class ChatHub(
             sentAt = now,
         };
         await Clients.Group(ConversationGroup(conversationId)).SendAsync("ReceiveMessage", dto);
-        // Surface visitor messages to any agent who hasn't joined the conversation yet.
+        // Surface visitor messages to any agent who hasn't joined the conversation yet,
+        // and let the AI assistant answer (unless a human agent has taken over).
         if (sender == ChatSender.Visitor)
         {
             await Clients.Group(AgentGroup(tenantId)).SendAsync("ConversationActivity", new
@@ -204,6 +207,8 @@ public sealed class ChatHub(
                 lastMessageAt = now,
                 preview = body.Length > 120 ? body[..120] : body,
             });
+
+            botResponder.Trigger(tenantId, conversationId, body);
         }
 
         try

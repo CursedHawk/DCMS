@@ -20,7 +20,7 @@ export interface ChatConversation {
 
 export interface ChatMessage {
   id: string;
-  sender: 'Visitor' | 'Agent';
+  sender: 'Visitor' | 'Agent' | 'Bot';
   body: string;
   sentAt: string;
   readAt?: string | null;

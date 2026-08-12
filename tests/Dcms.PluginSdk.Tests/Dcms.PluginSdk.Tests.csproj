@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.AudioLibrary\Dcms.Plugins.AudioLibrary.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Analytics\Dcms.Plugins.Analytics.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Blog\Dcms.Plugins.Blog.csproj" />
+    <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Branding\Dcms.Plugins.Branding.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Carousel\Dcms.Plugins.Carousel.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Events\Dcms.Plugins.Events.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.FileDownloads\Dcms.Plugins.FileDownloads.csproj" />

@@ -8,11 +8,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { cn } from '../../lib/cn';
 import { MediaThumb } from './MediaThumb';
 import { MediaUploader } from './MediaUploader';
-import { type MediaCategory, useMedia } from './api';
+import { ROOT_FOLDER, type MediaCategory, formatDate, formatSize, useMedia, useMediaFolders } from './api';
 
 /** Form field that picks a media asset id from the library (with inline upload). */
 export function MediaPicker({
@@ -26,7 +33,9 @@ export function MediaPicker({
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const media = useMedia();
+  const [folder, setFolder] = useState<string>('all');
+  const media = useMedia(folder === 'all' ? undefined : folder);
+  const folders = useMediaFolders();
   const items = (media.data ?? []).filter((a) => !category || a.category === category);
 
   return (
@@ -52,8 +61,29 @@ export function MediaPicker({
           <DialogHeader>
             <DialogTitle>{t('media.pick')}</DialogTitle>
           </DialogHeader>
-          <div className="mb-3">
-            <MediaUploader onUploaded={(id) => onChange(id)} />
+
+          <div className="flex items-center gap-2">
+            <Select value={folder} onValueChange={setFolder}>
+              <SelectTrigger className="h-8 w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('media.folders.all')}</SelectItem>
+                <SelectItem value={ROOT_FOLDER}>{t('media.folders.unfiled')}</SelectItem>
+                {(folders.data ?? []).map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="mb-1">
+            <MediaUploader
+              folderId={folder !== 'all' && folder !== ROOT_FOLDER ? folder : null}
+              onUploaded={(id) => onChange(id)}
+            />
           </div>
           {media.isLoading ? (
             <CenteredSpinner />
@@ -68,11 +98,22 @@ export function MediaPicker({
                     setOpen(false);
                   }}
                   className={cn(
-                    'aspect-square overflow-hidden rounded-md border transition-all hover:ring-2 hover:ring-ring',
+                    'overflow-hidden rounded-md border text-left transition-all hover:ring-2 hover:ring-ring',
                     value === a.id && 'ring-2 ring-primary',
                   )}
                 >
-                  <MediaThumb id={a.id} category={a.category} status={a.status} />
+                  <div className="aspect-square overflow-hidden">
+                    <MediaThumb id={a.id} category={a.category} status={a.status} />
+                  </div>
+                  <div className="space-y-0.5 p-1.5">
+                    <p className="truncate text-[11px] font-medium" title={a.fileName}>
+                      {a.fileName}
+                    </p>
+                    <div className="flex justify-between text-[10px] text-muted-foreground">
+                      <span>{formatDate(a.createdAt)}</span>
+                      <span className="tabular-nums">{formatSize(a.sizeBytes)}</span>
+                    </div>
+                  </div>
                 </button>
               ))}
             </div>

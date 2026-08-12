@@ -172,9 +172,50 @@ never returned). AI editor generation: `POST /api/admin/ai/generate/component`
 and `.../site` assemble a prompt from the component contract + the tenant's
 enabled plugin instances, relay it to ai-gateway, and return validated JSON.
 Mode B sites: site-builder's `ReactAppBuilder` materializes the AI/editor file
-map and runs a sandboxed offline `pnpm install` + `vite build` before uploading
-`dist/`. The OpenAI-compatible provider is covered by an in-process stub test;
-Transit and live model calls run against real infra/keys.
+map and builds it. A Mode B project is untrusted code, so install + build run in
+an ephemeral, per-build **sandbox container** (see below), never in the builder
+process. Install runs `--ignore-scripts` (no package lifecycle code executes) and
+may fetch dependencies from the registry; the build (`vite build`, which executes
+site `vite.config`) runs with **no network** and a scrubbed environment, then
+`dist/` is uploaded. The OpenAI-compatible provider is covered by an in-process
+stub test; Transit and live model calls run against real infra/keys.
+
+#### Mode B build sandbox (security)
+
+Builds are isolated so a malicious site cannot reach platform secrets or other
+tenants (see [[git-integration-progress]]):
+
+- **Isolation:** each build phase runs as `docker run --rm` on the host daemon via
+  a `docker-socket-proxy` (the builder never mounts the raw socket), with
+  `--cap-drop ALL`, `--security-opt no-new-privileges`, `--read-only`, per-build
+  cpu/memory/pids limits, and — for the build phase — `--network none`. Set
+  `DCMS_BUILD_RUNTIME=runsc` in `.env` after installing gVisor on the host
+  (`/etc/docker/daemon.json`) for kernel-level isolation.
+- **Env scrub:** the build process inherits *no* platform env — `ReactAppBuilder`
+  clears `ProcessStartInfo.Environment` and passes only PATH/HOME/CI/npm_config_*.
+- **Least privilege:** site-builder no longer gets `*service-env`/`*prod-env`. It
+  uses a Postgres role scoped to the `sites` schema (`dcms_sitebuilder`,
+  `infra/postgres/init/02-service-roles.sh`) and a MinIO service account scoped to
+  the site buckets (`dcms-sitebuilder`, `infra/minio/init.sh`), and holds **no**
+  Vault token.
+
+**Deploy steps (in addition to the normal three-file `up`):**
+
+1. Build the sandbox image so the daemon can launch it:
+   `docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.vps.yml --profile sandbox build site-build-sandbox`
+2. Create the host work dir (world-writable so the builder and sandbox uid can both
+   write): `mkdir -p ~/dcms-data/build-work && chmod 0777 ~/dcms-data/build-work`.
+3. Set a strong `FORGEJO_WEBHOOK_SECRET` in `.env` (admin-api now refuses to start
+   in Production with an empty/default one); re-register site webhooks afterwards.
+4. Optionally set `SITEBUILDER_DB_PASSWORD` / `SITEBUILDER_MINIO_USER` /
+   `SITEBUILDER_MINIO_PASSWORD` in `.env`.
+
+**Existing cluster note:** the scoped Postgres role and MinIO account are created by
+the init jobs only on a *fresh* data dir. On the already-provisioned vps1, run the
+statements in `02-service-roles.sh` against Postgres once, and
+`mc admin user add` + `mc admin policy attach` (per `infra/minio/init.sh`) against
+MinIO, then redeploy. Until then, temporarily point site-builder back at the
+existing creds — but the sandbox + env-scrub already prevent secret exposure.
 
 ### Search, Analytics & Visitor Auth (Phase 11)
 

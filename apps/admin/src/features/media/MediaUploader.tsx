@@ -7,8 +7,17 @@ import { Spinner } from '../../components/ui/spinner';
 import { cn } from '../../lib/cn';
 import { ApiError, api } from '../../lib/api';
 
-/** Drag-and-drop / click uploader. Uploads files one by one to /admin/media. */
-export function MediaUploader({ onUploaded }: { onUploaded?: (id: string) => void }) {
+/**
+ * Drag-and-drop / click uploader. Uploads files one by one to /admin/media,
+ * optionally filing them into `folderId`.
+ */
+export function MediaUploader({
+  onUploaded,
+  folderId,
+}: {
+  onUploaded?: (id: string) => void;
+  folderId?: string | null;
+}) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -21,6 +30,7 @@ export function MediaUploader({ onUploaded }: { onUploaded?: (id: string) => voi
       for (const file of Array.from(files)) {
         const form = new FormData();
         form.append('file', file);
+        if (folderId) form.append('folderId', folderId);
         try {
           const res = await api.upload<{ id: string }>('/admin/media', form);
           onUploaded?.(res.id);
@@ -28,7 +38,11 @@ export function MediaUploader({ onUploaded }: { onUploaded?: (id: string) => voi
           toast.error(e instanceof ApiError ? `${file.name}: ${e.message}` : t('errors.generic'));
         }
       }
-      await qc.invalidateQueries({ queryKey: ['media'] });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['media'] }),
+        qc.invalidateQueries({ queryKey: ['media-folders'] }),
+        qc.invalidateQueries({ queryKey: ['media-usage'] }),
+      ]);
     } finally {
       setBusy(false);
     }

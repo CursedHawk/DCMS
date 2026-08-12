@@ -53,6 +53,6 @@ public class PublicConfigTests
 
         // Adding a plugin here is a deliberate act: the keys become world-readable
         // on every published tenant site.
-        exposing.Should().BeEquivalentTo(["carousel", "events", "roster"]);
+        exposing.Should().BeEquivalentTo(["branding", "carousel", "events", "roster"]);
     }
 }

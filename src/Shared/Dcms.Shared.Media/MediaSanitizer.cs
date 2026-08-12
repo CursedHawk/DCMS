@@ -8,9 +8,10 @@ public sealed record SanitizedImage(byte[] Data, string ContentType, int Width, 
 public sealed class MediaSanitizationException(string message) : Exception(message);
 
 /// <summary>
-/// Re-encodes images through ImageSharp to neutralize embedded payloads and
-/// strip metadata (EXIF/IPTC/XMP), enforcing dimension limits. SVG and other
-/// non-raster image types are rejected (no safe re-encode in MVP).
+/// Re-encodes raster images through ImageSharp to neutralize embedded payloads
+/// and strip metadata (EXIF/IPTC/XMP), enforcing dimension limits. SVG is vector
+/// XML with a different threat model and is handled by <see cref="SvgSanitizer"/>;
+/// other non-raster image types have no safe re-encode here and are rejected.
 /// </summary>
 public sealed class MediaSanitizer
 {

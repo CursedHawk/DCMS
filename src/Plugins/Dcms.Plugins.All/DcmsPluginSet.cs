@@ -2,6 +2,7 @@ using Dcms.Plugins.Analytics;
 using Dcms.Plugins.Articles;
 using Dcms.Plugins.AudioLibrary;
 using Dcms.Plugins.Blog;
+using Dcms.Plugins.Branding;
 using Dcms.Plugins.Carousel;
 using Dcms.Plugins.Events;
 using Dcms.Plugins.FileDownloads;
@@ -25,6 +26,7 @@ public static class DcmsPluginSet
         .Add<AnalyticsPlugin>()
         .Add<AudioLibraryPlugin>()
         .Add<BlogPlugin>()
+        .Add<BrandingPlugin>()
         .Add<CarouselPlugin>()
         .Add<EventsPlugin>()
         .Add<FileDownloadsPlugin>()

@@ -210,6 +210,11 @@ services:
     <<: *service-defaults
     environment:
       <<: *service-env
+      # AI Chatbot: content-api calls ai-gateway for visitor replies.
+      ServiceClient__TokenEndpoint: "http://dcms-identity:8080/connect/token"
+      ServiceClient__ClientId: "dcms-admin-api"
+      ServiceClient__ClientSecret: "dcms-admin-api-dev-secret"
+      Services__AiGateway: "http://ai-gateway:8080"
 
   media-worker:
     build:
@@ -224,16 +229,40 @@ services:
       context: .
       dockerfile: src/Services/Dcms.SiteBuilder/Dockerfile
     <<: *service-defaults
+    # Least privilege: the builder deliberately does NOT get *service-env. It runs a
+    # Postgres role scoped to the sites schema and a MinIO service account scoped to
+    # the site buckets — never the root storage creds or a Vault token — so a
+    # compromised build (or the builder itself) cannot reach other tenants' data or
+    # platform secrets. See infra/postgres/init/02-service-roles.sh and infra/minio/init.sh.
     environment:
-      <<: *service-env
-    # A Mode B build runs the site's own package manager (network install) then
-    # its build; cap resources so one build can't starve the host, and share a
-    # warm package cache across builds.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_sitebuilder;Password=dcms-sitebuilder-dev"
+      ConnectionStrings__Redis: "redis:6379"
+      Nats__Url: "nats://nats:4222"
+      Storage__Endpoint: "minio:9000"
+      Storage__AccessKey: "dcms-sitebuilder"
+      Storage__SecretKey: "dcms-sitebuilder-dev"
+      # Dev builds run unsandboxed (no gVisor/socket-proxy locally) but still with a
+      # fully scrubbed env and --ignore-scripts. Production (prod + vps overlays)
+      # sets DCMS_BUILD_SANDBOX_IMAGE + DCMS_BUILD_REQUIRE_SANDBOX so every build
+      # runs in an isolated, no-network, cap-dropped ephemeral container instead.
+    # Container-wide ceiling; per-build limits are applied to each sandbox container.
     mem_limit: 2g
     cpus: 2.0
     pids_limit: 512
-    volumes:
-      - build-cache:/var/cache/dcms-build
+
+  # Image-only build: the ephemeral sandbox that untrusted Mode B builds run inside
+  # (node + pnpm/yarn, non-root). It is never started as a long-running service (the
+  # profile keeps it out of `up`); it exists so `docker compose` builds and tags the
+  # image the site-builder launches throwaway containers from. Build it during deploy:
+  #   docker compose --profile sandbox build site-build-sandbox
+  site-build-sandbox:
+    profiles: ["sandbox"]
+    image: dcms/site-build-sandbox:latest
+    build:
+      context: .
+      dockerfile: src/Services/Dcms.SiteBuilder/sandbox.Dockerfile
+    entrypoint: ["true"]
+    restart: "no"
 
   site-host:
     build:
@@ -270,4 +299,3 @@ volumes:
   nats-data:
   minio-data:
   forgejo-data:
-  build-cache:

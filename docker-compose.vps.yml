@@ -58,6 +58,22 @@ services:
       MINIO_URL: "http://minio:9000"
       MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      # Least-privilege service account for the site-builder (scoped to the site
+      # buckets), created by infra/minio/init.sh. Must match the site-builder's
+      # Storage__AccessKey/SecretKey in the prod overlay.
+      SITEBUILDER_MINIO_USER: "${SITEBUILDER_MINIO_USER:-dcms-sitebuilder}"
+      SITEBUILDER_MINIO_PASSWORD: "${SITEBUILDER_MINIO_PASSWORD:-dcms-sitebuilder-dev}"
+
+  # Host-specific sandbox wiring: DCMS_BUILD_WORK_HOST_ROOT is the host path that
+  # backs the builder's /var/build-work bind (see the build-work volume below), which
+  # the nested `docker run` needs to mount each per-build dir into the sandbox.
+  site-builder:
+    environment:
+      DCMS_BUILD_WORK_HOST_ROOT: "/home/cursedhawk/dcms-data/build-work"
+      # Set DCMS_BUILD_RUNTIME=runsc in .env once gVisor is installed on the host
+      # (/etc/docker/daemon.json) for kernel-level isolation. Until then each build
+      # still runs in a scrubbed, no-network, cap-dropped ephemeral container.
+      DCMS_BUILD_RUNTIME: "${DCMS_BUILD_RUNTIME:-}"
 
   identity:
     environment:
@@ -166,3 +182,9 @@ volumes:
   forgejo-data:
     driver: local
     driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/forgejo }
+  # Per-build work area, bind-mounted so the nested sandbox `docker run` can mount
+  # each build dir by host path. Create the dir before `up` (chmod 0777 so both the
+  # builder and the sandbox uid can write): mkdir -p dcms-data/build-work.
+  build-work:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/build-work }

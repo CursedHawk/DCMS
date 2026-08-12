@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, ImagePlus, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ImagePlus, Layers, X } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../components/ui/button';
@@ -9,16 +9,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { cn } from '../../lib/cn';
 import { MediaThumb } from './MediaThumb';
 import { MediaUploader } from './MediaUploader';
-import { type MediaCategory, useMedia } from './api';
+import { ROOT_FOLDER, type MediaCategory, useMedia, useMediaFolders } from './api';
 
 /**
  * Form field that picks an *ordered* list of media asset ids from the library
- * (e.g. a gallery's images). Selection is toggled in a dialog; chosen items are
- * shown as reorderable thumbnails. Bound value is a string[] of asset ids.
+ * (e.g. a gallery's images). Selection is toggled in a dialog; whole folders can
+ * be added at once ("point this at a folder"). Bound value is a string[] of ids.
  */
 export function MediaMultiPicker({
   value,
@@ -31,7 +38,9 @@ export function MediaMultiPicker({
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const media = useMedia();
+  const [folder, setFolder] = useState<string>('all');
+  const media = useMedia(folder === 'all' ? undefined : folder);
+  const folders = useMediaFolders();
 
   const ids = value ?? [];
   const byId = new Map((media.data ?? []).map((a) => [a.id, a]));
@@ -47,6 +56,14 @@ export function MediaMultiPicker({
     [next[i], next[j]] = [next[j], next[i]];
     onChange(next);
   };
+
+  // "Serve a whole folder": append every not-yet-selected asset in the current view.
+  const addAllInView = () => {
+    const toAdd = items.map((a) => a.id).filter((id) => !ids.includes(id));
+    if (toAdd.length) onChange([...ids, ...toAdd]);
+  };
+
+  const inView = folder === 'all' ? null : folder;
 
   return (
     <div className="space-y-2">
@@ -103,8 +120,33 @@ export function MediaMultiPicker({
           <DialogHeader>
             <DialogTitle>{t('media.addImages')}</DialogTitle>
           </DialogHeader>
-          <div className="mb-3">
-            <MediaUploader onUploaded={(id) => onChange([...ids, id])} />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={folder} onValueChange={setFolder}>
+              <SelectTrigger className="h-8 w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('media.folders.all')}</SelectItem>
+                <SelectItem value={ROOT_FOLDER}>{t('media.folders.unfiled')}</SelectItem>
+                {(folders.data ?? []).map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button type="button" size="sm" variant="secondary" onClick={addAllInView} disabled={items.length === 0}>
+              <Layers className="h-4 w-4" />
+              {inView ? t('media.addFolder') : t('media.addAll')}
+            </Button>
+          </div>
+
+          <div className="mb-1">
+            <MediaUploader
+              folderId={folder !== 'all' && folder !== ROOT_FOLDER ? folder : null}
+              onUploaded={(id) => onChange([...ids, id])}
+            />
           </div>
           {media.isLoading ? (
             <CenteredSpinner />

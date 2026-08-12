@@ -97,6 +97,29 @@ builder.Services.AddHttpClient("content-api", (sp, client) =>
 // no-ops until it's set (ForgejoOptions.Enabled).
 builder.Services.Configure<Dcms.AdminApi.Sites.Git.ForgejoOptions>(
     builder.Configuration.GetSection(Dcms.AdminApi.Sites.Git.ForgejoOptions.SectionName));
+
+// Prod safety: the git push webhook (/api/internal/git/webhook) is anonymous and
+// gated only by an HMAC over Forgejo__WebhookSecret. An empty or well-known default
+// secret lets anyone forge webhooks and queue arbitrary builds, so refuse to start
+// in Production when git integration is enabled but the secret is weak. Mirrors the
+// DCMS_REFUSE_DEV_VAULT guard in Dcms.Shared.Vault.
+if (builder.Environment.IsProduction())
+{
+    var forgejo = builder.Configuration
+        .GetSection(Dcms.AdminApi.Sites.Git.ForgejoOptions.SectionName)
+        .Get<Dcms.AdminApi.Sites.Git.ForgejoOptions>() ?? new();
+    var weakSecrets = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "dcms-dev-webhook-secret", "dcms-forgejo-webhook",
+    };
+    if (forgejo.Enabled &&
+        (string.IsNullOrWhiteSpace(forgejo.WebhookSecret) || weakSecrets.Contains(forgejo.WebhookSecret.Trim())))
+    {
+        throw new InvalidOperationException(
+            "Refusing to start: Forgejo__WebhookSecret is empty or a known default in Production. " +
+            "Set a strong, unique FORGEJO_WEBHOOK_SECRET and re-register the site webhooks.");
+    }
+}
 builder.Services.AddHttpClient<Dcms.AdminApi.Sites.Git.ForgejoClient>((sp, client) =>
 {
     var opts = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Dcms.AdminApi.Sites.Git.ForgejoOptions>>().Value;

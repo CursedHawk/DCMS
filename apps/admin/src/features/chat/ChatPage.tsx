@@ -5,7 +5,7 @@ import {
   LogLevel,
 } from '@microsoft/signalr';
 import { useQuery } from '@tanstack/react-query';
-import { MessagesSquare, Send } from 'lucide-react';
+import { Bot, MessagesSquare, Send } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '../../components/ui/badge';
@@ -87,6 +87,9 @@ export function ChatPage() {
     setDraft('');
   }
 
+  // The bot answers until a human agent replies; an Agent message means we've taken over.
+  const humanHandling = messages.some((m) => m.sender === 'Agent');
+
   if (!slug) {
     return <EmptyState icon={MessagesSquare} title={t('chat.title')} description={t('tenant.selectFirst')} />;
   }
@@ -123,32 +126,58 @@ export function ChatPage() {
         <div className="flex flex-1 flex-col bg-muted/20">
           {selected ? (
             <>
+              <div className="flex items-center gap-2 border-b bg-card/60 px-4 py-2 text-xs text-muted-foreground">
+                {humanHandling ? (
+                  <>
+                    <Badge tone="secondary">{t('chat.youHandling')}</Badge>
+                    <span>{t('chat.youHandlingHint')}</span>
+                  </>
+                ) : (
+                  <>
+                    <Badge tone="default">
+                      <Bot className="h-3 w-3" /> {t('chat.botHandling')}
+                    </Badge>
+                    <span>{t('chat.botHandlingHint')}</span>
+                  </>
+                )}
+              </div>
               <div className="flex-1 space-y-2 overflow-y-auto p-4">
                 {messages.map((m) => (
-                  <div
-                    key={m.id}
-                    className={cn(
-                      'max-w-[70%] rounded-2xl px-3.5 py-2 text-sm',
-                      m.sender === 'Agent'
-                        ? 'ml-auto bg-primary text-primary-foreground'
-                        : 'bg-card text-card-foreground shadow-sm',
-                    )}
-                  >
-                    {m.body}
+                  <div key={m.id} className={cn('flex flex-col', m.sender === 'Agent' && 'items-end')}>
+                    {m.sender === 'Bot' ? (
+                      <span className="mb-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                        <Bot className="h-3 w-3" /> {t('chat.assistant')}
+                      </span>
+                    ) : null}
+                    <div
+                      className={cn(
+                        'max-w-[70%] rounded-2xl px-3.5 py-2 text-sm',
+                        m.sender === 'Agent' && 'bg-primary text-primary-foreground',
+                        m.sender === 'Bot' && 'bg-accent text-accent-foreground',
+                        m.sender === 'Visitor' && 'bg-card text-card-foreground shadow-sm',
+                      )}
+                    >
+                      {m.body}
+                    </div>
                   </div>
                 ))}
                 <div ref={endRef} />
               </div>
-              <div className="flex gap-2 border-t bg-card p-3">
-                <Input
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && void send()}
-                  placeholder={t('chat.message')}
-                />
-                <Button onClick={() => void send()} disabled={!draft.trim()}>
-                  <Send className="h-4 w-4" /> {t('chat.send')}
-                </Button>
+              <div className="flex flex-col gap-1.5 border-t bg-card p-3">
+                {!humanHandling ? (
+                  <p className="text-xs text-muted-foreground">{t('chat.takeoverHint')}</p>
+                ) : null}
+                <div className="flex gap-2">
+                  <Input
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && void send()}
+                    placeholder={t('chat.message')}
+                  />
+                  <Button onClick={() => void send()} disabled={!draft.trim()}>
+                    <Send className="h-4 w-4" /> {t('chat.send')}
+                  </Button>
+                </div>
               </div>
             </>
           ) : (

@@ -33,6 +33,7 @@ public static class RlsConfigurator
         ("cms", "content_versions"),
         ("media", "media_assets"),
         ("media", "media_variants"),
+        ("media", "media_folders"),
         ("sites", "sites"),
         ("sites", "site_builds"),
         ("sites", "site_drafts"),

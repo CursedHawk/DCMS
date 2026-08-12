@@ -194,8 +194,23 @@ public sealed class SitePublishConsumer(
     // the user exactly why a build failed.
     private async Task BuildReactAppAsync(string definitionJson, string artifactPrefix, CancellationToken ct)
     {
-        var workDir = Path.Combine(Path.GetTempPath(), $"dcms-react-{Guid.NewGuid():N}");
+        // Per-build dir lives directly under the work root so the sandbox can bind-mount
+        // it by host path (DCMS_BUILD_WORK_HOST_ROOT + leaf). Defaults to the temp dir
+        // when sandboxing is off (dev).
+        var workRoot = Environment.GetEnvironmentVariable("DCMS_BUILD_WORK_DIR");
+        if (string.IsNullOrWhiteSpace(workRoot))
+        {
+            workRoot = Path.GetTempPath();
+        }
+        var workDir = Path.Combine(workRoot, $"dcms-react-{Guid.NewGuid():N}");
         Directory.CreateDirectory(workDir);
+        // The sandbox container may run as a different uid; let it create node_modules/
+        // dist under the (throwaway) work dir. Files it creates use umask 0 (see the
+        // sandbox image) so the service can read the artifacts and clean up afterwards.
+        if (!OperatingSystem.IsWindows())
+        {
+            try { File.SetUnixFileMode(workDir, (UnixFileMode)0b111_111_111); } catch { /* best effort */ }
+        }
         var log = new StringBuilder();
         try
         {

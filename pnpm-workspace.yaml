@@ -1,8 +1,8 @@
 packages:
   - apps/*
   - packages/*
-  # The Mode B dependency palette is never installed for development — it is
-  # fetched straight into the site-builder image's offline store.
+  # The Mode B dependency palette drives IDE type hints only (not a build allowlist);
+  # it is never installed for development.
   - '!packages/site-builder-toolchain'
 allowBuilds:
   # Tailwind v4's native oxide binary; needed to build the tenant sites.
