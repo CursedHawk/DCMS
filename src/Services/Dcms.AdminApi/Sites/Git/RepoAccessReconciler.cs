@@ -25,7 +25,8 @@ public sealed class RepoAccessReconciler(
     ILogger<RepoAccessReconciler> logger)
 {
     /// <summary>Reconcile the user's access to every Mode B site repo in the tenant.</summary>
-    public async Task ReconcileUserAsync(Guid tenantId, Guid userId, string email, CancellationToken ct)
+    public async Task ReconcileUserAsync(
+        Guid tenantId, Guid userId, string email, CancellationToken ct, bool isSuperAdmin = false)
     {
         if (!git.Enabled) return;
         try
@@ -42,7 +43,7 @@ public sealed class RepoAccessReconciler(
 
             foreach (var repo in repos)
             {
-                await ApplyAsync(repo.GitRepoFullName!, repo.Id, username, perms, ct);
+                await ApplyAsync(repo.GitRepoFullName!, repo.Id, username, perms, isSuperAdmin, ct);
             }
         }
         catch (Exception ex)
@@ -52,7 +53,8 @@ public sealed class RepoAccessReconciler(
     }
 
     /// <summary>Reconcile the user's access to a single site's repo (self-heal on git open).</summary>
-    public async Task ReconcileUserSiteAsync(Guid tenantId, Guid userId, string email, Site site, CancellationToken ct)
+    public async Task ReconcileUserSiteAsync(
+        Guid tenantId, Guid userId, string email, Site site, CancellationToken ct, bool isSuperAdmin = false)
     {
         if (!git.Enabled || site.RenderMode != SiteRenderMode.ReactApp || site.GitRepoFullName is null) return;
         try
@@ -60,7 +62,7 @@ public sealed class RepoAccessReconciler(
             var perms = await permissions.GetPermissionsAsync(tenantId, userId, ct);
             var username = await forgejo.FindUsernameByEmailAsync(email, ct);
             if (username is null) return;
-            await ApplyAsync(site.GitRepoFullName, site.Id, username, perms, ct);
+            await ApplyAsync(site.GitRepoFullName, site.Id, username, perms, isSuperAdmin, ct);
         }
         catch (Exception ex)
         {
@@ -68,11 +70,24 @@ public sealed class RepoAccessReconciler(
         }
     }
 
+    /// <summary>
+    /// Desired Forgejo access for a user on one site repo. Site editors get push
+    /// access to every Mode B repo: the permission "needed" to work on a site
+    /// (<see cref="PlatformPermissions.SiteEdit"/> / <see cref="PlatformPermissions.SitePublish"/>,
+    /// held by the Owner and admin roles) implies write on its source. SuperAdmins
+    /// (who bypass tenant permission checks and thus hold no explicit grants) get
+    /// write too. Explicit per-site <c>repo:{siteId}:read|write</c> grants still
+    /// apply for finer-grained, non-editor access. Anything else → no collaborator.
+    /// </summary>
     private async Task ApplyAsync(
-        string repoFullName, Guid siteId, string username, IReadOnlySet<string> perms, CancellationToken ct)
+        string repoFullName, Guid siteId, string username, IReadOnlySet<string> perms, bool isSuperAdmin, CancellationToken ct)
     {
         var (org, repo) = SplitRepo(repoFullName);
-        var desired = perms.Contains(PlatformPermissions.RepoWrite(siteId)) ? "write"
+        var canWrite = isSuperAdmin
+            || perms.Contains(PlatformPermissions.SiteEdit)
+            || perms.Contains(PlatformPermissions.SitePublish)
+            || perms.Contains(PlatformPermissions.RepoWrite(siteId));
+        var desired = canWrite ? "write"
             : perms.Contains(PlatformPermissions.RepoRead(siteId)) ? "read"
             : null;
 

@@ -13,10 +13,18 @@
     <PackageReference Include="Testcontainers.Nats" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.Redis" />
-    <!-- Not used directly: forces the patched transitive version. See Directory.Packages.props. -->
+    <!-- Not used directly: force the patched transitive versions. See Directory.Packages.props. -->
+    <PackageReference Include="SSH.NET" />
     <PackageReference Include="System.Security.Cryptography.Xml" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Mounted into the test Postgres containers by TestPostgres. -->
+    <None Include="..\..\infra\postgres\init\00-schemas.sql"
+          Link="postgres-init\00-schemas.sql"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

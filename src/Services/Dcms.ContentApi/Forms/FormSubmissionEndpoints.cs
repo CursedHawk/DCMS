@@ -3,6 +3,7 @@ using Dcms.Plugins.Forms;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Kernel.Abstractions;
+using Dcms.Shared.Messaging.Email;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.ContentApi.Forms;
@@ -27,7 +28,8 @@ public static class FormSubmissionEndpoints
     {
         app.MapPost("/api/{slug}/forms/{formName}", async (
             string slug, string formName, JsonElement body, HttpContext http,
-            ITenantContext tenant, CmsDbContext cms, FormsDbContext forms, CancellationToken ct) =>
+            ITenantContext tenant, CmsDbContext cms, FormsDbContext forms,
+            IEmailQueue email, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
             {
@@ -82,6 +84,25 @@ public static class FormSubmissionEndpoints
             forms.Submissions.Add(submission);
             await forms.SaveChangesAsync(ct);
 
+            // Queue the notification after the write, so a mail problem can never cost
+            // a submission: email-worker owns delivery and retries from here on. A
+            // failed enqueue (NATS down) is logged and swallowed for the same reason —
+            // the submission is already safe in the database and visible in the admin.
+            // Preview submissions are test data and deliberately stay silent.
+            if (!submission.IsSandbox && definition.Notify is { } notify)
+            {
+                try
+                {
+                    var notification = BuildNotification(instance.Name, definition, notify, payload, submission);
+                    await email.EnqueueAsync(notification.ToEmail(), ct);
+                }
+                catch (Exception ex)
+                {
+                    loggerFactory.CreateLogger(typeof(FormSubmissionEndpoints)).LogWarning(
+                        ex, "Failed to queue notification for submission {SubmissionId}.", submission.Id);
+                }
+            }
+
             return Results.Accepted(value: new
             {
                 submissionId = submission.Id,
@@ -91,6 +112,53 @@ public static class FormSubmissionEndpoints
 
         return app;
     }
+
+    /// <summary>
+    /// Collects the submission into the notification that gets rendered and queued.
+    /// Every declared field appears, in form order, so a notification reads the same
+    /// way whether or not the visitor filled in the optional ones.
+    /// </summary>
+    private static FormNotificationMessage BuildNotification(
+        string instanceName,
+        FormDefinition definition,
+        FormNotificationDefinition notify,
+        IReadOnlyDictionary<string, JsonElement> payload,
+        FormSubmission submission)
+    {
+        var title = definition.Title ?? definition.Name;
+        var values = definition.Fields
+            .Select(f => (
+                Label: f.Label ?? f.Name,
+                Value: payload.TryGetValue(f.Name, out var value) ? Display(value) : "—"))
+            .ToList();
+
+        string? replyTo = null;
+        if (!string.IsNullOrWhiteSpace(notify.ReplyToField) &&
+            payload.TryGetValue(notify.ReplyToField, out var reply) &&
+            reply.ValueKind == JsonValueKind.String)
+        {
+            replyTo = reply.GetString();
+        }
+
+        return new FormNotificationMessage(
+            Recipients: notify.Recipients,
+            Subject: string.IsNullOrWhiteSpace(notify.Subject) ? $"New {title} submission" : notify.Subject,
+            FormTitle: title,
+            InstanceName: instanceName,
+            SubmissionId: submission.Id,
+            TenantId: submission.TenantId,
+            SubmittedAt: submission.SubmittedAt,
+            Values: values,
+            ReplyTo: replyTo);
+    }
+
+    private static string Display(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.String => value.GetString() ?? string.Empty,
+        JsonValueKind.True => "Yes",
+        JsonValueKind.False => "No",
+        _ => value.GetRawText(),
+    };
 
     /// <summary>Returns an error message, or null when the body satisfies the form.</summary>
     private static string? Validate(FormDefinition definition, JsonElement body)

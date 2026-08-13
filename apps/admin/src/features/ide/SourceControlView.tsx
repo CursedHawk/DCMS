@@ -39,7 +39,7 @@ import {
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { ApiError } from '../../lib/api';
 import { cn } from '../../lib/cn';
-import { can, repoRead, repoWrite, useMyPermissions } from '../../lib/permissions';
+import { can, Perm, repoRead, repoWrite, useMyPermissions } from '../../lib/permissions';
 import { useNavigate } from '@tanstack/react-router';
 import { accountApi } from '../account/accountApi';
 import type { GitChange, GitCommit } from './git';
@@ -92,7 +92,14 @@ export function SourceControlView({
 
   const { data: me } = useMyPermissions(true);
   // Whether the caller may clone/pull this site's repo with their own credentials.
-  const canClone = can(me, repoRead(siteId)) || can(me, repoWrite(siteId));
+  // Mirrors the server's RepoAccessReconciler: site editors (site:edit / site:publish,
+  // held by Owner/admin roles and SuperAdmins) get repo access, plus anyone with an
+  // explicit per-site repo:{siteId}:read|write grant.
+  const canClone =
+    can(me, Perm.SiteEdit) ||
+    can(me, Perm.SitePublish) ||
+    can(me, repoRead(siteId)) ||
+    can(me, repoWrite(siteId));
   const navigate = useNavigate();
   // Only fetch git-credential status once the clone panel is opened by a user who
   // actually has repo access — used to nudge Google/no-password accounts.

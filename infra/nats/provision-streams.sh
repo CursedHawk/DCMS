@@ -43,6 +43,7 @@ ensure_stream SITES        "site.publish.>"                          work
 ensure_stream SITES_EVENTS "site.published,site.build.failed"        limits
 ensure_stream ANALYTICS    "analytics.>"                             limits
 ensure_stream CHAT         "chat.>"                                  limits
+ensure_stream EMAIL        "email.>"                                 work
 
 echo "JetStream provisioning complete."
 nats --server "$NATS_URL" stream ls

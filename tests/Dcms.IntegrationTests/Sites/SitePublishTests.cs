@@ -88,7 +88,9 @@ public class SitePublishTests(SitePublishFixture fixture)
     private static async Task<Guid> Id(HttpClient client, HttpRequestMessage req, CancellationToken ct)
     {
         var res = await client.SendAsync(req, ct);
-        res.IsSuccessStatusCode.Should().BeTrue($"request to {req.RequestUri} should succeed but was {res.StatusCode}");
+        var raw = await res.Content.ReadAsStringAsync(ct);
+        res.IsSuccessStatusCode.Should().BeTrue(
+            $"request to {req.RequestUri} should succeed but was {res.StatusCode}: {raw}");
         var json = await res.Content.ReadFromJsonAsync<JsonElement>(ct);
         return json.TryGetProperty("id", out var id) ? id.GetGuid() : json.GetProperty("siteId").GetGuid();
     }

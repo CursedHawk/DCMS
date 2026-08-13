@@ -13,6 +13,7 @@ import { AiSettingsPage } from './features/ai/AiSettingsPage';
 import { ContentPage } from './features/content/ContentPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { DomainsPage } from './features/domains/DomainsPage';
+import { FormsPage } from './features/forms/FormsPage';
 import { InviteAcceptPage } from './features/invitations/InviteAcceptPage';
 import { MediaPage } from './features/media/MediaPage';
 import { MembersPage } from './features/members/MembersPage';
@@ -65,6 +66,7 @@ const domainsRoute = child('/domains', DomainsPage);
 const pluginsRoute = child('/plugins', PluginsPage);
 const contentRoute = child('/content', ContentPage);
 const mediaRoute = child('/media', MediaPage);
+const formsRoute = child('/forms', FormsPage);
 const sitesRoute = child('/sites', SitesPage);
 const openapiRoute = child('/openapi', () => <OpenApiPage />);
 const aiRoute = child('/ai', AiSettingsPage);
@@ -93,6 +95,7 @@ export const routeTree = rootRoute.addChildren([
     pluginsRoute,
     contentRoute,
     mediaRoute,
+    formsRoute,
     sitesRoute,
     editorRoute,
     openapiRoute,

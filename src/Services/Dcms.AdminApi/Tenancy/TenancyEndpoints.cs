@@ -151,8 +151,7 @@ public static class TenancyEndpoints
             CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;
-            var role = await db.TenantRoles.Include(r => r.Permissions)
-                .FirstOrDefaultAsync(r => r.Id == id, ct);
+            var role = await db.TenantRoles.FirstOrDefaultAsync(r => r.Id == id, ct);
             if (role is null)
             {
                 return Results.NotFound();
@@ -161,11 +160,20 @@ public static class TenancyEndpoints
             {
                 role.Name = body.Name;
             }
-            db.TenantRolePermissions.RemoveRange(role.Permissions);
-            role.Permissions.Clear();
+
+            // Replace the permission set wholesale. We hard-delete the existing rows
+            // with ExecuteDelete rather than RemoveRange-ing the tracked navigation and
+            // re-adding: removing then re-adding dependents of a required relationship in
+            // one SaveChanges makes EF's change-tracker fixup emit UPDATEs keyed on the
+            // brand-new rows' Ids (which don't exist yet) → "affected 0 rows"
+            // DbUpdateConcurrencyException. A direct delete + plain inserts sidesteps the
+            // tracker entirely. Wrapped in a transaction so the swap is atomic. The
+            // ExecuteDelete query honours the tenant query filter, so it is tenant-scoped.
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            await db.TenantRolePermissions.Where(p => p.TenantRoleId == id).ExecuteDeleteAsync(ct);
             foreach (var permission in body.Permissions.Distinct())
             {
-                role.Permissions.Add(new TenantRolePermission
+                db.TenantRolePermissions.Add(new TenantRolePermission
                 {
                     Id = Guid.NewGuid(),
                     TenantId = tenantId,
@@ -174,6 +182,7 @@ public static class TenancyEndpoints
                 });
             }
             await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
 
             // Members holding this role: invalidate their cached permissions and
             // reconcile Forgejo repo access so changed repo:{site} grants take effect

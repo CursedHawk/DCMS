@@ -224,6 +224,22 @@ services:
     environment:
       <<: *service-env
 
+  # The only container that speaks SMTP. Drains the EMAIL work queue — identity and
+  # content-api publish rendered messages to it and return immediately, so a slow or
+  # unreachable relay costs a retry here instead of a hanging request. Delivery is
+  # at-least-once with NAK backoff and dead-lettering (see EmailSendConsumer).
+  #
+  # Deliberately does NOT inherit *service-env: it needs NATS and the Email:* settings
+  # and nothing else — no database, no object storage, no Vault token. Dev defaults
+  # point at the Mailpit container, which captures mail without delivering it.
+  email-worker:
+    build:
+      context: .
+      dockerfile: src/Services/Dcms.EmailWorker/Dockerfile
+    <<: *service-defaults
+    environment:
+      Nats__Url: "nats://nats:4222"
+
   site-builder:
     build:
       context: .

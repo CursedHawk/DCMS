@@ -14,6 +14,7 @@ public static class Streams
     public const string SitesEvents = "SITES_EVENTS";
     public const string Analytics = "ANALYTICS";
     public const string Chat = "CHAT";
+    public const string Email = "EMAIL";
 }
 
 public static class Subjects
@@ -49,4 +50,7 @@ public static class Subjects
 
     // CHAT
     public const string ChatMessagePosted = "chat.message.posted";
+
+    // EMAIL (work queue)
+    public const string EmailSend = "email.send";
 }

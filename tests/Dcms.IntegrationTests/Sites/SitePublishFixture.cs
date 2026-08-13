@@ -14,6 +14,7 @@ using NATS.Net;
 using Testcontainers.Minio;
 using Testcontainers.Nats;
 using Testcontainers.PostgreSql;
+using Testcontainers.Redis;
 
 namespace Dcms.IntegrationTests.Sites;
 
@@ -24,10 +25,13 @@ namespace Dcms.IntegrationTests.Sites;
 /// </summary>
 public sealed class SitePublishFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:18")
-        .WithDatabase("dcms").WithUsername("dcms").WithPassword("dcms-dev").Build();
+    private readonly PostgreSqlContainer _postgres = TestPostgres.Build();
     private readonly NatsContainer _nats = new NatsBuilder("nats:2.11").WithCommand("--jetstream").Build();
     private readonly MinioContainer _minio = new MinioBuilder("minio/minio:latest").Build();
+
+    // admin-api's permission checks read through the Redis cache, so this needs to
+    // be a real server: an unreachable address surfaces as a 500, not a cache miss.
+    private readonly RedisContainer _redis = new RedisBuilder("redis:7").Build();
 
     public WebApplicationFactory<AdminApiApp::Program> Admin { get; private set; } = null!;
     public WebApplicationFactory<SiteHostApp::Program> Host { get; private set; } = null!;
@@ -35,7 +39,7 @@ public sealed class SitePublishFixture : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        await Task.WhenAll(_postgres.StartAsync(), _nats.StartAsync(), _minio.StartAsync());
+        await Task.WhenAll(_postgres.StartAsync(), _nats.StartAsync(), _minio.StartAsync(), _redis.StartAsync());
 
         await using (var nats = new NatsClient(_nats.GetConnectionString()))
         {
@@ -55,7 +59,7 @@ public sealed class SitePublishFixture : IAsyncLifetime
         {
             b.UseSetting("ConnectionStrings:Postgres", _postgres.GetConnectionString());
             b.UseSetting("Nats:Url", _nats.GetConnectionString());
-            b.UseSetting("ConnectionStrings:Redis", "localhost:1");
+            b.UseSetting("ConnectionStrings:Redis", _redis.GetConnectionString());
             b.UseSetting("Storage:Endpoint", endpoint);
             b.UseSetting("Storage:AccessKey", _minio.GetAccessKey());
             b.UseSetting("Storage:SecretKey", _minio.GetSecretKey());
@@ -84,7 +88,8 @@ public sealed class SitePublishFixture : IAsyncLifetime
         if (Admin is not null) await Admin.DisposeAsync();
         if (_builder is not null) await _builder.DisposeAsync();
         if (Host is not null) await Host.DisposeAsync();
-        await Task.WhenAll(_postgres.DisposeAsync().AsTask(), _nats.DisposeAsync().AsTask(), _minio.DisposeAsync().AsTask());
+        await Task.WhenAll(_postgres.DisposeAsync().AsTask(), _nats.DisposeAsync().AsTask(),
+            _minio.DisposeAsync().AsTask(), _redis.DisposeAsync().AsTask());
     }
 }
 

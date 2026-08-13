@@ -1,3 +1,4 @@
+using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 
@@ -27,10 +28,36 @@ public sealed class DockerFactAttribute : FactAttribute
     {
         try
         {
+            if (Environment.GetEnvironmentVariable("DOCKER_HOST") is not null
+                || File.Exists("/var/run/docker.sock"))
+            {
+                return true;
+            }
+
+            // Docker Desktop on Windows serves the engine over a named pipe and
+            // leaves TCP 2375 closed unless you opt in, so without this check the
+            // whole suite silently skips on a perfectly working machine.
+            if (OperatingSystem.IsWindows() && NamedPipeAvailable())
+            {
+                return true;
+            }
+
             using var client = new TcpClient();
-            return client.ConnectAsync("localhost", 2375).Wait(500)
-                   || File.Exists("/var/run/docker.sock")
-                   || Environment.GetEnvironmentVariable("DOCKER_HOST") is not null;
+            return client.ConnectAsync("localhost", 2375).Wait(500);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool NamedPipeAvailable()
+    {
+        try
+        {
+            using var pipe = new NamedPipeClientStream(".", "docker_engine", PipeDirection.InOut);
+            pipe.Connect(500);
+            return true;
         }
         catch
         {

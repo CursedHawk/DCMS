@@ -25,8 +25,7 @@ namespace Dcms.IntegrationTests.Media;
 /// </summary>
 public class MediaWorkerTests : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:18")
-        .WithDatabase("dcms").WithUsername("dcms").WithPassword("dcms-dev").Build();
+    private readonly PostgreSqlContainer _postgres = TestPostgres.Build();
     private readonly NatsContainer _nats = new NatsBuilder("nats:2.11").WithCommand("--jetstream").Build();
     private readonly MinioContainer _minio = new MinioBuilder("minio/minio:latest").Build();
 

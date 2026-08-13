@@ -1,8 +1,8 @@
 using System.Net;
 using System.Security.Claims;
 using Dcms.Identity.Domain;
-using Dcms.Identity.Email;
 using Dcms.Identity.Forgejo;
+using Dcms.Shared.Messaging.Email;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -95,10 +95,11 @@ public static class AccountEndpoints
         app.MapPost("/account/forgot-password", async (
             HttpContext context,
             UserManager<DcmsUser> userManager,
-            IEmailSender emailSender,
+            IEmailQueue emailQueue,
             ILoggerFactory loggerFactory,
             [FromForm] string email,
-            [FromForm] string? returnUrl) =>
+            [FromForm] string? returnUrl,
+            CancellationToken ct) =>
         {
             email = email?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(email))
@@ -116,13 +117,18 @@ public static class AccountEndpoints
                 var link = BuildResetLink(context, email, token, returnUrl);
                 try
                 {
-                    await emailSender.SendAsync(email, "Reset your DCMS password", ResetEmailBody(link));
+                    await emailQueue.EnqueueAsync(new EmailMessage(
+                        Recipients: [email],
+                        Subject: "Reset your DCMS password",
+                        HtmlBody: ResetEmailBody(link),
+                        Purpose: "password-reset"), ct);
                 }
                 catch (Exception ex)
                 {
-                    // Don't leak delivery failures to the form (still no enumeration);
-                    // log so the operator can see SMTP problems.
-                    loggerFactory.CreateLogger("Account").LogError(ex, "Failed to send password-reset email.");
+                    // Don't leak queueing failures to the form (still no enumeration);
+                    // log so the operator can see it. Delivery problems past this point
+                    // are email-worker's to retry and report.
+                    loggerFactory.CreateLogger("Account").LogError(ex, "Failed to queue password-reset email.");
                 }
             }
 

@@ -17,6 +17,7 @@ using Dcms.Shared.Data.Search;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Data.Visitors;
 using Dcms.Shared.Messaging;
+using Dcms.Shared.Messaging.Email;
 using Dcms.Shared.Security;
 using Dcms.Shared.Storage;
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
@@ -35,6 +36,10 @@ builder.Services.AddDcmsTenancyData(builder.Configuration);
 builder.Services.AddDcmsCmsData(builder.Configuration);
 builder.Services.AddDcmsMediaData(builder.Configuration);
 builder.Services.AddDcmsFormsData(builder.Configuration);
+
+// Optional per-form email notifications. Rendered here, delivered by email-worker
+// off the EMAIL work queue — content-api never touches SMTP.
+builder.Services.AddDcmsEmailQueue();
 builder.Services.AddDcmsSearchData(builder.Configuration);
 builder.Services.AddDcmsVisitorsData(builder.Configuration);
 builder.Services.AddDcmsChatData(builder.Configuration);

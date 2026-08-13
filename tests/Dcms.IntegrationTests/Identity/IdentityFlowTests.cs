@@ -83,6 +83,12 @@ public class IdentityFlowTests(IdentityAppFixture fixture)
                 ["scope"] = "dcms.ai",
             }), TestContext.Current.CancellationToken);
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        // Failed client authentication is 401 + invalid_client, not 400: RFC 6749
+        // §5.2 allows either and OpenIddict picks 401 (with WWW-Authenticate).
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(
+            TestContext.Current.CancellationToken);
+        body.GetProperty("error").GetString().Should().Be("invalid_client");
     }
 }

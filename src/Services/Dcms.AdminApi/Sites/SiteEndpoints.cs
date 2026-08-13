@@ -569,7 +569,7 @@ public static class SiteEndpoints
             // Self-heal: bring the caller's Forgejo collaborator access in line with
             // their per-site repo permissions whenever they open the git panel.
             if (tenant.TenantId is Guid tid && user.UserId is Guid uid && !string.IsNullOrWhiteSpace(user.Email))
-                await repoAccess.ReconcileUserSiteAsync(tid, uid, user.Email!, site, ct);
+                await repoAccess.ReconcileUserSiteAsync(tid, uid, user.Email!, site, ct, user.IsSuperAdmin);
 
             var (http, ssh) = git.CloneUrls(site.GitRepoFullName);
             return Results.Ok(new

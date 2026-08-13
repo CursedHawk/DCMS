@@ -16,6 +16,7 @@
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Kernel\Dcms.Shared.Kernel.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Contracts\Dcms.Shared.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Media\Dcms.Shared.Media.csproj" />
+    <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Messaging\Dcms.Shared.Messaging.csproj" />
   </ItemGroup>
 
 </Project>

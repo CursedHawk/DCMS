@@ -13,11 +13,7 @@ namespace Dcms.IntegrationTests.Identity;
 /// </summary>
 public sealed class IdentityAppFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:18")
-        .WithDatabase("dcms")
-        .WithUsername("dcms")
-        .WithPassword("dcms-dev")
-        .Build();
+    private readonly PostgreSqlContainer _postgres = TestPostgres.Build();
 
     public WebApplicationFactory<IdentityApp::Program> Factory { get; private set; } = null!;
 

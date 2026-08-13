@@ -16,8 +16,74 @@ public static class FormSubmissionEndpoints
 {
     public static IEndpointRouteBuilder MapFormSubmissionEndpoints(this IEndpointRouteBuilder app)
     {
+        // The forms an operator can review: every Forms plugin instance with the
+        // forms declared in its config, so the admin can render real labels and
+        // columns instead of raw payload keys.
+        app.MapGet("/api/admin/forms", async (
+            CmsDbContext cms, FormsDbContext db, CancellationToken ct) =>
+        {
+            var instances = await cms.PluginInstances.AsNoTracking()
+                .Where(p => p.PluginId == FormsPlugin.PluginId)
+                .OrderBy(p => p.Name)
+                .ToListAsync(ct);
+
+            var counts = await db.Submissions.AsNoTracking()
+                .GroupBy(s => new { s.PluginInstanceId, s.FormName })
+                .Select(g => new
+                {
+                    g.Key.PluginInstanceId,
+                    g.Key.FormName,
+                    Total = g.LongCount(),
+                    Unhandled = g.LongCount(s => s.HandledAt == null),
+                })
+                .ToListAsync(ct);
+
+            var countLookup = counts.ToDictionary(c => (c.PluginInstanceId, c.FormName));
+
+            // Materialised rather than deferred: each instance's config document is
+            // disposed as soon as its forms are read.
+            var result = new List<object>(instances.Count);
+            foreach (var instance in instances)
+            {
+                using var config = JsonDocument.Parse(
+                    string.IsNullOrWhiteSpace(instance.ConfigJson) ? "{}" : instance.ConfigJson);
+
+                var forms = FormsPlugin.ReadForms(config).Select(form =>
+                {
+                    countLookup.TryGetValue((instance.Id, form.Name), out var count);
+                    return new
+                    {
+                        name = form.Name,
+                        title = form.Title ?? form.Name,
+                        fields = form.Fields.Select(f => new
+                        {
+                            name = f.Name,
+                            label = f.Label ?? f.Name,
+                            type = f.Type,
+                            required = f.Required,
+                        }).ToList(),
+                        // Empty when the form has notifications off or no recipients.
+                        notifyRecipients = form.Notify?.Recipients ?? (IReadOnlyList<string>)[],
+                        totalCount = count?.Total ?? 0,
+                        unhandledCount = count?.Unhandled ?? 0,
+                    };
+                }).ToList();
+
+                result.Add(new
+                {
+                    instanceId = instance.Id,
+                    slug = instance.Slug,
+                    name = instance.Name,
+                    enabled = instance.Enabled,
+                    forms,
+                });
+            }
+
+            return Results.Ok(result);
+        }).RequirePermission(PlatformPermissions.ContentRead);
+
         app.MapGet("/api/admin/forms/{instanceId:guid}/submissions", async (
-            Guid instanceId, string? formName, int? page, int? pageSize,
+            Guid instanceId, string? formName, string? handled, int? page, int? pageSize,
             CmsDbContext cms, FormsDbContext db, CancellationToken ct) =>
         {
             var instance = await cms.PluginInstances.AsNoTracking()
@@ -35,6 +101,12 @@ public static class FormSubmissionEndpoints
             {
                 query = query.Where(s => s.FormName == formName);
             }
+            query = handled switch
+            {
+                "unhandled" => query.Where(s => s.HandledAt == null),
+                "handled" => query.Where(s => s.HandledAt != null),
+                _ => query,
+            };
 
             var total = await query.LongCountAsync(ct);
             var rows = await query
@@ -52,6 +124,7 @@ public static class FormSubmissionEndpoints
                     data = JsonDocument.Parse(s.DataJson).RootElement,
                     submittedAt = s.SubmittedAt,
                     handledAt = s.HandledAt,
+                    userAgent = s.UserAgent,
                 }),
                 page = current,
                 pageSize = size,

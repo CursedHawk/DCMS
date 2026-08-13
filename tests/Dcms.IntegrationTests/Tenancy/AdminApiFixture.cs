@@ -20,8 +20,7 @@ namespace Dcms.IntegrationTests.Tenancy;
 /// </summary>
 public sealed class AdminApiFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:18")
-        .WithDatabase("dcms").WithUsername("dcms").WithPassword("dcms-dev").Build();
+    private readonly PostgreSqlContainer _postgres = TestPostgres.Build();
 
     private readonly RedisContainer _redis = new RedisBuilder("redis:7").Build();
 

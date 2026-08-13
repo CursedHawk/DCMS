@@ -1,10 +1,10 @@
-namespace Dcms.Identity.Email;
+namespace Dcms.Shared.Messaging.Email;
 
 /// <summary>
 /// SMTP delivery settings, bound from the "Email" configuration section. Defaults
 /// target the Mailpit container that runs in every environment (dev and vps),
 /// which captures mail without delivering it. Point Host/Port/User/Password at a
-/// real relay in production to actually deliver reset links to users.
+/// real relay in production to actually deliver mail to users.
 /// </summary>
 public sealed class EmailOptions
 {

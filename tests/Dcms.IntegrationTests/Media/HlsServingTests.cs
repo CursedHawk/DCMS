@@ -21,8 +21,7 @@ namespace Dcms.IntegrationTests.Media;
 /// </summary>
 public class HlsServingTests : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:18")
-        .WithDatabase("dcms").WithUsername("dcms").WithPassword("dcms-dev").Build();
+    private readonly PostgreSqlContainer _postgres = TestPostgres.Build();
     private readonly MinioContainer _minio = new MinioBuilder("minio/minio:latest").Build();
 
     private WebApplicationFactory<Program> _content = null!;

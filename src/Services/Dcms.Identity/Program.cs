@@ -1,11 +1,11 @@
 using Dcms.Identity;
 using Dcms.Identity.Data;
 using Dcms.Identity.Domain;
-using Dcms.Identity.Email;
 using Dcms.Identity.Endpoints;
 using Dcms.Identity.Seeding;
 using Dcms.Shared.Hosting;
 using Dcms.Shared.Messaging;
+using Dcms.Shared.Messaging.Email;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -150,9 +150,9 @@ builder.Services.AddHttpClient<Dcms.Identity.Forgejo.ForgejoAdminClient>((sp, cl
 builder.Services.AddScoped<Dcms.Identity.Forgejo.ForgejoUserSync>();
 builder.Services.AddHostedService<Dcms.Identity.Forgejo.ForgejoSyncWorker>();
 
-// Email delivery for password-reset links (Email:* config; defaults to Mailpit).
-builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
-builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+// Password-reset links are queued, not sent: email-worker owns SMTP, so a slow or
+// unreachable relay costs a retry there instead of a hanging forgot-password POST.
+builder.Services.AddDcmsEmailQueue();
 
 // The admin SPA (oidc-client-ts) fetches the discovery document, JWKS and token
 // endpoint cross-origin, which requires CORS on those responses. Origins are the

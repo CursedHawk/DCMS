@@ -61,6 +61,51 @@ public class FormsPluginTests
     }
 
     [Fact]
+    public void Reads_no_notification_when_the_form_declares_none()
+    {
+        FormsPlugin.ReadForms(JsonDocument.Parse(BookingConfig))[0].Notify.Should().BeNull();
+    }
+
+    [Fact]
+    public void Reads_the_notification_settings_of_a_form()
+    {
+        var config = NotifyConfig("""
+            { "enabled": true, "recipients": ["ops@example.com", " booking@example.com "],
+              "subject": "New booking", "replyToField": "email" }
+            """);
+
+        var notify = FormsPlugin.ReadForms(JsonDocument.Parse(config))[0].Notify;
+
+        notify.Should().NotBeNull();
+        notify!.Recipients.Should().BeEquivalentTo(["ops@example.com", "booking@example.com"]);
+        notify.Subject.Should().Be("New booking");
+        notify.ReplyToField.Should().Be("email");
+    }
+
+    [Theory]
+    // Off, and on-but-nowhere-to-send, are both "do not notify" — the latter is
+    // what a half-finished config looks like while an operator is editing it.
+    [InlineData("""{ "enabled": false, "recipients": ["ops@example.com"] }""")]
+    [InlineData("""{ "enabled": true, "recipients": [] }""")]
+    [InlineData("""{ "enabled": true }""")]
+    public void Reads_no_notification_when_it_would_have_nowhere_to_go(string notify)
+    {
+        FormsPlugin.ReadForms(JsonDocument.Parse(NotifyConfig(notify)))[0].Notify.Should().BeNull();
+    }
+
+    private static string NotifyConfig(string notify) => $$"""
+        {
+          "forms": [
+            {
+              "name": "booking",
+              "fields": [{ "name": "email", "type": "email" }],
+              "notify": {{notify}}
+            }
+          ]
+        }
+        """;
+
+    [Fact]
     public void Documents_a_post_per_declared_form()
     {
         var assembler = new OpenApiAssembler(new PluginRegistry([new FormsPlugin()]));

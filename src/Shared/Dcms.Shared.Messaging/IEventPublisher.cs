@@ -8,6 +8,11 @@ namespace Dcms.Shared.Messaging;
 /// </summary>
 public interface IEventPublisher
 {
-    ValueTask PublishAsync<T>(string subject, T @event, CancellationToken ct = default)
+    /// <param name="messageId">
+    /// Optional idempotency key (published as Nats-Msg-Id). JetStream discards a
+    /// duplicate id seen inside the stream's dupe window, so a publisher that
+    /// retries after an ambiguous failure does not enqueue the work twice.
+    /// </param>
+    ValueTask PublishAsync<T>(string subject, T @event, CancellationToken ct = default, string? messageId = null)
         where T : IDcmsEvent;
 }

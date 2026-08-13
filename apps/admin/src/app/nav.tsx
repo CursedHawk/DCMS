@@ -5,6 +5,7 @@ import {
   FileText,
   Globe,
   Image,
+  Inbox,
   LayoutDashboard,
   type LucideIcon,
   MessagesSquare,
@@ -36,6 +37,7 @@ export const NAV: NavItem[] = [
   { to: '/sites', labelKey: 'nav.sites', icon: PanelsTopLeft, perm: Perm.SiteEdit, group: 'build' },
   { to: '/openapi', labelKey: 'nav.openapi', icon: FileJson, group: 'build' },
 
+  { to: '/forms', labelKey: 'nav.forms', icon: Inbox, perm: Perm.ContentRead, group: 'main' },
   { to: '/analytics', labelKey: 'nav.analytics', icon: TrendingUp, perm: Perm.AnalyticsRead, group: 'main' },
   { to: '/chat', labelKey: 'nav.chat', icon: MessagesSquare, perm: Perm.ChatRead, group: 'main' },
 

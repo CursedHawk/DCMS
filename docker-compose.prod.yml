@@ -93,6 +93,15 @@ services:
     environment:
       <<: *prod-env
 
+  # Like the site-builder, email-worker deliberately does NOT inherit *prod-env: the
+  # mail relay is all it needs to reach. Host-specific SMTP settings are layered on
+  # by the vps overlay (x-vps-email).
+  email-worker:
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      DOTNET_ENVIRONMENT: "Production"
+      Nats__Url: "nats://nats:4222"
+
   # The site-builder deliberately does NOT inherit *prod-env (no root MinIO creds,
   # no Vault token, no broad DB user). It gets least-privilege scoped credentials
   # and runs every untrusted build in an isolated sandbox container launched over a

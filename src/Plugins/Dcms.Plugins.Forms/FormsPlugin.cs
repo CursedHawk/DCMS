@@ -51,6 +51,35 @@ public sealed class FormsPlugin : IPlugin
                       "required": ["name"],
                       "additionalProperties": false
                     }
+                  },
+                  "notify": {
+                    "type": "object",
+                    "title": "Email notification",
+                    "description": "Optionally email a copy of every submission. Submissions are stored either way, and preview (sandbox) submissions never send mail.",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean",
+                        "title": "Email me new submissions",
+                        "default": false
+                      },
+                      "recipients": {
+                        "type": "array",
+                        "title": "Recipients",
+                        "description": "Where to send the notification. Each entry is one email address.",
+                        "items": { "type": "string", "format": "email" }
+                      },
+                      "subject": {
+                        "type": "string",
+                        "title": "Subject",
+                        "description": "Defaults to \"New <form> submission\"."
+                      },
+                      "replyToField": {
+                        "type": "string",
+                        "title": "Reply-to field",
+                        "description": "Name of an email field on this form; its value becomes the notification's Reply-To so you can answer the visitor directly."
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "required": ["name", "fields"],
@@ -153,9 +182,50 @@ public sealed class FormsPlugin : IPlugin
                 }
             }
 
-            result.Add(new FormDefinition(name, GetString(form, "title"), GetString(form, "successMessage"), fields));
+            result.Add(new FormDefinition(
+                name,
+                GetString(form, "title"),
+                GetString(form, "successMessage"),
+                fields,
+                ReadNotification(form)));
         }
         return result;
+    }
+
+    /// <summary>
+    /// The form's notification settings, or null when it has none configured.
+    /// A form with notifications enabled but no recipients yields null too —
+    /// there is nowhere to send, and a half-filled config is expected while an
+    /// operator is still editing it.
+    /// </summary>
+    private static FormNotificationDefinition? ReadNotification(JsonElement form)
+    {
+        if (!form.TryGetProperty("notify", out var notify) || notify.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        if (!notify.TryGetProperty("enabled", out var enabled) || enabled.ValueKind != JsonValueKind.True)
+        {
+            return null;
+        }
+
+        var recipients = new List<string>();
+        if (notify.TryGetProperty("recipients", out var list) && list.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var entry in list.EnumerateArray())
+            {
+                if (entry.ValueKind == JsonValueKind.String && entry.GetString() is { Length: > 0 } address &&
+                    !string.IsNullOrWhiteSpace(address))
+                {
+                    recipients.Add(address.Trim());
+                }
+            }
+        }
+
+        return recipients.Count == 0
+            ? null
+            : new FormNotificationDefinition(recipients, GetString(notify, "subject"), GetString(notify, "replyToField"));
     }
 
     private static string? GetString(JsonElement element, string property)
@@ -216,7 +286,17 @@ public sealed record FormDefinition(
     string Name,
     string? Title,
     string? SuccessMessage,
-    IReadOnlyList<FormFieldDefinition> Fields);
+    IReadOnlyList<FormFieldDefinition> Fields,
+    FormNotificationDefinition? Notify = null);
+
+/// <summary>
+/// Where to email a copy of each submission. Only present when the form has
+/// notifications enabled and at least one recipient.
+/// </summary>
+public sealed record FormNotificationDefinition(
+    IReadOnlyList<string> Recipients,
+    string? Subject,
+    string? ReplyToField);
 
 public sealed record FormFieldDefinition(
     string Name,

@@ -32,6 +32,25 @@ x-vps-resource-auth: &vps-resource-auth
   Auth__Issuer: "https://admin.highgeek.eu/"
   Auth__RequireHttpsMetadata: "false"
 
+# SMTP for email-worker, the one service that delivers mail. Everything that wants
+# to send (identity: password resets; content-api: form-submission notifications)
+# publishes to the EMAIL work queue instead, so relay credentials live in exactly
+# one container. Defaults target the in-cluster Mailpit, which captures mail without
+# delivering it — view it via the mailpit container. To deliver real mail, set
+# EMAIL_HOST/PORT/USER/PASSWORD to an SMTP relay and EMAIL_USE_STARTTLS=true in .env.
+#
+# Note for relays that police the envelope sender (iCloud, Gmail): EMAIL_FROM_ADDRESS
+# must be the authenticated account or one of its verified aliases, or the relay
+# rejects the message with a 5xx and email-worker drops it as permanently undeliverable.
+x-vps-email: &vps-email
+  Email__FromAddress: "${EMAIL_FROM_ADDRESS:-no-reply@highgeek.eu}"
+  Email__FromName: "${EMAIL_FROM_NAME:-DCMS}"
+  Email__Host: "${EMAIL_HOST:-mailpit}"
+  Email__Port: "${EMAIL_PORT:-1025}"
+  Email__User: "${EMAIL_USER:-}"
+  Email__Password: "${EMAIL_PASSWORD:-}"
+  Email__UseStartTls: "${EMAIL_USE_STARTTLS:-false}"
+
 services:
   # Vault writes to a bind-mounted dir owned by the deploy user (cursedhawk,
   # uid 1001); run the process as that uid so it can write without a root chown.
@@ -97,16 +116,6 @@ services:
       #   https://admin.highgeek.eu/signin-google
       Authentication__Google__ClientId: "${GOOGLE_CLIENT_ID:-}"
       Authentication__Google__ClientSecret: "${GOOGLE_CLIENT_SECRET:-}"
-      # Password-reset email. Defaults target the in-cluster Mailpit (captures mail,
-      # does not deliver — view it via the mailpit container). To deliver real mail,
-      # set Email__Host/Port/User/Password to an SMTP relay and Email__UseStartTls=true.
-      Email__FromAddress: "${EMAIL_FROM_ADDRESS:-no-reply@highgeek.eu}"
-      Email__FromName: "${EMAIL_FROM_NAME:-DCMS}"
-      Email__Host: "${EMAIL_HOST:-mailpit}"
-      Email__Port: "${EMAIL_PORT:-1025}"
-      Email__User: "${EMAIL_USER:-}"
-      Email__Password: "${EMAIL_PASSWORD:-}"
-      Email__UseStartTls: "${EMAIL_USE_STARTTLS:-false}"
       # Forgejo user mirror: Identity provisions a Forgejo account per DCMS user and
       # keeps email+password in sync so users can clone/pull/push with their own
       # credentials. The admin token needs the write:admin scope (user provisioning);
@@ -140,6 +149,11 @@ services:
       <<: *vps-resource-auth
       # content-api validates platform tokens for chat agents (aud dcms-admin-api).
       Auth__Audience: "dcms-admin-api"
+
+  # Sole holder of the SMTP relay credentials; see x-vps-email above.
+  email-worker:
+    environment:
+      <<: *vps-email
 
   ai-gateway:
     environment:

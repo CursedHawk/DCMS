@@ -22,7 +22,14 @@
        Dcms.IntegrationTests resolves it as a package (the services get it from the
        shared framework), so it is referenced directly there to force the patched
        version. Drop both once OpenIddict raises its own floor. -->
+  <!-- Transitive floor raised for security. Testcontainers (still 4.13.0) depends on
+       SSH.NET 2025.1.0, which has a path-traversal flaw in ScpClient.Download
+       (GHSA-q939-rpr3-3284, high severity), first patched in 2026.0.0. Only
+       Dcms.IntegrationTests pulls Testcontainers, so SSH.NET is referenced directly
+       there to force the patched version. Drop both once Testcontainers raises its
+       own floor. -->
   <ItemGroup Label="Security pins">
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
   </ItemGroup>
 

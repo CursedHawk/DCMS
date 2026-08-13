@@ -1,6 +1,7 @@
 using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.Shared.Data.Media;
@@ -24,9 +25,16 @@ public static class MediaServiceCollectionExtensions
     /// like media-worker, which scope tenancy explicitly per job via
     /// IgnoreQueryFilters rather than the ambient context.
     /// </summary>
+    /// <remarks>
+    /// Replaces rather than appends: AddDcmsTenancyData registers the Finbuckle
+    /// bridge, which needs an IMultiTenantContextAccessor these hosts never set up.
+    /// Appending would merely shadow it (last registration wins at resolution), and
+    /// the unsatisfiable descriptor left behind fails ValidateOnBuild — so site-host
+    /// could not start under Development at all.
+    /// </remarks>
     public static IServiceCollection AddNullTenantContext(this IServiceCollection services)
     {
-        services.AddScoped<ITenantContext, NullTenantContext>();
+        services.Replace(ServiceDescriptor.Scoped<ITenantContext, NullTenantContext>());
         return services;
     }
 
