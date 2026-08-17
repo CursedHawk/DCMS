@@ -1,6 +1,7 @@
 import { type ComponentNode, effectiveLayout } from '@dcms/editor-core';
 import { findRegistration } from '@dcms/site-components';
 import { ArrowDownToLine, ArrowUpToLine, Copy, MousePointerClick, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -188,14 +189,45 @@ function ElementInspector({ node, instances }: { node: ComponentNode; instances:
   );
 }
 
+/** Layout values are whole grid units, so a typed fraction is committed rounded. */
+function toGridUnits(text: string): number | undefined {
+  const n = Number(text);
+  return text.trim() === '' || !Number.isFinite(n) ? undefined : Math.round(n);
+}
+
+/**
+ * One layout box number (X/Y/W/H).
+ *
+ * The text is held locally rather than re-derived from `value` on every
+ * keystroke: bound directly, an emptied field parsed as `Number('') === 0` and
+ * snapped the element to the origin — or to zero size — before a new number
+ * could be typed, and a lone `-` parsed as `NaN` and poisoned the layout. An
+ * incomplete entry now simply commits nothing, and blur restores the last value.
+ */
 function NumField({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  const external = Math.round(value);
+  const [draft, setDraft] = useState(String(external));
+  const [seen, setSeen] = useState(external);
+
+  // Adopt a value changed on the canvas (drag, resize, another node selected),
+  // but leave a draft that already means it — "12.5" commits as 13 — alone.
+  if (seen !== external) {
+    setSeen(external);
+    if (toGridUnits(draft) !== external) setDraft(String(external));
+  }
+
   return (
     <label className="flex items-center gap-1.5 rounded-md border px-2 text-xs">
       <span className="text-muted-foreground">{label}</span>
       <input
         type="number"
-        value={Math.round(value)}
-        onChange={(e) => onChange(Number(e.target.value))}
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          const n = toGridUnits(e.target.value);
+          if (n !== undefined) onChange(n);
+        }}
+        onBlur={() => setDraft(String(Math.round(value)))}
         className="w-full bg-transparent py-1.5 outline-none"
       />
     </label>

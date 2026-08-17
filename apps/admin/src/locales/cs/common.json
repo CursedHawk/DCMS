@@ -182,6 +182,9 @@
       "role": "Role",
       "visible": "Viditelný"
     },
+    "tags": {
+      "placeholder": "Napište štítek a stiskněte Enter"
+    },
     "customFields": {
       "title": "Vlastní pole",
       "empty": "Tato instance zatím nemá žádná vlastní pole — přidejte je v konfiguraci pluginu."

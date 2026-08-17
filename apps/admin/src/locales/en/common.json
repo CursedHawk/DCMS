@@ -180,6 +180,9 @@
       "role": "Role",
       "visible": "Visible"
     },
+    "tags": {
+      "placeholder": "Type a tag and press Enter"
+    },
     "customFields": {
       "title": "Custom fields",
       "empty": "This instance defines no custom fields yet — add them in the plugin's configuration."

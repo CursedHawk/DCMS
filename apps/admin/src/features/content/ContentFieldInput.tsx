@@ -1,6 +1,9 @@
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Input, Textarea } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Switch } from '../../components/ui/switch';
+import { TagsInput, toTagList } from '../../components/ui/tags-input';
 import type { MediaCategory } from '../media/api';
 import { MediaMultiPicker } from '../media/MediaMultiPicker';
 import { MediaPicker } from '../media/MediaPicker';
@@ -21,6 +24,47 @@ function toIdList(value: unknown): string[] {
   return [];
 }
 
+/**
+ * Numeric field. The text is held locally, because re-deriving it from the
+ * parsed number on every keystroke — the same mistake the tag input used to make
+ * — swallows anything not yet a complete number: "1." and "-" vanish as typed,
+ * so no decimal or negative value can be entered.
+ */
+function NumberInput({
+  value,
+  onChange,
+}: {
+  value: unknown;
+  onChange: (v: number | undefined) => void;
+}) {
+  const [draft, setDraft] = useState('');
+
+  const parse = (text: string) => {
+    if (text.trim() === '') return undefined;
+    const n = Number(text);
+    return Number.isFinite(n) ? n : undefined;
+  };
+
+  // Adopt a value that changed elsewhere (item loaded, editor reopened) — but
+  // compare numbers, not text, so a draft that already means the stored value
+  // ("1." while 1 is stored) is left alone.
+  const external = parse(
+    typeof value === 'number' ? String(value) : typeof value === 'string' ? value : '',
+  );
+  if (external !== parse(draft)) setDraft(external === undefined ? '' : String(external));
+
+  return (
+    <Input
+      type="number"
+      value={draft}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        onChange(parse(e.target.value));
+      }}
+    />
+  );
+}
+
 /** Renders the right control for a plugin content field type, bound to data[name]. */
 export function ContentFieldInput({
   field,
@@ -37,6 +81,8 @@ export function ContentFieldInput({
    */
   instanceConfig: Record<string, unknown>;
 }) {
+  const { t } = useTranslation();
+
   const label = (
     <Label className="flex items-center gap-1">
       {field.name}
@@ -91,13 +137,7 @@ export function ContentFieldInput({
           />
         );
       case 'Number':
-        return (
-          <Input
-            type="number"
-            value={(value as number | undefined) ?? ''}
-            onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
-          />
-        );
+        return <NumberInput value={value} onChange={(v) => onChange(v)} />;
       case 'Boolean':
         return <Switch checked={!!value} onCheckedChange={(v) => onChange(v)} />;
       case 'DateTime':
@@ -118,17 +158,10 @@ export function ContentFieldInput({
         );
       case 'Tags':
         return (
-          <Input
-            value={Array.isArray(value) ? (value as string[]).join(', ') : ((value as string) ?? '')}
-            placeholder="tag1, tag2"
-            onChange={(e) =>
-              onChange(
-                e.target.value
-                  .split(',')
-                  .map((s) => s.trim())
-                  .filter(Boolean),
-              )
-            }
+          <TagsInput
+            value={toTagList(value)}
+            onChange={(tags) => onChange(tags)}
+            placeholder={t('content.tags.placeholder')}
           />
         );
       case 'ContentRef':
