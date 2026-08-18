@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { versions as paletteVersions } from 'virtual:dcms-palette-types';
+import { useVfs } from '../../site-source';
 import { previewEntry } from '../paths';
-import { useVfs } from '../vfs';
 import type { BuildRequest, BuildResponse } from './bundler.worker';
 import BundlerWorker from './bundler.worker?worker';
 

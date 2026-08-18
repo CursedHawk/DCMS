@@ -1,6 +1,6 @@
 import * as esbuild from 'esbuild-wasm';
 import wasmURL from 'esbuild-wasm/esbuild.wasm?url';
-import { base64ToBytes, bytesToBase64, isBinaryPath, mimeOf } from '../binary';
+import { base64ToBytes, bytesToBase64, isBinaryPath, mimeOf } from '../../site-source/binary';
 
 // In-browser bundler for the live preview. It transpiles + bundles the Mode B
 // project entirely client-side: local files come from the posted file map;

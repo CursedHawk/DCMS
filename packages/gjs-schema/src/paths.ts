@@ -1,0 +1,102 @@
+/**
+ * The Mode A repository layout. A Mode A site is stored as the same flat file map
+ * (`{ files: { path: content } }`) the Mode B stack already speaks, so the git
+ * repo, working drafts, granular autosave and the build webhook are shared with
+ * no special-casing. These paths are the contract between the builder, the Monaco
+ * code view and the C# site assembler.
+ *
+ *   site.json              manifest: theme, nav, page index, settings
+ *   pages/<slug>.html      one page's body markup
+ *   styles/theme.css       GENERATED from site.json.theme — never hand-edited
+ *   styles/global.css      rules shared by every page
+ *   styles/pages/<slug>.css  rules scoped to one page
+ *   assets.json            Asset Manager entries (DCMS media library references)
+ *   blocks/<name>.json     tenant-saved blocks
+ */
+
+export const SITE_JSON = 'site.json';
+export const ASSETS_JSON = 'assets.json';
+export const THEME_CSS = 'styles/theme.css';
+export const GLOBAL_CSS = 'styles/global.css';
+
+export const PAGES_DIR = 'pages';
+export const PAGE_CSS_DIR = 'styles/pages';
+export const BLOCKS_DIR = 'blocks';
+
+export function pageHtmlPath(slug: string): string {
+  return `${PAGES_DIR}/${slug}.html`;
+}
+
+export function pageCssPath(slug: string): string {
+  return `${PAGE_CSS_DIR}/${slug}.css`;
+}
+
+export function blockPath(name: string): string {
+  return `${BLOCKS_DIR}/${name}.json`;
+}
+
+/** The page slug a `pages/<slug>.html` path refers to, or null if it isn't one. */
+export function slugFromPageHtmlPath(path: string): string | null {
+  const match = /^pages\/([^/]+)\.html$/.exec(path);
+  return match ? match[1] : null;
+}
+
+/** The page slug a `styles/pages/<slug>.css` path refers to, or null. */
+export function slugFromPageCssPath(path: string): string | null {
+  const match = /^styles\/pages\/([^/]+)\.css$/.exec(path);
+  return match ? match[1] : null;
+}
+
+/**
+ * Files the builder regenerates from `site.json` on every save. The code view
+ * shows them read-only: an edit here would be silently overwritten, which is
+ * worse than not offering the edit at all.
+ */
+export function isGeneratedPath(path: string): boolean {
+  return path === THEME_CSS;
+}
+
+/** Every stylesheet a page pulls in, in cascade order (theme → global → page). */
+export function stylesheetsForPage(slug: string): string[] {
+  return [THEME_CSS, GLOBAL_CSS, pageCssPath(slug)];
+}
+
+const SLUG_STRIP = /[^a-z0-9]+/g;
+// Unicode combining marks, written from a string so the range stays legible in source.
+const COMBINING_MARKS = new RegExp('[\\u0300-\\u036f]', 'g');
+
+/**
+ * A filesystem- and URL-safe slug. Diacritics are folded rather than dropped so
+ * a Czech page title still yields a readable file name.
+ */
+export function slugify(input: string): string {
+  const folded = input.normalize('NFKD').replace(COMBINING_MARKS, '').toLowerCase();
+  const slug = folded.replace(SLUG_STRIP, '-').replace(/^-+|-+$/g, '');
+  return slug || 'page';
+}
+
+/** The slug for a route path: `/` → `home`, `/about/team` → `about-team`. */
+export function slugFromRoutePath(routePath: string): string {
+  const trimmed = routePath.replace(/^\/+|\/+$/g, '');
+  return trimmed ? slugify(trimmed) : 'home';
+}
+
+/** Make `slug` unique against `taken` by appending -2, -3, … */
+export function uniqueSlug(slug: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  if (!used.has(slug)) return slug;
+  for (let n = 2; ; n++) {
+    const candidate = `${slug}-${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+}
+
+/**
+ * The published file name for a route path. Mirrors the existing Mode A
+ * convention so links that worked before still work: `/` → index.html,
+ * `/about/team` → about_team.html.
+ */
+export function outputFileName(routePath: string): string {
+  const trimmed = routePath.replace(/^\/+|\/+$/g, '');
+  return trimmed ? `${trimmed.replace(/\//g, '_')}.html` : 'index.html';
+}

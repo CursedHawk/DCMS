@@ -9,12 +9,9 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@dcms/editor-core": "workspace:*",
-    "@microsoft/signalr": "^8",
-    "react": "^19"
+    "@microsoft/signalr": "^8"
   },
   "devDependencies": {
-    "@types/react": "^19",
     "typescript": "^5"
   }
 }

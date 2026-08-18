@@ -11,6 +11,17 @@
  * the tenant delivery API (/api/{slug}/{contentType}), and render the result in
  * place. The delivery API is reached through the site-host proxy on the same
  * origin, so no auth header or absolute base URL is needed.
+ *
+ * `props` may carry presentation choices made in the builder:
+ *   layout      cards | list | article | video | audio | downloads
+ *   titleField / bodyField / imageField / linkField
+ *               which field fills each slot, instead of guessing from key names
+ *   heading, emptyText
+ *
+ * The builder draws the same layouts in its canvas
+ * (packages/gjs-blocks/src/preview.ts). The two are separate implementations —
+ * this one ships to every published site and must stay dependency-free ES5 —
+ * so a change to either belongs in both.
  */
 (function () {
   'use strict';
@@ -69,6 +80,17 @@
     return undefined;
   }
 
+  // A slot's value: the author's explicit field mapping when they made one,
+  // otherwise the first conventionally-named field that holds something. The
+  // mapping exists because the guess is only as good as the tenant's naming.
+  function slot(data, explicit, keys) {
+    if (explicit) {
+      var v = data && data[explicit];
+      return v === '' ? undefined : v;
+    }
+    return pick(data, keys);
+  }
+
   function injectStylesOnce() {
     if (document.getElementById('dcms-hydrate-styles')) return;
     var style = document.createElement('style');
@@ -88,16 +110,20 @@
       '.dcms-downloads{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.5rem;}',
       '.dcms-download a{display:inline-flex;align-items:center;gap:.5rem;color:var(--color-primary,#2563eb);text-decoration:none;}',
       '.dcms-empty{color:var(--color-muted,#6b7280);font-size:.95rem;padding:1rem 0;}',
+      '.dcms-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.75rem;}',
+      '.dcms-row{display:flex;flex-direction:column;gap:.25rem;padding-bottom:.75rem;border-bottom:1px solid var(--color-border,#e5e7eb);}',
+      '.dcms-row-title{font-weight:600;}',
+      '.dcms-row-text{color:var(--color-muted,#6b7280);font-size:.95rem;}',
     ].join('');
     document.head.appendChild(style);
   }
 
-  function cardHtml(item) {
+  function cardHtml(item, props) {
     var d = (item && item.data) || item || {};
-    var title = pick(d, TITLE_KEYS);
-    var body = pick(d, BODY_KEYS);
-    var img = pick(d, IMAGE_KEYS);
-    var href = pick(d, LINK_KEYS);
+    var title = slot(d, props.titleField, TITLE_KEYS);
+    var body = slot(d, props.bodyField, BODY_KEYS);
+    var img = slot(d, props.imageField, IMAGE_KEYS);
+    var href = slot(d, props.linkField, LINK_KEYS);
     var parts = ['<article class="dcms-card">'];
     if (img) parts.push('<img class="dcms-card-img" src="' + esc(mediaUrl(img)) + '" alt="' + esc(title || '') + '" loading="lazy" />');
     parts.push('<div class="dcms-card-body">');
@@ -112,11 +138,27 @@
     return '<div class="dcms-collection">' + items.map(inner).join('') + '</div>';
   }
 
-  function articleHtml(item) {
+  function rowHtml(item, props) {
     var d = (item && item.data) || item || {};
-    var title = pick(d, TITLE_KEYS);
-    var body = pick(d, BODY_KEYS);
-    var img = pick(d, IMAGE_KEYS);
+    var title = slot(d, props.titleField, TITLE_KEYS);
+    var body = slot(d, props.bodyField, BODY_KEYS);
+    var href = slot(d, props.linkField, LINK_KEYS);
+    var inner = '<span class="dcms-row-title">' + esc(title || '(untitled)') + '</span>' +
+      (body ? '<span class="dcms-row-text">' + esc(body) + '</span>' : '');
+    return '<li class="dcms-row">' + (href ? '<a href="' + esc(href) + '">' + inner + '</a>' : inner) + '</li>';
+  }
+
+  function listHtml(items, props) {
+    return '<ul class="dcms-list">' + items.map(function (item) {
+      return rowHtml(item, props);
+    }).join('') + '</ul>';
+  }
+
+  function articleHtml(item, props) {
+    var d = (item && item.data) || item || {};
+    var title = slot(d, props.titleField, TITLE_KEYS);
+    var body = slot(d, props.bodyField, BODY_KEYS);
+    var img = slot(d, props.imageField, IMAGE_KEYS);
     var out = ['<article class="dcms-article">'];
     if (title) out.push('<h1 class="dcms-article-title">' + esc(title) + '</h1>');
     if (img) out.push('<img class="dcms-article-img" src="' + esc(mediaUrl(img)) + '" alt="' + esc(title || '') + '" />');
@@ -125,11 +167,11 @@
     return out.join('');
   }
 
-  function mediaPlayerHtml(items, tag) {
+  function mediaPlayerHtml(items, tag, props) {
     return collectionHtml(items, function (item) {
       var d = (item && item.data) || item || {};
       var src = mediaUrl(pick(d, MEDIA_KEYS));
-      var title = pick(d, TITLE_KEYS);
+      var title = slot(d, props.titleField, TITLE_KEYS);
       var out = ['<div class="dcms-card"><div class="dcms-card-body">'];
       if (title) out.push('<h3 class="dcms-card-title">' + esc(title) + '</h3>');
       if (src) out.push('<' + tag + ' class="dcms-media" controls preload="metadata" src="' + esc(src) + '"></' + tag + '>');
@@ -138,38 +180,67 @@
     });
   }
 
-  function downloadsHtml(items) {
+  function downloadsHtml(items, props) {
     return '<ul class="dcms-downloads">' + items.map(function (item) {
       var d = (item && item.data) || item || {};
       var src = mediaUrl(pick(d, MEDIA_KEYS));
-      var title = pick(d, TITLE_KEYS) || src;
+      var title = slot(d, props.titleField, TITLE_KEYS) || src;
       return '<li class="dcms-download"><a href="' + esc(src) + '" download>' + esc(title) + '</a></li>';
     }).join('') + '</ul>';
   }
 
-  function renderBody(type, items) {
-    if (!items.length) return '<p class="dcms-empty">No content published yet.</p>';
-    switch (type) {
-      case 'ArticleView':
-        return articleHtml(items[0]);
-      case 'VideoPlayer':
-        return mediaPlayerHtml(items, 'video');
-      case 'AudioPlayer':
-        return mediaPlayerHtml(items, 'audio');
-      case 'DownloadList':
-        return downloadsHtml(items);
+  // Layout by type, for pages published before the builder offered the choice.
+  var TYPE_LAYOUT = {
+    ArticleView: 'article',
+    VideoPlayer: 'video',
+    AudioPlayer: 'audio',
+    DownloadList: 'downloads',
+  };
+  var LAYOUTS = ['cards', 'list', 'article', 'video', 'audio', 'downloads'];
+
+  function layoutOf(type, props) {
+    var requested = props && props.layout;
+    if (LAYOUTS.indexOf(requested) !== -1) return requested;
+    return TYPE_LAYOUT[type] || 'cards';
+  }
+
+  function renderBody(type, props, items) {
+    if (!items.length) {
+      return '<p class="dcms-empty">' + esc((props && props.emptyText) || 'No content published yet.') + '</p>';
+    }
+    switch (layoutOf(type, props)) {
+      case 'article':
+        return articleHtml(items[0], props);
+      case 'list':
+        return listHtml(items, props);
+      case 'video':
+        return mediaPlayerHtml(items, 'video', props);
+      case 'audio':
+        return mediaPlayerHtml(items, 'audio', props);
+      case 'downloads':
+        return downloadsHtml(items, props);
       default:
-        // BlogList, GalleryGrid, CarouselView, SearchBox + any future list type.
-        return collectionHtml(items, cardHtml);
+        return collectionHtml(items, function (item) {
+          return cardHtml(item, props);
+        });
     }
   }
 
   function render(el, type, props, items) {
     injectStylesOnce();
     var heading = props && props.heading;
-    var html = (heading ? '<h2 class="dcms-heading">' + esc(heading) + '</h2>' : '') + renderBody(type, items);
+    var html = (heading ? '<h2 class="dcms-heading">' + esc(heading) + '</h2>' : '') + renderBody(type, props || {}, items);
     el.innerHTML = html;
     el.setAttribute('data-dcms-hydrated', 'true');
+  }
+
+  // Which item a detail component shows: an explicitly pinned slug, else the last
+  // segment of the page URL — the convention a /blog/my-post route implies.
+  function itemSlugFor(query) {
+    if (query.itemSlug) return String(query.itemSlug);
+    var parts = (location.pathname || '').split('/').filter(Boolean);
+    var last = parts.length ? parts[parts.length - 1] : '';
+    return last.replace(/\.html?$/i, '');
   }
 
   function fetchBinding(binding, type) {
@@ -179,10 +250,19 @@
     if (!slug || !contentType) return Promise.resolve([]);
 
     var url = '/api/' + encodeURIComponent(slug) + '/' + encodeURIComponent(contentType);
-    var qs = [];
-    if (query.pageSize) qs.push('pageSize=' + encodeURIComponent(query.pageSize));
-    if (query.page) qs.push('page=' + encodeURIComponent(query.page));
-    if (qs.length) url += '?' + qs.join('&');
+
+    // A binding that fills a single prop is a detail view: it wants one item by
+    // slug, not the first page of a list.
+    if (binding.propPath === 'item') {
+      var itemSlug = itemSlugFor(query);
+      if (!itemSlug) return Promise.resolve([]);
+      url += '/' + encodeURIComponent(itemSlug);
+    } else {
+      var qs = [];
+      if (query.pageSize) qs.push('pageSize=' + encodeURIComponent(query.pageSize));
+      if (query.page) qs.push('page=' + encodeURIComponent(query.page));
+      if (qs.length) url += '?' + qs.join('&');
+    }
 
     return fetch(url, { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
       .then(function (res) {

@@ -1,0 +1,28 @@
+{
+  "name": "@dcms/gjs-parse",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./diff": "./src/diff.ts"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "css-tree": "^3",
+    "domhandler": "^6.0.1",
+    "htmlparser2": "^12",
+    "js-beautify": "^2"
+  },
+  "devDependencies": {
+    "@types/css-tree": "^2",
+    "@types/js-beautify": "^1",
+    "typescript": "^5",
+    "vitest": "^3"
+  }
+}

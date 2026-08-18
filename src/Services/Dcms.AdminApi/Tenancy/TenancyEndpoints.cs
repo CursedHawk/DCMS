@@ -315,14 +315,15 @@ public static class TenancyEndpoints
                 group = m.Name,
             }));
 
-            // Per-site repo perms (Mode B sites): one read + one write key per site,
-            // so roles can grant pull/push on individual repositories.
-            var modeBSites = await sites.Sites
-                .Where(s => s.RenderMode == SiteRenderMode.ReactApp)
+            // Per-site repo perms (git-backed sites — Mode A builder and Mode B React):
+            // one read + one write key per site, so roles can grant pull/push on
+            // individual repositories.
+            var gitSites = await sites.Sites
+                .Where(s => s.RenderMode == SiteRenderMode.ReactApp || s.RenderMode == SiteRenderMode.StaticPrerender)
                 .OrderBy(s => s.Name)
                 .Select(s => new { s.Id, s.Name })
                 .ToListAsync(ct);
-            var repo = modeBSites.SelectMany(s =>
+            var repo = gitSites.SelectMany(s =>
             {
                 var name = string.IsNullOrWhiteSpace(s.Name) ? s.Id.ToString() : s.Name;
                 return new[]

@@ -14,6 +14,17 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('@scalar')) return 'scalar';
           if (id.includes('monaco-editor')) return 'monaco';
+          // GrapesJS and its Backbone/Underscore stack are only ever needed by
+          // the lazily-routed Mode A builder. Without this they land in `vendor`,
+          // which every page loads eagerly — over a megabyte for nothing.
+          if (
+            id.includes('/grapesjs/') ||
+            id.includes('/backbone/') ||
+            id.includes('/backbone-undo/') ||
+            id.includes('/underscore/')
+          ) {
+            return 'grapesjs';
+          }
           if (id.includes('esbuild-wasm')) return 'esbuild';
           if (id.includes('recharts') || id.includes('/d3') || id.includes('victory')) return 'charts';
           if (id.includes('@rjsf') || id.includes('/ajv')) return 'rjsf';

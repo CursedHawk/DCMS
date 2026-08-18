@@ -1,0 +1,25 @@
+{
+  "name": "@dcms/gjs-blocks",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dcms/gjs-schema": "workspace:*"
+  },
+  "peerDependencies": {
+    "grapesjs": "^0.23"
+  },
+  "devDependencies": {
+    "@dcms/gjs-parse": "workspace:*",
+    "grapesjs": "^0.23",
+    "jsdom": "^27",
+    "typescript": "^5",
+    "vitest": "^3"
+  }
+}

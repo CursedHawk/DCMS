@@ -22,6 +22,7 @@ docker compose up -d --build
 pnpm install && pnpm dev:admin
 ```
 
-See `docs/runbook.md` for ports/credentials and `docs/plugins.md` for writing
-plugins. Implementation proceeds in 12 phases (see the project plan); Phase 1
+See `docs/runbook.md` for ports/credentials, `docs/plugins.md` for writing
+plugins, and `docs/mode-a-builder.md` for the visual builder that authors Mode A
+sites. Implementation proceeds in 12 phases (see the project plan); Phase 1
 (infrastructure + scaffold) is complete.

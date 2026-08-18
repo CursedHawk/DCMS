@@ -12,6 +12,19 @@ public enum SiteRenderMode
     StaticFiles,
 }
 
+public static class SiteRenderModeExtensions
+{
+    /// <summary>
+    /// Render modes whose source is a file map kept in a per-site git repo: Mode B
+    /// a React project, Mode A the visual builder's site.json + pages/*.html +
+    /// styles/*.css. They share the whole source stack — working drafts, granular
+    /// autosave, branches, diffs, merges, and build-on-push to the release branch.
+    /// Mode C (uploaded bundle) has no source to version.
+    /// </summary>
+    public static bool IsGitBacked(this SiteRenderMode mode) =>
+        mode is SiteRenderMode.ReactApp or SiteRenderMode.StaticPrerender;
+}
+
 public enum SiteBuildStatus
 {
     Queued,

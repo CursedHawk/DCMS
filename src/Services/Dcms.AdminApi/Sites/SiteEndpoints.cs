@@ -51,7 +51,11 @@ public static class SiteEndpoints
                 TenantId = tenant.TenantId!.Value,
                 Name = body.Name,
                 RenderMode = mode,
-                DraftDefinitionJson = body.Definition ?? "{\"version\":1,\"theme\":{},\"pages\":[],\"nav\":[]}",
+                // Git-backed modes seed their own starter file map on first open in
+                // the editor (the builder / IDE knows what a new site should contain),
+                // so a fresh site starts with an empty definition rather than a
+                // server-invented one that would immediately be replaced.
+                DraftDefinitionJson = body.Definition ?? "{}",
             };
             db.Sites.Add(site);
             await db.SaveChangesAsync(ct);
@@ -275,8 +279,8 @@ public static class SiteEndpoints
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
-            if (site.RenderMode != SiteRenderMode.ReactApp)
-                return Results.BadRequest(new { error = "The web IDE is only for ReactApp (Mode B) sites." });
+            if (!site.RenderMode.IsGitBacked())
+                return Results.BadRequest(new { error = "This site's source is not authored in DCMS, so it has no working draft." });
 
             // Provision the repo on first open (like GET /git) so a branch always exists.
             if (site.GitRepoFullName is null && git.Enabled && !string.IsNullOrWhiteSpace(tenant.TenantSlug))
@@ -413,11 +417,12 @@ public static class SiteEndpoints
                 return Results.NotFound();
             }
 
-            // Mode B (git-backed): release is a normal branch whose only special power is
-            // that a push to it builds+deploys. Publishing = merge the current branch into
-            // release. The frontend commits the working draft first, so this ships committed
-            // work. Publishing while already on release just (re)builds the release head.
-            if (site.RenderMode == SiteRenderMode.ReactApp && site.GitRepoFullName is not null && git.Enabled)
+            // Git-backed (Modes A and B): release is a normal branch whose only special
+            // power is that a push to it builds+deploys. Publishing = merge the current
+            // branch into release. The frontend commits the working draft first, so this
+            // ships committed work. Publishing while already on release just (re)builds
+            // the release head.
+            if (site.RenderMode.IsGitBacked() && site.GitRepoFullName is not null && git.Enabled)
             {
                 var release = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
                 var sourceBranch = ResolveBranch(branch, site);
@@ -521,8 +526,8 @@ public static class SiteEndpoints
 
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
-            if (site.RenderMode != SiteRenderMode.ReactApp)
-                return Results.BadRequest(new { error = "Git source is only available for ReactApp (Mode B) sites." });
+            if (!site.RenderMode.IsGitBacked())
+                return Results.BadRequest(new { error = "Git source is only available for sites whose source is authored in DCMS." });
 
             var files = SiteFileMap.Parse(site.DraftDefinitionJson);
             var info = await git.EnsureRepoAsync(tenant.TenantSlug!, site.Id, files, authorName: null, authorEmail: null, ct);
@@ -551,7 +556,7 @@ public static class SiteEndpoints
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
-            if (site.RenderMode != SiteRenderMode.ReactApp || !git.Enabled)
+            if (!site.RenderMode.IsGitBacked() || !git.Enabled)
                 return Results.Ok(new { enabled = false });
 
             if (site.GitRepoFullName is null && !string.IsNullOrWhiteSpace(tenant.TenantSlug))
@@ -1037,7 +1042,7 @@ public static class SiteEndpoints
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
-            if (site.RenderMode != SiteRenderMode.ReactApp || site.GitRepoFullName is null || !git.Enabled)
+            if (!site.RenderMode.IsGitBacked() || site.GitRepoFullName is null || !git.Enabled)
                 return Results.BadRequest(new { error = "This site has no git-backed release to rebuild." });
             var buildId = await EnqueueReleaseBuildAsync(db, events, git, site, ct);
             return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{buildId}", new { buildId });

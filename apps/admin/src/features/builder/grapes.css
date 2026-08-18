@@ -1,0 +1,38 @@
+/*
+ * Reconciles GrapesJS's stylesheet with the DCMS admin shell.
+ *
+ * grapes.min.css lays the editor out for GrapesJS's *own* chrome — a 15% left
+ * panel and a 40px top bar. Every manager here runs in `custom: true` mode and
+ * the panels are React components outside the editor element, so that chrome
+ * does not exist and the space reserved for it would show as dead margin around
+ * the canvas. Zeroing the two layout variables hands the whole element to the
+ * canvas.
+ *
+ * Loaded after grapes.min.css (see the import order in grapes.ts).
+ */
+.gjs-editor {
+  /* Both are substituted into `calc(100% - var(…))`, where a unitless zero makes
+     the whole expression invalid — and an invalid width on the absolutely
+     positioned canvas collapses it to nothing. They must carry a unit. */
+  --gjs-left-width: 0px;
+  --gjs-canvas-top: 0px;
+  /* GrapesJS ships its own font stack; the builder chrome should look like the
+     rest of the admin. The canvas iframe is unaffected — it has its own
+     document and gets the site's fonts from styles/theme.css. */
+  --gjs-main-font: inherit;
+}
+
+/* The canvas sits on the admin's muted surface rather than GrapesJS's grey, so
+   the page being edited reads as a sheet of paper on the app's background. */
+.gjs-cv-canvas {
+  background-color: transparent;
+}
+
+/*
+ * GrapesJS renders an empty `.gjs-pn-panels` container even with
+ * `panels: { defaults: [] }`. It is positioned absolutely and would sit over the
+ * canvas swallowing clicks along the top edge.
+ */
+.gjs-pn-panels {
+  display: none;
+}

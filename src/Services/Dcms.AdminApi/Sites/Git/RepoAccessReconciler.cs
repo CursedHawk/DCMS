@@ -32,8 +32,11 @@ public sealed class RepoAccessReconciler(
         try
         {
             var perms = await permissions.GetPermissionsAsync(tenantId, userId, ct);
+            // A provisioned repo implies a git-backed render mode (A or B), so the
+            // repo name is the only filter needed — and it stays correct if another
+            // mode gains a repo later.
             var repos = await sites.Sites
-                .Where(s => s.RenderMode == SiteRenderMode.ReactApp && s.GitRepoFullName != null)
+                .Where(s => s.GitRepoFullName != null)
                 .Select(s => new { s.Id, s.GitRepoFullName })
                 .ToListAsync(ct);
             if (repos.Count == 0) return;
@@ -56,7 +59,7 @@ public sealed class RepoAccessReconciler(
     public async Task ReconcileUserSiteAsync(
         Guid tenantId, Guid userId, string email, Site site, CancellationToken ct, bool isSuperAdmin = false)
     {
-        if (!git.Enabled || site.RenderMode != SiteRenderMode.ReactApp || site.GitRepoFullName is null) return;
+        if (!git.Enabled || !site.RenderMode.IsGitBacked() || site.GitRepoFullName is null) return;
         try
         {
             var perms = await permissions.GetPermissionsAsync(tenantId, userId, ct);

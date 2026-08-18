@@ -1,0 +1,388 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
+import type { Editor } from 'grapesjs';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  Code2,
+  Columns2,
+  MousePointer2,
+  RefreshCw,
+  Redo2,
+  Rocket,
+  Sparkles,
+  Undo2,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+import { Button } from '../../components/ui/button';
+import { CenteredSpinner } from '../../components/ui/spinner';
+import { ApiError, api } from '../../lib/api';
+import { cn } from '../../lib/cn';
+import {
+  MergeDialog,
+  RELEASE_BRANCH,
+  Resizer,
+  gitApi,
+  useDraftSession,
+  useStoredWidth,
+  useVfs,
+} from '../site-source';
+import { coreSpecsFor } from '@dcms/gjs-blocks';
+import { usePluginComponentSpecs } from './plugins/specs';
+import { BuilderCanvas } from './BuilderCanvas';
+import { BuilderSidebar, type SidebarView } from './BuilderSidebar';
+import { Inspector } from './Inspector';
+import { CodeView } from './code/CodeView';
+import { AiPanel } from './ai/AiPanel';
+import { AssetsBridge } from './panels/AssetsBridge';
+import { PreviewBridge } from './plugins/PreviewBridge';
+import { starterFiles } from './starter';
+import { useBuilder, type ViewMode } from './store';
+
+// Widen for TanStack Link typing (sibling routes are registered via a helper).
+const sitesPath: string = '/sites';
+
+const VIEWS: { id: ViewMode; icon: typeof Code2; labelKey: string }[] = [
+  { id: 'design', icon: MousePointer2, labelKey: 'builder.viewDesign' },
+  { id: 'split', icon: Columns2, labelKey: 'builder.viewSplit' },
+  { id: 'code', icon: Code2, labelKey: 'builder.viewCode' },
+];
+
+/**
+ * The Mode A visual builder.
+ *
+ * Its source is a file map in a per-site git repo, exactly like the Mode B IDE:
+ * the same per-branch working draft, the same granular autosave and conflict
+ * handling, the same Source Control and Deployments panels, and the same
+ * "publish = ship this branch to `release`" flow. What differs is only what sits
+ * between the author and those files — a canvas and a code view over
+ * `site.json`, `pages/*.html` and `styles/*.css`.
+ */
+export function BuilderPage({ siteId }: { siteId: string }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  // State, not a ref: the panels are rendered from it, so they must re-render
+  // when the canvas finishes creating the editor.
+  const [editor, setEditor] = useState<Editor | null>(null);
+
+  const rev = useVfs((s) => s.rev);
+  const generation = useVfs((s) => s.generation);
+  const dirty = useVfs((s) => s.dirty);
+  const conflict = useVfs((s) => s.conflict);
+  const branch = useVfs((s) => s.branch);
+
+  const project = useBuilder((s) => s.project);
+  const projectError = useBuilder((s) => s.error);
+  const view = useBuilder((s) => s.view);
+  const setView = useBuilder((s) => s.setView);
+
+  const [sidebarView, setSidebarView] = useState<SidebarView>('blocks');
+  const [aiOpen, setAiOpen] = useState(false);
+  const [publishMerge, setPublishMerge] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  const [sidebarWidth, setSidebarWidth, resetSidebarWidth] = useStoredWidth(
+    'dcms.builder.sidebarWidth',
+    280,
+    200,
+    520,
+  );
+  const [inspectorWidth, setInspectorWidth, resetInspectorWidth] = useStoredWidth(
+    'dcms.builder.inspectorWidth',
+    300,
+    220,
+    560,
+  );
+
+  const site = useQuery({
+    queryKey: ['site', siteId],
+    queryFn: () => api.get<{ name: string }>(`/admin/sites/${siteId}`),
+  });
+
+  const session = useDraftSession({ siteId, seed: () => starterFiles(site.data?.name) });
+
+  // Blocks that need a plugin (forms, blog lists) are only offered when that
+  // plugin is actually enabled — a form that silently posts nowhere is worse
+  // than a form that was never in the palette. Alongside those, the tenant's own
+  // plugin instances generate a component each, so a newly installed plugin
+  // appears in the palette with no deploy.
+  const plugins = usePluginComponentSpecs();
+
+  // The same spec list drives the palette, the canvas and the code view's
+  // completions and diagnostics, so the three cannot describe different
+  // components.
+  const specs = useMemo(
+    () => [...coreSpecsFor(plugins.enabledPluginIds), ...plugins.specs],
+    [plugins.enabledPluginIds, plugins.specs],
+  );
+
+  // Re-read the project whenever the file map changes. This is what makes an
+  // edit in the code view, a git restore and a branch switch all land in the
+  // canvas through one path instead of three.
+  useEffect(() => {
+    if (!session.ready) return;
+    useBuilder.getState().syncFromVfs();
+  }, [rev, session.ready]);
+
+  // A full reload (branch switch, restore, conflict reload) replaces every file,
+  // so the canvas must re-read the page rather than keep its in-memory copy.
+  useEffect(() => {
+    if (!session.ready) return;
+    useBuilder.getState().requestReload();
+  }, [generation, session.ready]);
+
+  const onEditorReady = useCallback((instance: Editor) => {
+    setEditor(instance);
+    const sync = () => {
+      setCanUndo(instance.UndoManager.hasUndo());
+      setCanRedo(instance.UndoManager.hasRedo());
+    };
+    instance.on('update', sync);
+    instance.on('undo redo', sync);
+  }, []);
+
+  // Publish = ship this branch to `release`, which builds and deploys. The
+  // working draft is flushed and committed first so what ships is what the
+  // author sees, then a non-release branch completes through the merge dialog.
+  const publish = useMutation({
+    mutationFn: async () => {
+      await session.flush();
+      await gitApi.commit(siteId, { branch, message: `Publish ${branch}` });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['git-changes', siteId] });
+      queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
+      if (branch === RELEASE_BRANCH) {
+        toast.success(t('editor.publishQueued'));
+        setSidebarView('deploy');
+      } else {
+        setPublishMerge(true);
+      }
+    },
+    onError: (e) => {
+      if (e instanceof ApiError && e.status === 409) {
+        toast.error(t('ide.git.resolveInScm'));
+        setSidebarView('scm');
+      } else {
+        toast.error(t('errors.generic'));
+      }
+    },
+  });
+
+  // The plugin catalogue is part of the wait: the canvas registers its component
+  // types once, at creation, so opening before the specs arrive would give this
+  // session a palette missing every plugin block.
+  if (site.isLoading || plugins.isLoading || !session.ready) {
+    return <CenteredSpinner label={t('common.loading')} />;
+  }
+
+  const showCanvas = view !== 'code';
+  const showCode = view !== 'design';
+
+  return (
+    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
+      {/* Toolbar */}
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
+        <Link to={sitesPath}>
+          <Button size="icon" variant="ghost">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+        </Link>
+        <span className="font-medium">{site.data?.name}</span>
+        <span className="text-xs text-muted-foreground">{t('sites.modeStaticPrerender')}</span>
+
+        <div className="mx-2 flex items-center gap-1 rounded-md border bg-muted p-0.5">
+          {VIEWS.map(({ id, icon: Icon, labelKey }) => (
+            <button
+              key={id}
+              type="button"
+              title={t(labelKey)}
+              onClick={() => setView(id)}
+              className={cn(
+                'flex h-7 w-8 items-center justify-center rounded',
+                view === id ? 'bg-background shadow-sm' : 'text-muted-foreground',
+              )}
+            >
+              <Icon className="h-4 w-4" />
+            </button>
+          ))}
+        </div>
+
+        <Button
+          size="icon"
+          variant="ghost"
+          disabled={!canUndo}
+          onClick={() => editor?.UndoManager.undo()}
+          title={t('actions.undo')}
+        >
+          <Undo2 className="h-4 w-4" />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          disabled={!canRedo}
+          onClick={() => editor?.UndoManager.redo()}
+          title={t('actions.redo')}
+        >
+          <Redo2 className="h-4 w-4" />
+        </Button>
+
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={() => setAiOpen(true)}
+          title={t('builder.ai.title')}
+        >
+          <Sparkles className="h-4 w-4" />
+        </Button>
+
+        <div className="flex-1" />
+        <span className="text-xs text-muted-foreground">
+          {dirty ? t('common.saving') : session.status}
+        </span>
+        <Button
+          onClick={() => publish.mutate()}
+          disabled={publish.isPending || !!conflict || session.switching}
+        >
+          <Rocket className="h-4 w-4" /> {t('ide.git.publishToRelease')}
+        </Button>
+      </div>
+
+      {/* Double-clicking an image in the canvas opens the DCMS media library. */}
+      <AssetsBridge editor={editor} />
+
+      {/* Plugin placeholders show real tenant content instead of a blank box. */}
+      <PreviewBridge editor={editor} />
+
+      <AiPanel open={aiOpen} onOpenChange={setAiOpen} specs={specs} />
+
+      <MergeDialog
+        siteId={siteId}
+        head={branch}
+        open={publishMerge}
+        onOpenChange={setPublishMerge}
+        onMerged={() => {
+          queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
+          queryClient.invalidateQueries({ queryKey: ['site-builds', siteId] });
+          setSidebarView('deploy');
+        }}
+      />
+
+      {/* Someone else changed a file we also edited; autosave is paused until reload. */}
+      {conflict && (
+        <Banner
+          tone="destructive"
+          icon={<AlertTriangle className="h-4 w-4 shrink-0" />}
+          message={t('ide.conflictWarning', { files: conflict.join(', ') })}
+          action={
+            <Button size="sm" variant="outline" onClick={() => session.openBranch(branch)}>
+              <RefreshCw className="h-4 w-4" /> {t('ide.reloadLatest')}
+            </Button>
+          }
+        />
+      )}
+
+      {/* An unreadable site.json is only fixable in the code view, so say so. */}
+      {projectError && (
+        <Banner
+          tone="warning"
+          icon={<AlertTriangle className="h-4 w-4 shrink-0" />}
+          message={t('builder.projectError', { error: projectError })}
+          action={
+            <Button size="sm" variant="outline" onClick={() => setView('code')}>
+              <Code2 className="h-4 w-4" /> {t('builder.openCode')}
+            </Button>
+          }
+        />
+      )}
+
+      {/* Workspace: sidebar | canvas (+ code) | inspector. */}
+      <div className="relative flex min-h-0 flex-1">
+        <div style={{ width: sidebarWidth }} className="min-w-0 shrink-0 border-r bg-card">
+          <BuilderSidebar
+            siteId={siteId}
+            view={sidebarView}
+            onViewChange={setSidebarView}
+            editor={editor}
+          />
+        </div>
+        <Resizer onDelta={(dx) => setSidebarWidth(sidebarWidth + dx)} onReset={resetSidebarWidth} />
+
+        <div className="flex min-w-0 flex-1">
+          {/*
+            The canvas stays mounted in Code view and is merely hidden. Unmounting
+            it destroys the GrapesJS editor, and the panels, the AI dialog and the
+            preview bridge all hold that same object — so a view switch used to
+            take the page down. Keeping it alive also preserves the undo history
+            and the scroll position across a switch.
+          */}
+          <div
+            className={cn(
+              'min-w-0 bg-muted/40',
+              !showCanvas && 'hidden',
+              showCode ? 'w-1/2' : 'flex-1',
+            )}
+          >
+            {project ? (
+              <BuilderCanvas
+                onReady={onEditorReady}
+                onTeardown={() => setEditor(null)}
+                enabledPluginIds={plugins.enabledPluginIds}
+                pluginSpecs={plugins.specs}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
+                {t('builder.noProject')}
+              </div>
+            )}
+          </div>
+          {showCode && (
+            <div className={cn('min-w-0 border-l', showCanvas ? 'w-1/2' : 'flex-1')}>
+              <CodeView specs={specs} />
+            </div>
+          )}
+        </div>
+
+        <Resizer
+          onDelta={(dx) => setInspectorWidth(inspectorWidth - dx)}
+          onReset={resetInspectorWidth}
+        />
+        <div style={{ width: inspectorWidth }} className="min-w-0 shrink-0 border-l bg-card">
+          <Inspector editor={editor} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Banner({
+  tone,
+  icon,
+  message,
+  action,
+}: {
+  tone: 'destructive' | 'warning';
+  icon: React.ReactNode;
+  message: string;
+  action: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex shrink-0 items-center gap-2 border-b px-3 py-2 text-sm',
+        tone === 'destructive'
+          ? 'bg-destructive/10 text-destructive'
+          : 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+      )}
+    >
+      {icon}
+      <span className="min-w-0 flex-1">{message}</span>
+      {action}
+    </div>
+  );
+}
+
+

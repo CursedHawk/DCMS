@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using Dcms.Shared.Data.Sites;
 
 namespace Dcms.SiteBuilder;
 
@@ -45,21 +46,7 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
 
     private readonly SandboxOptions _sandbox = SandboxOptions.FromEnvironment();
 
-    /// <summary>
-    /// Extensions whose file-map value is base64-encoded raw bytes rather than
-    /// text. Must match the admin IDE (binary.ts BINARY_EXTENSIONS) and the
-    /// preview bundler so an upload round-trips losslessly. Everything else —
-    /// including SVG — is written as literal UTF-8 text.
-    /// </summary>
-    private static readonly HashSet<string> BinaryExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".bmp",
-        ".woff", ".woff2", ".ttf", ".otf", ".eot",
-        ".mp3", ".mp4", ".webm", ".ogg", ".wav",
-        ".pdf",
-    };
-
-    private static bool IsBinaryPath(string path) => BinaryExtensions.Contains(Path.GetExtension(path));
+    private static bool IsBinaryPath(string path) => SiteFileMap.IsBinaryPath(path);
 
     /// <summary>
     /// Build the site. All step output (install + build) is appended to
@@ -251,15 +238,8 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
         }
         """;
 
-    private static Dictionary<string, string> ParseFileMap(string snapshotJson)
-    {
-        using var doc = JsonDocument.Parse(snapshotJson);
-        if (!doc.RootElement.TryGetProperty("files", out var files) || files.ValueKind != JsonValueKind.Object)
-        {
-            return [];
-        }
-        return files.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? string.Empty);
-    }
+    private static Dictionary<string, string> ParseFileMap(string snapshotJson) =>
+        SiteFileMap.Parse(snapshotJson);
 
     // A build may emit symlinks into dist/ (e.g. pointing at /proc, secrets, or
     // sibling paths); never upload a symlink's target as an artifact.

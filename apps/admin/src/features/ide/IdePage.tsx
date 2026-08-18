@@ -7,23 +7,29 @@ import { toast } from 'sonner';
 import { Button } from '../../components/ui/button';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { ApiError, api } from '../../lib/api';
-import { isBinaryPath } from './binary';
-import { BinaryFileView } from './BinaryFileView';
-import { RELEASE_BRANCH } from './constants';
-import { DiffEditor } from './DiffEditor';
-import { EditorTabs } from './EditorTabs';
-import { gitApi } from './git';
-import { ideApi } from './ide';
+import {
+  BinaryFileView,
+  DiffEditor,
+  EditorTabs,
+  MergeDialog,
+  MonacoEditor,
+  RELEASE_BRANCH,
+  Resizer,
+  StatusBar,
+  gitApi,
+  ideApi,
+  isBinaryPath,
+  loadOpenDocs,
+  saveOpenDocs,
+  useDraftSession,
+  useStoredWidth,
+  useVfs,
+} from '../site-source';
 import { IdeSidebar, type SidebarView } from './IdeSidebar';
-import { MergeDialog } from './MergeDialog';
-import { MonacoEditor } from './MonacoEditor';
-import { loadOpenDocs, saveOpenDocs } from './openDocs';
 import { PreviewPane } from './PreviewPane';
-import { Resizer, useStoredWidth } from './Resizer';
 import { StarterPicker, type StarterFlavor } from './StarterPicker';
-import { StatusBar } from './StatusBar';
 import { STARTER_FILES } from './starter';
-import { useVfs } from './vfs';
+import { ensurePaletteTypes } from './types/palette';
 
 const sitesPath: string = '/sites';
 
@@ -39,7 +45,6 @@ export function IdePage({ siteId }: { siteId: string }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const dirty = useVfs((s) => s.dirty);
-  const rev = useVfs((s) => s.rev);
   const branch = useVfs((s) => s.branch);
   const openTabs = useVfs((s) => s.openTabs);
   const activePath = useVfs((s) => s.activePath);
@@ -48,15 +53,11 @@ export function IdePage({ siteId }: { siteId: string }) {
   const conflict = useVfs((s) => s.conflict);
   const [showPreview, setShowPreview] = useState(true);
   const [sidebarView, setSidebarView] = useState<SidebarView>('files');
-  const [status, setStatus] = useState('');
-  const [ready, setReady] = useState(false);
-  const [switching, setSwitching] = useState(false);
   // When publishing from a non-release branch, we open the merge-into-release dialog.
   const [publishMerge, setPublishMerge] = useState(false);
   // Shown for a brand-new (empty) site so the user picks what to scaffold.
   const [pickStarter, setPickStarter] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
-  const loadedFor = useRef<string | null>(null);
   // Marks the site whose persisted tabs have been restored — gates tab autosave so
   // we never write the previous site's tabs under a newly-selected site's key.
   const restoredFor = useRef<string | null>(null);
@@ -82,26 +83,22 @@ export function IdePage({ siteId }: { siteId: string }) {
     queryFn: () => api.get<SiteData>(`/admin/sites/${siteId}`),
   });
 
-  // Load a branch's working draft into the vfs (seeding a starter for a brand-new,
-  // empty site so the IDE is never blank). `undefined` lets the server pick the
-  // site's default branch.
-  const loadBranch = useMutation({
-    mutationFn: (b?: string) => ideApi.load(siteId, b),
-    onSuccess: (data) => {
-      useVfs.getState().setBranch(data.branch);
+  // The shared working-draft session: load a branch, autosave granular deltas,
+  // detect conflicts. `seed` returns null on purpose — a brand-new Mode B site
+  // asks the user what to scaffold rather than being given one silently.
+  const session = useDraftSession({
+    siteId,
+    seed: () => null,
+    onLoaded: (loadedBranch, isEmpty) => {
       restoredFor.current = siteId;
-      if (Object.keys(data.files).length > 0) {
-        useVfs.getState().load(data.files, data.version, data.hashes);
-        // Reopen the documents that were open last time for this site + branch.
-        const saved = loadOpenDocs(siteId, data.branch);
-        if (saved) useVfs.getState().restoreSession(saved.openTabs, saved.activePath);
-      } else {
-        // Brand-new site: let the user choose what to scaffold before seeding.
+      if (isEmpty) {
         setPickStarter(true);
+        return;
       }
-      setReady(true);
+      // Reopen the documents that were open last time for this site + branch.
+      const saved = loadOpenDocs(siteId, loadedBranch);
+      if (saved) useVfs.getState().restoreSession(saved.openTabs, saved.activePath);
     },
-    onError: () => toast.error(t('errors.loadFailed')),
   });
 
   // Seed a brand-new site's workspace from the chosen starter flavor. Everything
@@ -123,55 +120,18 @@ export function IdePage({ siteId }: { siteId: string }) {
     },
   });
 
+  // Mode B typings are opted into here rather than by the shared Monaco setup, so
+  // the Mode A builder never pays for the React dependency palette.
   useEffect(() => {
-    if (site.data && loadedFor.current !== siteId) {
-      loadedFor.current = siteId;
-      loadBranch.mutate(undefined);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [site.data, siteId]);
-
-  // Granular save: flush only the changed/deleted files into the user's draft for
-  // the current branch, each carrying the hash it was last synced at, so the same
-  // account editing the same file+branch from two tabs is reported (409) instead of
-  // clobbered. Edits to different files just merge.
-  const save = useMutation({
-    mutationFn: async () => {
-      const delta = useVfs.getState().takeDelta();
-      if (Object.keys(delta.put).length === 0 && delta.delete.length === 0) return;
-      const res = await ideApi.saveFiles(siteId, useVfs.getState().branch, delta);
-      if (res) useVfs.getState().reconcile(delta, res.version, res.hashes);
-    },
-    onSuccess: () => {
-      setStatus(t('common.saved'));
-      queryClient.invalidateQueries({ queryKey: ['git-changes', siteId] });
-    },
-    onError: (e) => {
-      if (e instanceof ApiError && e.status === 409) {
-        const paths = ((e.detail as { conflicts?: { path: string }[] })?.conflicts ?? []).map(
-          (c) => c.path,
-        );
-        useVfs.getState().setConflict(paths);
-      } else {
-        toast.error(t('errors.generic'));
-      }
-    },
-  });
-
-  // Debounced autosave on any content change — paused while a conflict is unresolved.
-  useEffect(() => {
-    if (!ready || !dirty || conflict || loadedFor.current !== siteId) return;
-    const id = setTimeout(() => save.mutate(), 1200);
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rev, dirty, conflict, ready]);
+    ensurePaletteTypes();
+  }, []);
 
   // Persist the open documents (per site + branch) whenever the tab set or focus
   // changes, but only once this site's own session has been restored (see restoredFor).
   useEffect(() => {
-    if (!ready || restoredFor.current !== siteId) return;
+    if (!session.ready || restoredFor.current !== siteId) return;
     saveOpenDocs(siteId, branch, { openTabs, activePath });
-  }, [openTabs, activePath, ready, siteId, branch]);
+  }, [openTabs, activePath, session.ready, siteId, branch]);
 
   // Wipe the tenant's preview sandbox (test form submissions, visitors, chats),
   // then force the iframe to rebuild so it reflects the cleared state.
@@ -184,22 +144,16 @@ export function IdePage({ siteId }: { siteId: string }) {
     onError: () => toast.error(t('errors.generic')),
   });
 
-  // Switch branches without losing work: flush the current branch's draft first
-  // (drafts are per-branch, so already-saved edits are safe), then load the target.
-  // Blocked while a save conflict is unresolved.
-  const switchBranch = async (b: string) => {
-    if (b === branch || switching || loadBranch.isPending) return;
+  // Switching branches flushes the branch being left; the shared session handles
+  // that. An unresolved conflict blocks the switch, because the draft the switch
+  // would flush is the one the server has already rejected.
+  const switchBranch = (b: string) => {
+    if (b === branch || session.switching) return;
     if (conflict) {
       toast.error(t('ide.git.resolveInScm'));
       return;
     }
-    setSwitching(true);
-    try {
-      if (dirty) await save.mutateAsync();
-    } catch {
-      // A save conflict leaves the draft as-is server-side; still allow the switch.
-    }
-    loadBranch.mutate(b, { onSettled: () => setSwitching(false) });
+    session.openBranch(b);
   };
 
   // Publish = ship the current branch to `release` (→ build + deploy). Commit the
@@ -207,7 +161,7 @@ export function IdePage({ siteId }: { siteId: string }) {
   // builds, otherwise open the merge-into-release dialog to complete the publish.
   const publish = useMutation({
     mutationFn: async () => {
-      await save.mutateAsync(); // flush pending edits first (throws on conflict)
+      await session.flush(); // flush pending edits first (throws on conflict)
       await gitApi.commit(siteId, { branch, message: `Publish ${branch}` });
     },
     onSuccess: () => {
@@ -232,7 +186,7 @@ export function IdePage({ siteId }: { siteId: string }) {
     },
   });
 
-  if (site.isLoading || !ready) return <CenteredSpinner label={t('common.loading')} />;
+  if (site.isLoading || !session.ready) return <CenteredSpinner label={t('common.loading')} />;
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
@@ -249,7 +203,7 @@ export function IdePage({ siteId }: { siteId: string }) {
 
         <div className="flex-1" />
         <span className="text-xs text-muted-foreground">
-          {save.isPending || dirty ? t('common.saving') : status}
+          {session.saving || dirty ? t('common.saving') : session.status}
         </span>
         <Button
           variant="ghost"
@@ -263,7 +217,7 @@ export function IdePage({ siteId }: { siteId: string }) {
           {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           {showPreview ? t('ide.hidePreview') : t('ide.showPreview')}
         </Button>
-        <Button onClick={() => publish.mutate()} disabled={publish.isPending || !!conflict || switching}>
+        <Button onClick={() => publish.mutate()} disabled={publish.isPending || !!conflict || session.switching}>
           <Rocket className="h-4 w-4" /> {t('ide.git.publishToRelease')}
         </Button>
       </div>
@@ -291,8 +245,8 @@ export function IdePage({ siteId }: { siteId: string }) {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => loadBranch.mutate(branch)}
-            disabled={loadBranch.isPending}
+            onClick={() => session.openBranch(branch)}
+            disabled={session.switching}
           >
             <RefreshCw className="h-4 w-4" /> {t('ide.reloadLatest')}
           </Button>
@@ -309,7 +263,7 @@ export function IdePage({ siteId }: { siteId: string }) {
           view={sidebarView}
           onViewChange={setSidebarView}
           onSwitchBranch={switchBranch}
-          onReload={() => loadBranch.mutate(branch)}
+          onReload={() => session.openBranch(branch)}
           onRestored={(files, version, hashes) => useVfs.getState().load(files, version, hashes)}
           viewWidth={sidebarWidth}
         />
@@ -355,7 +309,7 @@ export function IdePage({ siteId }: { siteId: string }) {
       <StatusBar
         siteId={siteId}
         branch={branch}
-        dirty={save.isPending || dirty}
+        dirty={session.saving || dirty}
         onOpenScm={() => setSidebarView('scm')}
       />
     </div>

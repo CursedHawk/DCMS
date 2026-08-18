@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { useVfs } from '../vfs';
+import { useVfs } from '../../site-source';
 import {
   type Message,
   NoApiKeyError,

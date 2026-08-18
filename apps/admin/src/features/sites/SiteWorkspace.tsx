@@ -5,15 +5,15 @@ import { CenteredSpinner } from '../../components/ui/spinner';
 import { api } from '../../lib/api';
 import { StaticSitePage } from './StaticSitePage';
 
-// The canvas editor and the code IDE are both heavy; keep them lazy and load
-// only the one this site's render mode needs.
-const EditorPage = lazy(() => import('../editor/EditorPage').then((m) => ({ default: m.EditorPage })));
+// The visual builder and the code IDE are both heavy (GrapesJS and Monaco
+// respectively); keep them lazy and load only the one this render mode needs.
+const BuilderPage = lazy(() => import('../builder/BuilderPage').then((m) => ({ default: m.BuilderPage })));
 const IdePage = lazy(() => import('../ide/IdePage').then((m) => ({ default: m.IdePage })));
 
 /**
  * Entry point for /sites/$siteId. Static-files sites get the upload/publish
- * surface; ReactApp sites get the code IDE (file map editor); StaticPrerender
- * sites get the free-canvas visual editor.
+ * surface; ReactApp sites get the code IDE (React project); StaticPrerender
+ * sites get the visual builder over their HTML/CSS source.
  */
 export function SiteWorkspace({ siteId }: { siteId: string }) {
   const { t } = useTranslation();
@@ -30,7 +30,7 @@ export function SiteWorkspace({ siteId }: { siteId: string }) {
       {site.data?.renderMode === 'ReactApp' ? (
         <IdePage siteId={siteId} />
       ) : (
-        <EditorPage siteId={siteId} />
+        <BuilderPage siteId={siteId} />
       )}
     </Suspense>
   );

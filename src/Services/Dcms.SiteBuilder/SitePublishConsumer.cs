@@ -15,10 +15,12 @@ using NATS.Client.JetStream.Models;
 namespace Dcms.SiteBuilder;
 
 /// <summary>
-/// Consumes site.publish.requested: renders the build's definition snapshot to
-/// static HTML (Mode A), uploads the artifacts to dcms-sites, activates the
-/// build and emits site.published. Cross-tenant (no ambient tenant), so query
-/// filters are bypassed. Resilient to NATS being unavailable.
+/// Consumes site.publish.requested: turns the build's definition snapshot into
+/// static artifacts (Mode A assembles the builder's HTML/CSS source, Mode B runs
+/// the site's own React build, Mode C extracts an uploaded bundle), uploads them
+/// to dcms-sites, activates the build and emits site.published. Cross-tenant (no
+/// ambient tenant), so query filters are bypassed. Resilient to NATS being
+/// unavailable.
 /// </summary>
 public sealed class SitePublishConsumer(
     INatsJSContext jetStream,
@@ -26,7 +28,7 @@ public sealed class SitePublishConsumer(
     IObjectStorage storage,
     IOptions<StorageOptions> storageOptions,
     IEventPublisher events,
-    SiteRenderer renderer,
+    StaticSiteAssembler assembler,
     ReactAppBuilder reactBuilder,
     ILogger<SitePublishConsumer> logger) : BackgroundService
 {
@@ -132,15 +134,31 @@ public sealed class SitePublishConsumer(
             Guid.NewGuid(), DateTimeOffset.UtcNow, job.TenantId, job.SiteId, build.Id, build.ArtifactPrefix), ct);
     }
 
-    // Mode A: render the component tree to static HTML.
+    // Mode A: assemble the builder's committed HTML/CSS source into static pages.
     private async Task PrerenderAsync(string definitionJson, string artifactPrefix, CancellationToken ct)
     {
-        var definition = JsonSerializer.Deserialize<SiteDefinition>(definitionJson, JsonOpts) ?? new SiteDefinition();
-        foreach (var page in renderer.Render(definition))
+        var files = SiteFileMap.Parse(definitionJson);
+        if (files.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "This site has no source files to publish. Open it in the builder and save it, then publish again.");
+        }
+
+        var site = assembler.Assemble(files);
+
+        foreach (var page in site.Pages)
         {
             var bytes = Encoding.UTF8.GetBytes(page.Html);
             await using var stream = new MemoryStream(bytes);
             await storage.PutAsync(Bucket, $"{artifactPrefix}/{page.FileName}", stream, bytes.Length, "text/html; charset=utf-8", ct);
+        }
+
+        // Stylesheets and any assets committed alongside them ship verbatim; the
+        // pages link to them by their repo path, so the layout is preserved.
+        foreach (var file in site.Files)
+        {
+            await using var stream = new MemoryStream(file.Content);
+            await storage.PutAsync(Bucket, $"{artifactPrefix}/{file.FileName}", stream, file.Content.Length, file.ContentType, ct);
         }
 
         // The pages reference /_dcms/hydrate.js (it populates data-bound/plugin

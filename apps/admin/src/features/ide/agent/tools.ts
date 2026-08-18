@@ -1,5 +1,4 @@
-import { isToolchainFile, normalizePath } from '../paths';
-import { useVfs } from '../vfs';
+import { isToolchainFile, normalizePath, useVfs } from '../../site-source';
 import type { ToolUseBlock } from './client';
 
 // The agent's file tools, executed locally against the live VFS store so edits

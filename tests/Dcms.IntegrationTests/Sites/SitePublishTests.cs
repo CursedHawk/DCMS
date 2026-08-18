@@ -18,30 +18,31 @@ public class SitePublishTests(SitePublishFixture fixture)
         var slug = "site-" + Guid.NewGuid().ToString("N")[..8];
         var hostname = $"{slug}.example.com";
 
-        // Tenant + site with a one-page definition.
+        // Tenant + site with a one-page source tree, in the Mode A file-map format
+        // the visual builder commits (site.json + pages/*.html + styles/*.css).
         (await admin.SendAsync(Admin(HttpMethod.Post, "/api/admin/tenants", slug,
             new { slug, name = slug, ownerUserId = Owner, ownerEmail = "o@dcms.test" }, superAdmin: true), ct))
             .EnsureSuccessStatusCode();
 
+        var manifest = """
+            {
+              "version": 2,
+              "theme": { "colors": {}, "fonts": {} },
+              "nav": [],
+              "pages": [
+                { "id": "home", "slug": "home", "path": "/", "title": "Home", "home": true,
+                  "seo": { "title": "Hello Site" } }
+              ]
+            }
+            """;
         var definition = new
         {
-            version = 1,
-            theme = new { colors = new { }, fonts = new { } },
-            nav = Array.Empty<object>(),
-            pages = new[]
+            files = new Dictionary<string, string>
             {
-                new
-                {
-                    id = "home", path = "/", title = "Home",
-                    seo = new { title = "Hello Site" },
-                    root = new
-                    {
-                        id = "h", type = "Hero",
-                        props = new { title = "Welcome Visitor" },
-                        bindings = Array.Empty<object>(),
-                        children = Array.Empty<object>(),
-                    },
-                },
+                ["site.json"] = manifest,
+                ["pages/home.html"] = "<section class=\"hero\"><h1>Welcome Visitor</h1></section>",
+                ["styles/global.css"] = "body{margin:0}",
+                ["styles/pages/home.css"] = ".hero{padding:2rem}",
             },
         };
         var siteId = await Id(admin, Admin(HttpMethod.Post, "/api/admin/sites", slug,

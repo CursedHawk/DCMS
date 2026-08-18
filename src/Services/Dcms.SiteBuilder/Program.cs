@@ -13,7 +13,7 @@ builder.Services.AddDcmsObjectStorage(builder.Configuration);
 // Reads/writes the sites schema with no ambient tenant (scoped per job).
 builder.Services.AddDcmsSitesData(builder.Configuration);
 builder.Services.AddNullTenantContext();
-builder.Services.AddSingleton<SiteRenderer>();
+builder.Services.AddSingleton<StaticSiteAssembler>();
 builder.Services.AddSingleton<ReactAppBuilder>();
 builder.Services.AddHostedService<SitePublishConsumer>();
 

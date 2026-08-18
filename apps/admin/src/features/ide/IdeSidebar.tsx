@@ -2,11 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Files, GitBranch, Rocket, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/cn';
+import { DeploymentsView, FileTree, SourceControlView, gitApi } from '../site-source';
 import { AgentPanel } from './agent/AgentPanel';
-import { DeploymentsView } from './DeploymentsView';
-import { FileTree } from './FileTree';
-import { gitApi } from './git';
-import { SourceControlView } from './SourceControlView';
 
 export type SidebarView = 'files' | 'scm' | 'agent' | 'deploy';
 

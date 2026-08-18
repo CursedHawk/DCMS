@@ -12,3 +12,4 @@ as their implementation phase lands.
 - [0003](0003-tenancy-owned-by-admin-api.md) — Tenancy & authorization data owned by admin-api
 - [0004](0004-live-chat-signalr-redis.md) — Live chat via SignalR + Redis backplane in content-api
 - [0005](0005-rls-defense-in-depth.md) — Postgres RLS as a defense-in-depth backstop
+- [0006](0006-mode-a-html-css-in-git.md) — Mode A sites are HTML/CSS files in git, edited with GrapesJS
