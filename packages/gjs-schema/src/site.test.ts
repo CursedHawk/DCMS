@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { siteManifestSchema } from './site';
 import {
   emptySiteManifest,
+  emptyTheme,
   expectedFiles,
   homePage,
   makePageEntry,
@@ -24,7 +25,7 @@ describe('siteManifestSchema', () => {
     });
     expect(parsed.nav).toEqual([]);
     expect(parsed.settings).toEqual({ lang: 'en', renderNav: true });
-    expect(parsed.theme).toEqual({ colors: {}, fonts: {}, spacing: {}, custom: {} });
+    expect(parsed.theme).toEqual(emptyTheme());
   });
 
   it('rejects a version 1 (component tree) definition rather than loading it empty', () => {

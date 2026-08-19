@@ -37,7 +37,7 @@ export const navigationSpecs: DcmsComponentSpec[] = [
   <a class="dcms-logo" href="/">Site name</a>
   <input class="dcms-navbar-toggle" id="nav-toggle" type="checkbox" hidden />
   <label class="dcms-navbar-burger" for="nav-toggle" aria-label="Menu"><span></span></label>
-  <nav class="dcms-navbar-links">
+  <nav class="dcms-navbar-links" data-dcms-nav="menu">
     <a href="/">Home</a>
     <a href="/about">About</a>
     <a href="/contact">Contact</a>
@@ -65,7 +65,7 @@ export const navigationSpecs: DcmsComponentSpec[] = [
         ],
       },
     ],
-    snippet: `<nav class="dcms-menu" data-direction="row"><a href="/">Home</a><a href="/about">About</a></nav>`,
+    snippet: `<nav class="dcms-menu" data-direction="row" data-dcms-nav="menu"><a href="/">Home</a><a href="/about">About</a></nav>`,
   },
   {
     type: 'Breadcrumbs',
@@ -75,9 +75,9 @@ export const navigationSpecs: DcmsComponentSpec[] = [
     icon: 'breadcrumbs',
     acceptsChildren: true,
     order: 2,
-    docs: 'Shows where this page sits in the site.',
-    traits: [],
-    snippet: `<nav class="dcms-breadcrumbs" aria-label="Breadcrumb"><ol><li><a href="/">Home</a></li><li><a href="/section">Section</a></li><li aria-current="page">This page</li></ol></nav>`,
+    docs: 'Shows where this page sits in the site. The trail is filled in from the page URL, so one breadcrumb bar in a shared region is correct on every page.',
+    traits: [{ name: 'data-home-label', label: 'Home label', kind: 'text', default: 'Home' }],
+    snippet: `<nav class="dcms-breadcrumbs" aria-label="Breadcrumb" data-dcms-nav="breadcrumbs" data-home-label="Home"><ol><li><a href="/">Home</a></li><li aria-current="page">This page</li></ol></nav>`,
   },
   {
     type: 'Tabs',
@@ -171,7 +171,7 @@ export const navigationSpecs: DcmsComponentSpec[] = [
     traits: [],
     snippet: `<footer class="dcms-footer">
   <div class="dcms-container">
-    <nav class="dcms-menu" data-direction="row"><a href="/">Home</a><a href="/privacy">Privacy</a></nav>
+    <nav class="dcms-menu" data-direction="row" data-dcms-nav="menu"><a href="/">Home</a><a href="/privacy">Privacy</a></nav>
     <p class="dcms-footer-note">© Your organisation</p>
   </div>
 </footer>`,

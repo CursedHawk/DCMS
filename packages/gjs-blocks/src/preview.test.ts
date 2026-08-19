@@ -7,6 +7,7 @@ import {
   previewBody,
   previewHtml,
   previewNotice,
+  readField,
   type PreviewItem,
 } from './preview';
 
@@ -150,6 +151,87 @@ describe('previewBody', () => {
     });
   });
 
+  describe('tiles', () => {
+    it('draws an image with the title burned in', () => {
+      const html = previewBody([post()], { layout: 'tiles' });
+      expect(html).toContain('dcms-tile-caption');
+      expect(html).toContain('/api/media/');
+    });
+
+    it('makes the whole tile the link when the item has one', () => {
+      const html = previewBody([post({ linkUrl: '/p/1' })], { layout: 'tiles' });
+      expect(html).toContain('<a class="dcms-tile" href="/p/1"');
+    });
+  });
+
+  describe('compact', () => {
+    it('puts a thumbnail beside the title', () => {
+      const html = previewBody([post()], { layout: 'compact' });
+      expect(html).toContain('dcms-row-media');
+      expect(html).toContain('dcms-row-title');
+    });
+  });
+
+  describe('feature', () => {
+    it('draws a band per item rather than a grid', () => {
+      const html = previewBody([post(), post()], { layout: 'feature' });
+      expect(html).not.toContain('dcms-collection');
+      expect(html.match(/dcms-feature-item/g)).toHaveLength(2);
+    });
+  });
+
+  describe('arrangement and columns', () => {
+    it('carries an explicit column count onto the collection', () => {
+      expect(previewBody([post()], { columns: '3' })).toContain('data-columns="3"');
+    });
+
+    it('says nothing when the columns should just fit', () => {
+      expect(previewBody([post()], {})).not.toContain('data-columns');
+    });
+
+    it('marks a non-grid arrangement', () => {
+      expect(previewBody([post()], { arrangement: 'masonry' })).toContain('data-layout="masonry"');
+      expect(previewBody([post()], { arrangement: 'grid' })).not.toContain('data-layout');
+    });
+  });
+
+  describe('meta and tags', () => {
+    it('formats a date rather than printing the timestamp', () => {
+      const html = previewBody([post({ publishedAt: '2025-03-04T10:00:00Z' })], {});
+      expect(html).toContain('dcms-card-meta');
+      expect(html).not.toContain('2025-03-04T10:00:00Z');
+    });
+
+    it('leaves a non-date meta value alone', () => {
+      expect(previewBody([post({ category: 'Releases' })], { metaField: 'category' })).toContain(
+        'Releases',
+      );
+    });
+
+    it('draws tags as chips', () => {
+      const html = previewBody([post({ tags: ['a', 'b'] })], {});
+      expect(html.match(/dcms-tag"/g)).toHaveLength(2);
+    });
+
+    it('splits a comma-separated tag field', () => {
+      const html = previewBody([post({ tags: 'a, b, c' })], {});
+      expect(html.match(/dcms-tag"/g)).toHaveLength(3);
+    });
+  });
+
+  describe('excerpt trimming', () => {
+    it('cuts at a word and marks the cut', () => {
+      const item = { data: { title: 'x', excerpt: 'one two three four five six seven' } };
+      const html = previewBody([item], { excerptLength: 12 });
+      expect(html).toContain('…');
+      expect(html).not.toContain('seven');
+    });
+
+    it('leaves short text alone', () => {
+      expect(previewBody([{ data: { excerpt: 'short' } }], { excerptLength: 40 })).toContain('short');
+    });
+  });
+
   describe('field mapping', () => {
     const item: PreviewItem = { data: { nadpis: 'Ahoj', perex: 'Světe', obrazek: '/o.png' } };
 
@@ -178,18 +260,70 @@ describe('previewBody', () => {
     it('escapes item content', () => {
       expect(previewBody([{ data: { title: '<img onerror=x>' } }], {})).toContain('&lt;img');
     });
+
+    it('lets a slot be emptied explicitly', () => {
+      // Empty means "guess", so there had to be a third value meaning "don't".
+      const html = previewBody([post()], { bodyField: '-' });
+      expect(html).not.toContain('World');
+      expect(html).toContain('Hello');
+    });
   });
 });
 
 describe('previewHtml', () => {
   it('puts the heading above the body', () => {
     const html = previewHtml([post()], { heading: 'Latest posts' });
-    expect(html.indexOf('dcms-heading')).toBeLessThan(html.indexOf('dcms-collection'));
+    expect(html.indexOf('dcms-heading')).toBeLessThan(html.indexOf('dcms-card'));
     expect(html).toContain('Latest posts');
   });
 
   it('omits the heading when there is none', () => {
     expect(previewHtml([post()], {})).not.toContain('dcms-heading');
+  });
+
+  it('puts the “see all” link beside the heading, not under the last card', () => {
+    const html = previewHtml([post()], {
+      heading: 'Latest posts',
+      moreLabel: 'See all',
+      moreHref: '/blog',
+    });
+    expect(html.indexOf('dcms-more')).toBeLessThan(html.indexOf('dcms-card'));
+    expect(html).toContain('href="/blog"');
+  });
+
+  it('needs both a label and a link before it shows one', () => {
+    expect(previewHtml([post()], { moreLabel: 'See all' })).not.toContain('dcms-more');
+    expect(previewHtml([post()], { moreHref: '/blog' })).not.toContain('dcms-more');
+  });
+});
+
+describe('field mapping into tenant-defined fields', () => {
+  // The values of tenant-defined fields are nested under one key on the item.
+  const item: PreviewItem = {
+    data: { title: 'Plugin title', values: { nadpis: 'Tenant title', perex: 'Tenant text' } },
+  };
+
+  it('reads a mapped field by its full path', () => {
+    expect(readField(fieldsOf(item), 'values.nadpis')).toBe('Tenant title');
+  });
+
+  it('finds a nested field by its bare name, which is what the author sees', () => {
+    expect(readField(fieldsOf(item), 'nadpis')).toBe('Tenant title');
+  });
+
+  it('prefers a top-level field of the same name', () => {
+    const both: PreviewItem = { data: { note: 'top', values: { note: 'nested' } } };
+    expect(readField(fieldsOf(both), 'note')).toBe('top');
+  });
+
+  it('renders a card from a tenant field, which is the whole point', () => {
+    const html = previewBody([item], { titleField: 'values.nadpis', bodyField: 'values.perex' });
+    expect(html).toContain('Tenant title');
+    expect(html).toContain('Tenant text');
+  });
+
+  it('resolves to nothing for a path that is not there', () => {
+    expect(readField(fieldsOf(item), 'values.missing')).toBeUndefined();
   });
 });
 

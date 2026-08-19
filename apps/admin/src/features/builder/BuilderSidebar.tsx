@@ -1,15 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import type { Editor } from 'grapesjs';
-import { Blocks, FileText, GitBranch, Layers, Rocket } from 'lucide-react';
+import { Blocks, FileText, GitBranch, Layers, LayoutTemplate, Puzzle, Rocket } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/cn';
 import { DeploymentsView, SourceControlView, gitApi, useVfs } from '../site-source';
 import { BlocksPanel } from './panels/BlocksPanel';
 import { LayersPanel } from './panels/LayersPanel';
+import { ComponentsPanel } from './panels/ComponentsPanel';
+import { LayoutPanel } from './panels/LayoutPanel';
 import { PagesPanel } from './panels/PagesPanel';
 import { useBuilder } from './store';
 
-export type SidebarView = 'blocks' | 'layers' | 'pages' | 'scm' | 'deploy';
+export type SidebarView = 'blocks' | 'layers' | 'pages' | 'layout' | 'components' | 'scm' | 'deploy';
 
 /**
  * The builder's left rail. Source Control and Deployments are the very same
@@ -48,6 +50,20 @@ export function BuilderSidebar({
           <FileText className="h-5 w-5" />
         </RailButton>
         <RailButton
+          active={view === 'layout'}
+          label={t('builder.regions.title')}
+          onClick={() => onViewChange('layout')}
+        >
+          <LayoutTemplate className="h-5 w-5" />
+        </RailButton>
+        <RailButton
+          active={view === 'components'}
+          label={t('builder.components.title')}
+          onClick={() => onViewChange('components')}
+        >
+          <Puzzle className="h-5 w-5" />
+        </RailButton>
+        <RailButton
           active={view === 'scm'}
           label={t('ide.git.title')}
           onClick={() => onViewChange('scm')}
@@ -64,6 +80,8 @@ export function BuilderSidebar({
         {view === 'blocks' && <BlocksPanel editor={editor} />}
         {view === 'layers' && <LayersPanel editor={editor} />}
         {view === 'pages' && <PagesPanel />}
+        {view === 'layout' && <LayoutPanel />}
+        {view === 'components' && <ComponentsPanel />}
         {view === 'scm' && (
           <SourceControlView
             siteId={siteId}

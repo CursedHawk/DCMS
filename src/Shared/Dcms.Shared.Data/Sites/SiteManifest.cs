@@ -22,6 +22,13 @@ public sealed class SiteManifest
     public ThemeTokens Theme { get; set; } = new();
     public List<PageEntry> Pages { get; set; } = [];
     public List<NavItem> Nav { get; set; } = [];
+
+    /// <summary>Bands shared between pages, each backed by <c>regions/{Slug}.html</c>.</summary>
+    public List<RegionEntry> Regions { get; set; } = [];
+
+    /// <summary>Named sets of regions a page can adopt.</summary>
+    public List<LayoutEntry> Layouts { get; set; } = [];
+
     public SiteSettings Settings { get; set; } = new();
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -55,6 +62,78 @@ public sealed class SiteManifest
     /// <summary>The page a request for "/" resolves to: the flagged home, else the first.</summary>
     public PageEntry? HomePage() =>
         Pages.FirstOrDefault(p => p.Home) ?? Pages.FirstOrDefault(p => p.Path == "/") ?? Pages.FirstOrDefault();
+
+    /// <summary>The layout used by pages that name none.</summary>
+    public LayoutEntry? DefaultLayout() =>
+        Layouts.FirstOrDefault(l => l.Default) ?? Layouts.FirstOrDefault();
+
+    /// <summary>
+    /// The layout wrapping a page, or null when it opted out.
+    /// Mirrors <c>layoutForPage</c> in packages/gjs-schema/src/site.ts: an empty
+    /// string means "no chrome", which is not the same as an absent value.
+    /// </summary>
+    public LayoutEntry? LayoutFor(PageEntry page)
+    {
+        if (page.Layout is null)
+        {
+            return DefaultLayout();
+        }
+        if (page.Layout.Length == 0)
+        {
+            return null;
+        }
+        return Layouts.FirstOrDefault(l => l.Id == page.Layout) ?? DefaultLayout();
+    }
+
+    /// <summary>
+    /// The regions wrapping a page, split by placement and ordered as the layout
+    /// lists them. A layout naming a region that no longer exists renders without
+    /// it rather than failing the publish over a dangling id.
+    /// </summary>
+    public (List<RegionEntry> Before, List<RegionEntry> After) RegionsFor(PageEntry page)
+    {
+        var layout = LayoutFor(page);
+        if (layout is null)
+        {
+            return ([], []);
+        }
+        var byId = Regions.GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.First());
+        var chosen = layout.Regions
+            .Select(id => byId.GetValueOrDefault(id))
+            .Where(r => r is not null)
+            .Select(r => r!)
+            .ToList();
+        return (
+            chosen.Where(r => r.Placement != "after").ToList(),
+            chosen.Where(r => r.Placement == "after").ToList());
+    }
+}
+
+/// <summary>A band of markup shared by every page whose layout names it.</summary>
+public sealed class RegionEntry
+{
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>File-name stem: <c>regions/{Slug}.html</c>.</summary>
+    public string Slug { get; set; } = string.Empty;
+
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>"before" (above the page body) or "after" (below it).</summary>
+    public string Placement { get; set; } = "before";
+}
+
+/// <summary>A named set of regions a page can adopt.</summary>
+public sealed class LayoutEntry
+{
+    public string Id { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>Region ids, in the order they are emitted within their placement.</summary>
+    public List<string> Regions { get; set; } = [];
+
+    /// <summary>Used by pages that name no layout.</summary>
+    public bool Default { get; set; }
 }
 
 public sealed class ThemeTokens
@@ -83,6 +162,12 @@ public sealed class PageEntry
 
     /// <summary>True for the page served at the site root.</summary>
     public bool Home { get; set; }
+
+    /// <summary>
+    /// Which layout wraps this page. Null = the default layout; an empty string
+    /// = no chrome at all, for a landing page that owns the whole viewport.
+    /// </summary>
+    public string? Layout { get; set; }
 }
 
 public sealed class SeoMeta

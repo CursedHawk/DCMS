@@ -4,11 +4,22 @@ import { interactiveSpecs } from './interactive';
 import { layoutSpecs } from './layout';
 import { mediaSpecs } from './media';
 import { navigationSpecs } from './navigation';
+import { partSpecs } from './parts';
 import { sectionSpecs } from './sections';
 import { typographySpecs } from './typography';
 import { utilitySpecs } from './utility';
 
-export { formSpecs, interactiveSpecs, layoutSpecs, mediaSpecs, navigationSpecs, sectionSpecs, typographySpecs, utilitySpecs };
+export {
+  formSpecs,
+  interactiveSpecs,
+  layoutSpecs,
+  mediaSpecs,
+  navigationSpecs,
+  partSpecs,
+  sectionSpecs,
+  typographySpecs,
+  utilitySpecs,
+};
 
 /**
  * The built-in catalogue. Tenant-plugin components are generated at runtime and
@@ -21,6 +32,7 @@ export const BUILTIN_SPECS: DcmsComponentSpec[] = [
   ...mediaSpecs,
   ...navigationSpecs,
   ...sectionSpecs,
+  ...partSpecs,
   ...interactiveSpecs,
   ...formSpecs,
   ...utilitySpecs,

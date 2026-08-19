@@ -20,6 +20,9 @@ export function PagesPanel() {
   const { t } = useTranslation();
   const project = useBuilder((s) => s.project);
   const activeSlug = useBuilder((s) => s.activeSlug);
+  // Kind matters: a region or a component can share a slug with a page, and
+  // highlighting a page the canvas is not showing is worse than highlighting none.
+  const onAPage = useBuilder((s) => s.activeKind === 'page');
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState('');
 
@@ -134,7 +137,9 @@ export function PagesPanel() {
             <div
               className={cn(
                 'group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm',
-                entry.slug === activeSlug ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50',
+                onAPage && entry.slug === activeSlug
+                  ? 'bg-accent text-accent-foreground'
+                  : 'hover:bg-accent/50',
               )}
             >
               <button

@@ -1,13 +1,15 @@
 import type { Editor } from 'grapesjs';
-import { Palette, Settings, SlidersHorizontal } from 'lucide-react';
+import { Database, Palette, Settings, SlidersHorizontal } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/cn';
+import { BindingPanel } from './panels/BindingPanel';
 import { SettingsPanel } from './panels/SettingsPanel';
 import { StylesPanel } from './panels/StylesPanel';
 import { TraitsPanel } from './panels/TraitsPanel';
+import { useBuilder } from './store';
 
-type InspectorTab = 'settings' | 'styles' | 'page';
+type InspectorTab = 'settings' | 'styles' | 'page' | 'data';
 
 /**
  * The right-hand inspector: what the selected component *is* (its traits and
@@ -18,9 +20,16 @@ type InspectorTab = 'settings' | 'styles' | 'page';
 export function Inspector({ editor }: { editor: Editor | null }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<InspectorTab>('settings');
+  const editingComponent = useBuilder((s) => s.activeKind === 'component');
 
   const tabs: { id: InspectorTab; icon: typeof Settings; label: string }[] = [
     { id: 'settings', icon: SlidersHorizontal, label: t('builder.settings') },
+    // Only while a component template is open: binding attributes mean nothing
+    // on a page, and a tab that is inert three quarters of the time teaches an
+    // author to ignore it.
+    ...(editingComponent
+      ? [{ id: 'data' as const, icon: Database, label: t('builder.components.data') }]
+      : []),
     { id: 'styles', icon: Palette, label: t('builder.styles') },
     { id: 'page', icon: Settings, label: t('builder.pageSettings') },
   ];
@@ -49,6 +58,7 @@ export function Inspector({ editor }: { editor: Editor | null }) {
 
       <div className="min-h-0 flex-1 overflow-auto">
         {tab === 'settings' && <TraitsPanel editor={editor} />}
+        {tab === 'data' && <BindingPanel editor={editor} />}
         {tab === 'styles' && <StylesPanel editor={editor} />}
         {tab === 'page' && <SettingsPanel />}
       </div>

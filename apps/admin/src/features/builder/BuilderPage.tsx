@@ -6,7 +6,9 @@ import {
   ArrowLeft,
   Code2,
   Columns2,
+  LayoutTemplate,
   MousePointer2,
+  Puzzle,
   RefreshCw,
   Redo2,
   Rocket,
@@ -29,7 +31,8 @@ import {
   useStoredWidth,
   useVfs,
 } from '../site-source';
-import { coreSpecsFor } from '@dcms/gjs-blocks';
+import { coreSpecsFor, specsForComponents } from '@dcms/gjs-blocks';
+import { homePage } from '@dcms/gjs-schema';
 import { usePluginComponentSpecs } from './plugins/specs';
 import { BuilderCanvas } from './BuilderCanvas';
 import { BuilderSidebar, type SidebarView } from './BuilderSidebar';
@@ -37,6 +40,9 @@ import { Inspector } from './Inspector';
 import { CodeView } from './code/CodeView';
 import { AiPanel } from './ai/AiPanel';
 import { AssetsBridge } from './panels/AssetsBridge';
+import { MediaBridge } from './panels/MediaBridge';
+import { RegionChrome } from './panels/RegionChrome';
+import { TemplateHints } from './panels/TemplateHints';
 import { PreviewBridge } from './plugins/PreviewBridge';
 import { starterFiles } from './starter';
 import { useBuilder, type ViewMode } from './store';
@@ -75,6 +81,8 @@ export function BuilderPage({ siteId }: { siteId: string }) {
 
   const project = useBuilder((s) => s.project);
   const projectError = useBuilder((s) => s.error);
+  const activeKind = useBuilder((s) => s.activeKind);
+  const activeSlug = useBuilder((s) => s.activeSlug);
   const view = useBuilder((s) => s.view);
   const setView = useBuilder((s) => s.setView);
 
@@ -111,12 +119,30 @@ export function BuilderPage({ siteId }: { siteId: string }) {
   // appears in the palette with no deploy.
   const plugins = usePluginComponentSpecs();
 
+  // The tenant's own components, from `blocks/*.json` in this site's repo. They
+  // become ordinary specs so the palette, the inspector and the code view treat
+  // one the same as a built-in — which is what stops the component builder from
+  // producing second-class blocks.
+  //
+  // Keyed by *content*: the project is re-read from the working draft on every
+  // autosave, so the array itself is new every time and recomputing on its
+  // identity would re-expand every snippet, re-teach Monaco its component data
+  // and re-register the canvas types several times a second while typing.
+  const projectComponents = useBuilder((s) => s.project?.components);
+  const componentsKey = useMemo(() => JSON.stringify(projectComponents ?? []), [projectComponents]);
+  const customSpecs = useMemo(
+    // Read fresh rather than closing over the array, which is deliberately not a
+    // dependency here.
+    () => specsForComponents(useBuilder.getState().project?.components ?? [], document),
+    [componentsKey],
+  );
+
   // The same spec list drives the palette, the canvas and the code view's
   // completions and diagnostics, so the three cannot describe different
   // components.
   const specs = useMemo(
-    () => [...coreSpecsFor(plugins.enabledPluginIds), ...plugins.specs],
-    [plugins.enabledPluginIds, plugins.specs],
+    () => [...coreSpecsFor(plugins.enabledPluginIds), ...plugins.specs, ...customSpecs],
+    [plugins.enabledPluginIds, plugins.specs, customSpecs],
   );
 
   // Re-read the project whenever the file map changes. This is what makes an
@@ -194,6 +220,35 @@ export function BuilderPage({ siteId }: { siteId: string }) {
         <span className="font-medium">{site.data?.name}</span>
         <span className="text-xs text-muted-foreground">{t('sites.modeStaticPrerender')}</span>
 
+        {/* The canvas holds something that is not a page — a shared region or a
+            component template. Without this the author is editing a header that
+            appears on every page while the panel that names pages shows none of
+            them selected, and the way back is not obvious. */}
+        {activeKind !== 'page' && (
+          <button
+            type="button"
+            onClick={() => {
+              const home = project ? homePage(project.manifest).slug : null;
+              if (home) useBuilder.getState().setActiveSlug(home);
+            }}
+            className="flex items-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-xs text-primary"
+            title={t('builder.regions.backToPage')}
+          >
+            {activeKind === 'region' ? (
+              <LayoutTemplate className="h-3.5 w-3.5" />
+            ) : (
+              <Puzzle className="h-3.5 w-3.5" />
+            )}
+            {t('builder.regions.editing', {
+              label:
+                activeKind === 'region'
+                  ? (project?.regions.find((r) => r.entry.slug === activeSlug)?.entry.label ??
+                    activeSlug)
+                  : (project?.components.find((c) => c.name === activeSlug)?.label ?? activeSlug),
+            })}
+          </button>
+        )}
+
         <div className="mx-2 flex items-center gap-1 rounded-md border bg-muted p-0.5">
           {VIEWS.map(({ id, icon: Icon, labelKey }) => (
             <button
@@ -254,8 +309,18 @@ export function BuilderPage({ siteId }: { siteId: string }) {
       {/* Double-clicking an image in the canvas opens the DCMS media library. */}
       <AssetsBridge editor={editor} />
 
+      {/* Media stored as its published URL is fetched so it renders here too. */}
+      <MediaBridge editor={editor} />
+
       {/* Plugin placeholders show real tenant content instead of a blank box. */}
       <PreviewBridge editor={editor} />
+
+      {/* The page's shared header/footer regions, drawn around it. */}
+      <RegionChrome editor={editor} />
+
+      {/* While a component template is open, its empty bound elements say what
+          they are bound to instead of rendering as blank boxes. */}
+      <TemplateHints editor={editor} />
 
       <AiPanel open={aiOpen} onOpenChange={setAiOpen} specs={specs} />
 
@@ -332,6 +397,7 @@ export function BuilderPage({ siteId }: { siteId: string }) {
                 onTeardown={() => setEditor(null)}
                 enabledPluginIds={plugins.enabledPluginIds}
                 pluginSpecs={plugins.specs}
+                customSpecs={customSpecs}
               />
             ) : (
               <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">

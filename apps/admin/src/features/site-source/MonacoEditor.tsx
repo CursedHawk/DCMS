@@ -10,6 +10,19 @@ import { useVfs } from './vfs';
 // edits flow model -> store. The parent remounts this per site (key=siteId) so
 // the model set is created fresh, and create/delete/rename reconcile in place.
 
+/**
+ * Push new content into a model without throwing the editor's state away.
+ *
+ * `setValue` resets the undo stack, the scroll position, folding and any open
+ * find — which matters here because the Mode A builder writes the page back on
+ * every canvas change, so this runs constantly while the author is reading the
+ * code beside the canvas. A single edit over the full range is the same result
+ * to the model and leaves all of that intact.
+ */
+function applyContent(model: Monaco.editor.ITextModel, content: string): void {
+  model.pushEditOperations([], [{ range: model.getFullModelRange(), text: content }], () => null);
+}
+
 export function MonacoEditor() {
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -27,6 +40,16 @@ export function MonacoEditor() {
   // Create the editor once.
   useEffect(() => {
     setupMonaco();
+    // Overflowing widgets — the find box, hovers, the suggest list — are hosted
+    // outside the editor's own DOM. `fixedOverflowWidgets` alone positions them
+    // `fixed`, which is measured against the nearest transformed or clipping
+    // ancestor; the builder's split view has several, so the find widget was
+    // being placed outside the visible area and Ctrl+F looked like it did
+    // nothing at all. Giving Monaco a host on <body> puts it back on screen.
+    const overflowHost = document.createElement('div');
+    overflowHost.className = 'monaco-editor dcms-monaco-overflow';
+    document.body.appendChild(overflowHost);
+
     const editor = monaco.editor.create(hostRef.current!, {
       automaticLayout: true,
       fontSize: 13,
@@ -34,6 +57,7 @@ export function MonacoEditor() {
       scrollBeyondLastLine: false,
       tabSize: 2,
       fixedOverflowWidgets: true,
+      overflowWidgetsDomNode: overflowHost,
     });
     editorRef.current = editor;
     applyEditorTheme(resolved);
@@ -82,6 +106,7 @@ export function MonacoEditor() {
       sub.dispose();
       opener.dispose();
       editor.dispose();
+      overflowHost.remove();
       editorRef.current = null;
       for (const model of modelsRef.current.values()) model.dispose();
       modelsRef.current.clear();
@@ -121,9 +146,7 @@ export function MonacoEditor() {
     try {
       for (const [path, model] of modelsRef.current) {
         const content = files[path];
-        if (content != null && model.getValue() !== content) {
-          model.setValue(content);
-        }
+        if (content != null && model.getValue() !== content) applyContent(model, content);
       }
     } finally {
       syncingRef.current = false;
@@ -137,21 +160,29 @@ export function MonacoEditor() {
   // those must show up in the code immediately — otherwise the two halves of the
   // same screen disagree about the same file.
   //
-  // The focused model is deliberately skipped: overwriting text under a typing
-  // cursor would move it, and content the user just typed already matches the
-  // store anyway.
+  // The model the author is working in is deliberately skipped: overwriting text
+  // under a typing cursor would move it, and content they just typed already
+  // matches the store anyway.
+  //
+  // "Working in" means `hasWidgetFocus`, not `hasTextFocus`. The find widget is
+  // part of the editor but is not the text area, so with the narrower check a
+  // Ctrl+F in the builder's split view was cancelled by the very next canvas
+  // autosave: the model under the open find widget was replaced wholesale, which
+  // drops its matches and pulls focus out of the search box. Typing a second
+  // character then did it again — the find box was unusable rather than merely
+  // flickering.
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    const focusedUri = editor.hasTextFocus() ? editor.getModel()?.uri.toString() : undefined;
+    const busyUri = editor.hasWidgetFocus() ? editor.getModel()?.uri.toString() : undefined;
     const { files } = useVfs.getState();
 
     syncingRef.current = true;
     try {
       for (const [path, model] of modelsRef.current) {
-        if (model.uri.toString() === focusedUri) continue;
+        if (model.uri.toString() === busyUri) continue;
         const content = files[path];
-        if (content != null && model.getValue() !== content) model.setValue(content);
+        if (content != null && model.getValue() !== content) applyContent(model, content);
       }
     } finally {
       syncingRef.current = false;
@@ -168,7 +199,10 @@ export function MonacoEditor() {
     }
     const model = modelsRef.current.get(activePath);
     if (model) {
-      editor.setModel(model);
+      // Only when it actually changes: re-attaching the model already showing
+      // resets the view state and closes the find widget, and this effect also
+      // runs whenever a file is created or deleted anywhere in the project.
+      if (editor.getModel() !== model) editor.setModel(model);
       editor.updateOptions({ readOnly: isToolchainFile(activePath) || isGeneratedFile(activePath) });
     }
   }, [activePath, fileKeys]);

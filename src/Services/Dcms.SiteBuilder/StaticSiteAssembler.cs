@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Net;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Storage;
 
@@ -35,14 +37,40 @@ public sealed class StaticSiteAssembler
 {
     public const string SiteJson = "site.json";
     public const string PagesPrefix = "pages/";
+    public const string RegionsPrefix = "regions/";
+    public const string BlocksPrefix = "blocks/";
     public const string StylesPrefix = "styles/";
     public const string ThemeCss = "styles/theme.css";
     public const string GlobalCss = "styles/global.css";
     public const string HydrateScript = "/_dcms/hydrate.js";
 
+    /// <summary>
+    /// The id of the embedded component registry. <c>hydrate.js</c> reads the
+    /// tenant's own component templates out of it, so a component the author
+    /// built renders without a second request — and without the delivery API
+    /// having to know that tenant components exist at all.
+    /// </summary>
+    public const string ComponentRegistryId = "dcms-components";
+
+    /// <summary>
+    /// The id of the embedded route table. <c>hydrate.js</c> reads it to label a
+    /// breadcrumb trail and to mark the current link in a menu — both of which
+    /// live in a shared region and are therefore identical markup on every page,
+    /// resolvable only against the URL the visitor actually asked for.
+    /// </summary>
+    public const string RouteTableId = "dcms-routes";
+
     /// <summary>Files that describe the site rather than being part of its output.</summary>
     private static readonly HashSet<string> SourceOnly =
         new(StringComparer.Ordinal) { SiteJson, "assets.json" };
+
+    /// <summary>
+    /// Directories consumed here rather than copied. Page and region markup is
+    /// assembled into documents, and a component definition is embedded in every
+    /// page that might use it — publishing any of them as files would expose the
+    /// source and serve markup fragments at guessable URLs.
+    /// </summary>
+    private static readonly string[] SourceOnlyPrefixes = [PagesPrefix, RegionsPrefix, BlocksPrefix];
 
     public AssembledSite Assemble(IReadOnlyDictionary<string, string> files)
     {
@@ -59,11 +87,13 @@ public sealed class StaticSiteAssembler
         var home = manifest.HomePage();
         var pages = new List<RenderedPage>();
         var emitted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var registry = ComponentRegistry(files);
+        var routes = RouteTable(manifest);
 
         foreach (var page in manifest.Pages)
         {
             var body = files.GetValueOrDefault(PageHtmlPath(page.Slug), string.Empty);
-            var html = Document(manifest, page, body);
+            var html = Document(manifest, page, body, files, registry, routes);
 
             var fileName = FileNameFor(page.Path);
             // Two pages routed to the same path would silently overwrite each other's
@@ -99,7 +129,7 @@ public sealed class StaticSiteAssembler
         foreach (var (path, content) in files)
         {
             if (SourceOnly.Contains(path)) continue;
-            if (path.StartsWith(PagesPrefix, StringComparison.Ordinal)) continue;
+            if (SourceOnlyPrefixes.Any(p => path.StartsWith(p, StringComparison.Ordinal))) continue;
             if (!SiteFileMap.IsSafePath(path)) continue;
 
             var bytes = SiteFileMap.IsBinaryPath(path)
@@ -135,9 +165,66 @@ public sealed class StaticSiteAssembler
 
     public static string PageHtmlPath(string slug) => $"{PagesPrefix}{slug}.html";
 
+    public static string RegionHtmlPath(string slug) => $"{RegionsPrefix}{slug}.html";
+
     public static string PageCssPath(string slug) => $"{StylesPrefix}pages/{slug}.css";
 
-    private static string Document(SiteManifest manifest, PageEntry page, string body)
+    /// <summary>
+    /// The tenant's own component definitions, keyed by name, as one JSON object.
+    ///
+    /// Embedded in the page rather than fetched: a component the author built is
+    /// part of the page's markup in every sense except that its data arrives
+    /// late, and making the *layout* wait on a second round trip would give every
+    /// such component a visible pop-in that a built-in one does not have. The
+    /// definitions are small — a template and its prop list — and they compress
+    /// with the document.
+    ///
+    /// A definition that is not valid JSON is skipped rather than failing the
+    /// build: these files are hand-editable in the code view, and one broken
+    /// component should cost that component, not the whole site.
+    /// </summary>
+    private static string ComponentRegistry(IReadOnlyDictionary<string, string> files)
+    {
+        var entries = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
+        foreach (var (path, content) in files)
+        {
+            if (!path.StartsWith(BlocksPrefix, StringComparison.Ordinal)) continue;
+            if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var name = path[BlocksPrefix.Length..^".json".Length];
+            if (name.Length == 0 || name.Contains('/')) continue;
+
+            try
+            {
+                var node = JsonNode.Parse(content);
+                // A definition with no template renders nothing, so carrying it
+                // would only put an empty entry in every page of the site.
+                if (node?["template"] is not null) entries[name] = node;
+            }
+            catch (JsonException)
+            {
+                // Skipped — see above.
+            }
+        }
+
+        return entries.Count == 0 ? string.Empty : JsonSerializer.Serialize(entries);
+    }
+
+    /// <summary>
+    /// Every page's path and title, as JSON. Small enough to embed in each
+    /// document (a site with two hundred pages is a few kilobytes) and embedding
+    /// it keeps navigation working on a static host with no API in front of it.
+    /// </summary>
+    private static string RouteTable(SiteManifest manifest) =>
+        JsonSerializer.Serialize(manifest.Pages.Select(p => new { path = p.Path, title = p.Title }));
+
+    private static string Document(
+        SiteManifest manifest,
+        PageEntry page,
+        string body,
+        IReadOnlyDictionary<string, string> files,
+        string registry,
+        string routes)
     {
         var head = new StringBuilder();
         var settings = manifest.Settings;
@@ -189,6 +276,23 @@ public sealed class StaticSiteAssembler
         var bodyEnd = settings.BodyEndHtml ?? string.Empty;
         var lang = string.IsNullOrWhiteSpace(settings.Lang) ? "en" : settings.Lang;
 
+        // The page's layout, resolved to markup. Regions are emitted verbatim in
+        // the same place the builder's canvas draws them, which is the whole
+        // point of them being files rather than a rendering rule: what the author
+        // sees around their page is what ships around it.
+        var (beforeRegions, afterRegions) = manifest.RegionsFor(page);
+        var before = string.Concat(beforeRegions.Select(r => RegionMarkup(files, r)));
+        var after = string.Concat(afterRegions.Select(r => RegionMarkup(files, r)));
+
+        // A JSON script block, not JavaScript: the content is data and is parsed
+        // as data, so a template containing "</script>" cannot end the element
+        // early — the one escape that matters here.
+        var components = registry.Length == 0
+            ? string.Empty
+            : $"<script type=\"application/json\" id=\"{ComponentRegistryId}\">{registry.Replace("<", "\\u003c")}</script>";
+        var routeTable =
+            $"<script type=\"application/json\" id=\"{RouteTableId}\">{routes.Replace("<", "\\u003c")}</script>";
+
         return $"""
             <!doctype html>
             <html lang="{Attr(lang)}">
@@ -197,9 +301,23 @@ public sealed class StaticSiteAssembler
             <meta name="viewport" content="width=device-width, initial-scale=1" />
             {head}
             </head>
-            <body>{nav}{body}{bodyEnd}<script src="{HydrateScript}" defer></script></body>
+            <body>{nav}{before}{body}{after}{bodyEnd}{components}{routeTable}<script src="{HydrateScript}" defer></script></body>
             </html>
             """;
+    }
+
+    /// <summary>
+    /// One region's markup, wrapped so its own CSS has something to target and so
+    /// the builder can find it again in a published page.
+    /// </summary>
+    private static string RegionMarkup(IReadOnlyDictionary<string, string> files, RegionEntry region)
+    {
+        var markup = files.GetValueOrDefault(RegionHtmlPath(region.Slug), string.Empty);
+        if (string.IsNullOrWhiteSpace(markup))
+        {
+            return string.Empty;
+        }
+        return $"<div class=\"dcms-region dcms-region-{Attr(region.Slug)}\" data-dcms-region=\"{Attr(region.Id)}\">{markup}</div>";
     }
 
     private static string RenderNav(IReadOnlyList<NavItem> nav)

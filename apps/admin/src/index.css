@@ -300,3 +300,23 @@
     transform: translate(-50%, -48%) scale(0.97);
   }
 }
+
+/*
+ * Host for Monaco's overflowing widgets — the find box, hovers, the suggest
+ * list. It lives on <body> so those are measured against the viewport rather
+ * than against the builder's clipped, transformed split panes; without it the
+ * find widget was positioned off-screen and Ctrl+F appeared to do nothing.
+ *
+ * The host itself must never intercept anything: it is an empty box most of the
+ * time, and a full-viewport click blocker would swallow every click in the app.
+ */
+.dcms-monaco-overflow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+.dcms-monaco-overflow > * {
+  pointer-events: auto;
+}

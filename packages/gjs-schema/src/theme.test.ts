@@ -27,12 +27,26 @@ describe('renderThemeCss', () => {
       colors: { brand: '#0af' },
       fonts: { body: 'Inter, sans-serif' },
       spacing: { lg: '2rem' },
+      text: { xl: '1.5rem' },
+      shadows: { md: '0 4px 12px rgb(0 0 0 / 8%)' },
+      metrics: { container: '72rem', 'tracking-heading': '-0.02em' },
       radius: '8px',
     });
     expect(css).toContain('--dcms-color-brand: #0af;');
     expect(css).toContain('--dcms-font-body: Inter, sans-serif;');
     expect(css).toContain('--dcms-space-lg: 2rem;');
+    expect(css).toContain('--dcms-text-xl: 1.5rem;');
+    expect(css).toContain('--dcms-shadow-md: 0 4px 12px rgb(0 0 0 / 8%);');
     expect(css).toContain('--dcms-radius: 8px;');
+  });
+
+  it('emits metrics without a group infix', () => {
+    const css = renderThemeCss({ ...base, metrics: { container: '72rem', 'radius-lg': '1rem' } });
+    expect(css).toContain('--dcms-container: 72rem;');
+    expect(css).toContain('--dcms-radius-lg: 1rem;');
+    // The infixed form would be a different variable, and every rule in the
+    // block stylesheet reads the short one.
+    expect(css).not.toContain('--dcms-metric-');
   });
 
   it('passes custom properties through, adding the -- prefix when missing', () => {

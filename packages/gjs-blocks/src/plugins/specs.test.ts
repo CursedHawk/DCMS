@@ -155,11 +155,29 @@ describe('pluginSpecs', () => {
 
     it('offers only textual fields as the title source', () => {
       const options = named('titleField')?.options?.map((o) => o.value);
-      expect(options).toEqual(['', 'title', 'excerpt', 'body']);
+      expect(options).toEqual(['', '-', 'title', 'excerpt', 'body']);
     });
 
     it('offers only media fields as the image source', () => {
-      expect(named('imageField')?.options?.map((o) => o.value)).toEqual(['', 'coverImage']);
+      expect(named('imageField')?.options?.map((o) => o.value)).toEqual(['', '-', 'coverImage']);
+    });
+
+    it('lets a slot be emptied as well as guessed or mapped', () => {
+      // Without a "None", an author who did not want an excerpt had no way to
+      // say so — the guess would find `excerpt` whatever they did.
+      for (const name of ['titleField', 'bodyField', 'imageField', 'metaField', 'tagsField', 'linkField']) {
+        const options = named(name)?.options?.map((o) => o.value);
+        expect(options, name).toContain('-');
+      }
+    });
+
+    it('offers the collection controls on a list and not on a detail', () => {
+      // A single item has no arrangement or column count; offering them would be
+      // settings that silently do nothing.
+      for (const name of ['arrangement', 'columns', 'cardVariant']) {
+        expect(named(name)?.target, name).toBe('prop');
+        expect(detail.traits.find((t) => t.name === name), name).toBeUndefined();
+      }
     });
 
     it('includes tenant-defined custom fields', () => {
@@ -172,6 +190,28 @@ describe('pluginSpecs', () => {
       const spec = withCustom.find((s) => s.type === listType('blog', 'post'))!;
       const options = spec.traits.find((t) => t.name === 'titleField')?.options?.map((o) => o.value);
       expect(options).toContain('subtitle');
+    });
+
+    it('offers a custom field at the path its value actually lives at', () => {
+      // The values of tenant-defined fields are nested under one key, so a bare
+      // key resolves to nothing on the page. Every option in this dropdown was a
+      // field that rendered blank once chosen.
+      const nested = pluginSpecs(
+        [
+          {
+            ...blogManifest,
+            contentTypes: blogManifest.contentTypes.map((c) =>
+              c.name === 'post' ? { ...c, customFields: { valuesField: 'values' } } : c,
+            ),
+          },
+        ],
+        [instance()],
+        { customFields: () => [{ key: 'subtitle', label: 'Subtitle', type: 'text' }] },
+      );
+      const spec = nested.find((s) => s.type === listType('blog', 'post'))!;
+      const options = spec.traits.find((t) => t.name === 'titleField')?.options?.map((o) => o.value);
+      expect(options).toContain('values.subtitle');
+      expect(options).not.toContain('subtitle');
     });
 
     it('defaults a detail view to the article layout', () => {

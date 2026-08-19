@@ -264,6 +264,120 @@ public class StaticSiteAssemblerTests
         SiteRenderMode.StaticFiles.IsGitBacked().Should().BeFalse();
     }
 
+    private const string ChromeManifest = """
+        {
+          "version": 2,
+          "pages": [
+            { "id": "home", "slug": "home", "path": "/", "title": "Home", "home": true, "seo": { "title": "Home" } },
+            { "id": "landing", "slug": "landing", "path": "/landing", "title": "Landing", "layout": "", "seo": { "title": "Landing" } }
+          ],
+          "regions": [
+            { "id": "r-head", "slug": "header", "label": "Header", "placement": "before" },
+            { "id": "r-foot", "slug": "footer", "label": "Footer", "placement": "after" }
+          ],
+          "layouts": [{ "id": "default", "label": "Default", "regions": ["r-head", "r-foot"], "default": true }],
+          "settings": { "lang": "en", "renderNav": false }
+        }
+        """;
+
+    private static Dictionary<string, string> ChromeFiles() => new(StringComparer.Ordinal)
+    {
+        ["site.json"] = ChromeManifest,
+        ["pages/home.html"] = "<main>Home body</main>",
+        ["pages/landing.html"] = "<main>Landing body</main>",
+        ["regions/header.html"] = "<header>Site header</header>",
+        ["regions/footer.html"] = "<footer>Site footer</footer>",
+        ["styles/global.css"] = "body{margin:0;}",
+    };
+
+    [Fact]
+    public void Wraps_a_page_in_the_regions_its_layout_names()
+    {
+        var html = new StaticSiteAssembler().Assemble(ChromeFiles()).Pages
+            .Single(p => p.FileName == "index.html").Html;
+
+        html.Should().Contain("Site header");
+        html.Should().Contain("Site footer");
+        // Order is what makes a header a header: before the page, after it a footer.
+        html.IndexOf("Site header", StringComparison.Ordinal)
+            .Should().BeLessThan(html.IndexOf("Home body", StringComparison.Ordinal));
+        html.IndexOf("Home body", StringComparison.Ordinal)
+            .Should().BeLessThan(html.IndexOf("Site footer", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Lets_a_page_opt_out_of_the_shared_chrome()
+    {
+        // An empty layout is a real choice — a landing page that must not show the
+        // site navigation — and is not the same as leaving it unset.
+        var html = new StaticSiteAssembler().Assemble(ChromeFiles()).Pages
+            .Single(p => p.FileName == "landing.html").Html;
+
+        html.Should().Contain("Landing body");
+        html.Should().NotContain("Site header");
+        html.Should().NotContain("Site footer");
+    }
+
+    [Fact]
+    public void Never_publishes_region_or_component_source()
+    {
+        var files = ChromeFiles();
+        files["blocks/promo.json"] = """{ "version": 1, "name": "promo", "label": "Promo", "template": "<div>x</div>" }""";
+        var site = new StaticSiteAssembler().Assemble(files);
+
+        // Serving these would expose the source and put markup fragments at
+        // guessable URLs; they are consumed into the document instead.
+        var names = site.Files.Select(f => f.FileName).ToList();
+        names.Should().NotContain("regions/header.html");
+        names.Should().NotContain("blocks/promo.json");
+        names.Should().Contain("styles/global.css");
+    }
+
+    [Fact]
+    public void Embeds_the_component_registry_and_the_route_table()
+    {
+        var files = ChromeFiles();
+        files["blocks/promo.json"] = """{ "version": 1, "name": "promo", "label": "Promo", "template": "<div>x</div>" }""";
+        var html = new StaticSiteAssembler().Assemble(files).Pages
+            .Single(p => p.FileName == "index.html").Html;
+
+        html.Should().Contain("id=\"dcms-components\"");
+        html.Should().Contain("id=\"dcms-routes\"");
+        // Every page's title, so a breadcrumb in a shared region can name the
+        // levels above the one being viewed.
+        html.Should().Contain("Landing");
+    }
+
+    [Fact]
+    public void Escapes_a_closing_script_tag_in_embedded_json()
+    {
+        var files = ChromeFiles();
+        files["blocks/promo.json"] =
+            """{ "version": 1, "name": "promo", "label": "Promo", "template": "<div></script></div>" }""";
+        var html = new StaticSiteAssembler().Assemble(files).Pages
+            .Single(p => p.FileName == "index.html").Html;
+
+        // A template that could close its own script element would let authored
+        // content escape into the document as markup.
+        html.Should().NotContain("<div></script>");
+        html.Should().Contain("\u003c");
+    }
+
+    [Fact]
+    public void Skips_a_component_definition_that_is_not_valid_json()
+    {
+        var files = ChromeFiles();
+        files["blocks/broken.json"] = "{ not json";
+        files["blocks/promo.json"] = """{ "version": 1, "name": "promo", "label": "Promo", "template": "<div>x</div>" }""";
+
+        var html = new StaticSiteAssembler().Assemble(files).Pages
+            .Single(p => p.FileName == "index.html").Html;
+
+        // One half-typed file in the code view must not fail the whole publish.
+        html.Should().Contain("promo");
+        html.Should().NotContain("broken");
+    }
+
     [Fact]
     public void Produces_utf8_page_content()
     {

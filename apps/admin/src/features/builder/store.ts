@@ -1,4 +1,13 @@
-import { GLOBAL_CSS, THEME_CSS, homePage, pageCssPath, pageHtmlPath, type SiteManifest } from '@dcms/gjs-schema';
+import {
+  GLOBAL_CSS,
+  THEME_CSS,
+  componentPath,
+  homePage,
+  pageCssPath,
+  pageHtmlPath,
+  regionHtmlPath,
+  type SiteManifest,
+} from '@dcms/gjs-schema';
 import { create } from 'zustand';
 import { useVfs } from '../site-source';
 import { projectFiles, readProject, type Project } from './project';
@@ -14,11 +23,33 @@ import { projectFiles, readProject, type Project } from './project';
 
 export type ViewMode = 'design' | 'split' | 'code';
 
+/**
+ * What the canvas is holding.
+ *
+ * A region and a tenant component are edited on the same canvas as a page,
+ * because they are the same kind of thing — markup styled by the same global
+ * stylesheet — and because a second editor would mean a second undo history, a
+ * second set of panels and a second chance for the two to disagree about what a
+ * component is. Only the file it reads and writes differs.
+ *
+ * For a component the slug is the definition's name, and the markup it holds is
+ * the definition's `template`, which is why capture has to fold the canvas back
+ * into JSON rather than write a file straight out.
+ */
+export type CanvasKind = 'page' | 'region' | 'component';
+
+export interface CanvasTarget {
+  kind: CanvasKind;
+  slug: string;
+}
+
 interface BuilderState {
   project: Project | null;
   /** Why the file map is not a readable project, if it is not. */
   error: string | null;
   activeSlug: string | null;
+  /** Whether `activeSlug` names a page, a shared region or a component. */
+  activeKind: CanvasKind;
   view: ViewMode;
   /** Bumped whenever the active page's content changes from outside the canvas. */
   reloadToken: number;
@@ -37,6 +68,8 @@ interface BuilderState {
   /** Record what the canvas just wrote, so it is not mistaken for an edit. */
   noteCapture: (files: Record<string, string>) => void;
   setActiveSlug: (slug: string) => void;
+  /** Open a region on the canvas instead of a page, or go back to a page. */
+  setActiveTarget: (target: CanvasTarget) => void;
   setView: (view: ViewMode) => void;
   /** Apply a change to the project and write the affected files back. */
   update: (mutate: (project: Project) => Project) => void;
@@ -45,12 +78,17 @@ interface BuilderState {
   requestReload: () => void;
 
   activePage: () => Project['pages'][number] | null;
+  activeRegion: () => Project['regions'][number] | null;
+  activeComponent: () => Project['components'][number] | null;
+  /** The files the canvas currently reads and writes. */
+  activeFiles: () => string[];
 }
 
 export const useBuilder = create<BuilderState>((set, get) => ({
   project: null,
   error: null,
   activeSlug: null,
+  activeKind: 'page',
   view: 'design',
   reloadToken: 0,
   capturedFiles: {},
@@ -59,23 +97,33 @@ export const useBuilder = create<BuilderState>((set, get) => ({
     const files = useVfs.getState().files;
     const { project, error } = readProject(files);
     const current = get().activeSlug;
-    const stillThere = project?.pages.some((p) => p.entry.slug === current) ?? false;
+    const kind = get().activeKind;
+
+    // A region, component or page that was deleted drops the canvas back to the
+    // home page rather than leaving it pointed at a file that is gone.
+    const stillThere =
+      kind === 'region'
+        ? (project?.regions.some((r) => r.entry.slug === current) ?? false)
+        : kind === 'component'
+          ? (project?.components.some((c) => c.name === current) ?? false)
+          : (project?.pages.some((p) => p.entry.slug === current) ?? false);
+    const activeKind: CanvasKind = stillThere ? kind : 'page';
     const activeSlug = project ? (stillThere ? current : homePage(project.manifest).slug) : null;
 
-    // If the active page's source no longer matches what the canvas last wrote,
-    // something else changed it — the code view, a git restore, an AI insert —
-    // and the canvas has to re-read it.
+    // If the active document's source no longer matches what the canvas last
+    // wrote, something else changed it — the code view, a git restore, an AI
+    // insert — and the canvas has to re-read it.
     const captured = get().capturedFiles;
-    const drifted =
-      activeSlug !== null &&
-      [pageHtmlPath(activeSlug), pageCssPath(activeSlug), GLOBAL_CSS].some(
-        (path) => captured[path] !== undefined && files[path] !== captured[path],
-      );
+    const watched = activeSlug === null ? [] : filesFor({ kind: activeKind, slug: activeSlug });
+    const drifted = watched.some(
+      (path) => captured[path] !== undefined && files[path] !== captured[path],
+    );
 
     set((s) => ({
       project,
       error,
       activeSlug,
+      activeKind,
       reloadToken: drifted ? s.reloadToken + 1 : s.reloadToken,
     }));
   },
@@ -83,7 +131,8 @@ export const useBuilder = create<BuilderState>((set, get) => ({
   noteCapture: (files) =>
     set((s) => ({ capturedFiles: { ...s.capturedFiles, ...files } })),
 
-  setActiveSlug: (slug) => set({ activeSlug: slug }),
+  setActiveSlug: (slug) => set({ activeSlug: slug, activeKind: 'page' }),
+  setActiveTarget: ({ kind, slug }) => set({ activeSlug: slug, activeKind: kind }),
   setView: (view) => set({ view }),
   requestReload: () => set((s) => ({ reloadToken: s.reloadToken + 1 })),
 
@@ -99,10 +148,43 @@ export const useBuilder = create<BuilderState>((set, get) => ({
     get().update((project) => ({ ...project, manifest: mutate(project.manifest) })),
 
   activePage: () => {
-    const { project, activeSlug } = get();
+    const { project, activeSlug, activeKind } = get();
+    if (activeKind !== 'page') return null;
     return project?.pages.find((p) => p.entry.slug === activeSlug) ?? null;
   },
+
+  activeRegion: () => {
+    const { project, activeSlug, activeKind } = get();
+    if (activeKind !== 'region') return null;
+    return project?.regions.find((r) => r.entry.slug === activeSlug) ?? null;
+  },
+
+  activeComponent: () => {
+    const { project, activeSlug, activeKind } = get();
+    if (activeKind !== 'component') return null;
+    return project?.components.find((c) => c.name === activeSlug) ?? null;
+  },
+
+  activeFiles: () => {
+    const { activeSlug, activeKind } = get();
+    return activeSlug === null ? [] : filesFor({ kind: activeKind, slug: activeSlug });
+  },
 }));
+
+/**
+ * The files one canvas target owns.
+ *
+ * A region has no stylesheet of its own: it appears on every page that uses its
+ * layout, so per-region rules would have to be loaded on every page anyway —
+ * which is what `global.css` already is.
+ */
+function filesFor(target: CanvasTarget): string[] {
+  if (target.kind === 'region') return [regionHtmlPath(target.slug), GLOBAL_CSS];
+  // A component's markup is a field inside its definition, so the file the
+  // canvas watches for outside edits is the whole JSON.
+  if (target.kind === 'component') return [componentPath(target.slug), GLOBAL_CSS];
+  return [pageHtmlPath(target.slug), pageCssPath(target.slug), GLOBAL_CSS];
+}
 
 /**
  * Write only what actually changed into the working draft.

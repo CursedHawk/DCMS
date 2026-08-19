@@ -10,22 +10,34 @@ import type { ThemeTokens } from './site';
 export const THEME_HEADER =
   '/* Generated from site.json — edit the theme in the builder, not this file. */';
 
-/** `--dcms-color-brand`, `--dcms-font-body`, `--dcms-space-lg`, `--dcms-radius`. */
-export function themeVarName(group: 'color' | 'font' | 'space', token: string): string {
+/** The prefixed token groups. `metrics` is unprefixed and handled separately. */
+export type TokenGroup = 'color' | 'font' | 'space' | 'text' | 'shadow';
+
+/** `--dcms-color-brand`, `--dcms-font-body`, `--dcms-space-lg`, `--dcms-text-xl`. */
+export function themeVarName(group: TokenGroup, token: string): string {
   return `--dcms-${group}-${cssIdent(token)}`;
 }
 
 /** Every variable this theme defines, for the code view's completion list. */
 export function themeVariables(theme: ThemeTokens): { name: string; value: string }[] {
   const vars: { name: string; value: string }[] = [];
-  for (const [token, value] of Object.entries(theme.colors ?? {})) {
-    vars.push({ name: themeVarName('color', token), value });
-  }
-  for (const [token, value] of Object.entries(theme.fonts ?? {})) {
-    vars.push({ name: themeVarName('font', token), value });
-  }
-  for (const [token, value] of Object.entries(theme.spacing ?? {})) {
-    vars.push({ name: themeVarName('space', token), value });
+  const group = (entries: Record<string, string> | undefined, name: TokenGroup) => {
+    for (const [token, value] of Object.entries(entries ?? {})) {
+      vars.push({ name: themeVarName(name, token), value });
+    }
+  };
+
+  group(theme.colors, 'color');
+  group(theme.fonts, 'font');
+  group(theme.spacing, 'space');
+  group(theme.text, 'text');
+  group(theme.shadows, 'shadow');
+  // Metrics carry no group infix — the token name is already the whole name
+  // (`container`, `radius-lg`, `tracking-heading`), so prefixing would give
+  // `--dcms-metric-radius-lg`, which reads worse in a stylesheet than the thing
+  // it describes.
+  for (const [token, value] of Object.entries(theme.metrics ?? {})) {
+    vars.push({ name: `--dcms-${cssIdent(token)}`, value });
   }
   if (theme.radius) vars.push({ name: '--dcms-radius', value: theme.radius });
   for (const [name, value] of Object.entries(theme.custom ?? {})) {

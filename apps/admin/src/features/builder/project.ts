@@ -2,14 +2,22 @@ import {
   GLOBAL_CSS,
   SITE_JSON,
   THEME_CSS,
+  componentPath,
+  nameFromBlockPath,
   pageCssPath,
   pageHtmlPath,
+  regionHtmlPath,
   renderThemeCss,
   safeParseSiteManifest,
+  safeParseComponentDefinition,
+  serializeComponentDefinition,
   serializeSiteManifest,
   slugFromPageCssPath,
   slugFromPageHtmlPath,
+  slugFromRegionHtmlPath,
+  type ComponentDefinition,
   type PageEntry,
+  type RegionEntry,
   type SiteManifest,
 } from '@dcms/gjs-schema';
 
@@ -26,9 +34,21 @@ export interface ProjectPage {
   css: string;
 }
 
+/**
+ * A region is markup and nothing else. It has no stylesheet of its own — a band
+ * on every page belongs in `global.css` — so unlike a page it is one file.
+ */
+export interface ProjectRegion {
+  entry: RegionEntry;
+  html: string;
+}
+
 export interface Project {
   manifest: SiteManifest;
   pages: ProjectPage[];
+  regions: ProjectRegion[];
+  /** The tenant's own components, from `blocks/*.json`. */
+  components: ComponentDefinition[];
   globalCss: string;
   /** Files the builder does not own (committed assets, robots.txt, …). */
   extras: Record<string, string>;
@@ -71,21 +91,51 @@ export function readProject(files: Record<string, string>): ProjectLoadResult {
     html: files[pageHtmlPath(entry.slug)] ?? '',
     css: files[pageCssPath(entry.slug)] ?? '',
   }));
+  const regions: ProjectRegion[] = manifest.regions.map((entry) => ({
+    entry,
+    html: files[regionHtmlPath(entry.slug)] ?? '',
+  }));
+  const components = readComponents(files);
 
   const owned = new Set<string>([SITE_JSON, THEME_CSS, GLOBAL_CSS]);
   for (const page of pages) {
     owned.add(pageHtmlPath(page.entry.slug));
     owned.add(pageCssPath(page.entry.slug));
   }
+  for (const region of regions) owned.add(regionHtmlPath(region.entry.slug));
+  for (const component of components) owned.add(componentPath(component.name));
   const extras: Record<string, string> = {};
   for (const [path, content] of Object.entries(files)) {
     if (!owned.has(path)) extras[path] = content;
   }
 
   return {
-    project: { manifest, pages, globalCss: files[GLOBAL_CSS] ?? '', extras },
+    project: { manifest, pages, regions, components, globalCss: files[GLOBAL_CSS] ?? '', extras },
     error: null,
   };
+}
+
+/**
+ * The tenant's components, from every `blocks/*.json` the repo holds.
+ *
+ * A definition that does not parse is skipped rather than failing the load: the
+ * files are editable in the code view, and half-typed JSON there should cost
+ * that one block from the palette, not the ability to open the site. The code
+ * view reports it as a diagnostic, which is where the author is looking.
+ */
+function readComponents(files: Record<string, string>): ComponentDefinition[] {
+  const components: ComponentDefinition[] = [];
+  for (const [path, content] of Object.entries(files)) {
+    const name = nameFromBlockPath(path);
+    if (!name) continue;
+    try {
+      const parsed = safeParseComponentDefinition(JSON.parse(content));
+      if (parsed.success) components.push(parsed.data);
+    } catch {
+      /* not valid JSON — see above */
+    }
+  }
+  return components.sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /**
@@ -103,6 +153,12 @@ export function projectFiles(project: Project): Record<string, string> {
   for (const page of project.pages) {
     files[pageHtmlPath(page.entry.slug)] = page.html;
     files[pageCssPath(page.entry.slug)] = page.css;
+  }
+  for (const region of project.regions) {
+    files[regionHtmlPath(region.entry.slug)] = region.html;
+  }
+  for (const component of project.components) {
+    files[componentPath(component.name)] = serializeComponentDefinition(component);
   }
   return files;
 }
@@ -133,11 +189,18 @@ export function isProjectFile(path: string): boolean {
     path === SITE_JSON ||
     path === THEME_CSS ||
     path === GLOBAL_CSS ||
-    pageSlugOf(path) !== null
+    pageSlugOf(path) !== null ||
+    slugFromRegionHtmlPath(path) !== null ||
+    nameFromBlockPath(path) !== null
   );
 }
 
 /** The files a page occupies, for deletion when the page is removed. */
 export function pageFiles(slug: string): string[] {
   return [pageHtmlPath(slug), pageCssPath(slug)];
+}
+
+/** The component definitions a project holds, as specs the builder understands. */
+export function componentOf(project: Project, name: string): ComponentDefinition | undefined {
+  return project.components.find((c) => c.name === name);
 }

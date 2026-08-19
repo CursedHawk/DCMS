@@ -32,6 +32,13 @@ export interface PluginContentTypeLike {
   searchable?: boolean;
   slugField?: string;
   fields: PluginFieldLike[];
+  /**
+   * Set when the type carries tenant-defined fields. `valuesField` is the key
+   * they are nested under on an item, which is what makes a custom field's real
+   * path `values.barva` rather than `barva` — the difference between a field
+   * mapping that works and one that silently resolves to nothing.
+   */
+  customFields?: { valuesField?: string } | null;
 }
 
 export interface PluginManifestLike {
@@ -65,14 +72,43 @@ export interface PluginSpecOptions {
   customFields?: (instanceSlug: string, contentType: string) => CustomFieldLike[];
 }
 
-/** How the published page should lay a collection out. Understood by hydrate.js. */
+/**
+ * How the published page should lay a collection out. Understood by hydrate.js
+ * and drawn identically by the canvas preview (packages/gjs-blocks/src/preview.ts).
+ * The three lists are one contract: adding a layout means adding it in all three.
+ */
 const LAYOUTS: TraitOption[] = [
   { value: 'cards', label: 'Cards' },
+  { value: 'tiles', label: 'Image tiles' },
   { value: 'list', label: 'List' },
+  { value: 'compact', label: 'Compact list with thumbnails' },
+  { value: 'feature', label: 'Full-width bands' },
   { value: 'article', label: 'Article' },
   { value: 'video', label: 'Video players' },
   { value: 'audio', label: 'Audio players' },
   { value: 'downloads', label: 'Download links' },
+];
+
+/** How the items of a card or tile layout are arranged on the page. */
+const ARRANGEMENTS: TraitOption[] = [
+  { value: 'grid', label: 'Grid' },
+  { value: 'masonry', label: 'Masonry' },
+  { value: 'carousel', label: 'Side-scrolling row' },
+];
+
+const COLUMNS: TraitOption[] = [
+  { value: '', label: 'Fit as many as fit' },
+  { value: '1', label: '1' },
+  { value: '2', label: '2' },
+  { value: '3', label: '3' },
+  { value: '4', label: '4' },
+];
+
+const CARD_VARIANTS: TraitOption[] = [
+  { value: 'outline', label: 'Outlined' },
+  { value: 'raised', label: 'Raised' },
+  { value: 'soft', label: 'Soft fill' },
+  { value: 'plain', label: 'No box' },
 ];
 
 /**
@@ -86,30 +122,77 @@ function defaultLayout(contentType: PluginContentTypeLike): string {
   if (/video|clip|film/.test(names)) return 'video';
   if (/audio|track|song|podcast|episode/.test(names)) return 'audio';
   if (/file|download|document|attachment/.test(names)) return 'downloads';
-  if (/gallery|photo|image|slide/.test(names)) return 'cards';
+  if (/gallery|photo|image|slide|artwork/.test(names)) return 'tiles';
+  if (/event|release|news|change/.test(names)) return 'compact';
   return types.has('MediaRef') ? 'cards' : 'list';
 }
 
-/** Fields that could plausibly fill each slot of a card, for the mapping traits. */
+/**
+ * Fields that could plausibly fill each slot of a card, for the mapping traits.
+ *
+ * Three states, not two: `Auto` guesses from the field's name, an explicit field
+ * overrides the guess, and `None` says leave the slot empty — without which an
+ * author who did not want an excerpt had to hope no field happened to be called
+ * `summary`.
+ */
 function fieldOptions(
   contentType: PluginContentTypeLike,
   custom: CustomFieldLike[],
   predicate: (type: string) => boolean,
 ): TraitOption[] {
-  const options: TraitOption[] = [{ value: '', label: 'Auto' }];
+  const options: TraitOption[] = [
+    { value: '', label: 'Auto' },
+    { value: FIELD_NONE, label: 'None' },
+  ];
   for (const field of contentType.fields) {
     if (predicate(field.type)) options.push({ value: field.name, label: humanize(field.name) });
   }
+  // A tenant field's option value is its *path*, because that is where the value
+  // actually is on the item. Emitting the bare key produced a dropdown full of
+  // the fields that make a site specific, every one of which rendered nothing.
+  const prefix = contentType.customFields?.valuesField
+    ? `${contentType.customFields.valuesField}.`
+    : '';
   for (const field of custom) {
-    if (predicate(field.type)) options.push({ value: field.key, label: field.label });
+    if (predicate(field.type)) options.push({ value: `${prefix}${field.key}`, label: field.label });
   }
   return options;
 }
+
+/** Mirrors `FIELD_NONE` in preview.ts and hydrate.js. */
+const FIELD_NONE = '-';
+
+/** Palette icon per default layout, so a gallery block does not look like a list. */
+const LAYOUT_ICON: Record<string, string> = {
+  cards: 'card',
+  tiles: 'gallery',
+  list: 'list',
+  compact: 'list',
+  feature: 'features',
+  article: 'article',
+  video: 'video',
+  audio: 'audio',
+  downloads: 'download',
+};
+
+/** Presentation traits that only describe a collection, not a single item. */
+const COLLECTION_ONLY = new Set([
+  'arrangement',
+  'columns',
+  'cardVariant',
+  'moreLabel',
+  'moreHref',
+  'linkLabel',
+  'excerptLength',
+]);
 
 const TEXTUAL = (type: string) =>
   ['Text', 'RichText', 'Markdown', 'text', 'longText'].includes(type);
 const MEDIA = (type: string) => ['MediaRef', 'image'].includes(type);
 const LINKY = (type: string) => ['Text', 'text', 'url'].includes(type);
+const METAISH = (type: string) =>
+  ['DateTime', 'Date', 'Text', 'ContentRef', 'date', 'text'].includes(type);
+const TAGGY = (type: string) => ['Tags', 'tags', 'Text', 'text'].includes(type);
 
 /**
  * Traits shared by every generated component: what it says, how it looks, and
@@ -131,12 +214,72 @@ function presentationTraits(
       description: 'Shown above the content. Leave empty for none.',
     },
     {
+      name: 'subheading',
+      label: 'Supporting line',
+      kind: 'text',
+      target: 'prop',
+      description: 'One sentence under the heading.',
+    },
+    {
+      name: 'moreLabel',
+      label: '“See all” label',
+      kind: 'text',
+      target: 'prop',
+      description: 'Shown beside the heading. Needs a link to appear.',
+    },
+    {
+      name: 'moreHref',
+      label: '“See all” link',
+      kind: 'url',
+      target: 'prop',
+    },
+    {
       name: 'layout',
       label: 'Layout',
       kind: 'select',
       target: 'prop',
       options: LAYOUTS,
       default: layout,
+      description: 'What each item looks like.',
+    },
+    {
+      name: 'arrangement',
+      label: 'Arrangement',
+      kind: 'select',
+      target: 'prop',
+      options: ARRANGEMENTS,
+      default: 'grid',
+      description: 'How the items are placed. Applies to cards and tiles.',
+    },
+    {
+      name: 'columns',
+      label: 'Columns',
+      kind: 'select',
+      target: 'prop',
+      options: COLUMNS,
+      description: 'Collapses to one on a phone whatever this says.',
+    },
+    {
+      name: 'cardVariant',
+      label: 'Card style',
+      kind: 'select',
+      target: 'prop',
+      options: CARD_VARIANTS,
+      default: 'outline',
+    },
+    {
+      name: 'excerptLength',
+      label: 'Trim text to',
+      kind: 'number',
+      target: 'prop',
+      description: 'Characters, cut at a word. Leave empty to show the whole field.',
+    },
+    {
+      name: 'linkLabel',
+      label: 'Item link text',
+      kind: 'text',
+      target: 'prop',
+      description: 'Used by the layouts that show a link per item.',
     },
     {
       name: 'emptyText',
@@ -166,6 +309,22 @@ function presentationTraits(
       kind: 'select',
       target: 'prop',
       options: fieldOptions(contentType, custom, MEDIA),
+    },
+    {
+      name: 'metaField',
+      label: 'Date or category from',
+      kind: 'select',
+      target: 'prop',
+      options: fieldOptions(contentType, custom, METAISH),
+      description: 'Shown as a small line above the title. Dates are formatted for the reader.',
+    },
+    {
+      name: 'tagsField',
+      label: 'Tags from',
+      kind: 'select',
+      target: 'prop',
+      options: fieldOptions(contentType, custom, TAGGY),
+      description: 'Rendered as chips. A list, or one field of comma-separated values.',
     },
     {
       name: 'linkField',
@@ -254,7 +413,7 @@ export function pluginSpecs(
         acceptsChildren: false,
         order: index * 2,
         requiredPluginId: manifest.id,
-        icon: 'list',
+        icon: LAYOUT_ICON[layout] ?? 'list',
         docs: `Shows ${label.toLowerCase()} items from “${instance.name}”.`,
         traits: [...presentation, ...listQueryTraits()],
         binding: { propPath: 'items', contentType: contentType.name, instanceSlug: instance.slug },
@@ -275,9 +434,11 @@ export function pluginSpecs(
           icon: 'article',
           docs: `Shows one ${label.toLowerCase()} from “${instance.name}”, chosen by the page’s slug.`,
           traits: [
-            ...presentation.map((trait) =>
-              trait.name === 'layout' ? { ...trait, default: 'article' } : trait,
-            ),
+            // A detail view shows one item, so the controls that only describe
+            // how a *collection* is arranged would be settings that do nothing.
+            ...presentation
+              .filter((trait) => !COLLECTION_ONLY.has(trait.name))
+              .map((trait) => (trait.name === 'layout' ? { ...trait, default: 'article' } : trait)),
             ...detailQueryTraits(contentType),
           ],
           binding: { propPath: 'item', contentType: contentType.name, instanceSlug: instance.slug },

@@ -19,10 +19,25 @@ export type ComponentCategory =
   | 'media'
   | 'navigation'
   | 'section'
+  /**
+   * The repeatable pieces sections are built from — one card, one plan, one
+   * step. They are their own category because the operation an author reaches
+   * for most is "add another one of these", and that only works if the piece is
+   * a real component with its own traits rather than anonymous markup inside a
+   * section's snippet.
+   */
+  | 'part'
   | 'interactive'
   | 'form'
   | 'utility'
-  | 'plugin';
+  | 'plugin'
+  /**
+   * A component the tenant built themselves in the component builder (see
+   * ./component). It is a category rather than a flag so the palette can keep
+   * "the things we shipped" and "the things you made" apart, which is the first
+   * question an author has when their own list is thirty entries long.
+   */
+  | 'custom';
 
 export type TraitKind =
   | 'text'

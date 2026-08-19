@@ -6,6 +6,7 @@ import {
   defaultProps,
   defaultQuery,
   encodePlaceholder,
+  OWN_COMPONENTS_GROUP,
   identityClassOf,
   type DcmsComponentSpec,
 } from '@dcms/gjs-schema';
@@ -14,6 +15,7 @@ import { matchersFor } from './match';
 import { bindPlaceholder, type PlaceholderHost } from './placeholderModel';
 import { toGrapesTraits } from './traits';
 import { iconFor } from './icons';
+import { thumbnailFor } from './thumbnails';
 
 /**
  * One spec → one GrapesJS component type and one palette block.
@@ -92,7 +94,13 @@ function registerBlock(editor: Editor, spec: DcmsComponentSpec, { idPrefix = '' 
     media: iconFor(spec),
     attributes: { title: spec.docs ?? spec.label },
     content: spec.snippet ?? defaultSnippet(spec),
-  });
+    // Extra properties survive on the block model, so the palette can offer both
+    // densities: the wireframe when there is room to show what a block does, the
+    // glyph when the list is compact. `media` stays the glyph because that is
+    // what GrapesJS's own block view would render if ours ever stopped.
+    thumbnail: thumbnailFor(spec),
+    docs: spec.docs ?? '',
+  } as Parameters<Editor['BlockManager']['add']>[1]);
 }
 
 const CATEGORY_LABELS: Record<DcmsComponentSpec['category'], string> = {
@@ -101,10 +109,12 @@ const CATEGORY_LABELS: Record<DcmsComponentSpec['category'], string> = {
   media: 'Media',
   navigation: 'Navigation',
   section: 'Sections',
+  part: 'Building blocks',
   interactive: 'Interactive',
   form: 'Forms',
   utility: 'Utility',
   plugin: 'Plugins',
+  custom: OWN_COMPONENTS_GROUP,
 };
 
 function categoryLabel(category: DcmsComponentSpec['category']): string {

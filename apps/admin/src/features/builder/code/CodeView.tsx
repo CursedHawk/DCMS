@@ -1,5 +1,13 @@
 import type { DcmsComponentSpec } from '@dcms/gjs-schema';
-import { GLOBAL_CSS, SITE_JSON, THEME_CSS, pageCssPath, pageHtmlPath } from '@dcms/gjs-schema';
+import {
+  GLOBAL_CSS,
+  SITE_JSON,
+  THEME_CSS,
+  componentPath,
+  pageCssPath,
+  pageHtmlPath,
+  regionHtmlPath,
+} from '@dcms/gjs-schema';
 import { FileCode2, FileJson, Palette } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -9,6 +17,21 @@ import { isGeneratedBuilderFile, useBuilder } from '../store';
 import { registerHtmlData } from './htmlData';
 import { registerSiteJsonSchema } from './siteJsonSchema';
 import { useIntellisense } from './useIntellisense';
+
+/** The file that holds the markup of one canvas target. */
+function docPath(kind: 'page' | 'region' | 'component', slug: string): string {
+  if (kind === 'region') return regionHtmlPath(slug);
+  if (kind === 'component') return componentPath(slug);
+  return pageHtmlPath(slug);
+}
+
+interface CodeFile {
+  path: string;
+  label: string;
+  icon: typeof FileCode2;
+  /** Derived from site.json; shown read-only so an edit cannot be lost. */
+  generated?: boolean;
+}
 
 /**
  * The code view over the project's real files.
@@ -24,6 +47,7 @@ export function CodeView({ specs }: { specs: readonly DcmsComponentSpec[] }) {
   const { t } = useTranslation();
   const project = useBuilder((s) => s.project);
   const activeSlug = useBuilder((s) => s.activeSlug);
+  const activeKind = useBuilder((s) => s.activeKind);
   const activePath = useVfs((s) => s.activePath);
 
   // Language intelligence: component-aware HTML completion in the html worker,
@@ -45,29 +69,48 @@ export function CodeView({ specs }: { specs: readonly DcmsComponentSpec[] }) {
   useIntellisense(specs);
 
   // The files worth switching between, in the order an author thinks about
-  // them: this page's markup, this page's styles, then the shared ones.
-  const files = useMemo(() => {
+  // them: this document's markup, its styles, then the shared ones.
+  const files = useMemo<CodeFile[]>(() => {
     if (!project || !activeSlug) return [];
-    return [
-      { path: pageHtmlPath(activeSlug), label: t('builder.fileMarkup'), icon: FileCode2 },
-      { path: pageCssPath(activeSlug), label: t('builder.filePageCss'), icon: Palette },
+    const shared: CodeFile[] = [
       { path: GLOBAL_CSS, label: t('builder.fileGlobalCss'), icon: Palette },
       { path: THEME_CSS, label: t('builder.fileTheme'), icon: Palette, generated: true },
       { path: SITE_JSON, label: t('builder.fileManifest'), icon: FileJson },
     ];
-  }, [project, activeSlug, t]);
+    // A region is one file: its rules live in global.css, which is already here.
+    if (activeKind === 'region') {
+      return [
+        { path: regionHtmlPath(activeSlug), label: t('builder.fileMarkup'), icon: FileCode2 },
+        ...shared,
+      ];
+    }
+    // A component's markup lives inside its definition, so the file to edit is
+    // the JSON — which is also where its props and its data source are.
+    if (activeKind === 'component') {
+      return [
+        { path: componentPath(activeSlug), label: t('builder.fileComponent'), icon: FileJson },
+        ...shared,
+      ];
+    }
+    return [
+      { path: pageHtmlPath(activeSlug), label: t('builder.fileMarkup'), icon: FileCode2 },
+      { path: pageCssPath(activeSlug), label: t('builder.filePageCss'), icon: Palette },
+      ...shared,
+    ];
+  }, [project, activeSlug, activeKind, t]);
 
-  // Open this page's markup by default, and follow the active page.
+  // Open the active document's markup by default, and follow the canvas.
   useEffect(() => {
     if (!activeSlug) return;
-    const target = pageHtmlPath(activeSlug);
+    const target = docPath(activeKind, activeSlug);
     const { files: vfsFiles, activePath: current } = useVfs.getState();
     if (vfsFiles[target] === undefined) return;
-    // Only redirect when the open file belongs to a different page; a manual
+    // Only redirect when the open file belongs to a different document; a manual
     // switch to global.css must survive a page change.
-    const belongsToAnotherPage = current !== null && /^(pages|styles\/pages)\//.test(current) && current !== target;
-    if (current === null || belongsToAnotherPage) useVfs.getState().open(target);
-  }, [activeSlug]);
+    const belongsToAnother =
+      current !== null && /^(pages|regions|styles\/pages)\//.test(current) && current !== target;
+    if (current === null || belongsToAnother) useVfs.getState().open(target);
+  }, [activeSlug, activeKind]);
 
   if (!project) {
     return (

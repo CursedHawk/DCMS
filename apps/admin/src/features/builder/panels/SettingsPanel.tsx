@@ -1,7 +1,8 @@
-import type { ThemeTokens } from '@dcms/gjs-schema';
+import { defaultLayout, type ThemeTokens } from '@dcms/gjs-schema';
 import { useTranslation } from 'react-i18next';
 import { Input, Textarea } from '../../../components/ui/input';
 import { useBuilder } from '../store';
+import { DesignKitPicker } from './DesignKitPicker';
 
 /**
  * Page and site settings — the parts of `site.json` that are not markup.
@@ -14,10 +15,14 @@ export function SettingsPanel() {
   const { t } = useTranslation();
   const project = useBuilder((s) => s.project);
   const activeSlug = useBuilder((s) => s.activeSlug);
-  const page = project?.pages.find((p) => p.entry.slug === activeSlug)?.entry;
+  const activeKind = useBuilder((s) => s.activeKind);
+  const page = activeKind === 'page' ? project?.pages.find((p) => p.entry.slug === activeSlug)?.entry : undefined;
 
   if (!project || !page) {
-    return <p className="p-4 text-sm text-muted-foreground">{t('builder.noProject')}</p>;
+    // A region has no page settings — no path, no SEO, no layout of its own —
+    // so saying "no project" here would be a lie about why the panel is empty.
+    const message = activeKind === 'region' ? t('builder.regions.settingsHint') : t('builder.noProject');
+    return <p className="p-4 text-sm text-muted-foreground">{message}</p>;
   }
 
   type PagePatch = Partial<Omit<typeof page, 'seo'>> & { seo?: Partial<typeof page.seo> };
@@ -78,6 +83,32 @@ export function SettingsPanel() {
             onChange={(e) => patchPage({ seo: { description: e.target.value } })}
           />
         </Field>
+        {/* Which shared chrome wraps this page. Empty string is a real value —
+            "no chrome at all" — and is not the same as leaving it unset, which
+            means "whatever the site's default layout is". A landing page that
+            must not show the site navigation is the reason both exist. */}
+        <Field label={t('builder.regions.pageLayout')}>
+          <select
+            value={page.layout ?? '#default'}
+            onChange={(e) =>
+              patchPage({ layout: e.target.value === '#default' ? undefined : e.target.value })
+            }
+            className="h-8 w-full rounded-md border bg-background px-2 text-sm"
+          >
+            <option value="#default">
+              {t('builder.regions.layoutDefault', {
+                label: defaultLayout(project.manifest)?.label ?? t('builder.regions.noneOption'),
+              })}
+            </option>
+            {project.manifest.layouts.map((layout) => (
+              <option key={layout.id} value={layout.id}>
+                {layout.label}
+              </option>
+            ))}
+            <option value="">{t('builder.regions.noneOption')}</option>
+          </select>
+        </Field>
+
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -89,11 +120,23 @@ export function SettingsPanel() {
         </label>
       </section>
 
+      <div className="border-t pt-4">
+        <DesignKitPicker />
+      </div>
+
       <section className="space-y-2 border-t pt-4">
         <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {t('builder.theme')}
         </h3>
         <p className="text-xs text-muted-foreground">{t('builder.themeHint')}</p>
+
+        {/* Collapsed by default: a kit defines twenty-odd colour tokens, and an
+            author who wants a different look should reach for the picker above
+            rather than scroll a wall of colour inputs to find `brand`. */}
+        <details className="group space-y-2">
+          <summary className="cursor-pointer list-none text-xs font-medium text-muted-foreground hover:text-foreground">
+            {t('builder.themeTokens')}
+          </summary>
 
         {Object.entries(project.manifest.theme.colors).map(([token, value]) => (
           <Field key={token} label={token}>
@@ -129,13 +172,14 @@ export function SettingsPanel() {
           </Field>
         ))}
 
-        <Field label={t('builder.radius')}>
-          <Input
-            value={project.manifest.theme.radius ?? ''}
-            onChange={(e) => patchTheme({ radius: e.target.value })}
-            className="h-8"
-          />
-        </Field>
+          <Field label={t('builder.radius')}>
+            <Input
+              value={project.manifest.theme.radius ?? ''}
+              onChange={(e) => patchTheme({ radius: e.target.value })}
+              className="h-8"
+            />
+          </Field>
+        </details>
       </section>
     </div>
   );

@@ -5,13 +5,14 @@
  * no special-casing. These paths are the contract between the builder, the Monaco
  * code view and the C# site assembler.
  *
- *   site.json              manifest: theme, nav, page index, settings
+ *   site.json              manifest: theme, nav, pages, regions, layouts, settings
  *   pages/<slug>.html      one page's body markup
+ *   regions/<slug>.html    a band shared by every page whose layout names it
  *   styles/theme.css       GENERATED from site.json.theme — never hand-edited
  *   styles/global.css      rules shared by every page
  *   styles/pages/<slug>.css  rules scoped to one page
  *   assets.json            Asset Manager entries (DCMS media library references)
- *   blocks/<name>.json     tenant-saved blocks
+ *   blocks/<name>.json     a tenant-authored component (see ./component)
  */
 
 export const SITE_JSON = 'site.json';
@@ -22,9 +23,23 @@ export const GLOBAL_CSS = 'styles/global.css';
 export const PAGES_DIR = 'pages';
 export const PAGE_CSS_DIR = 'styles/pages';
 export const BLOCKS_DIR = 'blocks';
+export const REGIONS_DIR = 'regions';
 
 export function pageHtmlPath(slug: string): string {
   return `${PAGES_DIR}/${slug}.html`;
+}
+
+/**
+ * A shared region's markup.
+ *
+ * Regions deliberately have no stylesheet of their own. A band that appears on
+ * every page belongs in `styles/global.css`; a private sheet per region would
+ * have to be linked from every page that uses it, and the one page that does not
+ * would still pay for it — the opposite of the per-page cascade this format
+ * exists to keep honest.
+ */
+export function regionHtmlPath(slug: string): string {
+  return `${REGIONS_DIR}/${slug}.html`;
 }
 
 export function pageCssPath(slug: string): string {
@@ -38,6 +53,18 @@ export function blockPath(name: string): string {
 /** The page slug a `pages/<slug>.html` path refers to, or null if it isn't one. */
 export function slugFromPageHtmlPath(path: string): string | null {
   const match = /^pages\/([^/]+)\.html$/.exec(path);
+  return match ? match[1] : null;
+}
+
+/** The region slug a `regions/<slug>.html` path refers to, or null. */
+export function slugFromRegionHtmlPath(path: string): string | null {
+  const match = /^regions\/([^/]+)\.html$/.exec(path);
+  return match ? match[1] : null;
+}
+
+/** The component name a `blocks/<name>.json` path refers to, or null. */
+export function nameFromBlockPath(path: string): string | null {
+  const match = /^blocks\/([^/]+)\.json$/.exec(path);
   return match ? match[1] : null;
 }
 

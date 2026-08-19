@@ -18,6 +18,9 @@ const theme: ThemeTokens = {
   colors: { brand: '#2563eb', text: '#0f172a', surface: '#ffffff' },
   fonts: { body: 'system-ui', heading: 'system-ui' },
   spacing: { md: '1rem' },
+  text: {},
+  shadows: {},
+  metrics: {},
   radius: '0.5rem',
   custom: {},
 };
