@@ -22,6 +22,26 @@ import { useVfs } from './vfs';
 
 // A VS Code-styled explorer over the flat file map. Folders are derived from
 // the path segments; toolchain files render locked (read-only, no delete).
+//
+// Folders have no storage of their own, so every folder operation is a bulk
+// operation over the files that share its prefix — see the store's
+// deleteFolder/renameFolder.
+
+/**
+ * Marks a drag as coming from this tree rather than the OS. The payload is the
+ * dragged path; the type alone is readable during `dragover` (the value is not),
+ * which is what lets the external-upload drop zone step aside for an internal move.
+ */
+const DND_PATH = 'application/x-dcms-path';
+
+function baseName(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1);
+}
+
+function parentOf(path: string): string {
+  const i = path.lastIndexOf('/');
+  return i < 0 ? '' : path.slice(0, i);
+}
 
 interface TreeNode {
   name: string;
@@ -55,6 +75,11 @@ function buildTree(paths: string[]): TreeNode[] {
   return sort(root.children);
 }
 
+/** How many files a folder holds, at any depth — what a delete would take with it. */
+function countFiles(node: TreeNode): number {
+  return node.dir ? node.children.reduce((n, c) => n + countFiles(c), 0) : 1;
+}
+
 export function FileTree() {
   const { t } = useTranslation();
   const files = useVfs((s) => s.files);
@@ -64,6 +89,8 @@ export function FileTree() {
   const importFiles = useVfs((s) => s.importFiles);
   const deleteFile = useVfs((s) => s.deleteFile);
   const renameFile = useVfs((s) => s.renameFile);
+  const deleteFolder = useVfs((s) => s.deleteFolder);
+  const renameFolder = useVfs((s) => s.renameFolder);
 
   const tree = useMemo(() => buildTree(Object.keys(files)), [files]);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -71,6 +98,60 @@ export function FileTree() {
   const [newName, setNewName] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // The in-flight internal drag. Kept in a ref because `dragover` may only read
+  // the data *types*, not the payload, so the target cannot ask what it is over.
+  const dragging = useRef<{ path: string; dir: boolean } | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+
+  /** Whether `path` may be dropped into `folder` ('' = repo root). */
+  const canDropInto = (folder: string): boolean => {
+    const drag = dragging.current;
+    if (!drag) return false;
+    if (parentOf(drag.path) === folder) return false; // already there
+    // A folder cannot swallow itself.
+    return !(drag.dir && (folder === drag.path || folder.startsWith(`${drag.path}/`)));
+  };
+
+  const dropInto = (folder: string) => {
+    const drag = dragging.current;
+    dragging.current = null;
+    setDropTarget(null);
+    if (!drag || !canDropInto(folder)) return;
+    const to = folder ? `${folder}/${baseName(drag.path)}` : baseName(drag.path);
+    const moved = drag.dir ? renameFolder(drag.path, to) : renameFile(drag.path, to);
+    if (!moved) toast.error(t('ide.moveFailed', { path: to }));
+  };
+
+  const dragProps = (path: string, dir: boolean) => ({
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      dragging.current = { path, dir };
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData(DND_PATH, path);
+    },
+    onDragEnd: () => {
+      dragging.current = null;
+      setDropTarget(null);
+    },
+  });
+
+  /** Drop-target wiring for a folder row ('' = the tree background, i.e. root). */
+  const dropProps = (folder: string) => ({
+    onDragOver: (e: React.DragEvent) => {
+      if (!e.dataTransfer.types.includes(DND_PATH) || !canDropInto(folder)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      setDropTarget(folder);
+    },
+    onDragLeave: () => setDropTarget((cur) => (cur === folder ? null : cur)),
+    onDrop: (e: React.DragEvent) => {
+      if (!e.dataTransfer.types.includes(DND_PATH)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dropInto(folder);
+    },
+  });
 
   const uploadFiles = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
@@ -112,15 +193,55 @@ export function FileTree() {
       const isCollapsed = collapsed.has(node.path);
       return (
         <div key={node.path}>
-          <button
-            type="button"
-            onClick={() => toggle(node.path)}
-            className="flex w-full items-center gap-1 py-1 text-xs text-muted-foreground hover:text-foreground"
+          <div
+            className={cn(
+              'group flex items-center gap-1 py-1 pr-2 text-xs',
+              dropTarget === node.path ? 'bg-primary/15 ring-1 ring-inset ring-primary/50' : 'hover:bg-accent/40',
+            )}
             style={pad}
+            {...dragProps(node.path, true)}
+            {...dropProps(node.path)}
           >
-            {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            <span className="truncate">{node.name}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => toggle(node.path)}
+              className="flex min-w-0 flex-1 items-center gap-1 text-muted-foreground hover:text-foreground"
+              title={node.path}
+            >
+              {isCollapsed ? (
+                <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+              )}
+              <span className="truncate">{node.name}</span>
+            </button>
+            <span className="hidden shrink-0 items-center gap-1 group-hover:flex">
+              <button
+                type="button"
+                title={t('ide.moveFolder')}
+                onClick={() => {
+                  const to = window.prompt(t('ide.moveFolderPrompt'), node.path);
+                  if (!to || to === node.path) return;
+                  if (!renameFolder(node.path, to)) toast.error(t('ide.moveFailed', { path: to }));
+                }}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                title={t('ide.deleteFolder')}
+                onClick={() => {
+                  const count = countFiles(node);
+                  if (!window.confirm(t('ide.deleteFolderConfirm', { path: node.path, count }))) return;
+                  deleteFolder(node.path);
+                }}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </span>
+          </div>
           {!isCollapsed && node.children.map((c) => renderNode(c, depth + 1))}
         </div>
       );
@@ -136,6 +257,7 @@ export function FileTree() {
           active ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50',
         )}
         style={pad}
+        {...(locked ? {} : dragProps(node.path, false))}
       >
         <button
           type="button"
@@ -188,6 +310,8 @@ export function FileTree() {
     <div
       className={cn('flex h-full flex-col', dragOver && 'ring-2 ring-inset ring-ring')}
       onDragOver={(e) => {
+        // An internal move is not an upload — let the folder rows handle it.
+        if (e.dataTransfer.types.includes(DND_PATH)) return;
         e.preventDefault();
         setDragOver(true);
       }}
@@ -197,6 +321,7 @@ export function FileTree() {
         setDragOver(false);
       }}
       onDrop={(e) => {
+        if (e.dataTransfer.types.includes(DND_PATH)) return;
         e.preventDefault();
         setDragOver(false);
         void uploadFiles(e.dataTransfer.files);
@@ -261,7 +386,17 @@ export function FileTree() {
           />
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-auto py-1">{tree.map((n) => renderNode(n, 0))}</div>
+      {/* The empty space below the tree is the repo root, so a file can be dragged
+          back out of a folder. */}
+      <div
+        className={cn(
+          'min-h-0 flex-1 overflow-auto py-1',
+          dropTarget === '' && 'bg-primary/10 ring-1 ring-inset ring-primary/50',
+        )}
+        {...dropProps('')}
+      >
+        {tree.map((n) => renderNode(n, 0))}
+      </div>
     </div>
   );
 }

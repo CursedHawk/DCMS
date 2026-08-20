@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   THEME_CSS,
+  isDetailRoute,
   isGeneratedPath,
   outputFileName,
   pageCssPath,
@@ -82,5 +83,20 @@ describe('outputFileName', () => {
     expect(outputFileName('/')).toBe('index.html');
     expect(outputFileName('/about')).toBe('about.html');
     expect(outputFileName('/about/team')).toBe('about_team.html');
+  });
+});
+
+describe('detail routes', () => {
+  it('publishes a wildcard segment to a name the host can find', () => {
+    expect(outputFileName('/events/:slug')).toBe('events_@.html');
+    expect(outputFileName('/:slug')).toBe('@.html');
+    // Ordinary routes are untouched, so existing links keep working.
+    expect(outputFileName('/about/team')).toBe('about_team.html');
+    expect(outputFileName('/')).toBe('index.html');
+  });
+
+  it('recognises one', () => {
+    expect(isDetailRoute('/events/:slug')).toBe(true);
+    expect(isDetailRoute('/events')).toBe(false);
   });
 });

@@ -1,3 +1,4 @@
+import { CookieConsent } from './dcms';
 import { ContentList } from './pages/ContentList';
 
 export function App() {
@@ -9,6 +10,13 @@ export function App() {
         typed client in <code>src/api</code>.
       </p>
       <ContentList />
+
+      {/*
+        Renders nothing unless there is something to consent to: analytics on for
+        this tenant, and this visitor has not answered yet. Point `policyUrl` at
+        your own privacy page — a notice with nothing to read is not consent.
+      */}
+      <CookieConsent />
     </main>
   );
 }

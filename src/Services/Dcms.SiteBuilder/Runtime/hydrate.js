@@ -176,18 +176,63 @@
     return out;
   }
 
+  // Expand an item-link pattern: `{slug}`, `{id}` and `{anyField}` are
+  // substituted, and a pattern with no placeholder at all is the folder a detail
+  // page lives in — `/events/` means `/events/{slug}`. A placeholder that
+  // resolves to nothing yields no link rather than an address with a hole in it.
+  // Mirrors expandLink() in preview.ts.
+  function expandLink(pattern, item, d) {
+    if (!pattern) return '';
+    var value = function (key) {
+      if (key === 'slug') return String((item && item.slug) || '');
+      if (key === 'id') return String((item && item.id) || '');
+      var found = readField(d, key);
+      return found == null ? '' : String(found);
+    };
+    if (pattern.indexOf('{') === -1) {
+      var slug = value('slug');
+      if (!slug) return '';
+      return pattern.replace(/\/+$/, '') + '/' + encodeURIComponent(slug);
+    }
+    var missing = false;
+    var url = pattern.replace(/\{([^}]*)\}/g, function (_, key) {
+      var resolved = value(String(key).replace(/^\s+|\s+$/g, ''));
+      if (!resolved) missing = true;
+      return encodeURIComponent(resolved);
+    });
+    return missing ? '' : url;
+  }
+
+  // Where one item links to. Three sources, most explicit first: a field the
+  // author mapped, a pattern they typed, then the conventional guess. FIELD_NONE
+  // on the mapping is the only way to say a card must not be clickable, so it
+  // outranks all of them. Mirrors linkFor() in preview.ts.
+  function linkFor(item, d, props) {
+    if (props.linkField === FIELD_NONE) return '';
+    if (props.linkField) {
+      var explicit = readField(d, props.linkField);
+      if (explicit != null && explicit !== '') return String(explicit);
+    }
+    if (props.itemLink) {
+      var built = expandLink(String(props.itemLink), item, d);
+      if (built) return built;
+    }
+    var guess = pick(d, LINK_KEYS);
+    return guess == null ? '' : String(guess);
+  }
+
   // Every slot of one item, resolved once. Mirrors slotsOf() in preview.ts.
   function slotsOf(item, props) {
     var d = (item && item.data) || item || {};
     var body = slot(d, props.bodyField, BODY_KEYS);
     var meta = slot(d, props.metaField, META_KEYS);
     var title = slot(d, props.titleField, TITLE_KEYS);
-    var link = slot(d, props.linkField, LINK_KEYS);
+    var link = linkFor(item, d, props);
     return {
       title: title == null ? '' : String(title),
       body: body == null ? '' : truncate(String(body), Number(props.excerptLength || 0) || 0),
       image: mediaUrl(slot(d, props.imageField, IMAGE_KEYS)),
-      link: link == null ? '' : String(link),
+      link: link,
       media: mediaUrl(slot(d, undefined, MEDIA_KEYS)),
       meta: meta == null ? '' : formatMeta(meta),
       tags: tagsOf(slot(d, props.tagsField, TAG_KEYS)),
@@ -355,7 +400,9 @@
     return collectionHtml(items, props, function (item) {
       var s = slotsOf(item, props);
       var out = ['<div class="dcms-card" data-variant="outline"><div class="dcms-card-body">'];
-      if (s.title) out.push('<h3 class="dcms-card-title">' + esc(s.title) + '</h3>');
+      // The card cannot be a link — it holds a player, and wrapping controls in
+      // an anchor makes every click a navigation. The title is the way through.
+      if (s.title) out.push('<h3 class="dcms-card-title">' + linked(esc(s.title), s.link, 'dcms-card-link') + '</h3>');
       if (s.meta) out.push('<p class="dcms-card-meta">' + esc(s.meta) + '</p>');
       if (s.media) out.push('<' + tag + ' class="dcms-media" controls preload="metadata" src="' + esc(s.media) + '"></' + tag + '>');
       out.push('</div></div>');
@@ -499,18 +546,39 @@
     return Array.isArray(value) && value.length === 0;
   }
 
+  // The item slots a `#source` reads off the envelope rather than the content.
+  var META_SOURCES = { id: 1, slug: 1, value: 1 };
+
   // Three namespaces, told apart by a sigil rather than by lookup order: a
   // content type may have a field called `heading` and a component a prop called
   // `heading`, and preferring one silently would make the other unreachable.
-  function resolveSource(source, item, index, props) {
+  //
+  // `ctx` is { item, index, count } — the position travels with the item because
+  // a nested repeat iterates an array on the item above it, and `#index` inside
+  // it must count that array rather than the outer one.
+  function resolveSource(source, ctx, props) {
     if (source.charAt(0) === '@') return props[source.slice(1)];
-    if (source.charAt(0) === '#') {
-      var key = source.slice(1);
-      if (key === 'index') return index;
-      return item ? item[key] : undefined;
-    }
-    if (!item) return undefined;
-    return readField(item.data || item, source);
+    if (source.charAt(0) === '#') return resolveMeta(source.slice(1), ctx);
+    if (!ctx.item) return undefined;
+    return readField(ctx.item.data || ctx.item, source);
+  }
+
+  // The positional sources exist because a list template otherwise has no way to
+  // say "the first one is the big card" or to stripe its rows. Most are booleans
+  // meant for data-dcms-if / data-dcms-unless; `#parity` is the one that reads
+  // well as a value, in a `class` binding. Mirrors resolveMeta() in render.ts.
+  function resolveMeta(key, ctx) {
+    var index = ctx.index;
+    var count = ctx.count;
+    if (key === 'index') return index;
+    if (key === 'number') return index + 1;
+    if (key === 'count') return count;
+    if (key === 'first') return index === 0;
+    if (key === 'last') return count > 0 && index === count - 1;
+    if (key === 'even') return index % 2 === 0;
+    if (key === 'odd') return index % 2 === 1;
+    if (key === 'parity') return index % 2 === 0 ? 'even' : 'odd';
+    return META_SOURCES[key] && ctx.item ? ctx.item[key] : undefined;
   }
 
   function formatBound(el, target, value) {
@@ -527,11 +595,11 @@
     return limit ? truncate(formatted, limit) : formatted;
   }
 
-  function applyBind(el, spec, item, index, props) {
+  function applyBind(el, spec, ctx, props) {
     var parsed = parseBind(spec);
     if (!parsed) return;
 
-    var raw = resolveSource(parsed.source, item, index, props);
+    var raw = resolveSource(parsed.source, ctx, props);
     var fallback = el.getAttribute(FALLBACK_ATTR) || '';
     var text = isBlank(raw) ? fallback : formatBound(el, parsed.target, raw);
 
@@ -553,18 +621,18 @@
     } else el.setAttribute(parsed.target, text);
   }
 
-  function passesCondition(el, item, index, props) {
+  function passesCondition(el, ctx, props) {
     var ifSource = el.getAttribute(IF_ATTR);
-    if (ifSource && isBlank(resolveSource(ifSource, item, index, props))) return false;
+    if (ifSource && isBlank(resolveSource(ifSource, ctx, props))) return false;
     var unlessSource = el.getAttribute(UNLESS_ATTR);
-    if (unlessSource && !isBlank(resolveSource(unlessSource, item, index, props))) return false;
+    if (unlessSource && !isBlank(resolveSource(unlessSource, ctx, props))) return false;
     return true;
   }
 
   // `skipRepeated` stops the ambient pass from touching what the repeat pass
   // rendered: those clones hold their own item, and re-binding them against the
   // ambient one shows the same post in every card.
-  function applyBindings(root, item, index, props, skipRepeated) {
+  function applyBindings(root, ctx, props, skipRepeated) {
     var candidates = [];
     if (root.getAttribute(BIND_ATTR) || root.getAttribute(IF_ATTR) || root.getAttribute(UNLESS_ATTR)) {
       candidates.push(root);
@@ -579,12 +647,12 @@
       var el = candidates[j];
       // A parent removed by its own condition took its children with it.
       if (el !== root && !root.contains(el)) continue;
-      if (!passesCondition(el, item, index, props)) {
+      if (!passesCondition(el, ctx, props)) {
         if (el.parentNode) el.parentNode.removeChild(el);
         continue;
       }
       var bind = el.getAttribute(BIND_ATTR);
-      if (bind) applyBind(el, bind, item, index, props);
+      if (bind) applyBind(el, bind, ctx, props);
     }
   }
 
@@ -608,6 +676,83 @@
     }
   }
 
+  // The repeats directly inside `root` — the ones not already contained by
+  // another repeat. The inner ones are expanded again inside each clone, against
+  // the item that clone holds, which is what makes a crew list inside an event
+  // card show that event's crew instead of the same names under every event.
+  function outermostRepeats(root) {
+    var all = root.querySelectorAll('[' + REPEAT_ATTR + ']');
+    var out = [];
+    for (var i = 0; i < all.length; i++) {
+      var nested = false;
+      for (var j = 0; j < all.length; j++) {
+        if (all[j] !== all[i] && all[j].contains(all[i])) { nested = true; break; }
+      }
+      if (!nested) out.push(all[i]);
+    }
+    return out;
+  }
+
+  // Whatever a repeat's source resolved to, as a list of items. Primitives are
+  // wrapped so a repeat over an array of strings can still bind them, via
+  // `#value`. Mirrors asItems() in render.ts.
+  function asItems(value) {
+    if (value == null || value === '') return [];
+    var list = Array.isArray(value) ? value : [value];
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var entry = list[i];
+      out.push(entry !== null && typeof entry === 'object' ? entry : { value: entry });
+    }
+    return out;
+  }
+
+  // An [data-dcms-empty] sibling of a repeat is *that repeat's* empty state, so
+  // it is settled here rather than by the component-wide pass. Dropping the
+  // attribute is how a kept marker says it has been decided.
+  function claimEmptyMarkers(parent, isEmpty) {
+    var children = [];
+    for (var i = 0; i < parent.children.length; i++) children.push(parent.children[i]);
+    for (var k = 0; k < children.length; k++) {
+      if (children[k].getAttribute(EMPTY_ATTR) === null) continue;
+      if (isEmpty) children[k].removeAttribute(EMPTY_ATTR);
+      else if (children[k].parentNode) children[k].parentNode.removeChild(children[k]);
+    }
+  }
+
+  // Expand every repeat under `root`, recursively. `items` is the component's
+  // own fetched list and is only meaningful at the top level: a bare
+  // data-dcms-repeat there means "once per fetched item". A repeat carrying a
+  // source (`data-dcms-repeat="crew"`, `data-dcms-repeat="@names"`) iterates that
+  // value on whichever item is in scope, at any depth.
+  // Mirrors expandRepeats() in render.ts.
+  function expandRepeats(root, ctx, items, props) {
+    var repeats = outermostRepeats(root);
+    for (var r = 0; r < repeats.length; r++) {
+      var template = repeats[r];
+      var parent = template.parentNode;
+      if (!parent) continue;
+
+      var source = (template.getAttribute(REPEAT_ATTR) || '').replace(/^\s+|\s+$/g, '');
+      var list = source ? asItems(resolveSource(source, ctx, props)) : (items || []);
+      template.removeAttribute(REPEAT_ATTR);
+
+      for (var i = 0; i < list.length; i++) {
+        var clone = template.cloneNode(true);
+        var child = { item: list[i], index: i, count: list.length };
+        // Inner repeats first: binding the clone before expanding them would
+        // fill the inner template's single row and copy that one row per entry.
+        expandRepeats(clone, child, null, props);
+        applyBindings(clone, child, props, true);
+        clone.setAttribute(RENDERED_ATTR, '');
+        parent.insertBefore(clone, template);
+      }
+
+      claimEmptyMarkers(parent, list.length === 0);
+      parent.removeChild(template);
+    }
+  }
+
   function renderTemplate(template, items, props) {
     var holder = document.createElement('div');
     holder.innerHTML = template;
@@ -616,23 +761,13 @@
     // element already is — rendering it would nest a second wrapper on every
     // hydration, and the canvas would be one level shallower than the page.
     var root = holder.children.length === 1 ? holder.children[0] : holder;
+    var ambient = { item: items[0], index: 0, count: items.length };
 
-    var repeat = root.querySelector('[' + REPEAT_ATTR + ']');
-    if (repeat && repeat.parentNode) {
-      var parent = repeat.parentNode;
-      for (var i = 0; i < items.length; i++) {
-        var clone = repeat.cloneNode(true);
-        clone.removeAttribute(REPEAT_ATTR);
-        applyBindings(clone, items[i], i, props, false);
-        clone.setAttribute(RENDERED_ATTR, '');
-        parent.insertBefore(clone, repeat);
-      }
-      parent.removeChild(repeat);
-    }
+    expandRepeats(root, ambient, items, props);
 
-    // Everything outside the repeat resolves against the first item — which is
+    // Everything outside the repeats resolves against the first item — which is
     // all a detail view is, and what a list's heading usually wants.
-    applyBindings(root, items[0], 0, props, true);
+    applyBindings(root, ambient, props, true);
 
     var markers = root.querySelectorAll('[' + EMPTY_ATTR + ']');
     for (var m = markers.length - 1; m >= 0; m--) {
@@ -732,12 +867,157 @@
     }
   }
 
-  function sendPageview() {
+  // --- Cookie consent -----------------------------------------------------
+  //
+  // The only thing this runtime stores is a per-visit id used to derive an
+  // anonymous visitor. That is analytics storage, not strictly-necessary storage,
+  // so by default nothing is written and no beacon is sent until the visitor says
+  // yes. The site's own policy travels with the page (see
+  // StaticSiteAssembler.ConsentConfigId); a site whose owner has established they
+  // do not need consent can set mode "off" in site.json.
+
+  var CONSENT_KEY = 'dcms-consent';
+  var consentPolicy = null;
+  var consentState = null;
+
+  function policy() {
+    if (consentPolicy) return consentPolicy;
+    var el = document.getElementById('dcms-consent');
+    consentPolicy = (el && parseJSON(el.textContent, null)) || { mode: 'banner' };
+    return consentPolicy;
+  }
+
+  // Answers persist across visits, so localStorage rather than sessionStorage —
+  // being asked again on every visit is exactly what makes banners hated.
+  function storedConsent() {
+    if (consentState !== null) return consentState;
+    try {
+      consentState = localStorage.getItem(CONSENT_KEY);
+    } catch (e) {
+      // Storage blocked entirely (private mode, cookies off). Treat that as a
+      // refusal: we cannot record an answer, so we must not assume one.
+      consentState = 'denied';
+    }
+    return consentState;
+  }
+
+  function setConsent(value) {
+    consentState = value;
+    try {
+      localStorage.setItem(CONSENT_KEY, value);
+    } catch (e) {
+      /* nothing to do — the in-memory value still governs this page */
+    }
+  }
+
+  // Whether this site records anything at all. Stamped at publish time from the
+  // tenant's plugin state — a site with analytics switched off has nothing to ask
+  // consent for, and greeting its visitors with a cookie banner would be theatre.
+  function analyticsConfigured() {
+    return policy().analytics !== false;
+  }
+
+  function analyticsAllowed() {
+    if (!analyticsConfigured()) return false;
+    return policy().mode === 'off' || storedConsent() === 'granted';
+  }
+
+  function consentBannerNeeded() {
+    return analyticsConfigured() &&
+      policy().mode !== 'off' &&
+      storedConsent() !== 'granted' &&
+      storedConsent() !== 'denied';
+  }
+
+  function showConsentBanner(onGranted) {
+    var p = policy();
+    var bar = document.createElement('div');
+    bar.className = 'dcms-consent';
+    bar.setAttribute('role', 'dialog');
+    bar.setAttribute('aria-live', 'polite');
+    bar.setAttribute('aria-label', 'Cookie notice');
+
+    var text = document.createElement('p');
+    text.textContent = p.message ||
+      'We use anonymous analytics to understand how this site is used. No data is stored until you accept.';
+    bar.appendChild(text);
+
+    if (p.policyUrl) {
+      var link = document.createElement('a');
+      link.href = p.policyUrl;
+      link.textContent = p.policyLabel || 'Privacy policy';
+      text.appendChild(document.createTextNode(' '));
+      text.appendChild(link);
+    }
+
+    var actions = document.createElement('div');
+    actions.className = 'dcms-consent-actions';
+
+    var decline = document.createElement('button');
+    decline.type = 'button';
+    decline.className = 'dcms-consent-decline';
+    decline.textContent = p.declineLabel || 'Decline';
+    decline.addEventListener('click', function () {
+      setConsent('denied');
+      bar.remove();
+    });
+
+    var accept = document.createElement('button');
+    accept.type = 'button';
+    accept.className = 'dcms-consent-accept';
+    accept.textContent = p.acceptLabel || 'Accept';
+    accept.addEventListener('click', function () {
+      setConsent('granted');
+      bar.remove();
+      onGranted();
+    });
+
+    // Decline first in the DOM so it is not the default focus target — an accept
+    // button that catches a stray Enter is not consent.
+    actions.appendChild(decline);
+    actions.appendChild(accept);
+    bar.appendChild(actions);
+
+    injectConsentStyles();
+    document.body.appendChild(bar);
+  }
+
+  var consentStylesInjected = false;
+
+  function injectConsentStyles() {
+    if (consentStylesInjected) return;
+    consentStylesInjected = true;
+    var css = document.createElement('style');
+    // Deliberately neutral and theme-variable driven where the site defines them,
+    // so the banner does not fight a tenant's design. Everything is scoped under
+    // .dcms-consent, which a site can override in its own global.css.
+    css.textContent =
+      '.dcms-consent{position:fixed;left:1rem;right:1rem;bottom:1rem;z-index:2147483000;' +
+      'display:flex;flex-wrap:wrap;align-items:center;gap:.75rem 1rem;' +
+      'max-width:44rem;margin:0 auto;padding:.875rem 1rem;border-radius:.5rem;' +
+      'background:var(--dcms-consent-bg,#111);color:var(--dcms-consent-fg,#fff);' +
+      'box-shadow:0 8px 30px rgba(0,0,0,.25);font:400 .875rem/1.5 system-ui,sans-serif}' +
+      '.dcms-consent p{margin:0;flex:1 1 16rem}' +
+      '.dcms-consent a{color:inherit;text-underline-offset:2px}' +
+      '.dcms-consent-actions{display:flex;gap:.5rem;margin-left:auto}' +
+      '.dcms-consent button{cursor:pointer;border-radius:.375rem;padding:.4rem .9rem;' +
+      'font:inherit;font-weight:600;border:1px solid currentColor;background:transparent;color:inherit}' +
+      '.dcms-consent .dcms-consent-accept{background:var(--dcms-consent-fg,#fff);' +
+      'color:var(--dcms-consent-bg,#111);border-color:transparent}' +
+      '@media print{.dcms-consent{display:none}}';
+    document.head.appendChild(css);
+  }
+
+  function send(type, path, props) {
+    // Every beacon goes through here, so this is the single gate: nothing leaves
+    // the page — and no session id is created — without consent.
+    if (!analyticsAllowed()) return;
     var payload = {
-      type: 'pageview',
-      path: location.pathname || '/',
+      type: type,
+      path: path,
       referrer: document.referrer || null,
       sessionId: sessionId(),
+      props: props || null,
     };
     try {
       fetch('/api/collect', {
@@ -745,10 +1025,78 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
         credentials: 'same-origin',
+        // The page may be unloading (pageleave, outbound click); without this the
+        // browser cancels the request as it tears the document down.
         keepalive: true,
       }).catch(function () {});
     } catch (e) {
       /* best-effort */
+    }
+  }
+
+  // The path INCLUDING its query string. The query is where utm_source and friends
+  // live, and the server parses campaign attribution out of it; aggregation strips
+  // it again, so top-pages does not fragment into one row per campaign link.
+  function currentPath() {
+    return (location.pathname || '/') + (location.search || '');
+  }
+
+  function sendPageview() {
+    send('pageview', currentPath(), null);
+  }
+
+  // Outbound links and downloads: the two things a visitor does that a pageview
+  // cannot record, because the destination is not ours to instrument. Delegated
+  // from the document so links added later are covered without re-binding.
+  var DOWNLOAD_EXT = /\.(pdf|zip|rar|7z|gz|tar|docx?|xlsx?|pptx?|csv|txt|rtf|dmg|exe|pkg|apk|mp3|mp4|wav|mov)$/i;
+
+  function trackOutboundClicks() {
+    document.addEventListener('click', function (e) {
+      var el = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+      if (!el) return;
+      var href = el.getAttribute('href') || '';
+      if (!href || href.charAt(0) === '#' || href.indexOf('javascript:') === 0) return;
+
+      var url;
+      try {
+        url = new URL(href, location.href);
+      } catch (err) {
+        return;
+      }
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
+      if (url.host !== location.host) {
+        send('outbound', currentPath(), { url: url.href });
+      } else if (DOWNLOAD_EXT.test(url.pathname)) {
+        send('download', currentPath(), { file: url.pathname });
+      }
+    }, true);
+  }
+
+  // How long the visitor actually stayed. Sent once, on the first time the page is
+  // hidden (a tab switch, a navigation, closing the tab) — 'visibilitychange' is
+  // the only signal that fires reliably on mobile, where 'unload' often does not.
+  function trackEngagement() {
+    var start = Date.now();
+    var sent = false;
+    document.addEventListener('visibilitychange', function () {
+      if (sent || document.visibilityState !== 'hidden') return;
+      sent = true;
+      send('pageleave', currentPath(), { seconds: Math.round((Date.now() - start) / 1000) });
+    });
+  }
+
+  function startAnalytics() {
+    if (analyticsAllowed()) {
+      sendPageview();
+      trackOutboundClicks();
+      trackEngagement();
+      return;
+    }
+    if (consentBannerNeeded()) {
+      // The pageview is sent on acceptance, so a visitor who says yes is still
+      // counted for the page they said it on rather than only from the next one.
+      showConsentBanner(startAnalytics);
     }
   }
 
@@ -853,7 +1201,7 @@
   }
 
   function run() {
-    sendPageview();
+    startAnalytics();
     applyNav(document, location.pathname || '/');
     var nodes = document.querySelectorAll('[data-dcms-component]');
     for (var i = 0; i < nodes.length; i++) hydrate(nodes[i]);

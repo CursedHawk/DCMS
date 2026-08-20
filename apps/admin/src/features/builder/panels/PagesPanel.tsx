@@ -1,5 +1,5 @@
-import { makePageEntry, slugFromRoutePath, type PageEntry } from '@dcms/gjs-schema';
-import { FileText, Home, Plus, Trash2 } from 'lucide-react';
+import { isDetailRoute, makePageEntry, slugFromRoutePath, type PageEntry } from '@dcms/gjs-schema';
+import { FileText, Home, Layers, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -25,6 +25,11 @@ export function PagesPanel() {
   const onAPage = useBuilder((s) => s.activeKind === 'page');
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState('');
+  // Optional, because deriving the route from the title is right nearly always.
+  // It exists for the two cases the derivation cannot express: a nested page
+  // (`/about/team`) and a detail route (`/events/:slug`), which is the page one
+  // item of a collection is shown on.
+  const [newPath, setNewPath] = useState('');
 
   if (!project) {
     return <div className="p-4 text-sm text-muted-foreground">{t('builder.noProject')}</div>;
@@ -33,24 +38,28 @@ export function PagesPanel() {
   const addPage = () => {
     const title = newTitle.trim();
     if (!title) return;
-    const routePath = `/${slugFromRoutePath(`/${title}`)}`;
+    const routePath = normalizeRoute(newPath) ?? `/${slugFromRoutePath(`/${title}`)}`;
     if (project.manifest.pages.some((p) => p.path === routePath)) {
       toast.error(t('builder.pagePathTaken', { path: routePath }));
       return;
     }
     const entry = makePageEntry(project.manifest, routePath, title, crypto.randomUUID());
+    // A detail route is not an address — `/events/:slug` in a menu would link to
+    // a literal colon — so it joins the site without joining the navigation.
+    const detail = isDetailRoute(routePath);
 
     useBuilder.getState().update((current) => ({
       ...current,
       manifest: {
         ...current.manifest,
         pages: [...current.manifest.pages, entry],
-        nav: [...current.manifest.nav, { label: title, path: routePath }],
+        nav: detail ? current.manifest.nav : [...current.manifest.nav, { label: title, path: routePath }],
       },
       pages: [...current.pages, { entry, html: '', css: '' }],
     }));
     useBuilder.getState().setActiveSlug(entry.slug);
     setNewTitle('');
+    setNewPath('');
     setAdding(false);
   };
 
@@ -114,20 +123,34 @@ export function PagesPanel() {
       </div>
 
       {adding && (
-        <div className="flex gap-1 border-b p-2">
+        <div className="space-y-1.5 border-b p-2">
+          <div className="flex gap-1">
+            <Input
+              autoFocus
+              value={newTitle}
+              placeholder={t('builder.pageTitle')}
+              onChange={(e) => setNewTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') addPage();
+                if (e.key === 'Escape') setAdding(false);
+              }}
+            />
+            <Button size="sm" onClick={addPage}>
+              {t('actions.add')}
+            </Button>
+          </div>
           <Input
-            autoFocus
-            value={newTitle}
-            placeholder={t('builder.pageTitle')}
-            onChange={(e) => setNewTitle(e.target.value)}
+            value={newPath}
+            placeholder={t('builder.pagePathPlaceholder')}
+            onChange={(e) => setNewPath(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') addPage();
               if (e.key === 'Escape') setAdding(false);
             }}
           />
-          <Button size="sm" onClick={addPage}>
-            {t('actions.add')}
-          </Button>
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            {t('builder.pagePathHint')}
+          </p>
         </div>
       )}
 
@@ -151,9 +174,18 @@ export function PagesPanel() {
                   if (title !== null) renamePage(entry, title);
                 }}
               >
-                <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                {isDetailRoute(entry.path) ? (
+                  <Layers className="h-4 w-4 shrink-0 text-primary" />
+                ) : (
+                  <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
                 <span className="min-w-0 flex-1 truncate">{entry.title}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">{entry.path}</span>
+                <span
+                  className="shrink-0 text-xs text-muted-foreground"
+                  title={isDetailRoute(entry.path) ? t('builder.pageDetailRoute') : undefined}
+                >
+                  {entry.path}
+                </span>
               </button>
               <button
                 type="button"
@@ -180,4 +212,19 @@ export function PagesPanel() {
       </ul>
     </div>
   );
+}
+
+/**
+ * A typed route, cleaned up — or null when the field was left empty, which means
+ * "derive it from the title".
+ *
+ * Only the shape is enforced (leading slash, no trailing one, no empty
+ * segments); the `:param` segments a detail route needs are passed through
+ * untouched.
+ */
+function normalizeRoute(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const segments = trimmed.split('/').filter(Boolean);
+  return segments.length === 0 ? '/' : `/${segments.join('/')}`;
 }

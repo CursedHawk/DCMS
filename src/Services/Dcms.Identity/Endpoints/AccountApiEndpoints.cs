@@ -1,7 +1,9 @@
 using System.Security.Claims;
+using Dcms.Identity.Data;
 using Dcms.Identity.Domain;
 using Dcms.Identity.Forgejo;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
 using OpenIddict.Abstractions;
 
@@ -104,6 +106,66 @@ public static class AccountApiEndpoints
             }
         });
 
+        // ---- Account deletion ----
+        //
+        // Split across two services deliberately (see Dcms.AdminApi's
+        // MyAccountEndpoints). admin-api owns the tenancy rules and detaches the user
+        // from every workspace; identity owns the login and refuses to destroy it
+        // while any membership remains. So the irreversible half cannot run before the
+        // safe half, and neither service writes the other's tables — identity only
+        // *counts* memberships.
+        group.MapDelete("/me", async (
+            ClaimsPrincipal principal, UserManager<DcmsUser> users, IdentityDbContext db,
+            ForgejoAdminClient admin, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        {
+            var user = await FindUserAsync(principal, users);
+            if (user is null) return Results.Unauthorized();
+
+            var userId = user.Id;
+            var memberships = await CountMembershipsAsync(db, userId, ct);
+            if (memberships > 0)
+            {
+                return Results.Conflict(new
+                {
+                    error = "Leave your workspaces before deleting your account.",
+                    memberships,
+                });
+            }
+
+            var logger = loggerFactory.CreateLogger("AccountDeletion");
+
+            // Forgejo first: once the identity row is gone we no longer know which
+            // mirrored account belonged to this user, and it would be orphaned for good.
+            if (user.ForgejoUsername is { Length: > 0 } username)
+            {
+                try
+                {
+                    await admin.DeleteUserAsync(username, ct);
+                }
+                catch (Exception ex)
+                {
+                    // Not fatal: an orphaned git account is tidy-up, whereas refusing
+                    // to delete the login because a side system is down is not a
+                    // defensible answer to "delete my account".
+                    logger.LogError(ex, "Failed deleting Forgejo account {Username}; it is now orphaned.", username);
+                }
+            }
+
+            // Queued credential syncs would otherwise keep re-creating the account.
+            await db.ForgejoSyncOutbox.Where(o => o.UserId == userId).ExecuteDeleteAsync(ct);
+
+            var result = await users.DeleteAsync(user);
+            if (!result.Succeeded)
+            {
+                return Results.Problem(
+                    result.Errors.FirstOrDefault()?.Description ?? "Could not delete the account.",
+                    statusCode: 500);
+            }
+
+            logger.LogWarning("Account {UserId} deleted at the user's request.", userId);
+            return Results.NoContent();
+        });
+
         group.MapDelete("/ssh-keys/{id:long}", async (
             long id, ClaimsPrincipal principal, UserManager<DcmsUser> users,
             ForgejoUserSync forgejo, ForgejoAdminClient admin, CancellationToken ct) =>
@@ -117,6 +179,24 @@ public static class AccountApiEndpoints
         });
 
         return app;
+    }
+
+    /// <summary>
+    /// How many tenant memberships the user still has. This is the one piece of
+    /// tenancy state identity looks at, and it only reads: admin-api owns those rows
+    /// and the rules about when they may go (see its MyAccountEndpoints). Read with
+    /// raw SQL over the Identity connection rather than by taking a dependency on
+    /// TenancyDbContext, which would drag Finbuckle's ambient-tenant resolution into
+    /// a service that has no tenant. Both schemas live in the same database.
+    /// </summary>
+    private static async Task<int> CountMembershipsAsync(IdentityDbContext db, Guid userId, CancellationToken ct)
+    {
+        var counts = await db.Database
+            .SqlQueryRaw<int>(
+                """SELECT count(*)::int AS "Value" FROM tenancy.tenant_memberships WHERE "UserId" = {0}""",
+                userId)
+            .ToListAsync(ct);
+        return counts.FirstOrDefault();
     }
 
     private static Task<DcmsUser?> FindUserAsync(ClaimsPrincipal principal, UserManager<DcmsUser> users)

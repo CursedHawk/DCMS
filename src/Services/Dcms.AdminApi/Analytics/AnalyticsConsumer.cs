@@ -77,16 +77,27 @@ public sealed class AnalyticsConsumer(
                 SessionId = evt.SessionId,
                 VisitorHash = evt.VisitorHash,
                 PropsJson = evt.Props?.GetRawText() ?? "{}",
+                Device = evt.Device,
+                Browser = evt.Browser,
+                Os = evt.Os,
+                Country = evt.Country,
+                UtmSource = evt.UtmSource,
+                UtmMedium = evt.UtmMedium,
+                UtmCampaign = evt.UtmCampaign,
             });
 
+            // Rollups key on the *path without its query*: "/pricing?utm_source=x" and
+            // "/pricing" are the same page, and keying on the raw path fragmented the
+            // top-pages table into one row per campaign link.
+            var rollupPath = RollupPath(evt.Path);
             var day = DateOnly.FromDateTime(evt.OccurredAt.UtcDateTime);
             var rollup = await db.DailyRollups.FirstOrDefaultAsync(
-                r => r.TenantId == batch.TenantId && r.Day == day && r.Type == evt.Type && r.Path == evt.Path, ct);
+                r => r.TenantId == batch.TenantId && r.Day == day && r.Type == evt.Type && r.Path == rollupPath, ct);
             if (rollup is null)
             {
                 db.DailyRollups.Add(new DailyRollup
                 {
-                    TenantId = batch.TenantId, Day = day, Type = evt.Type, Path = evt.Path, Count = 1,
+                    TenantId = batch.TenantId, Day = day, Type = evt.Type, Path = rollupPath, Count = 1,
                 });
             }
             else
@@ -96,5 +107,21 @@ public sealed class AnalyticsConsumer(
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// The page a URL refers to, for aggregation: query and fragment stripped, a
+    /// trailing slash removed (but "/" kept), and clamped to the column width.
+    /// </summary>
+    private static string RollupPath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return "/";
+        var cut = path.AsSpan();
+        var q = cut.IndexOfAny('?', '#');
+        if (q >= 0) cut = cut[..q];
+        var value = cut.ToString();
+        if (value.Length == 0) return "/";
+        if (value.Length > 1 && value.EndsWith('/')) value = value.TrimEnd('/');
+        return value.Length > 1024 ? value[..1024] : value;
     }
 }

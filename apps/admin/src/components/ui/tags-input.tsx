@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { cn } from '../../lib/cn';
 
 /**
@@ -47,6 +47,7 @@ export function TagsInput({
   disabled,
   className,
   id,
+  suggestions,
 }: {
   value: string[];
   onChange: (tags: string[]) => void;
@@ -54,9 +55,26 @@ export function TagsInput({
   disabled?: boolean;
   className?: string;
   id?: string;
+  /** Tags already used elsewhere, most-relevant first; offered while typing. */
+  suggestions?: string[];
 }) {
   const [draft, setDraft] = useState('');
+  const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  /*
+   * Suggestions are the point of the tag vocabulary: an author who picks the
+   * existing "live" instead of typing "Live" keeps the two items in one group.
+   * Matched case-insensitively so a near-miss of case still surfaces the original.
+   */
+  const matches = useMemo(() => {
+    if (!suggestions?.length) return [];
+    const q = draft.trim().toLowerCase();
+    const chosen = new Set(value.map((v) => v.toLowerCase()));
+    return suggestions
+      .filter((s) => !chosen.has(s.toLowerCase()) && (q === '' || s.toLowerCase().includes(q)))
+      .slice(0, 8);
+  }, [suggestions, draft, value]);
 
   /** Commits the draft (or pasted text) as one or more tags; ignores duplicates. */
   const commit = (text: string) => {
@@ -70,6 +88,7 @@ export function TagsInput({
   const removeAt = (i: number) => onChange(value.filter((_, j) => j !== i));
 
   return (
+    <div className="relative">
     <div
       className={cn(
         'flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1 text-sm shadow-sm',
@@ -121,10 +140,38 @@ export function TagsInput({
             removeAt(value.length - 1);
           }
         }}
+        onFocus={() => setFocused(true)}
         // Losing focus with a half-typed tag keeps it, so a tag is never lost by
-        // clicking Save instead of pressing Enter first.
-        onBlur={() => draft.trim() && commit(draft)}
+        // clicking Save instead of pressing Enter first. The close is deferred by a
+        // tick so a click on a suggestion lands before the list unmounts.
+        onBlur={() => {
+          if (draft.trim()) commit(draft);
+          setTimeout(() => setFocused(false), 120);
+        }}
       />
+    </div>
+
+      {focused && matches.length > 0 && !disabled ? (
+        <ul className="dcms-pop absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-md border bg-popover p-1 shadow-lg">
+          {matches.map((tag) => (
+            <li key={tag}>
+              <button
+                type="button"
+                // onMouseDown, not onClick: the input's blur would otherwise fire
+                // first and tear the list down before the click could register.
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  commit(tag);
+                  inputRef.current?.focus();
+                }}
+                className="w-full rounded-sm px-2 py-1 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+              >
+                {tag}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

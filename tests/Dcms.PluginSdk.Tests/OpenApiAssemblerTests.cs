@@ -169,4 +169,48 @@ public class OpenApiAssemblerTests
         var urls = doc["servers"]!.AsArray().Select(s => s!["url"]!.GetValue<string>()).ToList();
         urls.Should().Equal("https://acme.example", "https://www.acme.example");
     }
+
+    [Fact]
+    public void Says_nothing_about_tags_for_a_tenant_that_uses_none()
+    {
+        var assembler = new OpenApiAssembler(new PluginRegistry([new BlogPlugin()]));
+
+        var doc = assembler.Build("Acme", [Instance("blog", "devblog", "Dev Blog", "Deep dives.")]);
+
+        // A documented endpoint that answers with an empty list on every site that
+        // has never used a tag is noise in every one of those tenants' docs.
+        doc["paths"]!.AsObject().Should().NotContainKey("/api/tags");
+        var parameters = doc["paths"]!["/api/devblog/post"]!["get"]!["parameters"]?.AsArray() ?? [];
+        parameters.Select(p => p!["name"]!.GetValue<string>()).Should().NotContain("tag");
+    }
+
+    [Fact]
+    public void Documents_the_tag_index_and_the_list_filter_once_a_tenant_uses_tags()
+    {
+        var assembler = new OpenApiAssembler(new PluginRegistry([new BlogPlugin()]));
+
+        var doc = assembler.Build(
+            "Acme", [Instance("blog", "devblog", "Dev Blog", "Deep dives.")], tagging: true);
+
+        var index = doc["paths"]!["/api/tags"]!["get"]!;
+        index["operationId"]!.GetValue<string>().Should().Be("listTags");
+        index["description"]!.GetValue<string>().Should().Contain("published");
+        // Each occurrence carries the call that fetches it — that is what makes the
+        // index browseable rather than merely informative.
+        var occurrence = index["responses"]!["200"]!["content"]!["application/json"]!["schema"]!
+            ["properties"]!["items"]!["items"]!["properties"]!["occurrences"]!["items"]!["properties"]!;
+        occurrence.AsObject().Should().ContainKeys("instance", "contentType", "field", "count", "url");
+
+        var listParams = doc["paths"]!["/api/devblog/post"]!["get"]!["parameters"]!.AsArray();
+        listParams.Select(p => p!["name"]!.GetValue<string>()).Should().Contain(["tag", "tagField"]);
+        listParams.Where(p => p!["name"]!.GetValue<string>() == "tag")
+            .Should().OnlyContain(p => p!["description"]!.GetValue<string>().Length > 20);
+
+        // Fetch-by-slug returns one item or nothing, so a tag filter there would be
+        // a parameter that can never do anything.
+        var bySlug = doc["paths"]!["/api/devblog/post/{slug}"]!["get"]!["parameters"]?.AsArray() ?? [];
+        bySlug.Select(p => p!["name"]!.GetValue<string>()).Should().NotContain("tag");
+
+        doc["tags"]!.AsArray().Select(t => t!["name"]!.GetValue<string>()).Should().Contain("Tags");
+    }
 }

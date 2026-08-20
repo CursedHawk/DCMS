@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Dcms.Shared.Caching;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Cms;
@@ -28,8 +29,8 @@ public static class AnalyticsIngestEndpoints
     {
         // Slug-addressed beacon (explicit analytics instance).
         app.MapPost("/api/{slug}/collect", async (
-            string slug, CollectRequest body, ITenantContext tenant, ISandboxContext sandbox, CmsDbContext cms,
-            IEventPublisher events, CancellationToken ct) =>
+            string slug, CollectRequest body, HttpContext http, ITenantContext tenant, ISandboxContext sandbox,
+            CmsDbContext cms, IEventPublisher events, IGeoIpResolver geo, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
             {
@@ -45,7 +46,7 @@ public static class AnalyticsIngestEndpoints
             // Preview sandbox: swallow the beacon so real analytics stay clean.
             if (!sandbox.IsSandbox)
             {
-                await PublishAsync(events, tenantId, body, ct);
+                await PublishAsync(events, tenantId, body, http, geo, ct);
             }
             return Results.Accepted();
         }).RequireCors(CollectCorsPolicy);
@@ -55,8 +56,8 @@ public static class AnalyticsIngestEndpoints
         // tenant's single enabled analytics instance here. Returns 202 even when
         // analytics is disabled so the beacon never logs a client-side error.
         app.MapPost("/api/collect", async (
-            CollectRequest body, ITenantContext tenant, ISandboxContext sandbox, CmsDbContext cms,
-            IEventPublisher events, CancellationToken ct) =>
+            CollectRequest body, HttpContext http, ITenantContext tenant, ISandboxContext sandbox,
+            CmsDbContext cms, IEventPublisher events, IGeoIpResolver geo, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
             {
@@ -66,16 +67,53 @@ public static class AnalyticsIngestEndpoints
                 .AnyAsync(p => p.PluginId == AnalyticsPluginId && p.Enabled, ct);
             if (enabled && !sandbox.IsSandbox)
             {
-                await PublishAsync(events, tenantId, body, ct);
+                await PublishAsync(events, tenantId, body, http, geo, ct);
             }
             return Results.Accepted();
+        }).RequireCors(CollectCorsPolicy);
+
+        // Whether this tenant records anything, for a site that has to decide
+        // whether to *ask*.
+        //
+        // A prerendered Mode A page is told at publish time (the assembler stamps
+        // it into the document), but a Mode B React app is built once and served
+        // from static files — it has no publish-time hook and no way to know. Left
+        // guessing it would show a cookie banner on a tenant that stores nothing,
+        // which is the exact theatre the consent work set out to avoid.
+        //
+        // The beacon itself does not depend on this — it already no-ops server-side
+        // when analytics is off — so this exists purely so the banner can be
+        // suppressed. Cached briefly: it changes only when a plugin is toggled.
+        app.MapGet("/api/analytics/status", async (
+            ITenantContext tenant, CmsDbContext cms, ICacheService cache, CancellationToken ct) =>
+        {
+            if (tenant.TenantId is not { } tenantId)
+            {
+                return Results.NotFound();
+            }
+            var key = $"t:{tenantId}:analytics:enabled";
+            var cached = await cache.GetAsync<bool?>(key, ct);
+            if (cached is not { } enabled)
+            {
+                enabled = await cms.PluginInstances.AsNoTracking()
+                    .AnyAsync(p => p.PluginId == AnalyticsPluginId && p.Enabled, ct);
+                await cache.SetAsync(key, (bool?)enabled, TimeSpan.FromMinutes(5), ct);
+            }
+            return Results.Ok(new { enabled });
         }).RequireCors(CollectCorsPolicy);
 
         return app;
     }
 
-    private static ValueTask PublishAsync(IEventPublisher events, Guid tenantId, CollectRequest body, CancellationToken ct)
+    private static ValueTask PublishAsync(
+        IEventPublisher events, Guid tenantId, CollectRequest body,
+        HttpContext http, IGeoIpResolver geo, CancellationToken ct)
     {
+        // Device/browser/OS and country are derived from the request, not read from
+        // the payload: a page can claim to be anything, and it cannot see its own IP.
+        var facts = UserAgentFacts.Parse(http.Request.Headers.UserAgent.ToString(), geo.ResolveCountry(http));
+        var utm = UtmFacts.FromPath(body.Path);
+
         var evt = new AnalyticsEvent(
             DateTimeOffset.UtcNow,
             string.IsNullOrWhiteSpace(body.Type) ? "pageview" : body.Type,
@@ -83,7 +121,14 @@ public static class AnalyticsIngestEndpoints
             body.Referrer,
             body.SessionId,
             Hash(body.SessionId),
-            body.Props);
+            body.Props,
+            facts.Device,
+            facts.Browser,
+            facts.Os,
+            facts.Country,
+            utm.Source,
+            utm.Medium,
+            utm.Campaign);
 
         return events.PublishAsync(Subjects.AnalyticsEvents, new AnalyticsEventBatch(
             Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, [evt]), ct);

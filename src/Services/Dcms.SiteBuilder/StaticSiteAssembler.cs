@@ -3,6 +3,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Storage;
 
@@ -60,9 +61,34 @@ public sealed class StaticSiteAssembler
     /// </summary>
     public const string RouteTableId = "dcms-routes";
 
+    /// <summary>
+    /// The id of the embedded cookie-consent policy. <c>hydrate.js</c> reads it to
+    /// decide whether to ask before storing anything for analytics, and what to say.
+    ///
+    /// Embedded in the page rather than fetched: the runtime has to know the answer
+    /// *before* it may write the session id or fire the first beacon, and a request
+    /// to find out would either delay every pageview or race it.
+    /// </summary>
+    public const string ConsentConfigId = "dcms-consent";
+
+    /// <summary>
+    /// camelCase and no nulls, so the embedded policy matches the shape the author
+    /// edits in site.json and unset fields cost nothing on every page.
+    /// </summary>
+    private static readonly JsonSerializerOptions ConsentJson = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
     /// <summary>Files that describe the site rather than being part of its output.</summary>
+    /// <summary>
+    /// Files consumed or kept private rather than published. `AGENTS.md` is the
+    /// generated authoring contract for AI agents working on the repo — useful in
+    /// git, but it describes the site's internals and has no business being served
+    /// at a guessable URL.
+    /// </summary>
     private static readonly HashSet<string> SourceOnly =
-        new(StringComparer.Ordinal) { SiteJson, "assets.json" };
+        new(StringComparer.Ordinal) { SiteJson, "assets.json", "AGENTS.md" };
 
     /// <summary>
     /// Directories consumed here rather than copied. Page and region markup is
@@ -72,7 +98,11 @@ public sealed class StaticSiteAssembler
     /// </summary>
     private static readonly string[] SourceOnlyPrefixes = [PagesPrefix, RegionsPrefix, BlocksPrefix];
 
-    public AssembledSite Assemble(IReadOnlyDictionary<string, string> files)
+    /// <param name="analyticsEnabled">
+    /// Whether the owning tenant records analytics. Baked into each page's consent
+    /// block: a site that stores nothing must not show a cookie banner.
+    /// </param>
+    public AssembledSite Assemble(IReadOnlyDictionary<string, string> files, bool analyticsEnabled = true)
     {
         var manifest = SiteManifest.TryParse(files.GetValueOrDefault(SiteJson))
             ?? throw new InvalidOperationException(
@@ -93,7 +123,7 @@ public sealed class StaticSiteAssembler
         foreach (var page in manifest.Pages)
         {
             var body = files.GetValueOrDefault(PageHtmlPath(page.Slug), string.Empty);
-            var html = Document(manifest, page, body, files, registry, routes);
+            var html = Document(manifest, page, body, files, registry, routes, analyticsEnabled);
 
             var fileName = FileNameFor(page.Path);
             // Two pages routed to the same path would silently overwrite each other's
@@ -154,13 +184,37 @@ public sealed class StaticSiteAssembler
     }
 
     /// <summary>
-    /// The published file name for a route. Unchanged from the previous Mode A
-    /// renderer so existing links and host rewrite rules keep working.
+    /// What a <c>:param</c> route segment becomes in a published file name.
+    ///
+    /// <c>@</c> because a real segment is kebab-case and can never contain one,
+    /// so <see cref="SiteHost"/> can tell "the page for /events/anything" apart
+    /// from "the page for /events/at". Mirrors WILDCARD_FILE_SEGMENT in
+    /// @dcms/gjs-schema's paths module.
+    /// </summary>
+    public const string WildcardSegment = "@";
+
+    /// <summary>
+    /// True for a route carrying a <c>:param</c> segment — a detail route, one
+    /// page serving every item under it (<c>/events/:slug</c>).
+    /// </summary>
+    public static bool IsDetailRoute(string path) =>
+        path.Split('/').Any(segment => segment.StartsWith(':'));
+
+    /// <summary>
+    /// The published file name for a route. Unchanged for ordinary routes, so
+    /// existing links and host rewrite rules keep working: <c>/about/team</c> →
+    /// <c>about_team.html</c>, <c>/events/:slug</c> → <c>events_@.html</c>.
     /// </summary>
     public static string FileNameFor(string path)
     {
         var trimmed = path.Trim('/');
-        return string.IsNullOrEmpty(trimmed) ? "index.html" : $"{trimmed.Replace('/', '_')}.html";
+        if (string.IsNullOrEmpty(trimmed))
+        {
+            return "index.html";
+        }
+        var segments = trimmed.Split('/')
+            .Select(segment => segment.StartsWith(':') ? WildcardSegment : segment);
+        return $"{string.Join('_', segments)}.html";
     }
 
     public static string PageHtmlPath(string slug) => $"{PagesPrefix}{slug}.html";
@@ -215,8 +269,19 @@ public sealed class StaticSiteAssembler
     /// document (a site with two hundred pages is a few kilobytes) and embedding
     /// it keeps navigation working on a static host with no API in front of it.
     /// </summary>
+    /// <summary>
+    /// The routes the page-aware navigation resolves against: breadcrumb titles
+    /// and "you are here" highlighting.
+    ///
+    /// Detail routes are left out on purpose — <c>/events/:slug</c> is not an
+    /// address, so it can never match the page being viewed, and a menu offering
+    /// it would link to a literal colon. The breadcrumb for a real item URL
+    /// falls back to humanising its last segment, which reads correctly.
+    /// </summary>
     private static string RouteTable(SiteManifest manifest) =>
-        JsonSerializer.Serialize(manifest.Pages.Select(p => new { path = p.Path, title = p.Title }));
+        JsonSerializer.Serialize(manifest.Pages
+            .Where(p => !IsDetailRoute(p.Path))
+            .Select(p => new { path = p.Path, title = p.Title }));
 
     private static string Document(
         SiteManifest manifest,
@@ -224,7 +289,8 @@ public sealed class StaticSiteAssembler
         string body,
         IReadOnlyDictionary<string, string> files,
         string registry,
-        string routes)
+        string routes,
+        bool analyticsEnabled)
     {
         var head = new StringBuilder();
         var settings = manifest.Settings;
@@ -293,6 +359,25 @@ public sealed class StaticSiteAssembler
         var routeTable =
             $"<script type=\"application/json\" id=\"{RouteTableId}\">{routes.Replace("<", "\\u003c")}</script>";
 
+        // The consent policy travels with the page rather than being fetched: the
+        // runtime must know the answer *before* it may write a session id or fire the
+        // first beacon, and a request to find out would either delay every pageview
+        // or race it.
+        var consentJson = JsonSerializer.Serialize(
+            new
+            {
+                mode = settings.CookieConsent.Mode,
+                settings.CookieConsent.Message,
+                settings.CookieConsent.AcceptLabel,
+                settings.CookieConsent.DeclineLabel,
+                settings.CookieConsent.PolicyUrl,
+                settings.CookieConsent.PolicyLabel,
+                analytics = analyticsEnabled,
+            },
+            ConsentJson);
+        var consent =
+            $"<script type=\"application/json\" id=\"{ConsentConfigId}\">{consentJson.Replace("<", "\\u003c")}</script>";
+
         return $"""
             <!doctype html>
             <html lang="{Attr(lang)}">
@@ -301,7 +386,7 @@ public sealed class StaticSiteAssembler
             <meta name="viewport" content="width=device-width, initial-scale=1" />
             {head}
             </head>
-            <body>{nav}{before}{body}{after}{bodyEnd}{components}{routeTable}<script src="{HydrateScript}" defer></script></body>
+            <body>{nav}{before}{body}{after}{bodyEnd}{components}{routeTable}{consent}<script src="{HydrateScript}" defer></script></body>
             </html>
             """;
     }

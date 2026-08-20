@@ -89,6 +89,7 @@ export function RolesPage() {
           <THead>
             <TR>
               <TH>{t('common.name')}</TH>
+              <TH className="w-24">{t('nav.members')}</TH>
               <TH>{t('roles.permissions')}</TH>
               <TH className="text-right">{t('common.actions')}</TH>
             </TR>
@@ -104,6 +105,7 @@ export function RolesPage() {
                     </Badge>
                   ) : null}
                 </TD>
+                <TD className="text-sm text-muted-foreground tabular-nums">{r.memberCount}</TD>
                 <TD>
                   <div className="flex flex-wrap gap-1">
                     {r.permissions.slice(0, 4).map((p) => (
@@ -129,7 +131,17 @@ export function RolesPage() {
                         size="icon"
                         variant="ghost"
                         className="text-destructive"
-                        onClick={() => remove.mutate(r.id)}
+                        title={t('actions.delete')}
+                        aria-label={t('actions.delete')}
+                        onClick={() => {
+                          // Deleting a role silently strips whatever it granted from
+                          // everyone holding it, so say how many people that is.
+                          const message =
+                            r.memberCount > 0
+                              ? t('roles.deleteConfirmInUse', { name: r.name, count: r.memberCount })
+                              : t('roles.deleteConfirm', { name: r.name });
+                          if (window.confirm(message)) remove.mutate(r.id);
+                        }}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -177,6 +189,16 @@ export function RolesPage() {
                     const next = new Set(prev);
                     if (on) next.add(key);
                     else next.delete(key);
+                    return next;
+                  })
+                }
+                onSetMany={(keys, on) =>
+                  setSelected((prev) => {
+                    const next = new Set(prev);
+                    for (const key of keys) {
+                      if (on) next.add(key);
+                      else next.delete(key);
+                    }
                     return next;
                   })
                 }

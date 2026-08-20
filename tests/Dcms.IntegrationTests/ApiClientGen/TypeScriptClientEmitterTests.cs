@@ -184,6 +184,36 @@ public class TypeScriptClientEmitterTests
         }
     }
 
+    [Fact]
+    public void Ships_a_consent_gated_analytics_layer_with_the_starter()
+    {
+        var zip = SiteStarterEmitter.Build(SampleSpec(), SampleInstances(), "https://acme.example");
+
+        using var archive = new ZipArchive(new MemoryStream(zip), ZipArchiveMode.Read);
+        var entries = archive.Entries.Select(e => e.FullName.Replace('\\', '/')).ToHashSet();
+
+        Assert.Contains("src/dcms/analytics.ts", entries);
+        Assert.Contains("src/dcms/CookieConsent.tsx", entries);
+        Assert.Contains("src/dcms/index.ts", entries);
+
+        // Same wire contract as the Mode A runtime — one beacon shape, one consent
+        // key, one endpoint — or a tenant's numbers would mean two different things
+        // depending on how their site was built.
+        var analytics = ReadEntry(archive, "src/dcms/analytics.ts");
+        Assert.Contains("/api/collect", analytics);
+        Assert.Contains("dcms-consent", analytics);
+        Assert.Contains("dcms-sid", analytics);
+        // The Mode B-specific half: a SPA never reloads, so route changes are the
+        // only way past the entry pageview.
+        Assert.Contains("popstate", analytics);
+        Assert.Contains("pushState", analytics);
+
+        // The default page actually wires it up — a collector nobody calls is worse
+        // than none, because it looks done.
+        Assert.Contains("installAnalytics", ReadEntry(archive, "src/main.tsx"));
+        Assert.Contains("CookieConsent", ReadEntry(archive, "src/App.tsx"));
+    }
+
     private static string ReadEntry(ZipArchive archive, string path)
     {
         using var stream = archive.GetEntry(path)!.Open();

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
+using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
@@ -116,7 +117,7 @@ public sealed class SitePublishConsumer(
         }
         else
         {
-            await PrerenderAsync(build.DefinitionSnapshotJson, build.ArtifactPrefix, ct);
+            await PrerenderAsync(build.DefinitionSnapshotJson, build.ArtifactPrefix, job.AnalyticsEnabled, ct);
         }
 
         build.Status = SiteBuildStatus.Succeeded;
@@ -135,7 +136,8 @@ public sealed class SitePublishConsumer(
     }
 
     // Mode A: assemble the builder's committed HTML/CSS source into static pages.
-    private async Task PrerenderAsync(string definitionJson, string artifactPrefix, CancellationToken ct)
+    private async Task PrerenderAsync(
+        string definitionJson, string artifactPrefix, bool? analyticsEnabled, CancellationToken ct)
     {
         var files = SiteFileMap.Parse(definitionJson);
         if (files.Count == 0)
@@ -144,7 +146,13 @@ public sealed class SitePublishConsumer(
                 "This site has no source files to publish. Open it in the builder and save it, then publish again.");
         }
 
-        var site = assembler.Assemble(files);
+        // Whether the tenant records analytics comes from the message: this service
+        // connects as a least-privilege role that reaches the `sites` schema alone,
+        // so asking the database itself failed on every publish (42501) and silently
+        // fell back to "enabled" — every site got a cookie banner. A message from
+        // before the field existed says nothing, which still means enabled: err
+        // towards asking rather than tracking.
+        var site = assembler.Assemble(files, analyticsEnabled ?? true);
 
         foreach (var page in site.Pages)
         {

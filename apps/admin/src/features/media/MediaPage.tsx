@@ -1,4 +1,4 @@
-import { FolderInput, Image as ImageIcon, Search, Trash2, UploadCloud, X } from 'lucide-react';
+import { Folder, FolderInput, Image as ImageIcon, Search, Trash2, UploadCloud, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -56,6 +56,19 @@ export function MediaPage() {
   const del = useDeleteAssets();
 
   const folderList = folders.data ?? [];
+
+  /*
+   * Folders shown as tiles at the head of the grid, so the library browses like a
+   * file manager rather than only through the rail. "All media" shows the
+   * top-level folders; inside a folder you see its children. The Unfiled view is
+   * by definition folder-less, and the search results are a flat list of assets,
+   * so neither shows tiles.
+   */
+  const folderTiles = useMemo(() => {
+    if (folder === ROOT_FOLDER || search.trim()) return [];
+    const parentId = folder ?? null;
+    return folderList.filter((f) => (f.parentId ?? null) === parentId);
+  }, [folderList, folder, search]);
   const items = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = media.data ?? [];
@@ -188,8 +201,31 @@ export function MediaPage() {
 
           {media.isLoading ? (
             <CenteredSpinner />
-          ) : items.length > 0 ? (
+          ) : items.length > 0 || folderTiles.length > 0 ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+              {folderTiles.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => {
+                    setFolder(f.id);
+                    clearSelection();
+                  }}
+                  className="flex flex-col items-start gap-3 rounded-lg border bg-card p-4 text-left transition-shadow hover:border-primary/50 hover:shadow-md"
+                >
+                  <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+                    <Folder className="h-6 w-6" />
+                  </span>
+                  <span className="min-w-0 w-full">
+                    <span className="block truncate text-sm font-medium" title={f.name}>
+                      {f.name}
+                    </span>
+                    <span className="block text-[11px] text-muted-foreground">
+                      {t('media.folders.itemCount', { count: f.assetCount })}
+                    </span>
+                  </span>
+                </button>
+              ))}
               {items.map((a) => {
                 const isSelected = selected.has(a.id);
                 const CatIcon = categoryMeta[a.category].icon;

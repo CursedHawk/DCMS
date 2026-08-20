@@ -9,6 +9,7 @@ import { useMyPermissions } from '../lib/permissions';
 import { login, register } from '../auth';
 import { useAuth } from '../useAuth';
 import { CommandPalette } from './CommandPalette';
+import { StorageNotice } from './StorageNotice';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 
@@ -57,6 +58,7 @@ export function AppShell() {
         </AnimatePresence>
       </div>
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} me={me.data} />
+      <StorageNotice />
     </div>
   );
 }

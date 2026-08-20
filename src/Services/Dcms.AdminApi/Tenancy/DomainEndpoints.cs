@@ -1,5 +1,6 @@
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
+using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Messaging;
@@ -17,9 +18,14 @@ public static class DomainEndpoints
 
     public static IEndpointRouteBuilder MapDomainEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/admin/domains", async (TenancyDbContext db, CancellationToken ct) =>
+        // The site name is resolved here rather than left to the SPA: listing sites
+        // needs SiteEdit, and someone with only DomainsManage must still be able to
+        // see which site each of their domains serves.
+        app.MapGet("/api/admin/domains", async (
+            TenancyDbContext db, SitesDbContext sites, CancellationToken ct) =>
         {
             var domains = await db.Domains
+                .OrderBy(d => d.Hostname)
                 .Select(d => new
                 {
                     id = d.Id,
@@ -27,11 +33,31 @@ public static class DomainEndpoints
                     verified = d.VerifiedAt != null,
                     isPrimary = d.IsPrimary,
                     managed = d.VerificationToken == "dcms-managed",
+                    siteId = d.SiteId,
                     txtRecord = $"{TxtPrefix}.{d.Hostname}",
                     txtValue = d.VerificationToken,
                 })
                 .ToListAsync(ct);
-            return Results.Ok(domains);
+
+            var siteIds = domains.Where(d => d.siteId != null).Select(d => d.siteId!.Value).Distinct().ToList();
+            var names = await sites.Sites
+                .Where(s => siteIds.Contains(s.Id))
+                .ToDictionaryAsync(s => s.Id, s => s.Name, ct);
+
+            return Results.Ok(domains.Select(d => new
+            {
+                d.id,
+                d.hostname,
+                d.verified,
+                d.isPrimary,
+                d.managed,
+                d.siteId,
+                // Null when the linked site has been deleted out from under the
+                // domain — the SPA shows that as "unlinked" rather than a blank row.
+                siteName = d.siteId is { } id && names.TryGetValue(id, out var n) ? n : null,
+                d.txtRecord,
+                d.txtValue,
+            }));
         }).RequirePermission(PlatformPermissions.DomainsManage);
 
         app.MapPost("/api/admin/domains", async (
@@ -90,7 +116,6 @@ public static class DomainEndpoints
                 Hostname = hostname,
                 VerificationToken = "dcms-managed",
                 VerifiedAt = DateTimeOffset.UtcNow,
-                IsPrimary = !await db.Domains.AnyAsync(d => d.IsPrimary, ct),
             };
             db.Domains.Add(domain);
             await db.SaveChangesAsync(ct);
@@ -134,10 +159,6 @@ public static class DomainEndpoints
             }
 
             domain.VerifiedAt = DateTimeOffset.UtcNow;
-            if (!await db.Domains.AnyAsync(d => d.IsPrimary, ct))
-            {
-                domain.IsPrimary = true;
-            }
             await db.SaveChangesAsync(ct);
 
             await events.PublishAsync(Subjects.TenantDomainVerified,
@@ -146,8 +167,124 @@ public static class DomainEndpoints
             return Results.Ok(new { verified = true, isPrimary = domain.IsPrimary });
         }).RequirePermission(PlatformPermissions.DomainsManage);
 
+        // Link a verified domain to a site (or unlink it with a null siteId) so
+        // site-host serves it there. Lives beside the other domain routes because
+        // it is where primary-domain bookkeeping happens.
+        app.MapPost("/api/admin/domains/{id:guid}/site", async (
+            Guid id, LinkSiteRequest body, TenancyDbContext db, SitesDbContext sites, CancellationToken ct) =>
+        {
+            var domain = await db.Domains.FirstOrDefaultAsync(d => d.Id == id, ct);
+            if (domain is null)
+            {
+                return Results.NotFound();
+            }
+            if (body.SiteId is { } target && !await sites.Sites.AnyAsync(s => s.Id == target, ct))
+            {
+                return Results.BadRequest(new { error = "Unknown site." });
+            }
+
+            var previousSiteId = domain.SiteId;
+            domain.SiteId = body.SiteId;
+
+            // "Primary" is the canonical hostname *of a site*, so a domain that moves
+            // to another site (or is unlinked) cannot carry the flag with it.
+            if (previousSiteId != body.SiteId)
+            {
+                domain.IsPrimary = false;
+            }
+            // First domain on a site becomes its primary: a site with domains but no
+            // canonical one would leave the OpenAPI server list arbitrarily ordered.
+            if (body.SiteId is { } siteId &&
+                !await db.Domains.AnyAsync(d => d.SiteId == siteId && d.IsPrimary && d.Id != domain.Id, ct))
+            {
+                domain.IsPrimary = true;
+            }
+
+            await db.SaveChangesAsync(ct);
+            if (previousSiteId is { } orphaned && orphaned != body.SiteId)
+            {
+                await PromotePrimaryAsync(db, orphaned, ct);
+            }
+            return Results.NoContent();
+        }).RequirePermission(PlatformPermissions.DomainsManage);
+
+        // Make this the canonical hostname for the site it serves. Exclusive within
+        // the site, not the tenant — a tenant with several sites has one primary each.
+        app.MapPost("/api/admin/domains/{id:guid}/primary", async (
+            Guid id, TenancyDbContext db, CancellationToken ct) =>
+        {
+            var domain = await db.Domains.FirstOrDefaultAsync(d => d.Id == id, ct);
+            if (domain is null)
+            {
+                return Results.NotFound();
+            }
+            if (domain.SiteId is not { } siteId)
+            {
+                return Results.BadRequest(new { error = "Link the domain to a site before making it primary." });
+            }
+            if (!domain.IsVerified)
+            {
+                return Results.BadRequest(new { error = "Verify the domain before making it primary." });
+            }
+
+            var siblings = await db.Domains.Where(d => d.SiteId == siteId).ToListAsync(ct);
+            foreach (var sibling in siblings)
+            {
+                sibling.IsPrimary = sibling.Id == domain.Id;
+            }
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        }).RequirePermission(PlatformPermissions.DomainsManage);
+
+        // Remove a domain. The row is the only record that a hostname belongs to this
+        // tenant, so deleting it both stops site-host resolving the host and releases
+        // the name for another tenant to claim. site-host caches routes for up to five
+        // minutes (see SiteHost/DomainResolver), so the host keeps serving until the
+        // entry expires.
+        app.MapDelete("/api/admin/domains/{id:guid}", async (
+            Guid id, TenancyDbContext db, CancellationToken ct) =>
+        {
+            var domain = await db.Domains.FirstOrDefaultAsync(d => d.Id == id, ct);
+            if (domain is null)
+            {
+                return Results.NotFound();
+            }
+            var siteId = domain.SiteId;
+            db.Domains.Remove(domain);
+            await db.SaveChangesAsync(ct);
+            if (siteId is { } orphaned)
+            {
+                await PromotePrimaryAsync(db, orphaned, ct);
+            }
+            return Results.NoContent();
+        }).RequirePermission(PlatformPermissions.DomainsManage);
+
         return app;
     }
 
+    /// <summary>
+    /// Ensures a site that still has verified domains has exactly one primary. Called
+    /// after the current primary is deleted, unlinked or moved; picks the alphabetically
+    /// first verified domain so the choice is stable rather than insertion-ordered.
+    /// </summary>
+    private static async Task PromotePrimaryAsync(TenancyDbContext db, Guid siteId, CancellationToken ct)
+    {
+        var remaining = await db.Domains
+            .Where(d => d.SiteId == siteId)
+            .OrderBy(d => d.Hostname)
+            .ToListAsync(ct);
+        if (remaining.Count == 0 || remaining.Any(d => d.IsPrimary))
+        {
+            return;
+        }
+        var replacement = remaining.FirstOrDefault(d => d.VerifiedAt != null);
+        if (replacement is not null)
+        {
+            replacement.IsPrimary = true;
+            await db.SaveChangesAsync(ct);
+        }
+    }
+
     private sealed record AddDomainRequest(string Hostname);
+    private sealed record LinkSiteRequest(Guid? SiteId);
 }

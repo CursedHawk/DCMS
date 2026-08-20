@@ -16,3 +16,4 @@ export * from './tooltip';
 export * from './checkbox';
 export * from './popover';
 export * from './tags-input';
+export * from './progress';

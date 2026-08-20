@@ -4,6 +4,7 @@ using System.Text.Json;
 using Dcms.AdminApi.Tenancy;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
+using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Kernel.Abstractions;
@@ -408,8 +409,9 @@ public static class SiteEndpoints
         }).RequirePermission(PlatformPermissions.SiteEdit);
 
         app.MapPost("/api/admin/sites/{id:guid}/publish", async (
-            Guid id, string? branch, SitesDbContext db, ITenantContext tenant, IEventPublisher events,
-            CurrentUser user, Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+            Guid id, string? branch, SitesDbContext db, CmsDbContext cms, ITenantContext tenant,
+            IEventPublisher events, CurrentUser user, Dcms.AdminApi.Sites.Git.SiteGitService git,
+            CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null)
@@ -433,7 +435,7 @@ public static class SiteEndpoints
                 {
                     // Already on release: deploy the current release head (force a fresh build
                     // even if the tree is unchanged — this is the "redeploy" affordance).
-                    var buildId = await EnqueueReleaseBuildAsync(db, events, git, site, ct);
+                    var buildId = await EnqueueReleaseBuildAsync(db, cms, events, git, site, ct);
                     return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{buildId}", new { released = true, buildId });
                 }
 
@@ -494,24 +496,11 @@ public static class SiteEndpoints
             await db.SaveChangesAsync(ct);
 
             await events.PublishAsync(Subjects.SitePublishRequested, new SitePublishRequested(
-                Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, site.Id, build.Id, site.RenderMode.ToString()), ct);
+                Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, site.Id, build.Id,
+                site.RenderMode.ToString(), await AnalyticsEnabledAsync(cms, tenantId, ct)), ct);
 
             return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{build.Id}", new { buildId = build.Id });
         }).RequirePermission(PlatformPermissions.SitePublish);
-
-        // Link a verified domain to a site so site-host serves it there.
-        app.MapPost("/api/admin/domains/{id:guid}/site", async (
-            Guid id, LinkSiteRequest body, TenancyDbContext db, CancellationToken ct) =>
-        {
-            var domain = await db.Domains.FirstOrDefaultAsync(d => d.Id == id, ct);
-            if (domain is null)
-            {
-                return Results.NotFound();
-            }
-            domain.SiteId = body.SiteId;
-            await db.SaveChangesAsync(ct);
-            return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.DomainsManage);
 
         // --- Git backend (Forgejo): provision a repo for a Mode B site and seed it. ---
         // Provisioning is idempotent: ensures the tenant org + site repo exist and, on
@@ -929,7 +918,7 @@ public static class SiteEndpoints
         // (owner role bypasses RLS). Any push to `release` builds (app commit, merge, or
         // external `git push`); pushes to feature/dev branches never build.
         app.MapPost("/api/internal/git/webhook", async (
-            HttpRequest request, SitesDbContext db, IEventPublisher events,
+            HttpRequest request, SitesDbContext db, CmsDbContext cms, IEventPublisher events,
             Dcms.AdminApi.Sites.Git.SiteGitService git,
             IOptions<Dcms.AdminApi.Sites.Git.ForgejoOptions> gitOptions,
             ILoggerFactory loggerFactory, CancellationToken ct) =>
@@ -1004,7 +993,8 @@ public static class SiteEndpoints
             await db.SaveChangesAsync(ct);
 
             await events.PublishAsync(Subjects.SitePublishRequested, new SitePublishRequested(
-                Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id, site.RenderMode.ToString()), ct);
+                Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id,
+                site.RenderMode.ToString(), await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct);
 
             log.LogInformation("Queued build {BuildId} from git push {Sha} to {Repo}", build.Id, afterSha, repoFull);
             return Results.Ok(new { buildId = build.Id });
@@ -1037,14 +1027,14 @@ public static class SiteEndpoints
         // unchanged (recovers from a failed build or a wedged queue — the tree-diff no-op
         // in the normal push path can't otherwise re-trigger).
         app.MapPost("/api/admin/sites/{id:guid}/builds", async (
-            Guid id, SitesDbContext db, IEventPublisher events,
+            Guid id, SitesDbContext db, CmsDbContext cms, IEventPublisher events,
             Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
             if (!site.RenderMode.IsGitBacked() || site.GitRepoFullName is null || !git.Enabled)
                 return Results.BadRequest(new { error = "This site has no git-backed release to rebuild." });
-            var buildId = await EnqueueReleaseBuildAsync(db, events, git, site, ct);
+            var buildId = await EnqueueReleaseBuildAsync(db, cms, events, git, site, ct);
             return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{buildId}", new { buildId });
         }).RequirePermission(PlatformPermissions.SitePublish);
 
@@ -1054,8 +1044,8 @@ public static class SiteEndpoints
     /// <summary>Queue a build of the current <c>release</c> tree and request it. Reaps any
     /// stale in-flight builds first so a wedged queue can't block the new one.</summary>
     private static async Task<Guid> EnqueueReleaseBuildAsync(
-        SitesDbContext db, IEventPublisher events, Dcms.AdminApi.Sites.Git.SiteGitService git,
-        Site site, CancellationToken ct)
+        SitesDbContext db, CmsDbContext cms, IEventPublisher events,
+        Dcms.AdminApi.Sites.Git.SiteGitService git, Site site, CancellationToken ct)
     {
         await ReapStaleBuildsAsync(db, site.Id, ct);
         var release = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
@@ -1074,8 +1064,38 @@ public static class SiteEndpoints
         db.Builds.Add(build);
         await db.SaveChangesAsync(ct);
         await events.PublishAsync(Subjects.SitePublishRequested, new SitePublishRequested(
-            Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id, site.RenderMode.ToString()), ct);
+            Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id,
+            site.RenderMode.ToString(), await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct);
         return build.Id;
+    }
+
+    /// <summary>
+    /// Whether this tenant records analytics, resolved here and put on the publish
+    /// message.
+    ///
+    /// It is answered by the producer rather than by site-builder because
+    /// site-builder cannot answer it: it connects as a least-privilege role that
+    /// reaches the `sites` schema only, so its own read of
+    /// `plugins.plugin_instances` failed with 42501 on every publish and silently
+    /// assumed "enabled" — which meant a site with analytics switched off still
+    /// shipped a cookie banner. Admin-api already holds this permission, so nothing
+    /// has to be granted to move the question here.
+    ///
+    /// Cross-tenant callers exist (the git webhook is anonymous and has no ambient
+    /// tenant), so the query filter is bypassed and the tenant matched explicitly.
+    /// A failure still errs towards asking rather than tracking.
+    /// </summary>
+    private static async Task<bool> AnalyticsEnabledAsync(CmsDbContext cms, Guid tenantId, CancellationToken ct)
+    {
+        try
+        {
+            return await cms.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+                .AnyAsync(p => p.TenantId == tenantId && p.PluginId == "analytics" && p.Enabled, ct);
+        }
+        catch
+        {
+            return true;
+        }
     }
 
     /// <summary>Mark builds stuck in Queued/Building past the timeout as Failed, so a crashed
@@ -1105,7 +1125,6 @@ public static class SiteEndpoints
             : branch.Trim();
 
     private sealed record CreateSiteRequest(string Name, string? RenderMode, string? Definition);
-    private sealed record LinkSiteRequest(Guid SiteId);
     private sealed record SaveFilesRequest(int? BaseVersion, Dictionary<string, FileWrite>? Put, DeleteEntry[]? Delete);
     private sealed record FileWrite(string Content, string? BaseHash);
     private sealed record DeleteEntry(string Path, string? BaseHash);

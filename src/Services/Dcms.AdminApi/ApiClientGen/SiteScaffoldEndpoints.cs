@@ -18,6 +18,22 @@ namespace Dcms.AdminApi.ApiClientGen;
 /// </summary>
 public static class SiteScaffoldEndpoints
 {
+    /// <summary>
+    /// The directories DCMS owns inside a Mode B site, and therefore the ones
+    /// "Refresh API" overwrites.
+    ///
+    /// `src/api/` is the typed client, which goes stale the moment a plugin is
+    /// installed or reconfigured. `src/dcms/` is the runtime layer that has the
+    /// same problem for the same reason — the analytics collector and the consent
+    /// banner have to keep speaking whatever `/api/collect` currently expects, and
+    /// a site scaffolded a year ago should pick up a fix without being rebuilt from
+    /// scratch. Both are documented in-file as generated, and both take their
+    /// configuration as arguments so nothing an author wants to change lives here.
+    ///
+    /// Anything outside these prefixes is the author's and is never touched.
+    /// </summary>
+    private static readonly string[] GeneratedPrefixes = ["src/api/", "src/dcms/"];
+
     public static IEndpointRouteBuilder MapSiteScaffoldEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/admin/sites/{siteId}/starter-files", async (
@@ -49,8 +65,24 @@ public static class SiteScaffoldEndpoints
                     files["openapi.json"] = openApiJson;
                     break;
 
+                // Just the DCMS-owned files of an existing starter-scaffolded site, so
+                // the editor can refresh them after the tenant's plugins change without
+                // touching a line the author wrote. Deliberately NOT the whole starter:
+                // that would overwrite src/App.tsx, package.json and .env.
+                case "regenerate":
+                    foreach (var (path, content) in Unzip(SiteStarterEmitter.Build(
+                                 r.Doc, r.Instances, r.Servers.FirstOrDefault())))
+                    {
+                        if (GeneratedPrefixes.Any(p => path.StartsWith(p, StringComparison.Ordinal)))
+                        {
+                            files[path] = content;
+                        }
+                    }
+                    files["openapi.json"] = openApiJson;
+                    break;
+
                 default:
-                    return Results.BadRequest(new { error = "flavor must be one of: openapi, client, starter." });
+                    return Results.BadRequest(new { error = "flavor must be one of: openapi, client, starter, regenerate." });
             }
 
             return Results.Ok(new { files });

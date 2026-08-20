@@ -31,8 +31,25 @@ namespace Dcms.Shared.Data.Migrations.Analytics
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
+                    b.Property<string>("Browser")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Country")
+                        .HasMaxLength(2)
+                        .HasColumnType("character(2)")
+                        .IsFixedLength();
+
+                    b.Property<string>("Device")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<DateTimeOffset>("OccurredAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Os")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
 
                     b.Property<string>("Path")
                         .IsRequired()
@@ -59,6 +76,18 @@ namespace Dcms.Shared.Data.Migrations.Analytics
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("UtmCampaign")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("UtmMedium")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("UtmSource")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.Property<string>("VisitorHash")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
@@ -66,6 +95,8 @@ namespace Dcms.Shared.Data.Migrations.Analytics
                     b.HasKey("Id");
 
                     b.HasIndex("TenantId", "OccurredAt");
+
+                    b.HasIndex("TenantId", "OccurredAt", "VisitorHash");
 
                     b.ToTable("events", "analytics");
                 });

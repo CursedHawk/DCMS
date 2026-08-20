@@ -94,7 +94,14 @@ export function OpenApiPage() {
       {spec.isLoading ? (
         <CenteredSpinner />
       ) : hasPaths ? (
-        <div className="overflow-hidden rounded-lg border">
+        /*
+          No `overflow-hidden` wrapper here. An element with a clipping overflow
+          becomes the scroll container that `position: sticky` descendants are
+          measured against — so it stopped Scalar's sidebar sticking at all (the
+          real scroller is <main>, further up), and it clipped Scalar's own
+          popovers. The border/rounding stay; only the clipping goes.
+        */
+        <div className="dcms-scalar rounded-lg border">
           <ApiReferenceReact
             configuration={{
               content: spec.data,

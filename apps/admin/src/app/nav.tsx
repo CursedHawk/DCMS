@@ -1,6 +1,7 @@
 import {
   Bot,
   Boxes,
+  Building2,
   FileJson,
   FileText,
   Globe,
@@ -45,6 +46,7 @@ export const NAV: NavItem[] = [
   { to: '/roles', labelKey: 'nav.roles', icon: ShieldCheck, perm: Perm.RolesManage, group: 'admin' },
   { to: '/domains', labelKey: 'nav.domains', icon: Globe, perm: Perm.DomainsManage, group: 'admin' },
   { to: '/ai', labelKey: 'nav.ai', icon: Bot, perm: Perm.AiSettings, group: 'admin' },
+  { to: '/workspace', labelKey: 'nav.workspace', icon: Building2, perm: Perm.TenantSettings, group: 'admin' },
   { to: '/tenants', labelKey: 'nav.tenants', icon: Boxes, superAdmin: true, group: 'admin' },
 ];
 

@@ -34,6 +34,32 @@ export const BLOCKS_CSS = `/* --------------------------------------------------
 
 html { -webkit-text-size-adjust: 100%; }
 
+/* --- Scrollbars ------------------------------------------------ */
+/* The standard properties cover Firefox and current Chromium; the
+   ::-webkit- rules cover Safari and older Chromium, which ignore
+   them. WebKit drops scrollbar-width/-color once a ::-webkit-
+   scrollbar rule matches, so the two never disagree. */
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--dcms-color-border-strong) transparent;
+}
+
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner { background: var(--dcms-color-surface-sunken); }
+
+::-webkit-scrollbar-thumb {
+  /* A transparent border with background-clip is what makes the thumb read as
+     a slim pill while the grab area stays the full track width. */
+  background-color: var(--dcms-color-border-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--dcms-radius-pill);
+}
+
+::-webkit-scrollbar-thumb:hover { background-color: var(--dcms-color-muted); }
+
 body {
   margin: 0;
   font-family: var(--dcms-font-body);

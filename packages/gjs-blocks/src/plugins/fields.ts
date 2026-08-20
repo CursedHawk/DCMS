@@ -100,6 +100,40 @@ export const META_FIELDS: ContentField[] = [
   { path: '#slug', label: 'Item slug', kind: 'text', custom: false },
   { path: '#id', label: 'Item id', kind: 'text', custom: false },
   { path: '#index', label: 'Position in the list', kind: 'number', custom: false },
+  { path: '#number', label: 'Position, counting from 1', kind: 'number', custom: false },
+  { path: '#count', label: 'How many items in the list', kind: 'number', custom: false },
+  // The rest are conditions: they read as true/false, so they belong on
+  // `data-dcms-if` / `data-dcms-unless` rather than in a text slot. Without them
+  // a template has no way to say "the first one is the big card", because
+  // `:nth-child` in a stylesheet cannot reach a class name or an attribute.
+  {
+    path: '#first',
+    label: 'Is the first item',
+    kind: 'text',
+    custom: false,
+    description: 'True for the first item. For show/hide conditions.',
+  },
+  {
+    path: '#last',
+    label: 'Is the last item',
+    kind: 'text',
+    custom: false,
+    description: 'True for the last item. For show/hide conditions.',
+  },
+  {
+    path: '#parity',
+    label: 'Row parity',
+    kind: 'text',
+    custom: false,
+    description: '“even” or “odd”. Bind it to `class` to stripe a list.',
+  },
+  {
+    path: '#value',
+    label: 'The entry itself',
+    kind: 'text',
+    custom: false,
+    description: 'Inside a repeat over a list of plain values, this is the value.',
+  },
 ];
 
 /** The bind target that makes sense for a field, before the author overrides it. */

@@ -1,6 +1,7 @@
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
+using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Kernel.Abstractions;
@@ -107,12 +108,17 @@ public static class TenancyEndpoints
                 return Results.BadRequest(new { error = "Tenant header required." });
             }
             var roles = await db.TenantRoles
+                .OrderBy(r => r.Name)
                 .Select(r => new
                 {
                     id = r.Id,
                     name = r.Name,
                     isSystem = r.IsSystem,
                     permissions = r.Permissions.Select(p => p.Permission),
+                    // Who this role currently affects. Editing a role that nobody holds
+                    // is free; editing one held by fifteen people is not, and the list
+                    // should say which it is before the dialog opens.
+                    memberCount = r.Members.Count,
                 })
                 .ToListAsync(ct);
             return Results.Ok(roles);
@@ -299,21 +305,43 @@ public static class TenancyEndpoints
         // Effective permission catalog: platform keys ∪ installed plugins' manifest
         // permissions ∪ per-site git repo permissions, each with a display name and
         // group — drives the role matrix.
+        // Every entry says what it actually governs, so the role editor can show the
+        // feature a permission belongs to and whether it is live in this tenant:
+        //
+        //  - platform keys link to the admin page they gate;
+        //  - plugin keys name the *enabled instances* of that plugin. A plugin that
+        //    ships in the binary but has no instance here has permissions that grant
+        //    access to nothing, and they were previously indistinguishable from real
+        //    ones — the catalog was built from manifests alone;
+        //  - repo keys link to the site whose repository they cover.
         app.MapGet("/api/admin/permissions/catalog", async (
-            IPluginCatalog catalog, SitesDbContext sites, CancellationToken ct) =>
+            IPluginCatalog catalog, SitesDbContext sites, CmsDbContext cms, CancellationToken ct) =>
         {
-            var platform = PlatformPermissions.All.Select(k => new
+            var platform = PlatformPermissions.All.Select(k => new PermissionEntry(
+                k, PlatformPermissionName(k), "Platform",
+                new PermissionFeature("platform", null, "Platform", PlatformPermissionRoute(k), true, [])));
+
+            // Instances the tenant has actually enabled, grouped by plugin.
+            var instances = await cms.PluginInstances
+                .Where(i => i.Enabled)
+                .OrderBy(i => i.Name)
+                .Select(i => new { i.PluginId, i.Id, i.Name, i.Slug })
+                .ToListAsync(ct);
+            var byPlugin = instances
+                .GroupBy(i => i.PluginId)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(i => new PermissionFeatureRef(i.Id.ToString(), string.IsNullOrWhiteSpace(i.Name) ? i.Slug : i.Name)).ToList());
+
+            var plugin = catalog.Manifests.SelectMany(m =>
             {
-                key = k,
-                displayName = PlatformPermissionName(k),
-                group = "Platform",
+                var used = byPlugin.TryGetValue(m.Id, out var list) ? list : [];
+                return m.Permissions.Select(p => new PermissionEntry(
+                    PlatformPermissions.ForPlugin(m.Id, p.Action),
+                    p.DisplayName,
+                    m.Name,
+                    new PermissionFeature("plugin", m.Id, m.Name, "/plugins", used.Count > 0, used)));
             });
-            var plugin = catalog.Manifests.SelectMany(m => m.Permissions.Select(p => new
-            {
-                key = PlatformPermissions.ForPlugin(m.Id, p.Action),
-                displayName = p.DisplayName,
-                group = m.Name,
-            }));
 
             // Per-site repo perms (git-backed sites — Mode A builder and Mode B React):
             // one read + one write key per site, so roles can grant pull/push on
@@ -326,10 +354,11 @@ public static class TenancyEndpoints
             var repo = gitSites.SelectMany(s =>
             {
                 var name = string.IsNullOrWhiteSpace(s.Name) ? s.Id.ToString() : s.Name;
+                var feature = new PermissionFeature("site", s.Id.ToString(), name, $"/sites/{s.Id}", true, []);
                 return new[]
                 {
-                    new { key = PlatformPermissions.RepoRead(s.Id), displayName = $"{name}: clone/pull", group = "Repositories" },
-                    new { key = PlatformPermissions.RepoWrite(s.Id), displayName = $"{name}: push", group = "Repositories" },
+                    new PermissionEntry(PlatformPermissions.RepoRead(s.Id), $"{name}: clone/pull", "Repositories", feature),
+                    new PermissionEntry(PlatformPermissions.RepoWrite(s.Id), $"{name}: push", "Repositories", feature),
                 };
             });
 
@@ -359,6 +388,37 @@ public static class TenancyEndpoints
         PlatformPermissions.ChatManage => "Manage chat",
         _ => key,
     };
+
+    /// <summary>Admin route a platform permission gates, for "what does this affect?".</summary>
+    private static string? PlatformPermissionRoute(string key) => key switch
+    {
+        PlatformPermissions.TenantSettings => "/workspace",
+        PlatformPermissions.MembersManage => "/members",
+        PlatformPermissions.RolesManage => "/roles",
+        PlatformPermissions.DomainsManage => "/domains",
+        PlatformPermissions.PluginsManage => "/plugins",
+        PlatformPermissions.MediaRead or PlatformPermissions.MediaWrite => "/media",
+        PlatformPermissions.SiteEdit or PlatformPermissions.SitePublish => "/sites",
+        PlatformPermissions.AiSettings => "/ai",
+        PlatformPermissions.AnalyticsRead => "/analytics",
+        PlatformPermissions.ContentRead or PlatformPermissions.ContentWrite
+            or PlatformPermissions.ContentPublish => "/content",
+        PlatformPermissions.ChatRead or PlatformPermissions.ChatManage => "/chat",
+        _ => null,
+    };
+
+    /// <summary>One thing a permission grants access to (an instance, a site).</summary>
+    private sealed record PermissionFeatureRef(string Id, string Name);
+
+    /// <summary>
+    /// What a permission governs. <paramref name="InUse"/> is false for a plugin that
+    /// ships in the binary but has no enabled instance in this tenant — granting its
+    /// permissions is harmless but meaningless, and the editor says so.
+    /// </summary>
+    private sealed record PermissionFeature(
+        string Kind, string? Id, string Name, string? Route, bool InUse, IReadOnlyList<PermissionFeatureRef> Instances);
+
+    private sealed record PermissionEntry(string Key, string DisplayName, string Group, PermissionFeature Feature);
 
     private static bool IsSlug(string value) =>
         value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')

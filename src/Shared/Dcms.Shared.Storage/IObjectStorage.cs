@@ -10,6 +10,17 @@ public interface IObjectStorage
     Task<Stream> GetAsync(string bucket, string key, CancellationToken ct = default);
     Task<bool> ExistsAsync(string bucket, string key, CancellationToken ct = default);
     Task DeleteAsync(string bucket, string key, CancellationToken ct = default);
+
+    /// <summary>Every object key under a prefix, recursively.</summary>
+    IAsyncEnumerable<string> ListKeysAsync(string bucket, string prefix, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes every object under a prefix and returns how many were removed. The
+    /// key convention is hierarchical ({tenantId}/{siteId}/…), so this is how a
+    /// site's or a tenant's artifacts are reclaimed when the owning row is deleted.
+    /// Best-effort and re-runnable: deleting an already-empty prefix is a no-op.
+    /// </summary>
+    Task<int> DeletePrefixAsync(string bucket, string prefix, CancellationToken ct = default);
 }
 
 public static class StorageKeys

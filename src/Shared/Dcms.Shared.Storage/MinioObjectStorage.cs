@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Minio;
 using Minio.DataModel.Args;
 
@@ -47,4 +48,48 @@ public sealed class MinioObjectStorage(IMinioClient client) : IObjectStorage
         var args = new RemoveObjectArgs().WithBucket(bucket).WithObject(key);
         await client.RemoveObjectAsync(args, ct);
     }
+
+    public async IAsyncEnumerable<string> ListKeysAsync(
+        string bucket, string prefix, [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var args = new ListObjectsArgs().WithBucket(bucket).WithPrefix(prefix).WithRecursive(true);
+        await foreach (var item in client.ListObjectsEnumAsync(args, ct).ConfigureAwait(false))
+        {
+            if (item.Key is { Length: > 0 } key)
+            {
+                yield return key;
+            }
+        }
+    }
+
+    public async Task<int> DeletePrefixAsync(string bucket, string prefix, CancellationToken ct = default)
+    {
+        // Batched rather than one RemoveObject per key: a published site build is
+        // hundreds of small files, and a round trip each would make deleting a site
+        // take minutes. 1000 is the S3 DeleteObjects limit MinIO also enforces.
+        const int BatchSize = 1000;
+        var deleted = 0;
+        var batch = new List<string>(BatchSize);
+
+        await foreach (var key in ListKeysAsync(bucket, prefix, ct).ConfigureAwait(false))
+        {
+            batch.Add(key);
+            if (batch.Count == BatchSize)
+            {
+                await RemoveBatchAsync(bucket, batch, ct).ConfigureAwait(false);
+                deleted += batch.Count;
+                batch.Clear();
+            }
+        }
+        if (batch.Count > 0)
+        {
+            await RemoveBatchAsync(bucket, batch, ct).ConfigureAwait(false);
+            deleted += batch.Count;
+        }
+        return deleted;
+    }
+
+    private Task RemoveBatchAsync(string bucket, List<string> keys, CancellationToken ct) =>
+        client.RemoveObjectsAsync(
+            new RemoveObjectsArgs().WithBucket(bucket).WithObjects(keys), ct);
 }

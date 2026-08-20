@@ -40,6 +40,9 @@ builder.Services.AddDcmsFormsData(builder.Configuration);
 // Optional per-form email notifications. Rendered here, delivered by email-worker
 // off the EMAIL work queue — content-api never touches SMTP.
 builder.Services.AddDcmsEmailQueue();
+// Country for analytics comes from the edge; swap this registration for a GeoIP
+// database implementation if the deployment has no country-stamping proxy.
+builder.Services.AddSingleton<Dcms.ContentApi.Delivery.IGeoIpResolver, Dcms.ContentApi.Delivery.HeaderGeoIpResolver>();
 builder.Services.AddDcmsSearchData(builder.Configuration);
 builder.Services.AddDcmsVisitorsData(builder.Configuration);
 builder.Services.AddDcmsChatData(builder.Configuration);
@@ -150,6 +153,7 @@ app.MapPluginConfig();
 app.MapVisitorAuth();
 app.MapChatDelivery();
 app.MapContentDelivery();
+app.MapTagDelivery();
 app.MapMediaDelivery();
 app.MapOpenApi();
 app.MapHub<ChatHub>("/hub/chat");

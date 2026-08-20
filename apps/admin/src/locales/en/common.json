@@ -18,7 +18,8 @@
     "ai": "AI",
     "analytics": "Analytics",
     "chat": "Chat",
-    "settings": "Settings"
+    "settings": "Settings",
+    "workspace": "Workspace"
   },
   "actions": {
     "create": "Create",
@@ -70,7 +71,8 @@
     "reject": "Reject",
     "reset": "Reset",
     "send": "Send",
-    "stop": "Stop"
+    "stop": "Stop",
+    "confirmType": "Type {{value}} to confirm"
   },
   "theme": {
     "light": "Light",
@@ -103,8 +105,22 @@
     "email": "Email",
     "roles": "Roles",
     "invite": "Invite member",
-    "inviteSent": "Invitation created",
-    "noRoles": "No roles"
+    "inviteSent": "Invitation sent",
+    "inviteEmailed": "An email with the invitation link was sent to {{email}}. You can also share the link directly:",
+    "noRoles": "No roles",
+    "pending": "Pending invitations",
+    "pendingNone": "No pending invitations",
+    "invited": "Invited",
+    "expires": "Expires",
+    "expired": "Expired",
+    "resend": "Resend invitation",
+    "resent": "Invitation resent",
+    "revoke": "Revoke invitation",
+    "revoked": "Invitation revoked",
+    "revokeConfirm": "Revoke the invitation for {{email}}? The link they were sent will stop working.",
+    "inviteAccepted": "Invitation accepted",
+    "inviteAcceptedTo": "You have joined {{tenant}}",
+    "inviteNoToken": "This link is missing an invitation token. Please use the link from your invitation email."
   },
   "roles": {
     "title": "Roles",
@@ -112,7 +128,18 @@
     "permissions": "Permissions",
     "system": "System",
     "permissionMatrix": "Permission matrix",
-    "platform": "Platform"
+    "platform": "Platform",
+    "searchPermissions": "Search permissions…",
+    "selectedCount": "{{count}} selected",
+    "selectAll": "Select all",
+    "selectNone": "Clear",
+    "notInUse": "Not in use here",
+    "showUnused": "Show {{count}} unused",
+    "hideUnused": "Hide unused",
+    "openFeature": "Open",
+    "deleteConfirm": "Delete the role “{{name}}”?",
+    "deleteConfirmInUse_one": "Delete the role “{{name}}”? {{count}} member will lose everything it grants.",
+    "deleteConfirmInUse_other": "Delete the role “{{name}}”? {{count}} members will lose everything it grants."
   },
   "domains": {
     "title": "Domains",
@@ -129,7 +156,16 @@
     "custom": "Custom domain",
     "providedHint": "Get a ready-to-use address under dcms.highgeek.eu — no DNS setup, verified instantly.",
     "getSubdomain": "Get subdomain",
-    "providedBadge": "Provided"
+    "providedBadge": "Provided",
+    "notLinked": "Not linked to a site",
+    "siteMissing": "Linked site no longer exists",
+    "unlink": "Not linked",
+    "makePrimary": "Make primary",
+    "primaryHint": "The canonical hostname for this site. Listed first as an API server and used for canonical links.",
+    "remove": "Remove domain",
+    "removeConfirm": "Remove {{hostname}}? The site will stop being served on this address and the hostname is released for anyone else to claim.",
+    "removed": "Domain removed",
+    "primarySet": "Primary domain updated"
   },
   "plugins": {
     "title": "Plugins",
@@ -188,12 +224,19 @@
       "visible": "Visible"
     },
     "tags": {
-      "placeholder": "Type a tag and press Enter"
+      "placeholder": "Type a tag and press Enter",
+      "allTags": "All tags"
     },
     "customFields": {
       "title": "Custom fields",
       "empty": "This instance defines no custom fields yet — add them in the plugin's configuration."
-    }
+    },
+    "saveAndPublish": "Save and publish",
+    "scheduledFor": "Publishing automatically on {{when}}",
+    "cancelSchedule": "Cancel",
+    "scheduleCancelled": "Scheduled publish cancelled",
+    "rescheduleAt": "Reschedule to",
+    "scheduleHint": "Scheduling publishes what is currently in the editor. One schedule per item — setting a new time replaces the old one."
   },
   "media": {
     "title": "Media library",
@@ -246,7 +289,9 @@
       "unfiled": "Unfiled",
       "new": "New folder",
       "namePlaceholder": "Folder name",
-      "deleteConfirm": "Delete folder “{{name}}”? Its files move back to Unfiled."
+      "deleteConfirm": "Delete folder “{{name}}”? Its files move back to Unfiled.",
+      "itemCount_one": "{{count}} file",
+      "itemCount_other": "{{count}} files"
     },
     "detail": {
       "title": "Media detail",
@@ -269,7 +314,8 @@
       "processing": "Optimized versions are still being generated…",
       "noVariants": "No optimized versions for this file type.",
       "versionsHint": "Visitors are automatically served the smallest suitable version."
-    }
+    },
+    "uploadingCount": "Uploading… {{done}} of {{total}} done"
   },
   "forms": {
     "title": "Form submissions",
@@ -323,7 +369,15 @@
     "buildQueued": "Queued",
     "buildBuilding": "Building",
     "buildSucceeded": "Succeeded",
-    "buildFailed": "Failed"
+    "buildFailed": "Failed",
+    "delete": "Delete site",
+    "deleteTitle": "Delete {{name}}",
+    "deleteDescription": "This permanently deletes the site. It cannot be undone.",
+    "deleteConsequenceBuilds": "All builds and their published files are deleted.",
+    "deleteConsequenceRepo": "The site's git repository and its full history are deleted.",
+    "deleteConsequenceDomains": "Domains pointing here are unlinked and stop serving the site.",
+    "deleted": "Site deleted",
+    "deletedPartial": "Site deleted, but some stored files could not be removed. Check the logs."
   },
   "editor": {
     "publishQueued": "Publish queued"
@@ -332,6 +386,7 @@
     "viewDesign": "Design",
     "viewSplit": "Split",
     "viewCode": "Code",
+    "resizeCode": "Resize the code pane",
     "blocks": "Blocks",
     "layers": "Layers",
     "pages": "Pages",
@@ -340,6 +395,9 @@
     "setHome": "Set as home page",
     "lastPage": "A site needs at least one page.",
     "pagePathTaken": "A page already uses the path {{path}}.",
+    "pagePathPlaceholder": "/events/:slug  (optional)",
+    "pagePathHint": "Leave empty to build the address from the title. Use /parent/child to nest a page, or a :slug segment for a detail page — one page that shows any single item, e.g. /events/:slug for /events/summer-party.",
+    "pageDetailRoute": "Detail page: serves every address under it, and the block on it shows whichever item the address names.",
     "noProject": "This site has no builder project yet.",
     "projectError": "site.json could not be read: {{error}}",
     "openCode": "Open code view",
@@ -348,6 +406,7 @@
     "fileGlobalCss": "Global CSS",
     "fileTheme": "Theme CSS",
     "fileManifest": "site.json",
+    "fileAgents": "AI guide",
     "readOnly": "read-only",
     "generatedFile": "Generated from site.json",
     "generatedFileHint": "This file is generated from the theme in site.json. Edit the theme instead — changes here are overwritten on the next save.",
@@ -498,7 +557,20 @@
     },
     "fileComponent": "Definition",
     "expandAll": "Expand all",
-    "collapseAll": "Collapse all"
+    "collapseAll": "Collapse all",
+    "consent": {
+      "title": "Cookies & consent",
+      "hint": "This site stores a per-visit id for anonymous analytics. Ask visitors first unless you have established you do not need to.",
+      "mode": "Consent",
+      "modeBanner": "Ask before tracking (recommended)",
+      "modeOff": "Track without asking",
+      "message": "Banner text",
+      "messageDefault": "We use anonymous analytics to understand how this site is used. No data is stored until you accept.",
+      "acceptLabel": "Accept button",
+      "declineLabel": "Decline button",
+      "policyUrl": "Privacy policy link",
+      "offWarning": "No banner is shown and analytics starts on page load. In the EU/UK this usually needs a lawful basis you can point to."
+    }
   },
   "ide": {
     "preview": "Preview",
@@ -583,6 +655,12 @@
     "uploaded_other": "Uploaded {{count}} files",
     "uploadSkipped": "Skipped {{count}} file",
     "uploadSkipped_other": "Skipped {{count}} files",
+    "moveFolder": "Move or rename folder",
+    "moveFolderPrompt": "Move folder to",
+    "deleteFolder": "Delete folder",
+    "deleteFolderConfirm": "Delete {{path}} and the {{count}} file inside it?",
+    "deleteFolderConfirm_other": "Delete {{path}} and the {{count}} files inside it?",
+    "moveFailed": "Could not move to {{path}} — the name is invalid or already taken",
     "agent": {
       "title": "Assistant",
       "modeHint": "Auto applies edits automatically; Manual asks first",
@@ -606,7 +684,11 @@
       "clientDesc": "The generated typed TypeScript client and the OpenAPI spec.",
       "starterTitle": "React starter + OpenAPI",
       "starterDesc": "A ready-to-run React site wired to your content API, plus the spec."
-    }
+    },
+    "refreshGenerated": "Refresh API",
+    "refreshGeneratedHint": "Re-generate the DCMS-owned files — openapi.json, the typed client in src/api/, and the analytics + cookie-consent layer in src/dcms/ — from this workspace’s current plugins. Your own files are not touched.",
+    "generatedRefreshed": "Refreshed {{count}} generated files",
+    "generatedUpToDate": "Generated files are already up to date"
   },
   "openapi": {
     "title": "API documentation",
@@ -655,15 +737,61 @@
     "keyAdded": "SSH key added.",
     "keyDeleted": "SSH key removed.",
     "gitAccess": "Git access",
-    "gitAccessHint": "Clone with your email or git username + password over HTTPS, or use an SSH key. You can only access repositories you've been granted."
+    "gitAccessHint": "Clone with your email or git username + password over HTTPS, or use an SSH key. You can only access repositories you've been granted.",
+    "delete": "Delete account",
+    "deleteTitle": "Delete account",
+    "deleteHint": "Permanently delete your DCMS login and your git account. This cannot be undone.",
+    "deleteBlocked": "You are the only owner of these workspaces:",
+    "deleteBlockedHint": "Transfer each of them to another member, or delete them, then come back here.",
+    "deleteLeaves": "You will leave {{count}} workspaces. Other members keep their access.",
+    "deleteDescription": "This deletes your login and your git account, and removes you from every workspace.",
+    "deleteConsequenceLogin": "Your sign-in, password and SSH keys are deleted.",
+    "deleteConsequenceGit": "Your git account is deleted; you lose access to every repository.",
+    "deleteConsequenceWorkspaces": "You are removed from {{count}} workspaces. Their content is not deleted.",
+    "deleted": "Account deleted"
   },
   "analytics": {
     "title": "Analytics",
-    "pageviews": "Events",
-    "topPaths": "Top paths",
-    "byType": "By type",
+    "events": "Events",
+    "pageviews": "Page views",
+    "visitors": "Visitors",
+    "sessions": "Sessions",
+    "overTime": "Over time",
+    "topPaths": "Top pages",
+    "topSources": "Top referrers",
+    "byType": "Event types",
+    "byCountry": "Countries",
+    "byDevice": "Devices",
+    "byBrowser": "Browsers",
+    "byCampaign": "Campaigns",
+    "utmSource": "Source",
+    "utmMedium": "Medium",
+    "utmCampaign": "Campaign",
     "range": "Range",
-    "days": "{{count}} days"
+    "days": "Last {{count}} days",
+    "filterType": "Any event type",
+    "filterDevice": "Any device",
+    "filterCountry": "Any country",
+    "filterPath": "Filter by path prefix, e.g. /blog",
+    "clearFilters": "Clear filters",
+    "noneYet": "No analytics recorded yet. Enable the Analytics plugin on a site and traffic will appear here.",
+    "noneForFilters": "No events match these filters.",
+    "directOnly": "All traffic arrived directly, with no referrer.",
+    "noCountryData": "No country data. Countries are read from the edge (CF-IPCountry by default); see docs/runbook.md.",
+    "device": {
+      "desktop": "Desktop",
+      "mobile": "Mobile",
+      "tablet": "Tablet",
+      "bot": "Bots"
+    },
+    "clear": "Clear statistics",
+    "clearTitle": "Clear all analytics",
+    "clearDescription": "This permanently deletes this workspace’s analytics history. It cannot be undone.",
+    "clearConsequenceEvents": "Every recorded event is deleted.",
+    "clearConsequenceRollups": "All daily totals are deleted; charts start from empty.",
+    "clearConsequenceIrreversible": "There is no backup of analytics data.",
+    "clearConfirmWord": "CLEAR",
+    "cleared": "Cleared {{count}} events"
   },
   "chat": {
     "title": "Chat",
@@ -683,5 +811,38 @@
     "forbidden": "You don't have permission to do that.",
     "notFound": "Not found.",
     "loadFailed": "Failed to load."
+  },
+  "workspace": {
+    "title": "Workspace",
+    "slugFixed": "Identifier {{slug}} cannot be changed — it is used in URLs, the git organisation and stored file paths.",
+    "owner": "Owner",
+    "noOwner": "No owner",
+    "countMembers": "{{count}} members",
+    "countSites": "{{count}} sites",
+    "countDomains": "{{count}} domains",
+    "countMedia": "{{count}} media files",
+    "countContent": "{{count}} content items",
+    "transferTitle": "Transfer ownership",
+    "transferHint": "Hand this workspace to another member. They become the sole owner and you lose the Owner role.",
+    "transferPick": "Choose a member",
+    "transferNoCandidates": "Invite someone else to this workspace first.",
+    "transfer": "Transfer",
+    "transferConfirm": "Make {{email}} the owner of this workspace? You will lose the Owner role.",
+    "transferred": "{{email}} is now the owner",
+    "dangerZone": "Danger zone",
+    "delete": "Delete workspace",
+    "deleteHint": "Permanently delete this workspace and everything in it.",
+    "deleteTitle": "Delete {{name}}",
+    "deleteDescription": "This permanently deletes the workspace and everything it contains. It cannot be undone.",
+    "deleteConsequenceSites": "{{count}} sites, their builds, published files and git repositories are deleted.",
+    "deleteConsequenceContent": "{{content}} content items and {{media}} media files are deleted.",
+    "deleteConsequenceMembers": "{{count}} members lose access; roles and invitations are deleted.",
+    "deleteConsequenceDomains": "{{count}} domains are released and stop serving.",
+    "deleted": "Workspace deleted",
+    "deletedPartial": "Workspace deleted, but some stored files could not be removed. Check the logs."
+  },
+  "storage": {
+    "notice": "This admin app stores only what it needs to work: your sign-in session, the selected workspace, and interface preferences such as theme and open editor tabs. Nothing is used for advertising or shared with third parties.",
+    "gotIt": "Got it"
   }
 }

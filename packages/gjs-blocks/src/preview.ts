@@ -74,6 +74,17 @@ export interface PreviewProps {
   linkField?: string;
   metaField?: string;
   tagsField?: string;
+  /**
+   * Where an item links to, as a URL pattern — `/events/{slug}`, or just
+   * `/events/` to mean the same thing.
+   *
+   * The `linkField` mapping only works for content that carries a URL of its
+   * own, which almost none does: an event or a crew member links to *its own
+   * page on this site*, and that address is built from the item's slug, not
+   * stored in a field. Without this a list was a wall of unclickable cards
+   * unless the tenant had added a redundant link field to every item.
+   */
+  itemLink?: string;
   /** Trim the body text to roughly this many characters. 0 or absent = whole. */
   excerptLength?: string | number;
   /** Label for the per-item link in layouts that show one. */
@@ -234,11 +245,72 @@ interface Slots {
   tags: string[];
 }
 
+/**
+ * Expand an item-link pattern.
+ *
+ * `{slug}`, `{id}` and `{anyField}` are substituted; a pattern with no
+ * placeholder at all is treated as the folder a detail page lives in, so
+ * `/events/` and `/events/{slug}` mean the same thing — which is what an author
+ * types first, and refusing it would be pedantry.
+ *
+ * A pattern whose placeholder resolves to nothing yields no link rather than a
+ * URL with a hole in it: half an address is a 404 that looks like a feature.
+ */
+export function expandLink(
+  pattern: string,
+  item: PreviewItem,
+  fields: Record<string, unknown>,
+): string {
+  if (!pattern) return '';
+  const value = (key: string): string => {
+    if (key === 'slug') return String(item.slug ?? '');
+    if (key === 'id') return String(item.id ?? '');
+    const found = readField(fields, key);
+    return found == null ? '' : String(found);
+  };
+
+  if (!pattern.includes('{')) {
+    const slug = value('slug');
+    if (!slug) return '';
+    return `${pattern.replace(/\/+$/, '')}/${encodeURIComponent(slug)}`;
+  }
+
+  let missing = false;
+  const url = pattern.replace(/\{([^}]*)\}/g, (_, key: string) => {
+    const resolved = value(key.trim());
+    if (!resolved) missing = true;
+    return encodeURIComponent(resolved);
+  });
+  return missing ? '' : url;
+}
+
+/**
+ * Where one item links to.
+ *
+ * Three sources in order of how explicit they are: a field the author mapped, a
+ * pattern the author typed, then the conventional guess. `FIELD_NONE` on the
+ * mapping means "no link", and outranks all of them — it is the only way to say
+ * a card must not be clickable.
+ */
+function linkFor(item: PreviewItem, fields: Record<string, unknown>, props: PreviewProps): string | undefined {
+  if (props.linkField === FIELD_NONE) return undefined;
+  if (props.linkField) {
+    const explicit = readField(fields, props.linkField);
+    if (explicit != null && explicit !== '') return String(explicit);
+  }
+  if (props.itemLink) {
+    const built = expandLink(props.itemLink, item, fields);
+    if (built) return built;
+  }
+  const guess = slot(fields, undefined, LINK_KEYS);
+  return guess == null ? undefined : String(guess);
+}
+
 function slotsOf(item: PreviewItem, props: PreviewProps): Slots {
   const fields = fieldsOf(item);
   const title = slot(fields, props.titleField, TITLE_KEYS);
   const body = slot(fields, props.bodyField, BODY_KEYS);
-  const link = slot(fields, props.linkField, LINK_KEYS);
+  const link = linkFor(item, fields, props);
   const meta = slot(fields, props.metaField, META_KEYS);
   const limit = Number(props.excerptLength ?? 0) || 0;
   const bodyText = body == null ? undefined : truncate(String(body), limit);
@@ -246,7 +318,7 @@ function slotsOf(item: PreviewItem, props: PreviewProps): Slots {
     title: title == null ? undefined : String(title),
     body: bodyText,
     image: mediaUrl(slot(fields, props.imageField, IMAGE_KEYS)),
-    link: link == null ? undefined : String(link),
+    link,
     media: mediaUrl(slot(fields, undefined, MEDIA_KEYS)),
     meta: meta == null ? undefined : formatMeta(meta),
     tags: tagsOf(slot(fields, props.tagsField, TAG_KEYS)),
@@ -350,9 +422,13 @@ function articleHtml(item: PreviewItem, props: PreviewProps): string {
 }
 
 function playerHtml(item: PreviewItem, props: PreviewProps, tag: 'video' | 'audio'): string {
-  const { title, media, meta } = slotsOf(item, props);
+  const { title, media, meta, link } = slotsOf(item, props);
   const out = ['<div class="dcms-card" data-variant="outline"><div class="dcms-card-body">'];
-  if (title) out.push(`<h3 class="dcms-card-title">${escapeHtml(title)}</h3>`);
+  // The card itself cannot be a link — it holds a player, and wrapping controls
+  // in an anchor makes every click a navigation. The title is the way through.
+  if (title) {
+    out.push(`<h3 class="dcms-card-title">${linked(escapeHtml(title), link, 'dcms-card-link')}</h3>`);
+  }
   if (meta) out.push(`<p class="dcms-card-meta">${escapeHtml(meta)}</p>`);
   if (media) {
     out.push(`<${tag} class="dcms-media" controls preload="metadata" src="${escapeHtml(media)}"></${tag}>`);

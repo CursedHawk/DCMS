@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { PanelsTopLeft, Plus } from 'lucide-react';
+import { PanelsTopLeft, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { ConfirmDeleteDialog } from '../../components/ConfirmDeleteDialog';
 import { Page, PageHeader } from '../../components/Page';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -27,7 +28,7 @@ import {
 } from '../../components/ui/select';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { Card } from '../../components/ui/card';
-import { api } from '../../lib/api';
+import { ApiError, api } from '../../lib/api';
 
 interface SiteSummary {
   id: string;
@@ -43,6 +44,7 @@ export function SitesPage() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [mode, setMode] = useState('StaticPrerender');
+  const [pendingDelete, setPendingDelete] = useState<SiteSummary | null>(null);
 
   const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<SiteSummary[]>('/admin/sites') });
 
@@ -55,6 +57,22 @@ export function SitesPage() {
       void navigate({ to: '/sites/$siteId', params: { siteId: id } });
     },
     onError: () => toast.error(t('errors.generic')),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del<{ storageFailed: boolean }>(`/admin/sites/${id}`),
+    // Storage and Forgejo are cleaned up best-effort after the rows are gone, so a
+    // delete can succeed while leaving files behind — say so rather than claiming
+    // a clean sweep.
+    onSuccess: async (result) => {
+      setPendingDelete(null);
+      toast[result?.storageFailed ? 'warning' : 'success'](
+        t(result?.storageFailed ? 'sites.deletedPartial' : 'sites.deleted'),
+      );
+      await qc.invalidateQueries({ queryKey: ['sites'] });
+      await qc.invalidateQueries({ queryKey: ['domains'] });
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
   });
 
   return (
@@ -109,20 +127,37 @@ export function SitesPage() {
       ) : sites.data && sites.data.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sites.data.map((s) => (
-            <Link key={s.id} to="/sites/$siteId" params={{ siteId: s.id }}>
-              <Card className="group h-full p-5 transition-all hover:-translate-y-0.5 hover:shadow-md">
-                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-accent-foreground">
-                  <PanelsTopLeft className="h-5 w-5" />
-                </div>
-                <p className="font-medium">{s.name}</p>
-                <div className="mt-2 flex items-center gap-2">
-                  <Badge tone="secondary">{s.renderMode}</Badge>
-                  <Badge tone={s.activeBuildId ? 'success' : 'warning'}>
-                    {s.activeBuildId ? t('content.published') : t('content.draft')}
-                  </Badge>
-                </div>
-              </Card>
-            </Link>
+            <div key={s.id} className="group relative">
+              <Link to="/sites/$siteId" params={{ siteId: s.id }}>
+                <Card className="h-full p-5 transition-all hover:-translate-y-0.5 hover:shadow-md">
+                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+                    <PanelsTopLeft className="h-5 w-5" />
+                  </div>
+                  <p className="font-medium">{s.name}</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Badge tone="secondary">{s.renderMode}</Badge>
+                    <Badge tone={s.activeBuildId ? 'success' : 'warning'}>
+                      {s.activeBuildId ? t('content.published') : t('content.draft')}
+                    </Badge>
+                  </div>
+                </Card>
+              </Link>
+              {/*
+                Outside the Link, not inside it: nesting a button in an anchor makes
+                every click navigate as well as act. Sits above the card and is
+                revealed on hover/focus so the grid stays calm.
+              */}
+              <Button
+                size="icon"
+                variant="ghost"
+                title={t('sites.delete')}
+                aria-label={t('sites.delete')}
+                className="absolute right-2 top-2 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                onClick={() => setPendingDelete(s)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
           ))}
         </div>
       ) : (
@@ -137,6 +172,24 @@ export function SitesPage() {
           }
         />
       )}
+
+      <ConfirmDeleteDialog
+        open={pendingDelete !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingDelete(null);
+        }}
+        title={t('sites.deleteTitle', { name: pendingDelete?.name ?? '' })}
+        description={t('sites.deleteDescription')}
+        consequences={[
+          t('sites.deleteConsequenceBuilds'),
+          t('sites.deleteConsequenceDomains'),
+          ...(pendingDelete?.renderMode === 'StaticFiles' ? [] : [t('sites.deleteConsequenceRepo')]),
+        ]}
+        confirmationValue={pendingDelete?.name ?? ''}
+        confirmLabel={t('sites.delete')}
+        pending={remove.isPending}
+        onConfirm={() => pendingDelete && remove.mutate(pendingDelete.id)}
+      />
     </Page>
   );
 }

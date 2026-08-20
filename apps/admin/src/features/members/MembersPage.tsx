@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, UserPlus, Users, X } from 'lucide-react';
+import { MailPlus, Plus, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -27,17 +27,28 @@ import { Label } from '../../components/ui/label';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '../../components/ui/table';
 import { ApiError, api } from '../../lib/api';
-import { useMembers, useRoles } from '../rbac/api';
+import { useInvitations, useMembers, useRoles } from '../rbac/api';
+
+/** Short absolute date, e.g. "19 Aug 2026" in the active locale. */
+function formatDate(iso: string, locale: string): string {
+  return new Date(iso).toLocaleDateString(locale, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
 
 export function MembersPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const qc = useQueryClient();
   const members = useMembers();
   const roles = useRoles();
+  const invitations = useInvitations();
   const [inviteOpen, setInviteOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [inviteRoles, setInviteRoles] = useState<Set<string>>(new Set());
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [invitedEmail, setInvitedEmail] = useState('');
 
   const roleName = (id: string) => roles.data?.find((r) => r.id === id)?.name ?? id;
 
@@ -61,22 +72,50 @@ export function MembersPage() {
 
   const invite = useMutation({
     mutationFn: () =>
-      api.post<{ token: string }>('/admin/invitations', {
+      api.post<{ link: string; email: string }>('/admin/invitations', {
         email: email.trim(),
         roleIds: [...inviteRoles],
       }),
-    onSuccess: ({ token }) => {
-      setInviteLink(`${window.location.origin}/invite/accept?token=${token}`);
+    onSuccess: async (created) => {
+      setInviteLink(created.link);
+      setInvitedEmail(created.email);
       toast.success(t('members.inviteSent'));
+      await qc.invalidateQueries({ queryKey: ['invitations'] });
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+  });
+
+  // Resending mints a fresh token server-side, so the returned link replaces the
+  // one in the dialog — an admin who resends then copies must get the live link.
+  const resend = useMutation({
+    mutationFn: (id: string) => api.post<{ link: string; email: string }>(`/admin/invitations/${id}/resend`, {}),
+    onSuccess: async (sent) => {
+      setInviteLink(sent.link);
+      setInvitedEmail(sent.email);
+      setInviteOpen(true);
+      toast.success(t('members.resent'));
+      await qc.invalidateQueries({ queryKey: ['invitations'] });
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+  });
+
+  const revoke = useMutation({
+    mutationFn: (id: string) => api.del(`/admin/invitations/${id}`),
+    onSuccess: async () => {
+      toast.success(t('members.revoked'));
+      await qc.invalidateQueries({ queryKey: ['invitations'] });
+    },
+    onError: () => toast.error(t('errors.generic')),
   });
 
   function resetInvite() {
     setEmail('');
     setInviteRoles(new Set());
     setInviteLink(null);
+    setInvitedEmail('');
   }
+
+  const pending = invitations.data ?? [];
 
   return (
     <Page>
@@ -165,6 +204,94 @@ export function MembersPage() {
         <EmptyState icon={Users} title={t('members.title')} />
       )}
 
+      {/*
+        Invitations sit under the member list rather than mixed into it: they are
+        not members yet, their roles are a promise rather than a fact, and the
+        actions that apply to them (resend / revoke) apply to nothing else.
+      */}
+      <section className="mt-8 space-y-3">
+        <h2 className="text-sm font-medium text-muted-foreground">{t('members.pending')}</h2>
+        {invitations.isLoading ? (
+          <CenteredSpinner />
+        ) : pending.length === 0 ? (
+          <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+            {t('members.pendingNone')}
+          </p>
+        ) : (
+          <Table>
+            <THead>
+              <TR>
+                <TH>{t('members.email')}</TH>
+                <TH>{t('members.roles')}</TH>
+                <TH>{t('members.invited')}</TH>
+                <TH>{t('members.expires')}</TH>
+                <TH className="w-20" />
+              </TR>
+            </THead>
+            <TBody>
+              {pending.map((inv) => (
+                <TR key={inv.id}>
+                  <TD className="font-medium">{inv.email}</TD>
+                  <TD>
+                    <div className="flex flex-wrap items-center gap-1">
+                      {inv.roleIds.length === 0 ? (
+                        <span className="text-xs text-muted-foreground">{t('members.noRoles')}</span>
+                      ) : (
+                        inv.roleIds.map((rid) => (
+                          <Badge key={rid} tone="secondary">
+                            {roleName(rid)}
+                          </Badge>
+                        ))
+                      )}
+                    </div>
+                  </TD>
+                  <TD className="text-sm text-muted-foreground">
+                    {formatDate(inv.createdAt, i18n.language)}
+                  </TD>
+                  <TD className="text-sm">
+                    {inv.expired ? (
+                      <Badge tone="destructive">{t('members.expired')}</Badge>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        {formatDate(inv.expiresAt, i18n.language)}
+                      </span>
+                    )}
+                  </TD>
+                  <TD>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title={t('members.resend')}
+                        aria-label={t('members.resend')}
+                        disabled={resend.isPending}
+                        onClick={() => resend.mutate(inv.id)}
+                      >
+                        <MailPlus className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title={t('members.revoke')}
+                        aria-label={t('members.revoke')}
+                        disabled={revoke.isPending}
+                        onClick={() => {
+                          if (window.confirm(t('members.revokeConfirm', { email: inv.email }))) {
+                            revoke.mutate(inv.id);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        )}
+      </section>
+
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent>
           <DialogHeader>
@@ -172,7 +299,9 @@ export function MembersPage() {
           </DialogHeader>
           {inviteLink ? (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">{t('members.inviteSent')}</p>
+              <p className="text-sm text-muted-foreground">
+                {t('members.inviteEmailed', { email: invitedEmail })}
+              </p>
               <div className="flex items-center gap-2">
                 <Input readOnly value={inviteLink} className="text-xs" />
                 <CopyButton value={inviteLink} />

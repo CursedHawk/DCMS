@@ -12,6 +12,7 @@ export * from './custom';
 export * from './traits';
 export * from './icons';
 export * from './thumbnails';
+export * from './guide';
 export * from './specs';
 export * from './plugins/core';
 export * from './plugins/dcmsPlugins';

@@ -78,6 +78,7 @@ export function BuilderPage({ siteId }: { siteId: string }) {
   const dirty = useVfs((s) => s.dirty);
   const conflict = useVfs((s) => s.conflict);
   const branch = useVfs((s) => s.branch);
+  const activeDiff = useVfs((s) => s.activeDiff);
 
   const project = useBuilder((s) => s.project);
   const projectError = useBuilder((s) => s.error);
@@ -103,6 +104,14 @@ export function BuilderPage({ siteId }: { siteId: string }) {
     300,
     220,
     560,
+  );
+  // The code pane's width in split view. Stored in px rather than as a fraction
+  // so it survives a window resize the way the other two panes do.
+  const [codeWidth, setCodeWidth, resetCodeWidth] = useStoredWidth(
+    'dcms.builder.codeWidth',
+    560,
+    280,
+    1400,
   );
 
   const site = useQuery({
@@ -159,6 +168,13 @@ export function BuilderPage({ siteId }: { siteId: string }) {
     if (!session.ready) return;
     useBuilder.getState().requestReload();
   }, [generation, session.ready]);
+
+  // A diff is opened from the Source Control panel, which is reachable from every
+  // view — including Design, which has nowhere to show it. Reveal the code pane
+  // rather than let the click look like it did nothing.
+  useEffect(() => {
+    if (activeDiff && useBuilder.getState().view === 'design') setView('split');
+  }, [activeDiff, setView]);
 
   const onEditorReady = useCallback((instance: Editor) => {
     setEditor(instance);
@@ -384,13 +400,7 @@ export function BuilderPage({ siteId }: { siteId: string }) {
             take the page down. Keeping it alive also preserves the undo history
             and the scroll position across a switch.
           */}
-          <div
-            className={cn(
-              'min-w-0 bg-muted/40',
-              !showCanvas && 'hidden',
-              showCode ? 'w-1/2' : 'flex-1',
-            )}
-          >
+          <div className={cn('min-w-0 flex-1 bg-muted/40', !showCanvas && 'hidden')}>
             {project ? (
               <BuilderCanvas
                 onReady={onEditorReady}
@@ -405,8 +415,22 @@ export function BuilderPage({ siteId }: { siteId: string }) {
               </div>
             )}
           </div>
+          {/* Split view: the code pane keeps a dragged width, the canvas takes the
+              rest. In Code view it is the only pane, so it simply fills. */}
+          {showCode && showCanvas && (
+            <Resizer
+              onDelta={(dx) => setCodeWidth(codeWidth - dx)}
+              onReset={resetCodeWidth}
+              ariaLabel={t('builder.resizeCode')}
+            />
+          )}
           {showCode && (
-            <div className={cn('min-w-0 border-l', showCanvas ? 'w-1/2' : 'flex-1')}>
+            <div
+              style={showCanvas ? { width: codeWidth } : undefined}
+              // max-w wins over the inline width, so a width stored on a wide
+              // screen can never squeeze the canvas out of existence on a narrow one.
+              className={cn('min-w-0 border-l', showCanvas ? 'max-w-[75%] shrink-0' : 'flex-1')}
+            >
               <CodeView specs={specs} />
             </div>
           )}

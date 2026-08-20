@@ -10,13 +10,33 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        // Split heavy, route-specific libraries so the initial bundle stays lean.
+        /*
+         * Split heavy, route-specific libraries out of the shared `vendor` chunk.
+         *
+         * `vendor` is the catch-all and is downloaded on first paint, so anything
+         * left in it is paid for on every page including the dashboard. Every rule
+         * above it names a library that only one lazily-routed page needs (see
+         * routes.tsx, where all pages but the dashboard are React.lazy).
+         *
+         * Keeping the catch-all matters: without it Rollup folds shared modules —
+         * React itself, in practice — into whichever named chunk it likes, which
+         * gives the entry a static edge to that chunk and drags the whole thing
+         * eagerly back in. One predictable shared chunk is the point.
+         */
         manualChunks(id) {
+          // Vite's dynamic-import preload helper is a tiny synthetic module the entry
+          // always imports. Left unassigned, Rollup folds it into whichever manual
+          // chunk happens to need it — it picked `monaco`, which gave the entry a
+          // static edge to a 3.8 MB chunk and had every page, dashboard included,
+          // modulepreload the whole editor. Pinning it to the always-loaded shared
+          // chunk keeps that edge harmless.
+          if (id.includes('vite/preload-helper')) return 'vendor';
+          if (!id.includes('node_modules')) return undefined;
+
           if (id.includes('@scalar')) return 'scalar';
           if (id.includes('monaco-editor')) return 'monaco';
-          // GrapesJS and its Backbone/Underscore stack are only ever needed by
-          // the lazily-routed Mode A builder. Without this they land in `vendor`,
-          // which every page loads eagerly — over a megabyte for nothing.
+          // GrapesJS and its Backbone/Underscore stack are only ever needed by the
+          // lazily-routed Mode A builder.
           if (
             id.includes('/grapesjs/') ||
             id.includes('/backbone/') ||
@@ -25,12 +45,21 @@ export default defineConfig({
           ) {
             return 'grapesjs';
           }
+          // Source parsing/formatting for the builder and IDE, reached only through
+          // @dcms/gjs-parse and @dcms/gjs-schema.
+          if (
+            id.includes('/css-tree/') ||
+            id.includes('/htmlparser2/') ||
+            id.includes('/js-beautify/') ||
+            id.includes('/zod/')
+          ) {
+            return 'editor-libs';
+          }
           if (id.includes('esbuild-wasm')) return 'esbuild';
           if (id.includes('recharts') || id.includes('/d3') || id.includes('victory')) return 'charts';
           if (id.includes('@rjsf') || id.includes('/ajv')) return 'rjsf';
           if (id.includes('@microsoft/signalr')) return 'signalr';
-          if (id.includes('node_modules')) return 'vendor';
-          return undefined;
+          return 'vendor';
         },
       },
     },

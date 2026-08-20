@@ -130,10 +130,26 @@ export function createEditor({
     canvas: {
       // A dropped block should be styleable immediately, so the frame gets a
       // minimal reset. The site's own reset lives in styles/global.css.
+      // The scrollbar rules are builder chrome, not part of the page: the frame
+      // is its own document, so the admin's scrollbar styling stops at the
+      // iframe boundary and the OS default would show through. Fixed
+      // translucent greys rather than theme variables — the frame resolves
+      // `var(--dcms-*)` from the *site's* theme, which knows nothing about the
+      // admin's light/dark mode, and a translucent grey reads correctly on both.
       frameStyle: `
         body { margin: 0; min-height: 100%; }
         [data-gjs-highlightable] { outline: 1px auto rgba(148,163,184,.45); outline-offset: -1px; }
         .gjs-dashed *[data-gjs-highlightable] { outline: 1px dashed rgba(148,163,184,.6); }
+        html { scrollbar-width: thin; scrollbar-color: rgba(100,116,139,.5) transparent; }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+        ::-webkit-scrollbar-thumb {
+          background-color: rgba(100,116,139,.5);
+          border: 3px solid transparent;
+          background-clip: content-box;
+          border-radius: 999px;
+        }
+        ::-webkit-scrollbar-thumb:hover { background-color: rgba(100,116,139,.8); }
       `,
     },
 

@@ -40,10 +40,64 @@ function titleFieldOf(ct: ContentTypeDef): string | undefined {
   return textual?.name ?? ct.slugField;
 }
 
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * What an array of strings has to look like to be a vocabulary.
+ *
+ * Nothing in the data says "this field holds tags" — a media reference list is
+ * an array of strings exactly like a tag list is, so without this a gallery's
+ * every photo shows up in the tag filter as an asset id and buries the real
+ * tags. Kept in lockstep with `LooksLikeATag` in the backend's TagQueries.
+ */
+function looksLikeATag(value: string): boolean {
+  const text = value.trim();
+  return text.length > 0 && text.length <= 64 && !GUID.test(text) && !/^(\/|https?:\/\/)/.test(text);
+}
+
+/**
+ * Every tag on an item, from any tag-ish field.
+ *
+ * Read off the loaded rows rather than fetched, so filtering by tag costs no
+ * request and the offered tags are exactly the ones this collection actually
+ * has. One level of nesting because a plugin's tenant-defined fields live under
+ * a single key, which is where a site's most specific tags usually are.
+ */
+function tagsOfItem(item: ContentItem): string[] {
+  const data = (item.draft ?? {}) as Record<string, unknown>;
+  const out: string[] = [];
+  const collect = (value: unknown) => {
+    if (!Array.isArray(value)) return;
+    for (const entry of value) {
+      if (typeof entry === 'string' && looksLikeATag(entry)) out.push(entry.trim());
+    }
+  };
+  for (const value of Object.values(data)) {
+    collect(value);
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      for (const nested of Object.values(value as Record<string, unknown>)) collect(nested);
+    }
+  }
+  return out;
+}
+
 function itemTitle(item: ContentItem, titleField: string | undefined): string {
   const raw = titleField ? item.draft?.[titleField] : undefined;
   const text = typeof raw === 'string' ? raw.trim() : '';
   return text || item.slug;
+}
+
+/*
+ * "Scheduled" is not a ContentStatus — the enum is Draft/Published/Archived, and
+ * an item waiting to go live is genuinely still a draft. The list derives it from
+ * the pending schedule the server reports, so the status filter (which has always
+ * offered "Scheduled") actually matches something.
+ *
+ * An already-published item can also have a schedule queued, for a later revision;
+ * it stays Published, because that is what a visitor sees right now.
+ */
+function effectiveStatus(item: { status: string; scheduledPublishAt?: string | null }): string {
+  return item.scheduledPublishAt && item.status !== 'Published' ? 'Scheduled' : item.status;
 }
 
 function statusTone(status: string): 'success' | 'warning' | 'secondary' {
@@ -204,12 +258,32 @@ function CollectionView({
   const [editorItem, setEditorItem] = useState<string | null | undefined>(undefined);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
+  const [tag, setTag] = useState('all');
 
   const titleField = titleFieldOf(contentType);
 
   const all = items.data ?? [];
+  // The tags this collection actually uses, most-used first — the filter offers
+  // exactly what is here rather than the tenant's whole vocabulary, most of which
+  // would match nothing in this list.
+  const tagOptions = useMemo(() => {
+    const counts = new Map<string, { label: string; count: number }>();
+    for (const item of all) {
+      for (const t of new Set(tagsOfItem(item).map((v) => v))) {
+        const key = t.toLowerCase();
+        const seen = counts.get(key);
+        if (seen) seen.count += 1;
+        else counts.set(key, { label: t, count: 1 });
+      }
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
+      .map(([key, v]) => ({ key, label: v.label, count: v.count }));
+  }, [all]);
+
   const filtered = all.filter((item) => {
-    if (status !== 'all' && item.status !== status) return false;
+    if (status !== 'all' && effectiveStatus(item) !== status) return false;
+    if (tag !== 'all' && !tagsOfItem(item).some((v) => v.toLowerCase() === tag)) return false;
     if (query.trim()) {
       const q = query.trim().toLowerCase();
       return (
@@ -255,6 +329,21 @@ function CollectionView({
             <SelectItem value="Scheduled">{t('content.scheduled')}</SelectItem>
           </SelectContent>
         </Select>
+        {tagOptions.length > 0 && (
+          <Select value={tag} onValueChange={setTag}>
+            <SelectTrigger className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('content.tags.allTags')}</SelectItem>
+              {tagOptions.map((o) => (
+                <SelectItem key={o.key} value={o.key}>
+                  {o.label} ({o.count})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       {items.isLoading ? (
@@ -275,7 +364,16 @@ function CollectionView({
                 <TD className="font-medium">{itemTitle(item, titleField)}</TD>
                 <TD className="text-muted-foreground">{item.slug}</TD>
                 <TD>
-                  <Badge tone={statusTone(item.status)}>{item.status}</Badge>
+                  <Badge
+                    tone={statusTone(effectiveStatus(item))}
+                    title={
+                      item.scheduledPublishAt
+                        ? new Date(item.scheduledPublishAt).toLocaleString()
+                        : undefined
+                    }
+                  >
+                    {effectiveStatus(item)}
+                  </Badge>
                 </TD>
                 <TD className="text-muted-foreground">{new Date(item.updatedAt).toLocaleString()}</TD>
               </TR>

@@ -39,19 +39,32 @@ public sealed class PublishedContentReader(CmsDbContext db, ICacheService cache)
         return item;
     }
 
+    /// <param name="onlyIds">
+    /// When supplied, restricts the page to these items — how tag filtering is
+    /// applied without a second path to published content. Not cached: the id set
+    /// comes from a query that already ran, and folding an arbitrary list into the
+    /// key would make one cache entry per tag combination.
+    /// </param>
     public async Task<PagedResult<ContentItemDto>> ListAsync(
-        Guid tenantId, Guid instanceId, string contentType, int page, int pageSize, CancellationToken ct)
+        Guid tenantId, Guid instanceId, string contentType, int page, int pageSize, CancellationToken ct,
+        IReadOnlyCollection<Guid>? onlyIds = null)
     {
         var generation = await cache.GetAsync<long?>(GenKey(tenantId, instanceId), ct) ?? 0;
         var listKey = $"t:{tenantId}:c:{instanceId}:{contentType}:list:g{generation}:p{page}:s{pageSize}";
+        var cacheable = onlyIds is null;
 
-        var cached = await cache.GetAsync<CachedPage>(listKey, ct);
+        var cached = cacheable ? await cache.GetAsync<CachedPage>(listKey, ct) : null;
         if (cached is not null)
         {
             return cached.ToResult();
         }
 
         var query = QueryPublished(instanceId, contentType);
+        if (onlyIds is not null)
+        {
+            var ids = onlyIds as IList<Guid> ?? onlyIds.ToList();
+            query = query.Where(x => ids.Contains(x.Item.Id));
+        }
         var total = await query.CountAsync(ct);
         var rows = await query
             .OrderByDescending(x => x.Item.PublishedAt)
@@ -60,7 +73,10 @@ public sealed class PublishedContentReader(CmsDbContext db, ICacheService cache)
             .ToListAsync(ct);
 
         var result = new PagedResult<ContentItemDto>(rows.Select(Map).ToList(), page, pageSize, total);
-        await cache.SetAsync(listKey, CachedPage.From(result), Ttl, ct);
+        if (cacheable)
+        {
+            await cache.SetAsync(listKey, CachedPage.From(result), Ttl, ct);
+        }
         return result;
     }
 

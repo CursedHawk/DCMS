@@ -181,6 +181,49 @@ public sealed partial class SiteGitService(
         return forgejo.EnsurePushWebhookAsync(org, repo, _opts.WebhookUrl, _opts.WebhookSecret, ct);
     }
 
+    /// <summary>
+    /// Delete a site's repo when the site itself is deleted. Best-effort: the DCMS
+    /// row is the source of truth for whether the site exists, so a Forgejo outage
+    /// must not block the delete — it leaves an orphaned repo, which is recoverable,
+    /// where a half-deleted site is not. Returns whether the repo actually went away.
+    /// </summary>
+    public async Task<bool> DeleteRepoAsync(string repoFullName, CancellationToken ct)
+    {
+        if (!Enabled) return false;
+        var (org, repo) = Split(repoFullName);
+        try
+        {
+            await forgejo.DeleteRepoAsync(org, repo, ct);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to delete Forgejo repo {Repo}; it is now orphaned.", repoFullName);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Delete a tenant's whole Forgejo org, once its site repos are gone. Best-effort
+    /// for the same reason as <see cref="DeleteRepoAsync"/>: an orphaned org is tidy-up,
+    /// a half-deleted tenant is not.
+    /// </summary>
+    public async Task<bool> DeleteOrgAsync(string tenantSlug, CancellationToken ct)
+    {
+        if (!Enabled) return false;
+        var org = OrgFor(tenantSlug);
+        try
+        {
+            await forgejo.DeleteOrgAsync(org, ct);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to delete Forgejo org {Org}; it is now orphaned.", org);
+            return false;
+        }
+    }
+
     /// <summary>The git identity used for platform-made commits (to distinguish IDE/publish
     /// commits from external CLI pushes in the webhook).</summary>
     public string CommitterEmail => _opts.CommitterEmail;

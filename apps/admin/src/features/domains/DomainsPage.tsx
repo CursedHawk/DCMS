@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BadgeCheck, Globe, Link2, Plus, ShieldAlert } from 'lucide-react';
+import { BadgeCheck, Globe, Link2, Plus, ShieldAlert, Star, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -35,9 +35,19 @@ interface Domain {
   verified: boolean;
   isPrimary: boolean;
   managed: boolean;
+  /** The site served on this hostname, or null when the domain is not linked yet. */
+  siteId: string | null;
+  /** Resolved server-side: listing sites needs SiteEdit, managing domains does not. */
+  siteName: string | null;
   txtRecord: string;
   txtValue: string;
 }
+
+/*
+ * Radix Select rejects an empty string as an item value (it reserves "" for
+ * "nothing selected"), so unlinking needs a sentinel that maps back to null.
+ */
+const UNLINKED = '__unlinked';
 interface SiteSummary {
   id: string;
   name: string;
@@ -82,13 +92,31 @@ export function DomainsPage() {
   });
 
   const linkSite = useMutation({
-    mutationFn: ({ id, siteId }: { id: string; siteId: string }) =>
+    mutationFn: ({ id, siteId }: { id: string; siteId: string | null }) =>
       api.post(`/admin/domains/${id}/site`, { siteId }),
     onSuccess: async () => {
       toast.success(t('common.saved'));
       await qc.invalidateQueries({ queryKey: ['domains'] });
     },
-    onError: () => toast.error(t('errors.generic')),
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+  });
+
+  const setPrimary = useMutation({
+    mutationFn: (id: string) => api.post(`/admin/domains/${id}/primary`),
+    onSuccess: async () => {
+      toast.success(t('domains.primarySet'));
+      await qc.invalidateQueries({ queryKey: ['domains'] });
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del(`/admin/domains/${id}`),
+    onSuccess: async () => {
+      toast.success(t('domains.removed'));
+      await qc.invalidateQueries({ queryKey: ['domains'] });
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
   });
 
   return (
@@ -129,6 +157,35 @@ export function DomainsPage() {
                       {t('actions.verify')}
                     </Button>
                   ) : null}
+                  {/*
+                    Only offered where it can succeed: a domain that serves no site
+                    has nothing to be canonical for, and the server rejects it.
+                  */}
+                  {d.verified && d.siteId && !d.isPrimary ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      title={t('domains.primaryHint')}
+                      disabled={setPrimary.isPending}
+                      onClick={() => setPrimary.mutate(d.id)}
+                    >
+                      <Star className="h-4 w-4" /> {t('domains.makePrimary')}
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    title={t('domains.remove')}
+                    aria-label={t('domains.remove')}
+                    disabled={remove.isPending}
+                    onClick={() => {
+                      if (window.confirm(t('domains.removeConfirm', { hostname: d.hostname }))) {
+                        remove.mutate(d.id);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
 
                 {!d.verified ? (
@@ -140,21 +197,43 @@ export function DomainsPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Link2 className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">{t('domains.linkSite')}:</span>
-                    <Select onValueChange={(siteId) => linkSite.mutate({ id: d.id, siteId })}>
-                      <SelectTrigger className="w-60">
-                        <SelectValue placeholder={t('sites.title')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(sites.data ?? []).map((s) => (
-                          <SelectItem key={s.id} value={s.id}>
-                            {s.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {/*
+                      Controlled by siteId, so the row states which site the domain
+                      actually points at — the select used to be uncontrolled and always
+                      read as an empty "pick a site" prompt however it was linked.
+
+                      Listing sites needs SiteEdit. Without it there is nothing to pick
+                      from, so fall back to the name the domains endpoint resolved.
+                    */}
+                    {sites.data ? (
+                      <Select
+                        value={d.siteId ?? UNLINKED}
+                        onValueChange={(value) =>
+                          linkSite.mutate({ id: d.id, siteId: value === UNLINKED ? null : value })
+                        }
+                      >
+                        <SelectTrigger className="w-60">
+                          <SelectValue placeholder={t('domains.notLinked')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={UNLINKED}>{t('domains.unlink')}</SelectItem>
+                          {sites.data.map((site) => (
+                            <SelectItem key={site.id} value={site.id}>
+                              {site.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span className="text-sm">{d.siteName ?? t('domains.notLinked')}</span>
+                    )}
+                    {/* Linked, but the site itself is gone — say so rather than blank. */}
+                    {d.siteId && sites.data && !d.siteName ? (
+                      <span className="text-sm text-destructive">{t('domains.siteMissing')}</span>
+                    ) : null}
                   </div>
                 )}
               </CardContent>

@@ -1,4 +1,5 @@
 import {
+  AGENTS_MD,
   GLOBAL_CSS,
   SITE_JSON,
   THEME_CSS,
@@ -8,6 +9,7 @@ import {
   pageHtmlPath,
   regionHtmlPath,
   renderThemeCss,
+  themeVariables,
   safeParseSiteManifest,
   safeParseComponentDefinition,
   serializeComponentDefinition,
@@ -20,6 +22,7 @@ import {
   type RegionEntry,
   type SiteManifest,
 } from '@dcms/gjs-schema';
+import { renderAiGuide } from '@dcms/gjs-blocks';
 
 /**
  * The Mode A project as the builder sees it: a manifest plus, per page, its
@@ -148,6 +151,10 @@ export function projectFiles(project: Project): Record<string, string> {
     ...project.extras,
     [SITE_JSON]: serializeSiteManifest(project.manifest),
     [THEME_CSS]: renderThemeCss(project.manifest.theme),
+    // Written after `extras` on purpose: the generated copy always wins, which is
+    // what makes the authoring contract permanent rather than a starter file that
+    // drifts once someone edits it.
+    [AGENTS_MD]: aiGuideFor(project),
     [GLOBAL_CSS]: project.globalCss,
   };
   for (const page of project.pages) {
@@ -161,6 +168,21 @@ export function projectFiles(project: Project): Record<string, string> {
     files[componentPath(component.name)] = serializeComponentDefinition(component);
   }
   return files;
+}
+
+/**
+ * The authoring contract for this project, as `AGENTS.md`.
+ *
+ * Generated from the block catalogue and this site's own manifest, so it can
+ * describe what an agent editing the repo actually has available rather than a
+ * frozen snapshot of what the builder offered the day the site was created.
+ */
+export function aiGuideFor(project: Project): string {
+  return renderAiGuide({
+    themeVariables: themeVariables(project.manifest.theme).map((v) => v.name),
+    components: project.components,
+    pages: project.manifest.pages.map((p) => ({ path: p.path, title: p.title, slug: p.slug })),
+  });
 }
 
 /** Every stylesheet in the project, for the class/custom-property index. */

@@ -18,7 +18,8 @@
     "ai": "AI",
     "analytics": "Analytika",
     "chat": "Chat",
-    "settings": "Nastavení"
+    "settings": "Nastavení",
+    "workspace": "Pracovní prostor"
   },
   "actions": {
     "create": "Vytvořit",
@@ -70,7 +71,8 @@
     "reject": "Zamítnout",
     "reset": "Vymazat",
     "send": "Odeslat",
-    "stop": "Zastavit"
+    "stop": "Zastavit",
+    "confirmType": "Pro potvrzení napište {{value}}"
   },
   "theme": {
     "light": "Světlý",
@@ -103,8 +105,22 @@
     "email": "E-mail",
     "roles": "Role",
     "invite": "Pozvat člena",
-    "inviteSent": "Pozvánka vytvořena",
-    "noRoles": "Žádné role"
+    "inviteSent": "Pozvánka odeslána",
+    "inviteEmailed": "E-mail s odkazem na pozvánku byl odeslán na {{email}}. Odkaz můžete také sdílet přímo:",
+    "noRoles": "Žádné role",
+    "pending": "Čekající pozvánky",
+    "pendingNone": "Žádné čekající pozvánky",
+    "invited": "Pozván",
+    "expires": "Platnost do",
+    "expired": "Vypršela",
+    "resend": "Odeslat pozvánku znovu",
+    "resent": "Pozvánka odeslána znovu",
+    "revoke": "Zrušit pozvánku",
+    "revoked": "Pozvánka zrušena",
+    "revokeConfirm": "Zrušit pozvánku pro {{email}}? Odeslaný odkaz přestane fungovat.",
+    "inviteAccepted": "Pozvánka přijata",
+    "inviteAcceptedTo": "Připojili jste se k {{tenant}}",
+    "inviteNoToken": "V tomto odkazu chybí token pozvánky. Použijte prosím odkaz z e-mailu s pozvánkou."
   },
   "roles": {
     "title": "Role",
@@ -112,7 +128,19 @@
     "permissions": "Oprávnění",
     "system": "Systémová",
     "permissionMatrix": "Matice oprávnění",
-    "platform": "Platforma"
+    "platform": "Platforma",
+    "searchPermissions": "Hledat oprávnění…",
+    "selectedCount": "Vybráno: {{count}}",
+    "selectAll": "Vybrat vše",
+    "selectNone": "Zrušit výběr",
+    "notInUse": "Zde se nepoužívá",
+    "showUnused": "Zobrazit {{count}} nepoužívaných",
+    "hideUnused": "Skrýt nepoužívané",
+    "openFeature": "Otevřít",
+    "deleteConfirm": "Smazat roli „{{name}}“?",
+    "deleteConfirmInUse_one": "Smazat roli „{{name}}“? {{count}} člen přijde o vše, co uděluje.",
+    "deleteConfirmInUse_few": "Smazat roli „{{name}}“? {{count}} členové přijdou o vše, co uděluje.",
+    "deleteConfirmInUse_other": "Smazat roli „{{name}}“? {{count}} členů přijde o vše, co uděluje."
   },
   "domains": {
     "title": "Domény",
@@ -129,7 +157,16 @@
     "custom": "Vlastní doména",
     "providedHint": "Získejte připravenou adresu pod dcms.highgeek.eu — bez nastavení DNS, ověřeno okamžitě.",
     "getSubdomain": "Získat subdoménu",
-    "providedBadge": "Poskytnutá"
+    "providedBadge": "Poskytnutá",
+    "notLinked": "Není propojeno s webem",
+    "siteMissing": "Propojený web už neexistuje",
+    "unlink": "Bez propojení",
+    "makePrimary": "Nastavit jako hlavní",
+    "primaryHint": "Kanonický název hostitele pro tento web. Uvádí se jako první API server a používá se pro kanonické odkazy.",
+    "remove": "Odebrat doménu",
+    "removeConfirm": "Odebrat {{hostname}}? Web přestane být na této adrese dostupný a název hostitele se uvolní pro ostatní.",
+    "removed": "Doména odebrána",
+    "primarySet": "Hlavní doména aktualizována"
   },
   "plugins": {
     "title": "Pluginy",
@@ -190,12 +227,19 @@
       "visible": "Viditelný"
     },
     "tags": {
-      "placeholder": "Napište štítek a stiskněte Enter"
+      "placeholder": "Napište štítek a stiskněte Enter",
+      "allTags": "Všechny štítky"
     },
     "customFields": {
       "title": "Vlastní pole",
       "empty": "Tato instance zatím nemá žádná vlastní pole — přidejte je v konfiguraci pluginu."
-    }
+    },
+    "saveAndPublish": "Uložit a publikovat",
+    "scheduledFor": "Automatické publikování {{when}}",
+    "cancelSchedule": "Zrušit",
+    "scheduleCancelled": "Naplánované publikování zrušeno",
+    "rescheduleAt": "Přeplánovat na",
+    "scheduleHint": "Naplánuje se to, co je právě v editoru. Na položku připadá jeden plán — nový čas nahradí ten původní."
   },
   "media": {
     "title": "Knihovna médií",
@@ -252,7 +296,10 @@
       "unfiled": "Nezařazené",
       "new": "Nová složka",
       "namePlaceholder": "Název složky",
-      "deleteConfirm": "Smazat složku „{{name}}“? Její soubory se přesunou do Nezařazené."
+      "deleteConfirm": "Smazat složku „{{name}}“? Její soubory se přesunou do Nezařazené.",
+      "itemCount_one": "{{count}} soubor",
+      "itemCount_few": "{{count}} soubory",
+      "itemCount_other": "{{count}} souborů"
     },
     "detail": {
       "title": "Detail média",
@@ -275,7 +322,8 @@
       "processing": "Optimalizované verze se stále generují…",
       "noVariants": "Pro tento typ souboru nejsou optimalizované verze.",
       "versionsHint": "Návštěvníkům se automaticky poskytuje nejmenší vhodná verze."
-    }
+    },
+    "uploadingCount": "Nahrávání… hotovo {{done}} z {{total}}"
   },
   "forms": {
     "title": "Odeslané formuláře",
@@ -329,7 +377,15 @@
     "buildQueued": "Ve frontě",
     "buildBuilding": "Sestavuje se",
     "buildSucceeded": "Úspěšné",
-    "buildFailed": "Selhalo"
+    "buildFailed": "Selhalo",
+    "delete": "Smazat web",
+    "deleteTitle": "Smazat {{name}}",
+    "deleteDescription": "Tímto se web trvale smaže. Akci nelze vrátit zpět.",
+    "deleteConsequenceBuilds": "Smažou se všechny buildy i publikované soubory.",
+    "deleteConsequenceRepo": "Smaže se git repozitář webu včetně celé historie.",
+    "deleteConsequenceDomains": "Domény mířící sem se odpojí a přestanou web zobrazovat.",
+    "deleted": "Web smazán",
+    "deletedPartial": "Web byl smazán, ale některé uložené soubory se nepodařilo odstranit. Zkontrolujte logy."
   },
   "editor": {
     "publishQueued": "Publikace zařazena"
@@ -338,6 +394,7 @@
     "viewDesign": "Návrh",
     "viewSplit": "Rozdělené",
     "viewCode": "Kód",
+    "resizeCode": "Změnit šířku panelu s kódem",
     "blocks": "Bloky",
     "layers": "Vrstvy",
     "pages": "Stránky",
@@ -346,6 +403,9 @@
     "setHome": "Nastavit jako úvodní stránku",
     "lastPage": "Web musí mít alespoň jednu stránku.",
     "pagePathTaken": "Cestu {{path}} už používá jiná stránka.",
+    "pagePathPlaceholder": "/akce/:slug  (volitelné)",
+    "pagePathHint": "Necháte-li prázdné, adresa se odvodí z názvu. Zanoření zapište jako /rodic/potomek, detailní stránku segmentem :slug — jedna stránka zobrazí libovolnou položku, např. /akce/:slug pro /akce/letni-party.",
+    "pageDetailRoute": "Detailní stránka: obslouží každou adresu pod sebou a blok na ní zobrazí položku, kterou adresa pojmenuje.",
     "noProject": "Tento web zatím nemá projekt editoru.",
     "projectError": "Soubor site.json se nepodařilo načíst: {{error}}",
     "openCode": "Otevřít kód",
@@ -354,6 +414,7 @@
     "fileGlobalCss": "Globální CSS",
     "fileTheme": "CSS motivu",
     "fileManifest": "site.json",
+    "fileAgents": "Návod pro AI",
     "readOnly": "jen ke čtení",
     "generatedFile": "Generováno ze site.json",
     "generatedFileHint": "Tento soubor se generuje z motivu v site.json. Upravte motiv — změny zde budou při dalším uložení přepsány.",
@@ -504,7 +565,20 @@
     },
     "fileComponent": "Definice",
     "expandAll": "Rozbalit vše",
-    "collapseAll": "Sbalit vše"
+    "collapseAll": "Sbalit vše",
+    "consent": {
+      "title": "Cookies a souhlas",
+      "hint": "Tento web ukládá identifikátor návštěvy pro anonymní analytiku. Pokud nemáte doloženo, že to není třeba, nejdřív se zeptejte.",
+      "mode": "Souhlas",
+      "modeBanner": "Zeptat se před sledováním (doporučeno)",
+      "modeOff": "Sledovat bez dotazu",
+      "message": "Text lišty",
+      "messageDefault": "Používáme anonymní analytiku, abychom rozuměli používání webu. Dokud nesouhlasíte, nic se neukládá.",
+      "acceptLabel": "Tlačítko souhlasu",
+      "declineLabel": "Tlačítko odmítnutí",
+      "policyUrl": "Odkaz na zásady ochrany soukromí",
+      "offWarning": "Lišta se nezobrazí a analytika se spustí hned po načtení stránky. V EU/UK k tomu obvykle potřebujete doložitelný právní základ."
+    }
   },
   "ide": {
     "preview": "Náhled",
@@ -592,6 +666,13 @@
     "uploadSkipped": "Přeskočen {{count}} soubor",
     "uploadSkipped_few": "Přeskočeny {{count}} soubory",
     "uploadSkipped_other": "Přeskočeno {{count}} souborů",
+    "moveFolder": "Přesunout nebo přejmenovat složku",
+    "moveFolderPrompt": "Přesunout složku do",
+    "deleteFolder": "Smazat složku",
+    "deleteFolderConfirm": "Smazat {{path}} a {{count}} soubor uvnitř?",
+    "deleteFolderConfirm_few": "Smazat {{path}} a {{count}} soubory uvnitř?",
+    "deleteFolderConfirm_other": "Smazat {{path}} a {{count}} souborů uvnitř?",
+    "moveFailed": "Nelze přesunout do {{path}} — název je neplatný nebo už existuje",
     "agent": {
       "title": "Asistent",
       "modeHint": "Automaticky provádí úpravy sám; Ručně se nejdřív zeptá",
@@ -615,7 +696,11 @@
       "clientDesc": "Vygenerovaný typovaný TypeScript klient a specifikace OpenAPI.",
       "starterTitle": "React starter + OpenAPI",
       "starterDesc": "Hotový React web napojený na vaše content API a k tomu specifikace."
-    }
+    },
+    "refreshGenerated": "Obnovit API",
+    "refreshGeneratedHint": "Znovu vygeneruje soubory spravované DCMS — openapi.json, typovaného klienta v src/api/ a vrstvu analytiky a souhlasu s cookies v src/dcms/ — podle aktuálních pluginů tohoto prostoru. Vašich souborů se to nedotkne.",
+    "generatedRefreshed": "Obnoveno {{count}} vygenerovaných souborů",
+    "generatedUpToDate": "Vygenerované soubory jsou aktuální"
   },
   "openapi": {
     "title": "API dokumentace",
@@ -664,15 +749,61 @@
     "keyAdded": "SSH klíč přidán.",
     "keyDeleted": "SSH klíč odebrán.",
     "gitAccess": "Přístup ke gitu",
-    "gitAccessHint": "Klonujte pomocí e-mailu nebo git uživatelského jména + hesla přes HTTPS, nebo použijte SSH klíč. Přístup máte jen k repozitářům, které vám byly povoleny."
+    "gitAccessHint": "Klonujte pomocí e-mailu nebo git uživatelského jména + hesla přes HTTPS, nebo použijte SSH klíč. Přístup máte jen k repozitářům, které vám byly povoleny.",
+    "delete": "Smazat účet",
+    "deleteTitle": "Smazat účet",
+    "deleteHint": "Trvale smaže vaše přihlášení do DCMS i váš git účet. Akci nelze vrátit zpět.",
+    "deleteBlocked": "Jste jediným vlastníkem těchto pracovních prostorů:",
+    "deleteBlockedHint": "Převeďte je na jiného člena nebo je smažte a pak se sem vraťte.",
+    "deleteLeaves": "Opustíte {{count}} pracovních prostorů. Ostatní členové o přístup nepřijdou.",
+    "deleteDescription": "Smaže se vaše přihlášení i git účet a budete odebráni ze všech pracovních prostorů.",
+    "deleteConsequenceLogin": "Smaže se vaše přihlášení, heslo i SSH klíče.",
+    "deleteConsequenceGit": "Smaže se váš git účet; ztratíte přístup ke všem repozitářům.",
+    "deleteConsequenceWorkspaces": "Budete odebráni z {{count}} pracovních prostorů. Jejich obsah se nemaže.",
+    "deleted": "Účet smazán"
   },
   "analytics": {
     "title": "Analytika",
-    "pageviews": "Události",
-    "topPaths": "Nejčastější cesty",
-    "byType": "Podle typu",
+    "events": "Události",
+    "pageviews": "Zobrazení stránek",
+    "visitors": "Návštěvníci",
+    "sessions": "Relace",
+    "overTime": "V čase",
+    "topPaths": "Nejnavštěvovanější stránky",
+    "topSources": "Zdroje návštěv",
+    "byType": "Typy událostí",
+    "byCountry": "Země",
+    "byDevice": "Zařízení",
+    "byBrowser": "Prohlížeče",
+    "byCampaign": "Kampaně",
+    "utmSource": "Zdroj",
+    "utmMedium": "Médium",
+    "utmCampaign": "Kampaň",
     "range": "Rozsah",
-    "days": "{{count}} dní"
+    "days": "Posledních {{count}} dní",
+    "filterType": "Libovolný typ události",
+    "filterDevice": "Libovolné zařízení",
+    "filterCountry": "Libovolná země",
+    "filterPath": "Filtrovat podle začátku cesty, např. /blog",
+    "clearFilters": "Zrušit filtry",
+    "noneYet": "Zatím nejsou zaznamenána žádná data. Zapněte na webu plugin Analytics a návštěvnost se objeví zde.",
+    "noneForFilters": "Těmto filtrům neodpovídají žádné události.",
+    "directOnly": "Veškerá návštěvnost přišla přímo, bez odkazujícího webu.",
+    "noCountryData": "Žádná data o zemích. Země se čtou z edge vrstvy (výchozí CF-IPCountry); viz docs/runbook.md.",
+    "device": {
+      "desktop": "Počítač",
+      "mobile": "Mobil",
+      "tablet": "Tablet",
+      "bot": "Roboti"
+    },
+    "clear": "Vymazat statistiky",
+    "clearTitle": "Vymazat veškerou analytiku",
+    "clearDescription": "Tímto se trvale smaže historie analytiky tohoto prostoru. Akci nelze vrátit zpět.",
+    "clearConsequenceEvents": "Smaže se každá zaznamenaná událost.",
+    "clearConsequenceRollups": "Smažou se všechny denní souhrny; grafy začnou od nuly.",
+    "clearConsequenceIrreversible": "Analytická data se nikam nezálohují.",
+    "clearConfirmWord": "VYMAZAT",
+    "cleared": "Vymazáno {{count}} událostí"
   },
   "chat": {
     "title": "Chat",
@@ -692,5 +823,38 @@
     "forbidden": "Nemáte oprávnění to provést.",
     "notFound": "Nenalezeno.",
     "loadFailed": "Načtení selhalo."
+  },
+  "workspace": {
+    "title": "Pracovní prostor",
+    "slugFixed": "Identifikátor {{slug}} nelze změnit — používá se v URL, git organizaci i cestách uložených souborů.",
+    "owner": "Vlastník",
+    "noOwner": "Bez vlastníka",
+    "countMembers": "{{count}} členů",
+    "countSites": "{{count}} webů",
+    "countDomains": "{{count}} domén",
+    "countMedia": "{{count}} souborů médií",
+    "countContent": "{{count}} položek obsahu",
+    "transferTitle": "Převod vlastnictví",
+    "transferHint": "Předejte tento prostor jinému členovi. Stane se jediným vlastníkem a vy roli Owner ztratíte.",
+    "transferPick": "Vyberte člena",
+    "transferNoCandidates": "Nejdřív do prostoru pozvěte někoho dalšího.",
+    "transfer": "Převést",
+    "transferConfirm": "Nastavit {{email}} jako vlastníka tohoto prostoru? Ztratíte roli Owner.",
+    "transferred": "Vlastníkem je nyní {{email}}",
+    "dangerZone": "Nebezpečná zóna",
+    "delete": "Smazat prostor",
+    "deleteHint": "Trvale smazat tento pracovní prostor a vše v něm.",
+    "deleteTitle": "Smazat {{name}}",
+    "deleteDescription": "Tímto se trvale smaže pracovní prostor i vše, co obsahuje. Akci nelze vrátit zpět.",
+    "deleteConsequenceSites": "Smaže se {{count}} webů včetně buildů, publikovaných souborů a git repozitářů.",
+    "deleteConsequenceContent": "Smaže se {{content}} položek obsahu a {{media}} souborů médií.",
+    "deleteConsequenceMembers": "{{count}} členů ztratí přístup; role a pozvánky se smažou.",
+    "deleteConsequenceDomains": "{{count}} domén se uvolní a přestane fungovat.",
+    "deleted": "Pracovní prostor smazán",
+    "deletedPartial": "Prostor byl smazán, ale některé uložené soubory se nepodařilo odstranit. Zkontrolujte logy."
+  },
+  "storage": {
+    "notice": "Tato administrace ukládá jen to, co potřebuje k provozu: vaše přihlášení, vybraný pracovní prostor a nastavení rozhraní, jako je motiv nebo otevřené záložky editoru. Nic se nepoužívá k reklamě ani nesdílí s třetími stranami.",
+    "gotIt": "Rozumím"
   }
 }

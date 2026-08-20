@@ -48,6 +48,9 @@ const STALE_MS = 60_000;
 interface ContentRow {
   id: string;
   slug: string;
+  status?: string;
+  publishedAt?: string | null;
+  updatedAt?: string | null;
   /** The author's unpublished edits, if any. */
   draft?: Record<string, unknown> | null;
   /** What the delivery API serves, and therefore what a visitor sees. */
@@ -246,6 +249,13 @@ async function paint(
  * - **A detail binding resolves one item**, by the slug the author pinned, or the
  *   first — because that is the shape `hydrate.js` gives it from the page URL,
  *   and a detail view handed a list would draw the wrong thing.
+ * - **A list is filtered and ordered the way delivery orders it**: published
+ *   only, newest published first. The admin endpoint returns everything in
+ *   `updatedAt` order, so the canvas used to show archived and never-published
+ *   items, in a different sequence, and an author laying out "the three latest"
+ *   was laying out three items the site would never show. The fallback to
+ *   unpublished rows is for the case that would otherwise be an empty canvas:
+ *   a collection nobody has published yet.
  */
 function itemsFor(rows: ContentRow[], binding: { propPath: string; query: Record<string, unknown> }): PreviewItem[] {
   const toItem = (row: ContentRow): PreviewItem => ({
@@ -260,9 +270,21 @@ function itemsFor(rows: ContentRow[], binding: { propPath: string; query: Record
     return row ? [toItem(row)] : [];
   }
 
+  const published = rows.filter((r) => r.status === 'Published');
+  const visible = (published.length > 0 ? published : rows)
+    .slice()
+    .sort((a, b) => when(b) - when(a));
+
   const page = Math.max(1, Number(binding.query.page) || 1);
   const pageSize = Math.min(Number(binding.query.pageSize) || 10, MAX_ITEMS);
-  return rows.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize).map(toItem);
+  return visible.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize).map(toItem);
+}
+
+/** The instant delivery sorts on, falling back to the last edit for a draft. */
+function when(row: ContentRow): number {
+  const stamp = row.publishedAt ?? row.updatedAt;
+  const value = stamp ? Date.parse(stamp) : NaN;
+  return Number.isNaN(value) ? 0 : value;
 }
 
 /** The tenant component a placeholder names, if it names one. */

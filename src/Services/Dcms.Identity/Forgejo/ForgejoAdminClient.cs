@@ -96,6 +96,20 @@ public sealed class ForgejoAdminClient(HttpClient http, ILogger<ForgejoAdminClie
             await ThrowFor(res, ct);
     }
 
+    /// <summary>
+    /// Delete a mirrored user account (admin API). A 404 counts as success so a
+    /// re-run of a partly-finished account deletion still completes. <c>purge</c>
+    /// removes the repos and org memberships the user still owns — without it
+    /// Forgejo refuses to delete an account that owns anything.
+    /// </summary>
+    public async Task DeleteUserAsync(string username, CancellationToken ct)
+    {
+        using var res = await http.DeleteAsync(
+            $"/api/v1/admin/users/{Uri.EscapeDataString(username)}?purge=true", ct);
+        if (res.StatusCode is not (HttpStatusCode.NoContent or HttpStatusCode.NotFound))
+            await ThrowFor(res, ct);
+    }
+
     private async Task ThrowFor(HttpResponseMessage res, CancellationToken ct)
     {
         var body = await res.Content.ReadAsStringAsync(ct);

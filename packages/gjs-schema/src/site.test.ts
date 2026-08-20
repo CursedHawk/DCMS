@@ -24,7 +24,13 @@ describe('siteManifestSchema', () => {
       pages: [{ id: 'p1', slug: 'home', path: '/', title: 'Home', seo: { title: 'Home' } }],
     });
     expect(parsed.nav).toEqual([]);
-    expect(parsed.settings).toEqual({ lang: 'en', renderNav: true });
+    // Consent defaults to asking: a site that records nothing yet must not be
+    // silently opted in the moment analytics is switched on.
+    expect(parsed.settings).toEqual({
+      lang: 'en',
+      renderNav: true,
+      cookieConsent: { mode: 'banner' },
+    });
     expect(parsed.theme).toEqual(emptyTheme());
   });
 

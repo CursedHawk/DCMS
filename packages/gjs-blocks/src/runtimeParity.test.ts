@@ -63,8 +63,27 @@ describe('hydrate.js and the canvas preview', () => {
       'tagsField',
       'excerptLength',
       'linkLabel',
+      'itemLink',
     ]) {
       expect(runtime, prop).toContain(`props.${prop}`);
+    }
+  });
+
+  it('build an item link from the same pattern', () => {
+    // A card links to its own page on this site, and that address is built from
+    // the item's slug rather than stored in a field — so the pattern has to be
+    // expanded identically in both, or a list is clickable in the builder and
+    // inert once published.
+    const item: PreviewItem = { slug: 'summer-party', data: { title: 'T' } };
+    const html = previewHtml([item], { itemLink: '/events/{slug}' });
+    expect(html).toContain('href="/events/summer-party"');
+    // The shorthand: a pattern with no placeholder is the folder items live in.
+    expect(previewHtml([item], { itemLink: '/events/' })).toContain('href="/events/summer-party"');
+    // An explicit "none" still wins, or there would be no way to say "not a link".
+    expect(previewHtml([item], { itemLink: '/events/', linkField: '-' })).not.toContain('href=');
+
+    for (const marker of ['expandLink', 'linkFor']) {
+      expect(runtime, `hydrate.js is missing ${marker}`).toContain(`function ${marker}`);
     }
   });
 
@@ -207,6 +226,48 @@ describe('the tenant component renderer', () => {
     expect(html).not.toContain('data-dcms-');
     for (const marker of ['renderTemplate', 'applyBindings', 'stripTemplateAttrs', 'definitionFor']) {
       expect(runtime, `hydrate.js is missing ${marker}`).toContain(`function ${marker}`);
+    }
+  });
+
+  it('expands nested repeats against the item that holds them', () => {
+    // One list inside another — an event's crew under each event — is the shape
+    // a tenant component reaches for as soon as its content is not flat. Only
+    // the first repeat in the whole template used to be expanded, so the inner
+    // one published as a single unbound row.
+    const html = renderTemplate(
+      document,
+      '<div><article data-dcms-repeat><h3 data-dcms-bind="text:title"></h3>' +
+        '<ul><li data-dcms-repeat="crew" data-dcms-bind="text:name"></li></ul></article></div>',
+      [
+        { data: { title: 'Opening', crew: [{ name: 'Ada' }, { name: 'Bo' }] } },
+        { data: { title: 'Closing', crew: [{ name: 'Cy' }] } },
+      ],
+    );
+    expect(html).toContain('Opening');
+    expect(html).toContain('Closing');
+    // Each event's own crew, not the first event's under both.
+    expect(html.indexOf('Ada')).toBeLessThan(html.indexOf('Closing'));
+    expect(html.indexOf('Cy')).toBeGreaterThan(html.indexOf('Closing'));
+    expect(html).not.toContain('data-dcms-');
+
+    for (const marker of ['expandRepeats', 'outermostRepeats', 'asItems', 'resolveMeta']) {
+      expect(runtime, `hydrate.js is missing ${marker}`).toContain(`function ${marker}`);
+    }
+  });
+
+  it('resolves the same positional sources in both', () => {
+    const html = renderTemplate(
+      document,
+      '<div><span data-dcms-repeat data-dcms-bind="class:#parity">' +
+        '<b data-dcms-bind="text:#number"></b></span></div>',
+      [{ data: {} }, { data: {} }, { data: {} }],
+    );
+    expect(html).toContain('class="even"');
+    expect(html).toContain('class="odd"');
+    expect(html).toContain('<b>1</b>');
+    expect(html).toContain('<b>3</b>');
+    for (const key of ['index', 'number', 'count', 'first', 'last', 'even', 'odd', 'parity']) {
+      expect(runtime, `hydrate.js does not know #${key}`).toContain(`'${key}'`);
     }
   });
 

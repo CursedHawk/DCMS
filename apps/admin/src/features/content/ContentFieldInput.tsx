@@ -71,6 +71,7 @@ export function ContentFieldInput({
   value,
   onChange,
   instanceConfig,
+  tagSuggestions,
 }: {
   field: ContentFieldDef;
   value: unknown;
@@ -80,6 +81,8 @@ export function ContentFieldInput({
    * another plugin names the instance it points at.
    */
   instanceConfig: Record<string, unknown>;
+  /** Tags already in use for this field elsewhere; only meaningful for Tags fields. */
+  tagSuggestions?: string[];
 }) {
   const { t } = useTranslation();
 
@@ -162,6 +165,7 @@ export function ContentFieldInput({
             value={toTagList(value)}
             onChange={(tags) => onChange(tags)}
             placeholder={t('content.tags.placeholder')}
+            suggestions={tagSuggestions}
           />
         );
       case 'ContentRef':

@@ -52,4 +52,10 @@ export const accountApi = {
   addKey: (body: { title: string; key: string }) =>
     req<SshKey>('/ssh-keys', { method: 'POST', body: JSON.stringify(body) }),
   deleteKey: (id: number) => req<void>(`/ssh-keys/${id}`, { method: 'DELETE' }),
+  /**
+   * Destroys the login and the mirrored git account. Identity refuses while the
+   * user still belongs to any workspace, so this can never run before admin-api's
+   * reversible half (`DELETE /api/admin/me`) has detached them.
+   */
+  deleteAccount: () => req<void>('/me', { method: 'DELETE' }),
 };

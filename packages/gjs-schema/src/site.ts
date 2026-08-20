@@ -145,6 +145,29 @@ export const navItemSchema: z.ZodType<NavItem> = z.lazy(() =>
   }),
 );
 
+/**
+ * Whether the site asks visitors before storing anything for analytics.
+ *
+ * The runtime keeps a per-visit id in sessionStorage, which the server hashes into
+ * an anonymous visitor. That is analytics storage, not strictly-necessary storage,
+ * so under ePrivacy it needs consent in most European readings — hence `banner`
+ * is the default: a site that has not thought about it does not silently track.
+ */
+export const cookieConsentSchema = z.object({
+  /**
+   * `banner` — ask, and record nothing until the visitor accepts (default).
+   * `off` — no banner, analytics runs immediately. Only appropriate where the
+   * owner has established they do not need consent.
+   */
+  mode: z.enum(['banner', 'off']).default('banner'),
+  message: z.string().optional(),
+  acceptLabel: z.string().optional(),
+  declineLabel: z.string().optional(),
+  /** Link to the site's own cookie/privacy policy, shown in the banner. */
+  policyUrl: z.string().optional(),
+  policyLabel: z.string().optional(),
+});
+
 export const siteSettingsSchema = z.object({
   /** `<html lang>` for every page. */
   lang: z.string().default('en'),
@@ -155,6 +178,7 @@ export const siteSettingsSchema = z.object({
   bodyEndHtml: z.string().optional(),
   /** Render the manifest nav as a `<nav>` above each page's body. */
   renderNav: z.boolean().default(true),
+  cookieConsent: cookieConsentSchema.default({ mode: 'banner' }),
 });
 
 export const siteManifestSchema = z.object({
@@ -165,7 +189,7 @@ export const siteManifestSchema = z.object({
   /** Shared bands, each backed by `regions/<slug>.html`. */
   regions: z.array(regionEntrySchema).default([]),
   layouts: z.array(layoutEntrySchema).default([]),
-  settings: siteSettingsSchema.default({ lang: 'en', renderNav: true }),
+  settings: siteSettingsSchema.default({ lang: 'en', renderNav: true, cookieConsent: { mode: 'banner' } }),
 });
 
 export type ThemeTokens = z.infer<typeof themeTokensSchema>;
@@ -173,6 +197,7 @@ export type SeoMeta = z.infer<typeof seoMetaSchema>;
 export type PageEntry = z.infer<typeof pageEntrySchema>;
 export type RegionEntry = z.infer<typeof regionEntrySchema>;
 export type LayoutEntry = z.infer<typeof layoutEntrySchema>;
+export type CookieConsentSettings = z.infer<typeof cookieConsentSchema>;
 export type SiteSettings = z.infer<typeof siteSettingsSchema>;
 export type SiteManifest = z.infer<typeof siteManifestSchema>;
 
@@ -284,6 +309,6 @@ export function emptySiteManifest(title = 'Home'): SiteManifest {
     nav: [],
     regions: [],
     layouts: [],
-    settings: { lang: 'en', renderNav: true },
+    settings: { lang: 'en', renderNav: true, cookieConsent: { mode: 'banner' } },
   };
 }

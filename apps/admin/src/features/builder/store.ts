@@ -1,4 +1,5 @@
 import {
+  AGENTS_MD,
   GLOBAL_CSS,
   THEME_CSS,
   componentPath,
@@ -10,7 +11,7 @@ import {
 } from '@dcms/gjs-schema';
 import { create } from 'zustand';
 import { useVfs } from '../site-source';
-import { projectFiles, readProject, type Project } from './project';
+import { aiGuideFor, projectFiles, readProject, type Project } from './project';
 
 /**
  * Builder state that is *not* file content: which page is open, which view is
@@ -126,6 +127,13 @@ export const useBuilder = create<BuilderState>((set, get) => ({
       activeKind,
       reloadToken: drifted ? s.reloadToken + 1 : s.reloadToken,
     }));
+
+    // The authoring contract is generated, which has to mean *every* repo has a
+    // current one — including the ones that predate it and the one someone just
+    // deleted the file from. Opening the site is enough. `writeFile` is a no-op
+    // when the content already matches, so this settles after one pass rather
+    // than looping through the sync it triggers.
+    if (project) useVfs.getState().writeFile(AGENTS_MD, aiGuideFor(project));
   },
 
   noteCapture: (files) =>
@@ -217,7 +225,11 @@ export function writeWholeProject(project: Project): void {
   }
 }
 
-/** The generated theme stylesheet is derived from site.json; never hand-edited. */
+/**
+ * Files the builder rewrites on every save: the theme stylesheet, derived from
+ * site.json, and the AI authoring contract, derived from the catalogue. Both are
+ * shown read-only, because an edit here would be silently overwritten.
+ */
 export function isGeneratedBuilderFile(path: string): boolean {
-  return path === THEME_CSS;
+  return path === THEME_CSS || path === AGENTS_MD;
 }

@@ -10,6 +10,7 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { accountApi } from './accountApi';
+import { DeleteAccountCard } from './DeleteAccountCard';
 
 export function AccountPage() {
   const { t } = useTranslation();
@@ -191,6 +192,9 @@ export function AccountPage() {
             </form>
           </CardContent>
         </Card>
+
+        {/* Danger zone */}
+        {me.data?.email ? <DeleteAccountCard email={me.data.email} /> : null}
 
         {/* Git help */}
         <Card>

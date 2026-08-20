@@ -46,6 +46,29 @@ public class StaticSiteAssemblerTests
     }
 
     [Fact]
+    public void Embeds_a_consent_policy_defaulting_to_asking_first()
+    {
+        var home = new StaticSiteAssembler().Assemble(Files()).Pages
+            .Single(p => p.FileName == "index.html").Html;
+
+        home.Should().Contain("id=\"dcms-consent\"");
+        // Nothing in the manifest says anything about consent, so the site must
+        // still default to asking rather than to tracking silently.
+        home.Should().Contain("\"mode\":\"banner\"");
+        home.Should().Contain("\"analytics\":true");
+    }
+
+    [Fact]
+    public void Marks_the_consent_policy_when_the_tenant_records_no_analytics()
+    {
+        var home = new StaticSiteAssembler().Assemble(Files(), analyticsEnabled: false).Pages
+            .Single(p => p.FileName == "index.html").Html;
+
+        // A site that stores nothing must not greet visitors with a cookie banner.
+        home.Should().Contain("\"analytics\":false");
+    }
+
+    [Fact]
     public void Wraps_each_page_body_in_a_document_shell()
     {
         var site = new StaticSiteAssembler().Assemble(Files());
@@ -388,5 +411,58 @@ public class StaticSiteAssemblerTests
 
         html.Should().Contain("Příliš žluťoučký kůň");
         Encoding.UTF8.GetString(Encoding.UTF8.GetBytes(html)).Should().Be(html);
+    }
+
+    [Fact]
+    public void Publishes_a_detail_route_under_a_wildcard_file_name()
+    {
+        var files = Files(("pages/event.html", "<article>Event</article>"));
+        files["site.json"] = WithDetailPage(Manifest);
+
+        var site = new StaticSiteAssembler().Assemble(files);
+
+        // `@` cannot occur in a real segment (they are kebab-case), so the site
+        // host can tell "the page for any event" from "the page for /events/at".
+        site.Pages.Should().Contain(p => p.FileName == "events_@.html");
+    }
+
+    [Fact]
+    public void Leaves_detail_routes_out_of_the_navigation_route_table()
+    {
+        var files = Files(("pages/event.html", "<article>Event</article>"));
+        files["site.json"] = WithDetailPage(Manifest);
+
+        var home = new StaticSiteAssembler().Assemble(files).Pages
+            .Single(p => p.FileName == "index.html").Html;
+
+        // A detail route is not an address: it can never match the page being
+        // viewed, and a menu built from it would link to a literal colon.
+        home.Should().NotContain("/events/:slug");
+        home.Should().Contain("/about");
+    }
+
+    /// <summary>The shared manifest with an `/events/:slug` detail page added.</summary>
+    private static string WithDetailPage(string manifest) => manifest.Replace(
+        """
+            {
+              "id": "about", "slug": "about", "path": "/about", "title": "About",
+        """,
+        """
+            {
+              "id": "event", "slug": "event", "path": "/events/:slug", "title": "Event",
+              "seo": { "title": "Event" }
+            },
+            {
+              "id": "about", "slug": "about", "path": "/about", "title": "About",
+        """,
+        StringComparison.Ordinal);
+
+    [Theory]
+    [InlineData("/events/:slug", "events_@.html")]
+    [InlineData("/about/team", "about_team.html")]
+    [InlineData("/", "index.html")]
+    public void Maps_a_route_to_its_published_file_name(string path, string expected)
+    {
+        StaticSiteAssembler.FileNameFor(path).Should().Be(expected);
     }
 }

@@ -199,4 +199,37 @@ public sealed class SiteSettings
 
     /// <summary>Render the manifest nav above each page's body.</summary>
     public bool RenderNav { get; set; } = true;
+
+    /// <summary>Visitor consent for analytics storage. See <see cref="CookieConsentSettings"/>.</summary>
+    public CookieConsentSettings CookieConsent { get; set; } = new();
+}
+
+/// <summary>
+/// Whether the site asks visitors before storing anything for analytics.
+///
+/// The runtime keeps a per-visit id in sessionStorage, which is what the server
+/// hashes into an anonymous visitor. That is analytics storage, not
+/// strictly-necessary storage, so under ePrivacy it needs consent in most European
+/// readings — hence <see cref="Mode"/> defaults to <c>banner</c>: a site that has
+/// not thought about it does not silently track.
+///
+/// This is a per-site setting rather than a platform one because the obligation is
+/// the site owner's and depends on their audience.
+/// </summary>
+public sealed class CookieConsentSettings
+{
+    /// <summary>
+    /// <c>banner</c> — ask, and record nothing until the visitor accepts (default).
+    /// <c>off</c> — no banner, analytics runs immediately. Only appropriate where
+    /// the owner has established they do not need consent.
+    /// </summary>
+    public string Mode { get; set; } = "banner";
+
+    public string? Message { get; set; }
+    public string? AcceptLabel { get; set; }
+    public string? DeclineLabel { get; set; }
+
+    /// <summary>Link to the site's own cookie/privacy policy, shown in the banner.</summary>
+    public string? PolicyUrl { get; set; }
+    public string? PolicyLabel { get; set; }
 }

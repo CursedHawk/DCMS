@@ -8,26 +8,46 @@ import {
 import { lazy, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from './app/AppShell';
-import { AccountPage } from './features/account/AccountPage';
-import { AiSettingsPage } from './features/ai/AiSettingsPage';
-import { ContentPage } from './features/content/ContentPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
-import { DomainsPage } from './features/domains/DomainsPage';
-import { FormsPage } from './features/forms/FormsPage';
-import { InviteAcceptPage } from './features/invitations/InviteAcceptPage';
-import { MediaPage } from './features/media/MediaPage';
-import { MembersPage } from './features/members/MembersPage';
-import { PluginsPage } from './features/plugins/PluginsPage';
-import { RolesPage } from './features/roles/RolesPage';
-import { SitesPage } from './features/sites/SitesPage';
-import { SiteWorkspace } from './features/sites/SiteWorkspace';
-import { TenantsPage } from './features/tenants/TenantsPage';
 import { completeSignin } from './auth';
 
-// Heavy, route-specific pages are loaded on demand to keep the initial bundle lean.
-const OpenApiPage = lazy(() => import('./features/openapi/OpenApiPage').then((m) => ({ default: m.OpenApiPage })));
-const AnalyticsPage = lazy(() => import('./features/analytics/AnalyticsPage').then((m) => ({ default: m.AnalyticsPage })));
-const ChatPage = lazy(() => import('./features/chat/ChatPage').then((m) => ({ default: m.ChatPage })));
+/*
+ * Every page except the dashboard is loaded on demand.
+ *
+ * The initial download is then the shell plus the one page being opened, instead
+ * of every page in the app: several pull large route-specific libraries — Monaco
+ * and esbuild-wasm (site editor), GrapesJS (visual builder), Scalar (API docs),
+ * recharts (analytics), SignalR (chat), react-jsonschema-form (plugin config) —
+ * and statically importing any of them here puts them in the entry graph, where
+ * the browser preloads them on the dashboard.
+ *
+ * AppShell already wraps <Outlet /> in a Suspense boundary, so these need no
+ * per-route fallback.
+ */
+const page = <T extends string>(load: () => Promise<Record<T, React.FunctionComponent>>, name: T) =>
+  lazy(() => load().then((m) => ({ default: m[name] })));
+
+const AccountPage = page(() => import('./features/account/AccountPage'), 'AccountPage');
+const AiSettingsPage = page(() => import('./features/ai/AiSettingsPage'), 'AiSettingsPage');
+const AnalyticsPage = page(() => import('./features/analytics/AnalyticsPage'), 'AnalyticsPage');
+const ChatPage = page(() => import('./features/chat/ChatPage'), 'ChatPage');
+const ContentPage = page(() => import('./features/content/ContentPage'), 'ContentPage');
+const DomainsPage = page(() => import('./features/domains/DomainsPage'), 'DomainsPage');
+const FormsPage = page(() => import('./features/forms/FormsPage'), 'FormsPage');
+const InviteAcceptPage = page(() => import('./features/invitations/InviteAcceptPage'), 'InviteAcceptPage');
+const MediaPage = page(() => import('./features/media/MediaPage'), 'MediaPage');
+const MembersPage = page(() => import('./features/members/MembersPage'), 'MembersPage');
+const OpenApiPage = page(() => import('./features/openapi/OpenApiPage'), 'OpenApiPage');
+const PluginsPage = page(() => import('./features/plugins/PluginsPage'), 'PluginsPage');
+const RolesPage = page(() => import('./features/roles/RolesPage'), 'RolesPage');
+const SitesPage = page(() => import('./features/sites/SitesPage'), 'SitesPage');
+const TenantsPage = page(() => import('./features/tenants/TenantsPage'), 'TenantsPage');
+const WorkspacePage = page(() => import('./features/workspace/WorkspacePage'), 'WorkspacePage');
+
+// Takes a prop, so it cannot use the helper above.
+const SiteWorkspace = lazy(() =>
+  import('./features/sites/SiteWorkspace').then((m) => ({ default: m.SiteWorkspace })),
+);
 
 // Root renders just an outlet; the authenticated shell is a pathless layout so
 // the OIDC callback can complete outside the shell (before a user exists).
@@ -54,7 +74,10 @@ const appLayoutRoute = createRoute({
   component: AppShell,
 });
 
-function child(path: string, component: () => React.ReactNode) {
+// FunctionComponent rather than a plain function type: every page here is a
+// React.lazy wrapper, which is an exotic component object, not a function, and
+// the router's RouteComponent rejects class components.
+function child(path: string, component: React.FunctionComponent) {
   return createRoute({ getParentRoute: () => appLayoutRoute, path, component });
 }
 
@@ -68,11 +91,12 @@ const contentRoute = child('/content', ContentPage);
 const mediaRoute = child('/media', MediaPage);
 const formsRoute = child('/forms', FormsPage);
 const sitesRoute = child('/sites', SitesPage);
-const openapiRoute = child('/openapi', () => <OpenApiPage />);
+const openapiRoute = child('/openapi', OpenApiPage);
 const aiRoute = child('/ai', AiSettingsPage);
 const accountRoute = child('/account', AccountPage);
-const analyticsRoute = child('/analytics', () => <AnalyticsPage />);
-const chatRoute = child('/chat', () => <ChatPage />);
+const workspaceRoute = child('/workspace', WorkspacePage);
+const analyticsRoute = child('/analytics', AnalyticsPage);
+const chatRoute = child('/chat', ChatPage);
 const inviteRoute = child('/invite/accept', InviteAcceptPage);
 
 const editorRoute = createRoute({
@@ -101,6 +125,7 @@ export const routeTree = rootRoute.addChildren([
     openapiRoute,
     aiRoute,
     accountRoute,
+    workspaceRoute,
     analyticsRoute,
     chatRoute,
     inviteRoute,

@@ -13,9 +13,12 @@
  *   styles/pages/<slug>.css  rules scoped to one page
  *   assets.json            Asset Manager entries (DCMS media library references)
  *   blocks/<name>.json     a tenant-authored component (see ./component)
+ *   AGENTS.md              GENERATED authoring contract for AI agents
  */
 
 export const SITE_JSON = 'site.json';
+/** The generated authoring contract for AI agents (see @dcms/gjs-blocks' guide). */
+export const AGENTS_MD = 'AGENTS.md';
 export const ASSETS_JSON = 'assets.json';
 export const THEME_CSS = 'styles/theme.css';
 export const GLOBAL_CSS = 'styles/global.css';
@@ -80,7 +83,7 @@ export function slugFromPageCssPath(path: string): string | null {
  * worse than not offering the edit at all.
  */
 export function isGeneratedPath(path: string): boolean {
-  return path === THEME_CSS;
+  return path === THEME_CSS || path === AGENTS_MD;
 }
 
 /** Every stylesheet a page pulls in, in cascade order (theme → global → page). */
@@ -119,11 +122,38 @@ export function uniqueSlug(slug: string, taken: Iterable<string>): string {
 }
 
 /**
+ * What a `:param` route segment becomes in a published file name.
+ *
+ * `@` because a real segment is kebab-case (see `slugify`) and can never
+ * contain one, so the mapping is unambiguous in both directions — the site host
+ * has to be able to tell "the page for /events/anything" apart from "the page
+ * for /events/at".
+ */
+export const WILDCARD_FILE_SEGMENT = '@';
+
+/**
+ * True for a route with a `:param` segment — a **detail route**.
+ *
+ * `/events/:slug` is one page that serves every event: the host resolves any
+ * `/events/<something>` to it, and the detail component on it reads the last
+ * URL segment to decide which item to fetch. Without this a card linking to
+ * `/events/summer-party` fell through the host's SPA fallback and rendered the
+ * home page at that address, which is the reason lists were not clickable.
+ */
+export function isDetailRoute(routePath: string): boolean {
+  return routePath.split('/').some((segment) => segment.startsWith(':'));
+}
+
+/**
  * The published file name for a route path. Mirrors the existing Mode A
  * convention so links that worked before still work: `/` → index.html,
- * `/about/team` → about_team.html.
+ * `/about/team` → about_team.html, `/events/:slug` → events_@.html.
  */
 export function outputFileName(routePath: string): string {
   const trimmed = routePath.replace(/^\/+|\/+$/g, '');
-  return trimmed ? `${trimmed.replace(/\//g, '_')}.html` : 'index.html';
+  if (!trimmed) return 'index.html';
+  const segments = trimmed
+    .split('/')
+    .map((segment) => (segment.startsWith(':') ? WILDCARD_FILE_SEGMENT : segment));
+  return `${segments.join('_')}.html`;
 }

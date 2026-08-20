@@ -33,4 +33,15 @@ export const ideApi = {
     api.get<{ files: Record<string, string> }>(
       `/admin/sites/${siteId}/starter-files?flavor=${flavor}`,
     ),
+
+  /**
+   * Re-emit only the DCMS-owned files — `openapi.json` and the typed client under
+   * `src/api/` — from the tenant's current content API. Used to pull in plugins
+   * installed or reconfigured since the site was scaffolded, without touching a
+   * line the author wrote.
+   */
+  regenerate: (siteId: string) =>
+    api.get<{ files: Record<string, string> }>(
+      `/admin/sites/${siteId}/starter-files?flavor=regenerate`,
+    ),
 };

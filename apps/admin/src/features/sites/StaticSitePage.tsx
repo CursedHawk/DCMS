@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
+import { Progress } from '../../components/ui/progress';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { cn } from '../../lib/cn';
 import { ApiError, api } from '../../lib/api';
@@ -56,6 +57,9 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
   const zipInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  // Fraction of the bundle sent so far. A site upload is a whole built website —
+  // often tens of megabytes — so a bare "processing…" reads as a hang.
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const site = useQuery({
     queryKey: ['site', siteId],
@@ -73,9 +77,11 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
         const path = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
         fd.append('files', file, path && path.length > 0 ? path : file.name);
       }
-      return api.upload<{ fileCount: number; size: number; name: string; hasIndex: boolean }>(
+      setUploadProgress(0);
+      return api.uploadWithProgress<{ fileCount: number; size: number; name: string; hasIndex: boolean }>(
         `/admin/sites/${siteId}/upload`,
         fd,
+        setUploadProgress,
       );
     },
     onSuccess: async (r) => {
@@ -162,7 +168,18 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
                 <FolderUp className="h-4 w-4" /> {t('sites.chooseFolder')}
               </Button>
             </div>
-            {upload.isPending ? <p className="text-xs text-muted-foreground">{t('media.processing')}…</p> : null}
+            {upload.isPending ? (
+              <div className="w-full max-w-sm space-y-1">
+                <Progress value={uploadProgress} label={t('sites.chooseZip')} />
+                <p className="text-xs text-muted-foreground">
+                  {/* Once the bytes are gone the server is still unpacking, so the
+                      last step reads as "processing" rather than a stalled 100%. */}
+                  {uploadProgress < 1
+                    ? `${Math.round(uploadProgress * 100)}%`
+                    : `${t('media.processing')}…`}
+                </p>
+              </div>
+            ) : null}
             <input
               ref={zipInput}
               type="file"

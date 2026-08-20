@@ -26,16 +26,19 @@ using Dcms.Shared.Data.Visitors;
 using Dcms.Shared.Hosting;
 using Dcms.Shared.Media;
 using Dcms.Shared.Messaging;
+using Dcms.Shared.Messaging.Email;
 using Dcms.Shared.Security;
 using Dcms.Shared.Security.Authorization;
 using Dcms.Shared.Storage;
 using Dcms.Shared.Vault;
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddDcmsServiceDefaults("admin-api");
 builder.Services.AddDcmsMessaging(builder.Configuration);
 builder.Services.AddDcmsCaching(builder.Configuration);
+builder.Services.AddDcmsEmailQueue();
 builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
 
 // Tenancy: shared TenancyDbContext + header-based tenant resolution.
@@ -129,20 +132,41 @@ builder.Services.AddHttpClient<Dcms.AdminApi.Sites.Git.ForgejoClient>((sp, clien
 });
 builder.Services.AddScoped<Dcms.AdminApi.Sites.Git.SiteGitService>();
 builder.Services.AddScoped<Dcms.AdminApi.Sites.Git.RepoAccessReconciler>();
+builder.Services.AddScoped<Dcms.AdminApi.Sites.SiteDeleter>();
+builder.Services.AddScoped<TenantDeleter>();
 
 var app = builder.Build();
+
+// Behind the Caddy TLS edge admin-api is reached over plain HTTP on the internal
+// network, so Request.Scheme would be "http". Honour X-Forwarded-Proto/Host so
+// absolute links we mint for users (invitation accept links) point at the public
+// https origin. admin-api is only reachable through Caddy, so all proxies are
+// trusted.
+var forwardedHeaders = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor
+        | ForwardedHeaders.XForwardedProto
+        | ForwardedHeaders.XForwardedHost,
+};
+forwardedHeaders.KnownIPNetworks.Clear();
+forwardedHeaders.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeaders);
+
 app.UseAuthentication();
 app.UseMultiTenant();
 app.UseAuthorization();
 
 app.MapDcmsDefaultEndpoints();
 app.MapTenancyEndpoints();
+app.MapTenantAdminEndpoints();
+app.MapMyAccountEndpoints();
 app.MapInvitationEndpoints();
 app.MapDomainEndpoints();
 app.MapPluginEndpoints();
 app.MapContentEndpoints();
 app.MapMediaEndpoints();
 app.MapSiteEndpoints();
+app.MapSiteDeletion();
 app.MapSitePreview();
 app.MapFormSubmissionEndpoints();
 app.MapAiSettingsEndpoints();

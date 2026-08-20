@@ -1,4 +1,4 @@
-import { defaultLayout, type ThemeTokens } from '@dcms/gjs-schema';
+import { defaultLayout, type CookieConsentSettings, type ThemeTokens } from '@dcms/gjs-schema';
 import { useTranslation } from 'react-i18next';
 import { Input, Textarea } from '../../../components/ui/input';
 import { useBuilder } from '../store';
@@ -41,6 +41,18 @@ export function SettingsPanel() {
           ? { ...p, entry: { ...p.entry, ...patch, seo: { ...p.entry.seo, ...(patch.seo ?? {}) } } }
           : p,
       ),
+    }));
+  };
+
+  const consent: CookieConsentSettings = project.manifest.settings.cookieConsent ?? { mode: 'banner' };
+
+  const patchConsent = (patch: Partial<CookieConsentSettings>) => {
+    useBuilder.getState().updateManifest((manifest) => ({
+      ...manifest,
+      settings: {
+        ...manifest.settings,
+        cookieConsent: { ...(manifest.settings.cookieConsent ?? { mode: 'banner' }), ...patch },
+      },
     }));
   };
 
@@ -118,6 +130,71 @@ export function SettingsPanel() {
           />
           {t('builder.noIndex')}
         </label>
+      </section>
+
+      {/*
+        Cookie consent is a *site* setting, not a platform one: the obligation is
+        the site owner's and depends on their audience, and the wording has to be
+        theirs. It defaults to showing a banner, so a site nobody has configured
+        does not silently track its visitors.
+      */}
+      <section className="space-y-2 border-t pt-4">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {t('builder.consent.title')}
+        </h3>
+        <p className="text-xs text-muted-foreground">{t('builder.consent.hint')}</p>
+
+        <Field label={t('builder.consent.mode')}>
+          <select
+            value={consent.mode}
+            onChange={(e) => patchConsent({ mode: e.target.value as CookieConsentSettings['mode'] })}
+            className="h-8 w-full rounded-md border bg-background px-2 text-sm"
+          >
+            <option value="banner">{t('builder.consent.modeBanner')}</option>
+            <option value="off">{t('builder.consent.modeOff')}</option>
+          </select>
+        </Field>
+
+        {consent.mode === 'banner' ? (
+          <>
+            <Field label={t('builder.consent.message')}>
+              <Textarea
+                rows={3}
+                value={consent.message ?? ''}
+                placeholder={t('builder.consent.messageDefault')}
+                onChange={(e) => patchConsent({ message: e.target.value || undefined })}
+              />
+            </Field>
+            <Field label={t('builder.consent.acceptLabel')}>
+              <Input
+                value={consent.acceptLabel ?? ''}
+                placeholder="Accept"
+                onChange={(e) => patchConsent({ acceptLabel: e.target.value || undefined })}
+                className="h-8"
+              />
+            </Field>
+            <Field label={t('builder.consent.declineLabel')}>
+              <Input
+                value={consent.declineLabel ?? ''}
+                placeholder="Decline"
+                onChange={(e) => patchConsent({ declineLabel: e.target.value || undefined })}
+                className="h-8"
+              />
+            </Field>
+            <Field label={t('builder.consent.policyUrl')}>
+              <Input
+                value={consent.policyUrl ?? ''}
+                placeholder="/privacy"
+                onChange={(e) => patchConsent({ policyUrl: e.target.value || undefined })}
+                className="h-8"
+              />
+            </Field>
+          </>
+        ) : (
+          <p className="rounded-md border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/10 p-2 text-xs">
+            {t('builder.consent.offWarning')}
+          </p>
+        )}
       </section>
 
       <div className="border-t pt-4">

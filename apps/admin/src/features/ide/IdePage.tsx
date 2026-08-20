@@ -120,6 +120,31 @@ export function IdePage({ siteId }: { siteId: string }) {
     },
   });
 
+  /*
+   * Re-pull the DCMS-generated layer (openapi.json + the typed client under
+   * src/api/) from the tenant's current content API. Those files are emitted once
+   * when the site is scaffolded, so they drift the moment a plugin is installed or
+   * reconfigured — this is how the author picks the new endpoints up.
+   *
+   * Written through writeFile rather than seedStarter/importFiles: it must land as
+   * ordinary pending edits (so the normal autosave + git commit carries them) and
+   * must not steal the active tab.
+   */
+  const refreshGenerated = useMutation({
+    mutationFn: () => ideApi.regenerate(siteId),
+    onSuccess: ({ files }) => {
+      const vfs = useVfs.getState();
+      const changed = Object.entries(files).filter(([path, content]) => vfs.files[path] !== content);
+      for (const [path, content] of changed) vfs.writeFile(path, content);
+      toast.success(
+        changed.length === 0
+          ? t('ide.generatedUpToDate')
+          : t('ide.generatedRefreshed', { count: changed.length }),
+      );
+    },
+    onError: () => toast.error(t('errors.generic')),
+  });
+
   // Mode B typings are opted into here rather than by the shared Monaco setup, so
   // the Mode A builder never pays for the React dependency palette.
   useEffect(() => {
@@ -205,6 +230,14 @@ export function IdePage({ siteId }: { siteId: string }) {
         <span className="text-xs text-muted-foreground">
           {session.saving || dirty ? t('common.saving') : session.status}
         </span>
+        <Button
+          variant="ghost"
+          onClick={() => refreshGenerated.mutate()}
+          disabled={refreshGenerated.isPending}
+          title={t('ide.refreshGeneratedHint')}
+        >
+          <RefreshCw className="h-4 w-4" /> {t('ide.refreshGenerated')}
+        </Button>
         <Button
           variant="ghost"
           onClick={() => resetSandbox.mutate()}

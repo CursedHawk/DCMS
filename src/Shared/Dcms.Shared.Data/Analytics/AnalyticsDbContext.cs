@@ -6,7 +6,13 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Shared.Data.Analytics;
 
-/// <summary>Raw analytics event (page view, custom event). One row per ingested event.</summary>
+/// <summary>
+/// Raw analytics event (page view, custom event). One row per ingested event.
+///
+/// Everything past <see cref="PropsJson"/> is derived server-side at ingest, from
+/// the request rather than from the beacon payload: a browser cannot be trusted to
+/// report its own country, and it does not know its own IP at all.
+/// </summary>
 public sealed class AnalyticsEvent
 {
     public long Id { get; set; }
@@ -18,9 +24,30 @@ public sealed class AnalyticsEvent
     public string? SessionId { get; set; }
     public string? VisitorHash { get; set; }
     public string PropsJson { get; set; } = "{}";
+
+    // ---- Derived at ingest from the User-Agent header ----
+    /// <summary>"desktop", "mobile", "tablet" or "bot".</summary>
+    public string? Device { get; set; }
+    public string? Browser { get; set; }
+    public string? Os { get; set; }
+
+    /// <summary>ISO 3166-1 alpha-2 country code, or null when it could not be resolved.</summary>
+    public string? Country { get; set; }
+
+    // ---- Campaign attribution, parsed from the beacon's URL query ----
+    public string? UtmSource { get; set; }
+    public string? UtmMedium { get; set; }
+    public string? UtmCampaign { get; set; }
 }
 
-/// <summary>Per-day aggregate maintained by the consumer for fast dashboards.</summary>
+/// <summary>
+/// Per-day aggregate maintained by the consumer for fast dashboards.
+///
+/// Counts only. Unique visitors deliberately live nowhere here: distinct counts do
+/// not sum, so a "visitors" column per (day, type, path) could not be rolled up into
+/// a period total without over-counting anyone who visited twice. The dashboard
+/// computes uniques from the raw events instead.
+/// </summary>
 public sealed class DailyRollup
 {
     public Guid TenantId { get; set; }
@@ -56,7 +83,17 @@ public class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> options) : 
             e.Property(x => x.SessionId).HasMaxLength(128);
             e.Property(x => x.VisitorHash).HasMaxLength(128);
             e.Property(x => x.PropsJson).HasColumnType("jsonb");
+            e.Property(x => x.Device).HasMaxLength(16);
+            e.Property(x => x.Browser).HasMaxLength(64);
+            e.Property(x => x.Os).HasMaxLength(64);
+            e.Property(x => x.Country).HasMaxLength(2).IsFixedLength();
+            e.Property(x => x.UtmSource).HasMaxLength(128);
+            e.Property(x => x.UtmMedium).HasMaxLength(128);
+            e.Property(x => x.UtmCampaign).HasMaxLength(128);
             e.HasIndex(x => new { x.TenantId, x.OccurredAt });
+            // The dashboard's unique-visitor count is a DISTINCT over this triple for
+            // a date range; without the index it is a full scan of the tenant's events.
+            e.HasIndex(x => new { x.TenantId, x.OccurredAt, x.VisitorHash });
         });
 
         builder.Entity<DailyRollup>(e =>

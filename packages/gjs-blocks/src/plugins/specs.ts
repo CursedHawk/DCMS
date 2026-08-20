@@ -184,6 +184,8 @@ const COLLECTION_ONLY = new Set([
   'moreHref',
   'linkLabel',
   'excerptLength',
+  // A detail block *is* the item's page; linking each item to itself is noise.
+  'itemLink',
 ]);
 
 const TEXTUAL = (type: string) =>
@@ -327,12 +329,21 @@ function presentationTraits(
       description: 'Rendered as chips. A list, or one field of comma-separated values.',
     },
     {
+      name: 'itemLink',
+      label: 'Item links to',
+      kind: 'text',
+      target: 'prop',
+      description:
+        'A page on this site, per item — “/events/{slug}”, or just “/events/” for the same thing. ' +
+        'Point it at the page holding the matching detail block. Leave empty for unclickable items.',
+    },
+    {
       name: 'linkField',
       label: 'Link from',
       kind: 'select',
       target: 'prop',
       options: fieldOptions(contentType, custom, LINKY),
-      description: 'Which field each card links to, if any.',
+      description: 'A field holding a URL of its own. Overrides the pattern above.',
     },
   ];
 }

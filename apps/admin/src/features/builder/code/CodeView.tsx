@@ -1,5 +1,6 @@
 import type { DcmsComponentSpec } from '@dcms/gjs-schema';
 import {
+  AGENTS_MD,
   GLOBAL_CSS,
   SITE_JSON,
   THEME_CSS,
@@ -8,11 +9,18 @@ import {
   pageHtmlPath,
   regionHtmlPath,
 } from '@dcms/gjs-schema';
-import { FileCode2, FileJson, Palette } from 'lucide-react';
+import { BookText, FileCode2, FileJson, GitCompare, Palette, X } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../../lib/cn';
-import { MonacoEditor, monaco, setGeneratedPathPredicate, setupMonaco, useVfs } from '../../site-source';
+import {
+  DiffEditor,
+  MonacoEditor,
+  monaco,
+  setGeneratedPathPredicate,
+  setupMonaco,
+  useVfs,
+} from '../../site-source';
 import { isGeneratedBuilderFile, useBuilder } from '../store';
 import { registerHtmlData } from './htmlData';
 import { registerSiteJsonSchema } from './siteJsonSchema';
@@ -49,6 +57,11 @@ export function CodeView({ specs }: { specs: readonly DcmsComponentSpec[] }) {
   const activeSlug = useBuilder((s) => s.activeSlug);
   const activeKind = useBuilder((s) => s.activeKind);
   const activePath = useVfs((s) => s.activePath);
+  // Diffs opened from the Source Control panel land here too: the builder has no
+  // separate editor area, so without this a click on a changed file did nothing.
+  const openDiffs = useVfs((s) => s.openDiffs);
+  const activeDiff = useVfs((s) => s.activeDiff);
+  const diff = openDiffs.find((d) => d.path === activeDiff) ?? null;
 
   // Language intelligence: component-aware HTML completion in the html worker,
   // manifest validation in the json worker. Both off the main thread.
@@ -76,6 +89,7 @@ export function CodeView({ specs }: { specs: readonly DcmsComponentSpec[] }) {
       { path: GLOBAL_CSS, label: t('builder.fileGlobalCss'), icon: Palette },
       { path: THEME_CSS, label: t('builder.fileTheme'), icon: Palette, generated: true },
       { path: SITE_JSON, label: t('builder.fileManifest'), icon: FileJson },
+      { path: AGENTS_MD, label: t('builder.fileAgents'), icon: BookText, generated: true },
     ];
     // A region is one file: its rules live in global.css, which is already here.
     if (activeKind === 'region') {
@@ -131,7 +145,9 @@ export function CodeView({ specs }: { specs: readonly DcmsComponentSpec[] }) {
             title={generated ? t('builder.generatedFile') : path}
             className={cn(
               'flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs',
-              activePath === path ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50',
+              !activeDiff && activePath === path
+                ? 'bg-accent text-accent-foreground'
+                : 'text-muted-foreground hover:bg-accent/50',
             )}
           >
             <Icon className="h-3.5 w-3.5" />
@@ -139,16 +155,52 @@ export function CodeView({ specs }: { specs: readonly DcmsComponentSpec[] }) {
             {generated && <span className="text-[10px] opacity-60">{t('builder.readOnly')}</span>}
           </button>
         ))}
+
+        {openDiffs.map((d) => (
+          <span
+            key={`diff:${d.path}`}
+            className={cn(
+              'flex shrink-0 items-center gap-1 rounded-md pl-2 pr-1 text-xs',
+              activeDiff === d.path
+                ? 'bg-accent text-accent-foreground'
+                : 'text-muted-foreground hover:bg-accent/50',
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => useVfs.getState().setActiveDiff(d.path)}
+              title={`${d.path} — ${t('ide.git.viewDiff')}`}
+              className="flex items-center gap-1.5 py-1"
+            >
+              <GitCompare className="h-3.5 w-3.5" />
+              {d.path.slice(d.path.lastIndexOf('/') + 1)}
+            </button>
+            <button
+              type="button"
+              onClick={() => useVfs.getState().closeDiff(d.path)}
+              title={t('actions.close')}
+              className="rounded p-1 hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
       </div>
 
-      {activePath && isGeneratedBuilderFile(activePath) && (
+      {!activeDiff && activePath && isGeneratedBuilderFile(activePath) && (
         <p className="shrink-0 border-b bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400">
           {t('builder.generatedFileHint')}
         </p>
       )}
 
+      {/* Both stay mounted is not an option here — Monaco's diff editor and the
+          plain editor each own the whole area, so the active tab picks one. */}
       <div className="min-h-0 flex-1">
-        <MonacoEditor />
+        {diff ? (
+          <DiffEditor path={diff.path} original={diff.original} modified={diff.modified} />
+        ) : (
+          <MonacoEditor />
+        )}
       </div>
     </div>
   );

@@ -41,6 +41,18 @@ public sealed class ForgejoClient(HttpClient http, IOptions<ForgejoOptions> opti
             await ThrowFor(res, ct);
     }
 
+    /// <summary>
+    /// Delete an org. Forgejo refuses while it still owns repos, so callers delete
+    /// the repos first. 404 counts as success so a half-finished tenant delete can
+    /// simply be re-run.
+    /// </summary>
+    public async Task DeleteOrgAsync(string org, CancellationToken ct)
+    {
+        using var res = await http.DeleteAsync($"/api/v1/orgs/{Uri.EscapeDataString(org)}", ct);
+        if (res.StatusCode is HttpStatusCode.NoContent or HttpStatusCode.NotFound) return;
+        await ThrowFor(res, ct);
+    }
+
     // ---------- repos ----------
 
     public async Task<bool> RepoExistsAsync(string owner, string repo, CancellationToken ct)
@@ -49,6 +61,17 @@ public sealed class ForgejoClient(HttpClient http, IOptions<ForgejoOptions> opti
         if (res.StatusCode == HttpStatusCode.NotFound) return false;
         if (res.StatusCode != HttpStatusCode.OK) await ThrowFor(res, ct);
         return true;
+    }
+
+    /// <summary>
+    /// Permanently delete a repo, history included. Treats 404 as success so a
+    /// site whose repo was already removed still deletes cleanly.
+    /// </summary>
+    public async Task DeleteRepoAsync(string owner, string repo, CancellationToken ct)
+    {
+        using var res = await http.DeleteAsync($"/api/v1/repos/{owner}/{repo}", ct);
+        if (res.StatusCode is HttpStatusCode.NoContent or HttpStatusCode.NotFound) return;
+        await ThrowFor(res, ct);
     }
 
     /// <summary>Create an auto-initialised repo in the org and return it. Idempotent-ish:

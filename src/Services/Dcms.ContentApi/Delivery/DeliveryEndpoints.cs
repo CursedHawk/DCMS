@@ -16,7 +16,7 @@ public static class DeliveryEndpoints
     public static IEndpointRouteBuilder MapContentDelivery(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/{slug}/{contentType}", async (
-            string slug, string contentType, int? page, int? pageSize,
+            string slug, string contentType, int? page, int? pageSize, string? tag, string? tagField,
             ITenantContext tenant, CmsDbContext db, PluginRouteTable routes,
             PublishedContentReader reader, CancellationToken ct) =>
         {
@@ -26,7 +26,23 @@ public static class DeliveryEndpoints
                 return Results.NotFound();
             }
             var size = Math.Clamp(pageSize ?? r.Route.Options.DefaultPageSize, 1, r.Route.Options.MaxPageSize);
-            var result = await reader.ListAsync(r.TenantId, r.InstanceId, contentType, Math.Max(page ?? 1, 1), size, ct);
+
+            // Tag filtering resolves to a set of item ids first, so the listing
+            // still goes through one reader with one cache and one mapping rather
+            // than growing a second path to published content.
+            List<Guid>? ids = null;
+            if (!string.IsNullOrWhiteSpace(tag))
+            {
+                ids = await TagQueries.ItemIdsWithTagAsync(
+                    db, r.TenantId, r.InstanceId, contentType, tag, NullIfBlank(tagField), ct);
+                if (ids.Count == 0)
+                {
+                    return Results.Ok(new PagedResult<ContentItemDto>([], Math.Max(page ?? 1, 1), size, 0));
+                }
+            }
+
+            var result = await reader.ListAsync(
+                r.TenantId, r.InstanceId, contentType, Math.Max(page ?? 1, 1), size, ct, ids);
             return Results.Ok(result);
         });
 
@@ -63,6 +79,9 @@ public static class DeliveryEndpoints
         var route = routes.Find(instance.PluginId, contentType);
         return route is null ? null : new Resolved(tenantId, instance.Id, route);
     }
+
+    private static string? NullIfBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
 
     private readonly record struct Resolved(Guid TenantId, Guid InstanceId, ContentRouteInfo Route);
 }

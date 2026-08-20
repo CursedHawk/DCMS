@@ -47,6 +47,17 @@ public static class ContentEndpoints
                 })
                 .ToListAsync(ct);
 
+            // A queued publish is not a ContentStatus — the enum is Draft/Published/
+            // Archived and a scheduled item is genuinely still a draft. It is reported
+            // alongside the real status so the list can show (and filter on) "waiting
+            // to go live" without inventing a fourth state in the database.
+            var ids = rows.Select(r => r.id).ToList();
+            var pending = await db.ScheduledPublishes
+                .Where(sp => ids.Contains(sp.ItemId) && sp.Status == ScheduledPublishStatus.Pending)
+                .GroupBy(sp => sp.ItemId)
+                .Select(g => new { ItemId = g.Key, PublishAt = g.Min(sp => sp.PublishAt) })
+                .ToDictionaryAsync(x => x.ItemId, x => x.PublishAt, ct);
+
             return Results.Ok(rows.Select(r => new
             {
                 r.id,
@@ -55,6 +66,7 @@ public static class ContentEndpoints
                 r.status,
                 r.updatedAt,
                 r.publishedAt,
+                scheduledPublishAt = pending.TryGetValue(r.id, out var at) ? at : (DateTimeOffset?)null,
                 draft = r.draftJson is null ? (JsonElement?)null : JsonDocument.Parse(r.draftJson).RootElement,
             }));
         }).RequirePermission(PlatformPermissions.ContentRead);
@@ -68,6 +80,16 @@ public static class ContentEndpoints
                 return Results.NotFound();
             }
             var draft = item.Versions.FirstOrDefault(v => v.Id == item.CurrentDraftVersionId);
+            // A pending schedule is invisible state that changes what happens to this
+            // item without anyone touching it, so the editor has to be able to show
+            // and cancel it. scheduled_publishes is not tenant-filtered (the worker
+            // claims across tenants), so scope it explicitly by item.
+            var scheduled = await db.ScheduledPublishes
+                .Where(sp => sp.ItemId == item.Id && sp.Status == ScheduledPublishStatus.Pending)
+                .OrderBy(sp => sp.PublishAt)
+                .Select(sp => new { sp.Id, sp.PublishAt })
+                .FirstOrDefaultAsync(ct);
+
             return Results.Ok(new
             {
                 id = item.Id,
@@ -75,9 +97,70 @@ public static class ContentEndpoints
                 slug = item.Slug,
                 status = item.Status.ToString(),
                 draft = draft is null ? (JsonElement?)null : JsonDocument.Parse(draft.DataJson).RootElement,
+                scheduledPublishAt = scheduled?.PublishAt,
                 versions = item.Versions.OrderByDescending(v => v.VersionNo)
                     .Select(v => new { v.Id, v.VersionNo, v.CreatedAt, published = v.Id == item.PublishedVersionId }),
             });
+        }).RequirePermission(PlatformPermissions.ContentRead);
+
+        /*
+         * The tag vocabulary already in use for one field of one content type, most
+         * used first.
+         *
+         * Tags are a free-text string[] inside the version's JSON, with no shared
+         * vocabulary — so nothing stops the same idea being entered as "Live", "live"
+         * and "live music", which silently splits what should be one group. Feeding
+         * these back as suggestions is what actually links items by tag: authors pick
+         * an existing tag instead of coining a near-duplicate.
+         *
+         * Read from the *current draft* of each item rather than the published
+         * version: a tag an author added five minutes ago should already be offered.
+         */
+        // The tag vocabulary an author is offered.
+        //
+        // Every argument is optional, and that is the feature: with none, this is
+        // the *tenant's* whole vocabulary. A tag typed on an event and a tag typed
+        // on a gallery item are the same tag to a reader browsing by it, so scoping
+        // suggestions to one field of one content type — which is all this used to
+        // do — quietly guaranteed every collection would grow its own spelling of
+        // the same word.
+        app.MapGet("/api/admin/content/tags", async (
+            Guid? instanceId, string? contentType, string? field, CmsDbContext db,
+            ITenantContext tenant, CancellationToken ct) =>
+        {
+            if (tenant.TenantId is not { } tenantId)
+            {
+                return Results.BadRequest(new { error = "Select a tenant first." });
+            }
+
+            // Drafts included: an author should be offered a tag they typed five
+            // minutes ago and have not published yet.
+            var rows = await TagQueries.OccurrencesAsync(
+                db, tenantId, publishedOnly: false,
+                instanceId: instanceId,
+                contentType: string.IsNullOrWhiteSpace(contentType) ? null : contentType,
+                field: string.IsNullOrWhiteSpace(field) ? null : field,
+                ct: ct);
+
+            // Grouped case-insensitively, reported under the spelling used most —
+            // suggesting both "Live" and "live" is not a vocabulary, and picking
+            // the majority spelling renames nobody's tag.
+            var tags = rows
+                .GroupBy(r => r.Tag.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(g => new
+                {
+                    tag = g.OrderByDescending(r => r.Count).First().Tag.Trim(),
+                    count = g.Sum(r => r.Count),
+                    occurrences = g
+                        .Select(r => new { r.InstanceSlug, r.ContentType, r.Field, r.Count })
+                        .OrderByDescending(r => r.Count)
+                        .ToList(),
+                })
+                .OrderByDescending(t => t.count)
+                .ThenBy(t => t.tag, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return Results.Ok(tags);
         }).RequirePermission(PlatformPermissions.ContentRead);
 
         app.MapPost("/api/admin/content", async (
@@ -137,13 +220,25 @@ public static class ContentEndpoints
             return Results.Ok(new { versionId = version.Id, versionNo = version.VersionNo });
         }).RequirePermission(PlatformPermissions.ContentWrite);
 
+        // An optional `data` body makes this "save and publish": the edits become a new
+        // draft version and that version is published, in one transaction.
+        //
+        // Without it, publishing pins whatever was last *saved*. An author who types,
+        // then clicks Publish, would silently ship the previous revision — the same
+        // trap applies to scheduling, which is why it takes `data` too.
         app.MapPost("/api/admin/content/{id:guid}/publish", async (
-            Guid id, CmsDbContext db, ITenantContext tenant, CancellationToken ct) =>
+            Guid id, PublishRequest? body, CmsDbContext db, ITenantContext tenant,
+            CurrentUser me, CancellationToken ct) =>
         {
-            var item = await db.ContentItems.FirstOrDefaultAsync(c => c.Id == id, ct);
+            var item = await db.ContentItems.Include(c => c.Versions)
+                .FirstOrDefaultAsync(c => c.Id == id, ct);
             if (item is null)
             {
                 return Results.NotFound();
+            }
+            if (body?.Data is { } edits)
+            {
+                AddDraftVersion(db, item, edits, me.UserId);
             }
             if (item.CurrentDraftVersionId is null)
             {
@@ -170,21 +265,34 @@ public static class ContentEndpoints
         }).RequirePermission(PlatformPermissions.ContentPublish);
 
         app.MapPost("/api/admin/content/{id:guid}/schedule", async (
-            Guid id, ScheduleRequest body, CmsDbContext db, ITenantContext tenant, CancellationToken ct) =>
+            Guid id, ScheduleRequest body, CmsDbContext db, ITenantContext tenant,
+            CurrentUser me, CancellationToken ct) =>
         {
-            var item = await db.ContentItems.FirstOrDefaultAsync(c => c.Id == id, ct);
+            var item = await db.ContentItems.Include(c => c.Versions)
+                .FirstOrDefaultAsync(c => c.Id == id, ct);
             if (item is null)
             {
                 return Results.NotFound();
-            }
-            if (item.CurrentDraftVersionId is null)
-            {
-                return Results.BadRequest(new { error = "Nothing to schedule." });
             }
             if (body.PublishAt <= DateTimeOffset.UtcNow)
             {
                 return Results.BadRequest(new { error = "publishAt must be in the future." });
             }
+            if (body.Data is { } edits)
+            {
+                AddDraftVersion(db, item, edits, me.UserId);
+            }
+            if (item.CurrentDraftVersionId is null)
+            {
+                return Results.BadRequest(new { error = "Nothing to schedule." });
+            }
+
+            // One pending schedule per item. Re-scheduling used to stack a second row,
+            // so the item published twice — at the old time with the old version, then
+            // again at the new one.
+            await db.ScheduledPublishes
+                .Where(sp => sp.ItemId == item.Id && sp.Status == ScheduledPublishStatus.Pending)
+                .ExecuteDeleteAsync(ct);
 
             var scheduled = new ScheduledPublish
             {
@@ -197,6 +305,21 @@ public static class ContentEndpoints
             db.ScheduledPublishes.Add(scheduled);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { scheduleId = scheduled.Id, publishAt = scheduled.PublishAt });
+        }).RequirePermission(PlatformPermissions.ContentPublish);
+
+        // Cancel a pending schedule. Scoped by item id rather than schedule id so the
+        // editor can cancel from what it displays without holding the row's key.
+        app.MapDelete("/api/admin/content/{id:guid}/schedule", async (
+            Guid id, CmsDbContext db, CancellationToken ct) =>
+        {
+            if (!await db.ContentItems.AnyAsync(c => c.Id == id, ct))
+            {
+                return Results.NotFound();
+            }
+            var cancelled = await db.ScheduledPublishes
+                .Where(sp => sp.ItemId == id && sp.Status == ScheduledPublishStatus.Pending)
+                .ExecuteDeleteAsync(ct);
+            return Results.Ok(new { cancelled });
         }).RequirePermission(PlatformPermissions.ContentPublish);
 
         app.MapPost("/api/admin/content/{id:guid}/unpublish", async (
@@ -238,10 +361,31 @@ public static class ContentEndpoints
         CreatedBy = user,
     };
 
+    /// <summary>
+    /// Appends a new draft version and points the item at it, exactly as the PUT
+    /// path does. Shared by publish and schedule so those can carry the edits being
+    /// acted on. The caller saves; this only stages.
+    ///
+    /// The version is added through the DbSet, not through <c>item.Versions</c>: the
+    /// key is assigned here rather than by the store, so a new version reached via a
+    /// tracked entity's navigation is attached as an existing row and saved as an
+    /// UPDATE that matches nothing.
+    /// </summary>
+    private static void AddDraftVersion(CmsDbContext db, ContentItem item, JsonElement data, Guid? user)
+    {
+        var nextNo = item.Versions.Count == 0 ? 1 : item.Versions.Max(v => v.VersionNo) + 1;
+        var version = NewVersion(item, nextNo, data, user);
+        db.ContentVersions.Add(version);
+        item.Versions.Add(version);
+        item.CurrentDraftVersionId = version.Id;
+        item.UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
     private static bool PluginDeclaresType(IPluginCatalog catalog, string pluginId, string contentType)
         => catalog.Find(pluginId)?.ContentTypes.Any(t => t.Name == contentType) ?? false;
 
     private sealed record CreateContentRequest(Guid PluginInstanceId, string ContentType, string Slug, JsonElement? Data);
     private sealed record UpdateContentRequest(JsonElement? Data);
-    private sealed record ScheduleRequest(DateTimeOffset PublishAt);
+    private sealed record PublishRequest(JsonElement? Data);
+    private sealed record ScheduleRequest(DateTimeOffset PublishAt, JsonElement? Data);
 }

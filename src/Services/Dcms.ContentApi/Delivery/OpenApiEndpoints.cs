@@ -68,7 +68,11 @@ public static class OpenApiEndpoints
             .OrderBy(p => p.Slug)
             .ToListAsync(ct);
 
-        var hash = ConfigHash(instances);
+        // Part of the key, not just the document: the tag index appears in the spec
+        // the moment a tenant publishes its first tag, and a key that ignored it
+        // would serve the pre-tag document for another 24 hours.
+        var tagging = await TagDeliveryEndpoints.HasTagsAsync(tenantId, db, cache, ct);
+        var hash = ConfigHash(instances) + (tagging ? "t" : "");
         var cacheKey = $"t:{tenantId}:openapi:{hash}";
         var cached = await cache.GetAsync<string>(cacheKey, ct);
         if (cached is not null)
@@ -80,7 +84,7 @@ public static class OpenApiEndpoints
             p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description,
             JsonDocument.Parse(string.IsNullOrWhiteSpace(p.ConfigJson) ? "{}" : p.ConfigJson))).ToList();
 
-        var doc = assembler.Build(tenant.TenantSlug ?? tenantId.ToString(), contexts);
+        var doc = assembler.Build(tenant.TenantSlug ?? tenantId.ToString(), contexts, tagging: tagging);
         var json = doc.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         await cache.SetAsync(cacheKey, json, TimeSpan.FromHours(24), ct);
         return (json, Quote(hash));

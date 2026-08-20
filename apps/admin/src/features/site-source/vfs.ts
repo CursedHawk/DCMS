@@ -83,6 +83,10 @@ interface VfsState {
   importFiles: (entries: { path: string; content: string }[]) => { added: number; skipped: string[] };
   deleteFile: (path: string) => void;
   renameFile: (from: string, rawTo: string) => string | null;
+  /** Delete every file under a folder. Returns how many were removed. */
+  deleteFolder: (folder: string) => number;
+  /** Move/rename a folder and everything under it. Returns the new prefix, or null. */
+  renameFolder: (from: string, rawTo: string) => string | null;
 
   /** Snapshot the pending changes to send to the server. */
   takeDelta: () => Delta;
@@ -104,6 +108,21 @@ export function filesFromDefinition(definition: unknown): Record<string, string>
     return out;
   }
   return {};
+}
+
+/**
+ * Normalize a folder path. Folders are not stored — they exist only as shared
+ * prefixes of file paths — so this is the file rule with a tolerated trailing
+ * slash.
+ */
+export function normalizeFolder(raw: string): string | null {
+  return normalizePath(raw.replace(/\/+$/, ''));
+}
+
+/** Every file path inside `folder`, at any depth. */
+function pathsUnder(files: Record<string, string>, folder: string): string[] {
+  const prefix = `${folder}/`;
+  return Object.keys(files).filter((p) => p.startsWith(prefix));
 }
 
 /** Pick the file to focus on load: prefer src/App.tsx, else the first source-ish file. */
@@ -320,6 +339,89 @@ export const useVfs = create<VfsState>((set, get) => ({
       };
     });
     return to;
+  },
+
+  deleteFolder: (folder) => {
+    const dir = normalizeFolder(folder);
+    if (!dir) return 0;
+    const victims = pathsUnder(get().files, dir).filter((p) => !isToolchainFile(p));
+    if (victims.length === 0) return 0;
+    const gone = new Set(victims);
+    set((s) => {
+      const files = { ...s.files };
+      const dirtyPaths = new Set(s.dirtyPaths);
+      const deletedPaths = new Set(s.deletedPaths);
+      for (const p of victims) {
+        delete files[p];
+        dirtyPaths.delete(p);
+        // Same rule as deleteFile: only a server-known file needs a delete op.
+        if (s.baseHashes[p] !== undefined) deletedPaths.add(p);
+      }
+      const openTabs = s.openTabs.filter((p) => !gone.has(p));
+      return {
+        files,
+        openTabs,
+        activePath:
+          s.activePath && gone.has(s.activePath)
+            ? (openTabs[openTabs.length - 1] ?? null)
+            : s.activePath,
+        openDiffs: s.openDiffs.filter((d) => !gone.has(d.path)),
+        activeDiff: s.activeDiff && gone.has(s.activeDiff) ? null : s.activeDiff,
+        dirtyPaths,
+        deletedPaths,
+        dirty: dirtyPaths.size > 0 || deletedPaths.size > 0,
+        rev: s.rev + 1,
+      };
+    });
+    return victims.length;
+  },
+
+  renameFolder: (from, rawTo) => {
+    const src = normalizeFolder(from);
+    const dst = normalizeFolder(rawTo);
+    if (!src || !dst || src === dst) return null;
+    // Moving a folder inside itself would rewrite the prefix onto itself forever.
+    if (dst.startsWith(`${src}/`)) return null;
+
+    const before = get();
+    const moving = pathsUnder(before.files, src);
+    if (moving.length === 0) return null;
+
+    // Resolve the whole move up front and bail as a unit: a folder that lands
+    // half-moved because one child collided is worse than one that refuses.
+    const remap = new Map<string, string>();
+    for (const path of moving) {
+      if (isToolchainFile(path)) return null;
+      const to = normalizePath(`${dst}/${path.slice(src.length + 1)}`);
+      if (!to || before.files[to] !== undefined) return null;
+      remap.set(path, to);
+    }
+
+    set((s) => {
+      const files = { ...s.files };
+      const dirtyPaths = new Set(s.dirtyPaths);
+      const deletedPaths = new Set(s.deletedPaths);
+      for (const [oldPath, newPath] of remap) {
+        files[newPath] = files[oldPath] ?? '';
+        delete files[oldPath];
+        dirtyPaths.delete(oldPath);
+        dirtyPaths.add(newPath);
+        if (s.baseHashes[oldPath] !== undefined) deletedPaths.add(oldPath);
+      }
+      return {
+        files,
+        openTabs: s.openTabs.map((p) => remap.get(p) ?? p),
+        activePath: s.activePath ? (remap.get(s.activePath) ?? s.activePath) : s.activePath,
+        // A diff tab is pinned to a git path, so a moved file's diff is stale.
+        openDiffs: s.openDiffs.filter((d) => !remap.has(d.path)),
+        activeDiff: s.activeDiff && remap.has(s.activeDiff) ? null : s.activeDiff,
+        dirtyPaths,
+        deletedPaths,
+        dirty: true,
+        rev: s.rev + 1,
+      };
+    });
+    return dst;
   },
 
   takeDelta: () => {

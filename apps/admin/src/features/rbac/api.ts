@@ -6,6 +6,8 @@ export interface Role {
   name: string;
   isSystem: boolean;
   permissions: string[];
+  /** How many members currently hold this role. */
+  memberCount: number;
 }
 
 export interface Member {
@@ -15,10 +17,43 @@ export interface Member {
   roleIds: string[];
 }
 
+/** An invitation that has not been accepted yet — still live, or lapsed. */
+export interface Invitation {
+  id: string;
+  email: string;
+  roleIds: string[];
+  createdAt: string;
+  expiresAt: string;
+  expired: boolean;
+}
+
+/** One concrete thing a permission grants access to (a plugin instance, a site). */
+export interface PermissionFeatureRef {
+  id: string;
+  name: string;
+}
+
+/** What a permission actually governs, for "what does granting this affect?". */
+export interface PermissionFeature {
+  kind: 'platform' | 'plugin' | 'site';
+  id: string | null;
+  name: string;
+  /** Admin route this permission gates, when there is one. */
+  route: string | null;
+  /**
+   * False for a plugin that ships in the binary but has no enabled instance in
+   * this tenant: granting its permissions is harmless but grants access to nothing.
+   */
+  inUse: boolean;
+  /** The enabled instances covered, for plugin permissions. */
+  instances: PermissionFeatureRef[];
+}
+
 export interface PermissionDef {
   key: string;
   displayName: string;
   group: string;
+  feature: PermissionFeature;
 }
 
 export function useRoles() {
@@ -27,6 +62,13 @@ export function useRoles() {
 
 export function useMembers() {
   return useQuery({ queryKey: ['members'], queryFn: () => api.get<Member[]>('/admin/members') });
+}
+
+export function useInvitations() {
+  return useQuery({
+    queryKey: ['invitations'],
+    queryFn: () => api.get<Invitation[]>('/admin/invitations'),
+  });
 }
 
 export function usePermissionCatalog() {
