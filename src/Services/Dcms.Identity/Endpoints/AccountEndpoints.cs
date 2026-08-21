@@ -2,6 +2,8 @@ using System.Net;
 using System.Security.Claims;
 using Dcms.Identity.Domain;
 using Dcms.Identity.Forgejo;
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Messaging.Email;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
@@ -30,6 +32,7 @@ public static class AccountEndpoints
             SignInManager<DcmsUser> signInManager,
             UserManager<DcmsUser> userManager,
             ForgejoUserSync forgejo,
+            IAuditRecorder audit,
             [FromForm] string email,
             [FromForm] string password,
             [FromForm] string? returnUrl,
@@ -38,6 +41,21 @@ public static class AccountEndpoints
             var result = await signInManager.PasswordSignInAsync(email, password, isPersistent: false, lockoutOnFailure: true);
             if (!result.Succeeded)
             {
+                // A lockout is a different story from a wrong password — one is a user who
+                // mistyped, the other is a pattern worth looking at — so they are separate
+                // actions rather than one event with a flag.
+                var failed = await userManager.FindByEmailAsync(email);
+                var entry = audit.Declare(result.IsLockedOut ? AuditActions.LoginLockedOut : AuditActions.LoginFailed)
+                    .Platform()
+                    .As(AuditCategory.Auth, result.IsLockedOut ? AuditSeverity.Warning : AuditSeverity.Notice)
+                    // The address is recorded even when no account matches: repeated failures
+                    // against unknown addresses are exactly what an investigator looks for.
+                    .With("email", email)
+                    .Failed(result.IsLockedOut ? "locked-out" : "invalid-credentials");
+                if (failed is not null)
+                {
+                    entry.About(failed.Id);
+                }
                 return Results.Redirect($"/account/login?error=1&returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
             }
 
@@ -46,8 +64,17 @@ public static class AccountEndpoints
             var user = await userManager.FindByEmailAsync(email);
             if (user is not null) await forgejo.EnsureAsync(user, password, ct);
 
+            var success = audit.Declare(AuditActions.LoginSucceeded)
+                .Platform()
+                .As(AuditCategory.Auth)
+                .With("method", "password");
+            if (user is not null)
+            {
+                success.About(user.Id);
+            }
+
             return Results.Redirect(SafeReturnUrl(returnUrl));
-        }).DisableAntiforgery();
+        }).DisableAntiforgery().WithAudit(AuditActions.LoginSucceeded, category: AuditCategory.Auth);
 
         app.MapGet("/account/register", async (
             SignInManager<DcmsUser> signInManager, string? returnUrl, string? error) =>
@@ -86,7 +113,7 @@ public static class AccountEndpoints
 
             await signInManager.SignInAsync(user, isPersistent: false);
             return Results.Redirect(SafeReturnUrl(returnUrl));
-        }).DisableAntiforgery();
+        }).DisableAntiforgery().WithAudit(AuditActions.AccountRegistered, category: AuditCategory.Auth);
 
         // Forgot password: enter an email, receive a reset link.
         app.MapGet("/account/forgot-password", (string? returnUrl) =>
@@ -133,7 +160,7 @@ public static class AccountEndpoints
             }
 
             return Results.Content(ForgotPasswordPage(returnUrl, sent: true, error: null), "text/html");
-        }).DisableAntiforgery();
+        }).DisableAntiforgery().WithAudit(AuditActions.PasswordResetRequested, category: AuditCategory.Auth);
 
         // Reset password: reached via the emailed link (email + token in the query).
         app.MapGet("/account/reset-password", (string? email, string? token, string? returnUrl) =>
@@ -177,7 +204,7 @@ public static class AccountEndpoints
             await forgejo.EnsureAsync(user, password, ct);
 
             return Results.Content(ResetDonePage(returnUrl), "text/html");
-        }).DisableAntiforgery();
+        }).DisableAntiforgery().WithAudit(AuditActions.PasswordResetCompleted, category: AuditCategory.Auth);
 
         // Google SSO: kick off the challenge, then handle the callback.
         app.MapGet("/account/external/google", (
@@ -264,7 +291,7 @@ public static class AccountEndpoints
 
             await signInManager.SignInAsync(user, isPersistent: false);
             return Results.Redirect(SafeReturnUrl(returnUrl));
-        }).DisableAntiforgery();
+        }).DisableAntiforgery().WithAudit(AuditActions.SsoLinked, category: AuditCategory.Auth);
 
         return app;
     }

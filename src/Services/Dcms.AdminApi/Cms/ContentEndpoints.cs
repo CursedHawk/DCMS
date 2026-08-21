@@ -1,3 +1,6 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
+using Dcms.Shared.Audit.Propagation;
 using System.Text.Json;
 using Dcms.AdminApi.Tenancy;
 using Dcms.PluginSdk.Abstractions;
@@ -196,7 +199,7 @@ public static class ContentEndpoints
             db.ContentItems.Add(item);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/admin/content/{item.Id}", new { id = item.Id });
-        }).RequirePermission(PlatformPermissions.ContentWrite);
+        }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.ContentCreated, "content_item");
 
         app.MapPut("/api/admin/content/{id:guid}", async (
             Guid id, UpdateContentRequest body, CmsDbContext db, CurrentUser me, CancellationToken ct) =>
@@ -218,7 +221,7 @@ public static class ContentEndpoints
             item.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { versionId = version.Id, versionNo = version.VersionNo });
-        }).RequirePermission(PlatformPermissions.ContentWrite);
+        }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.ContentUpdated, "content_item");
 
         // An optional `data` body makes this "save and publish": the edits become a new
         // draft version and that version is published, in one transaction.
@@ -228,7 +231,7 @@ public static class ContentEndpoints
         // trap applies to scheduling, which is why it takes `data` too.
         app.MapPost("/api/admin/content/{id:guid}/publish", async (
             Guid id, PublishRequest? body, CmsDbContext db, ITenantContext tenant,
-            CurrentUser me, CancellationToken ct) =>
+            CurrentUser me, AuditScope scope, CancellationToken ct) =>
         {
             var item = await db.ContentItems.Include(c => c.Versions)
                 .FirstOrDefaultAsync(c => c.Id == id, ct);
@@ -259,14 +262,17 @@ public static class ContentEndpoints
                 TenantId = tenant.TenantId!.Value,
                 Subject = Subjects.ContentPublished,
                 PayloadJson = JsonSerializer.Serialize(evt),
+                // Carries the publisher across the dispatcher's two-second gap, so the site
+                // build this sets off still names the person who clicked publish.
+                ContextJson = AuditPropagation.CaptureJson(scope),
             });
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { status = "published", instanceSlug = instance?.Slug });
-        }).RequirePermission(PlatformPermissions.ContentPublish);
+        }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentPublished, "content_item");
 
         app.MapPost("/api/admin/content/{id:guid}/schedule", async (
             Guid id, ScheduleRequest body, CmsDbContext db, ITenantContext tenant,
-            CurrentUser me, CancellationToken ct) =>
+            CurrentUser me, IAuditRecorder audit, AuditScope scope, CancellationToken ct) =>
         {
             var item = await db.ContentItems.Include(c => c.Versions)
                 .FirstOrDefaultAsync(c => c.Id == id, ct);
@@ -290,6 +296,9 @@ public static class ContentEndpoints
             // One pending schedule per item. Re-scheduling used to stack a second row,
             // so the item published twice — at the old time with the old version, then
             // again at the new one.
+            // Clearing the old row is part of scheduling, not an act of its own; the record
+            // below says what the item is scheduled for now, which is the whole story.
+            using var _ = scope.SuppressBulkCapture();
             await db.ScheduledPublishes
                 .Where(sp => sp.ItemId == item.Id && sp.Status == ScheduledPublishStatus.Pending)
                 .ExecuteDeleteAsync(ct);
@@ -303,27 +312,38 @@ public static class ContentEndpoints
                 PublishAt = body.PublishAt,
             };
             db.ScheduledPublishes.Add(scheduled);
+
+            audit.Declared?
+                .For("content_item", item.Id, item.Slug)
+                .With("publish_at", body.PublishAt)
+                .With("version_id", scheduled.VersionId);
+
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { scheduleId = scheduled.Id, publishAt = scheduled.PublishAt });
-        }).RequirePermission(PlatformPermissions.ContentPublish);
+        }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentScheduled, "content_item");
 
         // Cancel a pending schedule. Scoped by item id rather than schedule id so the
         // editor can cancel from what it displays without holding the row's key.
         app.MapDelete("/api/admin/content/{id:guid}/schedule", async (
-            Guid id, CmsDbContext db, CancellationToken ct) =>
+            Guid id, CmsDbContext db, IAuditRecorder audit, AuditScope scope, CancellationToken ct) =>
         {
             if (!await db.ContentItems.AnyAsync(c => c.Id == id, ct))
             {
                 return Results.NotFound();
             }
+
+            using var _ = scope.SuppressBulkCapture();
             var cancelled = await db.ScheduledPublishes
                 .Where(sp => sp.ItemId == id && sp.Status == ScheduledPublishStatus.Pending)
                 .ExecuteDeleteAsync(ct);
+
+            audit.Declared?.With("cancelled", cancelled);
+
             return Results.Ok(new { cancelled });
-        }).RequirePermission(PlatformPermissions.ContentPublish);
+        }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentScheduleCancelled, "content_item");
 
         app.MapPost("/api/admin/content/{id:guid}/unpublish", async (
-            Guid id, CmsDbContext db, ITenantContext tenant, CancellationToken ct) =>
+            Guid id, CmsDbContext db, ITenantContext tenant, AuditScope scope, CancellationToken ct) =>
         {
             var item = await db.ContentItems.FirstOrDefaultAsync(c => c.Id == id, ct);
             if (item is null)
@@ -343,10 +363,11 @@ public static class ContentEndpoints
                 TenantId = tenant.TenantId!.Value,
                 Subject = Subjects.ContentUnpublished,
                 PayloadJson = JsonSerializer.Serialize(evt),
+                ContextJson = AuditPropagation.CaptureJson(scope),
             });
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { status = "unpublished" });
-        }).RequirePermission(PlatformPermissions.ContentPublish);
+        }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentUnpublished, "content_item");
 
         return app;
     }

@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Sites;
@@ -90,7 +92,7 @@ public static class DomainEndpoints
                 txtRecord = $"{TxtPrefix}.{domain.Hostname}",
                 txtValue = domain.VerificationToken,
             });
-        }).RequirePermission(PlatformPermissions.DomainsManage);
+        }).RequirePermission(PlatformPermissions.DomainsManage).WithAudit(AuditActions.DomainAdded, "domain");
 
         // Provision a managed subdomain under the platform-owned zone
         // ({domainId}.dcms.highgeek.eu). The platform controls the zone (wildcard
@@ -130,7 +132,7 @@ public static class DomainEndpoints
                 verified = true,
                 isPrimary = domain.IsPrimary,
             });
-        }).RequirePermission(PlatformPermissions.DomainsManage);
+        }).RequirePermission(PlatformPermissions.DomainsManage).WithAudit(AuditActions.DomainProvisioned, "domain");
 
         app.MapPost("/api/admin/domains/{id:guid}/verify", async (
             Guid id, TenancyDbContext db, IDnsTxtLookup dns, IConfiguration config,
@@ -165,7 +167,7 @@ public static class DomainEndpoints
                 new TenantDomainVerified(Guid.NewGuid(), DateTimeOffset.UtcNow, tenant.TenantId!.Value, domain.Id, domain.Hostname), ct);
 
             return Results.Ok(new { verified = true, isPrimary = domain.IsPrimary });
-        }).RequirePermission(PlatformPermissions.DomainsManage);
+        }).RequirePermission(PlatformPermissions.DomainsManage).WithAudit(AuditActions.DomainVerified, "domain");
 
         // Link a verified domain to a site (or unlink it with a null siteId) so
         // site-host serves it there. Lives beside the other domain routes because
@@ -206,7 +208,7 @@ public static class DomainEndpoints
                 await PromotePrimaryAsync(db, orphaned, ct);
             }
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.DomainsManage);
+        }).RequirePermission(PlatformPermissions.DomainsManage).WithAudit(AuditActions.DomainLinked, "domain");
 
         // Make this the canonical hostname for the site it serves. Exclusive within
         // the site, not the tenant — a tenant with several sites has one primary each.
@@ -234,7 +236,7 @@ public static class DomainEndpoints
             }
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.DomainsManage);
+        }).RequirePermission(PlatformPermissions.DomainsManage).WithAudit(AuditActions.DomainPrimarySet, "domain");
 
         // Remove a domain. The row is the only record that a hostname belongs to this
         // tenant, so deleting it both stops site-host resolving the host and releases
@@ -257,7 +259,7 @@ public static class DomainEndpoints
                 await PromotePrimaryAsync(db, orphaned, ct);
             }
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.DomainsManage);
+        }).RequirePermission(PlatformPermissions.DomainsManage).WithAudit(AuditActions.DomainRemoved, "domain");
 
         return app;
     }

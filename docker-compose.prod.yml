@@ -13,7 +13,7 @@
 #
 # Required env (e.g. via a .env file next to this compose):
 #   POSTGRES_PASSWORD, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD, VAULT_TOKEN,
-#   ADMIN_API_CLIENT_SECRET, ACME_EMAIL, PUBLIC_BASE_URL
+#   ADMIN_API_CLIENT_SECRET, ACME_EMAIL, PUBLIC_BASE_URL, AUDIT_CHAIN_KEY
 
 x-prod-env: &prod-env
   ASPNETCORE_ENVIRONMENT: "Production"
@@ -27,6 +27,17 @@ x-prod-env: &prod-env
   Storage__SecretKey: "${MINIO_ROOT_PASSWORD}"
   VAULT_ADDR: "http://vault:8200"
   VAULT_TOKEN: "${VAULT_TOKEN}"
+  # HMAC key for the audit hash chain. Every service that owns the audit schema
+  # needs it; the two that reach the log over NATS (email-worker, site-builder)
+  # deliberately do not inherit this anchor and do not need it.
+  #
+  # This key MUST be stable forever. Rotating it makes every previously written
+  # record fail verification, which reads exactly like tampering — so treat it as
+  # append-only configuration, back it up with the rest of .env, and never
+  # regenerate it to "fix" a problem. An empty value is a deliberate startup
+  # failure outside Development: a chain nobody can verify is worse than an
+  # obviously absent one. See docs/adr/0007-audit-logging.md.
+  Audit__ChainKey: "${AUDIT_CHAIN_KEY}"
 
 services:
   postgres:

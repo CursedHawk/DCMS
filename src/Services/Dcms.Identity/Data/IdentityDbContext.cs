@@ -35,6 +35,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             e.HasKey(o => o.Id);
             e.Property(o => o.Username).HasMaxLength(64);
             e.Property(o => o.Email).HasMaxLength(256).IsRequired();
+            e.Property(o => o.ContextJson).HasColumnType("jsonb");
             // NextAttemptAt drives the worker's due-row query; index it.
             e.HasIndex(o => o.NextAttemptAt);
         });

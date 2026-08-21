@@ -12,6 +12,7 @@ CREATE SCHEMA IF NOT EXISTS chat;
 CREATE SCHEMA IF NOT EXISTS visitors;
 CREATE SCHEMA IF NOT EXISTS forms;
 CREATE SCHEMA IF NOT EXISTS ai;
+CREATE SCHEMA IF NOT EXISTS audit;
 
 -- Sitewide search needs trigram matching for typeahead (Phase 11).
 CREATE EXTENSION IF NOT EXISTS pg_trgm;

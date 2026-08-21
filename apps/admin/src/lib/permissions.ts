@@ -25,6 +25,8 @@ export const Perm = {
   ContentPublish: 'content:publish',
   ChatRead: 'chat:read',
   ChatManage: 'chat:manage',
+  AuditRead: 'audit:read',
+  AuditExport: 'audit:export',
 } as const;
 
 /** Per-site git repo permission keys (resource-scoped; mirrors PlatformPermissions). */

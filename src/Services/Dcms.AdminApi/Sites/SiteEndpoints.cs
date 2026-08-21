@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -61,7 +63,7 @@ public static class SiteEndpoints
             db.Sites.Add(site);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/admin/sites/{site.Id}", new { id = site.Id });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.SiteCreated, "site");
 
         app.MapGet("/api/admin/sites/{id:guid}", async (Guid id, SitesDbContext db, CancellationToken ct) =>
         {
@@ -164,7 +166,7 @@ public static class SiteEndpoints
                 name = site.StaticBundleName,
                 hasIndex = bundle.HasIndex,
             });
-        }).RequirePermission(PlatformPermissions.SiteEdit).DisableAntiforgery();
+        }).RequirePermission(PlatformPermissions.SiteEdit).DisableAntiforgery().WithAudit(AuditActions.SiteUploaded, "site");
 
         // Build history for a site (status, source commit, log availability, which one is
         // live) — drives both the rollback UI and the IDE Deployments panel.
@@ -230,7 +232,7 @@ public static class SiteEndpoints
             site.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.SitePublish);
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteBuildActivated, "site");
 
         // Whole-map replace. Used for a full flush (publish) and as a fallback. An
         // optional `If-Match: <version>` guards against overwriting a newer draft:
@@ -260,7 +262,7 @@ public static class SiteEndpoints
 
             var files = SiteFileMap.Parse(site.DraftDefinitionJson);
             return Results.Ok(new { version = site.DefinitionVersion, hashes = SiteFileMap.HashAll(files) });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.SiteUpdated, "site");
 
         // Granular per-file save (Mode B IDE autosave). Instead of resending the whole
         // file map — which makes two people editing different files clobber each other
@@ -406,7 +408,7 @@ public static class SiteEndpoints
                 version = draft.Version,
                 hashes = put.ToDictionary(kv => kv.Key, kv => SiteFileMap.Hash(kv.Value.Content)),
             });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.SiteFilesChanged, "site");
 
         app.MapPost("/api/admin/sites/{id:guid}/publish", async (
             Guid id, string? branch, SitesDbContext db, CmsDbContext cms, ITenantContext tenant,
@@ -500,7 +502,7 @@ public static class SiteEndpoints
                 site.RenderMode.ToString(), await AnalyticsEnabledAsync(cms, tenantId, ct)), ct);
 
             return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{build.Id}", new { buildId = build.Id });
-        }).RequirePermission(PlatformPermissions.SitePublish);
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SitePublishRequested, "site");
 
         // --- Git backend (Forgejo): provision a repo for a Mode B site and seed it. ---
         // Provisioning is idempotent: ensures the tenant org + site repo exist and, on
@@ -535,7 +537,7 @@ public static class SiteEndpoints
                 httpUrl = info.HttpCloneUrl,
                 sshUrl = info.SshCloneUrl,
             });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.GitRepoProvisioned, "site");
 
         // Git status for a Mode B site. Auto-provisions the repo on first open so the
         // IDE never needs a manual provision step. Returns clone URLs for the panel.
@@ -768,7 +770,7 @@ public static class SiteEndpoints
             await db.SaveChangesAsync(ct);
 
             return Results.Ok(new { sha, branch = target });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.GitCommitted, "site");
 
         // Create a branch off another (defaults to the site's default branch).
         app.MapPost("/api/admin/sites/{id:guid}/git/branches", async (
@@ -784,7 +786,7 @@ public static class SiteEndpoints
             var from = ResolveBranch(body.From, site);
             await git.CreateBranchAsync(site.GitRepoFullName, body.Name!.Trim(), from, ct);
             return Results.Ok(new { name = body.Name!.Trim(), from });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.GitBranchCreated, "site");
 
         // Pre-merge review: what merging `head` into the release branch would bring
         // (files changed + commit count).
@@ -842,7 +844,7 @@ public static class SiteEndpoints
                     baseContent = f.BaseContent,
                 }),
             });
-        }).RequirePermission(PlatformPermissions.SitePublish);
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.GitMerged, "site");
 
         // Complete a conflicted merge of `head` into `base` (defaults to release): apply the
         // caller's per-file resolutions onto the auto-merged tree and commit the two-parent
@@ -864,7 +866,7 @@ public static class SiteEndpoints
             var sha = await git.ResolveMergeAsync(
                 site.GitRepoFullName, @base, body.Head!.Trim(), resolutions, user.Name, user.Email, ct);
             return Results.Ok(new { merged = true, sha });
-        }).RequirePermission(PlatformPermissions.SitePublish);
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.GitMergeResolved, "site");
 
         // Restore an earlier commit's tree into the current user's working draft on a
         // branch (does not commit — the user reviews the diff and commits explicitly).
@@ -910,7 +912,7 @@ public static class SiteEndpoints
                 files,
                 hashes = SiteFileMap.HashAll(files),
             });
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.GitRestored, "site");
 
         // Forgejo push webhook: builds+deploys the site on a push/merge to the RELEASE
         // branch — this is what "publish" lands on. HMAC-verified (no user auth). Cross-
@@ -921,6 +923,7 @@ public static class SiteEndpoints
             HttpRequest request, SitesDbContext db, CmsDbContext cms, IEventPublisher events,
             Dcms.AdminApi.Sites.Git.SiteGitService git,
             IOptions<Dcms.AdminApi.Sites.Git.ForgejoOptions> gitOptions,
+            IAuditRecorder audit, AuditScope scope,
             ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             var log = loggerFactory.CreateLogger("GitWebhook");
@@ -933,6 +936,10 @@ public static class SiteEndpoints
             if (string.IsNullOrWhiteSpace(secret))
             {
                 log.LogWarning("Git webhook rejected: WebhookSecret is not configured.");
+                audit.Record(AuditActions.WebhookRejected)
+                    .Platform()
+                    .As(AuditCategory.Security, AuditSeverity.Warning)
+                    .Denied("WebhookSecret is not configured");
                 return Results.Unauthorized();
             }
 
@@ -945,8 +952,20 @@ public static class SiteEndpoints
             if (signature is null || !CryptographicOperations.FixedTimeEquals(
                     Encoding.ASCII.GetBytes(signature), Encoding.ASCII.GetBytes(expected)))
             {
+                // Somebody posted to this route without the shared secret. Worth a record on
+                // its own: it is either a misconfigured Forgejo or somebody probing.
+                audit.Record(AuditActions.WebhookRejected)
+                    .Platform()
+                    .As(AuditCategory.Security, AuditSeverity.Warning)
+                    .Denied(signature is null ? "no signature header" : "signature mismatch");
                 return Results.Unauthorized();
             }
+
+            // The HMAC proves the push came from Forgejo. It does not say who pushed — the
+            // payload names a git author, which is a self-asserted string, not an identity
+            // this platform authenticated. So: a webhook actor, inferred, never a user.
+            scope.Actor = new AuditActor(
+                ActorKind.Webhook, null, "forgejo", "Forgejo webhook", AuditAttribution.Inferred);
 
             using var doc = JsonDocument.Parse(raw);
             var root = doc.RootElement;
@@ -990,6 +1009,19 @@ public static class SiteEndpoints
             };
             build.ArtifactPrefix = $"{site.TenantId}/{site.Id}/{build.Id}";
             db.Builds.Add(build);
+
+            // Before the save, so the record commits with the build row it describes. The
+            // commit sha is the whole point: it is the only thing that ties this build back to
+            // what a person actually wrote, since the pusher's identity is not something the
+            // HMAC establishes.
+            audit.Declared?
+                .For("site", site.Id, site.Name)
+                .InTenant(site.TenantId)
+                .With("repo", repoFull)
+                .With("branch", branch)
+                .With("commit", afterSha)
+                .With("build_id", build.Id);
+
             await db.SaveChangesAsync(ct);
 
             await events.PublishAsync(Subjects.SitePublishRequested, new SitePublishRequested(
@@ -998,7 +1030,7 @@ public static class SiteEndpoints
 
             log.LogInformation("Queued build {BuildId} from git push {Sha} to {Repo}", build.Id, afterSha, repoFull);
             return Results.Ok(new { buildId = build.Id });
-        }).AllowAnonymous();
+        }).AllowAnonymous().WithAudit(AuditActions.GitPushReceived, "site", AuditCategory.System);
 
         // Full step log (install + build output) for a build, as plain text. This is what
         // lets a user see exactly why a build failed, inside the IDE.
@@ -1036,7 +1068,7 @@ public static class SiteEndpoints
                 return Results.BadRequest(new { error = "This site has no git-backed release to rebuild." });
             var buildId = await EnqueueReleaseBuildAsync(db, cms, events, git, site, ct);
             return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{buildId}", new { buildId });
-        }).RequirePermission(PlatformPermissions.SitePublish);
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteBuildCreated, "site");
 
         return app;
     }

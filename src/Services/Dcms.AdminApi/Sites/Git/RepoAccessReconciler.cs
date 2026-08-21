@@ -1,3 +1,4 @@
+using Dcms.Shared.Audit;
 using Dcms.AdminApi.Tenancy;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Security;
@@ -22,6 +23,7 @@ public sealed class RepoAccessReconciler(
     SiteGitService git,
     TenancyPermissionResolver permissions,
     SitesDbContext sites,
+    IAuditRecorder audit,
     ILogger<RepoAccessReconciler> logger)
 {
     /// <summary>Reconcile the user's access to every Mode B site repo in the tenant.</summary>
@@ -52,6 +54,17 @@ public sealed class RepoAccessReconciler(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Repo-access reconcile (all sites) failed for user {UserId} in tenant {TenantId}.", userId, tenantId);
+
+            // The permission change committed; the git access did not follow. Best-effort is
+            // the right behaviour — a Forgejo outage must not fail the caller's request — but
+            // silence is not: this is someone keeping push rights they were just denied, and
+            // the next reconcile might be days away.
+            audit.Record(AuditActions.GitAccessReconcileFailed)
+                .InTenant(tenantId)
+                .About(userId)
+                .For("tenant", tenantId)
+                .As(AuditCategory.Security, AuditSeverity.Warning)
+                .Failed(ex.Message);
         }
     }
 

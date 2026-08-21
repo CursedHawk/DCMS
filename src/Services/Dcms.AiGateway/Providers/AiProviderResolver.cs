@@ -1,3 +1,4 @@
+using Dcms.Shared.Audit;
 using System.Text;
 using Dcms.Shared.Data.Ai;
 using Dcms.Shared.Vault;
@@ -18,7 +19,8 @@ public sealed record ResolvedCredentials(AiProvider Provider, string Model, stri
 /// row only where it sets a value. API keys are Vault Transit ciphertext, decrypted
 /// here at call time and never logged.
 /// </summary>
-public sealed class AiProviderResolver(AiDbContext db, ITransitEncryptor encryptor, IConfiguration config)
+public sealed class AiProviderResolver(
+    AiDbContext db, ITransitEncryptor encryptor, IConfiguration config, IAuditRecorder audit)
 {
     public async Task<ResolvedProvider> ResolveAsync(Guid tenantId, Guid? userId = null, CancellationToken ct = default)
     {
@@ -53,23 +55,40 @@ public sealed class AiProviderResolver(AiDbContext db, ITransitEncryptor encrypt
 
         var baseUrl = userSettings?.BaseUrl ?? tenantSettings?.BaseUrl ?? config["Ai:Defaults:BaseUrl"];
 
-        var apiKey = await ResolveKeyAsync(userSettings?.ApiKeyCiphertext, tenantSettings?.ApiKeyCiphertext, ct);
+        var apiKey = await ResolveKeyAsync(
+            userSettings?.ApiKeyCiphertext, tenantSettings?.ApiKeyCiphertext, tenantId, userId, ct);
 
         return new ResolvedCredentials(provider, model, baseUrl, apiKey);
     }
 
-    private async Task<string> ResolveKeyAsync(string? userCiphertext, string? tenantCiphertext, CancellationToken ct)
+    private async Task<string> ResolveKeyAsync(
+        string? userCiphertext, string? tenantCiphertext, Guid tenantId, Guid? userId, CancellationToken ct)
     {
-        var ciphertext = !string.IsNullOrEmpty(userCiphertext) ? userCiphertext
-            : !string.IsNullOrEmpty(tenantCiphertext) ? tenantCiphertext
+        var owner = !string.IsNullOrEmpty(userCiphertext) ? "user"
+            : !string.IsNullOrEmpty(tenantCiphertext) ? "tenant"
             : null;
+        var ciphertext = owner == "user" ? userCiphertext : owner == "tenant" ? tenantCiphertext : null;
 
         if (ciphertext is not null)
         {
+            // A stored provider credential is being decrypted and handed to an outbound call.
+            // Nothing in the database changes, so no other layer sees this happen — and "who
+            // used the tenant's API key, and when" is precisely the sort of question a bill
+            // nobody recognises turns into.
+            audit.Record(AuditActions.SecretAccessed)
+                .InTenant(tenantId)
+                .For("ai_credentials", owner)
+                .As(AuditCategory.Access)
+                .With("key_owner", owner)
+                .With("user_id", userId);
+
             var bytes = await encryptor.DecryptAsync(
                 VaultTransitServiceCollectionExtensions.TenantSecretsKey, ciphertext, ct);
             return Encoding.UTF8.GetString(bytes);
         }
+
+        // The platform's own key, not the tenant's. Worth telling apart: the tenant is not
+        // paying for this call and did not supply the credential.
         return config["Ai:Defaults:ApiKey"] ?? string.Empty;
     }
 

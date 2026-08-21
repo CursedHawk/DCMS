@@ -1,3 +1,4 @@
+using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,9 +14,10 @@ public static class MediaServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<MediaDbContext>(options =>
+        services.AddDbContext<MediaDbContext>((sp, options) =>
             options.UseNpgsql(connectionString, npgsql =>
-                npgsql.MigrationsHistoryTable("__ef_migrations_history", MediaDbContext.Schema)));
+                    npgsql.MigrationsHistoryTable("__ef_migrations_history", MediaDbContext.Schema))
+                .UseDcmsAuditInterceptors(sp));
 
         return services;
     }

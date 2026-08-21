@@ -8,6 +8,7 @@
     "tenants": "Tenants",
     "members": "Members",
     "roles": "Roles",
+    "audit": "Audit log",
     "domains": "Domains",
     "plugins": "Plugins",
     "content": "Content",
@@ -844,5 +845,76 @@
   "storage": {
     "notice": "This admin app stores only what it needs to work: your sign-in session, the selected workspace, and interface preferences such as theme and open editor tabs. Nothing is used for advertising or shared with third parties.",
     "gotIt": "Got it"
+  },
+  "audit": {
+    "title": "Audit log",
+    "description": "Who did what, when, and from where. Records are append-only and chained.",
+    "verify": "Verify chain",
+    "verifyOk": "Chain verified: {{count}} record(s) intact.",
+    "verifyFailed": "The audit chain does not verify.",
+    "verifyError": "Could not verify the chain.",
+    "filterAction": "Filter by action, e.g. site.",
+    "filterCategory": "Category",
+    "filterOutcome": "Outcome",
+    "anyCategory": "Any category",
+    "anyOutcome": "Any outcome",
+    "empty": "No audit records yet",
+    "emptyHint": "Actions taken in this workspace will appear here.",
+    "loadFailed": "Could not load the audit log",
+    "loadFailedHint": "The server could not return the log. Check the admin-api logs.",
+    "loadFailedForbidden": "You do not have permission to read this workspace's audit log.",
+    "loadMore": "Load more",
+    "sandbox": "Preview",
+    "actorUnknown": "Unknown",
+    "platformScope": "Account-level event",
+    "ipReported": "reported",
+    "ipReportedHint": "Reported by the caller. Not independently verified.",
+    "col": {
+      "when": "When",
+      "action": "Action",
+      "actor": "Actor",
+      "resource": "Resource",
+      "outcome": "Outcome",
+      "origin": "Origin"
+    },
+    "category": {
+      "tenantstate": "Changes",
+      "auth": "Sign-in",
+      "access": "Access",
+      "system": "System",
+      "security": "Security"
+    },
+    "outcome": {
+      "success": "Success",
+      "denied": "Denied",
+      "failure": "Failed"
+    },
+    "attribution": {
+      "propagated": "attributed across services",
+      "inferred": "inferred"
+    },
+    "andMoreFields": "and {{count}} more",
+    "export": "Export",
+    "exportError": "Could not export the log.",
+    "record": {
+      "loading": "Loading record…",
+      "notFound": "That record is not available.",
+      "changes": "What changed",
+      "field": "Field",
+      "before": "Before",
+      "after": "After",
+      "empty": "empty",
+      "redacted": "Changed — value withheld",
+      "redactionVersion": "Redaction policy v{{version}}",
+      "metadata": "Details",
+      "correlation": "Request id",
+      "scope": "Scope",
+      "platformScopeHint": "An account-level event. It belongs to the person, not to this workspace, so it is shown with less detail."
+    },
+    "history": {
+      "title": "History",
+      "empty": "Nothing recorded yet",
+      "emptyHint": "Changes to this item will appear here."
+    }
   }
 }

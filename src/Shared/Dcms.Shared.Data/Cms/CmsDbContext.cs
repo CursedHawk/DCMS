@@ -1,4 +1,5 @@
 using Dcms.Shared.Kernel.Abstractions;
+using Dcms.Shared.Data.Audit;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.Shared.Data.Cms;
@@ -26,6 +27,9 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options, ITenantContext
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        // Audit records are written by the same SaveChanges as the change they describe.
+        builder.MapAuditOutbox();
 
         builder.Entity<PluginInstance>(e =>
         {
@@ -67,6 +71,7 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options, ITenantContext
             e.HasKey(o => o.Id);
             e.Property(o => o.Subject).HasMaxLength(128).IsRequired();
             e.Property(o => o.PayloadJson).HasColumnType("jsonb");
+            e.Property(o => o.ContextJson).HasColumnType("jsonb");
             e.HasIndex(o => o.SentAt);
             // Not tenant-filtered: the dispatcher scans across tenants.
         });

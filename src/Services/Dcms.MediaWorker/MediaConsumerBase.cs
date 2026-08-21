@@ -1,3 +1,4 @@
+using Dcms.Shared.Audit;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Media;
@@ -72,9 +73,15 @@ public abstract class MediaConsumerBase(
             await msg.AckAsync(cancellationToken: ct);
             return;
         }
+        using var scope = services.CreateScope();
+
+        // The person who uploaded the asset, carried from the upload request. Without it the
+        // derivative work reads as the platform acting on its own.
+        using var context = msg.RestoreAuditContext(scope.ServiceProvider, job.TenantId);
+        var audit = scope.ServiceProvider.GetRequiredService<IAuditRecorder>();
+
         try
         {
-            using var scope = services.CreateScope();
             await ProcessAsync(job, scope, ct);
             await msg.AckAsync(cancellationToken: ct);
         }
@@ -82,8 +89,18 @@ public abstract class MediaConsumerBase(
         {
             logger.LogError(ex, "Failed processing asset {AssetId}", job.AssetId);
             await MarkFailedAsync(job, ex.Message, ct);
+
+            // The upload succeeded and the asset is unusable — a state the tenant will notice
+            // and ask about, and one nothing else records.
+            audit.Record(AuditActions.MediaProcessingFailed)
+                .For("media_asset", job.AssetId)
+                .As(AuditCategory.System)
+                .Failed(ex.Message);
+
             await msg.AckAsync(cancellationToken: ct); // recorded; don't redeliver poison messages
         }
+
+        await audit.FlushAsync(ct);
     }
 
     protected abstract Task ProcessAsync(MediaProcessRequested job, IServiceScope scope, CancellationToken ct);

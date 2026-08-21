@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using System.Text.Json;
 using Dcms.Shared.Caching;
 using Dcms.Shared.Contracts.Events;
@@ -49,7 +51,7 @@ public static class AnalyticsIngestEndpoints
                 await PublishAsync(events, tenantId, body, http, geo, ct);
             }
             return Results.Accepted();
-        }).RequireCors(CollectCorsPolicy);
+        }).RequireCors(CollectCorsPolicy).AuditExempt("Visitor telemetry, not an action on tenant state. Recorded in analytics.events, which has its own retention and is tenant-purgeable — audit is neither.");
 
         // Slug-less beacon fired by the published-site runtime (hydrate.js). The
         // runtime doesn't know the analytics instance slug, so we resolve the
@@ -70,7 +72,7 @@ public static class AnalyticsIngestEndpoints
                 await PublishAsync(events, tenantId, body, http, geo, ct);
             }
             return Results.Accepted();
-        }).RequireCors(CollectCorsPolicy);
+        }).RequireCors(CollectCorsPolicy).AuditExempt("Visitor telemetry, not an action on tenant state. Recorded in analytics.events, which has its own retention and is tenant-purgeable — audit is neither.");
 
         // Whether this tenant records anything, for a site that has to decide
         // whether to *ask*.
@@ -100,7 +102,7 @@ public static class AnalyticsIngestEndpoints
                 await cache.SetAsync(key, (bool?)enabled, TimeSpan.FromMinutes(5), ct);
             }
             return Results.Ok(new { enabled });
-        }).RequireCors(CollectCorsPolicy);
+        }).RequireCors(CollectCorsPolicy).AuditExempt("Visitor telemetry, not an action on tenant state. Recorded in analytics.events, which has its own retention and is tenant-purgeable — audit is neither.");
 
         return app;
     }

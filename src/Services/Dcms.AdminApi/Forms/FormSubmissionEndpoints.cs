@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using System.Text.Json;
 using Dcms.Plugins.Forms;
 using Dcms.Shared.Data.Cms;
@@ -143,7 +145,7 @@ public static class FormSubmissionEndpoints
             submission.HandledAt = submission.HandledAt is null ? DateTimeOffset.UtcNow : null;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { handledAt = submission.HandledAt });
-        }).RequirePermission(PlatformPermissions.ContentWrite);
+        }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.FormSubmissionHandled, "form_submission");
 
         app.MapDelete("/api/admin/forms/submissions/{id:guid}", async (
             Guid id, FormsDbContext db, CancellationToken ct) =>
@@ -156,7 +158,7 @@ public static class FormSubmissionEndpoints
             db.Submissions.Remove(submission);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.ContentWrite);
+        }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.FormSubmissionDeleted, "form_submission");
 
         return app;
     }

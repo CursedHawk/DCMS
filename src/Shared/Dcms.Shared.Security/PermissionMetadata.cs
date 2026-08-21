@@ -1,3 +1,4 @@
+using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Security.Authorization;
 using Microsoft.AspNetCore.Builder;
 
@@ -8,7 +9,12 @@ namespace Dcms.Shared.Security;
 /// middleware resolves the tenant from the request and evaluates the caller's
 /// effective permission set against this.
 /// </summary>
-public sealed record PermissionMetadata(string Permission);
+/// <remarks>
+/// Implements <see cref="IAuditPermission"/> so the audit middleware can record which
+/// permission key gated an action — the first thing anyone reviewing a refusal wants to know.
+/// The interface lives in the audit library so this stays a one-way dependency.
+/// </remarks>
+public sealed record PermissionMetadata(string Permission) : IAuditPermission;
 
 public static class PermissionEndpointExtensions
 {

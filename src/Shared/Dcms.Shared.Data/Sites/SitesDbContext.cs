@@ -1,4 +1,5 @@
 using Dcms.Shared.Kernel.Abstractions;
+using Dcms.Shared.Data.Audit;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.Shared.Data.Sites;
@@ -21,6 +22,9 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options, ITenantCon
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        // Audit records are written by the same SaveChanges as the change they describe.
+        builder.MapAuditOutbox();
         builder.HasDefaultSchema(Schema);
 
         builder.Entity<Site>(e =>

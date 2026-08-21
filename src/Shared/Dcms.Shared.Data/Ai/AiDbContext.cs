@@ -1,3 +1,4 @@
+using Dcms.Shared.Data.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
@@ -20,6 +21,9 @@ public class AiDbContext(DbContextOptions<AiDbContext> options) : DbContext(opti
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        // Audit records are written by the same SaveChanges as the change they describe.
+        builder.MapAuditOutbox();
         builder.HasDefaultSchema(Schema);
 
         builder.Entity<TenantAiSettings>(e =>
@@ -62,9 +66,10 @@ public static class AiServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<AiDbContext>(options =>
+        services.AddDbContext<AiDbContext>((sp, options) =>
             options.UseNpgsql(connectionString, npgsql =>
-                npgsql.MigrationsHistoryTable("__ef_migrations_history", AiDbContext.Schema)));
+                    npgsql.MigrationsHistoryTable("__ef_migrations_history", AiDbContext.Schema))
+                .UseDcmsAuditInterceptors(sp));
 
         return services;
     }

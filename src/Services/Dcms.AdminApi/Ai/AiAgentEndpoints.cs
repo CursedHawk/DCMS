@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
@@ -82,7 +84,7 @@ public static class AiAgentEndpoints
 
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.AiCredentialsUpdated, "ai_credentials");
 
         app.MapDelete("/api/admin/ai/user-credentials", async (
             AiDbContext db, ITenantContext tenant, CurrentUser me, CancellationToken ct) =>
@@ -96,7 +98,7 @@ public static class AiAgentEndpoints
                 await db.SaveChangesAsync(ct);
             }
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.AiCredentialsDeleted, "ai_credentials");
 
         // --- Streaming message proxy (browser agent loop -> ai-gateway) -------
 
@@ -134,7 +136,7 @@ public static class AiAgentEndpoints
             await upstreamStream.CopyToAsync(ctx.Response.Body, ct);
             upstream.Dispose();
             return Results.Empty;
-        }).RequirePermission(PlatformPermissions.SiteEdit);
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.AiRequestProxied, null, AuditCategory.Access);
 
         return app;
     }

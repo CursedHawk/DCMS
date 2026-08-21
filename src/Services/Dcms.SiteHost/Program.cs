@@ -1,3 +1,4 @@
+using Dcms.Shared.Data.Audit;
 using Dcms.SiteHost;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Sites;
@@ -16,6 +17,7 @@ builder.Services.AddHttpForwarder();
 // Reads tenancy + sites with no ambient tenant (resolution is by Host header).
 builder.Services.AddDcmsTenancyData(builder.Configuration);
 builder.Services.AddDcmsSitesData(builder.Configuration);
+builder.Services.AddDcmsAuditData(builder.Configuration);
 builder.Services.AddNullTenantContext();
 builder.Services.AddSingleton<DomainResolver>();
 builder.Services.AddHostedService<SiteCacheInvalidator>();

@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Ai;
@@ -57,7 +59,8 @@ public static class MyAccountEndpoints
         // client that fails between this call and identity's can simply retry both.
         app.MapDelete("/api/admin/me", async (
             CurrentUser me, TenancyDbContext db, SitesDbContext sites, AiDbContext ai,
-            TenancyPermissionResolver permissions, IEventPublisher events, CancellationToken ct) =>
+            TenancyPermissionResolver permissions, IEventPublisher events,
+            IAuditRecorder audit, AuditScope scope, CancellationToken ct) =>
         {
             var userId = me.RequireUserId();
             var memberships = await LoadMembershipsAsync(db, userId, ct);
@@ -72,8 +75,21 @@ public static class MyAccountEndpoints
                 });
             }
 
+            // Every statement below is set-based, and the departures span several tenants.
+            // One record per tenant, because each tenant's log has to show its own member
+            // leaving — a summary on the ambient tenant would put every workspace's departure
+            // in whichever one happened to be selected in the browser.
+            using var _ = scope.SuppressBulkCapture();
+
             foreach (var membership in memberships)
             {
+                audit.Record(AuditActions.MemberLeft)
+                    .InTenant(membership.TenantId)
+                    .For("membership", membership.MembershipId, me.Email)
+                    .About(userId)
+                    .With("workspace", membership.Slug)
+                    .With("reason", "account-deleted");
+
                 await RemoveMembershipAsync(db, membership.MembershipId, ct);
                 await permissions.InvalidateAsync(membership.TenantId, userId, ct);
                 await events.PublishAsync(Subjects.MembershipChanged,
@@ -97,13 +113,23 @@ public static class MyAccountEndpoints
             var aiSettings = await ai.UserSettings
                 .Where(s => s.UserId == userId).ExecuteDeleteAsync(ct);
 
+            // The platform-scope counterpart: the tenants each saw their own member go, but
+            // nothing above says the account itself was taken apart.
+            audit.Declare(AuditActions.AccountDetached)
+                .Platform()
+                .About(userId)
+                .As(AuditCategory.Auth, AuditSeverity.Notice)
+                .With("workspaces_left", memberships.Count)
+                .With("drafts_deleted", drafts)
+                .With("ai_settings_deleted", aiSettings);
+
             return Results.Ok(new
             {
                 workspacesLeft = memberships.Count,
                 draftsDeleted = drafts,
                 aiSettingsDeleted = aiSettings,
             });
-        }).RequireAuthorization();
+        }).RequireAuthorization().WithAudit(AuditActions.AccountDetached, category: AuditCategory.Auth);
 
         return app;
     }

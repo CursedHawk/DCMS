@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Sites;
@@ -27,14 +29,17 @@ public static class SitePreviewEndpoints
 
     public static IEndpointRouteBuilder MapSitePreview(this IEndpointRouteBuilder app)
     {
-        app.MapMethods("/api/admin/sites/{siteId:guid}/preview/api/{**path}", ProxyMethods, ProxyAsync);
+        app.MapMethods("/api/admin/sites/{siteId:guid}/preview/api/{**path}", ProxyMethods, ProxyAsync)
+            .AuditExempt("Transparent proxy to content-api. The real action is recorded there, "
+                       + "against the sandbox tenant; recording it here too would double every "
+                       + "preview interaction.");
 
         // Wipe the tenant's preview sandbox (forms / visitors / chat). Authenticated
         // admin action, scoped to the caller's current tenant.
         app.MapPost("/api/admin/sites/{siteId:guid}/preview/sandbox/reset", async (
             Guid siteId, SitesDbContext sites, FormsDbContext forms,
             VisitorsDbContext visitors, ChatDbContext chat,
-            ITenantContext tenant, CancellationToken ct) =>
+            ITenantContext tenant, IAuditRecorder audit, AuditScope scope, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
             {
@@ -46,20 +51,37 @@ public static class SitePreviewEndpoints
                 return Results.NotFound();
             }
 
-            var deleted = 0;
-            deleted += await forms.Submissions.IgnoreQueryFilters()
+            // Five statements, one act. The per-table breakdown is what a tenant asking
+            // "what did reset actually remove?" wants, so it is recorded here rather than
+            // left to five records that never mention the sandbox.
+            using var _ = scope.SuppressBulkCapture();
+
+            var submissions = await forms.Submissions.IgnoreQueryFilters()
                 .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
-            deleted += await chat.Messages.IgnoreQueryFilters()
+            var messages = await chat.Messages.IgnoreQueryFilters()
                 .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
-            deleted += await chat.Conversations.IgnoreQueryFilters()
+            var conversations = await chat.Conversations.IgnoreQueryFilters()
                 .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
-            deleted += await visitors.RefreshTokens.IgnoreQueryFilters()
+            var tokens = await visitors.RefreshTokens.IgnoreQueryFilters()
                 .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
-            deleted += await visitors.Accounts.IgnoreQueryFilters()
+            var accounts = await visitors.Accounts.IgnoreQueryFilters()
                 .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
 
+            var deleted = submissions + messages + conversations + tokens + accounts;
+
+            audit.Declared?
+                .With("deleted", deleted)
+                .With("rows", new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["forms.submissions"] = submissions,
+                    ["chat.messages"] = messages,
+                    ["chat.conversations"] = conversations,
+                    ["visitors.refresh_tokens"] = tokens,
+                    ["visitors.accounts"] = accounts,
+                });
+
             return Results.Ok(new { deleted });
-        }).RequireAuthorization();
+        }).RequireAuthorization().WithAudit(AuditActions.SitePreviewReset, "site");
 
         return app;
     }

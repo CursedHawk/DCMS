@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using System.Security.Claims;
 using Dcms.Identity.Domain;
 using Microsoft.AspNetCore;
@@ -19,10 +21,19 @@ public static class AuthorizationEndpoints
 {
     public static IEndpointRouteBuilder MapAuthorizationEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapMethods("/connect/authorize", ["GET", "POST"], AuthorizeAsync);
-        app.MapPost("/connect/token", ExchangeAsync);
-        app.MapMethods("/connect/userinfo", ["GET", "POST"], UserInfoAsync);
-        app.MapMethods("/connect/logout", ["GET", "POST"], LogoutAsync);
+        app.MapMethods("/connect/authorize", ["GET", "POST"], AuthorizeAsync)
+            .AuditExempt("Half of a sign-in that /account/login already records. A second record "
+                       + "per authorize round-trip would double every login without adding a fact.");
+
+        app.MapPost("/connect/token", ExchangeAsync)
+            .WithAudit(AuditActions.TokenIssued, category: AuditCategory.Auth);
+
+        app.MapMethods("/connect/userinfo", ["GET", "POST"], UserInfoAsync)
+            .AuditExempt("Reads the caller's own claims. Called on every silent renew, and "
+                       + "discloses nothing the caller did not already hold a token for.");
+
+        app.MapMethods("/connect/logout", ["GET", "POST"], LogoutAsync)
+            .WithAudit(AuditActions.Logout, category: AuditCategory.Auth);
         return app;
     }
 

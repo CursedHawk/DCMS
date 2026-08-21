@@ -13,6 +13,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Audit\Dcms.Shared.Audit.csproj" />
+    <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Kernel\Dcms.Shared.Kernel.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Contracts\Dcms.Shared.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Media\Dcms.Shared.Media.csproj" />

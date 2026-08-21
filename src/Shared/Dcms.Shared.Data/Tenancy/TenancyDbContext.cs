@@ -1,4 +1,5 @@
 using Dcms.Shared.Kernel.Abstractions;
+using Dcms.Shared.Data.Audit;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.Shared.Data.Tenancy;
@@ -32,6 +33,9 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options, ITenan
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        // Audit records are written by the same SaveChanges as the change they describe.
+        builder.MapAuditOutbox();
         builder.HasDefaultSchema(Schema);
 
         builder.Entity<Tenant>(e =>

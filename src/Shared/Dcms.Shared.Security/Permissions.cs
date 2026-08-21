@@ -23,13 +23,15 @@ public static class PlatformPermissions
     public const string ContentPublish = "content:publish";
     public const string ChatRead = "chat:read";
     public const string ChatManage = "chat:manage";
+    public const string AuditRead = "audit:read";
+    public const string AuditExport = "audit:export";
 
     /// <summary>All platform permission keys (excludes plugin-contributed ones).</summary>
     public static readonly IReadOnlyList<string> All =
     [
         TenantSettings, MembersManage, RolesManage, DomainsManage, PluginsManage,
         MediaRead, MediaWrite, SiteEdit, SitePublish, AiSettings, AnalyticsRead,
-        ContentRead, ContentWrite, ContentPublish, ChatRead, ChatManage,
+        ContentRead, ContentWrite, ContentPublish, ChatRead, ChatManage, AuditRead, AuditExport,
     ];
 
     public static string ForPlugin(string pluginId, string action) => $"plugin:{pluginId}:{action}";

@@ -1,3 +1,6 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Messaging;
+using Microsoft.Extensions.DependencyInjection;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Messaging.Email;
@@ -27,6 +30,7 @@ namespace Dcms.EmailWorker;
 public sealed class EmailSendConsumer(
     INatsJSContext jetStream,
     IEmailSender sender,
+    IServiceProvider services,
     ILogger<EmailSendConsumer> logger) : BackgroundService
 {
     private const string DurableName = "email-sender";
@@ -83,10 +87,19 @@ public sealed class EmailSendConsumer(
         }
 
         var attempt = (int)(msg.Metadata?.NumDelivered ?? 1);
+
+        // Restores the person whose action asked for this mail — a password reset, an
+        // invitation — so the delivery record names them rather than this worker. The tenant
+        // falls back to the payload: nothing here has an ambient one.
+        using var serviceScope = services.CreateScope();
+        using var context = msg.RestoreAuditContext(serviceScope.ServiceProvider, request.TenantId);
+        var audit = serviceScope.ServiceProvider.GetRequiredService<IAuditRecorder>();
+
         try
         {
             await sender.SendAsync(request.To, request.Subject, request.HtmlBody, request.ReplyTo, ct);
             await msg.AckAsync(cancellationToken: ct);
+            Record(audit, request, AuditActions.EmailSent).With("attempt", attempt);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -98,6 +111,9 @@ public sealed class EmailSendConsumer(
                 "Dropping {Purpose} email to {Recipient}: rejected permanently by the relay.",
                 request.Purpose, request.To);
             await msg.AckTerminateAsync(cancellationToken: ct);
+            // The mail will never arrive. Someone waiting on a password reset needs this to be
+            // findable, and the log line alone is not somewhere a support request can reach.
+            Record(audit, request, AuditActions.EmailFailed).Failed("rejected permanently by the relay");
         }
         catch (Exception ex)
         {
@@ -107,6 +123,10 @@ public sealed class EmailSendConsumer(
                     "Giving up on {Purpose} email to {Recipient} after {Attempts} attempts.",
                     request.Purpose, request.To, attempt);
                 await msg.AckTerminateAsync(cancellationToken: ct);
+                Record(audit, request, AuditActions.EmailFailed)
+                    .Failed($"undeliverable after {attempt} attempts")
+                    .With("attempts", attempt);
+                await audit.FlushAsync(ct);
                 return;
             }
 
@@ -116,7 +136,23 @@ public sealed class EmailSendConsumer(
                 attempt, request.Purpose, request.To, delay);
             await msg.NakAsync(delay: delay, cancellationToken: ct);
         }
+
+        // Explicit: this service has no request pipeline to flush for it, and no database
+        // transaction to ride along with. Nothing else will write these.
+        await audit.FlushAsync(ct);
     }
+
+    /// <summary>
+    /// One record per delivery attempt outcome. The recipient is recorded because an email is
+    /// addressed to a person and "we sent it" is not an answer without saying to whom; the body
+    /// never is, because it routinely contains a reset token.
+    /// </summary>
+    private static AuditEntry Record(IAuditRecorder audit, EmailRequested request, string action) =>
+        audit.Record(action)
+            .As(AuditCategory.System)
+            .For("email", request.EventId)
+            .With("purpose", request.Purpose)
+            .With("recipient", request.To);
 
     /// <summary>
     /// A 5xx SMTP reply means the relay has made up its mind (unknown mailbox,

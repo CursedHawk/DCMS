@@ -14,6 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Dcms.Shared.Audit\Dcms.Shared.Audit.csproj" />
     <ProjectReference Include="..\Dcms.Shared.Vault\Dcms.Shared.Vault.csproj" />
   </ItemGroup>
 

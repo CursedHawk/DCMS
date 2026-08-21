@@ -1,4 +1,6 @@
+using Dcms.Shared.Audit.Redaction;
 using Dcms.Shared.Kernel.Abstractions;
+using Dcms.Shared.Data.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
@@ -13,6 +15,8 @@ namespace Dcms.Shared.Data.Analytics;
 /// the request rather than from the beacon payload: a browser cannot be trusted to
 /// report its own country, and it does not know its own IP at all.
 /// </summary>
+// Raw visitor telemetry: written on every page view, tenant-purgeable, and already a record of itself. Auditing it would drown the log in traffic.
+[AuditIgnore]
 public sealed class AnalyticsEvent
 {
     public long Id { get; set; }
@@ -48,6 +52,8 @@ public sealed class AnalyticsEvent
 /// a period total without over-counting anyone who visited twice. The dashboard
 /// computes uniques from the raw events instead.
 /// </summary>
+// Derived from AnalyticsEvent by a scheduled job; nothing a person did.
+[AuditIgnore]
 public sealed class DailyRollup
 {
     public Guid TenantId { get; set; }
@@ -71,6 +77,9 @@ public class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> options) : 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        // Audit records are written by the same SaveChanges as the change they describe.
+        builder.MapAuditOutbox();
         builder.HasDefaultSchema(Schema);
 
         builder.Entity<AnalyticsEvent>(e =>
@@ -126,9 +135,10 @@ public static class AnalyticsServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<AnalyticsDbContext>(options =>
+        services.AddDbContext<AnalyticsDbContext>((sp, options) =>
             options.UseNpgsql(connectionString, npgsql =>
-                npgsql.MigrationsHistoryTable("__ef_migrations_history", AnalyticsDbContext.Schema)));
+                    npgsql.MigrationsHistoryTable("__ef_migrations_history", AnalyticsDbContext.Schema))
+                .UseDcmsAuditInterceptors(sp));
 
         return services;
     }

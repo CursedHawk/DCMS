@@ -14,10 +14,45 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Correlates one browser action with every server record it produces. The server
+ * generates an id when we don't send one, but originating it here is what links a
+ * retried request to its first attempt, and a click to the background work it queues.
+ */
+function newRequestId(): string {
+  return crypto.randomUUID().replace(/-/g, '');
+}
+
+/**
+ * Per-request overrides.
+ *
+ * `tenant` sends a different `X-Dcms-Tenant` than the ambient selection, so a platform admin
+ * can read one tenant's data without switching the whole app to it — the switch costs a full
+ * page reload and loses wherever they were. The server still decides: the header only names a
+ * tenant, and permissions are resolved per tenant, so this grants nothing a direct call
+ * would not.
+ *
+ * Anything reached this way must carry the tenant in its react-query key. Two tenants sharing
+ * one cache entry would show the first tenant's rows under the second tenant's name, which in
+ * an audit log is the worst possible kind of wrong.
+ */
+export interface RequestOptions {
+  tenant?: string;
+}
+
+/** Header override for a request options bag. Applied after the ambient headers, so it wins. */
+function overrides(opts?: RequestOptions): Record<string, string> {
+  return opts?.tenant ? { 'X-Dcms-Tenant': opts.tenant } : {};
+}
+
 async function send(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${base}${path}`, {
     ...init,
-    headers: { ...(await adminHeaders()), ...init?.headers },
+    headers: {
+      'X-Dcms-Request-Id': newRequestId(),
+      ...(await adminHeaders()),
+      ...init?.headers,
+    },
   });
 }
 
@@ -96,7 +131,7 @@ async function uploadWithProgress<T>(
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
+  get: <T>(path: string, opts?: RequestOptions) => request<T>(path, { headers: overrides(opts) }),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, {
       method: 'POST',
@@ -136,8 +171,10 @@ export const api = {
     signal?: AbortSignal,
   ) => uploadWithProgress<T>(path, form, onProgress, signal),
   /** Fetches a binary response (e.g. a generated zip) as a Blob. */
-  downloadBlob: async (path: string): Promise<Blob> => {
-    const res = await fetch(`${base}${path}`, { headers: await adminHeaders() });
+  downloadBlob: async (path: string, opts?: RequestOptions): Promise<Blob> => {
+    const res = await fetch(`${base}${path}`, {
+      headers: { ...(await adminHeaders()), ...overrides(opts) },
+    });
     if (!res.ok) {
       throw new ApiError(res.status, `GET ${path} → ${res.status}`);
     }

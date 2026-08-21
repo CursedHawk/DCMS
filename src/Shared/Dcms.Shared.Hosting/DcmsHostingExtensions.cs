@@ -1,4 +1,6 @@
 using System.Threading.RateLimiting;
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Vault;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -20,12 +22,26 @@ public static class DcmsHostingExtensions
     /// <summary>
     /// Cross-cutting wiring shared by every service: Vault configuration,
     /// Serilog, OpenTelemetry (OTLP when OTEL_EXPORTER_OTLP_ENDPOINT is set),
-    /// and base health checks (Postgres added when ConnectionStrings:Postgres
-    /// is present; Redis/NATS/MinIO checks register with their Add* extensions).
+    /// audit recording, and base health checks (Postgres added when
+    /// ConnectionStrings:Postgres is present; Redis/NATS/MinIO checks register
+    /// with their Add* extensions).
     /// </summary>
-    public static WebApplicationBuilder AddDcmsServiceDefaults(this WebApplicationBuilder builder, string serviceName)
+    /// <param name="auditProfile">
+    /// Whether this service resolves the acting principal from an HTTP request or acts as
+    /// itself while draining a queue. Every service already calls this method, which is why
+    /// audit is wired here: it is the one line nobody can forget to write.
+    /// </param>
+    public static WebApplicationBuilder AddDcmsServiceDefaults(
+        this WebApplicationBuilder builder,
+        string serviceName,
+        AuditProfile auditProfile = AuditProfile.Api)
     {
         builder.Configuration.AddDcmsVault(serviceName);
+
+        // Records go to a Critical log line until a service adds AddDcmsAuditData (durable
+        // outbox) — a floor rather than a destination, so an incompletely wired service still
+        // records instead of silently discarding.
+        builder.Services.AddDcmsAudit(serviceName, auditProfile);
 
         builder.Services.AddSerilog((services, loggerConfiguration) => loggerConfiguration
             .ReadFrom.Configuration(builder.Configuration)
@@ -121,11 +137,15 @@ public static class DcmsHostingExtensions
     /// </summary>
     public static WebApplication MapDcmsDefaultEndpoints(this WebApplication app)
     {
-        app.MapHealthChecks("/health");
+        // Health probes accept any method, so they register as mutating endpoints. Exempt
+        // rather than silent: the coverage test should see a decision, not an omission.
+        const string probeReason = "Liveness/readiness probe. Polled every few seconds by compose and the edge; it changes nothing.";
+
+        app.MapHealthChecks("/health").AuditExempt(probeReason);
         app.MapHealthChecks("/health/live", new HealthCheckOptions
         {
             Predicate = _ => false,
-        });
+        }).AuditExempt(probeReason);
         return app;
     }
 }

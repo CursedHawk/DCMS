@@ -7,6 +7,8 @@ using Dcms.PluginSdk.Runtime;
 using Dcms.Plugins.All;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Caching;
+using Dcms.Shared.Audit.Http;
+using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Hosting;
 using Dcms.ContentApi.Visitors;
 using Dcms.Shared.Data.Chat;
@@ -33,6 +35,7 @@ builder.Services.AddDcmsObjectStorage(builder.Configuration);
 // Tenant resolution: header in Phase 4 (host/domain routing arrives with
 // site-host in Phase 8). Reads the tenancy + CMS schemas owned by admin-api.
 builder.Services.AddDcmsTenancyData(builder.Configuration);
+builder.Services.AddDcmsAuditData(builder.Configuration);
 builder.Services.AddDcmsCmsData(builder.Configuration);
 builder.Services.AddDcmsMediaData(builder.Configuration);
 builder.Services.AddDcmsFormsData(builder.Configuration);
@@ -140,6 +143,7 @@ var app = builder.Build();
 app.UseDcmsSecurityHeaders();
 app.UseRateLimiter();
 app.UseCors();
+app.UseDcmsAudit();
 app.UseMultiTenant();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -156,7 +160,9 @@ app.MapContentDelivery();
 app.MapTagDelivery();
 app.MapMediaDelivery();
 app.MapOpenApi();
-app.MapHub<ChatHub>("/hub/chat");
+app.MapHub<ChatHub>("/hub/chat")
+    .AuditExempt("SignalR transport endpoint, not an action. Chat messages are recorded by the "
+               + "hub methods that write them, where the conversation and author are known.");
 app.MapGet("/", () => Results.Ok(new { service = "content-api" }));
 app.Run();
 

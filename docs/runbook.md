@@ -276,6 +276,233 @@ TS, reaches the hub through site-host's `/hub` proxy).
   default localhost:5173/5000) with credentials, required for the cross-origin
   agent hub connection.
 
+### Audit log
+
+- **Write path** — every service with database access records into
+  `audit.audit_outbox` *inside the transaction that commits the change being
+  recorded*, so a committed change cannot exist without its audit record.
+  `AuditChainWriter` (admin-api) drains the outbox, appends to
+  `audit.audit_events` with an HMAC chain, then fans out to the `AUDIT` NATS
+  stream for external sinks. Only email-worker (no database) and site-builder
+  (confined to the `sites` schema) publish to NATS directly.
+
+- **`Audit__ChainKey` is required outside development.** A ≥32-byte base64 key,
+  needed by all six services that own the audit schema (admin-api, identity,
+  content-api, ai-gateway, media-worker, site-host). They refuse to start without
+  it in non-Development environments, because a chain nobody can verify is
+  indistinguishable from a tampered one. Development falls back to a fixed
+  built-in key and logs a warning — the chain is **not** tamper-evident there.
+
+  **On vps1 it is an environment variable, not a Vault secret.** Vault there is
+  Shamir-sealed and supplementary — the real secrets already come from the
+  compose `prod-env` environment — so the key lives in `~/baas-dcms/.env` as
+  `AUDIT_CHAIN_KEY` and reaches the containers through the `x-prod-env` anchor in
+  `docker-compose.prod.yml`. Vault is the better home for it once the cluster is
+  routinely unsealed; until then, `.env` is what actually works.
+
+  ```sh
+  # vps1 — generate once, on the server, and never print it
+  printf '\nAUDIT_CHAIN_KEY=%s\n' "$(openssl rand -base64 48)" >> ~/baas-dcms/.env
+
+  # Vault-managed installations
+  vault kv patch secret/dcms/admin-api Audit__ChainKey="<value>"
+  ```
+
+  **Never rotate this key.** Every record written under the old key stops
+  verifying the moment it changes, and a chain that fails verification is
+  indistinguishable from one that was tampered with. It is append-only
+  configuration: back it up with the rest of `.env`, and if it is ever lost,
+  the honest response is to record that history before date X is no longer
+  verifiable — not to generate a new key and pretend otherwise.
+
+- **What the integrity guarantee is.** `POSTGRES_USER: dcms` is a cluster
+  superuser and seven of eight services connect as it, so the append-only
+  trigger and the `REVOKE UPDATE, DELETE` can be turned off by anyone holding
+  the app's credentials. They stop accidents, not attackers. What an attacker
+  with full database write access *cannot* do is recompute the HMAC without the
+  Vault-held key — that, plus off-box anchors, is the real control. Verify from
+  the SPA (Audit log → Verify chain) or `GET /api/admin/audit/verify`.
+
+- **Existing clusters need the schema by hand.** `infra/postgres/init/*` only
+  runs on a fresh cluster, so on vps1 apply the grants before deploying:
+
+  ```sql
+  CREATE SCHEMA IF NOT EXISTS audit;
+  GRANT USAGE ON SCHEMA audit TO dcms_rls;
+  ALTER DEFAULT PRIVILEGES FOR ROLE dcms IN SCHEMA audit GRANT SELECT ON TABLES TO dcms_rls;
+  ```
+
+  The tables, partitions and trigger are created by `TenancyMigrator` +
+  `AuditSchemaConfigurator` on startup and are idempotent.
+
+- **The `AUDIT` stream is create-only.** `provision-streams.sh` never
+  reconfigures an existing stream. AUDIT must be `limits` retention with
+  `--max-age 0 --discard new`; a stream created with work-queue retention would
+  allow only one consumer and drop messages on ack. Fix an existing one with
+  `nats stream edit AUDIT`.
+
+- **Two audit subjects, opposite directions.** `audit.submitted` is *inbound* —
+  email-worker and site-builder publish there because they cannot reach the
+  schema, and `AuditIngestConsumer` in admin-api drains it into the outbox so
+  everything reaches the chain by one path. `audit.recorded` is *outbound*
+  fan-out, published after a record is chained, for sinks outside the platform.
+  Keeping them apart is load-bearing: a writer consuming its own fan-out would
+  chain every record twice.
+
+- **Attribution crosses process boundaries as NATS headers**
+  (`Dcms-Correlation-Id`, `Dcms-Actor-*`, `Dcms-Tenant`, `Dcms-Causation-Id`).
+  None of the event records changed to carry them, and a consumer that ignores
+  them behaves as before. Anything restored from them is stamped
+  `attribution=propagated`, because a peer's assertion is not an
+  authentication — the audit page labels it, and it should stay labelled.
+
+  The two database outboxes bridge the same gap in time rather than space: both
+  carry a `ContextJson` column populated at enqueue and restored before publish.
+  Without it the chain breaks at the dispatcher's two-second poll, and "the site
+  build attributes back to the human who clicked publish" stops working — that
+  path runs request → `content_outbox` → dispatcher → JetStream → site-builder.
+
+- **The git webhook is `ActorKind.Webhook`, `attribution=inferred`.** The HMAC
+  proves the push came from Forgejo; it says nothing about who pushed. The
+  payload's git author is a self-asserted string and is deliberately not treated
+  as an identity. A failed HMAC records `security.webhook.rejected`.
+
+- **Existing tenants get `audit:read` on startup.** `OwnerPermissionBackfill`
+  grants each tenant's system Owner role every key in `PlatformPermissions.All`
+  it is missing. Without it a permission added after a tenant was created reaches
+  new tenants only, so the audit page would ship to an installation where nobody
+  can open it and no error says why. Idempotent, additive only — a role someone
+  narrowed by hand is a decision, not drift — and it records what it granted.
+
+- **Export is itself audited, before a byte is written.** `audit.exported`
+  carries the filter and the row cap; the response is a stream, so recording it
+  afterwards would mean recording it after the data had already left. NDJSON, not
+  CSV: a truncated download stays a valid prefix, and CSV would have to flatten
+  the diff and the metadata, which is most of what an export is for. Needs
+  `audit:export`, which is separate from `audit:read` on purpose.
+
+- **A record another tenant owns answers 404, not 403.** "That id exists but is
+  not yours" is itself a disclosure. Platform-scope records (sign-ins) resolve
+  through membership and come back with a restricted whitelist projection — no
+  resource, no HTTP detail, no metadata — so tenant A cannot learn which other
+  workspaces a shared account touched.
+
+- **Never delete audit rows.** Tenant purge deliberately excludes the `audit`
+  schema; an integration test asserts it. Retention drops whole monthly
+  partitions instead, and each month is a self-contained chain so dropping one
+  breaks nothing.
+
+- **Field values are default-deny.** `AuditRedactionDefaults` is an explicit list
+  of the entity types whose values may appear in a record. A type not on it still
+  produces a record — action, actor, table, which fields changed — but with the
+  values withheld. Add a table or a column and it discloses nothing until someone
+  has read the list and decided otherwise. Three further nets inside an opted-in
+  type: a per-type deny list, `[AuditSensitive]`, and a name heuristic
+  (`password`, `secret`, `token`, `hash`, `apikey`, `ciphertext`, `credential`,
+  `private`, `salt`, `signature`). Records carry the `RedactionVersion` that
+  produced them, so a blank field years from now is still interpretable.
+
+- **A missing `UseDcmsAuditInterceptors(sp)` is silent.** Registering the
+  interceptors in DI is not enough — EF Core does not resolve interceptors from
+  the application container by itself. A new `DbContext` whose `AddDbContext`
+  omits that call will commit changes and record none of them, without an error.
+  `AuditInterceptorDiscoveryTests` saves through every context and asserts the
+  buffer drained; add the new context to its list.
+
+- **Set-based statements record shape, not content.** `ExecuteUpdate` and
+  `ExecuteDelete` never load the rows they change, so there is no before-image to
+  record and there will not be one — reading first would double every delete on
+  the platform to serve the log. The interceptor records the table, the statement
+  shape and the affected row count. Where that is too thin, the call site wraps
+  the block in `scope.SuppressBulkCapture()` and records something better: the
+  tenant purge writes one manifest of per-table counts, a role update reads the
+  old permission set before replacing it. `AuditBulkStatementCoverageTests` fails
+  the build if a file issues such a statement without mentioning `IAuditRecorder`
+  or `AuditScope`, so the decision cannot be skipped by accident.
+
+- **The purge writes its intent before it acts.** `tenant.purge.started` goes
+  through `RecordNowAsync`, which propagates a sink failure — a purge that cannot
+  be recorded does not happen. `tenant.purged` follows with the count manifest. A
+  start with no matching finish means a purge died partway through, and it is the
+  only way to find that out: the rows that would have shown it are the ones that
+  were deleted.
+
+#### Sealing, retention and alerting
+
+- **`AuditMaintenanceWorker` runs hourly in admin-api, and once at startup.** Its
+  pass is: create partitions ahead of the writer → seal finished months → drop
+  expired partitions → publish metrics → check for omissions. A job that fires
+  once a month is a job nobody notices has stopped, and one that has to run at
+  midnight on the first misses a month whenever a deploy lands badly. Every step
+  is idempotent, so running it sixty times too often costs sixty no-ops.
+
+- **The chain's unique index is per-partition, never on the parent.** Postgres
+  requires a unique index on a partitioned table to include the partition key,
+  and adding `OccurredAt` to `("ChainKey","Period","Seq")` would defeat the
+  constraint — two rows could then claim one `Seq` at different instants. So each
+  partition carries its own `UX_audit_events_<month>_chain`, created by
+  `AuditSchemaConfigurator.EnsureChainIndexesAsync`, which runs at startup and in
+  every hourly maintenance pass over *all* partitions. The practical consequence:
+  **a partition created by hand — backfilling an old month, say — has no chain
+  index until that method next runs.** Writes still serialise on the chain-head
+  row lock, so the index is a backstop rather than the primary control, but do
+  not leave a partition without it. Re-running it is one idempotent statement.
+
+- **Sealing happens before dropping, always — that order *is* the safety
+  property.** `AuditChainSealer` verifies a finished month, then writes an
+  `audit.chain_anchors` row holding the sequence range, the row count, the first
+  and last hash, and an HMAC over all of it. That anchor is what lets a month
+  whose rows are gone still be shown to have been intact. Dropping first and
+  anchoring never would turn retention into evidence destruction.
+
+- **A month that will not seal is never dropped.** A segment refuses to seal
+  precisely when its chain does not verify, so the partition that most needs
+  looking at is the one retention leaves alone. Look for
+  `Refusing to seal audit segment …` at `Critical`, and
+  `Keeping audit partition for … : N segment(s) are not sealed.` at `Warning`.
+
+- **Anchors are logged as well as stored, at `Critical`.** The line
+  `AUDIT ANCHOR {chain}/{period} seq A-B rows N hash … hmac …` is not an error;
+  the level is a routing instruction, so the line leaves Postgres for stdout and
+  whatever collects it. **An anchor that exists only in the database it attests
+  to is not an off-box anchor** — if these lines are not being shipped somewhere
+  outside the cluster, the third integrity control is not actually in place.
+
+- **Anchors are never dropped**, by retention or by tenant purge.
+  `PartitionDroppedAt` is stamped on the anchor when its rows go, so a gap in the
+  months is visible as a gap rather than as an absence.
+
+- **Retention is `Audit:RetentionDays`, default 400.** Rows are removed only by
+  `ALTER TABLE … DETACH PARTITION` followed by `DROP TABLE`. The drop is itself
+  recorded as `audit.partition.dropped`.
+
+- **`ProducerSeq` gaps are the check the chain cannot perform.** A chain over
+  records that were silently dropped verifies perfectly — deleting the tail of a
+  chain leaves a valid chain. Each process stamps a `ServiceInstance` and a dense
+  counter, and `AuditGapDetector` compares the counter's range against the rows
+  that arrived. The hourly check looks back 6 hours and stops 5 minutes short of
+  now, because a process that has taken a sequence number but not yet flushed
+  looks momentarily like a gap at its own tail; the windows overlap so nothing is
+  skipped. A gap reads:
+  `Audit gap: {service} instance {id} issued sequence A-B but only N record(s) arrived`.
+
+- **Metrics, meter `Dcms.Audit`,** exported through the existing OpenTelemetry
+  wiring when `OTEL_EXPORTER_OTLP_ENDPOINT` is set:
+
+  | Metric | Alert when |
+  |---|---|
+  | `dcms.audit.recorded` | it **flat-lines** during known traffic — a silent audit log looks exactly like an idle platform, which is why the absence is the alarm rather than a spike |
+  | `dcms.audit.sink_failed` | > 0 — each one now survives only in a `Critical` log line |
+  | `dcms.audit.chain_broken` | > 0, ever — this is an incident, not a threshold |
+  | `dcms.audit.producer_gap` | > 0 outside the 5-minute settle window |
+  | `dcms.audit.outbox_depth` | sustained growth: the writer has stopped |
+  | `dcms.audit.writer_lag` | > 15 min — the worker already logs `Critical` at that point |
+
+- **Verifying by hand:** `GET /api/admin/audit/verify` for the current tenant, or
+  the SPA's *Audit log → Verify chain*. Every failing exit of the verifier
+  increments `dcms.audit.chain_broken`, so a finding cannot be discovered on one
+  operator's screen and nowhere else.
+
 ### Load smoke (Phase 12)
 
 `k6 run scripts/load-smoke.js` ramps to 50 VUs against content-api's cached reads

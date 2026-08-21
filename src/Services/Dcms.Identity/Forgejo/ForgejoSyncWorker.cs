@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Propagation;
 using Dcms.Identity.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -41,6 +43,8 @@ public sealed class ForgejoSyncWorker(
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
         var sync = scope.ServiceProvider.GetRequiredService<ForgejoUserSync>();
+        var ambient = scope.ServiceProvider.GetRequiredService<AuditAmbient>();
+        var auditScope = scope.ServiceProvider.GetRequiredService<AuditScope>();
 
         var now = DateTimeOffset.UtcNow;
         var due = await db.ForgejoSyncOutbox
@@ -51,6 +55,12 @@ public sealed class ForgejoSyncWorker(
 
         foreach (var row in due)
         {
+            // The person whose credential change this is. Restored per row: a batch may hold
+            // several people's, and attributing the second to the first would be worse than
+            // attributing it to nobody.
+            AuditPropagation.Restore(auditScope, AuditPropagation.FromJson(row.ContextJson));
+            using var _ = ambient.Enter(auditScope);
+
             try
             {
                 await sync.ApplyOutboxAsync(row, ct);

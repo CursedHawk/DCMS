@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Propagation;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Cms;
@@ -14,6 +16,7 @@ namespace Dcms.AdminApi.Cms;
 public sealed class OutboxDispatcher(
     IServiceProvider services,
     IEventPublisher events,
+    AuditAmbient ambient,
     ILogger<OutboxDispatcher> logger) : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
@@ -47,7 +50,16 @@ public sealed class OutboxDispatcher(
 
         foreach (var message in pending)
         {
-            await PublishAsync(message, ct);
+            // Put back the context of the request that enqueued this row, so the headers the
+            // publisher stamps name that person rather than this two-second timer. Per message,
+            // and disposed before the next: two rows in one batch may come from two people.
+            var restored = new AuditScope();
+            AuditPropagation.Restore(restored, AuditPropagation.FromJson(message.ContextJson), message.TenantId);
+            using (ambient.Enter(restored))
+            {
+                await PublishAsync(message, ct);
+            }
+
             message.SentAt = DateTimeOffset.UtcNow;
             message.Attempts++;
         }

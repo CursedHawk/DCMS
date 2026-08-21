@@ -46,6 +46,13 @@ public static class RlsConfigurator
         ("chat", "conversations"),
         ("chat", "messages"),
         ("forms", "form_submissions"),
+        // Audit rows carry a TenantId and must be covered like any other tenant table.
+        // Guid.Empty marks platform-scope records (logins, tenant provisioning): the policy
+        // compares equality against the GUC, so those rows are invisible to tenant readers,
+        // which is the intended behaviour. The sibling audit tables (chain_heads,
+        // chain_anchors, audit_outbox) are deliberately excluded — cross-tenant scan tables,
+        // same rationale as content_outbox above.
+        ("audit", "audit_events"),
     ];
 
     public static async Task ApplyAsync(DbContext context, ILogger logger, CancellationToken ct = default)

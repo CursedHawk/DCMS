@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
@@ -86,7 +88,7 @@ public static class TenancyEndpoints
             var tenant = await provisioning.CreateTenantAsync(body.Slug, body.Name, ownerId, ownerEmail, ct);
             return Results.Created($"/api/admin/tenants/{tenant.Id}",
                 new { tenantId = tenant.TenantId, slug = tenant.Identifier, name = tenant.Name });
-        }).RequireAuthorization();
+        }).RequireAuthorization().WithAudit(AuditActions.TenantCreated, "tenant");
 
         app.MapGet("/api/admin/tenants", async (CurrentUser me, TenancyDbContext db, CancellationToken ct) =>
         {
@@ -147,14 +149,14 @@ public static class TenancyEndpoints
             db.TenantRoles.Add(role);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/admin/roles/{role.Id}", new { id = role.Id });
-        }).RequirePermission(PlatformPermissions.RolesManage);
+        }).RequirePermission(PlatformPermissions.RolesManage).WithAudit(AuditActions.RoleCreated, "role");
 
         // Update a role's name and replace its permission set wholesale. System
         // roles keep their name fixed but their permissions may still be tuned.
         app.MapPut("/api/admin/roles/{id:guid}", async (
             Guid id, UpdateRoleRequest body, TenancyDbContext db, ITenantContext tenant,
             TenancyPermissionResolver permissions, Dcms.AdminApi.Sites.Git.RepoAccessReconciler repoAccess,
-            CancellationToken ct) =>
+            IAuditRecorder audit, AuditScope scope, CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;
             var role = await db.TenantRoles.FirstOrDefaultAsync(r => r.Id == id, ct);
@@ -175,9 +177,25 @@ public static class TenancyEndpoints
             // DbUpdateConcurrencyException. A direct delete + plain inserts sidesteps the
             // tracker entirely. Wrapped in a transaction so the swap is atomic. The
             // ExecuteDelete query honours the tenant query filter, so it is tenant-scoped.
+            //
+            // Read the old set before deleting it. A set-based delete leaves no before-image,
+            // and "who changed this role's permissions, and to what" is the question this
+            // whole subsystem exists to answer — a permission set is tens of short strings, so
+            // loading it to be able to answer is not a cost worth optimising away.
+            using var _ = scope.SuppressBulkCapture();
+            var previous = await db.TenantRolePermissions
+                .Where(p => p.TenantRoleId == id).Select(p => p.Permission).OrderBy(p => p).ToListAsync(ct);
+            var next = body.Permissions.Distinct().Order(StringComparer.Ordinal).ToList();
+
+            audit.Declared?
+                .For("role", role.Id, role.Name)
+                .Changed("permissions", string.Join(" ", previous), string.Join(" ", next))
+                .With("permissions_granted", next.Except(previous, StringComparer.Ordinal).ToList())
+                .With("permissions_revoked", previous.Except(next, StringComparer.Ordinal).ToList());
+
             await using var tx = await db.Database.BeginTransactionAsync(ct);
             await db.TenantRolePermissions.Where(p => p.TenantRoleId == id).ExecuteDeleteAsync(ct);
-            foreach (var permission in body.Permissions.Distinct())
+            foreach (var permission in next)
             {
                 db.TenantRolePermissions.Add(new TenantRolePermission
                 {
@@ -203,7 +221,7 @@ public static class TenancyEndpoints
                 await repoAccess.ReconcileUserAsync(tenantId, m.UserId, m.Email, ct);
             }
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.RolesManage);
+        }).RequirePermission(PlatformPermissions.RolesManage).WithAudit(AuditActions.RoleUpdated, "role");
 
         app.MapDelete("/api/admin/roles/{id:guid}", async (
             Guid id, TenancyDbContext db, CancellationToken ct) =>
@@ -224,7 +242,7 @@ public static class TenancyEndpoints
             db.TenantRoles.Remove(role);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.RolesManage);
+        }).RequirePermission(PlatformPermissions.RolesManage).WithAudit(AuditActions.RoleDeleted, "role");
 
         // ---- Tenant-scoped: members ----
         app.MapGet("/api/admin/members", async (TenancyDbContext db, CancellationToken ct) =>
@@ -274,7 +292,7 @@ public static class TenancyEndpoints
                 await repoAccess.ReconcileUserAsync(tenantId, membership.UserId, membership.Email, ct);
             }
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.MembersManage);
+        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRoleGranted, "membership");
 
         app.MapDelete("/api/admin/members/{membershipId:guid}/roles/{roleId:guid}", async (
             Guid membershipId, Guid roleId, TenancyDbContext db, ITenantContext tenant,
@@ -300,7 +318,7 @@ public static class TenancyEndpoints
                 await repoAccess.ReconcileUserAsync(tenantId, membership.UserId, membership.Email, ct);
             }
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.MembersManage);
+        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRoleRevoked, "membership");
 
         // Effective permission catalog: platform keys ∪ installed plugins' manifest
         // permissions ∪ per-site git repo permissions, each with a display name and

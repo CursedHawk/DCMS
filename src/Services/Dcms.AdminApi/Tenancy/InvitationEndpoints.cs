@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using System.Net;
 using System.Security.Cryptography;
 using Dcms.Shared.Contracts.Events;
@@ -105,7 +107,7 @@ public static class InvitationEndpoints
                 link,
                 expiresAt = invitation.ExpiresAt,
             });
-        }).RequirePermission(PlatformPermissions.MembersManage);
+        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberInvited, "invitation");
 
         // Resend: mint a fresh token and push the expiry out. The old link dies with
         // the old hash, which is what an admin resending after "I lost the email"
@@ -140,7 +142,7 @@ public static class InvitationEndpoints
                 link,
                 expiresAt = invitation.ExpiresAt,
             });
-        }).RequirePermission(PlatformPermissions.MembersManage);
+        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberInviteResent, "invitation");
 
         // Revoke. Deleting the row is the revocation: acceptance looks the token
         // hash up, so with the row gone an outstanding link is simply invalid.
@@ -155,7 +157,7 @@ public static class InvitationEndpoints
             db.Invitations.Remove(invitation);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.MembersManage);
+        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberInviteRevoked, "invitation");
 
         // Accept an invitation. Authenticated; the caller becomes a member of the
         // invited tenant with the invitation's roles. Operates across tenants, so
@@ -234,7 +236,7 @@ public static class InvitationEndpoints
                 tenantSlug = joined?.Identifier,
                 tenantName = joined?.Name,
             });
-        }).RequireAuthorization();
+        }).RequireAuthorization().WithAudit(AuditActions.MemberInviteAccepted, "invitation");
 
         return app;
     }

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Dcms.AdminApi.Ai;
 using Dcms.AdminApi.ApiClientGen;
 using Dcms.AdminApi.Analytics;
+using Dcms.AdminApi.Audit;
 using Dcms.AdminApi.Chat;
 using Dcms.AdminApi.Cms;
 using Dcms.AdminApi.Forms;
@@ -15,6 +16,8 @@ using Dcms.Shared.Caching;
 using Dcms.AdminApi.Sites;
 using Dcms.Shared.Data.Ai;
 using Dcms.Shared.Data.Analytics;
+using Dcms.Shared.Audit.Http;
+using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
@@ -54,6 +57,7 @@ builder.Services.AddDcmsAnalyticsData(builder.Configuration);
 builder.Services.AddDcmsVisitorsData(builder.Configuration);
 builder.Services.AddDcmsChatData(builder.Configuration);
 builder.Services.AddDcmsFormsData(builder.Configuration);
+builder.Services.AddDcmsAuditData(builder.Configuration);
 builder.Services.AddDcmsVaultTransit();
 builder.Services.AddScoped<AiPromptBuilder>();
 builder.Services.AddSingleton<MediaSanitizer>();
@@ -77,6 +81,13 @@ builder.Services.AddHostedService<OutboxDispatcher>();
 builder.Services.AddHostedService<ScheduledPublishWorker>();
 builder.Services.AddHostedService<AnalyticsConsumer>();
 builder.Services.AddHostedService<ChatFanoutConsumer>();
+builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditChainWriter>();
+// Brings in the records from the two services that cannot reach the audit schema, so
+// everything still reaches the chain by one path.
+builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditIngestConsumer>();
+// Seals finished months, keeps partitions ahead of the writer, drops what retention has
+// expired, and publishes the numbers that say whether any of it is working.
+builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditMaintenanceWorker>();
 
 // Outbound client-credentials token provider for calling ai-gateway.
 builder.Services.Configure<ServiceClientOptions>(builder.Configuration.GetSection(ServiceClientOptions.SectionName));
@@ -152,6 +163,10 @@ forwardedHeaders.KnownIPNetworks.Clear();
 forwardedHeaders.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeaders);
 
+// After UseForwardedHeaders (so the client address is the caller's) and before
+// authentication (so refusals from the auth stack are still inside the scope).
+app.UseDcmsAudit();
+
 app.UseAuthentication();
 app.UseMultiTenant();
 app.UseAuthorization();
@@ -167,6 +182,7 @@ app.MapContentEndpoints();
 app.MapMediaEndpoints();
 app.MapSiteEndpoints();
 app.MapSiteDeletion();
+app.MapAuditEndpoints();
 app.MapSitePreview();
 app.MapFormSubmissionEndpoints();
 app.MapAiSettingsEndpoints();

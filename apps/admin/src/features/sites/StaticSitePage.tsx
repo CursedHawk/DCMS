@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
+import { ResourceHistory } from '../audit/ResourceHistory';
 import { Progress } from '../../components/ui/progress';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { cn } from '../../lib/cn';
@@ -258,6 +259,11 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
       ) : (
         <p className="py-6 text-center text-sm text-muted-foreground">{t('sites.noDeployments')}</p>
       )}
+
+      {/* Who changed this site, and when. The audit page can answer the same question, but
+          only for someone who already knows to go there and what to filter by. */}
+      <h2 className="mb-2 mt-8 text-sm font-semibold">{t('audit.history.title')}</h2>
+      <ResourceHistory resourceType="site" resourceId={siteId} />
     </div>
   );
 }

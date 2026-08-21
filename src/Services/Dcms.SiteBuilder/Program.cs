@@ -1,3 +1,4 @@
+using Dcms.Shared.Audit;
 using Dcms.SiteBuilder;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Sites;
@@ -6,8 +7,11 @@ using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.AddDcmsServiceDefaults("site-builder");
+builder.AddDcmsServiceDefaults("site-builder", AuditProfile.Consumer);
 builder.Services.AddDcmsMessaging(builder.Configuration);
+// Connects as dcms_sitebuilder, which has USAGE on "sites" and nothing else — the audit
+// schema is deliberately not reachable from here, so records go over JetStream.
+builder.Services.AddDcmsAuditOverNats();
 builder.Services.AddDcmsObjectStorage(builder.Configuration);
 
 // Reads/writes the sites schema with no ambient tenant (scoped per job).

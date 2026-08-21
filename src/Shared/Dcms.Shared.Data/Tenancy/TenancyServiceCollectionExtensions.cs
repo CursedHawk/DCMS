@@ -1,3 +1,4 @@
+using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Kernel.Abstractions;
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Finbuckle.MultiTenant.Extensions;
@@ -20,9 +21,10 @@ public static class TenancyServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<TenancyDbContext>(options =>
+        services.AddDbContext<TenancyDbContext>((sp, options) =>
             options.UseNpgsql(connectionString, npgsql =>
-                npgsql.MigrationsHistoryTable("__ef_migrations_history", TenancyDbContext.Schema)));
+                    npgsql.MigrationsHistoryTable("__ef_migrations_history", TenancyDbContext.Schema))
+                .UseDcmsAuditInterceptors(sp));
 
         services.AddScoped<ITenantContext, FinbuckleTenantContext>();
         services.AddScoped<TenantStore>();

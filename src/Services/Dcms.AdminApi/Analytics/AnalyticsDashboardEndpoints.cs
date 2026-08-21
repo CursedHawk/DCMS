@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Analytics;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
@@ -166,7 +168,8 @@ public static class AnalyticsDashboardEndpoints
         // deleting it for a partially-cleared day would throw away counts for events
         // that are still there.
         app.MapDelete("/api/admin/analytics", async (
-            DateTimeOffset? before, AnalyticsDbContext db, ITenantContext tenant, CancellationToken ct) =>
+            DateTimeOffset? before, AnalyticsDbContext db, ITenantContext tenant,
+            IAuditRecorder audit, AuditScope scope, CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;
 
@@ -179,10 +182,23 @@ public static class AnalyticsDashboardEndpoints
                 rollups = rollups.Where(r => r.Day < lastWholeDay);
             }
 
+            // Analytics is the one table a tenant may destroy on demand; the audit record of
+            // having destroyed it is not, and is the only thing that survives to say what the
+            // history looked like before. The cutoff matters as much as the counts: "purged
+            // everything" and "purged last year" are different acts.
+            using var _ = scope.SuppressBulkCapture();
+
             var deletedEvents = await events.ExecuteDeleteAsync(ct);
             var deletedRollups = await rollups.ExecuteDeleteAsync(ct);
+
+            audit.Declared?
+                .With("before", before)
+                .With("scope", before is null ? "all-history" : "older-than-cutoff")
+                .With("events_deleted", deletedEvents)
+                .With("rollups_deleted", deletedRollups);
+
             return Results.Ok(new { deletedEvents, deletedRollups });
-        }).RequirePermission(PlatformPermissions.TenantSettings);
+        }).RequirePermission(PlatformPermissions.TenantSettings).WithAudit(AuditActions.AnalyticsPurged, "analytics");
 
         return app;
     }

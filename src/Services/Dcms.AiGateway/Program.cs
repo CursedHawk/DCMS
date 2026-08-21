@@ -1,7 +1,9 @@
 using Dcms.AiGateway;
 using Dcms.AiGateway.Providers;
 using Dcms.Shared.Caching;
+using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Ai;
+using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Hosting;
 using Dcms.Shared.Security;
 using Dcms.Shared.Vault;
@@ -13,11 +15,13 @@ builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
 
 // Reads tenant AI settings; decrypts tenant keys via Vault Transit at call time.
 builder.Services.AddDcmsAiData(builder.Configuration);
+builder.Services.AddDcmsAuditData(builder.Configuration);
 builder.Services.AddDcmsVaultTransit();
 builder.Services.AddScoped<AiProviderResolver>();
 builder.Services.AddHttpClient("anthropic");
 
 var app = builder.Build();
+app.UseDcmsAudit();
 app.UseAuthentication();
 app.UseAuthorization();
 

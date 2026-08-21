@@ -3,6 +3,8 @@ using Dcms.Identity.Data;
 using Dcms.Identity.Domain;
 using Dcms.Identity.Endpoints;
 using Dcms.Identity.Seeding;
+using Dcms.Shared.Audit.Http;
+using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Hosting;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Messaging.Email;
@@ -15,14 +17,16 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 var builder = WebApplication.CreateBuilder(args);
 builder.AddDcmsServiceDefaults("identity");
 builder.Services.AddDcmsMessaging(builder.Configuration);
+builder.Services.AddDcmsAuditData(builder.Configuration);
 
 var connectionString = builder.Configuration.GetConnectionString("Postgres")
                        ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-builder.Services.AddDbContext<IdentityDbContext>(options =>
+builder.Services.AddDbContext<IdentityDbContext>((sp, options) =>
 {
     options.UseNpgsql(connectionString, npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", IdentityDbContext.Schema));
     options.UseOpenIddict();
+    options.UseDcmsAuditInterceptors(sp);
 });
 
 builder.Services
@@ -180,6 +184,10 @@ var forwardedHeaders = new ForwardedHeadersOptions
 forwardedHeaders.KnownIPNetworks.Clear();
 forwardedHeaders.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeaders);
+
+// After UseForwardedHeaders (so the client address is the caller's): sign-in failures
+// are one of the few records where the address is most of the value.
+app.UseDcmsAudit();
 
 app.UseCors();
 app.UseAuthentication();

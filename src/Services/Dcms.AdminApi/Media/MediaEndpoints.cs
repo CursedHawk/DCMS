@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using System.Security.Cryptography;
 using Dcms.AdminApi.Tenancy;
 using Dcms.Shared.Contracts.Events;
@@ -125,7 +127,7 @@ public static class MediaEndpoints
                 contentType,
                 status = asset.Status.ToString(),
             });
-        }).RequirePermission(PlatformPermissions.MediaWrite).DisableAntiforgery();
+        }).RequirePermission(PlatformPermissions.MediaWrite).DisableAntiforgery().WithAudit(AuditActions.MediaUploaded, "media_asset");
 
         app.MapGet("/api/admin/media", async (Guid? folderId, MediaDbContext db, CancellationToken ct) =>
         {
@@ -235,7 +237,7 @@ public static class MediaEndpoints
             db.Folders.Add(folder);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { id = folder.Id, name = folder.Name, parentId = folder.ParentId, createdAt = folder.CreatedAt, assetCount = 0 });
-        }).RequirePermission(PlatformPermissions.MediaWrite);
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaFolderCreated, "media_folder");
 
         app.MapPatch("/api/admin/media/folders/{id:guid}", async (
             Guid id, UpdateFolderRequest body, MediaDbContext db, CancellationToken ct) =>
@@ -256,24 +258,32 @@ public static class MediaEndpoints
             }
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.MediaWrite);
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaFolderUpdated, "media_folder");
 
         // Deleting a folder keeps its assets — they fall back to "unfiled" — and
         // reparents any child folders to the root so nothing is orphaned.
         app.MapDelete("/api/admin/media/folders/{id:guid}", async (
-            Guid id, MediaDbContext db, CancellationToken ct) =>
+            Guid id, MediaDbContext db, IAuditRecorder audit, AuditScope scope, CancellationToken ct) =>
         {
             var folder = await db.Folders.FirstOrDefaultAsync(f => f.Id == id, ct);
             if (folder is null)
             {
                 return Results.NotFound();
             }
-            await db.Assets.Where(a => a.FolderId == id).ExecuteUpdateAsync(s => s.SetProperty(a => a.FolderId, (Guid?)null), ct);
-            await db.Folders.Where(f => f.ParentId == id).ExecuteUpdateAsync(s => s.SetProperty(f => f.ParentId, (Guid?)null), ct);
+
+            // The two reparenting statements are part of this delete, not events of their
+            // own — but how much they moved is the interesting part, since an emptied folder
+            // and a folder holding a thousand assets look identical afterwards.
+            using var _ = scope.SuppressBulkCapture();
+            var unfiled = await db.Assets.Where(a => a.FolderId == id).ExecuteUpdateAsync(s => s.SetProperty(a => a.FolderId, (Guid?)null), ct);
+            var reparented = await db.Folders.Where(f => f.ParentId == id).ExecuteUpdateAsync(s => s.SetProperty(f => f.ParentId, (Guid?)null), ct);
+
+            audit.Declared?.With("assets_unfiled", unfiled).With("subfolders_reparented", reparented);
+
             db.Folders.Remove(folder);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.MediaWrite);
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaFolderDeleted, "media_folder");
 
         // ---- Asset detail / edit / delete ------------------------------------
 
@@ -317,11 +327,11 @@ public static class MediaEndpoints
             asset.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.MediaWrite);
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaUpdated, "media_asset");
 
         // Move one or many assets into a folder (null folderId = back to unfiled).
         app.MapPost("/api/admin/media/move", async (
-            MoveAssetsRequest body, MediaDbContext db, CancellationToken ct) =>
+            MoveAssetsRequest body, MediaDbContext db, IAuditRecorder audit, AuditScope scope, CancellationToken ct) =>
         {
             if (body.Ids is null || body.Ids.Count == 0)
             {
@@ -331,11 +341,20 @@ public static class MediaEndpoints
             {
                 return Results.BadRequest(new { error = "Unknown folder." });
             }
+            using var _ = scope.SuppressBulkCapture();
             var moved = await db.Assets
                 .Where(a => body.Ids.Contains(a.Id))
                 .ExecuteUpdateAsync(s => s.SetProperty(a => a.FolderId, body.FolderId), ct);
+
+            // The ids, not just the count: a move is reversible, and only knowing which
+            // assets moved makes reversing it possible.
+            audit.Declared?
+                .With("moved", moved)
+                .With("asset_ids", body.Ids)
+                .With("folder_id", body.FolderId);
+
             return Results.Ok(new { moved });
-        }).RequirePermission(PlatformPermissions.MediaWrite);
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaMoved, "media_asset");
 
         // Delete one or many assets: their DB rows (variants cascade) and every
         // stored object (original + renditions). Storage deletes are best-effort.
@@ -371,7 +390,7 @@ public static class MediaEndpoints
             db.Assets.RemoveRange(assets);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { deleted = assets.Count });
-        }).RequirePermission(PlatformPermissions.MediaWrite);
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaDeleted, "media_asset");
 
         // Streams the original (or a named variant, e.g. ?variant=thumb / webp-640)
         // so the admin SPA can render previews behind the bearer token. No public

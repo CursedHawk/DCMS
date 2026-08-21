@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
@@ -85,7 +87,7 @@ public static class PluginInstanceEndpoints
             await PublishChange(events, instance, PluginInstanceChangeKind.Created, ct);
 
             return Results.Created($"/api/admin/plugins/instances/{instance.Id}", new { id = instance.Id });
-        }).RequirePermission(PlatformPermissions.PluginsManage);
+        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceCreated, "plugin_instance");
 
         app.MapPut("/api/admin/plugins/instances/{id:guid}", async (
             Guid id, UpdateInstanceRequest body, IPluginCatalog catalog, PluginConfigValidator validator,
@@ -112,7 +114,7 @@ public static class PluginInstanceEndpoints
             await db.SaveChangesAsync(ct);
             await PublishChange(events, instance, PluginInstanceChangeKind.Updated, ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.PluginsManage);
+        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceUpdated, "plugin_instance");
 
         app.MapPost("/api/admin/plugins/instances/{id:guid}/{action}", async (
             Guid id, string action, CmsDbContext db, IEventPublisher events, CancellationToken ct) =>
@@ -132,7 +134,7 @@ public static class PluginInstanceEndpoints
             await PublishChange(events, instance,
                 instance.Enabled ? PluginInstanceChangeKind.Enabled : PluginInstanceChangeKind.Disabled, ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.PluginsManage);
+        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceActioned, "plugin_instance");
 
         return app;
     }

@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Data.Ai;
 using Dcms.Shared.Data.Analytics;
 using Dcms.Shared.Data.Chat;
@@ -34,6 +36,16 @@ public sealed class TenancyMigrator(IServiceProvider services, IConfiguration co
         await scope.ServiceProvider.GetRequiredService<VisitorsDbContext>().Database.MigrateAsync(cancellationToken);
         await scope.ServiceProvider.GetRequiredService<ChatDbContext>().Database.MigrateAsync(cancellationToken);
         await scope.ServiceProvider.GetRequiredService<FormsDbContext>().Database.MigrateAsync(cancellationToken);
+
+        var audit = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
+        await audit.Database.MigrateAsync(cancellationToken);
+
+        // The partitioned table's DDL is hand-written in the migration; this adds what has to
+        // be re-checked every startup rather than once: the month partitions ahead of now, and
+        // the append-only trigger. Idempotent, and it must run after the migration created the
+        // table it partitions.
+        await AuditSchemaConfigurator.ApplyAsync(audit, logger, cancellationToken);
+
         logger.LogInformation("All databases migrated.");
 
         // Defense-in-depth: apply the RLS backstop once tables exist.
@@ -42,6 +54,13 @@ public sealed class TenancyMigrator(IServiceProvider services, IConfiguration co
             var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
             await RlsConfigurator.ApplyAsync(tenancy, logger, cancellationToken);
         }
+
+        // Last: it records what it grants, so the audit outbox has to exist first.
+        await OwnerPermissionBackfill.ApplyAsync(
+            scope.ServiceProvider.GetRequiredService<TenancyDbContext>(),
+            scope.ServiceProvider.GetRequiredService<IAuditRecorder>(),
+            logger,
+            cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

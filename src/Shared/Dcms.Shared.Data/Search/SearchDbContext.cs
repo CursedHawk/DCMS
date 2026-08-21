@@ -1,4 +1,6 @@
+using Dcms.Shared.Audit.Redaction;
 using Dcms.Shared.Kernel.Abstractions;
+using Dcms.Shared.Data.Audit;
 using Microsoft.EntityFrameworkCore;
 using NpgsqlTypes;
 
@@ -9,6 +11,8 @@ namespace Dcms.Shared.Data.Search;
 /// Postgres generated column (GIN-indexed); a pg_trgm GIN index on the title
 /// powers typeahead. One row per content item per tenant.
 /// </summary>
+// A denormalised index of content that is audited at its source.
+[AuditIgnore]
 public sealed class SearchDocument : TenantEntity
 {
     public Guid PluginInstanceId { get; set; }
@@ -36,6 +40,9 @@ public class SearchDbContext(DbContextOptions<SearchDbContext> options, ITenantC
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        // Audit records are written by the same SaveChanges as the change they describe.
+        builder.MapAuditOutbox();
         builder.HasDefaultSchema(Schema);
 
         builder.Entity<SearchDocument>(e =>

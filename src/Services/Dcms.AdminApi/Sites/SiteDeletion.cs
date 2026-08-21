@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.AdminApi.Sites.Git;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
@@ -41,6 +43,8 @@ public sealed class SiteDeleter(
     IObjectStorage storage,
     IOptions<StorageOptions> storageOptions,
     SiteGitService git,
+    IAuditRecorder audit,
+    AuditScope scope,
     ILogger<SiteDeleter> logger)
 {
     public async Task<SiteDeletionResult?> DeleteAsync(Guid siteId, CancellationToken ct)
@@ -57,9 +61,26 @@ public sealed class SiteDeleter(
         // --- Database ---
         // ExecuteDelete rather than load-then-Remove: a site can have thousands of
         // build rows, and there is nothing to validate per row.
+        //
+        // Those statements bypass the change tracker, so nothing would record them but the
+        // per-statement fallback — three rows saying three tables got shorter. Suppressed in
+        // favour of the counts below, which name the site they belonged to.
+        using var _ = scope.SuppressBulkCapture();
+
         await using var tx = await sites.Database.BeginTransactionAsync(ct);
         var builds = await sites.Builds.Where(b => b.SiteId == siteId).ExecuteDeleteAsync(ct);
         var drafts = await sites.Drafts.Where(d => d.SiteId == siteId).ExecuteDeleteAsync(ct);
+
+        // Before the save, so the record commits in the same transaction as the deletion.
+        // Declared is null when a tenant purge is walking the tenant's sites; then this is the
+        // only description of a named site being destroyed, and it is worth its own record.
+        (audit.Declared ?? audit.Record(AuditActions.SiteDeleted))
+            .For("site", siteId, site.Name)
+            .InTenant(tenantId)
+            .With("builds_deleted", builds)
+            .With("drafts_deleted", drafts)
+            .With("git_repo", repoFullName);
+
         sites.Sites.Remove(site);
         await sites.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
@@ -108,6 +129,19 @@ public sealed class SiteDeleter(
             repoDeleted = await git.DeleteRepoAsync(repoFullName!, ct);
         }
 
+        // The database is consistent either way, so this is not a failure of the delete — but
+        // it leaves the tenant's bytes on a disk the tenant believes was wiped, which someone
+        // has to be able to find later.
+        if (storageFailed)
+        {
+            audit.Record(AuditActions.SiteDeleteCleanupFailed)
+                .For("site", siteId, site.Name)
+                .InTenant(tenantId)
+                .As(AuditCategory.System, AuditSeverity.Warning)
+                .Failed("object storage did not accept the prefix delete; artifacts remain")
+                .With("prefix", prefix);
+        }
+
         return new SiteDeletionResult(
             siteId, builds, drafts, domains.Count, revoked, objects, repoDeleted, storageFailed);
     }
@@ -124,7 +158,7 @@ public static class SiteDeletionEndpoints
         {
             var result = await deleter.DeleteAsync(id, ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
-        }).RequirePermission(PlatformPermissions.SitePublish);
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteDeleted, "site");
 
         return app;
     }

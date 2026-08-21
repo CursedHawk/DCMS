@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using System.Text;
 using Dcms.AdminApi.Tenancy;
 using Dcms.Shared.Data.Ai;
@@ -66,7 +68,7 @@ public static class AiSettingsEndpoints
 
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.AiSettings);
+        }).RequirePermission(PlatformPermissions.AiSettings).WithAudit(AuditActions.AiSettingsUpdated, "ai_settings");
 
         return app;
     }

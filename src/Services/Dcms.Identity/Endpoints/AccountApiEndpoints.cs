@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using System.Security.Claims;
 using Dcms.Identity.Data;
 using Dcms.Identity.Domain;
@@ -67,7 +69,7 @@ public static class AccountApiEndpoints
             // Propagate to Forgejo (also flips HasGitPassword).
             await forgejo.EnsureAsync(user, body.NewPassword, ct);
             return Results.NoContent();
-        });
+        }).WithAudit(AuditActions.PasswordChanged, category: AuditCategory.Auth);
 
         // ---- SSH keys (on the user's Forgejo account) ----
 
@@ -104,7 +106,7 @@ public static class AccountApiEndpoints
             {
                 return Results.BadRequest(new { error = "That key is invalid or already registered." });
             }
-        });
+        }).WithAudit(AuditActions.SshKeyAdded, category: AuditCategory.Auth);
 
         // ---- Account deletion ----
         //
@@ -116,7 +118,8 @@ public static class AccountApiEndpoints
         // *counts* memberships.
         group.MapDelete("/me", async (
             ClaimsPrincipal principal, UserManager<DcmsUser> users, IdentityDbContext db,
-            ForgejoAdminClient admin, ILoggerFactory loggerFactory, CancellationToken ct) =>
+            ForgejoAdminClient admin, IAuditRecorder audit, AuditScope scope,
+            ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             var user = await FindUserAsync(principal, users);
             if (user is null) return Results.Unauthorized();
@@ -151,7 +154,9 @@ public static class AccountApiEndpoints
                 }
             }
 
-            // Queued credential syncs would otherwise keep re-creating the account.
+            // Queued credential syncs would otherwise keep re-creating the account. Not an
+            // event: it is the mechanics of this deletion, which the record below describes.
+            using var _ = scope.SuppressBulkCapture();
             await db.ForgejoSyncOutbox.Where(o => o.UserId == userId).ExecuteDeleteAsync(ct);
 
             var result = await users.DeleteAsync(user);
@@ -163,8 +168,17 @@ public static class AccountApiEndpoints
             }
 
             logger.LogWarning("Account {UserId} deleted at the user's request.", userId);
+
+            // The email is captured because the account it identified no longer exists to be
+            // looked up — a record naming only a guid answers nothing a year from now.
+            audit.Declared?
+                .Platform()
+                .About(userId)
+                .With("email", user.Email)
+                .With("forgejo_username", user.ForgejoUsername);
+
             return Results.NoContent();
-        });
+        }).WithAudit(AuditActions.AccountDeleted, category: AuditCategory.Auth);
 
         group.MapDelete("/ssh-keys/{id:long}", async (
             long id, ClaimsPrincipal principal, UserManager<DcmsUser> users,
@@ -176,7 +190,7 @@ public static class AccountApiEndpoints
             if (username is null) return Results.NoContent();
             await admin.DeletePublicKeyAsync(username, id, ct);
             return Results.NoContent();
-        });
+        }).WithAudit(AuditActions.SshKeyRemoved, category: AuditCategory.Auth);
 
         return app;
     }

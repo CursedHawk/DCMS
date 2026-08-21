@@ -15,6 +15,7 @@ public static class Streams
     public const string Analytics = "ANALYTICS";
     public const string Chat = "CHAT";
     public const string Email = "EMAIL";
+    public const string Audit = "AUDIT";
 }
 
 public static class Subjects
@@ -53,4 +54,24 @@ public static class Subjects
 
     // EMAIL (work queue)
     public const string EmailSend = "email.send";
+
+    // AUDIT
+    //
+    // Two subjects, in opposite directions, and keeping them apart matters: a writer that
+    // consumed its own fan-out would chain every record twice.
+
+    /// <summary>
+    /// Inbound. Records from the two services that cannot reach the <c>audit</c> schema —
+    /// email-worker, which has no database, and site-builder, which is confined to
+    /// <c>sites</c>. admin-api's ingest consumer drains this into the outbox, so everything
+    /// still reaches the chain by one path.
+    /// </summary>
+    public const string AuditSubmitted = "audit.submitted";
+
+    /// <summary>
+    /// Outbound fan-out, published after a record is chained. For sinks outside the platform —
+    /// a SIEM, a webhook — never for getting a record <i>into</i> the log. The system of
+    /// record is the audit schema, not this stream.
+    /// </summary>
+    public const string AuditRecorded = "audit.recorded";
 }

@@ -30,6 +30,7 @@ const page = <T extends string>(load: () => Promise<Record<T, React.FunctionComp
 const AccountPage = page(() => import('./features/account/AccountPage'), 'AccountPage');
 const AiSettingsPage = page(() => import('./features/ai/AiSettingsPage'), 'AiSettingsPage');
 const AnalyticsPage = page(() => import('./features/analytics/AnalyticsPage'), 'AnalyticsPage');
+const AuditPage = page(() => import('./features/audit/AuditPage'), 'AuditPage');
 const ChatPage = page(() => import('./features/chat/ChatPage'), 'ChatPage');
 const ContentPage = page(() => import('./features/content/ContentPage'), 'ContentPage');
 const DomainsPage = page(() => import('./features/domains/DomainsPage'), 'DomainsPage');
@@ -96,6 +97,7 @@ const aiRoute = child('/ai', AiSettingsPage);
 const accountRoute = child('/account', AccountPage);
 const workspaceRoute = child('/workspace', WorkspacePage);
 const analyticsRoute = child('/analytics', AnalyticsPage);
+const auditRoute = child('/audit', AuditPage);
 const chatRoute = child('/chat', ChatPage);
 const inviteRoute = child('/invite/accept', InviteAcceptPage);
 
@@ -127,6 +129,7 @@ export const routeTree = rootRoute.addChildren([
     accountRoute,
     workspaceRoute,
     analyticsRoute,
+    auditRoute,
     chatRoute,
     inviteRoute,
   ]),

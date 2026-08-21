@@ -1,4 +1,6 @@
+using Dcms.Shared.Audit.Redaction;
 using Dcms.Shared.Kernel.Abstractions;
+using Dcms.Shared.Data.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
@@ -23,6 +25,8 @@ public sealed class VisitorAccount : TenantEntity, ISandboxScoped
     public bool IsSandbox { get; set; }
 }
 
+// Rotated every few minutes by every signed-in visitor: high volume, no signal. The sign-in itself is recorded.
+[AuditIgnore]
 public sealed class VisitorRefreshToken : TenantEntity, ISandboxScoped
 {
     public Guid VisitorId { get; set; }
@@ -48,6 +52,9 @@ public class VisitorsDbContext(
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        // Audit records are written by the same SaveChanges as the change they describe.
+        builder.MapAuditOutbox();
         builder.HasDefaultSchema(Schema);
 
         builder.Entity<VisitorAccount>(e =>
@@ -134,9 +141,10 @@ public static class VisitorsServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<VisitorsDbContext>(options =>
+        services.AddDbContext<VisitorsDbContext>((sp, options) =>
             options.UseNpgsql(connectionString, npgsql =>
-                npgsql.MigrationsHistoryTable("__ef_migrations_history", VisitorsDbContext.Schema)));
+                    npgsql.MigrationsHistoryTable("__ef_migrations_history", VisitorsDbContext.Schema))
+                .UseDcmsAuditInterceptors(sp));
 
         services.TryAddScoped<ISandboxContext>(_ => Sandbox.DisabledSandboxContext.Instance);
         return services;

@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.AdminApi.Sites;
 using Dcms.AdminApi.Sites.Git;
 using Dcms.Shared.Contracts.Events;
@@ -101,7 +103,7 @@ public static class TenantAdminEndpoints
             row.Name = name;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { name = row.Name });
-        }).RequirePermission(PlatformPermissions.TenantSettings);
+        }).RequirePermission(PlatformPermissions.TenantSettings).WithAudit(AuditActions.TenantUpdated, "tenant");
 
         // Hand the tenant to another member. A transfer, not a co-ownership grant:
         // the target gains the Owner role and every other member loses it, so
@@ -167,7 +169,7 @@ public static class TenantAdminEndpoints
             }
 
             return Results.Ok(new { ownerMembershipId = target.Id, ownerEmail = target.Email });
-        }).RequirePermission(PlatformPermissions.TenantSettings);
+        }).RequirePermission(PlatformPermissions.TenantSettings).WithAudit(AuditActions.TenantTransferred, "tenant");
 
         app.MapDelete("/api/admin/tenant", async (
             TenancyDbContext db, CurrentUser me, ITenantContext tenant,
@@ -183,7 +185,7 @@ public static class TenantAdminEndpoints
             }
             var result = await deleter.DeleteAsync(tenantId, ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
-        }).RequirePermission(PlatformPermissions.TenantSettings);
+        }).RequirePermission(PlatformPermissions.TenantSettings).WithAudit(AuditActions.TenantPurged, "tenant");
 
         return app;
     }
@@ -257,6 +259,8 @@ public sealed class TenantDeleter(
     SiteGitService git,
     IObjectStorage storage,
     IOptions<StorageOptions> storageOptions,
+    IAuditRecorder audit,
+    AuditScope scope,
     ILogger<TenantDeleter> logger)
 {
     public async Task<TenantDeletionResult?> DeleteAsync(Guid tenantId, CancellationToken ct)
@@ -268,6 +272,23 @@ public sealed class TenantDeleter(
             return null;
         }
         var slug = tenant.Identifier;
+
+        // The intent, written and confirmed before a single row is destroyed. This is the one
+        // place on the platform that refuses to act unless it can record first: everything
+        // below is irreversible, and RecordNowAsync propagates a sink failure rather than
+        // swallowing it, so a purge that cannot be recorded does not happen.
+        await audit.RecordNowAsync(
+            new AuditEntry { Action = AuditActions.TenantPurgeStarted }
+                .InTenant(tenantId)
+                .For("tenant", tenantId, slug)
+                .As(AuditCategory.Security, AuditSeverity.Critical),
+            ct);
+
+        // From here every statement is set-based and every schema is emptied. Per-statement
+        // records would be twenty-five rows saying a table got shorter; one manifest below
+        // says what was destroyed, which is the question anyone will actually ask.
+        using var _ = scope.SuppressBulkCapture();
+        var manifest = new Dictionary<string, object?>(StringComparer.Ordinal);
 
         // Sites first: this is what removes the Forgejo repos and the per-site
         // artifacts, and it leaves the org empty so it can be deleted below.
@@ -282,48 +303,48 @@ public sealed class TenantDeleter(
         // issued straight to the database, so EF's cascade ordering does not apply.
         // Each schema gets its own transaction — they are separate DbContexts and
         // cannot share one without enlisting a distributed transaction.
-        await SweepAsync(cms, ct,
-            () => cms.ContentVersions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => cms.Outbox.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => cms.ScheduledPublishes.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => cms.ContentItems.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => cms.PluginInstances.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct));
+        await SweepAsync(cms, manifest, ct,
+            ("cms.ContentVersions", () => cms.ContentVersions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("cms.Outbox", () => cms.Outbox.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("cms.ScheduledPublishes", () => cms.ScheduledPublishes.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("cms.ContentItems", () => cms.ContentItems.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("cms.PluginInstances", () => cms.PluginInstances.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
-        await SweepAsync(media, ct,
-            () => media.Variants.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => media.Assets.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => media.Folders.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct));
+        await SweepAsync(media, manifest, ct,
+            ("media.Variants", () => media.Variants.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("media.Assets", () => media.Assets.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("media.Folders", () => media.Folders.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
-        await SweepAsync(forms, ct,
-            () => forms.Submissions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct));
+        await SweepAsync(forms, manifest, ct,
+            ("forms.Submissions", () => forms.Submissions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
-        await SweepAsync(search, ct,
-            () => search.Documents.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct));
+        await SweepAsync(search, manifest, ct,
+            ("search.Documents", () => search.Documents.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
-        await SweepAsync(analytics, ct,
-            () => analytics.Events.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => analytics.DailyRollups.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct));
+        await SweepAsync(analytics, manifest, ct,
+            ("analytics.Events", () => analytics.Events.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("analytics.DailyRollups", () => analytics.DailyRollups.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
-        await SweepAsync(chat, ct,
-            () => chat.Messages.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => chat.Conversations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct));
+        await SweepAsync(chat, manifest, ct,
+            ("chat.Messages", () => chat.Messages.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("chat.Conversations", () => chat.Conversations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
-        await SweepAsync(ai, ct,
-            () => ai.UserSettings.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => ai.Settings.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct));
+        await SweepAsync(ai, manifest, ct,
+            ("ai.UserSettings", () => ai.UserSettings.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("ai.Settings", () => ai.Settings.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
-        await SweepAsync(visitors, ct,
-            () => visitors.RefreshTokens.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => visitors.Accounts.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct));
+        await SweepAsync(visitors, manifest, ct,
+            ("visitors.RefreshTokens", () => visitors.RefreshTokens.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("visitors.Accounts", () => visitors.Accounts.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
-        await SweepAsync(tenancy, ct,
-            () => tenancy.MemberRoles.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => tenancy.TenantRolePermissions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => tenancy.Memberships.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => tenancy.TenantRoles.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => tenancy.Invitations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => tenancy.Domains.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct),
-            () => tenancy.Tenants.Where(t => t.Id == key).ExecuteDeleteAsync(ct));
+        await SweepAsync(tenancy, manifest, ct,
+            ("tenancy.MemberRoles", () => tenancy.MemberRoles.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.TenantRolePermissions", () => tenancy.TenantRolePermissions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.Memberships", () => tenancy.Memberships.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.TenantRoles", () => tenancy.TenantRoles.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.Invitations", () => tenancy.Invitations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.Domains", () => tenancy.Domains.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.Tenants", () => tenancy.Tenants.Where(t => t.Id == key).ExecuteDeleteAsync(ct)));
 
         // --- External systems (best effort) ---
         var objects = 0;
@@ -352,6 +373,22 @@ public sealed class TenantDeleter(
         logger.LogWarning("Tenant {TenantId} ({Slug}) deleted: {Sites} sites, {Objects} objects.",
             tenantId, slug, siteIds.Count, objects);
 
+        // The manifest. Written last, because it is the only surviving description of what the
+        // tenant held — the rows it counts no longer exist to be counted again. It is stamped
+        // with the tenant explicitly: the ambient tenant has just been deleted underneath us,
+        // and a record of a purge that landed on the platform scope would be lost to the one
+        // person entitled to ask about it.
+        audit.Record(AuditActions.TenantPurged)
+            .InTenant(tenantId)
+            .For("tenant", tenantId, slug)
+            .As(AuditCategory.Security, AuditSeverity.Critical)
+            .With("rows", manifest)
+            .With("sites", siteIds.Count)
+            .With("objects", objects)
+            .With("git_org_deleted", orgDeleted)
+            .With("storage_failed", storageFailed);
+        await audit.FlushAsync(ct);
+
         return new TenantDeletionResult(tenantId, siteIds.Count, objects, orgDeleted, storageFailed);
     }
 
@@ -361,12 +398,24 @@ public sealed class TenantDeleter(
     /// tenant is the one being removed, and filtering on an explicit TenantId is what
     /// makes the sweep auditable.
     /// </summary>
-    private static async Task SweepAsync(DbContext context, CancellationToken ct, params Func<Task<int>>[] deletes)
+    /// <param name="manifest">
+    /// Row counts by table, accumulated across every schema. This is the audit record: after
+    /// the sweep the rows are gone and nothing else can say what was there.
+    /// </param>
+    private static async Task SweepAsync(
+        DbContext context,
+        Dictionary<string, object?> manifest,
+        CancellationToken ct,
+        params (string Table, Func<Task<int>> Delete)[] deletes)
     {
         await using var tx = await context.Database.BeginTransactionAsync(ct);
-        foreach (var delete in deletes)
+        foreach (var (table, delete) in deletes)
         {
-            await delete();
+            var rows = await delete();
+            if (rows > 0)
+            {
+                manifest[table] = rows;
+            }
         }
         await tx.CommitAsync(ct);
     }

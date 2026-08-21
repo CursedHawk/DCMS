@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Propagation;
 using System.Text.RegularExpressions;
 using Dcms.Identity.Data;
 using Dcms.Identity.Domain;
@@ -23,6 +25,7 @@ public sealed partial class ForgejoUserSync
     private readonly IdentityDbContext _db;
     private readonly IDataProtector _protector;
     private readonly ForgejoOptions _opts;
+    private readonly AuditScope _scope;
     private readonly ILogger<ForgejoUserSync> _logger;
 
     public ForgejoUserSync(
@@ -30,6 +33,7 @@ public sealed partial class ForgejoUserSync
         IdentityDbContext db,
         IDataProtectionProvider dataProtection,
         IOptions<ForgejoOptions> options,
+        AuditScope scope,
         ILogger<ForgejoUserSync> logger)
     {
         _admin = admin;
@@ -38,6 +42,7 @@ public sealed partial class ForgejoUserSync
         // Vault dependency — Vault's token can't do transit on this host).
         _protector = dataProtection.CreateProtector("Dcms.Identity.Forgejo.OutboxPassword.v1");
         _opts = options.Value;
+        _scope = scope;
         _logger = logger;
     }
 
@@ -156,6 +161,9 @@ public sealed partial class ForgejoUserSync
             Username = user.ForgejoUsername ?? DeriveUsername(user.Email!),
             Email = user.Email!,
             EncryptedPassword = encrypted,
+            // Whoever changed the credential, remembered across the retry backoff — which
+            // reaches an hour, by which point nothing else remembers the request at all.
+            ContextJson = AuditPropagation.CaptureJson(_scope),
         });
     }
 

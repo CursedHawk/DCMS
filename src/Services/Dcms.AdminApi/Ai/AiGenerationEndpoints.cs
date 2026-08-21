@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Dcms.Shared.Kernel.Abstractions;
@@ -37,7 +39,8 @@ public static class AiGenerationEndpoints
                     """,
                 userPrompt: WithContext(body.Instruction, "The page it will be inserted into", body.Context),
                 ct))
-            .RequirePermission(PlatformPermissions.SiteEdit);
+            .RequirePermission(PlatformPermissions.SiteEdit)
+            .WithAudit(AuditActions.AiGenerateBlock, "site");
 
         app.MapPost("/api/admin/ai/generate/page", (
             GeneratePageRequest body, AiPromptBuilder prompts, IServiceTokenProvider tokens,
@@ -50,7 +53,8 @@ public static class AiGenerationEndpoints
                     """,
                 userPrompt: WithContext(body.Instruction, "The page as it is now, which you are replacing", body.Context),
                 ct))
-            .RequirePermission(PlatformPermissions.SiteEdit);
+            .RequirePermission(PlatformPermissions.SiteEdit)
+            .WithAudit(AuditActions.AiGeneratePage, "site");
 
         app.MapPost("/api/admin/ai/generate/site", (
             GenerateSiteRequest body, AiPromptBuilder prompts, IServiceTokenProvider tokens,
@@ -59,7 +63,8 @@ public static class AiGenerationEndpoints
                 framing: SiteFraming,
                 userPrompt: body.Instruction,
                 ct))
-            .RequirePermission(PlatformPermissions.SiteEdit);
+            .RequirePermission(PlatformPermissions.SiteEdit)
+            .WithAudit(AuditActions.AiGenerateSite, "site");
 
         return app;
     }

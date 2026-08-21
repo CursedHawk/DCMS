@@ -1,3 +1,5 @@
+using Dcms.Shared.Data.Audit;
+using Dcms.Shared.Audit;
 using Dcms.MediaWorker;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Hosting;
@@ -6,12 +8,15 @@ using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.AddDcmsServiceDefaults("media-worker");
+builder.AddDcmsServiceDefaults("media-worker", AuditProfile.Consumer);
 builder.Services.AddDcmsMessaging(builder.Configuration);
 builder.Services.AddDcmsObjectStorage(builder.Configuration);
 
 // Reads/writes the media schema with no ambient tenant (scoped per job).
 builder.Services.AddDcmsMediaData(builder.Configuration);
+// Reaches the audit schema on the shared connection, so it gets the strong path: its records
+// commit in the same transaction as the variants it writes.
+builder.Services.AddDcmsAuditData(builder.Configuration);
 builder.Services.AddNullTenantContext();
 builder.Services.AddSingleton<WebpLadderGenerator>();
 builder.Services.AddSingleton<VideoTranscoder>();

@@ -40,6 +40,10 @@ public sealed class AdminApiFixture : IAsyncLifetime
             var js = nats.CreateJetStreamContext();
             await js.CreateStreamAsync(new StreamConfig("TENANCY", ["tenant.>", "plugin.instance.>", "membership.>"]));
             await js.CreateStreamAsync(new StreamConfig("CMS", ["content.>"]));
+            // The chain writer fans every appended record out to this after it commits. Not
+            // needed for the record itself — that path is a row in the same transaction — but
+            // without the stream the fan-out logs an error on every test that changes anything.
+            await js.CreateStreamAsync(new StreamConfig("AUDIT", ["audit.>"]));
         }
 
         Factory = new WebApplicationFactory<AdminApiApp::Program>().WithWebHostBuilder(builder =>

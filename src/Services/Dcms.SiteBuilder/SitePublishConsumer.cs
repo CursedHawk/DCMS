@@ -1,3 +1,4 @@
+using Dcms.Shared.Audit;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
@@ -79,22 +80,40 @@ public sealed class SitePublishConsumer(
             await msg.AckAsync(cancellationToken: ct);
             return;
         }
+        // Puts back the person who clicked publish. Their context came through the content
+        // outbox row, out of the dispatcher and across JetStream to get here — this is the far
+        // end of that chain, and the record below is the reason the chain exists.
+        using var serviceScope = services.CreateScope();
+        using var context = msg.RestoreAuditContext(serviceScope.ServiceProvider, job.TenantId);
+        var audit = serviceScope.ServiceProvider.GetRequiredService<IAuditRecorder>();
+
         try
         {
-            await BuildAsync(job, ct);
+            await BuildAsync(job, serviceScope, ct);
+            audit.Record(AuditActions.SitePublished)
+                .For("site", job.SiteId)
+                .With("build_id", job.BuildId)
+                .With("render_mode", job.RenderMode);
             await msg.AckAsync(cancellationToken: ct);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Site build {BuildId} failed", job.BuildId);
             await FailAsync(job, ex.Message, ct);
+            audit.Record(AuditActions.SiteBuildFailed)
+                .For("site", job.SiteId)
+                .With("build_id", job.BuildId)
+                .Failed(ex.Message);
             await msg.AckAsync(cancellationToken: ct);
         }
+
+        // Nothing else will: this service has no request pipeline, and its records go over
+        // JetStream rather than riding a transaction of its own.
+        await audit.FlushAsync(ct);
     }
 
-    private async Task BuildAsync(SitePublishRequested job, CancellationToken ct)
+    private async Task BuildAsync(SitePublishRequested job, IServiceScope scope, CancellationToken ct)
     {
-        using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
 
         var build = await db.Builds.IgnoreQueryFilters().FirstOrDefaultAsync(b => b.Id == job.BuildId, ct);

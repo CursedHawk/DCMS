@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit.Redaction;
+
 namespace Dcms.Identity.Forgejo;
 
 /// <summary>
@@ -10,6 +12,8 @@ namespace Dcms.Identity.Forgejo;
 /// <see cref="EncryptedPassword"/> — never plaintext — and the row is deleted once
 /// applied.
 /// </summary>
+// Transport for a credential change that is audited where it is made.
+[AuditIgnore]
 public sealed class ForgejoSyncOutbox
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -35,4 +39,14 @@ public sealed class ForgejoSyncOutbox
 
     /// <summary>Last error, for diagnostics (never contains secrets).</summary>
     public string? LastError { get; set; }
+
+    /// <summary>
+    /// The audit context of the request that enqueued this row, as propagation headers.
+    ///
+    /// <para>Without it attribution dies here. The dispatcher polls every two seconds with no
+    /// request anywhere near it, so by the time this is published the person who caused it is
+    /// long gone — and content publish is exactly the path that has to reach the site builder
+    /// still naming them.</para>
+    /// </summary>
+    public string? ContextJson { get; set; }
 }

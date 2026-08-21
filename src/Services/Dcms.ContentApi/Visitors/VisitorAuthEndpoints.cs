@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Visitors;
 using Dcms.Shared.Kernel.Abstractions;
@@ -42,7 +44,7 @@ public static class VisitorAuthEndpoints
             await db.SaveChangesAsync(ct);
 
             return Results.Ok(await IssueAsync(db, tokens, tenantId, account, ct));
-        });
+        }).WithAudit(AuditActions.VisitorRegistered, "visitor", AuditCategory.Auth);
 
         app.MapPost("/api/{slug}/login", async (
             string slug, AuthRequest body, ITenantContext tenant, CmsDbContext cms,
@@ -60,7 +62,7 @@ public static class VisitorAuthEndpoints
                 return Results.Unauthorized();
             }
             return Results.Ok(await IssueAsync(db, tokens, tenantId, account, ct));
-        });
+        }).WithAudit(AuditActions.VisitorLoggedIn, "visitor", AuditCategory.Auth);
 
         app.MapPost("/api/{slug}/refresh", async (
             string slug, RefreshRequest body, ITenantContext tenant, CmsDbContext cms,
@@ -85,7 +87,7 @@ public static class VisitorAuthEndpoints
             stored.RevokedAt = DateTimeOffset.UtcNow; // rotate
             var result = await IssueAsync(db, tokens, tenantId, account, ct);
             return Results.Ok(result);
-        });
+        }).AuditExempt("Token refresh. High volume, low signal — the sign-in it renews is already recorded, and the visitor plane refreshes every 15 minutes.");
 
         app.MapGet("/api/{slug}/me", async (
             string slug, HttpContext http, ITenantContext tenant, CmsDbContext cms,

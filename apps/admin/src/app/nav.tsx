@@ -12,6 +12,7 @@ import {
   MessagesSquare,
   PanelsTopLeft,
   Plug,
+  ScrollText,
   ShieldCheck,
   TrendingUp,
   Users,
@@ -44,6 +45,7 @@ export const NAV: NavItem[] = [
 
   { to: '/members', labelKey: 'nav.members', icon: Users, perm: Perm.MembersManage, group: 'admin' },
   { to: '/roles', labelKey: 'nav.roles', icon: ShieldCheck, perm: Perm.RolesManage, group: 'admin' },
+  { to: '/audit', labelKey: 'nav.audit', icon: ScrollText, perm: Perm.AuditRead, group: 'admin' },
   { to: '/domains', labelKey: 'nav.domains', icon: Globe, perm: Perm.DomainsManage, group: 'admin' },
   { to: '/ai', labelKey: 'nav.ai', icon: Bot, perm: Perm.AiSettings, group: 'admin' },
   { to: '/workspace', labelKey: 'nav.workspace', icon: Building2, perm: Perm.TenantSettings, group: 'admin' },

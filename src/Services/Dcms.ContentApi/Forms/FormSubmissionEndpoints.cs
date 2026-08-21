@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using System.Text.Json;
 using Dcms.Plugins.Forms;
 using Dcms.Shared.Data.Cms;
@@ -108,7 +110,7 @@ public static class FormSubmissionEndpoints
                 submissionId = submission.Id,
                 message = definition.SuccessMessage ?? "Thanks — your submission has been received.",
             });
-        }).RequireCors(SubmitCorsPolicy);
+        }).RequireCors(SubmitCorsPolicy).WithAudit(AuditActions.FormSubmitted, "form_submission");
 
         return app;
     }

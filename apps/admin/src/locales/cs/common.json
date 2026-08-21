@@ -19,7 +19,8 @@
     "analytics": "Analytika",
     "chat": "Chat",
     "settings": "Nastavení",
-    "workspace": "Pracovní prostor"
+    "workspace": "Pracovní prostor",
+    "audit": "Auditní log"
   },
   "actions": {
     "create": "Vytvořit",
@@ -856,5 +857,76 @@
   "storage": {
     "notice": "Tato administrace ukládá jen to, co potřebuje k provozu: vaše přihlášení, vybraný pracovní prostor a nastavení rozhraní, jako je motiv nebo otevřené záložky editoru. Nic se nepoužívá k reklamě ani nesdílí s třetími stranami.",
     "gotIt": "Rozumím"
+  },
+  "audit": {
+    "title": "Auditní log",
+    "description": "Kdo co udělal, kdy a odkud. Záznamy jsou nepřepisovatelné a řetězené.",
+    "verify": "Ověřit řetěz",
+    "verifyOk": "Řetěz ověřen: {{count}} záznamů je neporušených.",
+    "verifyFailed": "Auditní řetěz neodpovídá.",
+    "verifyError": "Řetěz se nepodařilo ověřit.",
+    "filterAction": "Filtrovat podle akce, např. site.",
+    "filterCategory": "Kategorie",
+    "filterOutcome": "Výsledek",
+    "anyCategory": "Libovolná kategorie",
+    "anyOutcome": "Libovolný výsledek",
+    "empty": "Zatím žádné auditní záznamy",
+    "emptyHint": "Akce provedené v tomto prostoru se objeví zde.",
+    "loadFailed": "Auditní log se nepodařilo načíst",
+    "loadFailedHint": "Server nedokázal log vrátit. Zkontrolujte logy admin-api.",
+    "loadFailedForbidden": "Nemáte oprávnění číst auditní log tohoto prostoru.",
+    "loadMore": "Načíst další",
+    "sandbox": "Náhled",
+    "actorUnknown": "Neznámý",
+    "platformScope": "Událost účtu",
+    "ipReported": "deklarovaná",
+    "ipReportedHint": "Adresu uvedl volající. Nebyla nezávisle ověřena.",
+    "col": {
+      "when": "Kdy",
+      "action": "Akce",
+      "actor": "Aktér",
+      "resource": "Zdroj",
+      "outcome": "Výsledek",
+      "origin": "Původ"
+    },
+    "category": {
+      "tenantstate": "Změny",
+      "auth": "Přihlášení",
+      "access": "Přístup",
+      "system": "Systém",
+      "security": "Bezpečnost"
+    },
+    "outcome": {
+      "success": "Úspěch",
+      "denied": "Odepřeno",
+      "failure": "Selhalo"
+    },
+    "attribution": {
+      "propagated": "přiřazeno mezi službami",
+      "inferred": "odvozeno"
+    },
+    "andMoreFields": "a {{count}} dalších",
+    "export": "Exportovat",
+    "exportError": "Log se nepodařilo exportovat.",
+    "record": {
+      "loading": "Načítám záznam…",
+      "notFound": "Tento záznam není dostupný.",
+      "changes": "Co se změnilo",
+      "field": "Pole",
+      "before": "Před",
+      "after": "Po",
+      "empty": "prázdné",
+      "redacted": "Změněno — hodnota utajena",
+      "redactionVersion": "Pravidla utajení v{{version}}",
+      "metadata": "Podrobnosti",
+      "correlation": "ID požadavku",
+      "scope": "Rozsah",
+      "platformScopeHint": "Událost na úrovni účtu. Patří dané osobě, ne tomuto pracovnímu prostoru, proto se zobrazuje s méně detaily."
+    },
+    "history": {
+      "title": "Historie",
+      "empty": "Zatím nic nezaznamenáno",
+      "emptyHint": "Změny této položky se objeví zde."
+    }
   }
 }
