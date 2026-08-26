@@ -31,11 +31,12 @@ public sealed record SiteDeletionResult(
 /// site delete endpoint and (later) tenant deletion, so the cleanup steps live in
 /// one place rather than being duplicated per caller.
 ///
-/// Ordering is deliberate: the database rows go first, in one transaction, and the
-/// external systems (object storage, Forgejo) are cleaned up afterwards on a
-/// best-effort basis. A failure there leaks bytes or leaves an orphaned repo, both
-/// of which are recoverable by hand; the reverse order risks a site row pointing at
-/// artifacts that are already gone, which the serving path cannot recover from.
+/// Ordering is deliberate: the database rows go first — one transaction per schema, so
+/// each is either fully cleaned or untouched — and the external systems (object storage,
+/// Forgejo) are cleaned up afterwards on a best-effort basis. A failure there leaks bytes
+/// or leaves an orphaned repo, both of which are recoverable by hand; the reverse order
+/// risks a site row pointing at artifacts that are already gone, which the serving path
+/// cannot recover from.
 /// </summary>
 public sealed class SiteDeleter(
     SitesDbContext sites,
@@ -85,9 +86,20 @@ public sealed class SiteDeleter(
         await sites.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
 
-        // Domains live in the tenancy schema (a different DbContext, so a different
-        // transaction). Unlinking rather than deleting: the hostname is the tenant's
-        // and stays theirs to point at another site.
+        // Domains and repo grants live in the tenancy schema — a different DbContext, so it
+        // cannot join the transaction above without enlisting a distributed one. It gets its
+        // own instead, on the same rule tenant deletion sweeps by: a schema is either fully
+        // cleaned or untouched.
+        //
+        // Without it the two statements below autocommit independently, and ExecuteDelete
+        // lands before SaveChanges persists the unlinks — so a failure between them revokes
+        // the grants while leaving domains pointed at a site row that is already gone, and a
+        // failure before both leaves exactly the orphaned repo:{siteId} keys this method
+        // exists to clear. Neither half is recoverable through the UI.
+        await using var tenancyTx = await tenancy.Database.BeginTransactionAsync(ct);
+
+        // Unlinking rather than deleting: the hostname is the tenant's and stays theirs to
+        // point at another site.
         var domains = await tenancy.Domains.Where(d => d.SiteId == siteId).ToListAsync(ct);
         foreach (var domain in domains)
         {
@@ -104,6 +116,7 @@ public sealed class SiteDeleter(
             .Where(p => p.Permission == readKey || p.Permission == writeKey)
             .ExecuteDeleteAsync(ct);
         await tenancy.SaveChangesAsync(ct);
+        await tenancyTx.CommitAsync(ct);
 
         // --- External systems (best effort) ---
         var prefix = $"{tenantId}/{siteId}/";
