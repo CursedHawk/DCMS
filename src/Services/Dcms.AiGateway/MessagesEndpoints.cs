@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using Dcms.AiGateway.Providers;
 using Dcms.Shared.Data.Ai;
+using Dcms.Shared.Telemetry;
 
 namespace Dcms.AiGateway;
 
@@ -22,7 +24,8 @@ public static class MessagesEndpoints
     {
         app.MapPost("/v1/messages", async (
             MessagesProxyRequest body, HttpContext ctx, AiProviderResolver resolver,
-            IHttpClientFactory httpClientFactory, ILoggerFactory loggerFactory, CancellationToken ct) =>
+            IHttpClientFactory httpClientFactory, DcmsMetrics metrics,
+            ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             var logger = loggerFactory.CreateLogger("ai-gateway.messages");
 
@@ -56,6 +59,15 @@ public static class MessagesEndpoints
             upstreamRequest.Headers.TryAddWithoutValidation("x-api-key", creds.ApiKey);
             upstreamRequest.Headers.TryAddWithoutValidation("anthropic-version", AnthropicVersion);
 
+            // The model that was actually asked for, after the fill-in above — the agent pins a
+            // model per turn, so the resolver's default is often not what ran.
+            var model = payload["model"]?.GetValue<string>() ?? creds.Model;
+
+            using var activity = DcmsActivitySource.Start("ai.messages.proxy", ActivityKind.Client);
+            activity?.SetTag("gen_ai.system", "anthropic");
+            activity?.SetTag("gen_ai.request.model", model);
+
+            var started = Stopwatch.GetTimestamp();
             var http = httpClientFactory.CreateClient("anthropic");
             HttpResponseMessage upstream;
             try
@@ -64,6 +76,8 @@ public static class MessagesEndpoints
             }
             catch (Exception ex)
             {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                metrics.AiCall(body.TenantId, "anthropic", model, 0, 0, Stopwatch.GetElapsedTime(started));
                 logger.LogError(ex, "Upstream Anthropic request failed for tenant {TenantId}", body.TenantId);
                 return Results.Problem("AI request failed.", statusCode: StatusCodes.Status502BadGateway);
             }
@@ -73,9 +87,26 @@ public static class MessagesEndpoints
             ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
             ctx.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpResponseBodyFeature>()?.DisableBuffering();
 
+            // Tokens are read off the stream as it passes rather than from a parsed response,
+            // because there is no parsed response here — this endpoint is a byte proxy, and it
+            // is also the single most expensive path in the platform. Without this the IDE
+            // agent's spend would be the one thing the cost dashboard could not see.
+            var usage = new AnthropicUsageScanner();
             await using var upstreamStream = await upstream.Content.ReadAsStreamAsync(ct);
-            await upstreamStream.CopyToAsync(ctx.Response.Body, ct);
-            upstream.Dispose();
+            try
+            {
+                await usage.CopyAsync(upstreamStream, ctx.Response.Body, ct);
+            }
+            finally
+            {
+                // Recorded even when the browser disconnects mid-stream: the tokens produced up
+                // to that point were still generated, and still billed.
+                metrics.AiCall(body.TenantId, "anthropic", model,
+                    usage.PromptTokens, usage.CompletionTokens, Stopwatch.GetElapsedTime(started));
+                activity?.SetTag("gen_ai.usage.input_tokens", usage.PromptTokens);
+                activity?.SetTag("gen_ai.usage.output_tokens", usage.CompletionTokens);
+                upstream.Dispose();
+            }
             return Results.Empty;
         }).RequireAuthorization();
 

@@ -1,0 +1,710 @@
+{
+  "uid": "dcms-audit-activity",
+  "title": "Audit activity",
+  "description": "Who did what, by action, category, outcome and actor \u2014 read from the audit log.",
+  "tags": [
+    "dcms",
+    "audit"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "5m",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "templating": {
+    "list": [
+      {
+        "name": "action",
+        "label": "Action prefix",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": []
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 12,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**What people actually did, from the audit log itself.**\n\nRead from Postgres rather than from metrics, because these questions are high-cardinality by nature \u2014 every action, every tenant, every actor \u2014 and a metric label per actor would be unbounded. The `obs.*` views are read by a role whose entire world is those views."
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Actions (24h)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "SELECT sum(events) AS value FROM obs.v_tenant_activity_daily WHERE day >= now() - interval '1 day'",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Tenants active (24h)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "SELECT count(DISTINCT tenant_id) AS value FROM obs.v_tenant_activity_daily WHERE day >= now() - interval '1 day'",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Denials (24h)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "SELECT count(*) AS value FROM obs.v_audit_recent WHERE occurred_at >= now() - interval '1 day' AND outcome = 'Denied'",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Failures (24h)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "SELECT count(*) AS value FROM obs.v_audit_recent WHERE occurred_at >= now() - interval '1 day' AND outcome = 'Failure'",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "Sandbox actions (24h)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "SELECT count(*) AS value FROM obs.v_audit_recent WHERE occurred_at >= now() - interval '1 day' AND is_sandbox",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "description": "Preview traffic. Recorded, never dropped \u2014 a sandbox action is still an action.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "Propagated attribution (24h)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "SELECT count(*) AS value FROM obs.v_audit_recent WHERE occurred_at >= now() - interval '1 day' AND actor_attribution = 'Propagated'",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "description": "Records whose actor crossed a process boundary on a peer's word rather than being authenticated here. Labelled deliberately, and it should stay labelled.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Actions per day by category",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "\nSELECT day AS time, category, sum(events) AS events\nFROM obs.v_tenant_activity_daily\nWHERE day >= now() - interval '30 days'\nGROUP BY day, category\nORDER BY day\n",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Actions per day by outcome",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "\nSELECT day AS time, outcome, sum(events) AS events\nFROM obs.v_tenant_activity_daily\nWHERE day >= now() - interval '30 days'\nGROUP BY day, outcome\nORDER BY day\n",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 21,
+      "type": "barchart",
+      "title": "Most frequent actions (30 days)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "\nSELECT action, sum(events) AS events\nFROM obs.v_tenant_activity_daily\nWHERE day >= now() - interval '30 days'\nGROUP BY action\nORDER BY events DESC\nLIMIT 25\n",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "orientation": "auto",
+        "showValue": "auto",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "action"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "axisPlacement": "auto"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 22,
+      "type": "piechart",
+      "title": "Actions by actor kind (30 days)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "\nSELECT actor_kind, count(*) AS events\nFROM obs.v_audit_recent\nWHERE occurred_at >= now() - interval '30 days'\nGROUP BY actor_kind\nORDER BY events DESC\n",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "percent"
+        ],
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 23,
+      "type": "table",
+      "title": "Recent actions \u2014 click a trace id to open its trace",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "\nSELECT\n    occurred_at AS \"time\",\n    tenant_slug,\n    action,\n    outcome,\n    actor_kind,\n    actor_display,\n    resource_type,\n    resource_label,\n    service,\n    status_code,\n    trace_id\nFROM obs.v_audit_recent\nWHERE occurred_at >= now() - interval '7 days'\n  AND ($action = '' OR action LIKE $action || '%')\nORDER BY occurred_at DESC\nLIMIT 200\n",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "description": "trace_id is the join to Tempo. It is stored on every audit record and kept for 400 days, long after the span tree itself expires at 7.",
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

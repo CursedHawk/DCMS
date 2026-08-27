@@ -10,6 +10,7 @@ public static class DcmsOAuth
     {
         public const string AdminSpa = "dcms-admin-spa";          // public, code+PKCE
         public const string AdminApiService = "dcms-admin-api";    // confidential, client credentials
+        public const string Grafana = "dcms-grafana";              // confidential, code+PKCE
     }
 
     public static class Scopes

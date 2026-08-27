@@ -4,6 +4,7 @@ using Dcms.Shared.Data.Media;
 using Dcms.Shared.Media;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
+using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NATS.Client.JetStream;
@@ -18,8 +19,9 @@ public sealed class ImageProcessingConsumer(
     IOptions<StorageOptions> storageOptions,
     IEventPublisher events,
     WebpLadderGenerator webp,
+    DcmsMetrics metrics,
     ILogger<ImageProcessingConsumer> logger)
-    : MediaConsumerBase(jetStream, services, storage, storageOptions, events, logger)
+    : MediaConsumerBase(jetStream, services, storage, storageOptions, events, metrics, logger)
 {
     protected override string Subject => Subjects.MediaProcessImage;
     protected override string DurableName => "media-worker-image";

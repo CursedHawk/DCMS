@@ -26,7 +26,8 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '../../components/ui/table';
-import { ApiError, api } from '../../lib/api';
+import { api } from '../../lib/api';
+import { toastApiError } from '../../lib/errors';
 import { useInvitations, useMembers, useRoles } from '../rbac/api';
 
 /** Short absolute date, e.g. "19 Aug 2026" in the active locale. */
@@ -82,7 +83,7 @@ export function MembersPage() {
       toast.success(t('members.inviteSent'));
       await qc.invalidateQueries({ queryKey: ['invitations'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   // Resending mints a fresh token server-side, so the returned link replaces the
@@ -96,7 +97,7 @@ export function MembersPage() {
       toast.success(t('members.resent'));
       await qc.invalidateQueries({ queryKey: ['invitations'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const revoke = useMutation({

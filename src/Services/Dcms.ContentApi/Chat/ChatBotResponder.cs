@@ -6,6 +6,7 @@ using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Search;
 using Dcms.Shared.Security;
+using Dcms.Shared.Telemetry;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
@@ -28,6 +29,7 @@ public sealed class ChatBotResponder(
     IServiceProvider services,
     IHubContext<ChatHub> hub,
     IHttpClientFactory httpClientFactory,
+    DcmsMetrics metrics,
     ILogger<ChatBotResponder> logger)
 {
     private const string PluginId = "live-chat";
@@ -125,6 +127,8 @@ public sealed class ChatBotResponder(
         chat.Messages.Add(message);
         conversation.LastMessageAt = now;
         await chat.SaveChangesAsync(ct);
+
+        metrics.ChatMessage(tenantId, ChatSender.Bot.ToString());
 
         var dto = new
         {

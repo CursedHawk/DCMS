@@ -63,3 +63,35 @@ services:
   admin-spa:
     ports:
       - "5000:80"
+
+  # Observability, dev only. In production none of these publish a port — Grafana is
+  # reached through Caddy and the stores are internal. Grafana is on 3001 rather than its
+  # default 3000 because vps1 already has Forgejo on 3000, and a dev port that collides
+  # with a production port is a trap waiting for whoever debugs against a tunnel.
+  grafana:
+    ports:
+      - "3001:3000"
+
+  prometheus:
+    ports:
+      - "9090:9090"
+
+  loki:
+    ports:
+      - "3100:3100"
+
+  tempo:
+    ports:
+      - "3200:3200"
+
+  alloy:
+    ports:
+      # Alloy's own UI, which shows every component's state and is the fastest way to see
+      # why a pipeline is not producing anything.
+      - "12345:12345"
+      - "4317:4317"
+      - "4318:4318"
+
+  nats-exporter:
+    ports:
+      - "7777:7777"

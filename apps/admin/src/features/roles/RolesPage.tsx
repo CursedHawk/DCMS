@@ -18,7 +18,8 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '../../components/ui/table';
-import { ApiError, api } from '../../lib/api';
+import { api } from '../../lib/api';
+import { toastApiError } from '../../lib/errors';
 import { type Role, usePermissionCatalog, useRoles } from '../rbac/api';
 import { PermissionMatrix } from './PermissionMatrix';
 
@@ -57,7 +58,7 @@ export function RolesPage() {
       setOpen(false);
       await qc.invalidateQueries({ queryKey: ['roles'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const remove = useMutation({
@@ -66,7 +67,7 @@ export function RolesPage() {
       toast.success(t('common.saved'));
       await qc.invalidateQueries({ queryKey: ['roles'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const nameById = new Map((catalog.data ?? []).map((p) => [p.key, p.displayName]));

@@ -2,10 +2,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, UploadCloud } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
 import { Progress } from '../../components/ui/progress';
 import { cn } from '../../lib/cn';
 import { ApiError, api } from '../../lib/api';
+import { toastApiError } from '../../lib/errors';
 import { formatSize } from './api';
 
 /** One queued file and how far its upload has got. */
@@ -78,7 +78,7 @@ export function MediaUploader({
         } catch (e) {
           const message = e instanceof ApiError ? e.message : t('errors.generic');
           patch(item.id, { status: 'error', error: message });
-          toast.error(`${file.name}: ${message}`);
+          toastApiError(e, t, file.name);
         }
       }
       await Promise.all([

@@ -536,3 +536,128 @@ Differences from dev (`docker-compose.prod.yml`):
   `Production` environment with `Auth:RequireHttpsMetadata=true`.
 
 Postgres RLS (ADR 0005) is enabled in every profile as defense-in-depth.
+
+## Observability
+
+Full design in [ADR 0008](adr/0008-observability.md); deployment and
+troubleshooting in
+[`infra/observability/README.md`](../infra/observability/README.md). This section
+is the part an operator needs in the middle of an incident.
+
+Grafana is at **https://grafana.highgeek.eu**, OIDC against the DCMS identity
+service, **platform SuperAdmin only**. There is no host port; it is reachable
+only through Caddy. `GF_SECURITY_ADMIN_PASSWORD` is a break-glass local login for
+the case where identity itself is what is down.
+
+### Somebody reports a trace id
+
+This is the workflow the whole effort exists for. Every response carries
+`X-Dcms-Trace-Id`; every failed request in the admin SPA shows it behind a copy
+button; every browser-facing 5xx renders it on the error page; every RFC 9457
+body carries it as `traceId`.
+
+1. Open **Ops → Trace lookup** and paste the id.
+2. Three panels resolve from that one string: the **Tempo trace** (the span tree,
+   across every service and every NATS hop), the **Loki lines** tagged with it,
+   and the matching **`audit.audit_events` rows**. The audit table has stored
+   `TraceId` since ADR 0007, which is why the join works at all.
+3. If the trace panel is empty but the others are not, the id is **older than 7
+   days** — Tempo's retention. The audit row (400 days) and the log lines (30
+   days; 90 for audit and security streams) are still there. That is a
+   limitation, not a fault; say so to the reporter rather than hunting for a bug.
+
+An `X-Dcms-Request-Id` works too, though it resolves to the audit rows and logs
+rather than to a span tree.
+
+### Retention at a glance
+
+| Store | Kept | Cap |
+|---|---|---|
+| Prometheus (metrics) | 30 d | 8 GB |
+| Loki (logs) | 30 d — **90 d** for audit/security streams | ~8 GB |
+| Tempo (traces) | **7 d** | ~4 GB |
+| `audit.audit_events` | 400 d, by partition | — |
+| Docker json logs | 3 × 50 MB per container | ~3 GB |
+
+Check the budget with `du -sh ~/dcms-data/{prometheus,loki,tempo,grafana}` on
+vps1. The **Ops → Retention and disk** dashboard tracks the same numbers with a
+fill-rate projection, and the host disk alert fires below 20 % free.
+
+### The audit metrics now actually export
+
+The six `Dcms.Audit` metrics in the table above were documented for a release
+while exporting nothing: `AddMeter` was never called, and the OTel SDK silently
+drops instruments from an unsubscribed meter. Because the headline guidance is
+that `dcms.audit.recorded` **flat-lining** is the alarm, an unsubscribed meter and
+a compromised platform produced identical graphs.
+
+They are now subscribed via `DcmsMeters.All`, laid out on **Audit & security →
+Audit health** against exactly the alert table above, and guarded by
+`DcmsMeterRegistrationTests`, which fails the build if a meter defined in the
+solution is not subscribed. If you add a meter, add it to `DcmsMeters`.
+
+### Alerts
+
+Rules live in `infra/observability/prometheus/rules/alerts.yml` (23 rules across
+audit, availability, resources, infrastructure and security). They route through
+a Grafana webhook to `POST /api/internal/alerts` on admin-api, which enqueues
+onto the **`EMAIL` work queue** that email-worker already owns — so relay
+credentials stay in exactly one container.
+
+The webhook authenticates with a bearer token (`ALERT_WEBHOOK_SECRET`) compared
+in constant time. Grafana's webhook contact point cannot sign a body, so this is
+weaker than an HMAC and is treated accordingly: admin-api **refuses to start in
+Production** on a secret shorter than 16 characters or drawn from a weak set, the
+endpoint fails closed when no secret is set, and every accepted call is audited
+as `observability.alert.notified`.
+
+### Deployment gotchas that have already bitten
+
+- **A config change had no effect.** Alloy's and Caddy's configs are bind-mounted *files*;
+  a plain restart reads the old inode. `up -d --force-recreate <service>`.
+- **A store restart-loops on `permission denied`.** Its data directory is owned by a
+  different uid than the process. These are named volumes with `o: bind`, which Docker
+  populates from the image — ownership included — so the image's own uid is the right one.
+  Do not pin `user:` on them. Full explanation in `infra/observability/README.md`.
+
+### Is the telemetry budget being kept?
+
+```sh
+./scripts/obs-disk-check.sh        # on vps1, from ~/baas-dcms
+```
+
+Prints each store's peak size, growth trend, projected size at the end of its retention
+window, and its budget. Exit status is the number of stores projected over. The same series
+drive three alerts, so this is the readable view rather than the control — there is nothing to
+remember to run.
+
+Projections are marked provisional until a day of history exists: a store's initial fill from
+empty to steady state, extrapolated across thirty days, is a scare rather than a projection.
+
+### When the dashboards themselves are the problem
+
+- **A whole service missing from every panel** — `OTEL_EXPORTER_OTLP_ENDPOINT` is
+  unset on it. The wiring is gated on that variable and silent without it.
+- **Everything green but users cannot reach the site** — look at the `public-*` blackbox
+  probes, not the per-service ones. The internal probes only prove a service answers on the
+  compose network, which stays true when DNS, Caddy or a certificate is the problem.
+- **Everything missing at once** — check `alloy`. Its UI (port 12345, not
+  published; tunnel to it) shows every pipeline component's state and is the
+  fastest way to see what stopped.
+- **Grafana up, Postgres panels erroring** — the `dcms_grafana` role or the
+  `obs.*` views are missing. The role is manual on an existing cluster
+  (`infra/observability/README.md`, step 5); the views are applied by admin-api
+  on start.
+- **A Grafana login refused** — `role_attribute_strict` is working. The user is
+  not a SuperAdmin, and a Grafana Viewer here could read every tenant's usage and
+  every audit action on the platform.
+
+### What is deliberately not covered
+
+- **Direct-SQL writes.** Every service connects to Postgres as a cluster
+  superuser, so a change made outside the application produces no audit row and
+  no span. CDC is the control that would see it; it is designed and deferred
+  (ADR 0008), with a reserved metric name and an empty panel on the security
+  dashboard.
+- **Automated Postgres backups.** vps1 has none. The retention dashboard and disk
+  alert make the absence visible; they do not fix it.

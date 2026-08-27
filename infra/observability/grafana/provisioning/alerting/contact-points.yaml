@@ -1,0 +1,32 @@
+# Alert delivery, routed through the platform's own email queue.
+#
+# Grafana can send SMTP directly. It deliberately does not here: docker-compose.vps.yml
+# states that email-worker is the sole holder of the relay credentials and that everything
+# else publishes to the EMAIL work queue instead. Giving the alerting system its own copy
+# of those credentials would make it the exception, and the relay in use rejects any
+# envelope sender that is not the authenticated account — so a second sender is a second
+# thing to get wrong, silently, at the moment it is most needed.
+#
+# admin-api checks the bearer token below against ALERT_WEBHOOK_SECRET in constant time
+# before it queues anything, and records every alert it accepts as
+# observability.alert.notified. See the note on the header for why this is a token and not
+# a signature.
+
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: dcms-email
+    receivers:
+      - uid: dcms-email-webhook
+        type: webhook
+        settings:
+          url: http://admin-api:8080/api/internal/alerts
+          httpMethod: POST
+          # A bearer token rather than a signature: Grafana's webhook receiver can attach an
+          # Authorization header and cannot HMAC the body, so there is nothing for admin-api
+          # to verify a signature against. The endpoint compares this in constant time and
+          # admin-api refuses to start in Production if it is short or well-known.
+          authorization_scheme: Bearer
+          authorization_credentials: $ALERT_WEBHOOK_SECRET
+        disableResolveMessage: false

@@ -10,6 +10,7 @@ using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Security;
 using Dcms.Shared.Security.Authorization;
+using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Tenancy;
@@ -66,7 +67,7 @@ public static class TenancyEndpoints
         // ---- Tenant provisioning (platform SuperAdmin only) ----
         app.MapPost("/api/admin/tenants", async (
             CreateTenantRequest body, CurrentUser me, TenantProvisioning provisioning,
-            TenancyDbContext db, CancellationToken ct) =>
+            TenancyDbContext db, DcmsMetrics metrics, CancellationToken ct) =>
         {
             if (!me.IsSuperAdmin)
             {
@@ -86,6 +87,12 @@ public static class TenancyEndpoints
             var ownerId = body.OwnerUserId ?? me.RequireUserId();
             var ownerEmail = body.OwnerEmail ?? me.Email ?? "unknown";
             var tenant = await provisioning.CreateTenantAsync(body.Slug, body.Name, ownerId, ownerEmail, ct);
+
+            // Unlabelled on purpose. The tenant that was created is exactly the value that must
+            // not become a metric label — one series per tenant, forever — and the growth
+            // dashboard wants the rate, which the bare count gives. Which tenants exist is a
+            // question for obs.v_growth_daily.
+            metrics.TenantCreated();
             return Results.Created($"/api/admin/tenants/{tenant.Id}",
                 new { tenantId = tenant.TenantId, slug = tenant.Identifier, name = tenant.Name });
         }).RequireAuthorization().WithAudit(AuditActions.TenantCreated, "tenant");

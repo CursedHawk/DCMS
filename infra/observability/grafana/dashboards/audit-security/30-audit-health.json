@@ -1,0 +1,673 @@
+{
+  "uid": "dcms-audit-health",
+  "title": "Audit log health",
+  "description": "The six audit meters, chain integrity by month, and the off-box anchor lines.",
+  "tags": [
+    "dcms",
+    "audit",
+    "security"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**The six meters from `docs/runbook.md`, with the alert conditions it already specified.**\n\nRead the first panel differently from the rest. `dcms.audit.recorded` **flat-lining is the alarm**, not a spike \u2014 a silent audit log and an idle platform produce identical output, so the absence of signal is the signal. That property is also why these metrics went a whole release without exporting at all: the meter was never subscribed with `AddMeter`, the SDK dropped every instrument without an error, and the symptom was indistinguishable from a quiet week. `DcmsMeterRegistrationTests` now fails the build if that recurs.\n\n`dcms.audit.chain_broken` has no threshold on purpose. Any non-zero value is an incident: a chain that fails verification is indistinguishable from one that was tampered with."
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Records / sec",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "sum(rate(dcms_audit_recorded_total[5m]))",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "rate"
+        }
+      ],
+      "description": "Red when zero. Flat-lining during known traffic raises AuditLogSilentDuringTraffic.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.0001
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Sink failures (1h)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "sum(increase(dcms_audit_sink_failed_total[1h]))",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "fail"
+        }
+      ],
+      "description": "A record the sink refused. Each one survives only in a Critical log line \u2014 find it below before it ages out.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Chain broken",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "sum(increase(dcms_audit_chain_broken_total[24h]))",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "broken"
+        }
+      ],
+      "description": "An incident, not a threshold. Do not rotate Audit__ChainKey in response \u2014 every record written under the old key stops verifying, which looks exactly like tampering.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Producer gaps (1h)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "sum(increase(dcms_audit_producer_gap_total[1h]))",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "gaps"
+        }
+      ],
+      "description": "A hash chain over records that were silently dropped verifies perfectly. This counter is the only thing that sees the omission.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Outbox depth",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "sum(dcms_audit_outbox_depth)",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "depth"
+        }
+      ],
+      "description": "Records written but not yet appended to the chain. Sustained growth means the writer has stopped.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1000
+              },
+              {
+                "color": "red",
+                "value": 5000
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Writer lag p95",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(dcms_audit_writer_lag_seconds_bucket[10m])))",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "lag"
+        }
+      ],
+      "description": "Age of the oldest unchained row. The writer polls every 2s, so anything in minutes is a backlog.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 300
+              },
+              {
+                "color": "red",
+                "value": 900
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Records recorded",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "sum by (service) (rate(dcms_audit_recorded_total[5m]))",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "description": "All six services that own the audit schema, plus email-worker and site-builder arriving over NATS.",
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Outbox depth and writer lag",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "sum(dcms_audit_outbox_depth)",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "depth"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(dcms_audit_writer_lag_seconds_bucket[10m])))",
+          "refId": "B",
+          "format": "time_series",
+          "legendFormat": "lag p95 (s)"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Chain integrity by month",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "\nSELECT\n    tenant_slug,\n    period,\n    first_seq,\n    last_seq,\n    row_count,\n    sealed_at,\n    rows_dropped\nFROM obs.v_audit_integrity\nORDER BY period DESC, tenant_slug\nLIMIT 200\n",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "description": "An anchor is what lets a month whose rows were dropped by retention still be shown to have been intact. A month with no sealed_at is either the current one or one that refused to seal \u2014 and a segment refuses to seal precisely when its chain does not verify, so retention leaves it alone. Look for 'Refusing to seal audit segment' at Critical.",
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "logs",
+      "title": "Audit anchors and critical audit lines",
+      "datasource": {
+        "type": "loki",
+        "uid": "dcms-loki"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "dcms-loki"
+          },
+          "expr": "{service=~\"admin-api|identity|content-api|ai-gateway|media-worker|site-host\"} |~ \"AUDIT ANCHOR|Refusing to seal|Audit gap\"",
+          "refId": "A",
+          "queryType": "range"
+        }
+      ],
+      "description": "These lines are logged at Critical as a routing instruction, not because they are errors. The runbook is explicit that an anchor existing only in the database it attests to is not an off-box anchor \u2014 this panel, and the 90-day Loki retention behind it, is what makes it one.",
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    }
+  ]
+}

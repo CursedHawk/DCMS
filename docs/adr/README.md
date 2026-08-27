@@ -14,3 +14,4 @@ as their implementation phase lands.
 - [0005](0005-rls-defense-in-depth.md) — Postgres RLS as a defense-in-depth backstop
 - [0006](0006-mode-a-html-css-in-git.md) — Mode A sites are HTML/CSS files in git, edited with GrapesJS
 - [0007](0007-audit-logging.md) — Platform-wide audit logging: transactional outbox + HMAC hash chain
+- [0008](0008-observability.md) — Observability: OpenTelemetry into a single-host LGTM stack

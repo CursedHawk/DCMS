@@ -4,6 +4,7 @@ using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Messaging;
+using Dcms.Shared.Telemetry;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
@@ -23,6 +24,7 @@ public sealed class ChatHub(
     IServiceProvider services,
     IEventPublisher events,
     ChatBotResponder botResponder,
+    DcmsMetrics metrics,
     ILogger<ChatHub> logger) : Hub
 {
     private const string TenantItemKey = "dcms.tenantId";
@@ -186,6 +188,11 @@ public sealed class ChatHub(
         db.Messages.Add(message);
         conversation.LastMessageAt = now;
         await db.SaveChangesAsync();
+
+        // Visitor vs Agent, which is the ratio the chat dashboard is actually for: a tenant
+        // whose agents send nothing has a widget nobody answers. Bot replies are counted by
+        // ChatBotResponder, on the same meter, so the three add up.
+        metrics.ChatMessage(tenantId, sender.ToString());
 
         var dto = new
         {

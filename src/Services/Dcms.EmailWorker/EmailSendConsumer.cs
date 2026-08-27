@@ -1,4 +1,5 @@
 using Dcms.Shared.Audit;
+using Dcms.Shared.Telemetry;
 using Dcms.Shared.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Dcms.Shared.Contracts.Events;
@@ -31,6 +32,7 @@ public sealed class EmailSendConsumer(
     INatsJSContext jetStream,
     IEmailSender sender,
     IServiceProvider services,
+    DcmsMetrics metrics,
     ILogger<EmailSendConsumer> logger) : BackgroundService
 {
     private const string DurableName = "email-sender";
@@ -100,6 +102,7 @@ public sealed class EmailSendConsumer(
             await sender.SendAsync(request.To, request.Subject, request.HtmlBody, request.ReplyTo, ct);
             await msg.AckAsync(cancellationToken: ct);
             Record(audit, request, AuditActions.EmailSent).With("attempt", attempt);
+            metrics.EmailSent();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -107,6 +110,10 @@ public sealed class EmailSendConsumer(
         }
         catch (Exception ex) when (IsPermanent(ex))
         {
+            // Marks the consumer span, which is what makes the failure visible both in the
+            // trace view and in the per-stream message counter.
+            context.Failed("rejected permanently by the relay");
+
             logger.LogError(ex,
                 "Dropping {Purpose} email to {Recipient}: rejected permanently by the relay.",
                 request.Purpose, request.To);
@@ -114,9 +121,14 @@ public sealed class EmailSendConsumer(
             // The mail will never arrive. Someone waiting on a password reset needs this to be
             // findable, and the log line alone is not somewhere a support request can reach.
             Record(audit, request, AuditActions.EmailFailed).Failed("rejected permanently by the relay");
+            // A bounded reason class, never the relay's message — that text is unbounded and
+            // routinely quotes the address it refused, which has no business being a label.
+            metrics.EmailFailed("rejected");
         }
         catch (Exception ex)
         {
+            context.Failed(ex.Message);
+
             if (attempt >= MaxDeliver)
             {
                 logger.LogError(ex,
@@ -126,6 +138,7 @@ public sealed class EmailSendConsumer(
                 Record(audit, request, AuditActions.EmailFailed)
                     .Failed($"undeliverable after {attempt} attempts")
                     .With("attempts", attempt);
+                metrics.EmailFailed("exhausted-retries");
                 await audit.FlushAsync(ct);
                 return;
             }

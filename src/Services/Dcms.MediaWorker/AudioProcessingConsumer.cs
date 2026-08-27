@@ -4,6 +4,7 @@ using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
+using Dcms.Shared.Telemetry;
 using Microsoft.Extensions.Options;
 using NATS.Client.JetStream;
 
@@ -17,8 +18,9 @@ public sealed class AudioProcessingConsumer(
     IOptions<StorageOptions> storageOptions,
     IEventPublisher events,
     AudioTranscoder transcoder,
+    DcmsMetrics metrics,
     ILogger<AudioProcessingConsumer> logger)
-    : MediaConsumerBase(jetStream, services, storage, storageOptions, events, logger)
+    : MediaConsumerBase(jetStream, services, storage, storageOptions, events, metrics, logger)
 {
     protected override string Subject => Subjects.MediaProcessAudio;
     protected override string DurableName => "media-worker-audio";

@@ -41,6 +41,27 @@ x-prod-env: &prod-env
 
 services:
   postgres:
+    # pg_stat_statements is what turns "the database is slow" into "this statement is slow".
+    # It must be preloaded at startup — it cannot be enabled on a running server — so this
+    # costs one Postgres restart, once.
+    #
+    # track_io_timing makes the read/write time columns real rather than zero, which is the
+    # difference between knowing a query is slow and knowing whether it is slow on disk.
+    #
+    # For CDC later, add: -c wal_level=logical -c max_replication_slots=8 -c max_wal_senders=8
+    # Deliberately not set now. It raises WAL volume on a disk-constrained host for no
+    # benefit until something is actually reading a replication slot, and turning it on is
+    # the same one-restart cost then as it is now. See docs/adr/0008-observability.md.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.max=5000
+      - -c
+      - pg_stat_statements.track=top
+      - -c
+      - track_io_timing=on
     environment:
       POSTGRES_DB: dcms
       POSTGRES_USER: dcms
@@ -54,6 +75,12 @@ services:
     environment:
       MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      # Lets Alloy scrape /minio/v2/metrics/cluster without a bearer token. "public" here
+      # means "no auth on the metrics path", not "exposed publicly": MinIO publishes no host
+      # port, so the compose network is the only place this is reachable from. The
+      # alternative is minting a JWT with the root credentials and rotating it, which puts
+      # the root key in a second place to protect an endpoint that reports bucket sizes.
+      MINIO_PROMETHEUS_AUTH_TYPE: "public"
 
   # Real Vault server (sealed on first boot; operator runs init + unseal).
   vault:
@@ -127,6 +154,10 @@ services:
       Storage__Endpoint: "minio:9000"
       Storage__AccessKey: "${SITEBUILDER_MINIO_USER:-dcms-sitebuilder}"
       Storage__SecretKey: "${SITEBUILDER_MINIO_PASSWORD:-dcms-sitebuilder-dev}"
+      # Probe a bucket this key is allowed to see. The default is dcms-media, which the
+      # sitebuilder policy deliberately excludes, so the check answered AccessDenied and
+      # /health was Unhealthy for as long as this service has existed.
+      Storage__HealthBucket: "dcms-sites"
       # Sandbox each untrusted build. WORK_HOST_ROOT (the host path backing
       # /var/build-work) is host-specific and set in the vps overlay; without it the
       # builder refuses to run (DCMS_BUILD_REQUIRE_SANDBOX) rather than run unsafely.

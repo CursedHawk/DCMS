@@ -1,6 +1,21 @@
 name: dcms
 
+# Docker's json-file driver is unbounded by default. Nothing rotated these until now, and
+# the host has already needed a container log deleted by hand under disk pressure. 3x50MB
+# per container caps the whole stack at well under a gigabyte, and Loki holds the searchable
+# copy anyway — these files are only the last few minutes before Alloy picks them up.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 x-service-env: &service-env
+  # Turns the OpenTelemetry export on. AddDcmsServiceDefaults builds the tracer, meter and
+  # log pipelines unconditionally but only attaches an exporter when this is set, so an
+  # unset value means "collect nothing, cost nothing" for a bare `dotnet run`.
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy:4317"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
   ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev"
   ConnectionStrings__Redis: "redis:6379"
   Nats__Url: "nats://nats:4222"
@@ -12,6 +27,7 @@ x-service-env: &service-env
 
 x-service-defaults: &service-defaults
   restart: unless-stopped
+  logging: *default-logging
   depends_on:
     postgres:
       condition: service_healthy
@@ -34,6 +50,7 @@ services:
   # ---------- infrastructure ----------
   postgres:
     image: postgres:18
+    logging: *default-logging
     environment:
       POSTGRES_DB: dcms
       POSTGRES_USER: dcms
@@ -52,6 +69,7 @@ services:
 
   redis:
     image: redis:7
+    logging: *default-logging
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
@@ -63,6 +81,7 @@ services:
 
   nats:
     image: nats:2.11
+    logging: *default-logging
     command: ["--jetstream", "--store_dir", "/data", "--http_port", "8222"]
     volumes:
       - nats-data:/data
@@ -80,6 +99,7 @@ services:
 
   minio:
     image: minio/minio:latest
+    logging: *default-logging
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: dcms
@@ -107,6 +127,7 @@ services:
 
   vault:
     image: hashicorp/vault:latest
+    logging: *default-logging
     cap_add:
       - IPC_LOCK
     environment:
@@ -127,6 +148,7 @@ services:
 
   mailpit:
     image: axllent/mailpit:latest
+    logging: *default-logging
 
   # Self-hosted git server (Gitea community fork). Source of truth for Mode B
   # (ReactApp) site source: one repo per site, edited in the web IDE and cloneable
@@ -135,6 +157,7 @@ services:
   # default branch fires a webhook back to admin-api to trigger the offline build.
   forgejo:
     image: codeberg.org/forgejo/forgejo:11
+    logging: *default-logging
     restart: unless-stopped
     environment:
       USER_UID: "1000"
@@ -188,6 +211,9 @@ services:
       Identity__AllowInsecureHttp: "true"
       Identity__Spa__RedirectUris: "http://localhost:5173/auth/callback;http://localhost:5000/auth/callback"
       Identity__Spa__PostLogoutUris: "http://localhost:5173/;http://localhost:5000/"
+      # Grafana SSO against the dev stack, where Grafana is published on 3001.
+      Identity__Grafana__Secret: "${GRAFANA_OIDC_CLIENT_SECRET:-grafana-dev-secret}"
+      Identity__Grafana__RedirectUris: "http://localhost:3001/login/generic_oauth"
 
   admin-api:
     build:
@@ -202,6 +228,10 @@ services:
       ServiceClient__ClientId: "dcms-admin-api"
       ServiceClient__ClientSecret: "dcms-admin-api-dev-secret"
       Services__AiGateway: "http://ai-gateway:8080"
+      # The other end of the alert webhook. Unset → the endpoint refuses every request,
+      # which is the right way for an unconfigured installation to fail.
+      Alerting__WebhookSecret: "${ALERT_WEBHOOK_SECRET:-}"
+      Alerting__Recipients: "${ALERT_RECIPIENTS:-}"
 
   content-api:
     build:
@@ -305,8 +335,208 @@ services:
       args:
         VITE_OIDC_AUTHORITY: "http://dcms-identity:8080"
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       admin-api:
+        condition: service_started
+
+
+  # ---------- observability ----------
+  #
+  # Grafana + Prometheus + Loki + Tempo, fed by a single Alloy agent. Nothing here publishes
+  # a host port: Grafana is reached at https://grafana.highgeek.eu through Caddy, and the
+  # three stores are reachable only from the compose network. The dev override adds host
+  # ports for local work.
+  #
+  # Every one of these carries a hard mem_limit. vps1 has no swap, so an overrun is an OOM
+  # kill rather than a slowdown — and the process the kernel picks is not necessarily the
+  # one that overran. An unbounded metrics store can take Postgres with it.
+
+  alloy:
+    image: grafana/alloy:v1.19.1
+    restart: unless-stopped
+    logging: *default-logging
+    # 512m, not the 384m the other agents get. Alloy is not one process's worth of work: it
+    # is the OTLP receiver, the tail sampler holding up to 20 000 traces in memory, the
+    # container-log shipper and five embedded exporters — and cAdvisor alone is the largest
+    # of those. Measured at 349 MiB steady on this host, which is 91 % of 384m, and on a
+    # swapless box the margin above steady state is the whole safety budget.
+    mem_limit: 512m
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    environment:
+      # Read-only reporting role, same one Grafana's Postgres datasource uses. The exporter
+      # needs pg_stat_* views, which are readable by any role — it never touches table data.
+      POSTGRES_EXPORTER_USER: "${GRAFANA_DB_USER:-dcms_grafana}"
+      POSTGRES_EXPORTER_PASSWORD: "${GRAFANA_DB_PASSWORD:-dcms-grafana-dev}"
+    volumes:
+      - ./infra/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
+      # cAdvisor reads cgroup accounting from the host filesystem rather than from the
+      # Docker API, so these four are what it actually needs. All read-only. The Docker
+      # *API* is reached through docker-socket-proxy-ro instead — mounting the real socket
+      # here would hand the log shipper the ability to start a privileged container.
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      # Written by the store-usage sidecar, read by the node exporter's textfile collector.
+      - store-usage:/textfile:ro
+    depends_on:
+      docker-socket-proxy-ro:
+        condition: service_started
+
+  # Read-only half of the socket proxy pattern already used for the build sandbox. POST is
+  # off, so this API can list and inspect containers and can start nothing.
+  docker-socket-proxy-ro:
+    image: tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    logging: *default-logging
+    # 64m: it is a HAProxy in front of a socket and should need almost nothing, but two
+    # clients poll it continuously (Alloy's log discovery and its cAdvisor), and it measured
+    # at 29 MiB — too close to 32m to leave alone.
+    mem_limit: 64m
+    privileged: true
+    environment:
+      CONTAINERS: "1"
+      IMAGES: "1"
+      NETWORKS: "1"
+      VERSION: "1"
+      INFO: "1"
+      POST: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # Measures what the retention budget is written in: bytes on disk, per store.
+  #
+  # Nothing else does. Prometheus self-reports its TSDB size, but Loki and Tempo do not
+  # expose theirs at all, and the dashboards otherwise had only ingest *rates* — from which
+  # you can guess at growth but cannot answer "are we inside the 8/8/4 GB budget", which is
+  # the only question the budget exists to answer.
+  #
+  # A compose service rather than a host cron on purpose: a cron entry lives outside the
+  # repo and outside anyone's model of the deployment, and survives until the next person
+  # rebuilds the host. Mounts every store read-only; the one thing it can write is the
+  # textfile directory Alloy reads.
+  store-usage:
+    image: alpine:3
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 16m
+    entrypoint: ["sh", "/obs-store-usage.sh"]
+    volumes:
+      - ./scripts/obs-store-usage.sh:/obs-store-usage.sh:ro
+      - store-usage:/textfile
+      - prometheus-data:/stores/prometheus:ro
+      - loki-data:/stores/loki:ro
+      - tempo-data:/stores/tempo:ro
+      - grafana-data:/stores/grafana:ro
+      - alloy-data:/stores/alloy:ro
+
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 512m
+    # No `user:` override, deliberately. These four write through *named* volumes with
+    # `o: bind` driver options (see docker-compose.vps.yml), and Docker populates an empty
+    # named volume from the image — including the directory's ownership. So each store's
+    # data dir ends up owned by that image's own uid, and the image's own uid is the one
+    # that can write it. Pinning 1001 here broke exactly that: `permission denied` on
+    # /prometheus/queries.active and on mkdir /var/tempo/blocks.
+    #
+    # This is the opposite of vault and forgejo, which are pinned to 1001 — because those
+    # use plain host bind mounts, which Docker neither populates nor chowns. It matches
+    # postgres (999), redis (999) and caddy (0), which are already image-uid-owned under
+    # /home/cursedhawk/dcms-data. The cost is that removing one of those directories needs
+    # root; the alternative was a stack that does not start.
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # Two caps, not one. Time bounds what the dashboards can ask for; size is the promise
+      # to the disk, and it is the one that holds if a cardinality mistake ships.
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=8GB
+      - --web.enable-lifecycle
+      # Alloy pushes; without this the remote-write endpoint 404s.
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/observability/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+
+  loki:
+    image: grafana/loki:3.6.0
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 384m
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./infra/observability/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+
+  tempo:
+    image: grafana/tempo:2.10.0
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 384m
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./infra/observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+
+  grafana:
+    image: grafana/grafana:12.3.1
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 256m
+    environment:
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GRAFANA_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin-dev}"
+      GRAFANA_OIDC_CLIENT_SECRET: "${GRAFANA_OIDC_CLIENT_SECRET:-grafana-dev-secret}"
+      GRAFANA_DB_PASSWORD: "${GRAFANA_DB_PASSWORD:-dcms-grafana-dev}"
+      # Read by the provisioned contact point, which posts alerts to admin-api. It must be
+      # the same string admin-api is given above, or every alert is silently rejected — and
+      # a rejected alert looks exactly like having nothing to alert about.
+      ALERT_WEBHOOK_SECRET: "${ALERT_WEBHOOK_SECRET:-}"
+      GF_SERVER_ROOT_URL: "${GRAFANA_ROOT_URL:-http://localhost:3001/}"
+      GF_SERVER_DOMAIN: "${GRAFANA_DOMAIN:-localhost}"
+    volumes:
+      - ./infra/observability/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+
+  # NATS monitoring JSON translated to Prometheus. Needs no credentials and no NATS
+  # restart, which is why it is here rather than waiting on nats-surveyor: it carries the
+  # JetStream dashboards from the first deploy.
+  nats-exporter:
+    image: natsio/prometheus-nats-exporter:0.17.3
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 64m
+    command:
+      - -varz
+      - -jsz=all
+      - -connz
+      - -routez
+      - -subz
+      - -gatewayz
+      - -leafz
+      - -port=7777
+      - http://nats:8222
+    depends_on:
+      nats:
         condition: service_started
 
 volumes:
@@ -315,3 +545,13 @@ volumes:
   nats-data:
   minio-data:
   forgejo-data:
+  alloy-data:
+  prometheus-data:
+  loki-data:
+  tempo-data:
+  grafana-data:
+  # Deliberately NOT bind-mounted under dcms-data in the vps overlay, unlike every other
+  # volume here: it holds one file, rewritten every five minutes, and losing it costs one
+  # scrape interval. A host directory for that is a host directory to own, chown and back up
+  # for no reason.
+  store-usage:

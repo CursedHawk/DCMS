@@ -1,13 +1,15 @@
-using Dcms.Shared.Audit;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
+using Dcms.Shared.Audit;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
+using Dcms.Shared.Telemetry;
 using Dcms.SiteBuilder.Runtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -32,6 +34,7 @@ public sealed class SitePublishConsumer(
     IEventPublisher events,
     StaticSiteAssembler assembler,
     ReactAppBuilder reactBuilder,
+    DcmsMetrics metrics,
     ILogger<SitePublishConsumer> logger) : BackgroundService
 {
     private const string DurableName = "site-builder";
@@ -87,6 +90,19 @@ public sealed class SitePublishConsumer(
         using var context = msg.RestoreAuditContext(serviceScope.ServiceProvider, job.TenantId);
         var audit = serviceScope.ServiceProvider.GetRequiredService<IAuditRecorder>();
 
+        // The build as a span, parented to the request that asked for it. That parentage runs
+        // request -> content_outbox -> dispatcher -> JetStream -> here, which is a long way for
+        // a trace to survive and is exactly what the traceparent header was added for. Before
+        // it, this appeared as an unrelated root and "the publish took four minutes" could not
+        // be attributed to the click that caused it.
+        using var activity = DcmsActivitySource.Start("site.build");
+        activity?.SetTag("dcms.site.id", job.SiteId.ToString());
+        activity?.SetTag("dcms.site.build_id", job.BuildId.ToString());
+        activity?.SetTag("dcms.site.render_mode", job.RenderMode);
+
+        var started = Stopwatch.GetTimestamp();
+        var succeeded = false;
+
         try
         {
             await BuildAsync(job, serviceScope, ct);
@@ -95,9 +111,15 @@ public sealed class SitePublishConsumer(
                 .With("build_id", job.BuildId)
                 .With("render_mode", job.RenderMode);
             await msg.AckAsync(cancellationToken: ct);
+            succeeded = true;
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            // The build span above is a child of the consumer span; a child's status does not
+            // propagate, so the consumer span has to be told separately or the message counter
+            // records a failed build as a handled success.
+            context.Failed(ex.Message);
             logger.LogError(ex, "Site build {BuildId} failed", job.BuildId);
             await FailAsync(job, ex.Message, ct);
             audit.Record(AuditActions.SiteBuildFailed)
@@ -106,6 +128,12 @@ public sealed class SitePublishConsumer(
                 .Failed(ex.Message);
             await msg.AckAsync(cancellationToken: ct);
         }
+
+        // Mode A prerenders in C# and Mode B runs npm install plus vite build in a sandbox
+        // container. They differ by orders of magnitude, so the render mode is a label rather
+        // than something to average away — a single duration threshold across both would be
+        // meaningless for either.
+        metrics.SiteBuild(job.TenantId, job.RenderMode, succeeded, Stopwatch.GetElapsedTime(started));
 
         // Nothing else will: this service has no request pipeline, and its records go over
         // JetStream rather than riding a transaction of its own.

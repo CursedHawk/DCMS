@@ -13,7 +13,7 @@ public sealed class OpenAiCompatibleProvider(string providerId, string apiKey, s
 {
     public string ProviderId => providerId;
 
-    public async Task<string> CompleteAsync(ChatRequest request, CancellationToken ct = default)
+    public async Task<ChatCompletionResult> CompleteAsync(ChatRequest request, CancellationToken ct = default)
     {
         var credential = new ApiKeyCredential(string.IsNullOrEmpty(apiKey) ? "not-needed" : apiKey);
         var options = new OpenAIClientOptions();
@@ -32,6 +32,11 @@ public sealed class OpenAiCompatibleProvider(string providerId, string apiKey, s
 
         var completion = await client.CompleteChatAsync(messages, cancellationToken: ct);
         var parts = completion.Value.Content;
-        return parts.Count > 0 ? parts[0].Text : string.Empty;
+        var usage = completion.Value.Usage;
+        return new ChatCompletionResult(
+            parts.Count > 0 ? parts[0].Text : string.Empty,
+            // Ollama and LM Studio may not populate usage at all; see ChatCompletionResult.
+            usage?.InputTokenCount ?? 0,
+            usage?.OutputTokenCount ?? 0);
     }
 }

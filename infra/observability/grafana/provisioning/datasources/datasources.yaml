@@ -1,0 +1,103 @@
+# Datasources as code. Provisioned datasources cannot be edited in the UI, which is the
+# point: the Postgres connection below is scoped by a database role, and someone repointing
+# it at the `dcms` superuser from a settings page would silently undo that.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: dcms-prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST
+      # Links a metric's exemplar straight to the trace that produced it. Tempo's
+      # metrics-generator emits exemplars, so a latency spike on a graph is one click from
+      # the specific slow request that caused it.
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: dcms-tempo
+
+  - name: Loki
+    type: loki
+    uid: dcms-loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      maxLines: 2000
+      derivedFields:
+        # Turns a trace id appearing in a log line into a link to the trace. The services
+        # emit it as structured metadata, and this catches it in plain text too — which
+        # matters for the container-stdout path, where there is no structured metadata.
+        - name: TraceID
+          matcherType: label
+          matcherRegex: trace_id
+          datasourceUid: dcms-tempo
+          url: "$${__value.raw}"
+        - name: TraceIDText
+          matcherRegex: '"?trace[_-]?[Ii]d"?[:=]\s*"?([a-f0-9]{32})'
+          datasourceUid: dcms-tempo
+          url: "$${__value.raw}"
+
+  - name: Tempo
+    type: tempo
+    uid: dcms-tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      # The three sides of the trace-lookup workflow: from a span, reach its logs, its
+      # metrics, and the shape of the call graph around it.
+      tracesToLogsV2:
+        datasourceUid: dcms-loki
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        filterByTraceID: true
+        filterBySpanID: false
+        tags:
+          - key: service.name
+            value: service
+      tracesToMetrics:
+        datasourceUid: dcms-prometheus
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        tags:
+          - key: service.name
+            value: service
+      serviceMap:
+        datasourceUid: dcms-prometheus
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false
+      lokiSearch:
+        datasourceUid: dcms-loki
+
+  # The reporting plane. Metrics cannot answer "what is tenant X doing" without unbounded
+  # cardinality; Postgres can, and the data is already there.
+  #
+  # This connects as dcms_grafana, a role whose entire world is the obs schema: SELECT on a
+  # handful of views and USAGE on nothing else. Not the `dcms` superuser that seven services
+  # use, and not dcms_rls either — dcms_rls is constrained by RLS policies keyed on the
+  # app.tenant_id setting, so with no tenant set it would correctly see nothing at all.
+  #
+  # Grafana always lets an editor write raw SQL, so the control has to be at the database.
+  # It is: a query for identity.asp_net_users from this connection is a permission error.
+  - name: DCMS Reporting
+    type: postgres
+    uid: dcms-postgres
+    access: proxy
+    url: postgres:5432
+    user: dcms_grafana
+    secureJsonData:
+      password: $GRAFANA_DB_PASSWORD
+    jsonData:
+      database: dcms
+      sslmode: disable
+      postgresVersion: 1800
+      timescaledb: false
+      maxOpenConns: 4
+      maxIdleConns: 2
+      connMaxLifetime: 14400

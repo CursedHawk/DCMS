@@ -1,0 +1,730 @@
+{
+  "uid": "dcms-user-demographics",
+  "title": "User demographics",
+  "description": "Signup cohorts, authentication method, email-domain distribution and activity.",
+  "tags": [
+    "dcms",
+    "business",
+    "users"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "15m",
+  "time": {
+    "from": "now-180d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 25,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Who the platform's users are, as far as the data honestly goes.**\n\nThere is no country and no locale on a user row. The only country this platform stores is on `analytics.events`, which is a *site visitor's* rather than an operator's \u2014 and it is derived from a request header with no edge in front of the platform that stamps one, so it is caller-asserted and mostly null. Inventing a geography from an IP address would be a worse answer than not having one, so it is not reported here.\n\nThere is also no `LastLoginAt` column, and there is not going to be one: the audit log already records every sign-in against a `SubjectUserId`, so a second copy on the user row would be a denormalisation that can disagree with the record of record. Last-login below is derived from the audit log.\n\nNo email address appears anywhere on this page \u2014 only a bucketed domain."
+      }
+    },
+    {
+      "id": 26,
+      "type": "stat",
+      "title": "Total users",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "SELECT count(*) AS value FROM obs.v_user_activity",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "Confirmed",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "SELECT count(*) AS value FROM obs.v_user_activity WHERE email_confirmed",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 28,
+      "type": "stat",
+      "title": "Signed in (30d)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "SELECT count(*) AS value FROM obs.v_user_activity WHERE last_login_at >= now() - interval '30 days'",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 29,
+      "type": "stat",
+      "title": "Never signed in",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "SELECT count(*) AS value FROM obs.v_user_activity WHERE last_login_at IS NULL",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "description": "Accounts created but never used. Usually invitations that were accepted and then abandoned.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "New this month",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "SELECT coalesce(sum(signups), 0) AS value FROM obs.v_users_summary WHERE day >= date_trunc('month', now())",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "In more than one tenant",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 7
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "SELECT count(*) AS value FROM obs.v_user_activity WHERE tenant_count > 1",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Signups per day",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "\nSELECT day AS time, signups, confirmed\nFROM obs.v_users_summary\nWHERE day >= now() - interval '180 days'\nORDER BY day\n",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 33,
+      "type": "barchart",
+      "title": "Signup cohorts by month",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "\nSELECT to_char(signup_month, 'YYYY-MM') AS month, sum(users) AS users\nFROM obs.v_user_demographics\nGROUP BY 1 ORDER BY 1\n",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "orientation": "auto",
+        "showValue": "auto",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "month"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "axisPlacement": "auto"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 34,
+      "type": "piechart",
+      "title": "Authentication method",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 20
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "\nSELECT auth_method, sum(users) AS users\nFROM obs.v_user_demographics\nGROUP BY auth_method ORDER BY users DESC\n",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "description": "Password, Google SSO, or neither \u2014 an account created by invitation that has not set a credential.",
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "percent"
+        ],
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 35,
+      "type": "barchart",
+      "title": "Email domains",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 20
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "\nSELECT email_domain, sum(users) AS users\nFROM obs.v_user_demographics\nWHERE email_domain <> 'unknown'\nGROUP BY email_domain ORDER BY users DESC LIMIT 15\n",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "description": "The domain only. Addresses are never exposed to this datasource \u2014 the role cannot read the users table at all.",
+      "options": {
+        "orientation": "auto",
+        "showValue": "auto",
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "xField": "email_domain"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 80,
+            "axisPlacement": "auto"
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 36,
+      "type": "piechart",
+      "title": "Email confirmed",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 20
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "\nSELECT CASE WHEN email_confirmed THEN 'confirmed' ELSE 'unconfirmed' END AS state,\n       sum(users) AS users\nFROM obs.v_user_demographics GROUP BY 1\n",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "options": {
+        "pieType": "donut",
+        "displayLabels": [
+          "percent"
+        ],
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 37,
+      "type": "table",
+      "title": "Most active users (30 days)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "\nSELECT display_name, created_at, last_login_at, logins_30d, failed_30d, tenant_count\nFROM obs.v_user_activity\nWHERE logins_30d > 0\nORDER BY logins_30d DESC\nLIMIT 50\n",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "description": "Display name, not email. Last login and both counts come from the audit log, which is the login-history store on this platform.",
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

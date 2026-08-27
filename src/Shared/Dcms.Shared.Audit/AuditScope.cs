@@ -15,6 +15,25 @@ public sealed class AuditScope
     public string? TraceId { get; set; }
     public string? SpanId { get; set; }
 
+    /// <summary>
+    /// The W3C trace context this unit of work was handed, when it was handed one.
+    ///
+    /// <para>Needed for exactly one path, and that path is the important one. A publish made
+    /// during a request takes its parent span from <c>Activity.Current</c>. A publish made by
+    /// the outbox dispatcher has no current activity at all — it runs on a two-second timer,
+    /// minutes after the request that enqueued the row ended — so without somewhere to keep the
+    /// original context, the trace would break precisely where the audit design already went to
+    /// the trouble of keeping the <i>actor</i> intact. These carry through the outbox row's
+    /// <c>ContextJson</c> alongside everything else.</para>
+    ///
+    /// <para>They are a fallback, never an override: a live <c>Activity.Current</c> always wins,
+    /// because a consumer that republishes should parent the new message to its own span rather
+    /// than to the one two hops back.</para>
+    /// </summary>
+    public string? TraceParent { get; set; }
+
+    public string? TraceState { get; set; }
+
     /// <summary>The audit event that caused this whole scope, from propagated NATS headers.</summary>
     public Guid? CausationId { get; set; }
 

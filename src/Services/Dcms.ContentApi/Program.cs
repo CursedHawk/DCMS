@@ -140,6 +140,10 @@ builder.Services.AddHostedService<ContentCacheInvalidator>();
 builder.Services.AddHostedService<SearchIndexer>();
 
 var app = builder.Build();
+// First in the pipeline, so an exception anywhere below it becomes a ProblemDetails
+// carrying the trace id instead of a bare Kestrel 500 with no body and nothing to quote.
+app.UseDcmsProblemDetails();
+
 app.UseDcmsSecurityHeaders();
 app.UseRateLimiter();
 app.UseCors();

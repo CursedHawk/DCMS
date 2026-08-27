@@ -811,7 +811,10 @@
     "generic": "Something went wrong.",
     "forbidden": "You don't have permission to do that.",
     "notFound": "Not found.",
-    "loadFailed": "Failed to load."
+    "loadFailed": "Failed to load.",
+    "traceId": "Trace ID: {{id}}",
+    "copyId": "Copy ID",
+    "copied": "Copied."
   },
   "workspace": {
     "title": "Workspace",

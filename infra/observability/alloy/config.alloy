@@ -1,0 +1,417 @@
+// Grafana Alloy — the single telemetry agent for the whole DCMS host.
+//
+// One container rather than six. Alloy embeds the node, cAdvisor, Postgres and Redis
+// exporters that would otherwise each be their own process, and it is also the OTLP
+// receiver and the container-log shipper. On a 4-core, 7.6 GB host with no swap that
+// consolidation is not tidiness — it is the difference between the observability stack
+// fitting and competing with the platform it observes.
+//
+// Nothing here listens on a published host port. Every endpoint below is reachable only
+// from the compose network.
+
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+// ---------------------------------------------------------------------------
+// OTLP intake — every .NET service ships traces, metrics and logs here.
+// ---------------------------------------------------------------------------
+
+otelcol.receiver.otlp "default" {
+  grpc { endpoint = "0.0.0.0:4317" }
+  http { endpoint = "0.0.0.0:4318" }
+
+  output {
+    traces  = [otelcol.processor.attributes.scrub.input]
+    metrics = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+  }
+}
+
+// The collector-side half of secret scrubbing. The services do this too, in
+// SensitiveAttributeProcessor, and the duplication is deliberate: a service still running
+// last week's image has not got that processor, and the window in which that is true is
+// exactly the window in which an unnoticed leak would happen.
+otelcol.processor.attributes "scrub" {
+  action {
+    key    = "url.query"
+    action = "delete"
+  }
+  action {
+    key    = "http.request.header.authorization"
+    action = "delete"
+  }
+  action {
+    key    = "http.request.header.cookie"
+    action = "delete"
+  }
+  action {
+    key    = "http.response.header.set-cookie"
+    action = "delete"
+  }
+  action {
+    key    = "db.query.parameter"
+    action = "delete"
+  }
+
+  output {
+    traces = [otelcol.processor.tail_sampling.default.input]
+  }
+}
+
+// Sampling is deliberately OFF — every policy below keeps everything.
+//
+// This platform serves a handful of tenants on one host; full traces fit the ~4 GB Tempo
+// budget comfortably, and full traces are what makes the support workflow actually work.
+// A user quoting a trace id is almost always quoting a failure, but "almost always" is not
+// good enough when the alternative is telling them their id resolves to nothing.
+//
+// To throttle later: delete the `keep_everything` policy and uncomment the three below it.
+// Check infra/observability/grafana/dashboards/ops/retention-and-disk.json first — that is
+// the panel that says whether this is needed yet.
+otelcol.processor.tail_sampling "default" {
+  decision_wait               = "10s"
+  num_traces                  = 20000
+  expected_new_traces_per_sec = 50
+
+  policy {
+    name = "keep_everything"
+    type = "always_sample"
+  }
+
+  // policy {
+  //   name = "errors"
+  //   type = "status_code"
+  //   status_code { status_codes = ["ERROR"] }
+  // }
+  // policy {
+  //   name = "slow"
+  //   type = "latency"
+  //   latency { threshold_ms = 1000 }
+  // }
+  // policy {
+  //   name = "baseline"
+  //   type = "probabilistic"
+  //   probabilistic { sampling_percentage = 10 }
+  // }
+
+  output {
+    traces = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  send_batch_size = 1000
+  timeout         = "5s"
+
+  output {
+    metrics = [otelcol.exporter.prometheus.default.input]
+    logs    = [otelcol.exporter.loki.default.input]
+  }
+}
+
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo:4317"
+    tls { insecure = true }
+  }
+}
+
+otelcol.exporter.prometheus "default" {
+  forward_to = [prometheus.relabel.otel_service.receiver]
+}
+
+// Give every OTLP metric a plain `service` label.
+//
+// Without this, a .NET metric arrives carrying `job="dcms/admin-api"` (Prometheus's OTLP
+// mapping joins service.namespace and service.name) and `instance=<service.instance.id>`,
+// and *no* `service` label at all. Every recording rule that says `sum by (service)` then
+// collapses all eight services into one unlabelled series, and every dashboard variable
+// built on `service` matches nothing — both of which look like "no traffic" rather than
+// like a broken query, which is the single most expensive failure mode in this whole stack.
+//
+// Derived here rather than fixed in sixteen rules and seven dashboards, because the label
+// is the contract and one place is where a contract belongs. Non-DCMS jobs (the embedded
+// exporters, the blackbox probes) simply do not match the regex and are left alone.
+//
+// It also makes the metrics agree with the logs: the container-log scrape already relabels
+// to `service`, so a panel and a log query can now use the same name for the same thing.
+prometheus.relabel "otel_service" {
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  rule {
+    source_labels = ["job"]
+    regex         = "dcms/(.*)"
+    target_label  = "service"
+    replacement   = "$1"
+  }
+}
+
+otelcol.exporter.loki "default" {
+  forward_to = [loki.write.default.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// Container logs — belt and braces for the audit anchors.
+// ---------------------------------------------------------------------------
+//
+// The services already ship logs over OTLP. This scrapes their stdout as well, and the
+// duplication has one specific job: docs/runbook.md states that the Critical
+// "AUDIT ANCHOR ..." lines must leave the box for the third audit-integrity control to
+// exist at all. If the OTLP path breaks — a bad config, a service that failed to start far
+// enough to build its logger — container stdout still reaches Loki. An anchor that exists
+// only in the database it attests to is not an anchor.
+//
+// Reached through docker-socket-proxy-ro, which exposes the read-only container API and
+// nothing that can start, stop or exec. Mounting the real socket here would give the log
+// shipper the ability to run a privileged container.
+
+discovery.docker "containers" {
+  host             = "tcp://docker-socket-proxy-ro:2375"
+  refresh_interval = "30s"
+}
+
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_log_stream"]
+    target_label  = "stream"
+  }
+  // The compose service name, which is what every dashboard variable is built on — the
+  // container name carries a replica suffix that would split one service into several.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service"
+  }
+}
+
+loki.source.docker "containers" {
+  host       = "tcp://docker-socket-proxy-ro:2375"
+  targets    = discovery.relabel.containers.output
+  labels     = { source = "docker" }
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Embedded exporters — five containers that do not have to exist.
+// ---------------------------------------------------------------------------
+
+prometheus.exporter.unix "host" {
+  // Per-store disk usage, computed by the store-usage sidecar and dropped here as a file.
+  // The node exporter's textfile collector exists for exactly this: a number some other
+  // process is better placed to work out. It is how dcms_store_disk_bytes — the only
+  // measurement of whether the retention budget is actually being kept — reaches Prometheus.
+  textfile {
+    directory = "/textfile"
+  }
+
+  // The host's root filesystem, as this container sees it.
+  //
+  // This is load-bearing and was missing. The node exporter runs *inside* Alloy, so without
+  // it every mountpoint is reported with the container's own view: the host root appears as
+  // `/rootfs`, and `node_filesystem_avail_bytes{mountpoint="/"}` — which three alerts, two
+  // recording rules and the whole resource-exhaustion dashboard are written against —
+  // matches nothing at all. Not an error anywhere; just permanently empty panels and alerts
+  // that can never fire, on the one control that exists to stop the disk filling up.
+  //
+  // rootfs_path makes the exporter strip the prefix, so the host's `/` is reported as `/`.
+  rootfs_path = "/rootfs"
+
+  // Container filesystems are noise; the question this host actually has is how full
+  // /home/cursedhawk/dcms-data is, which lives on the root filesystem.
+  filesystem {
+    fs_types_exclude = "^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$"
+
+    // Every Docker volume and every single-file bind mount is the same underlying device
+    // reported again — 217 duplicate series on this host before this was tightened, one per
+    // mount, all of them saying what /dev/sda1 already says. The /etc/* entries are the
+    // container's own config bind mounts.
+    mount_points_exclude = "^/(dev|proc|sys|run|etc/(hostname|hosts|resolv.conf|alloy)|var/lib/docker/.+|var/lib/kubelet/.+)($|/)"
+  }
+}
+
+prometheus.exporter.cadvisor "containers" {
+  docker_host            = "tcp://docker-socket-proxy-ro:2375"
+  storage_duration       = "5m"
+  docker_only            = true
+  // Per-container CPU, memory against limit, restarts and OOM kills. On a host with no
+  // swap the OOM counter is the one that matters: memory pressure here does not degrade
+  // gracefully, it kills a process.
+}
+
+prometheus.exporter.postgres "db" {
+  data_source_names = ["postgresql://" + env("POSTGRES_EXPORTER_USER") + ":" + env("POSTGRES_EXPORTER_PASSWORD") + "@postgres:5432/dcms?sslmode=disable"]
+
+  autodiscovery {
+    enabled = false
+  }
+}
+
+prometheus.exporter.redis "cache" {
+  redis_addr = "redis:6379"
+}
+
+// Synthetic probes. These answer a question no in-process metric can: whether the thing is
+// reachable from outside itself. A service can report healthy on every internal check while
+// the edge in front of it returns 502.
+prometheus.exporter.blackbox "probes" {
+  // YAML flow style on one line rather than a block scalar: Alloy's config language has no
+  // heredoc, and this argument is a string that blackbox parses as YAML — so the whole module
+  // definition has to fit in one quoted value.
+  config = "{ modules: { http_2xx: { prober: http, timeout: 5s, http: { valid_status_codes: [200], preferred_ip_protocol: ip4 } }, public_2xx: { prober: http, timeout: 10s, http: { valid_status_codes: [200, 302], preferred_ip_protocol: ip4, fail_if_not_ssl: true } } } }"
+
+  target {
+    name    = "admin-api"
+    address = "http://admin-api:8080/health"
+    module  = "http_2xx"
+  }
+  target {
+    name    = "content-api"
+    address = "http://content-api:8080/health"
+    module  = "http_2xx"
+  }
+  target {
+    name    = "identity"
+    address = "http://identity:8080/health"
+    module  = "http_2xx"
+  }
+  target {
+    name    = "site-host"
+    address = "http://site-host:8080/health"
+    module  = "http_2xx"
+  }
+  target {
+    name    = "ai-gateway"
+    address = "http://ai-gateway:8080/health"
+    module  = "http_2xx"
+  }
+  target {
+    name    = "media-worker"
+    address = "http://media-worker:8080/health"
+    module  = "http_2xx"
+  }
+  target {
+    name    = "site-builder"
+    address = "http://site-builder:8080/health"
+    module  = "http_2xx"
+  }
+  target {
+    name    = "email-worker"
+    address = "http://email-worker:8080/health"
+    module  = "http_2xx"
+  }
+
+  // The public names, over the real internet path: out through the host's NAT, back in
+  // through Caddy, TLS and all. Everything above proves a service answers on the compose
+  // network, which is exactly what stayed true while grafana.highgeek.eu resolved to a
+  // different server entirely and Caddy could not obtain a certificate for it. An internal
+  // probe cannot see that class of failure; this one is the only thing that can.
+  //
+  // `fail_if_not_ssl` is what makes it a TLS check rather than a reachability check, and it
+  // is also what populates probe_ssl_earliest_cert_expiry — the certificate-expiry panel on
+  // the Caddy dashboard has nothing to plot without it.
+  //
+  // 302 is valid: Grafana's root redirects to /login for a signed-out visitor.
+  target {
+    name    = "public-admin"
+    address = "https://admin.highgeek.eu/"
+    module  = "public_2xx"
+  }
+  target {
+    name    = "public-grafana"
+    address = "https://grafana.highgeek.eu/"
+    module  = "public_2xx"
+  }
+  target {
+    name    = "public-git"
+    address = "https://git.highgeek.eu/"
+    module  = "public_2xx"
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Scrapes
+// ---------------------------------------------------------------------------
+
+prometheus.scrape "host" {
+  targets    = prometheus.exporter.unix.host.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+  job_name   = "node"
+}
+
+prometheus.scrape "containers" {
+  targets         = prometheus.exporter.cadvisor.containers.targets
+  forward_to      = [prometheus.remote_write.default.receiver]
+  job_name        = "cadvisor"
+  scrape_interval = "30s"
+}
+
+prometheus.scrape "postgres" {
+  targets    = prometheus.exporter.postgres.db.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+  job_name   = "postgres"
+}
+
+prometheus.scrape "redis" {
+  targets    = prometheus.exporter.redis.cache.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+  job_name   = "redis"
+}
+
+prometheus.scrape "blackbox" {
+  targets         = prometheus.exporter.blackbox.probes.targets
+  forward_to      = [prometheus.remote_write.default.receiver]
+  job_name        = "blackbox"
+  scrape_interval = "30s"
+}
+
+// Infrastructure that publishes Prometheus metrics on its own.
+prometheus.scrape "infra" {
+  forward_to = [prometheus.remote_write.default.receiver]
+  job_name   = "infra"
+
+  targets = [
+    // NATS monitoring JSON, translated by prometheus-nats-exporter. No auth needed.
+    { __address__ = "nats-exporter:7777", service = "nats" },
+    // MinIO speaks Prometheus natively; MINIO_PROMETHEUS_AUTH_TYPE=public makes the
+    // cluster endpoint readable on the internal network without a bearer token.
+    { __address__ = "minio:9000", __metrics_path__ = "/minio/v2/metrics/cluster", service = "minio" },
+    // Caddy's metrics handler on an internal-only listener. Deliberately NOT the admin API
+    // on :2019, which can rewrite the running config.
+    { __address__ = "caddy:2019", service = "caddy" },
+    // Vault: seal state above all. There is no auto-unseal on this host, so a reboot leaves
+    // the platform down until someone runs unseal-vault.sh — and this is what says so.
+    { __address__ = "vault:8200", __metrics_path__ = "/v1/sys/metrics", service = "vault" },
+    // Alloy's own health. An agent that has stopped shipping looks exactly like a quiet
+    // platform, which is the same failure mode the audit meter had.
+    { __address__ = "localhost:12345", service = "alloy" },
+  ]
+}
+
+// nats-surveyor, scraped separately because it only exists once the NATS $SYS account has
+// been provisioned (see infra/nats/nats.conf). Until then this target is simply down, and
+// the nats-exporter target above carries the JetStream dashboards on its own.
+prometheus.scrape "nats_surveyor" {
+  targets    = [{ __address__ = "nats-surveyor:7777", service = "nats-surveyor" }]
+  forward_to = [prometheus.remote_write.default.receiver]
+  job_name   = "nats-surveyor"
+}
+
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}

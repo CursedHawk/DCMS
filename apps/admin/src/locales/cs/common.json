@@ -823,7 +823,10 @@
     "generic": "Něco se pokazilo.",
     "forbidden": "Nemáte oprávnění to provést.",
     "notFound": "Nenalezeno.",
-    "loadFailed": "Načtení selhalo."
+    "loadFailed": "Načtení selhalo.",
+    "traceId": "ID trasování: {{id}}",
+    "copyId": "Kopírovat ID",
+    "copied": "Zkopírováno."
   },
   "workspace": {
     "title": "Pracovní prostor",

@@ -8,10 +8,31 @@ export class ApiError extends Error {
     readonly status: number,
     message: string,
     readonly detail?: unknown,
+    /**
+     * The server-side trace this failure belongs to. Carried on the error itself rather than
+     * looked up later, because by the time a toast is rendered the Response is gone — and this
+     * is the only string a user can give support that resolves to the actual failure in Tempo,
+     * Loki and the audit log at once.
+     */
+    readonly traceId?: string,
+    readonly requestId?: string,
   ) {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+/**
+ * Where the ids come from, in order of trust: the response headers, which every response
+ * carries including the ones with no body at all, then the RFC 9457 problem document, which is
+ * what a proxied or cached response is most likely to still have.
+ */
+function traceOf(res: Response, detail: unknown): { traceId?: string; requestId?: string } {
+  const body = detail as { traceId?: string; requestId?: string } | undefined;
+  return {
+    traceId: res.headers.get('X-Dcms-Trace-Id') ?? body?.traceId ?? undefined,
+    requestId: res.headers.get('X-Dcms-Request-Id') ?? body?.requestId ?? undefined,
+  };
 }
 
 /**
@@ -77,7 +98,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* non-JSON error body */
     }
-    throw new ApiError(res.status, message, detail);
+    const { traceId, requestId } = traceOf(res, detail);
+    throw new ApiError(res.status, message, detail, traceId, requestId);
   }
 
   if (res.status === 204) return undefined as T;
@@ -119,8 +141,14 @@ async function uploadWithProgress<T>(
         resolve(parsed as T);
         return;
       }
-      const detail = parsed as { error?: string; title?: string } | undefined;
-      reject(new ApiError(xhr.status, detail?.error ?? detail?.title ?? `POST ${path} → ${xhr.status}`, parsed));
+      const detail = parsed as { error?: string; title?: string; traceId?: string; requestId?: string } | undefined;
+      reject(new ApiError(
+        xhr.status,
+        detail?.error ?? detail?.title ?? `POST ${path} → ${xhr.status}`,
+        parsed,
+        xhr.getResponseHeader('X-Dcms-Trace-Id') ?? detail?.traceId ?? undefined,
+        xhr.getResponseHeader('X-Dcms-Request-Id') ?? detail?.requestId ?? undefined,
+      ));
     };
     xhr.onerror = () => reject(new ApiError(0, `POST ${path} → network error`));
     xhr.onabort = () => reject(new DOMException('Upload aborted', 'AbortError'));
@@ -176,7 +204,8 @@ export const api = {
       headers: { ...(await adminHeaders()), ...overrides(opts) },
     });
     if (!res.ok) {
-      throw new ApiError(res.status, `GET ${path} → ${res.status}`);
+      const { traceId, requestId } = traceOf(res, undefined);
+      throw new ApiError(res.status, `GET ${path} → ${res.status}`, undefined, traceId, requestId);
     }
     return res.blob();
   },
@@ -195,6 +224,9 @@ export function mediaContentPath(id: string, variant?: string): string {
  */
 export async function fetchObjectUrl(path: string): Promise<string> {
   const res = await fetch(`${base}${path}`, { headers: await adminHeaders() });
-  if (!res.ok) throw new ApiError(res.status, `fetch ${path} → ${res.status}`);
+  if (!res.ok) {
+    const { traceId, requestId } = traceOf(res, undefined);
+    throw new ApiError(res.status, `fetch ${path} → ${res.status}`, undefined, traceId, requestId);
+  }
   return URL.createObjectURL(await res.blob());
 }

@@ -35,6 +35,16 @@ public interface IAuditPermission
 public sealed class AuditMiddleware(RequestDelegate next)
 {
     public const string CorrelationHeader = "X-Dcms-Request-Id";
+
+    /// <summary>
+    /// The W3C trace id of the request, echoed for the same reason as the correlation id: so a
+    /// caller can quote it. The two are not interchangeable. The correlation id is minted here
+    /// and survives however long the audit record does; the trace id resolves to a span tree
+    /// only for as long as the trace store keeps it. Both are echoed so a report is useful in
+    /// either window.
+    /// </summary>
+    public const string TraceHeader = "X-Dcms-Trace-Id";
+
     private const string SandboxHeader = "X-Dcms-Sandbox";
 
     public async Task InvokeAsync(
@@ -57,11 +67,19 @@ public sealed class AuditMiddleware(RequestDelegate next)
         scope.CorrelationId = correlationId;
         scope.TraceId = Activity.Current?.TraceId.ToString();
         scope.SpanId = Activity.Current?.SpanId.ToString();
+        // Stored so that anything this request enqueues into a database outbox can still be
+        // parented to it when the dispatcher publishes minutes later, with no current activity.
+        scope.TraceParent = Activity.Current?.Id;
+        scope.TraceState = Activity.Current?.TraceStateString;
         scope.IsSandbox = context.Request.Headers.ContainsKey(SandboxHeader);
 
         // Echoed before the response starts, so a caller can quote it in a support ticket even
         // when the request goes on to fail.
         context.Response.Headers[CorrelationHeader] = correlationId;
+        if (scope.TraceId is { Length: > 0 } traceId)
+        {
+            context.Response.Headers[TraceHeader] = traceId;
+        }
 
         if (IsUninteresting(context))
         {

@@ -5,6 +5,7 @@ using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Messaging;
+using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Cms;
@@ -17,9 +18,11 @@ public sealed class OutboxDispatcher(
     IServiceProvider services,
     IEventPublisher events,
     AuditAmbient ambient,
+    DcmsMetrics metrics,
     ILogger<OutboxDispatcher> logger) : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
+    private const int BatchSize = 100;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -45,11 +48,27 @@ public sealed class OutboxDispatcher(
         var pending = await db.Outbox
             .Where(o => o.SentAt == null)
             .OrderBy(o => o.OccurredAt)
-            .Take(100)
+            .Take(BatchSize)
             .ToListAsync(ct);
+
+        // Reported on every poll, including the polls that find nothing — a depth that simply
+        // stops being reported holds its last value on the dashboard, so a dispatcher that has
+        // died and one that has caught up would look identical. Counted rather than inferred
+        // from the batch: the batch is capped at BatchSize, so a backlog of ten thousand and a
+        // backlog of a hundred both fill it and neither is visible from the page alone. Only
+        // when the page is full, because that is the only time the cheap answer is wrong.
+        metrics.OutboxDepth("cms.content_outbox", pending.Count < BatchSize
+            ? pending.Count
+            : await db.Outbox.CountAsync(o => o.SentAt == null, ct));
 
         foreach (var message in pending)
         {
+            // Enqueue-to-dispatch latency, which is the number the content pipeline is judged
+            // on: everything downstream of here is JetStream's problem, everything upstream is
+            // the request's. Recorded before publishing, so a slow NATS shows up as message
+            // handling time rather than inflating the queue wait it did not cause.
+            metrics.OutboxLag("cms.content_outbox", DateTimeOffset.UtcNow - message.OccurredAt);
+
             // Put back the context of the request that enqueued this row, so the headers the
             // publisher stamps name that person rather than this two-second timer. Per message,
             // and disposed before the next: two rows in one batch may come from two people.

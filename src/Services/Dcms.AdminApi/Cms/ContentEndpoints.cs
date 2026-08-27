@@ -9,6 +9,7 @@ using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
+using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Cms;
@@ -231,7 +232,7 @@ public static class ContentEndpoints
         // trap applies to scheduling, which is why it takes `data` too.
         app.MapPost("/api/admin/content/{id:guid}/publish", async (
             Guid id, PublishRequest? body, CmsDbContext db, ITenantContext tenant,
-            CurrentUser me, AuditScope scope, CancellationToken ct) =>
+            CurrentUser me, AuditScope scope, DcmsMetrics metrics, CancellationToken ct) =>
         {
             var item = await db.ContentItems.Include(c => c.Versions)
                 .FirstOrDefaultAsync(c => c.Id == id, ct);
@@ -267,6 +268,11 @@ public static class ContentEndpoints
                 ContextJson = AuditPropagation.CaptureJson(scope),
             });
             await db.SaveChangesAsync(ct);
+
+            // After the commit, not before: the outbox row and the state change land in one
+            // transaction, and a counter incremented for a publish that then rolled back is a
+            // number no dashboard can reconcile against the content it claims to describe.
+            metrics.ContentPublished(tenant.TenantId!.Value, item.ContentType);
             return Results.Ok(new { status = "published", instanceSlug = instance?.Slug });
         }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentPublished, "content_item");
 
@@ -343,7 +349,8 @@ public static class ContentEndpoints
         }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentScheduleCancelled, "content_item");
 
         app.MapPost("/api/admin/content/{id:guid}/unpublish", async (
-            Guid id, CmsDbContext db, ITenantContext tenant, AuditScope scope, CancellationToken ct) =>
+            Guid id, CmsDbContext db, ITenantContext tenant, AuditScope scope,
+            DcmsMetrics metrics, CancellationToken ct) =>
         {
             var item = await db.ContentItems.FirstOrDefaultAsync(c => c.Id == id, ct);
             if (item is null)
@@ -366,6 +373,7 @@ public static class ContentEndpoints
                 ContextJson = AuditPropagation.CaptureJson(scope),
             });
             await db.SaveChangesAsync(ct);
+            metrics.ContentUnpublished(tenant.TenantId!.Value, item.ContentType);
             return Results.Ok(new { status = "unpublished" });
         }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentUnpublished, "content_item");
 

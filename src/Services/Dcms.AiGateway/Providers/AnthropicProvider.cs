@@ -13,7 +13,7 @@ public sealed class AnthropicProvider(string apiKey, string? baseUrl) : IChatPro
 {
     public string ProviderId => "anthropic";
 
-    public async Task<string> CompleteAsync(ChatRequest request, CancellationToken ct = default)
+    public async Task<ChatCompletionResult> CompleteAsync(ChatRequest request, CancellationToken ct = default)
     {
         var options = new ClientOptions { ApiKey = apiKey };
         if (!string.IsNullOrWhiteSpace(baseUrl))
@@ -37,6 +37,9 @@ public sealed class AnthropicProvider(string apiKey, string? baseUrl) : IChatPro
                 sb.Append(text.Text);
             }
         }
-        return sb.ToString();
+        return new ChatCompletionResult(
+            sb.ToString(),
+            message.Usage?.InputTokens ?? 0,
+            message.Usage?.OutputTokens ?? 0);
     }
 }

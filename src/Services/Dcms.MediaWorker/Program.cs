@@ -26,6 +26,10 @@ builder.Services.AddHostedService<VideoProcessingConsumer>();
 builder.Services.AddHostedService<AudioProcessingConsumer>();
 
 var app = builder.Build();
+// First in the pipeline, so an exception anywhere below it becomes a ProblemDetails
+// carrying the trace id instead of a bare Kestrel 500 with no body and nothing to quote.
+app.UseDcmsProblemDetails();
+
 app.MapDcmsDefaultEndpoints();
 app.MapGet("/", () => Results.Ok(new { service = "media-worker" }));
 app.Run();

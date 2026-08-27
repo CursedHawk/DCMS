@@ -29,6 +29,26 @@ public static class AuditPropagation
     public const string CorrelationId = "Dcms-Correlation-Id";
     public const string CausationId = "Dcms-Causation-Id";
     public const string TraceId = "Dcms-Trace-Id";
+
+    /// <summary>
+    /// W3C trace context, so the consumer's span becomes a <i>child</i> of the producer's rather
+    /// than a second root that merely shares a trace id.
+    ///
+    /// <para><see cref="TraceId"/> alone was not enough and could not be made enough. It carries
+    /// no span id, so a consumer restoring it knows which trace it belongs to but not what it
+    /// hangs off; every hop across the bus therefore started a fresh root, and the publish that
+    /// a person clicked and the build that resulted appeared in the trace store as unrelated
+    /// trees. This header carries the parent span id and the sampling decision as well, which is
+    /// what makes <c>request → outbox → JetStream → builder</c> one trace.</para>
+    ///
+    /// <para><see cref="TraceId"/> is kept, unchanged and still populated. A message already
+    /// sitting in a stream from before this header existed restores exactly as it did, and the
+    /// audit record's <c>TraceId</c> column does not depend on span plumbing being present.</para>
+    /// </summary>
+    public const string TraceParent = "traceparent";
+
+    /// <summary>Vendor-specific trace state, carried verbatim when present.</summary>
+    public const string TraceState = "tracestate";
     public const string Tenant = "Dcms-Tenant";
     public const string Sandbox = "Dcms-Sandbox";
     public const string ActorKind = "Dcms-Actor-Kind";
@@ -51,6 +71,28 @@ public static class AuditPropagation
 
         Set(headers, CorrelationId, scope.CorrelationId);
         Set(headers, TraceId, scope.TraceId);
+
+        // A live span wins over a stored one: the scope's TraceId was captured when the unit of
+        // work opened, while the span actually publishing may be a descendant of it, and a
+        // consumer that republishes should parent the new message to its own span rather than to
+        // the one two hops back.
+        //
+        // The fallback is what makes the database outboxes work. The dispatcher publishes on a
+        // two-second timer with no current activity at all, minutes after the request that
+        // enqueued the row finished — so without the stored value the trace would break exactly
+        // where the audit design already goes to some trouble to keep the actor intact, and
+        // "the site build attributes back to the human who clicked publish" would hold for the
+        // actor while the trace showed two unrelated trees.
+        if (System.Diagnostics.Activity.Current is { } activity)
+        {
+            Set(headers, TraceParent, activity.Id);
+            Set(headers, TraceState, activity.TraceStateString);
+        }
+        else
+        {
+            Set(headers, TraceParent, scope.TraceParent);
+            Set(headers, TraceState, scope.TraceState);
+        }
 
         // The record that caused whatever this message will become. The endpoint's own entry is
         // the right answer: it is the thing a person did, and everything downstream is a
@@ -99,6 +141,8 @@ public static class AuditPropagation
     {
         scope.CorrelationId = header(CorrelationId) ?? scope.CorrelationId;
         scope.TraceId = header(TraceId) ?? scope.TraceId;
+        scope.TraceParent = header(TraceParent) ?? scope.TraceParent;
+        scope.TraceState = header(TraceState) ?? scope.TraceState;
 
         if (Guid.TryParse(header(CausationId), out var causation))
         {
@@ -157,6 +201,27 @@ public static class AuditPropagation
         return values is null
             ? static _ => null
             : key => values.TryGetValue(key, out var value) ? value : null;
+    }
+
+    /// <summary>
+    /// The producer's span, if the carrier had one, for a consumer to start a child of.
+    ///
+    /// <para>Returns <c>default</c> — which <c>ActivitySource.StartActivity</c> reads as "no
+    /// parent, start a root" — when the header is absent or malformed. That is the right answer
+    /// for a message published before this header existed, and for one whose headers were
+    /// dropped: an unparented span is a worse trace, not a failure.</para>
+    /// </summary>
+    public static System.Diagnostics.ActivityContext ParentContext(Func<string, string?> header)
+    {
+        var traceParent = header(TraceParent);
+        if (string.IsNullOrEmpty(traceParent))
+        {
+            return default;
+        }
+
+        return System.Diagnostics.ActivityContext.TryParse(traceParent, header(TraceState), out var context)
+            ? context
+            : default;
     }
 
     private static void Set(Dictionary<string, string> headers, string key, string? value)

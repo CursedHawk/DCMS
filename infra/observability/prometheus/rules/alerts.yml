@@ -1,0 +1,273 @@
+# Alert rules, evaluated by Prometheus and surfaced in Grafana.
+#
+# The audit group is not new thinking: docs/runbook.md already tabulated these six
+# conditions and what each one means, months before there was anywhere to evaluate them.
+# This is that table, made executable.
+#
+# A note on the shape of several of these. The usual alert asks "is this value too high".
+# Three of the most important here ask the opposite — whether something that should be
+# producing numbers has stopped. A silent audit log, an agent that has stopped shipping and
+# an idle platform all look identical from the outside, and only an absence-of-signal alert
+# tells them apart.
+
+groups:
+  - name: dcms_audit
+    rules:
+      - alert: AuditLogSilentDuringTraffic
+        # The alarm is the flat line, not a spike. Guarded on there actually being traffic,
+        # because a genuinely idle platform recording nothing is correct behaviour, and an
+        # alert that fires every night is an alert that gets muted.
+        expr: |
+          sum(rate(dcms_audit_recorded_total[15m])) == 0
+            and sum(dcms:http_requests:rate5m) > 0.1
+        for: 15m
+        labels: { severity: critical, area: audit }
+        annotations:
+          summary: "Audit log has recorded nothing for 15 minutes while requests are being served"
+          description: "A silent audit log is indistinguishable from an idle platform, which is why this is keyed on traffic. Check the AuditChainWriter in admin-api and audit.audit_outbox depth."
+
+      - alert: AuditSinkFailing
+        expr: increase(dcms_audit_sink_failed_total[5m]) > 0
+        for: 0m
+        labels: { severity: critical, area: audit }
+        annotations:
+          summary: "An audit record was refused by its sink"
+          description: "Each of these survives only in a Critical log line. Search Loki for the record before it ages out."
+
+      - alert: AuditChainBroken
+        # No threshold and no `for`. A chain that fails verification is an incident on the
+        # first occurrence; waiting five minutes to see whether it happens again is not a
+        # thing anyone would choose to do about tamper evidence.
+        expr: increase(dcms_audit_chain_broken_total[1h]) > 0
+        labels: { severity: critical, area: audit }
+        annotations:
+          summary: "An audit chain segment failed verification"
+          description: "This is an incident, not a threshold. A failing chain is indistinguishable from a tampered one. Do not rotate Audit__ChainKey."
+
+      - alert: AuditProducerGap
+        expr: increase(dcms_audit_producer_gap_total[1h]) > 0
+        for: 5m
+        labels: { severity: warning, area: audit }
+        annotations:
+          summary: "A service issued audit sequence numbers whose records never arrived"
+          description: "A hash chain over records that were dropped still verifies perfectly. This counter is the only thing that sees the omission."
+
+      - alert: AuditOutboxBacklog
+        expr: dcms_audit_outbox_depth > 5000
+        for: 15m
+        labels: { severity: warning, area: audit }
+        annotations:
+          summary: "Audit outbox depth is {{ $value }} and not draining"
+          description: "The chain writer has stopped or cannot keep up."
+
+      - alert: AuditWriterLag
+        expr: histogram_quantile(0.95, sum by (le) (rate(dcms_audit_writer_lag_seconds_bucket[10m]))) > 900
+        for: 10m
+        labels: { severity: critical, area: audit }
+        annotations:
+          summary: "Oldest unchained audit row is over 15 minutes old"
+
+  - name: dcms_availability
+    rules:
+      - alert: ServiceDown
+        expr: probe_success == 0
+        for: 2m
+        labels: { severity: critical, area: platform }
+        annotations:
+          summary: "{{ $labels.instance }} has failed its health probe for 2 minutes"
+
+      - alert: HighErrorRate
+        expr: dcms:http_error_ratio:rate5m > 0.05
+        for: 10m
+        labels: { severity: warning, area: platform }
+        annotations:
+          summary: "{{ $labels.service }} is returning {{ $value | humanizePercentage }} 5xx"
+
+      - alert: LatencyRegression
+        expr: dcms:http_latency:p99 > 2
+        for: 15m
+        labels: { severity: warning, area: platform }
+        annotations:
+          summary: "{{ $labels.service }} p99 latency is {{ $value }}s"
+
+      - alert: TelemetryAgentStopped
+        # Same shape as the audit alarm above: no data from Alloy looks exactly like a
+        # healthy quiet platform, so the absence has to be the signal.
+        # NOT up{job="alloy"}. Alloy pushes by remote_write rather than being scraped, so
+        # Prometheus never generates an `up` series for it — its self-scrape arrives under
+        # job="infra" like the other four internal targets. The old expression's absent()
+        # branch was therefore true forever: an alert that fires permanently, which is an
+        # alert nobody reads, guarding the component every other signal here depends on.
+        #
+        # alloy_build_info is pushed by Alloy itself and stops arriving the moment it does.
+        # absent_over_time gives it a 10-minute grace so a restart is not a page.
+        expr: absent_over_time(alloy_build_info[10m])
+        for: 5m
+        labels: { severity: critical, area: observability }
+        annotations:
+          summary: "Alloy is not reporting — the platform may be unobserved rather than healthy"
+
+  - name: dcms_resources
+    rules:
+      - alert: HostDiskFilling
+        expr: dcms:host_disk_used_ratio > 0.80
+        for: 10m
+        labels: { severity: warning, area: host }
+        annotations:
+          summary: "Root filesystem is {{ $value | humanizePercentage }} full"
+          description: "Check ~/dcms-data/{prometheus,loki,tempo} against their 8/8/4 GB budgets first, then minio and postgres."
+
+      - alert: HostDiskCritical
+        expr: dcms:host_disk_used_ratio > 0.90
+        for: 5m
+        labels: { severity: critical, area: host }
+        annotations:
+          summary: "Root filesystem is {{ $value | humanizePercentage }} full"
+
+      - alert: HostDiskFullWithinWeek
+        # The projection, not the level. 46% full and rising steadily is a more actionable
+        # fact at 46% than it is at 90%.
+        expr: dcms:host_disk_seconds_to_full > 0 and dcms:host_disk_seconds_to_full < 604800
+        for: 30m
+        labels: { severity: warning, area: host }
+        annotations:
+          summary: "Root filesystem projected full in {{ $value | humanizeDuration }} at the current rate"
+
+      - alert: TelemetryStoreOverBudget
+        expr: dcms:store_disk_used_ratio > 1
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.store }} is over its retention budget"
+          description: >-
+            {{ $labels.store }} is holding {{ $value | humanizePercentage }} of the budget in
+            docs/adr/0008-observability.md. The retention settings are not doing what they
+            were sized to do — check the compactor (Loki) or the size cap (Prometheus)
+            before the host disk alert fires instead.
+
+      - alert: TelemetryStoreProjectedOverBudget
+        # The store is inside its budget today and will not be once the retention window is
+        # actually full. This is the alert that is worth having: by the time the plain
+        # over-budget alert fires there is nothing to do but delete data, and a store two
+        # weeks into a thirty-day window looks perfectly healthy right up until it isn't.
+        # The `and` clause is the guard that stops this crying wolf on the day it is
+        # deployed. The growth trend is computed over 24h of peaks, so it needs 24h of
+        # samples to mean anything; applied to a store that has existed for two hours it is
+        # measuring the initial fill from empty to steady state and extrapolating that
+        # across thirty days. Comparing the 24-hour sample count against the one-hour count
+        # is a self-calibrating way to ask "has this series existed for a day" without
+        # hardcoding a scrape interval that would then drift.
+        expr: |
+          (dcms:store_disk_projected_bytes > dcms_store_disk_budget_bytes * 1.1)
+            and on (store) (
+              count_over_time(dcms_store_disk_bytes[24h])
+                >= 23 * count_over_time(dcms_store_disk_bytes[1h])
+            )
+        for: 6h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.store }} is on track to exceed its retention budget"
+          description: >-
+            At the last six hours' growth rate, {{ $labels.store }} will hold about
+            {{ $value | humanize1024 }}B by the end of its retention window, against a
+            budget of {{ with printf "dcms_store_disk_budget_bytes{store='%s'}" $labels.store
+            | query }}{{ . | first | value | humanize1024 }}B{{ end }}. Reduce retention, or
+            raise the budget deliberately rather than by discovering it full.
+
+      - alert: StoreUsageStale
+        # The sidecar writes every five minutes. If the file stops being rewritten, every
+        # series above freezes at its last value — which reads as "nothing is growing", the
+        # most reassuring possible way for a disk check to fail.
+        expr: time() - dcms_store_usage_scrape_timestamp_seconds > 1800
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Store usage measurements have stopped"
+          description: >-
+            dcms_store_disk_bytes has not been refreshed for over 30 minutes; the
+            store-usage container is probably not running. The retention panels are
+            showing a frozen number, not a current one.
+
+      - alert: HostMemoryPressure
+        # This host has no swap. There is no gradual degradation here — the next step after
+        # sustained pressure is the OOM killer choosing a process, and it does not
+        # necessarily choose the one that overran.
+        expr: dcms:host_memory_used_ratio > 0.90
+        for: 10m
+        labels: { severity: critical, area: host }
+        annotations:
+          summary: "Host memory is {{ $value | humanizePercentage }} used and there is no swap"
+
+      - alert: ContainerOomKilled
+        expr: increase(container_oom_events_total[10m]) > 0
+        labels: { severity: critical, area: host }
+        annotations:
+          summary: "{{ $labels.name }} was OOM-killed"
+
+      - alert: ContainerRestartLoop
+        expr: increase(container_start_time_seconds[15m]) > 3
+        labels: { severity: warning, area: host }
+        annotations:
+          summary: "{{ $labels.name }} has restarted more than 3 times in 15 minutes"
+
+  - name: dcms_infrastructure
+    rules:
+      - alert: VaultSealed
+        # There is no auto-unseal on this host. A reboot leaves Vault sealed and the platform
+        # crash-looping until someone runs unseal-vault.sh, and without this the first
+        # notification of that is a user.
+        expr: vault_core_unsealed == 0
+        for: 2m
+        labels: { severity: critical, area: infra }
+        annotations:
+          summary: "Vault is sealed — run unseal-vault.sh on vps1"
+
+      - alert: PostgresConnectionsHigh
+        expr: sum(pg_stat_activity_count) / on() group_left() pg_settings_max_connections > 0.8
+        for: 10m
+        labels: { severity: warning, area: infra }
+        annotations:
+          summary: "Postgres is using {{ $value | humanizePercentage }} of max_connections"
+
+      - alert: JetStreamConsumerBacklog
+        expr: nats_consumer_num_pending > 1000
+        for: 15m
+        labels: { severity: warning, area: infra }
+        annotations:
+          summary: "{{ $labels.stream_name }}/{{ $labels.consumer_name }} has {{ $value }} pending messages"
+
+      - alert: AuditStreamGrowing
+        # The AUDIT stream is `--discard new`, deliberately: an audit publisher must see an
+        # error rather than have its message silently trimmed. The consequence is that a full
+        # stream starts refusing audit writes, so its size is a thing to watch and not a
+        # thing to discover.
+        expr: nats_stream_total_bytes{stream_name="AUDIT"} > 1.5e9
+        for: 30m
+        labels: { severity: warning, area: infra }
+        annotations:
+          summary: "AUDIT stream is {{ $value | humanize1024 }}B and discards new messages when full"
+
+  - name: dcms_security
+    rules:
+      - alert: AuthFailureSpike
+        expr: sum(rate(dcms_auth_login_total{outcome="failed"}[5m])) > 1
+        for: 10m
+        labels: { severity: warning, area: security }
+        annotations:
+          summary: "Sustained sign-in failures: {{ $value }}/s"
+
+      - alert: WebhookRejections
+        expr: increase(dcms_audit_recorded_total{action="security.webhook.rejected"}[15m]) > 3
+        labels: { severity: warning, area: security }
+        annotations:
+          summary: "Repeated webhook HMAC rejections"
+
+      - alert: RateLimitingActive
+        expr: sum(rate(dcms:http_requests:by_route:rate5m{http_response_status_code="429"}[5m])) > 5
+        for: 10m
+        labels: { severity: info, area: security }
+        annotations:
+          summary: "Clients are being rate limited at {{ $value }}/s"

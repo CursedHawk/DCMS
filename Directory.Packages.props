@@ -71,10 +71,20 @@
   </ItemGroup>
 
   <ItemGroup Label="Observability">
+    <!-- Matches the Npgsql that Npgsql.EntityFrameworkCore.PostgreSQL 10.0.2 resolves, so the
+         driver is not pulled forward by the instrumentation package alone. -->
+    <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.2" />
+    <PackageVersion Include="OpenTelemetry" Version="1.16.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.16.0" />
+    <!-- Prerelease because there has never been a stable release of this one; it is the only
+         way to get Redis command spans, and the alternative is a blind spot over the cache and
+         the SignalR backplane. Process instrumentation is deliberately NOT taken: it is also
+         prerelease-only and cAdvisor already reports per-container CPU and memory. -->
+    <PackageVersion Include="OpenTelemetry.Instrumentation.StackExchangeRedis" Version="1.16.0-beta.1" />
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.OpenTelemetry" Version="4.2.0" />
   </ItemGroup>

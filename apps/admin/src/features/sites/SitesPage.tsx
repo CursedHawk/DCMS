@@ -28,7 +28,8 @@ import {
 } from '../../components/ui/select';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { Card } from '../../components/ui/card';
-import { ApiError, api } from '../../lib/api';
+import { api } from '../../lib/api';
+import { toastApiError } from '../../lib/errors';
 
 interface SiteSummary {
   id: string;
@@ -72,7 +73,7 @@ export function SitesPage() {
       await qc.invalidateQueries({ queryKey: ['sites'] });
       await qc.invalidateQueries({ queryKey: ['domains'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   return (

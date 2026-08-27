@@ -1,0 +1,101 @@
+# Loki, single-binary, filesystem-backed.
+#
+# Retention is 30 days for everything, with a 90-day override for the audit and security
+# streams. That distinction is not a preference: docs/runbook.md states that the Critical
+# "AUDIT ANCHOR ..." lines are the third integrity control for the audit chain and only
+# count as an off-box anchor if they are shipped and kept. Thirty days would mean the
+# anchor for a month expires before the month it attests to is even finished.
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: info
+  # A single trace's worth of log lines can be large; the default 4 MB refuses them.
+  grpc_server_max_recv_msg_size: 8388608
+  grpc_server_max_send_msg_size: 8388608
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2026-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  tsdb_shipper:
+    active_index_directory: /loki/tsdb-index
+    cache_location: /loki/tsdb-cache
+  filesystem:
+    directory: /loki/chunks
+
+limits_config:
+  # The budget. 8 GB of the ~20 GB allotted to telemetry, on a host with 40 GB free.
+  retention_period: 720h
+
+  # Guards against one misbehaving service filling the disk in an afternoon. A tight loop
+  # logging at Debug can produce more in an hour than the platform does in a month, and the
+  # first symptom of that without a limit is Postgres failing to write.
+  ingestion_rate_mb: 8
+  ingestion_burst_size_mb: 16
+  per_stream_rate_limit: 3MB
+  per_stream_rate_limit_burst: 10MB
+  max_streams_per_user: 5000
+  max_global_streams_per_user: 5000
+  max_entries_limit_per_query: 10000
+  max_query_series: 2000
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+
+  # Trace and span ids arrive as structured metadata rather than as labels. As labels they
+  # would be unbounded cardinality — a new stream per request — which is the single fastest
+  # way to kill a Loki. As structured metadata they stay directly filterable, which is what
+  # the trace-lookup dashboard needs.
+  allow_structured_metadata: true
+  volume_enabled: true
+
+  # Longer retention for the two streams that are evidence rather than diagnostics.
+  retention_stream:
+    - selector: '{service="admin-api", category="audit"}'
+      priority: 10
+      period: 2160h
+    - selector: '{category="security"}'
+      priority: 10
+      period: 2160h
+
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m
+  # Without these three, retention_period is documentation: the compactor is what actually
+  # deletes expired chunks, and it does not do so unless deletion is switched on.
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 50
+  delete_request_store: filesystem
+
+ruler:
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  rule_path: /loki/rules-temp
+  enable_api: true
+
+analytics:
+  reporting_enabled: false

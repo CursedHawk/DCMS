@@ -16,7 +16,8 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { CenteredSpinner } from '../../components/ui/spinner';
-import { ApiError, api } from '../../lib/api';
+import { api } from '../../lib/api';
+import { toastApiError } from '../../lib/errors';
 import {
   type ContentFieldDef,
   type ContentTypeDef,
@@ -142,7 +143,7 @@ export function ContentEditor({
       await invalidate();
       onSaved();
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   // Publishing carries the current form state, so it is "save and publish" in one
@@ -156,7 +157,7 @@ export function ContentEditor({
       await invalidate();
       if (verb === 'publish') onSaved();
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   // Same reasoning as publish: schedule what is on screen, not what was last saved.
@@ -171,7 +172,7 @@ export function ContentEditor({
       setScheduleAt('');
       await invalidate();
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const cancelSchedule = useMutation({
@@ -180,7 +181,7 @@ export function ContentEditor({
       toast.success(t('content.scheduleCancelled'));
       await invalidate();
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   /**
@@ -199,7 +200,7 @@ export function ContentEditor({
         await invalidate();
         onSaved();
       } catch (e) {
-        toast.error(e instanceof ApiError ? e.message : t('errors.generic'));
+        toastApiError(e, t);
       }
       return;
     }

@@ -19,7 +19,8 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import { CenteredSpinner } from '../../components/ui/spinner';
-import { ApiError, api } from '../../lib/api';
+import { api } from '../../lib/api';
+import { toastApiError } from '../../lib/errors';
 import { setCurrentTenantSlug } from '../../tenants';
 
 interface WorkspaceMember {
@@ -73,7 +74,7 @@ export function WorkspacePage() {
       await qc.invalidateQueries({ queryKey: ['workspace'] });
       await qc.invalidateQueries({ queryKey: ['me-tenants'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const transfer = useMutation({
@@ -86,7 +87,7 @@ export function WorkspacePage() {
       // changed — without this the nav keeps showing pages they can no longer open.
       await qc.invalidateQueries({ queryKey: ['me-permissions'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const remove = useMutation({
@@ -101,7 +102,7 @@ export function WorkspacePage() {
       setCurrentTenantSlug(null);
       window.location.assign('/');
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   if (workspace.isLoading) return <CenteredSpinner />;

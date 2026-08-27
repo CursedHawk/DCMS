@@ -50,6 +50,17 @@ public sealed class AuditRedactor
         "ciphertext", "credential", "private", "salt", "signature",
     ];
 
+    /// <summary>
+    /// True when a name looks like it holds a secret, by the same heuristic that withholds an
+    /// audit field's value.
+    ///
+    /// <para>Public so that telemetry — span attributes and log properties — can apply the
+    /// identical test. Copying the fragment list into a second place would let the two drift,
+    /// and the direction they would drift is that a fragment added here for a newly discovered
+    /// leak keeps appearing in traces.</para>
+    /// </summary>
+    public static bool LooksSensitiveName(string name) => LooksSensitive(name);
+
     private readonly ConcurrentDictionary<Type, TypePolicy> _policies = new();
 
     /// <summary>

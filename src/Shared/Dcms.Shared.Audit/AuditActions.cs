@@ -166,6 +166,24 @@ public static class AuditActions
     public const string WebhookRejected = "security.webhook.rejected";
     public const string SecretAccessed = "security.secret.accessed";
 
+    // ---- observability ----
+
+    /// <summary>
+    /// A monitoring alert fired and was routed to a human. Recorded because the alert itself
+    /// lives in Grafana's own state, which is the one piece of observability data on this
+    /// platform that is not backed up — and "when did we first know" is a question that gets
+    /// asked after every incident.
+    /// </summary>
+    public const string AlertNotified = "observability.alert.notified";
+
+    /// <summary>
+    /// Raw analytics events removed by retention. One record per pass carrying the cutoff and
+    /// the count, rather than a bulk-statement record per batch — the batching is an
+    /// implementation detail of not holding a long transaction, and twenty records saying "a
+    /// table got shorter" is worse than one saying what policy removed how much.
+    /// </summary>
+    public const string AnalyticsPruned = "analytics.retention.pruned";
+
     /// <summary>
     /// Somebody took a copy of the log out of the platform. Recorded in the log itself, which
     /// is the only place it can be: an export leaves no other trace, and the first question

@@ -6,6 +6,7 @@ using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
+using Dcms.Shared.Data.Observability;
 using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Search;
 using Dcms.Shared.Data.Sites;
@@ -53,6 +54,17 @@ public sealed class TenancyMigrator(IServiceProvider services, IConfiguration co
         {
             var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
             await RlsConfigurator.ApplyAsync(tenancy, logger, cancellationToken);
+        }
+
+        // Reporting views for Grafana. After the migrations, because every view reads tables
+        // they create; before the backfill, because it changes nothing the backfill depends on
+        // and a failure here is logged rather than thrown.
+        if (configuration.GetValue("Observability:ApplyViews", true))
+        {
+            await ObservabilityViewConfigurator.ApplyAsync(
+                scope.ServiceProvider.GetRequiredService<TenancyDbContext>(),
+                logger,
+                cancellationToken);
         }
 
         // Last: it records what it grants, so the audit outbox has to exist first.

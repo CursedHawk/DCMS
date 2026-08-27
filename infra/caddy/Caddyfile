@@ -45,6 +45,27 @@ admin.highgeek.eu {
 	}
 }
 
+# Observability. Grafana publishes no host port at all, so this block is the only way in
+# from outside the compose network — and Grafana itself only admits platform SuperAdmins,
+# via OIDC against identity (role_attribute_strict, so an unmatched user is refused rather
+# than silently given Viewer).
+#
+# Note this must be a named site block, not a name under *.dcms.highgeek.eu. That wildcard
+# already resolves and would fall through to the on-demand-TLS catch-all below, where
+# site-host's /internal/tls-allowed would correctly refuse to mint a certificate for a
+# hostname no tenant has verified.
+grafana.highgeek.eu {
+	reverse_proxy grafana:3000
+}
+
+# Caddy's own metrics, on an internal-only listener that Alloy scrapes over the compose
+# network. Deliberately NOT the admin API on :2019 — that endpoint can rewrite the running
+# config, and reaching it from the compose network to get a scrape would trade a dashboard
+# for a remote-reconfiguration primitive.
+:2019 {
+	metrics /metrics
+}
+
 # Git server (Forgejo) web UI + HTTP git transport. Normal ACME (this host's DNS
 # must point here). SSH git access is separate, on host port 2222. Large pushes
 # need a generous body limit; Caddy streams git's chunked responses fine.

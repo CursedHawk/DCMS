@@ -1,6 +1,7 @@
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Search;
 using Dcms.Shared.Kernel.Abstractions;
+using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.ContentApi.Delivery;
@@ -18,7 +19,7 @@ public static class SearchDeliveryEndpoints
     {
         app.MapGet("/api/{slug}/search", async (
             string slug, string? q, int? limit, ITenantContext tenant,
-            CmsDbContext cms, SearchDbContext search, CancellationToken ct) =>
+            CmsDbContext cms, SearchDbContext search, DcmsMetrics metrics, CancellationToken ct) =>
         {
             if (tenant.TenantId is null)
             {
@@ -47,6 +48,10 @@ public static class SearchDeliveryEndpoints
                 .Select(d => new { d.Title, d.Url, d.ContentType })
                 .ToListAsync(ct);
 
+            // Counted here rather than at the top of the handler, so the number means "a search
+            // the tenant actually has a search plugin for and that ran", not "a URL was hit".
+            // The blank-q and missing-instance exits above are not searches.
+            metrics.SearchQuery(tenant.TenantId.Value);
             return Results.Ok(new { items, total });
         });
 

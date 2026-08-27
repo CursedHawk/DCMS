@@ -1,0 +1,41 @@
+# Prometheus is the metrics store, and on this host it is deliberately the *only* one.
+#
+# Mimir was the alternative and is the wrong shape here: it is built for multi-tenant,
+# object-storage-backed, horizontally scaled metrics and would cost roughly a gigabyte of
+# RAM to serve one tenant on one host. Prometheus with a hard size cap does the same job
+# in a third of the memory.
+#
+# Note there are almost no scrape_configs. Alloy does the scraping — it holds the embedded
+# node/cAdvisor/Postgres/Redis exporters and pushes over remote-write, so targets are
+# declared in infra/observability/alloy/config.alloy, not here. Prometheus scrapes only
+# itself and the three stores, which have no other agent in front of them.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+  external_labels:
+    host: vps1
+    platform: dcms
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # The stores watch themselves. A Loki that has stopped ingesting and a platform that has
+  # stopped logging produce the same empty result, so their own health has to come from
+  # somewhere other than the data they hold.
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: tempo
+    static_configs:
+      - targets: ["tempo:3200"]
+
+  - job_name: grafana
+    static_configs:
+      - targets: ["grafana:3000"]

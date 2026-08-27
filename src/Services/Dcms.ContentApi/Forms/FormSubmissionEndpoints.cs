@@ -6,6 +6,7 @@ using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Messaging.Email;
+using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.ContentApi.Forms;
@@ -31,7 +32,7 @@ public static class FormSubmissionEndpoints
         app.MapPost("/api/{slug}/forms/{formName}", async (
             string slug, string formName, JsonElement body, HttpContext http,
             ITenantContext tenant, CmsDbContext cms, FormsDbContext forms,
-            IEmailQueue email, ILoggerFactory loggerFactory, CancellationToken ct) =>
+            IEmailQueue email, DcmsMetrics metrics, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
             {
@@ -85,6 +86,11 @@ public static class FormSubmissionEndpoints
             };
             forms.Submissions.Add(submission);
             await forms.SaveChangesAsync(ct);
+
+            // Counted whether or not a notification is configured, and before the notification
+            // is attempted: the submission is the thing that happened, and the mail is an
+            // optional consequence of it that must not be able to change the count.
+            metrics.FormSubmission(tenantId);
 
             // Queue the notification after the write, so a mail problem can never cost
             // a submission: email-worker owns delivery and retries from here on. A

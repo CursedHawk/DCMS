@@ -17,7 +17,8 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import { CenteredSpinner } from '../../components/ui/spinner';
-import { ApiError, api } from '../../lib/api';
+import { api } from '../../lib/api';
+import { toastApiError } from '../../lib/errors';
 
 interface AiSettings {
   provider: string;
@@ -65,7 +66,7 @@ export function AiSettingsPage() {
       setApiKey('');
       await qc.invalidateQueries({ queryKey: ['ai-settings'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const clearKey = useMutation({
@@ -90,7 +91,7 @@ export function AiSettingsPage() {
       setUserKey('');
       await qc.invalidateQueries({ queryKey: ['ai-user-credentials'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
   const disconnectUser = useMutation({
     mutationFn: () => api.del('/admin/ai/user-credentials'),

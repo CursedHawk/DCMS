@@ -3,6 +3,7 @@ using Dcms.AdminApi.Ai;
 using Dcms.AdminApi.ApiClientGen;
 using Dcms.AdminApi.Analytics;
 using Dcms.AdminApi.Audit;
+using Dcms.AdminApi.Observability;
 using Dcms.AdminApi.Chat;
 using Dcms.AdminApi.Cms;
 using Dcms.AdminApi.Forms;
@@ -80,6 +81,9 @@ builder.Services.AddHostedService<MembershipChangedConsumer>();
 builder.Services.AddHostedService<OutboxDispatcher>();
 builder.Services.AddHostedService<ScheduledPublishWorker>();
 builder.Services.AddHostedService<AnalyticsConsumer>();
+// analytics.events had no retention at all: every pageview from every tenant site accumulated
+// forever on a host with 40 GB free. The daily rollups next to it already hold the aggregate.
+builder.Services.AddHostedService<AnalyticsRetentionWorker>();
 builder.Services.AddHostedService<ChatFanoutConsumer>();
 builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditChainWriter>();
 // Brings in the records from the two services that cannot reach the audit schema, so
@@ -88,9 +92,19 @@ builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditIngestConsumer>();
 // Seals finished months, keeps partitions ahead of the writer, drops what retention has
 // expired, and publishes the numbers that say whether any of it is working.
 builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditMaintenanceWorker>();
+// Reads audit.recorded — the fan-out subject the chain writer has always published and
+// nothing consumed — and projects each record onto the log pipeline, giving the audit log a
+// searchable presence next to the traces it shares a TraceId with.
+builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditLogProjector>();
 
 // Outbound client-credentials token provider for calling ai-gateway.
 builder.Services.Configure<ServiceClientOptions>(builder.Configuration.GetSection(ServiceClientOptions.SectionName));
+
+// Grafana posts fired alerts to /api/internal/alerts, which puts them on the EMAIL work
+// queue. Configuring Grafana's own SMTP instead would put the relay credentials in a second
+// container; email-worker is deliberately the only thing that speaks to the relay.
+builder.Services.Configure<Dcms.AdminApi.Observability.AlertingOptions>(
+    builder.Configuration.GetSection("Alerting"));
 builder.Services.AddHttpClient<IServiceTokenProvider, ServiceTokenClient>();
 builder.Services.AddHttpClient("ai-gateway", (sp, client) =>
 {
@@ -133,6 +147,26 @@ if (builder.Environment.IsProduction())
             "Refusing to start: Forgejo__WebhookSecret is empty or a known default in Production. " +
             "Set a strong, unique FORGEJO_WEBHOOK_SECRET and re-register the site webhooks.");
     }
+
+    // Same shape for the alert webhook (/api/internal/alerts), which can send mail from the
+    // platform's own address — a forged post there is a phishing primitive, not just noise.
+    //
+    // Empty is deliberately allowed and not checked here: the endpoint already refuses every
+    // request when the secret is unset, so an installation that never configured alerting
+    // fails closed rather than failing to start. What is refused is a secret that is present
+    // but guessable, which fails open and looks configured.
+    var alerting = builder.Configuration.GetSection("Alerting").Get<Dcms.AdminApi.Observability.AlertingOptions>() ?? new();
+    var weakAlertSecrets = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "changeme", "secret", "alert", "dcms-alert", "dcms-dev-alert-secret", "grafana",
+    };
+    if (!string.IsNullOrWhiteSpace(alerting.WebhookSecret)
+        && (alerting.WebhookSecret.Trim().Length < 16 || weakAlertSecrets.Contains(alerting.WebhookSecret.Trim())))
+    {
+        throw new InvalidOperationException(
+            "Refusing to start: Alerting__WebhookSecret is too short or a known default in Production. " +
+            "Set a strong, unique ALERT_WEBHOOK_SECRET (openssl rand -base64 32) or leave it unset to disable alert delivery.");
+    }
 }
 builder.Services.AddHttpClient<Dcms.AdminApi.Sites.Git.ForgejoClient>((sp, client) =>
 {
@@ -161,6 +195,10 @@ var forwardedHeaders = new ForwardedHeadersOptions
 };
 forwardedHeaders.KnownIPNetworks.Clear();
 forwardedHeaders.KnownProxies.Clear();
+// First in the pipeline, so an exception anywhere below it becomes a ProblemDetails
+// carrying the trace id instead of a bare Kestrel 500 with no body and nothing to quote.
+app.UseDcmsProblemDetails();
+
 app.UseForwardedHeaders(forwardedHeaders);
 
 // After UseForwardedHeaders (so the client address is the caller's) and before
@@ -183,6 +221,7 @@ app.MapMediaEndpoints();
 app.MapSiteEndpoints();
 app.MapSiteDeletion();
 app.MapAuditEndpoints();
+app.MapAlertEndpoints();
 app.MapSitePreview();
 app.MapFormSubmissionEndpoints();
 app.MapAiSettingsEndpoints();

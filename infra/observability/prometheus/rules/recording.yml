@@ -1,0 +1,158 @@
+# Recording rules exist for one reason on this host: a dashboard panel that asks for
+# "requests per day" over a 30-day window would otherwise re-aggregate several million raw
+# samples on every refresh, on a box with four cores that are already doing the work being
+# measured. These pre-compute the shapes the dashboards actually ask for.
+
+groups:
+  - name: dcms_http_rate
+    interval: 30s
+    rules:
+      # Per-second is the base unit; the minute/hour/day panels multiply it, which is
+      # correct for a rate and avoids keeping four near-identical series.
+      # Probe routes are excluded from every one of these, and it matters more than it
+      # looks. Compose polls /health/live on eight containers every ten seconds and Caddy
+      # polls /health; on an idle platform that is 0.8 req/s of pure self-inspection, which
+      # is *all* of the traffic. Left in, a requests-per-second panel shows a flat line that
+      # has nothing to do with anyone using the platform — and, worse, the
+      # AuditLogSilentDuringTraffic alert reads it as real traffic and fires forever, because
+      # probes are deliberately not audited. A permanently-firing alert is a disabled alert,
+      # and that one is the flagship: it is what detects the audit log going quiet.
+      - record: dcms:http_requests:rate1m
+        expr: sum by (service) (rate(http_server_request_duration_seconds_count{http_route!~"/health.*|/metrics"}[1m]))
+
+      - record: dcms:http_requests:rate5m
+        expr: sum by (service) (rate(http_server_request_duration_seconds_count{http_route!~"/health.*|/metrics"}[5m]))
+
+      - record: dcms:http_requests:rate1h
+        expr: sum by (service) (rate(http_server_request_duration_seconds_count{http_route!~"/health.*|/metrics"}[1h]))
+
+      # Counted, not rated: "how many requests yesterday" is a total, and deriving it from a
+      # rate loses whole minutes to counter resets across a deploy.
+      - record: dcms:http_requests:increase24h
+        expr: sum by (service) (increase(http_server_request_duration_seconds_count{http_route!~"/health.*|/metrics"}[24h]))
+
+      # Kept WITH the probes, unlike the aggregates above: this one is broken down by route,
+      # so a probe is a row you can ignore rather than a number that silently inflates a
+      # total — and "did the health endpoint stop answering" is a question worth being able
+      # to ask of it.
+      - record: dcms:http_requests:by_route:rate5m
+        expr: sum by (service, http_route, http_response_status_code) (rate(http_server_request_duration_seconds_count[5m]))
+
+      - record: dcms:http_errors:rate5m
+        expr: sum by (service) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+
+      # The error ratio, guarded against a zero denominator. Without the guard an idle
+      # service reports NaN, and a NaN in an alert expression is not "no errors" — it simply
+      # never fires, which is the failure that looks most like success.
+      - record: dcms:http_error_ratio:rate5m
+        expr: |
+          dcms:http_errors:rate5m
+            / clamp_min(dcms:http_requests:rate5m, 0.000001)
+
+  - name: dcms_http_latency
+    interval: 30s
+    rules:
+      - record: dcms:http_latency:p50
+        expr: histogram_quantile(0.50, sum by (service, le) (rate(http_server_request_duration_seconds_bucket[5m])))
+      - record: dcms:http_latency:p95
+        expr: histogram_quantile(0.95, sum by (service, le) (rate(http_server_request_duration_seconds_bucket[5m])))
+      - record: dcms:http_latency:p99
+        expr: histogram_quantile(0.99, sum by (service, le) (rate(http_server_request_duration_seconds_bucket[5m])))
+
+  - name: dcms_tenant_activity
+    interval: 60s
+    rules:
+      # Per-tenant series come only from the low-frequency counters that carry a tenant_id
+      # label by design. Per-request traffic is deliberately not broken down by tenant here —
+      # that question is answered from the obs.* views in Postgres, which can hold high
+      # cardinality without keeping it resident in memory.
+      - record: dcms:tenant_publishes:rate1h
+        expr: sum by (tenant_id) (rate(dcms_content_published_total[1h]))
+      - record: dcms:tenant_builds:rate1h
+        expr: sum by (tenant_id) (rate(dcms_site_build_total[1h]))
+      - record: dcms:tenant_ai_tokens:rate1h
+        expr: sum by (tenant_id, provider, model) (rate(dcms_ai_tokens_total[1h]))
+
+  - name: dcms_saturation
+    interval: 30s
+    rules:
+      - record: dcms:host_memory_used_ratio
+        expr: 1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+
+      - record: dcms:host_disk_used_ratio
+        expr: 1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})
+
+      # Seconds until the root filesystem is full at the last six hours' fill rate. Negative
+      # means it is draining. This is the panel that turns "disk is 46% full" into a date.
+      - record: dcms:host_disk_seconds_to_full
+        expr: |
+          node_filesystem_avail_bytes{mountpoint="/"}
+            / clamp_min(-deriv(node_filesystem_avail_bytes{mountpoint="/"}[6h]), 0.000001)
+
+  # ---------------------------------------------------------------------------
+  # Retention budget. The one thing the budget is written in — bytes on disk, per
+  # store — and the only place it is measured.
+  #
+  # Prometheus self-reports its TSDB size; Loki and Tempo expose theirs nowhere at
+  # all, so all three come from the store-usage sidecar through the node exporter's
+  # textfile collector. Without it the retention dashboards had ingest *rates*, from
+  # which you can infer growth and cannot answer "are we inside 8/8/4 GB".
+  # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Retention budget. The one thing the budget is written in — bytes on disk, per
+  # store — and the only place it is measured.
+  #
+  # Prometheus self-reports its TSDB size; Loki and Tempo expose theirs nowhere at
+  # all, so all three come from the store-usage sidecar through the node exporter's
+  # textfile collector. Without it the retention dashboards had ingest *rates*, from
+  # which you can infer growth and cannot answer "are we inside 8/8/4 GB".
+  #
+  # EVERY RULE HERE IS BUILT ON PEAKS, NOT ON THE INSTANTANEOUS SIZE, and that is
+  # the whole trick. These stores do not grow smoothly: Alloy's remote-write WAL
+  # ramps to ~45 MiB and truncates back to ~23 MiB every couple of hours, and
+  # Prometheus writes blocks and then compacts them. A naive deriv() over such a
+  # series measures whichever edge of the sawtooth it happens to span — on this host
+  # it read Alloy's rising edge as 0.08 GB/day and projected 2.6 GB against a 256 MiB
+  # budget, for a store that is in fact perfectly flat. What the disk has to
+  # accommodate is the top of the sawtooth, and what "is it growing" means is
+  # whether that top is rising.
+  # ---------------------------------------------------------------------------
+  - name: dcms_retention
+    interval: 60s
+    rules:
+      # The high-water mark over a window comfortably longer than one truncation
+      # cycle. This is the number the disk actually has to hold.
+      - record: dcms:store_disk_peak_bytes
+        expr: max_over_time(dcms_store_disk_bytes[6h])
+
+      - record: dcms:store_disk_used_ratio
+        expr: |
+          dcms:store_disk_peak_bytes
+            / clamp_min(dcms_store_disk_budget_bytes, 1)
+
+      # Trend of the peaks across a day, not of the raw series across six hours. A
+      # day spans several truncation and compaction cycles, so what is left is the
+      # direction the high-water mark is moving — which is the only growth that
+      # matters for a budget.
+      - record: dcms:store_disk_growth_bytes_per_second
+        expr: deriv(max_over_time(dcms_store_disk_bytes[1h])[24h:10m])
+
+      # What the store will hold once the retention window is actually full, at the
+      # current trend — which is the number to compare against the budget. A store
+      # two weeks into a thirty-day window looks fine, and reading its current size
+      # as "we have room" is how a disk fills on day 29.
+      - record: dcms:store_disk_projected_bytes
+        expr: |
+          dcms:store_disk_peak_bytes
+            + clamp_min(dcms:store_disk_growth_bytes_per_second, 0)
+              * on (store) group_left() dcms:store_retention_seconds
+
+      # Retention horizons, as a series rather than a literal, so a rule and a panel
+      # cannot disagree about them. Matches loki.yaml, tempo.yaml and the Prometheus
+      # --storage.tsdb.retention.time flag.
+      - record: dcms:store_retention_seconds
+        expr: |
+          (dcms_store_disk_budget_bytes{store="prometheus"} > bool 0) * 2592000
+          or (dcms_store_disk_budget_bytes{store="loki"} > bool 0) * 2592000
+          or (dcms_store_disk_budget_bytes{store="tempo"} > bool 0) * 604800
+          or (dcms_store_disk_budget_bytes{store=~"grafana|alloy"} > bool 0) * 2592000

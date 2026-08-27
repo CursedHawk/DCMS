@@ -11,14 +11,20 @@ public sealed class MinioHealthCheck(IMinioClient client, IOptions<StorageOption
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
+        // A bucket this service's credentials are actually allowed to see; see
+        // StorageOptions.HealthBucket for why that is not always the media bucket.
+        var bucket = string.IsNullOrWhiteSpace(options.Value.HealthBucket)
+            ? options.Value.MediaBucket
+            : options.Value.HealthBucket;
+
         try
         {
             var exists = await client.BucketExistsAsync(
-                new BucketExistsArgs().WithBucket(options.Value.MediaBucket),
+                new BucketExistsArgs().WithBucket(bucket),
                 cancellationToken);
             return exists
                 ? HealthCheckResult.Healthy("MinIO reachable")
-                : HealthCheckResult.Degraded($"Bucket '{options.Value.MediaBucket}' missing");
+                : HealthCheckResult.Degraded($"Bucket '{bucket}' missing");
         }
         catch (Exception ex)
         {

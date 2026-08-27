@@ -21,7 +21,8 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '../../components/ui/table';
-import { ApiError, api } from '../../lib/api';
+import { api } from '../../lib/api';
+import { toastApiError } from '../../lib/errors';
 import { Perm, can, useMyPermissions } from '../../lib/permissions';
 import { setCurrentTenantSlug } from '../../tenants';
 import { AuditLogViewer } from '../audit/AuditLogViewer';
@@ -60,7 +61,7 @@ export function TenantsPage() {
       await qc.invalidateQueries({ queryKey: ['tenants'] });
       await qc.invalidateQueries({ queryKey: ['me-tenants'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   return (

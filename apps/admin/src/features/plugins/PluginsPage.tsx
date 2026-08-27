@@ -25,7 +25,8 @@ import { Label } from '../../components/ui/label';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { Switch } from '../../components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { ApiError, api } from '../../lib/api';
+import { api } from '../../lib/api';
+import { toastApiError } from '../../lib/errors';
 import { cn } from '../../lib/cn';
 import {
   type PluginInstance,
@@ -294,7 +295,7 @@ function InstallDialog({
       toast.success(t('common.saved'));
       onDone();
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   return (
@@ -390,7 +391,7 @@ function ConfigDialog({
       toast.success(t('common.saved'));
       onDone();
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   return (

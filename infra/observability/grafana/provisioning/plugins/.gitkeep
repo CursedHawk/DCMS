@@ -1,0 +1,5 @@
+Deliberately empty. Grafana logs an ERROR on every start when a provisioning
+subdirectory is missing, and an error-level line that is not an error is exactly the
+kind of noise that trains people to ignore the log dashboard this stack just built.
+
+No plugins are provisioned: the datasources in use are all core.

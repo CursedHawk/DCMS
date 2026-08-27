@@ -27,7 +27,8 @@ import {
 } from '../../components/ui/select';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { TBody, TD, TH, THead, TR, Table } from '../../components/ui/table';
-import { ApiError, api } from '../../lib/api';
+import { api } from '../../lib/api';
+import { toastApiError } from '../../lib/errors';
 import { type MyPermissions, Perm, can, useMyPermissions } from '../../lib/permissions';
 
 interface Analytics {
@@ -105,7 +106,7 @@ export function AnalyticsPage() {
       await qc.invalidateQueries({ queryKey: ['analytics'] });
       await qc.invalidateQueries({ queryKey: ['analytics-dimensions'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const hasFilters = type !== ANY || country !== ANY || device !== ANY || appliedPath.trim() !== '';

@@ -183,6 +183,10 @@ var forwardedHeaders = new ForwardedHeadersOptions
 };
 forwardedHeaders.KnownIPNetworks.Clear();
 forwardedHeaders.KnownProxies.Clear();
+// First in the pipeline, so an exception anywhere below it becomes a ProblemDetails
+// carrying the trace id instead of a bare Kestrel 500 with no body and nothing to quote.
+app.UseDcmsProblemDetails();
+
 app.UseForwardedHeaders(forwardedHeaders);
 
 // After UseForwardedHeaders (so the client address is the caller's): sign-in failures

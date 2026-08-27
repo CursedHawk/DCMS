@@ -3,6 +3,7 @@ using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
+using Dcms.Shared.Telemetry;
 using Microsoft.Extensions.Options;
 using NATS.Client.JetStream;
 
@@ -16,8 +17,9 @@ public sealed class VideoProcessingConsumer(
     IOptions<StorageOptions> storageOptions,
     IEventPublisher events,
     VideoTranscoder transcoder,
+    DcmsMetrics metrics,
     ILogger<VideoProcessingConsumer> logger)
-    : MediaConsumerBase(jetStream, services, storage, storageOptions, events, logger)
+    : MediaConsumerBase(jetStream, services, storage, storageOptions, events, metrics, logger)
 {
     protected override string Subject => Subjects.MediaProcessVideo;
     protected override string DurableName => "media-worker-video";

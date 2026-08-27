@@ -19,7 +19,8 @@ import { ResourceHistory } from '../audit/ResourceHistory';
 import { Progress } from '../../components/ui/progress';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { cn } from '../../lib/cn';
-import { ApiError, api } from '../../lib/api';
+import { api } from '../../lib/api';
+import { toastApiError } from '../../lib/errors';
 
 interface StaticBundle {
   name?: string;
@@ -90,7 +91,7 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
       else toast.success(t('sites.uploadDone', { count: r.fileCount }));
       await qc.invalidateQueries({ queryKey: ['site', siteId] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const publish = useMutation({
@@ -99,7 +100,7 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
       toast.success(t('editor.publishQueued'));
       await qc.invalidateQueries({ queryKey: ['site-builds', siteId] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const activate = useMutation({
@@ -111,7 +112,7 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
         qc.invalidateQueries({ queryKey: ['site', siteId] }),
       ]);
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   if (site.isLoading) return <CenteredSpinner label={t('common.loading')} />;

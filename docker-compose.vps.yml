@@ -110,6 +110,11 @@ services:
       # SPA redirect/sign-out URIs registered for the public admin host.
       Identity__Spa__RedirectUris: "https://admin.highgeek.eu/auth/callback"
       Identity__Spa__PostLogoutUris: "https://admin.highgeek.eu/"
+      # Grafana SSO. Must equal the grafana container's GRAFANA_OIDC_CLIENT_SECRET.
+      # Left unset → the client is not seeded and Grafana falls back to its
+      # break-glass local admin login, which is the safe direction to fail.
+      Identity__Grafana__Secret: "${GRAFANA_OIDC_CLIENT_SECRET:-}"
+      Identity__Grafana__RedirectUris: "https://grafana.highgeek.eu/login/generic_oauth"
       # Google SSO. Left unset → the sign-in/up pages simply omit the Google
       # button. Provide both in .env to enable it. The authorized redirect URI to
       # register in the Google Cloud console is:
@@ -128,6 +133,11 @@ services:
     environment:
       <<: *vps-resource-auth
       Auth__Audience: "dcms-admin-api"
+      # Alert delivery. The secret must equal the grafana container's ALERT_WEBHOOK_SECRET.
+      # Recipients default to the platform SuperAdmin, who is the person who would be woken
+      # up anyway; override with a comma-separated ALERT_RECIPIENTS in .env.
+      Alerting__WebhookSecret: "${ALERT_WEBHOOK_SECRET:-}"
+      Alerting__Recipients: "${ALERT_RECIPIENTS:-${SUPERADMIN_EMAIL}}"
       # Forgejo git backend (see [[vps1-forgejo]]). Token is delivered via .env
       # (FORGEJO_TOKEN), the same way every other prod secret is — Vault KV is
       # not used here. admin-api reaches Forgejo over the internal network; the
@@ -168,6 +178,60 @@ services:
         # Baked into the static bundle: the SPA fetches OIDC discovery from here.
         VITE_OIDC_AUTHORITY: "https://admin.highgeek.eu"
 
+  # Grafana on its real hostname. No host port is published in any profile — Caddy is the
+  # only route in (infra/caddy/Caddyfile), which is the same shape as admin-spa and forgejo.
+  grafana:
+    environment:
+      GF_SERVER_ROOT_URL: "https://grafana.highgeek.eu/"
+      GF_SERVER_DOMAIN: "grafana.highgeek.eu"
+
+  # ---- NATS $SYS account ----
+  #
+  # Replaces NATS's flag-only startup with a config file, which is what gives nats-surveyor
+  # a system account to collect from. The ten streams stay in $G and `no_auth_user` keeps
+  # all eight services connecting exactly as they did — none of them gained a credential.
+  #
+  # This is the server that carries every queue on the platform and the failure mode of
+  # getting it wrong is "the streams are gone", so it was landed through the gate in
+  # infra/observability/README.md: store dir backed up, then the config proved against a
+  # throwaway container pointed at a *copy* of it. That rehearsal is what caught both real
+  # defects — `system_account: $SYS` unquoted is read as a variable reference, and `$G`
+  # cannot be declared as an account at all — before either could touch production.
+  nats:
+    command: ["-c", "/etc/nats/nats.conf"]
+    environment:
+      NATS_APP_PASSWORD: "${NATS_APP_PASSWORD:?set NATS_APP_PASSWORD in .env}"
+      NATS_SYS_PASSWORD: "${NATS_SYS_PASSWORD:?set NATS_SYS_PASSWORD in .env}"
+    volumes:
+      - ./infra/nats/nats.conf:/etc/nats/nats.conf:ro
+
+  # Collects from the $SYS account the config above creates: per-account statistics and the
+  # JetStream advisories that say when a consumer is falling behind, which the plain
+  # monitoring endpoint does not expose. nats-exporter in the base file still runs alongside
+  # it and still carries stream depth and consumer lag — the two overlap deliberately, and
+  # the cheaper one is the one anyone pages on.
+  nats-surveyor:
+    image: natsio/nats-surveyor:0.9.11
+    restart: unless-stopped
+    # Spelled out rather than anchored: YAML anchors do not cross compose files, so
+    # *default-logging from the base file is not in scope here.
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    mem_limit: 128m
+    command:
+      - --servers=nats://nats:4222
+      - --user=sys
+      - --password=${NATS_SYS_PASSWORD:-}
+      - --port=7777
+      - --accounts
+      - --jetstream=true
+    depends_on:
+      nats:
+        condition: service_started
+
 # Re-point every named volume from the prod profile at a bind mount under
 # /home/cursedhawk/dcms-data. The host directories are created (with the right
 # ownership for each container) before `up` — see the deploy steps.
@@ -202,3 +266,22 @@ volumes:
   build-work:
     driver: local
     driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/build-work }
+  # Telemetry stores. Same one-visible-directory convention as everything else, and the same
+  # ownership caveat: Docker does not chown a bind mount, so these must exist and be owned by
+  # uid 1001 before `up`, which is why each of those containers pins user: "1001:1001".
+  # Budget (see infra/observability/README.md): prometheus 8 GB, loki 8 GB, tempo 4 GB.
+  prometheus-data:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/prometheus }
+  loki-data:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/loki }
+  tempo-data:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/tempo }
+  grafana-data:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/grafana }
+  alloy-data:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/alloy }

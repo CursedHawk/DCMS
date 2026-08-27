@@ -5,6 +5,7 @@ using Dcms.Identity.Forgejo;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Messaging.Email;
+using Dcms.Shared.Telemetry;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -33,6 +34,7 @@ public static class AccountEndpoints
             UserManager<DcmsUser> userManager,
             ForgejoUserSync forgejo,
             IAuditRecorder audit,
+            DcmsMetrics metrics,
             [FromForm] string email,
             [FromForm] string password,
             [FromForm] string? returnUrl,
@@ -56,6 +58,13 @@ public static class AccountEndpoints
                 {
                     entry.About(failed.Id);
                 }
+
+                // Counted as well as recorded. The audit entry answers "who tried"; this
+                // answers "is the rate abnormal", which is a question about the shape of the
+                // last hour and not about any one attempt. No email or address as a label —
+                // that would be both unbounded and a disclosure.
+                metrics.Login("password", result.IsLockedOut ? "lockedout" : "failed");
+
                 return Results.Redirect($"/account/login?error=1&returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
             }
 
@@ -73,6 +82,8 @@ public static class AccountEndpoints
                 success.About(user.Id);
             }
 
+            metrics.Login("password", "succeeded");
+
             return Results.Redirect(SafeReturnUrl(returnUrl));
         }).DisableAntiforgery().WithAudit(AuditActions.LoginSucceeded, category: AuditCategory.Auth);
 
@@ -84,6 +95,7 @@ public static class AccountEndpoints
             UserManager<DcmsUser> userManager,
             SignInManager<DcmsUser> signInManager,
             ForgejoUserSync forgejo,
+            DcmsMetrics metrics,
             [FromForm] string email,
             [FromForm] string password,
             [FromForm] string confirmPassword,
@@ -112,6 +124,7 @@ public static class AccountEndpoints
             await forgejo.EnsureAsync(user, password, ct);
 
             await signInManager.SignInAsync(user, isPersistent: false);
+            metrics.Signup("password");
             return Results.Redirect(SafeReturnUrl(returnUrl));
         }).DisableAntiforgery().WithAudit(AuditActions.AccountRegistered, category: AuditCategory.Auth);
 

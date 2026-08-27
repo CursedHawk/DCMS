@@ -175,5 +175,74 @@ public sealed class IdentitySeeder(
             }, ct);
             logger.LogInformation("Seeded admin-api service client.");
         }
+
+        await SeedGrafanaClientAsync(manager, ct);
+    }
+
+    /// <summary>
+    /// The Grafana OIDC client. Confidential + PKCE: Grafana keeps the secret server-side, and
+    /// PKCE costs nothing on top of that while removing the authorization-code interception
+    /// class of attack entirely.
+    ///
+    /// <para>The <c>roles</c> scope is what makes the whole arrangement safe. Grafana maps
+    /// <c>contains(roles[*], 'SuperAdmin')</c> to Grafana Admin with
+    /// <c>role_attribute_strict</c>, so a user without it is refused rather than being given
+    /// the Viewer role — and a Viewer on these dashboards can read every tenant's usage, every
+    /// audit action and every trace on the platform. Drop the scope and every DCMS user with a
+    /// login becomes a platform-wide observer.</para>
+    ///
+    /// <para>Skipped entirely when no secret is configured, rather than seeded with a default.
+    /// A client with a guessable secret and this role mapping is worse than no Grafana login:
+    /// the break-glass local admin still works, so the failure mode of skipping is an
+    /// inconvenience, and the failure mode of a default secret is a platform-wide read.</para>
+    /// </summary>
+    private async Task SeedGrafanaClientAsync(IOpenIddictApplicationManager manager, CancellationToken ct)
+    {
+        if (await manager.FindByClientIdAsync(DcmsOAuth.Clients.Grafana, ct) is not null)
+        {
+            return;
+        }
+
+        var secret = configuration["Identity:Grafana:Secret"];
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            logger.LogInformation(
+                "Grafana OIDC client not seeded: Identity:Grafana:Secret is unset. " +
+                "Set it (GRAFANA_OIDC_CLIENT_SECRET) to enable Grafana SSO.");
+            return;
+        }
+
+        var redirects = (configuration["Identity:Grafana:RedirectUris"]
+                         ?? "https://grafana.highgeek.eu/login/generic_oauth")
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var descriptor = new OpenIddictApplicationDescriptor
+        {
+            ClientId = DcmsOAuth.Clients.Grafana,
+            ClientSecret = secret,
+            ClientType = ClientTypes.Confidential,
+            ConsentType = ConsentTypes.Implicit,
+            DisplayName = "DCMS Grafana",
+            Permissions =
+            {
+                Permissions.Endpoints.Authorization,
+                Permissions.Endpoints.Token,
+                Permissions.Endpoints.EndSession,
+                Permissions.GrantTypes.AuthorizationCode,
+                Permissions.GrantTypes.RefreshToken,
+                Permissions.ResponseTypes.Code,
+                Permissions.Scopes.Email,
+                Permissions.Scopes.Profile,
+                Permissions.Scopes.Roles,
+            },
+            Requirements = { Requirements.Features.ProofKeyForCodeExchange },
+        };
+        foreach (var uri in redirects)
+        {
+            descriptor.RedirectUris.Add(new Uri(uri));
+        }
+
+        await manager.CreateAsync(descriptor, ct);
+        logger.LogInformation("Seeded Grafana OIDC client.");
     }
 }

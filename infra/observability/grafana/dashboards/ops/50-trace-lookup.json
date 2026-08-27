@@ -1,0 +1,203 @@
+{
+  "uid": "dcms-trace-lookup",
+  "title": "Trace lookup",
+  "description": "Paste a trace id or request id from a user's report and get the trace, the logs and the audit records.",
+  "tags": [
+    "dcms",
+    "ops",
+    "support"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "templating": {
+    "list": [
+      {
+        "name": "traceId",
+        "label": "Trace ID",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": []
+      },
+      {
+        "name": "requestId",
+        "label": "Request ID",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": []
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "# A user gave you an id. Start here.\n\nPaste it into **Trace ID** above (a 32-character hex string) or **Request ID** (the `X-Dcms-Request-Id` value). Every response carries both as headers, and the error page shows them, so a support ticket can quote one.\n\nThe three panels below are the same incident from three angles:\n\n1. **The trace** \u2014 every span, across every service, including the hops over JetStream. This is the shape of what happened.\n2. **The logs** \u2014 every line any service emitted while handling it.\n3. **The audit records** \u2014 what was actually recorded as having been done, which is the authoritative answer to \"did my change save\".\n\n---\n\n**If the trace panel is empty but the audit rows are not, the trace has expired.** Tempo keeps 7 days, Loki keeps 30 (90 for audit and security), and the audit record keeps its `TraceId` for 400 days. That is a deliberate trade \u2014 traces are by far the largest signal per unit of insight on a host with 40 GB free \u2014 but it means an id quoted a month later resolves to *what was done* and not to *how long each step took*. Say so rather than reporting that the id is unknown."
+      }
+    },
+    {
+      "id": 2,
+      "type": "traces",
+      "title": "The trace",
+      "datasource": {
+        "type": "tempo",
+        "uid": "dcms-tempo"
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "dcms-tempo"
+          },
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "$traceId",
+          "limit": 20
+        }
+      ],
+      "description": "The whole request, across services and across the message bus. The bus hops appear because the publisher now injects a W3C traceparent alongside the platform's own attribution headers \u2014 without it every consumer started a fresh root and this panel stopped at the first NATS publish.",
+      "options": {},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "logs",
+      "title": "Every log line for this trace",
+      "datasource": {
+        "type": "loki",
+        "uid": "dcms-loki"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "dcms-loki"
+          },
+          "expr": "{service=~\".+\"} | trace_id = `$traceId`",
+          "refId": "A",
+          "queryType": "range"
+        }
+      ],
+      "description": "Structured metadata, not a label: trace ids as Loki labels would be one stream per request, which is the fastest way to kill a Loki.",
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "dedupStrategy": "none"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "What was recorded as done",
+      "datasource": {
+        "type": "postgres",
+        "uid": "dcms-postgres"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 24,
+        "x": 0,
+        "y": 37
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "dcms-postgres"
+          },
+          "rawSql": "\nSELECT\n    occurred_at AS \"time\",\n    tenant_slug,\n    action,\n    outcome,\n    actor_kind,\n    actor_display,\n    actor_attribution,\n    resource_type,\n    resource_label,\n    service,\n    http_method,\n    route,\n    status_code,\n    correlation_id\nFROM obs.v_audit_recent\nWHERE ('$traceId' <> '' AND trace_id = '$traceId')\n   OR ('$requestId' <> '' AND correlation_id = '$requestId')\nORDER BY occurred_at\nLIMIT 200\n",
+          "rawQuery": true,
+          "refId": "A",
+          "format": "table"
+        }
+      ],
+      "description": "The audit log is the record of what happened; the trace is the record of how. An action stamped attribution 'Propagated' had its actor carried across a process boundary on a peer's word rather than authenticated here \u2014 that label is deliberate and should stay in any answer given to a user.",
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}

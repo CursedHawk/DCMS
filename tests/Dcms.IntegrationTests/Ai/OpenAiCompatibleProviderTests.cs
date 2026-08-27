@@ -48,10 +48,15 @@ public class OpenAiCompatibleProviderTests
             var baseUrl = app.Urls.First().TrimEnd('/') + "/v1";
             var provider = new OpenAiCompatibleProvider("openai", "secret-key", baseUrl);
 
-            var text = await provider.CompleteAsync(
+            var completion = await provider.CompleteAsync(
                 new ChatRequest("stub-model", "You are a test.", "Say hello", MaxTokens: 64), ct);
 
-            text.Should().Be("HELLO FROM STUB");
+            completion.Text.Should().Be("HELLO FROM STUB");
+            // Usage is what the ai-gateway cost dashboard is built on, and it is read from a
+            // part of the response body the text extraction never touches — so a provider that
+            // returns the right answer with no token counts would otherwise pass silently.
+            completion.PromptTokens.Should().Be(1);
+            completion.CompletionTokens.Should().Be(1);
             // The provider must forward the API key (and never log it — checked by review).
             capturedAuth.Should().Contain("secret-key");
         }

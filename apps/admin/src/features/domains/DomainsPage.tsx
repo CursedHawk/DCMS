@@ -27,7 +27,8 @@ import {
 } from '../../components/ui/select';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
-import { ApiError, api } from '../../lib/api';
+import { api } from '../../lib/api';
+import { toastApiError } from '../../lib/errors';
 
 interface Domain {
   id: string;
@@ -69,7 +70,7 @@ export function DomainsPage() {
       setHostname('');
       await qc.invalidateQueries({ queryKey: ['domains'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const provision = useMutation({
@@ -79,7 +80,7 @@ export function DomainsPage() {
       setOpen(false);
       await qc.invalidateQueries({ queryKey: ['domains'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const verify = useMutation({
@@ -88,7 +89,7 @@ export function DomainsPage() {
       if (r.verified) toast.success(t('domains.verified'));
       await qc.invalidateQueries({ queryKey: ['domains'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const linkSite = useMutation({
@@ -98,7 +99,7 @@ export function DomainsPage() {
       toast.success(t('common.saved'));
       await qc.invalidateQueries({ queryKey: ['domains'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const setPrimary = useMutation({
@@ -107,7 +108,7 @@ export function DomainsPage() {
       toast.success(t('domains.primarySet'));
       await qc.invalidateQueries({ queryKey: ['domains'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   const remove = useMutation({
@@ -116,7 +117,7 @@ export function DomainsPage() {
       toast.success(t('domains.removed'));
       await qc.invalidateQueries({ queryKey: ['domains'] });
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : t('errors.generic')),
+    onError: (e) => toastApiError(e, t),
   });
 
   return (
