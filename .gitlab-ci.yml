@@ -236,7 +236,8 @@ promote-images:
     - chmod 600 ~/.ssh/id_ed25519
     # Pinned host keys, not StrictHostKeyChecking=no: a deploy job that accepts any host key
     # will happily hand the deployment to whatever answers on that address.
-    - echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+    - if [ -f "$SSH_KNOWN_HOSTS" ]; then cp "$SSH_KNOWN_HOSTS" ~/.ssh/known_hosts; else printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts; fi
+    - chmod 644 ~/.ssh/known_hosts
     - eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519
   script:
     - bash scripts/ci/resolve-digests.sh "$CI_REGISTRY_IMAGE" "$IMAGE_TAG" docker-compose.images.yml
