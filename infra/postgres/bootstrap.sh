@@ -52,12 +52,16 @@ psql -v ON_ERROR_STOP=1 -h "$PGHOST" -f /init/01-rls.sql
 # here, where a real one is available.
 if [ -n "${RLS_DB_PASSWORD:-}" ]; then
   echo "postgres-bootstrap: setting dcms_rls password"
-  psql -v ON_ERROR_STOP=1 -h "$PGHOST" --set=rls_pw="$RLS_DB_PASSWORD" \
-    -c "ALTER ROLE dcms_rls LOGIN PASSWORD :'rls_pw' NOSUPERUSER NOBYPASSRLS"
+
+  printf '%s\n' \
+    "ALTER ROLE dcms_rls LOGIN PASSWORD :'rls_pw' NOSUPERUSER NOBYPASSRLS;" |
+    psql \
+      -v ON_ERROR_STOP=1 \
+      -h "$PGHOST" \
+      --set=rls_pw="$RLS_DB_PASSWORD"
 else
   echo "postgres-bootstrap: WARNING: RLS_DB_PASSWORD unset; dcms_rls keeps the password from 01-rls.sql." >&2
 fi
-
 # These two take their own passwords from the environment and converge them on every run.
 echo "postgres-bootstrap: dcms_sitebuilder role"
 PGHOST="$PGHOST" sh /init/02-service-roles.sh
