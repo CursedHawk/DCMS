@@ -14,6 +14,27 @@
     -->
     <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%230f172a%22%2F%3E%3Cpath%20d%3D%22M10%208h6.2c4.9%200%208.3%203.2%208.3%208s-3.4%208-8.3%208H10V8Zm4.4%203.6v8.8h1.6c2.6%200%204.2-1.7%204.2-4.4s-1.6-4.4-4.2-4.4h-1.6Z%22%20fill%3D%22%23fff%22%2F%3E%3C%2Fsvg%3E" />
     <title>DCMS Admin</title>
+    <!--
+      Runtime configuration, substituted by docker-entrypoint.sh when the container starts.
+
+      These used to be Vite `import.meta.env.VITE_*` values, which Vite bakes into the bundle
+      at BUILD time. That made the admin image environment-specific: the same artifact could
+      not be promoted from dev to production, because the OIDC authority was compiled into it.
+      One image per environment defeats the point of promoting a tested digest.
+
+      The placeholders are deliberately NOT Vite's `%VITE_*%` syntax, so Vite leaves them
+      alone at build time and the entrypoint owns them. Under `vite dev` nothing substitutes
+      them and they arrive as the literal `__DCMS_*__` strings, which runtime-config.ts
+      recognises and ignores in favour of the Vite env / defaults.
+    -->
+    <script>
+      window.__DCMS_CONFIG__ = {
+        oidcAuthority: '__DCMS_OIDC_AUTHORITY__',
+        oidcClientId: '__DCMS_OIDC_CLIENT_ID__',
+        adminApiBase: '__DCMS_ADMIN_API_BASE__',
+        contentApiBase: '__DCMS_CONTENT_API_BASE__',
+      };
+    </script>
   </head>
   <body>
     <div id="root"></div>

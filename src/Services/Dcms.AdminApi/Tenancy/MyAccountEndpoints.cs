@@ -49,7 +49,7 @@ public static class MyAccountEndpoints
                 // The one condition that blocks deletion. Everything else is cleanup.
                 canDelete = memberships.All(m => !m.IsSoleOwner),
             });
-        }).RequireAuthorization();
+        }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
 
         // Detach the account from the platform: leave every workspace and drop the
         // per-user rows that only exist because this user was working here. The login
@@ -129,7 +129,9 @@ public static class MyAccountEndpoints
                 draftsDeleted = drafts,
                 aiSettingsDeleted = aiSettings,
             });
-        }).RequireAuthorization().WithAudit(AuditActions.AccountDetached, category: AuditCategory.Auth);
+        }).RequireAuthorization()
+          .AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped)
+          .WithAudit(AuditActions.AccountDetached, category: AuditCategory.Auth);
 
         return app;
     }

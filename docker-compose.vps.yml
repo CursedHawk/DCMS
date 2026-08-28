@@ -1,4 +1,4 @@
-# vps1 deployment overlay. Use AFTER the base and prod profiles:
+# Single-host VPS deployment overlay. Use AFTER the base and prod profiles:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.vps.yml up -d
 #
@@ -21,15 +21,36 @@
 #  3. Seeding/secrets that the prod profile sets on the consumer but not the
 #     issuer: the confidential admin-api client secret and the SuperAdmin login
 #     are seeded into identity here, and the admin SPA gets the public OIDC
-#     authority baked into its bundle.
+#     authority injected at runtime.
+#
+# ---------------------------------------------------------------------------
+# THIS FILE IS SHARED BY dev AND production.
+# ---------------------------------------------------------------------------
+# It was written when vps1 was the only deployment, so it hardcoded that host's public
+# names throughout -- the OIDC issuer, every registered redirect URI, Forgejo's clone URL,
+# Grafana's root URL. dev and prod now resolve to this same three-file overlay set, and the
+# ONLY things that distinguish them are the host's .env and the image digests. A hardcoded
+# `admin.highgeek.eu` in here would make a dev deployment mint tokens claiming to be
+# production's issuer, and register production's redirect URIs against dev's identity.
+#
+# So every public name comes from .env now, with the production values as defaults so this
+# is a no-op for the existing host:
+#
+#   PUBLIC_BASE_URL   https://admin.dev.highgeek.eu   the OIDC issuer and SPA authority
+#   GRAFANA_DOMAIN    grafana.dev.highgeek.eu
+#   GIT_HOST          git.dev.highgeek.eu
+#
+# ADMIN_HOST is the bare-hostname form of PUBLIC_BASE_URL, needed because a Caddy site
+# address is a hostname rather than a URL. scripts/deploy.sh asserts the two agree, so they
+# cannot drift into a state where the edge and the issuer disagree about who this host is.
 
 x-vps-resource-auth: &vps-resource-auth
   # Discover the OIDC metadata internally over HTTP (no public DNS / TLS needed
   # inside the compose network), but accept only tokens whose issuer is the
   # public HTTPS value that identity actually stamps onto them.
-  Auth__Authority: "https://admin.highgeek.eu/"
+  Auth__Authority: "${PUBLIC_BASE_URL}/"
   Auth__MetadataAddress: "http://identity:8080/.well-known/openid-configuration"
-  Auth__Issuer: "https://admin.highgeek.eu/"
+  Auth__Issuer: "${PUBLIC_BASE_URL}/"
   Auth__RequireHttpsMetadata: "false"
 
 # SMTP for email-worker, the one service that delivers mail. Everything that wants
@@ -88,18 +109,37 @@ services:
   # the nested `docker run` needs to mount each per-build dir into the sandbox.
   site-builder:
     environment:
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_SITE_BUILDER:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_SITE_BUILDER:-}"
       DCMS_BUILD_WORK_HOST_ROOT: "/home/cursedhawk/dcms-data/build-work"
       # Set DCMS_BUILD_RUNTIME=runsc in .env once gVisor is installed on the host
       # (/etc/docker/daemon.json) for kernel-level isolation. Until then each build
       # still runs in a scrubbed, no-network, cap-dropped ephemeral container.
       DCMS_BUILD_RUNTIME: "${DCMS_BUILD_RUNTIME:-}"
 
+  # ---------- Vault AppRole credentials ----------
+  #
+  # One role per service, each scoped by infra/vault/policies/dcms-<service>.hcl to
+  # secret/dcms/shared plus its own path. The deployment this replaces gave every service the
+  # SAME token with read on secret/data/dcms/*, so any one container could read the SMTP relay
+  # password and the Forgejo admin token.
+  #
+  # Provision with infra/vault/apply.sh, then per service:
+  #   vault read  -field=role_id      auth/approle/role/dcms-<service>/role-id
+  #   vault write -f -field=secret_id auth/approle/role/dcms-<service>/secret-id
+  #
+  # The secret id is a credential: this host's .env (chmod 600), never git. Leaving a pair
+  # unset falls that service back to VAULT_TOKEN, which is what lets the migration happen one
+  # service at a time instead of as a single cutover.
+
   identity:
     environment:
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_IDENTITY:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_IDENTITY:-}"
       # Public issuer (matches PUBLIC_BASE_URL). TLS is terminated at Caddy, so
       # identity itself speaks HTTP on the internal network — disable the
       # transport-security requirement (there is no ForwardedHeaders middleware).
-      Identity__Issuer: "https://admin.highgeek.eu/"
+      Identity__Issuer: "${PUBLIC_BASE_URL}/"
       Identity__AllowInsecureHttp: "true"
       # Seed the confidential client secret that admin-api presents for
       # client-credentials (must equal admin-api's ServiceClient__ClientSecret).
@@ -108,17 +148,17 @@ services:
       Identity__SuperAdmin__Email: "${SUPERADMIN_EMAIL}"
       Identity__SuperAdmin__Password: "${SUPERADMIN_PASSWORD}"
       # SPA redirect/sign-out URIs registered for the public admin host.
-      Identity__Spa__RedirectUris: "https://admin.highgeek.eu/auth/callback"
-      Identity__Spa__PostLogoutUris: "https://admin.highgeek.eu/"
+      Identity__Spa__RedirectUris: "${PUBLIC_BASE_URL}/auth/callback"
+      Identity__Spa__PostLogoutUris: "${PUBLIC_BASE_URL}/"
       # Grafana SSO. Must equal the grafana container's GRAFANA_OIDC_CLIENT_SECRET.
       # Left unset → the client is not seeded and Grafana falls back to its
       # break-glass local admin login, which is the safe direction to fail.
       Identity__Grafana__Secret: "${GRAFANA_OIDC_CLIENT_SECRET:-}"
-      Identity__Grafana__RedirectUris: "https://grafana.highgeek.eu/login/generic_oauth"
+      Identity__Grafana__RedirectUris: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}/login/generic_oauth"
       # Google SSO. Left unset → the sign-in/up pages simply omit the Google
       # button. Provide both in .env to enable it. The authorized redirect URI to
       # register in the Google Cloud console is:
-      #   https://admin.highgeek.eu/signin-google
+      #   ${PUBLIC_BASE_URL}/signin-google  (e.g. https://admin.highgeek.eu/signin-google)
       Authentication__Google__ClientId: "${GOOGLE_CLIENT_ID:-}"
       Authentication__Google__ClientSecret: "${GOOGLE_CLIENT_SECRET:-}"
       # Forgejo user mirror: Identity provisions a Forgejo account per DCMS user and
@@ -127,10 +167,12 @@ services:
       # provisioning is a no-op until FORGEJO_ADMIN_TOKEN is set in .env.
       Forgejo__BaseUrl: "http://forgejo:3000"
       Forgejo__AdminToken: "${FORGEJO_ADMIN_TOKEN:-}"
-      Forgejo__PublicUrl: "https://git.highgeek.eu"
+      Forgejo__PublicUrl: "https://${GIT_HOST:-git.highgeek.eu}"
 
   admin-api:
     environment:
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_ADMIN_API:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_ADMIN_API:-}"
       <<: *vps-resource-auth
       Auth__Audience: "dcms-admin-api"
       # Alert delivery. The secret must equal the grafana container's ALERT_WEBHOOK_SECRET.
@@ -147,8 +189,8 @@ services:
       # Admin-scoped token (write:admin) for user/repo authorization (Phase 2 repo
       # collaborator grants). Falls back to no-op until set in .env.
       Forgejo__AdminToken: "${FORGEJO_ADMIN_TOKEN:-}"
-      Forgejo__PublicUrl: "https://git.highgeek.eu"
-      Forgejo__SshHost: "git.highgeek.eu"
+      Forgejo__PublicUrl: "https://${GIT_HOST:-git.highgeek.eu}"
+      Forgejo__SshHost: "${GIT_HOST:-git.highgeek.eu}"
       Forgejo__SshPort: "2222"
       # HMAC secret for push webhooks (admin-api registers + verifies with it).
       # Override with FORGEJO_WEBHOOK_SECRET in .env to harden; re-provision after.
@@ -156,6 +198,8 @@ services:
 
   content-api:
     environment:
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_CONTENT_API:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_CONTENT_API:-}"
       <<: *vps-resource-auth
       # content-api validates platform tokens for chat agents (aud dcms-admin-api).
       Auth__Audience: "dcms-admin-api"
@@ -167,23 +211,25 @@ services:
 
   ai-gateway:
     environment:
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_AI_GATEWAY:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_AI_GATEWAY:-}"
       <<: *vps-resource-auth
       Auth__Audience: "dcms-ai-gateway"
 
   admin-spa:
-    build:
-      context: .
-      dockerfile: apps/admin/Dockerfile
-      args:
-        # Baked into the static bundle: the SPA fetches OIDC discovery from here.
-        VITE_OIDC_AUTHORITY: "https://admin.highgeek.eu"
-
-  # Grafana on its real hostname. No host port is published in any profile — Caddy is the
-  # only route in (infra/caddy/Caddyfile), which is the same shape as admin-spa and forgejo.
-  grafana:
+    # The SPA fetches OIDC discovery from here. Supplied at RUNTIME so this host's hostname is
+    # not compiled into the image -- the same digest built on master serves dev and production,
+    # which is what makes promoting a tested artifact possible.
     environment:
-      GF_SERVER_ROOT_URL: "https://grafana.highgeek.eu/"
-      GF_SERVER_DOMAIN: "grafana.highgeek.eu"
+      DCMS_OIDC_AUTHORITY: "${PUBLIC_BASE_URL}"
+
+  # Grafana publishes no host port in any profile — Caddy is the only route in
+  # (infra/caddy/Caddyfile), the same shape as admin-spa and forgejo.
+  #
+  # Its hostname used to be hardcoded here. That override silently won over the base
+  # compose's ${GRAFANA_ROOT_URL} / ${GRAFANA_DOMAIN}, so those variables looked configurable
+  # and were not. Removed: the base file is the one place that decides, and the OIDC redirect
+  # URI seeded into identity above is built from the same variable, so the two cannot disagree.
 
   # ---- NATS $SYS account ----
   #
@@ -235,6 +281,17 @@ services:
 # Re-point every named volume from the prod profile at a bind mount under
 # /home/cursedhawk/dcms-data. The host directories are created (with the right
 # ownership for each container) before `up` — see the deploy steps.
+
+  media-worker:
+    environment:
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_MEDIA_WORKER:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_MEDIA_WORKER:-}"
+
+  site-host:
+    environment:
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_SITE_HOST:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_SITE_HOST:-}"
+
 volumes:
   postgres-data:
     driver: local

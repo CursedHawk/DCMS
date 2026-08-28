@@ -166,6 +166,14 @@ public static class AuditActions
     public const string WebhookRejected = "security.webhook.rejected";
     public const string SecretAccessed = "security.secret.accessed";
 
+    /// <summary>
+    /// A stored provider credential was <i>not</i> handed to an outbound call, because the
+    /// destination had been chosen at a narrower scope than the credential's owner. The
+    /// refusal is worth a record for the same reason the successful access is: it is somebody
+    /// attempting to spend a key that is not theirs, and it is invisible everywhere else.
+    /// </summary>
+    public const string SecretAccessDenied = "security.secret.denied";
+
     // ---- observability ----
 
     /// <summary>

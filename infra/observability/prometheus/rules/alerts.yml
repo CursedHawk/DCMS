@@ -216,14 +216,20 @@ groups:
   - name: dcms_infrastructure
     rules:
       - alert: VaultSealed
-        # There is no auto-unseal on this host. A reboot leaves Vault sealed and the platform
-        # crash-looping until someone runs unseal-vault.sh, and without this the first
+        # Every service reads its configuration from Vault at startup and refuses to start on
+        # the 503, so a sealed Vault is a crash-looping platform. Without this alert the first
         # notification of that is a user.
+        #
+        # What it means depends on the host's seal:
+        #   Shamir (the default)  — a reboot leaves Vault sealed; run unseal-vault.sh.
+        #   Transit auto-unseal   — it should have unsealed itself, so this firing means the
+        #                           seal chain is broken (seal Vault down, token expired, or
+        #                           mesh unreachable). That is the more urgent of the two.
         expr: vault_core_unsealed == 0
         for: 2m
         labels: { severity: critical, area: infra }
         annotations:
-          summary: "Vault is sealed — run unseal-vault.sh on vps1"
+          summary: "Vault is sealed on {{ $externalLabels.host }} ({{ $externalLabels.environment }})"
 
       - alert: PostgresConnectionsHigh
         expr: sum(pg_stat_activity_count) / on() group_left() pg_settings_max_connections > 0.8

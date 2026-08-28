@@ -1,6 +1,18 @@
-# Development overrides: host ports, verbose logging. Applied automatically by
-# `docker compose up`. Production deployments use docker-compose.yml alone
-# (plus a prod profile added in Phase 12).
+# Development overrides: host ports, verbose logging. Applied automatically by a bare
+# `docker compose up`. Deployed environments pass an explicit -f list, which disables
+# auto-loading, so nothing here can reach dev or production.
+#
+# ASPNETCORE_ENVIRONMENT=Development is set on every .NET service below, and it is
+# load-bearing rather than cosmetic. Without it the containers default to Production,
+# where the platform's startup guards fire on configuration this file deliberately does
+# not supply -- admin-api refuses to boot without Audit:ChainKey, content-api without
+# Visitor:SigningKey, identity without persisted OIDC certificates. Those guards are
+# correct; the base file is simply not a production configuration (it hardcodes
+# `dcms-dev` and `dcms-dev-root`), so it has to say so.
+x-dev-env: &dev-env
+  ASPNETCORE_ENVIRONMENT: "Development"
+  DOTNET_ENVIRONMENT: "Development"
+
 services:
   postgres:
     ports:
@@ -30,6 +42,8 @@ services:
       - "1025:1025"
 
   identity:
+    environment:
+      <<: *dev-env
     ports:
       - "5001:8080"
       # OIDC issuer host port: with a "127.0.0.1 dcms-identity" hosts entry the
@@ -37,26 +51,38 @@ services:
       - "8080:8080"
 
   admin-api:
+    environment:
+      <<: *dev-env
     ports:
       - "5002:8080"
 
   content-api:
+    environment:
+      <<: *dev-env
     ports:
       - "5003:8080"
 
   media-worker:
+    environment:
+      <<: *dev-env
     ports:
       - "5004:8080"
 
   site-builder:
+    environment:
+      <<: *dev-env
     ports:
       - "5005:8080"
 
   site-host:
+    environment:
+      <<: *dev-env
     ports:
       - "5006:8080"
 
   ai-gateway:
+    environment:
+      <<: *dev-env
     ports:
       - "5007:8080"
 
@@ -95,3 +121,20 @@ services:
   nats-exporter:
     ports:
       - "7777:7777"
+
+  # No host ports to publish -- present only to inherit the development environment.
+  email-worker:
+    environment:
+      <<: *dev-env
+
+  migrate:
+    environment:
+      <<: *dev-env
+
+  identity-migrate:
+    environment:
+      <<: *dev-env
+
+  postgres-bootstrap:
+    environment:
+      <<: *dev-env

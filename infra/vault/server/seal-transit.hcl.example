@@ -1,0 +1,85 @@
+# Transit auto-unseal. COPY to seal-transit.hcl on a deployed host to enable it.
+#
+# ---------------------------------------------------------------------------
+# What this fixes
+# ---------------------------------------------------------------------------
+# With Shamir (the default in config.hcl), a reboot leaves Vault SEALED. Every service reads
+# its configuration from Vault at startup and refuses to start on a 503, so the whole platform
+# stays down until a human runs `vault operator unseal` — three times, with keys that have to
+# be somewhere a human can reach at 3am. "Everything is automatically deployable" is not true
+# of a platform that cannot come back from a power cycle without a person.
+#
+# ---------------------------------------------------------------------------
+# The trade, stated plainly
+# ---------------------------------------------------------------------------
+# A transit unseal chain always terminates somewhere. Here it terminates on VPSM: a small
+# Vault whose only job is to hold the unseal keys, itself unsealed at boot by a systemd unit
+# reading a root-only key file.
+#
+# So: root on VPSM yields the unseal capability for BOTH environments. In exchange, production
+# returns from a reboot unattended.
+#
+# Do not read that as "the seal lives on the quiet box". VPSM also publishes GitLab on 80/443,
+# and that GitLab is what deploys to production -- so root there already meant the ability to
+# ship arbitrary code to prod. The seal Vault does not open a new trust boundary; it widens an
+# existing one, from "future deploys" to "unwrap both environments' Vaults, including from a
+# stolen backup". That is the actual trade.
+#
+# What follows from it, in order of value:
+#
+#   1. Bind the seal Vault to the private mesh ONLY. No public listener, and no site block in
+#      the reverse proxy that already terminates 443 on that host.
+#   2. Keep it out of the GitLab container's blast radius: its own Docker network, and the
+#      seal token NEVER in a CI variable. CI has no reason to unseal anything.
+#   3. Root-only 0400 key file; systemd-creds + TPM2 where the hardware offers a TPM (most VPS
+#      instances do not).
+#   4. Keep the Shamir RECOVERY keys off the box entirely -- see the migration note below.
+#
+# The alternative that removes this trade entirely is a cloud KMS, which was ruled out to
+# avoid the dependency and the egress.
+#
+# ---------------------------------------------------------------------------
+# Provisioning the seal Vault (on VPSM, once)
+# ---------------------------------------------------------------------------
+#   vault secrets enable transit
+#   vault write -f transit/keys/dcms-unseal-prod
+#   vault write -f transit/keys/dcms-unseal-dev
+#
+#   # A policy that can ONLY wrap and unwrap with one key -- not read it, not delete it.
+#   vault policy write dcms-unseal-prod - <<'EOF'
+#   path "transit/encrypt/dcms-unseal-prod" { capabilities = ["update"] }
+#   path "transit/decrypt/dcms-unseal-prod" { capabilities = ["update"] }
+#   EOF
+#
+#   vault token create -policy=dcms-unseal-prod -period=768h -field=token
+#
+# ---------------------------------------------------------------------------
+# Migrating an already-initialised Vault from Shamir to this
+# ---------------------------------------------------------------------------
+# Not automatic. Add this file, then:
+#
+#   vault operator unseal   # x3, to get it open one last time
+#   # restart Vault with this config present, then:
+#   vault operator unseal -migrate   # x3, with the Shamir keys
+#
+# After migration the Shamir keys become RECOVERY keys. Keep them, and keep them OFF both the
+# seal host and the serving host: they are what recovers a Vault whose seal key is lost, and
+# storing them next to the thing they recover from defeats the point.
+
+seal "transit" {
+  # The seal Vault on VPSM. Reachable over the private mesh only -- never the public
+  # internet, and not through the reverse proxy that serves GitLab on the same host.
+  address = "https://vault-seal.internal:8200"
+
+  # Prefer the environment variable VAULT_TRANSIT_SEAL_TOKEN over writing the token here:
+  # this file is bind-mounted read-only but is still a file on disk in the repo directory.
+  # token = "hvs...."
+
+  key_name   = "dcms-unseal-prod"
+  mount_path = "transit/"
+
+  # Renew the seal token automatically. Without this it expires on its period and the NEXT
+  # reboot fails to unseal -- the failure mode this whole file exists to remove, returning
+  # months later and looking like something else.
+  disable_renewal = "false"
+}

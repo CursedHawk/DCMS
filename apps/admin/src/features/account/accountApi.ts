@@ -1,10 +1,11 @@
 import { getAccessToken } from '../../auth';
+import { runtimeConfig } from '../../runtime-config';
 
 // The account API is served by the identity service under /account/api/*. In prod
 // it is same-origin (Caddy routes /account → identity); in dev the OIDC authority
 // origin is used (identity enables CORS for the SPA origin). Auth is the bearer
 // access token — no tenant header (account settings are tenant-agnostic).
-const identityBase = import.meta.env.VITE_OIDC_AUTHORITY ?? window.location.origin;
+const identityBase = runtimeConfig.oidcAuthority || window.location.origin;
 
 export interface AccountMe {
   email: string | null;

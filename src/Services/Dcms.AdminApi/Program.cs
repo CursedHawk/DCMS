@@ -17,6 +17,7 @@ using Dcms.Shared.Caching;
 using Dcms.AdminApi.Sites;
 using Dcms.Shared.Data.Ai;
 using Dcms.Shared.Data.Analytics;
+using Dcms.Shared.Data.DataProtection;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Data.Cms;
@@ -59,6 +60,10 @@ builder.Services.AddDcmsVisitorsData(builder.Configuration);
 builder.Services.AddDcmsChatData(builder.Configuration);
 builder.Services.AddDcmsFormsData(builder.Configuration);
 builder.Services.AddDcmsAuditData(builder.Configuration);
+// Registered so the migration job can create the shared Data Protection key ring.
+// admin-api does not consume it -- it authenticates with bearer tokens and sets no
+// cookies -- but it owns the DDL for every schema in this database.
+builder.Services.AddDcmsDataProtection(builder.Configuration);
 builder.Services.AddDcmsVaultTransit();
 builder.Services.AddScoped<AiPromptBuilder>();
 builder.Services.AddSingleton<MediaSanitizer>();
@@ -182,6 +187,30 @@ builder.Services.AddScoped<TenantDeleter>();
 
 var app = builder.Build();
 
+// One-shot migration mode. The deploy pipeline runs `admin-api --migrate-only` as a job
+// before rolling any service, so DDL happens exactly once, from one process, with nothing
+// serving traffic against a half-migrated schema.
+//
+// Nothing is hosted in this mode: app.Run() is never reached, so no consumer binds, no
+// timer starts and no port is opened. It runs the migrations and exits, and a non-zero
+// exit stops the deploy.
+if (args.Contains("--migrate-only"))
+{
+    using var migrationScope = app.Services.CreateScope();
+    var migrationLogger = migrationScope.ServiceProvider
+        .GetRequiredService<ILoggerFactory>()
+        .CreateLogger("Dcms.Migrate");
+
+    // Deliberately bypasses the Tenancy:Migrate gate: that flag says "do not migrate on
+    // startup", and this is not a startup.
+    DcmsMigrationRunner.AssertRlsCoverage(migrationScope.ServiceProvider, migrationLogger);
+    await DcmsMigrationRunner.RunAsync(
+        migrationScope.ServiceProvider, app.Configuration, migrationLogger, CancellationToken.None);
+
+    migrationLogger.LogInformation("Migration job complete.");
+    return;
+}
+
 // Behind the Caddy TLS edge admin-api is reached over plain HTTP on the internal
 // network, so Request.Scheme would be "http". Honour X-Forwarded-Proto/Host so
 // absolute links we mint for users (invitation accept links) point at the public
@@ -207,6 +236,10 @@ app.UseDcmsAudit();
 
 app.UseAuthentication();
 app.UseMultiTenant();
+// Between resolution and authorization: the tenant is now known, so membership can be
+// checked, and the endpoints that survive still see a tenant context. Without this, an
+// endpoint guarded by a bare RequireAuthorization() trusts X-Dcms-Tenant outright.
+app.UseTenantMembership();
 app.UseAuthorization();
 
 app.MapDcmsDefaultEndpoints();
@@ -241,7 +274,7 @@ app.MapGet("/api/admin/me", (ClaimsPrincipal user) => Results.Ok(new
     name = user.FindFirstValue("name"),
     email = user.FindFirstValue("email"),
     roles = user.FindAll("role").Select(c => c.Value),
-})).RequireAuthorization();
+})).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
 
 // Proves the service-to-service client-credentials flow end to end:
 // admin-api obtains a dcms.ai token and calls ai-gateway's protected ping.

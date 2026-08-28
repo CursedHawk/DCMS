@@ -1,14 +1,51 @@
+# ---------------------------------------------------------------------------
+# DCMS pipeline.
+#
+#   merge request   build + test. No images, no deploy.
+#   push to master  build + test -> images (:<sha>, :dev) -> deploy to DEVELOPMENT (vps1)
+#   tag v*          PROMOTE the images already built for that commit -> manual gate ->
+#                   deploy to PRODUCTION
+#
+# The promotion never rebuilds. A tag pipeline retags the digests that were built and
+# deployed to dev from the same commit, so production runs the exact bits dev validated --
+# a rebuild from the same source can differ (base image moved, a dependency republished)
+# and would silently invalidate everything the dev environment proved.
+#
+# Deploys are by DIGEST, not tag. scripts/ci/resolve-digests.sh writes a compose overlay
+# pinning every service to a sha256, the overlay is kept on the target host, and
+# `scripts/deploy.sh --rollback` re-applies the previous one. See that script for why.
+#
+# Required CI/CD variables (Settings -> CI/CD -> Variables):
+#   SSH_PRIVATE_KEY        File type (a private key is multi-line, and GitLab cannot mask a
+#                          multi-line value). Plain type also works.
+#   SSH_KNOWN_HOSTS        File or plain; the targets' host keys (ssh-keyscan output)
+#   DEV_DEPLOY_TARGET      e.g. cursedhawk@vps1.example.com
+#   PROD_DEPLOY_TARGET     e.g. deploy@prod.example.com
+#   DEV_DEPLOY_PATH        default baas-dcms
+#   PROD_DEPLOY_PATH       default baas-dcms
+#
+# Registry credentials are NOT among these. The deploy job logs the target in with its own
+# $CI_JOB_TOKEN and logs it out again when the job ends, so no long-lived registry credential
+# ever rests on a serving host.
+# ---------------------------------------------------------------------------
+
 stages:
   - build
   - test
   - images
+  - promote
+  - deploy
 
 variables:
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
-  # Baked into the admin SPA bundle at image-build time (Vite). Points at the
-  # public, same-origin OIDC authority. Override in CI/CD settings per environment.
-  VITE_OIDC_AUTHORITY: "https://admin.highgeek.eu"
+  # Repo path on each deploy target. Overridable per environment in CI/CD settings.
+  DEV_DEPLOY_PATH: "baas-dcms"
+  PROD_DEPLOY_PATH: "baas-dcms"
+
+# ---------------------------------------------------------------------------
+# build + test
+# ---------------------------------------------------------------------------
 
 dotnet:
   stage: build
@@ -26,7 +63,9 @@ frontend:
   stage: build
   image: node:24-alpine
   before_script:
-    - npm install -g pnpm
+    # Pinned to the major that wrote pnpm-lock.yaml. Unpinned, a pnpm major release changes the
+    # lockfile format and --frozen-lockfile starts failing on a commit that changed nothing.
+    - npm install -g pnpm@11
   script:
     - pnpm install --frozen-lockfile
     - pnpm -r build
@@ -48,18 +87,16 @@ integration:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
 # ---------------------------------------------------------------------------
-# Build a Docker image per service and push it to this project's GitLab
-# Container Registry ($CI_REGISTRY_IMAGE, e.g. registry.gitlab.highgeek.eu/
-# cursedhawk/baas-dcms/<service>). Every service builds from the repo root as
-# its Docker context, matching docker-compose.yml.
+# images
 #
-# Tags pushed:
-#   <short-sha>         always (immutable, traceable to the commit)
-#   latest              on the default branch
-#   <git-tag>           on tag pipelines (e.g. v1.2.3)
+# One image per service, pushed to this project's registry as
+# $CI_REGISTRY_IMAGE/<service>. Every service builds from the repo root as its Docker
+# context, matching docker-compose.yml.
 #
-# Runs only on the default branch and on tags, and only after build + test pass.
+# Tags: <short-sha> always (immutable, traceable), plus `dev` on the default branch. There
+# is deliberately no `latest`: it is the tag people deploy by accident.
 # ---------------------------------------------------------------------------
+
 .build-image:
   stage: images
   image: docker:27-cli
@@ -73,33 +110,19 @@ integration:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
   script:
     - IMAGE="$CI_REGISTRY_IMAGE/$SERVICE"
-    # admin-spa is the only image that takes a build arg (the OIDC authority
-    # baked into the static bundle).
-    - EXTRA_ARGS=""
-    - if [ "$SERVICE" = "admin-spa" ]; then EXTRA_ARGS="--build-arg VITE_OIDC_AUTHORITY=$VITE_OIDC_AUTHORITY"; fi
-    # Warm the layer cache from the previous latest (best-effort).
-    - docker pull "$IMAGE:latest" || true
+    # Warm the layer cache from the last dev build (best-effort).
+    - docker pull "$IMAGE:dev" || true
     - >
       docker build
       --file "$DOCKERFILE"
-      --cache-from "$IMAGE:latest"
+      --cache-from "$IMAGE:dev"
       --build-arg BUILDKIT_INLINE_CACHE=1
-      $EXTRA_ARGS
       --tag "$IMAGE:$CI_COMMIT_SHORT_SHA"
       .
     - docker push "$IMAGE:$CI_COMMIT_SHORT_SHA"
-    - |
-      if [ -n "$CI_COMMIT_TAG" ]; then
-        docker tag "$IMAGE:$CI_COMMIT_SHORT_SHA" "$IMAGE:$CI_COMMIT_TAG"
-        docker push "$IMAGE:$CI_COMMIT_TAG"
-      fi
-    - |
-      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
-        docker tag "$IMAGE:$CI_COMMIT_SHORT_SHA" "$IMAGE:latest"
-        docker push "$IMAGE:latest"
-      fi
+    - docker tag "$IMAGE:$CI_COMMIT_SHORT_SHA" "$IMAGE:dev"
+    - docker push "$IMAGE:dev"
   rules:
-    - if: '$CI_COMMIT_TAG'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
 build-image:
@@ -114,11 +137,142 @@ build-image:
         DOCKERFILE: src/Services/Dcms.ContentApi/Dockerfile
       - SERVICE: media-worker
         DOCKERFILE: src/Services/Dcms.MediaWorker/Dockerfile
+      # email-worker and site-build-sandbox were missing from this matrix entirely, so
+      # email-worker had never had a registry image and the Mode B build sandbox had to be
+      # built by hand on the host.
+      - SERVICE: email-worker
+        DOCKERFILE: src/Services/Dcms.EmailWorker/Dockerfile
       - SERVICE: site-builder
         DOCKERFILE: src/Services/Dcms.SiteBuilder/Dockerfile
+      - SERVICE: site-build-sandbox
+        DOCKERFILE: src/Services/Dcms.SiteBuilder/sandbox.Dockerfile
       - SERVICE: site-host
         DOCKERFILE: src/Services/Dcms.SiteHost/Dockerfile
       - SERVICE: ai-gateway
         DOCKERFILE: src/Services/Dcms.AiGateway/Dockerfile
       - SERVICE: admin-spa
         DOCKERFILE: apps/admin/Dockerfile
+
+# ---------------------------------------------------------------------------
+# promote
+#
+# Tag pipelines only. Copies the manifest built from this commit to the tag, without
+# rebuilding. `imagetools create` is a registry-side manifest copy: it never pulls or
+# re-pushes layers, and the digest is unchanged by construction.
+#
+# If no image exists at this commit's sha, the tag was created on a commit that never
+# reached master -- which is exactly the case this job should refuse rather than paper over
+# by building something new.
+# ---------------------------------------------------------------------------
+
+promote-images:
+  stage: promote
+  image: docker:27-cli
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - |
+      set -e
+      for SERVICE in identity admin-api content-api media-worker email-worker \
+                     site-builder site-build-sandbox site-host ai-gateway admin-spa; do
+        IMAGE="$CI_REGISTRY_IMAGE/$SERVICE"
+        if ! docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_SHORT_SHA" >/dev/null 2>&1; then
+          echo "No image at $IMAGE:$CI_COMMIT_SHORT_SHA."
+          echo "A release tag must point at a commit that was built on $CI_DEFAULT_BRANCH."
+          exit 1
+        fi
+        docker buildx imagetools create \
+          --tag "$IMAGE:$CI_COMMIT_TAG" \
+          --tag "$IMAGE:stable" \
+          "$IMAGE:$CI_COMMIT_SHORT_SHA"
+        echo "promoted $SERVICE -> $CI_COMMIT_TAG"
+      done
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+
+# ---------------------------------------------------------------------------
+# deploy
+# ---------------------------------------------------------------------------
+
+.deploy:
+  image: docker:27-cli
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - apk add --no-cache openssh-client rsync bash
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    # Accept SSH_PRIVATE_KEY as either a File-type variable (the value is a path) or a plain
+    # one (the value is the key). A private key is multi-line, and GitLab cannot mask a
+    # multi-line value -- so File type is the better choice here and this supports both
+    # rather than failing confusingly on whichever one was picked.
+    - if [ -f "$SSH_PRIVATE_KEY" ]; then cp "$SSH_PRIVATE_KEY" ~/.ssh/id_ed25519; else printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519; fi
+    - chmod 600 ~/.ssh/id_ed25519
+    # Pinned host keys, not StrictHostKeyChecking=no: a deploy job that accepts any host key
+    # will happily hand the deployment to whatever answers on that address.
+    - echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
+    - eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519
+  script:
+    - bash scripts/ci/resolve-digests.sh "$CI_REGISTRY_IMAGE" "$IMAGE_TAG" docker-compose.images.yml
+    - cat docker-compose.images.yml
+    # The target is logged in to the registry with THIS JOB's token, and logged out again
+    # when the script exits. No long-lived deploy token lives on a serving host.
+    - >
+      bash scripts/ci/deploy-remote.sh
+      --env "$DEPLOY_ENV" --host "$DEPLOY_TARGET" --path "$DEPLOY_PATH"
+      --images docker-compose.images.yml
+      --registry "$CI_REGISTRY" --registry-user gitlab-ci-token
+      --registry-password-env CI_JOB_TOKEN
+  artifacts:
+    # Keep the exact digest set that was deployed. It is the record of what a given pipeline
+    # put on a host, and the thing to hand back to --rollback if the host's copy is lost.
+    paths:
+      - docker-compose.images.yml
+    expire_in: 90 days
+
+deploy:dev:
+  extends: .deploy
+  stage: deploy
+  variables:
+    DEPLOY_ENV: dev
+    IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+    DEPLOY_TARGET: $DEV_DEPLOY_TARGET
+    DEPLOY_PATH: $DEV_DEPLOY_PATH
+  environment:
+    name: development
+    url: https://admin.dev.highgeek.eu
+    deployment_tier: development
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+deploy:prod:
+  extends: .deploy
+  stage: deploy
+  needs: ["promote-images"]
+  variables:
+    DEPLOY_ENV: prod
+    IMAGE_TAG: $CI_COMMIT_TAG
+    DEPLOY_TARGET: $PROD_DEPLOY_TARGET
+    DEPLOY_PATH: $PROD_DEPLOY_PATH
+  environment:
+    name: production
+    url: https://admin.highgeek.eu
+    deployment_tier: production
+  # Only one production deploy at a time. Two concurrent runs would race on the host's
+  # rollback state and could leave --rollback pointing at a release that never ran.
+  resource_group: production
+  rules:
+    # Manual, and not automatic on a tag. A tag says "this is a release"; a person still
+    # says "put it in front of users". Protect the `production` environment so that person
+    # has to be allowed to.
+    - if: '$CI_COMMIT_TAG =~ /^v/'
+      when: manual
+      allow_failure: false

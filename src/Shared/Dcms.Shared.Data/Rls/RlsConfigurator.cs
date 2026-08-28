@@ -38,6 +38,11 @@ public static class RlsConfigurator
         ("sites", "site_builds"),
         ("sites", "site_drafts"),
         ("ai", "tenant_ai_settings"),
+        // Holds every user's Vault-Transit-encrypted provider key. Added a release after its
+        // sibling above and missed here, which mattered because 01-rls.sql grants SELECT on
+        // every *future* table in these schemas by default while the policies are opt-in per
+        // table — so the omission was a grant with nothing enforcing the tenant predicate.
+        ("ai", "user_ai_settings"),
         ("search", "search_documents"),
         ("analytics", "events"),
         ("analytics", "daily_rollups"),
@@ -54,6 +59,82 @@ public static class RlsConfigurator
         // same rationale as content_outbox above.
         ("audit", "audit_events"),
     ];
+
+    /// <summary>
+    /// Tables that carry a <c>TenantId</c> and are deliberately left without a policy, because
+    /// the code that reads them is a cross-tenant scan and a per-tenant predicate would break
+    /// it. Kept as data rather than as a comment so <see cref="AssertCoverage"/> can tell
+    /// "decided against" apart from "not noticed".
+    /// </summary>
+    private static readonly (string Schema, string Table)[] ExemptTables =
+    [
+        ("cms", "content_outbox"),        // drained by a cross-tenant dispatcher
+        ("cms", "scheduled_publishes"),   // scanned across tenants by the publish worker
+        ("audit", "audit_outbox"),        // same, and mapped into every business context
+        ("audit", "chain_heads"),         // one row per chain; the verifier walks all of them
+        ("audit", "chain_anchors"),
+    ];
+
+    /// <summary>
+    /// Fails startup when a tenant-scoped table is in neither list.
+    ///
+    /// <para><b>Why this is worth a startup check.</b> <c>TenantTables</c> is hand-maintained,
+    /// and the failure mode when somebody forgets an entry is silent: the table still works,
+    /// the tests still pass, and the only thing that changed is that the backstop no longer
+    /// covers it. <c>ai.user_ai_settings</c> sat that way — the table holding every user's
+    /// encrypted provider key was the one table in the granted schemas with a grant and no
+    /// policy. A new tenant table is exactly when nobody is thinking about RLS, so the check
+    /// runs then rather than relying on it being remembered.</para>
+    ///
+    /// <para>Pass every business <see cref="DbContext"/>; each contributes its own model.</para>
+    /// </summary>
+    public static void AssertCoverage(IEnumerable<DbContext> contexts, ILogger logger)
+    {
+        var known = new HashSet<(string, string)>(TenantTables);
+        known.UnionWith(ExemptTables);
+
+        var missing = new SortedSet<string>(StringComparer.Ordinal);
+
+        foreach (var context in contexts)
+        {
+            var model = context.Model;
+            foreach (var entity in model.GetEntityTypes())
+            {
+                // Only real tables, and only the ones carrying the tenant discriminator. An
+                // owned type or a keyless projection has no table of its own to protect.
+                if (entity.FindProperty(nameof(TenantEntity.TenantId)) is null)
+                {
+                    continue;
+                }
+                if (entity.GetTableName() is not { } table)
+                {
+                    continue;
+                }
+                var schema = entity.GetSchema() ?? model.GetDefaultSchema();
+                if (schema is null)
+                {
+                    continue;
+                }
+                if (!known.Contains((schema, table)))
+                {
+                    missing.Add($"{schema}.{table}");
+                }
+            }
+        }
+
+        if (missing.Count == 0)
+        {
+            logger.LogInformation(
+                "RLS coverage verified: {Covered} protected, {Exempt} deliberately exempt.",
+                TenantTables.Length, ExemptTables.Length);
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Refusing to start: tenant-scoped table(s) {string.Join(", ", missing)} have a " +
+            "TenantId but no Row-Level Security policy. Add each to RlsConfigurator.TenantTables, " +
+            "or to ExemptTables with a comment saying why a cross-tenant scan needs it unfiltered.");
+    }
 
     public static async Task ApplyAsync(DbContext context, ILogger logger, CancellationToken ct = default)
     {

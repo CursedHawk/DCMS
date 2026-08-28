@@ -215,6 +215,91 @@ services:
       Identity__Grafana__Secret: "${GRAFANA_OIDC_CLIENT_SECRET:-grafana-dev-secret}"
       Identity__Grafana__RedirectUris: "http://localhost:3001/login/generic_oauth"
 
+  # ---------- cluster bootstrap ----------
+  #
+  # One-shot, and the counterpart to the migration jobs: those create TABLES, this creates
+  # the schemas, extensions and roles the tables live in and are granted to.
+  #
+  # infra/postgres/init/* is mounted into the postgres container's docker-entrypoint-initdb.d,
+  # which runs once on an empty data directory and never again. Every script there is written
+  # idempotently, so the only thing missing was something to re-run them -- which is why every
+  # role added since vps1 was provisioned had to be created by hand against production.
+  postgres-bootstrap:
+    profiles: ["migrate"]
+    image: postgres:18
+    restart: "no"
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./infra/postgres/init:/init:ro
+      - ./infra/postgres/bootstrap.sh:/bootstrap.sh:ro
+    entrypoint: ["sh", "/bootstrap.sh"]
+    environment:
+      PGHOST: postgres
+      POSTGRES_USER: dcms
+      POSTGRES_DB: dcms
+      PGPASSWORD: "dcms-dev"
+      SITEBUILDER_DB_PASSWORD: "dcms-sitebuilder-dev"
+      GRAFANA_DB_PASSWORD: "dcms-grafana-dev"
+      RLS_DB_PASSWORD: "dcms-rls-dev"
+
+  # ---------- schema migration jobs ----------
+  #
+  # One-shot. The deploy pipeline runs these BEFORE rolling any service, so DDL happens
+  # once, from one process, with nothing serving traffic against a half-migrated schema.
+  # `scripts/deploy.sh --migrate` runs them; they are behind the "migrate" profile so a
+  # plain `up -d` never starts them.
+  #
+  # Two jobs rather than one because two services own schemas: admin-api owns everything
+  # in the platform database, identity owns its own tables plus OpenIddict's. Each takes
+  # a distinct Postgres advisory lock, so concurrent execution would not corrupt anything
+  # -- but they are run in order regardless, `migrate` first: identity's DbContext maps
+  # the audit outbox, so seeding a user writes an audit row, and the audit schema is
+  # created by the admin-api job.
+  migrate:
+    profiles: ["migrate"]
+    build:
+      context: .
+      dockerfile: src/Services/Dcms.AdminApi/Dockerfile
+    command: ["--migrate-only"]
+    restart: "no"
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault:
+        condition: service_started
+    environment:
+      <<: *service-env
+      # The job migrates regardless of these; they are set so the job's configuration
+      # matches the services' and a Vault lookup failure surfaces here, in a job whose
+      # exit code stops the deploy, rather than later in a rolling service.
+      Tenancy__Migrate: "true"
+
+  identity-migrate:
+    profiles: ["migrate"]
+    build:
+      context: .
+      dockerfile: src/Services/Dcms.Identity/Dockerfile
+    command: ["--migrate-only"]
+    restart: "no"
+    logging: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault:
+        condition: service_started
+    environment:
+      <<: *service-env
+      Identity__Issuer: "http://dcms-identity:8080/"
+      Identity__AllowInsecureHttp: "true"
+      Identity__Spa__RedirectUris: "http://localhost:5173/auth/callback;http://localhost:5000/auth/callback"
+      Identity__Spa__PostLogoutUris: "http://localhost:5173/;http://localhost:5000/"
+      Identity__Grafana__Secret: "${GRAFANA_OIDC_CLIENT_SECRET:-grafana-dev-secret}"
+      Identity__Grafana__RedirectUris: "http://localhost:3001/login/generic_oauth"
+
   admin-api:
     build:
       context: .
@@ -332,8 +417,10 @@ services:
     build:
       context: .
       dockerfile: apps/admin/Dockerfile
-      args:
-        VITE_OIDC_AUTHORITY: "http://dcms-identity:8080"
+    # Runtime, not a build arg: the image is environment-agnostic and these are substituted
+    # into index.html when the container starts. See apps/admin/docker-entrypoint.sh.
+    environment:
+      DCMS_OIDC_AUTHORITY: "http://dcms-identity:8080"
     restart: unless-stopped
     logging: *default-logging
     depends_on:
@@ -463,6 +550,14 @@ services:
       - --web.enable-lifecycle
       # Alloy pushes; without this the remote-write endpoint 404s.
       - --web.enable-remote-write-receiver
+      # Lets prometheus.yml's external_labels read DCMS_HOST / DCMS_ENV below. Without the
+      # flag Prometheus takes `${DCMS_HOST}` as a literal label value.
+      - --enable-feature=expand-external-labels
+    environment:
+      # Which deployment this stack's series belong to. See the external_labels comment in
+      # prometheus.yml for why the fallback is `unknown` rather than `dev`.
+      DCMS_HOST: "${DCMS_HOST:-unknown}"
+      DCMS_ENV: "${DCMS_ENV:-unknown}"
     volumes:
       - ./infra/observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./infra/observability/prometheus/rules:/etc/prometheus/rules:ro
@@ -504,6 +599,14 @@ services:
       ALERT_WEBHOOK_SECRET: "${ALERT_WEBHOOK_SECRET:-}"
       GF_SERVER_ROOT_URL: "${GRAFANA_ROOT_URL:-http://localhost:3001/}"
       GF_SERVER_DOMAIN: "${GRAFANA_DOMAIN:-localhost}"
+      # The same two values under their plain names, plus the identity host: grafana.ini
+      # reads them with $__env{} for [server] and for the OIDC auth_url the browser is
+      # redirected to. GF_* env vars override the ini, so these three exist for the ini's
+      # sake -- keeping one source per value rather than a literal in the file and a
+      # variable in compose that quietly wins over it.
+      GRAFANA_ROOT_URL: "${GRAFANA_ROOT_URL:-http://localhost:3001/}"
+      GRAFANA_DOMAIN: "${GRAFANA_DOMAIN:-localhost}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:8080}"
     volumes:
       - ./infra/observability/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
       - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro

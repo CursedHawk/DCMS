@@ -41,6 +41,13 @@ public static class AiSettingsEndpoints
                 return Results.BadRequest(new { error = "Unknown provider." });
             }
 
+            // Same constraint as the per-user credential endpoint: this URL becomes an
+            // outbound destination that ai-gateway attaches an API key to.
+            if (AiBaseUrl.Validate(body.BaseUrl, provider) is { } baseUrlError)
+            {
+                return Results.BadRequest(new { error = baseUrlError });
+            }
+
             var tenantId = tenant.TenantId!.Value;
             var settings = await db.Settings.FirstOrDefaultAsync(s => s.TenantId == tenantId, ct);
             if (settings is null)

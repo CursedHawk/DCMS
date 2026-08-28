@@ -187,8 +187,21 @@ public static class DcmsHostingExtensions
     /// <summary>
     /// Registers a per-client fixed-window global rate limiter for public delivery
     /// surfaces. Partitioned by client IP; limits/window are configurable under
-    /// "RateLimiting" (defaults 120 req / 60 s). Health and SignalR hub paths are
+    /// "RateLimiting" (defaults 600 req / 60 s). Health and SignalR hub paths are
     /// never limited. Enforced by <c>app.UseRateLimiter()</c>; returns 429.
+    ///
+    /// <para><b>The limiter is in-process, so the effective limit is
+    /// <c>PermitLimit × replica count.</c></b> Requests from one client are spread across
+    /// replicas by the edge, and each replica counts only what it sees. Running three
+    /// content-api replicas on the default therefore admits 1800 requests a minute per IP,
+    /// not 600.</para>
+    ///
+    /// <para>Left in-process deliberately: a Redis-backed limiter puts a network round trip on
+    /// every public delivery request — the hot path this platform targets at p95 under 30 ms —
+    /// to make a DoS-mitigation bound exact. The bound is approximate either way, since it
+    /// partitions on client IP and an attacker with many IPs is under no single partition.
+    /// Divide <c>RateLimiting:PermitLimit</c> by the replica count in configuration when the
+    /// exact ceiling matters.</para>
     /// </summary>
     public static IServiceCollection AddDcmsRateLimiting(this IServiceCollection services, IConfiguration configuration)
     {

@@ -5,6 +5,8 @@ using Dcms.Identity.Endpoints;
 using Dcms.Identity.Seeding;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Audit;
+using Dcms.Shared.Data.DataProtection;
+using Dcms.Shared.Vault;
 using Dcms.Shared.Hosting;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Messaging.Email;
@@ -18,6 +20,18 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddDcmsServiceDefaults("identity");
 builder.Services.AddDcmsMessaging(builder.Configuration);
 builder.Services.AddDcmsAuditData(builder.Configuration);
+// Shared Data Protection key ring in Postgres. Identity is the one service that uses Data
+// Protection -- the interactive auth cookie, the Google external-login correlation cookie,
+// and ForgejoSyncOutbox password ciphertext -- and all three break across replicas without it.
+//
+// Transit is registered only when the key ring is configured to be wrapped: the encryptor
+// resolves ITransitEncryptor, and registering the client unconditionally would give identity
+// a Vault dependency it does not otherwise have.
+if (builder.Configuration.GetValue("DataProtection:ProtectWithTransit", false))
+{
+    builder.Services.AddDcmsVaultTransit();
+}
+builder.Services.AddDcmsDataProtection(builder.Configuration);
 
 var connectionString = builder.Configuration.GetConnectionString("Postgres")
                        ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
@@ -99,9 +113,37 @@ builder.Services
         options.SetAccessTokenLifetime(TimeSpan.FromMinutes(10));
         options.SetRefreshTokenLifetime(TimeSpan.FromDays(14));
 
-        // Dev: ephemeral keys. Prod swaps in persisted certificates (runbook).
-        options.AddDevelopmentEncryptionCertificate()
-            .AddDevelopmentSigningCertificate();
+        // Persisted certificates from configuration (Vault). See OpenIddictCertificates for
+        // what minting them per process costs: a per-replica JWKS, and every live token
+        // invalidated by every deploy.
+        var signingCertificate = OpenIddictCertificates.Load(builder.Configuration, "SigningCertificate");
+        var encryptionCertificate = OpenIddictCertificates.Load(builder.Configuration, "EncryptionCertificate");
+
+        if (signingCertificate is not null && encryptionCertificate is not null)
+        {
+            options.AddSigningCertificate(signingCertificate)
+                .AddEncryptionCertificate(encryptionCertificate);
+        }
+        else if (builder.Environment.IsDevelopment()
+                 || builder.Configuration.GetValue("Identity:AllowEphemeralKeys", false))
+        {
+            // Development, or an environment deliberately opted out during the rollout.
+            // Identity:AllowEphemeralKeys is an escape hatch, not a setting: with it, Identity
+            // is pinned to one replica and every deploy logs everyone out.
+            options.AddDevelopmentEncryptionCertificate()
+                .AddDevelopmentSigningCertificate();
+        }
+        else
+        {
+            // Fail fast rather than boot on keys that disappear, matching the platform's other
+            // production guards (visitor signing key, audit chain key, alert webhook secret).
+            throw new InvalidOperationException(
+                "Identity:SigningCertificate and Identity:EncryptionCertificate must both be configured "
+                + "outside Development. Without them OpenIddict mints per-container keys, so each replica "
+                + "publishes a different JWKS and every deploy invalidates every live token. "
+                + "See OpenIddictCertificates for how to generate them, or set Identity:AllowEphemeralKeys=true "
+                + "to accept those consequences deliberately.");
+        }
 
         // Resource servers validate signed JWT access tokens with plain
         // JwtBearer against the discovery document — so disable JWE encryption.
@@ -138,7 +180,10 @@ builder.Services.AddHostedService<IdentitySeeder>();
 // login (email + password) in sync so users can clone/pull/push with their own
 // credentials. The admin token (write:admin) arrives via Forgejo__AdminToken;
 // provisioning is a no-op until it's set (ForgejoOptions.Enabled). Passwords that
-// can't be synced inline are queued encrypted (Vault Transit) and retried.
+// can't be synced inline are queued encrypted and retried -- with ASP.NET Data
+// Protection, not Vault Transit: identity never registers a transit encryptor. That
+// is why the key ring above must be the shared one; a per-container ring makes an
+// outbox row written by one replica undecryptable by any other.
 builder.Services.Configure<Dcms.Identity.Forgejo.ForgejoOptions>(
     builder.Configuration.GetSection(Dcms.Identity.Forgejo.ForgejoOptions.SectionName));
 builder.Services.AddHttpClient<Dcms.Identity.Forgejo.ForgejoAdminClient>((sp, client) =>
@@ -169,6 +214,21 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
     .AllowAnyMethod()));
 
 var app = builder.Build();
+
+// One-shot migration mode -- see the same block in admin-api. Identity owns its own schema
+// (the identity tables plus OpenIddict's), so the pipeline runs a job per owner rather than
+// one job that reaches across service boundaries.
+if (args.Contains("--migrate-only"))
+{
+    var migrationLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Dcms.Migrate");
+    var seeder = new IdentitySeeder(
+        app.Services, app.Configuration, app.Services.GetRequiredService<ILogger<IdentitySeeder>>());
+
+    await seeder.ExecuteAsync(migrate: true, seed: true, CancellationToken.None);
+
+    migrationLogger.LogInformation("Identity migration job complete.");
+    return;
+}
 
 // Behind the Caddy TLS edge, requests reach identity over plain HTTP on the
 // internal network. Honour X-Forwarded-Proto/Host so OpenIddict emits https://

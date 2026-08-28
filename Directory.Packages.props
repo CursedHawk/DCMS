@@ -7,6 +7,11 @@
   <ItemGroup Label="AspNetCore / EF / Identity">
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.Google" Version="10.0.9" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
+    <!-- 10.0.11, not the 10.0.9 the rest of this group uses: DataProtection below
+         10.0.10 drags in the vulnerable System.Security.Cryptography.Xml (see the
+         note below this group). This one IS resolved as a package by the services,
+         not just by tests, so the floor has to be real. -->
+    <PackageVersion Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.11" />
     <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.9" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.9" />
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" Version="10.0.9" />
@@ -18,10 +23,18 @@
   <!-- Transitive floor raised for security. OpenIddict's *.DataProtection packages
        pull Microsoft.AspNetCore.DataProtection 10.0.7, which drags in
        System.Security.Cryptography.Xml 10.0.7 — flagged high severity by NuGet audit
-       (CVE-2026-47302 / -47304 / -50525 / -50648), first patched in 10.0.10. Only
-       Dcms.IntegrationTests resolves it as a package (the services get it from the
-       shared framework), so it is referenced directly there to force the patched
-       version. Drop both once OpenIddict raises its own floor. -->
+       (CVE-2026-47302 / -47304 / -50525 / -50648), first patched in 10.0.10.
+
+       Pinned to 10.0.11, not 10.0.10: Dcms.Shared.Data references
+       Microsoft.AspNetCore.DataProtection.EntityFrameworkCore 10.0.11 for the shared
+       key ring, which requires Xml >= 10.0.11. A lower pin here is a package
+       DOWNGRADE (NU1605) rather than a floor, and fails the build.
+
+       This is no longer a test-only concern — it used to be true that only
+       Dcms.IntegrationTests resolved this as a package while the services got it from
+       the shared framework, and that is why the direct reference lives there. Every
+       service now resolves it through DataProtection.EntityFrameworkCore.
+       Drop both once OpenIddict raises its own floor. -->
   <!-- Transitive floor raised for security. Testcontainers (still 4.13.0) depends on
        SSH.NET 2025.1.0, which has a path-traversal flaw in ScpClient.Download
        (GHSA-q939-rpr3-3284, high severity), first patched in 2026.0.0. Only
@@ -30,7 +43,7 @@
        own floor. -->
   <ItemGroup Label="Security pins">
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.10" />
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.11" />
   </ItemGroup>
 
   <ItemGroup Label="Multi-tenancy / Auth">

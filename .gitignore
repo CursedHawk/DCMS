@@ -8,6 +8,10 @@ TestResults/
 
 # Node
 node_modules/
+# This is a pnpm workspace. A package-lock.json here is an npm artifact -- `npm init
+# playwright` leaves one behind -- and committing it would give the repo two lockfiles
+# disagreeing about the same dependency tree.
+package-lock.json
 dist/
 .vite/
 *.tsbuildinfo
@@ -36,3 +40,16 @@ graphify-out/
 
 #Apps
 apps/moordoor/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# Deploy artifacts. The digest overlay is generated per pipeline run by
+# scripts/ci/resolve-digests.sh, and .deploy/ is the target host's rollback state
+# (the current and previous digest sets). Both are per-deployment facts, not source.
+docker-compose.images.yml
+.deploy/

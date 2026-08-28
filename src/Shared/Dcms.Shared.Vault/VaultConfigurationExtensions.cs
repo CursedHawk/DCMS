@@ -5,38 +5,29 @@ namespace Dcms.Shared.Vault;
 public static class VaultConfigurationExtensions
 {
     /// <summary>
-    /// Adds Vault as a configuration source when VAULT_ADDR is set. Dev compose
-    /// sets VAULT_ADDR + VAULT_TOKEN (dev root token); prod uses AppRole-issued
-    /// tokens injected by the platform. Silently skipped when unset so the
+    /// Adds Vault as a configuration source when VAULT_ADDR is set, authenticating with an
+    /// AppRole (VAULT_ROLE_ID + VAULT_SECRET_ID) when both are present and falling back to
+    /// VAULT_TOKEN otherwise. Silently skipped when Vault is not configured at all, so the
     /// services still boot on a bare machine.
     /// </summary>
     public static IConfigurationBuilder AddDcmsVault(this IConfigurationBuilder builder, string serviceName)
     {
-        var address = Environment.GetEnvironmentVariable("VAULT_ADDR");
-        var token = Environment.GetEnvironmentVariable("VAULT_TOKEN");
-
-        // Prod safety: the prod compose profile sets DCMS_REFUSE_DEV_VAULT=true so
-        // a misconfigured deployment that still points at the dev-mode Vault root
-        // token fails fast instead of running with an insecure secrets backend.
+        // Prod safety: the prod compose profile sets DCMS_REFUSE_DEV_VAULT=true so a
+        // misconfigured deployment that still points at the dev-mode Vault root token fails
+        // fast instead of running with an insecure secrets backend.
         var refuseDev = string.Equals(
             Environment.GetEnvironmentVariable("DCMS_REFUSE_DEV_VAULT"), "true", StringComparison.OrdinalIgnoreCase);
-        if (refuseDev && IsDevToken(token))
+
+        var credentials = VaultCredentials.FromEnvironment(refuseDev);
+        if (credentials is null)
         {
-            throw new InvalidOperationException(
-                "Refusing to start: VAULT_TOKEN is a dev-mode root token but DCMS_REFUSE_DEV_VAULT is set. " +
-                "Configure a real Vault with an AppRole-issued token for this environment.");
+            return builder;
         }
 
-        if (!string.IsNullOrWhiteSpace(address) && !string.IsNullOrWhiteSpace(token))
-        {
-            builder.Add(new VaultConfigurationSource(serviceName, address, token));
-        }
-
+        // The same flag decides two things, and deliberately so: a deployment that says it
+        // will not tolerate a dev Vault token is also one where a Vault that answers 403 or
+        // 503 must stop the service rather than be quietly skipped.
+        builder.Add(new VaultConfigurationSource(serviceName, credentials, refuseDev));
         return builder;
     }
-
-    private static bool IsDevToken(string? token) =>
-        !string.IsNullOrWhiteSpace(token) &&
-        (token == "dcms-dev-root" || token.StartsWith("hvs.dev", StringComparison.OrdinalIgnoreCase) ||
-         token.StartsWith("root", StringComparison.OrdinalIgnoreCase) || token == "dev-root");
 }

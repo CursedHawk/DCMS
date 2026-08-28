@@ -10,8 +10,19 @@ public sealed class VisitorTokenOptions
 {
     public const string SectionName = "Visitor";
 
+    /// <summary>
+    /// The fallback used when nothing is configured. Public and named on purpose: it is in
+    /// this repository, so it is not a secret, and content-api refuses to start on it in
+    /// Production rather than silently signing every tenant's visitor sessions with a key
+    /// anyone can read.
+    /// </summary>
+    public const string DevelopmentSigningKey = "dev-visitor-signing-key-change-me-please-32b";
+
+    /// <summary>Minimum length for a real key. HMAC-SHA256's block size, and what the deploy guide asks for.</summary>
+    public const int MinimumKeyBytes = 32;
+
     /// <summary>Symmetric signing key (≥ 32 bytes). Supplied via Vault in prod.</summary>
-    public string SigningKey { get; set; } = "dev-visitor-signing-key-change-me-please-32b";
+    public string SigningKey { get; set; } = DevelopmentSigningKey;
     public int AccessTokenMinutes { get; set; } = 15;
     public int RefreshTokenDays { get; set; } = 30;
 }

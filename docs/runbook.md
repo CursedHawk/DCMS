@@ -10,10 +10,12 @@ docker compose up -d --build   # infra + all services
 pnpm dev:admin                 # admin SPA with hot reload on :5173
 ```
 
-Dev ports: admin SPA 5000 (container) / 5173 (vite), identity 5001,
-admin-api 5002, content-api 5003, media-worker 5004, site-builder 5005,
-site-host 5006, ai-gateway 5007, Postgres 5432, Redis 6379, NATS 4222
-(monitor 8222), MinIO 9000 (console 9001), Vault 8200, Mailpit 8025.
+Dev ports: admin SPA 5000 (container) / 5173 (vite), identity 5001 (and 8080 for
+the OIDC issuer alias), admin-api 5002, content-api 5003, media-worker 5004,
+site-builder 5005, site-host 5006, ai-gateway 5007, Postgres 5432, Redis 6379,
+NATS 4222 (monitor 8222), MinIO 9000 (console 9001), Vault 8200, Mailpit 8025
+(SMTP 1025). email-worker and Forgejo publish no host port. Telemetry ports are
+listed in [`infra/observability/README.md`](../infra/observability/README.md).
 
 Dev credentials (compose only): Postgres `dcms`/`dcms-dev`, MinIO
 `dcms`/`dcms-dev-secret`, Vault root token `dcms-dev-root`. Seeded platform
@@ -58,7 +60,16 @@ Key endpoints (all under `/api/admin`, JWT-protected): `POST /tenants`
 `RequirePermission(...)`: effective permissions are resolved from
 `tenant_role_permissions`, cached in Redis (`perm:{tenantId}:{userId}`, 5 min),
 invalidated directly on role change and via the `membership.changed` event.
-SuperAdmins bypass tenant permission checks. Domain verification reads a TXT
+SuperAdmins bypass tenant permission checks.
+
+The header is a *request*, not a claim — `TenantStore` resolves it by identifier and
+cannot know who is asking. `TenantMembershipMiddleware` therefore sits between
+`UseMultiTenant` and `UseAuthorization` and 403s any authenticated caller who names a
+tenant they are not a member of, so an endpoint guarded by a bare
+`RequireAuthorization()` is not cross-tenant by default. SuperAdmins pass; the one
+exemption is `POST /invitations/accept`, marked `AllowNonMemberTenant` because
+becoming a member is the point of the call (it reads the tenant from the invitation
+token, never from the header). Domain verification reads a TXT
 record `_dcms-verify.{hostname}`; set `Domains:AutoVerify=true` in dev to skip DNS.
 
 ### Plugins & CMS (Phase 4)
@@ -510,12 +521,35 @@ TS, reaches the hub through site-host's `/hub` proxy).
 over loopback (the internal cached-read target is p95 < 30 ms). Override with
 `-e BASE=… -e TENANT=… -e SLUG=… -e CONTENT_TYPE=…`.
 
-## Production profile
+## One-time cleanup: the old site-host cache consumer
 
-Run **without** the dev override:
+`site-host` used to bind a **shared durable** JetStream consumer named `site-host-cache` on
+the `SITES` stream. It now uses an ephemeral ordered consumer, so every replica sees every
+`site.published` rather than one replica seeing each — but the old durable is not removed by
+the deploy, and an orphaned durable holds back the stream's ack floor indefinitely.
+
+Delete it once, after the first deploy that includes this change:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+C="docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.vps.yml"
+$C exec nats nats consumer ls SITES                 # expect site-host-cache, plus the real ones
+$C exec nats nats consumer rm SITES site-host-cache
+```
+
+Removing it is safe while site-host is running: nothing binds it any more.
+
+## Production profile
+
+Run **without** the dev override, and always with the full overlay set — a
+partial `-f` set silently drops overrides and has caused an outage on this host:
+
+```sh
+scripts/deploy.sh --check    # validate first; changes nothing
+scripts/deploy.sh            # roll and health-gate
+
+# or, by hand:
+C="docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.vps.yml"
+$C up -d
 ```
 
 Differences from dev (`docker-compose.prod.yml`):
@@ -524,7 +558,7 @@ Differences from dev (`docker-compose.prod.yml`):
   via on-demand TLS. Caddy asks `site-host` `GET /internal/tls-allowed?domain=…`
   before minting a cert, so certificates are issued only for verified+linked
   domains. ACME email via `ACME_EMAIL`.
-- **Vault** runs in real server mode (`infra/vault/config.hcl`, file storage, no
+- **Vault** runs in real server mode (`infra/vault/server/config.hcl`, file storage, no
   dev root token). The operator runs `vault operator init` + unseal on first boot
   and provisions the KV/Transit paths + per-service AppRoles (layout mirrors
   `infra/vault/init.sh`). The dev seeding job is a no-op. Services set

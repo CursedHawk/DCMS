@@ -72,6 +72,13 @@ public sealed partial class ForgejoUserSync
             await SyncInlineAsync(user, password, ct);
             await _db.SaveChangesAsync(ct);
         }
+        catch (ForgejoAdoptionRefusedException ex)
+        {
+            // Permanent, not transient: retrying cannot make an unconfirmed address confirmed,
+            // and a queued row would just retry until it dead-letters. The user has no git
+            // credentials until an operator reconciles the two accounts.
+            _logger.LogError(ex, "Forgejo sync refused for {UserId}.", user.Id);
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
@@ -116,19 +123,23 @@ public sealed partial class ForgejoUserSync
             var existing = await _admin.FindByEmailAsync(email, ct);
             if (existing is not null)
             {
+                RequireProvenEmail(user, existing.Login);
                 user.ForgejoUsername = existing.Login;
                 user.ForgejoUserId = existing.Id;
                 await _admin.SetCredentialsAsync(existing.Login, email, password, ct);
             }
             else
             {
-                var created = await CreateWithUniqueNameAsync(email, password, ct);
+                var created = await CreateWithUniqueNameAsync(user, password, ct);
                 user.ForgejoUsername = created.Login;
                 user.ForgejoUserId = created.Id;
             }
         }
         else
         {
+            // Safe without a further check: a stored mapping can only have been established
+            // by a create below (an account this platform made) or by an adoption that
+            // already passed RequireProvenEmail.
             await _admin.SetCredentialsAsync(user.ForgejoUsername, email, password, ct);
         }
 
@@ -136,8 +147,35 @@ public sealed partial class ForgejoUserSync
         if (!string.IsNullOrEmpty(password)) user.HasGitPassword = true;
     }
 
-    private async Task<ForgejoUser> CreateWithUniqueNameAsync(string email, string? password, CancellationToken ct)
+    /// <summary>
+    /// Refuses to take over a Forgejo account this platform did not create unless the DCMS
+    /// identity has proven the address.
+    ///
+    /// <para>Adoption sets the account's password. Registration is open, unauthenticated and
+    /// does not confirm the address (<c>SignIn.RequireConfirmedAccount</c> is false), so
+    /// without this anyone could register with the email of an existing Forgejo account —
+    /// the headless-provisioned instance administrator being the obvious one — and have its
+    /// password reset to whatever they typed into the form. That is admin on the git server,
+    /// which is read/write on every tenant's site repository and a push to <c>release</c>
+    /// away from deploying to their domains.</para>
+    ///
+    /// <para><c>EmailConfirmed</c> is the platform's only evidence that the address belongs to
+    /// the person holding the session. Google SSO sets it (Google verified the address);
+    /// password registration does not. So SSO users still adopt, which is what makes a lost
+    /// mapping recoverable, and password users get a fresh account or a clear failure.</para>
+    /// </summary>
+    private static void RequireProvenEmail(DcmsUser user, string login)
     {
+        if (user.EmailConfirmed) return;
+
+        throw new ForgejoAdoptionRefusedException(
+            $"A Forgejo account ({login}) already uses {user.Email}, and this identity has not " +
+            "confirmed that address. Refusing to take over the account.");
+    }
+
+    private async Task<ForgejoUser> CreateWithUniqueNameAsync(DcmsUser user, string? password, CancellationToken ct)
+    {
+        var email = user.Email!;
         var baseName = DeriveUsername(email);
         for (var i = 0; i < 50; i++)
         {
@@ -147,7 +185,11 @@ public sealed partial class ForgejoUserSync
 
             // 422: either the email is taken (adopt it) or just the username (try next).
             var existing = await _admin.FindByEmailAsync(email, ct);
-            if (existing is not null) return existing;
+            if (existing is not null)
+            {
+                RequireProvenEmail(user, existing.Login);
+                return existing;
+            }
         }
         throw new InvalidOperationException($"Could not allocate a Forgejo username for {email}.");
     }

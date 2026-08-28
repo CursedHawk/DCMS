@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using VaultSharp;
-using VaultSharp.V1.AuthMethods.Token;
 using VaultSharp.V1.SecretsEngines.Transit;
 
 namespace Dcms.Shared.Vault;
@@ -38,17 +37,35 @@ public static class VaultTransitServiceCollectionExtensions
     public const string TenantSecretsKey = "dcms-tenant-secrets";
 
     /// <summary>
-    /// Registers an IVaultClient (from VAULT_ADDR/VAULT_TOKEN) and the Transit
-    /// encryptor. No-ops gracefully if Vault env vars are unset (encrypt/decrypt
-    /// will then throw on use — acceptable for environments without AI configured).
+    /// Registers an IVaultClient and the Transit encryptor, using the same credential
+    /// resolution as the configuration provider — AppRole when available, token otherwise.
+    ///
+    /// <para>This used to build its own client with
+    /// <c>VAULT_ADDR ?? "http://localhost:8200"</c> and <c>VAULT_TOKEN ?? "dcms-dev-root"</c>,
+    /// with no <c>DCMS_REFUSE_DEV_VAULT</c> check — so the guard that stops the CONFIGURATION
+    /// provider talking to a dev Vault did not apply to the client that decrypts tenants' AI
+    /// provider keys. A production deployment that lost its VAULT_TOKEN would have failed
+    /// startup on the config side and, had it not, silently tried a dev root token here.</para>
+    ///
+    /// <para>Still tolerant of Vault being absent: the client is registered lazily, so a
+    /// deployment with no Vault starts fine and only throws if something actually asks for an
+    /// encrypt or decrypt. That is the right shape — Transit is needed for tenant AI keys and
+    /// nothing else on the startup path.</para>
     /// </summary>
     public static IServiceCollection AddDcmsVaultTransit(this IServiceCollection services)
     {
         services.AddSingleton<IVaultClient>(_ =>
         {
-            var address = Environment.GetEnvironmentVariable("VAULT_ADDR") ?? "http://localhost:8200";
-            var token = Environment.GetEnvironmentVariable("VAULT_TOKEN") ?? "dcms-dev-root";
-            return new VaultClient(new VaultClientSettings(address, new TokenAuthMethodInfo(token)));
+            var refuseDev = string.Equals(
+                Environment.GetEnvironmentVariable("DCMS_REFUSE_DEV_VAULT"), "true", StringComparison.OrdinalIgnoreCase);
+
+            var credentials = VaultCredentials.FromEnvironment(refuseDev)
+                ?? throw new InvalidOperationException(
+                    "Vault Transit was requested but Vault is not configured. Set VAULT_ADDR plus either "
+                    + "VAULT_ROLE_ID/VAULT_SECRET_ID or VAULT_TOKEN. Transit decrypts tenant AI provider "
+                    + "keys; without it those keys cannot be read.");
+
+            return credentials.CreateClient();
         });
         services.AddSingleton<ITransitEncryptor, VaultTransitEncryptor>();
         return services;

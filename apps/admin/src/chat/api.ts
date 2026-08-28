@@ -1,6 +1,7 @@
 import { adminHeaders } from '../tenants';
+import { runtimeConfig } from '../runtime-config';
 
-const base = import.meta.env.VITE_ADMIN_API_BASE ?? '/api';
+const base = runtimeConfig.adminApiBase;
 
 /**
  * Base for the chat SignalR hub (hosted by content-api). Reached same-origin in
@@ -8,7 +9,7 @@ const base = import.meta.env.VITE_ADMIN_API_BASE ?? '/api';
  * in prod — so the default is relative. Override with VITE_CONTENT_API_BASE only
  * to point at a content-api on a different origin.
  */
-export const contentApiBase = import.meta.env.VITE_CONTENT_API_BASE ?? '';
+export const contentApiBase = runtimeConfig.contentApiBase;
 
 export interface ChatConversation {
   id: string;

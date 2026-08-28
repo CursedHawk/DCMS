@@ -1,4 +1,5 @@
 import {
+  HttpTransportType,
   HubConnection,
   HubConnectionBuilder,
   HubConnectionState,
@@ -37,8 +38,20 @@ export function ChatPage() {
     if (!slug) return;
     let disposed = false;
     const connection = new HubConnectionBuilder()
+      // skipNegotiation + WebSockets so the connection needs no server affinity.
+      //
+      // With negotiation, `POST /negotiate` and the follow-up transport connect must reach the
+      // SAME content-api replica -- nothing at the edge (Caddy, or site-host's YARP proxy)
+      // guarantees that, so a scaled content-api drops connections at random. The Redis
+      // backplane fans messages OUT across replicas; it does nothing about which replica a
+      // single client's two handshake requests land on.
+      //
+      // The access token still travels as the `access_token` query parameter, which is what
+      // content-api already reads for hub requests.
       .withUrl(`${contentApiBase}/hub/chat?tenant=${encodeURIComponent(slug)}`, {
         accessTokenFactory: async () => (await getAccessToken()) ?? '',
+        skipNegotiation: true,
+        transport: HttpTransportType.WebSockets,
       })
       .withAutomaticReconnect()
       .configureLogging(LogLevel.Warning)

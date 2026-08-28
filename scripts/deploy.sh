@@ -1,0 +1,456 @@
+#!/usr/bin/env bash
+#
+# Deploy the DCMS stack on a target host.
+#
+# This script replaces the untracked run-deploy.sh / run-deploy-full.sh that
+# lived only in ~/baas-dcms on vps1. It runs ON the target host, from the repo
+# root. CI delivers the tree with rsync and then invokes it over ssh.
+#
+# It encodes three things that have each already cost an outage:
+#
+#   1. The compose invocation always passes the FULL overlay set. A partial
+#      -f set silently drops overrides and has taken production down before.
+#   2. Images are built ONE AT A TIME. vps1 is 4 cores / 7.6 GB with no swap;
+#      building more than two services concurrently thrashes the box into an
+#      OOM kill, and the kernel does not necessarily kill the builder.
+#   3. Services whose configuration is a bind-mounted FILE are recreated, not
+#      reloaded. A reload reads the stale inode after an rsync replaces the
+#      file, so the container keeps running the previous config while every
+#      outward sign says the deploy succeeded.
+#
+# Usage:
+#   scripts/deploy.sh [options] [service ...]
+#
+#   --env dev|prod       Overlay set to use. Default: $DCMS_ENV, else prod.
+#   --check              Preflight only: resolve and validate the overlay set,
+#                        then stop. Changes nothing. Run this first.
+#   --no-migrate         Skip the schema migration jobs. They run by default: the
+#                        services no longer migrate at startup, so skipping this
+#                        rolls new code against an old schema.
+#   --build              Build images locally, serially, before rolling.
+#   --pull               Pull images from the registry before rolling.
+#   --images FILE        Extra compose overlay pinning image digests. Recorded
+#                        for rollback. Implies --pull.
+#   --rollback           Redeploy the previously recorded digest overlay.
+#   --no-health          Skip the post-deploy health gate.
+#   --recreate-vault     Recreate Vault even when it is Shamir-sealed. Doing so
+#                        SEALS it, and every service reads its config from Vault
+#                        at startup -- so the platform stays down until someone
+#                        unseals it by hand. Attended Vault-config changes only.
+#   --timeout SECONDS    Health gate budget per service. Default 120.
+#
+# With no service arguments every service is deployed.
+
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+REPO_ROOT=$(pwd)
+
+# ---------------------------------------------------------------------------
+# Service inventory
+# ---------------------------------------------------------------------------
+
+# Built from this repo, in dependency-ish order. Serial builds follow this order.
+APP_SERVICES=(
+  identity admin-api content-api ai-gateway
+  media-worker email-worker site-builder site-host admin-spa
+)
+
+# Configuration arrives as a bind-mounted file. These must be force-recreated
+# after the tree is synced -- see lesson 3 above.
+CONFIG_MOUNTED_SERVICES=(caddy alloy prometheus loki tempo grafana nats vault)
+
+# Health-gated after a roll. The workers expose /health/live but carry no
+# inbound traffic, so a slow start is not an outage; they are still checked.
+HEALTH_GATED_SERVICES=(
+  identity admin-api content-api ai-gateway
+  media-worker email-worker site-builder site-host
+)
+
+DEPLOY_STATE_DIR="${DCMS_DEPLOY_STATE_DIR:-$REPO_ROOT/.deploy}"
+
+# ---------------------------------------------------------------------------
+# Options
+# ---------------------------------------------------------------------------
+
+ENVIRONMENT="${DCMS_ENV:-prod}"
+DO_BUILD=0
+DO_CHECK=0
+DO_MIGRATE=1
+DO_PULL=0
+DO_HEALTH=1
+DO_ROLLBACK=0
+FORCE_RECREATE_VAULT=0
+VAULT_SEAL_TYPE=""
+IMAGES_FILE=""
+HEALTH_TIMEOUT=120
+TARGET_SERVICES=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --env)        ENVIRONMENT="$2"; shift 2 ;;
+    --check)      DO_CHECK=1; shift ;;
+    --no-migrate) DO_MIGRATE=0; shift ;;
+    --build)      DO_BUILD=1; shift ;;
+    --pull)       DO_PULL=1; shift ;;
+    --images)     IMAGES_FILE="$2"; DO_PULL=1; shift 2 ;;
+    --rollback)   DO_ROLLBACK=1; shift ;;
+    --no-health)  DO_HEALTH=0; shift ;;
+    --recreate-vault) FORCE_RECREATE_VAULT=1; shift ;;
+    --timeout)    HEALTH_TIMEOUT="$2"; shift 2 ;;
+    -h|--help)    sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -*)           echo "deploy: unknown option $1" >&2; exit 2 ;;
+    *)            TARGET_SERVICES+=("$1"); shift ;;
+  esac
+done
+
+log()  { printf '\n\033[1;36m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m warn:\033[0m %s\n' "$*" >&2; }
+die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# Compose invocation -- always the full overlay set
+# ---------------------------------------------------------------------------
+
+case "$ENVIRONMENT" in
+  prod|dev)
+    # Both deployed environments use the production profile. They differ in the
+    # host overlay and in the values Vault hands them, not in the profile: a dev
+    # environment that runs a different code path is not a rehearsal.
+    COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.prod.yml)
+    [ -f docker-compose.vps.yml ] && COMPOSE_FILES+=(-f docker-compose.vps.yml)
+    ;;
+  local)
+    # Bare `docker compose` picks up docker-compose.override.yml automatically.
+    COMPOSE_FILES=()
+    # The dev overlay leaves Tenancy:Migrate and Identity:Migrate on, so services still
+    # migrate at startup and a separate job would only duplicate the work.
+    DO_MIGRATE=0
+    ;;
+  *)
+    die "unknown environment '$ENVIRONMENT' (expected dev, prod or local)"
+    ;;
+esac
+
+if [ -n "$IMAGES_FILE" ]; then
+  [ -f "$IMAGES_FILE" ] || die "images overlay not found: $IMAGES_FILE"
+  COMPOSE_FILES+=(-f "$IMAGES_FILE")
+fi
+
+compose() { docker compose "${COMPOSE_FILES[@]}" "$@"; }
+
+# ---------------------------------------------------------------------------
+# Rollback: swap the recorded digest overlays back and redeploy
+# ---------------------------------------------------------------------------
+
+if [ "$DO_ROLLBACK" = 1 ]; then
+  PREVIOUS="$DEPLOY_STATE_DIR/images.previous.yml"
+  [ -f "$PREVIOUS" ] || die "no previous deployment recorded at $PREVIOUS"
+  log "Rolling back to the previously deployed digests"
+  exec "$0" --env "$ENVIRONMENT" --images "$PREVIOUS" --timeout "$HEALTH_TIMEOUT"
+fi
+
+# ---------------------------------------------------------------------------
+# Preflight
+# ---------------------------------------------------------------------------
+
+log "Preflight ($ENVIRONMENT)"
+
+docker compose version >/dev/null 2>&1 || die "docker compose plugin not available"
+
+# Compose substitutes ${VAR} from .env. Two NATS passwords use the ${VAR:?}
+# form, so a missing one fails the whole invocation rather than silently
+# starting a server nobody can authenticate against.
+if [ "$ENVIRONMENT" != "local" ] && [ ! -f .env ]; then
+  die ".env not found in $REPO_ROOT -- compose has nothing to substitute"
+fi
+
+# `config` fully resolves the overlay set and every substitution. If the files
+# disagree or a required variable is unset, this is where it surfaces -- before
+# anything is torn down.
+compose config --quiet || die "compose configuration is invalid; nothing was changed"
+
+# DCMS_ENV / DCMS_HOST become Prometheus external_labels, stamped onto every series
+# this host stores and every alert it fires. dev and prod run identical stacks from
+# identical config, so these labels are the only thing that tells their telemetry apart.
+#
+# Unset is survivable -- compose falls back to `unknown`, which is visibly unconfigured.
+# A MISMATCH is not: deploying the prod overlay onto a host whose .env still says
+# DCMS_ENV=dev produces prod alerts that name dev, and they look entirely plausible.
+if [ "$ENVIRONMENT" != "local" ]; then
+  env_declared="$(grep -E '^DCMS_ENV=' .env 2>/dev/null | tail -1 | cut -d= -f2-)"
+  host_declared="$(grep -E '^DCMS_HOST=' .env 2>/dev/null | tail -1 | cut -d= -f2-)"
+  if [ -n "$env_declared" ] && [ "$env_declared" != "$ENVIRONMENT" ]; then
+    die "DCMS_ENV in .env is '$env_declared' but this is a '$ENVIRONMENT' deploy.
+     Telemetry from this host would be labelled as the other environment.
+     Fix .env, or pass --env $env_declared if the overlay set is what is wrong."
+  fi
+  if [ -z "$env_declared" ] || [ -z "$host_declared" ]; then
+    warn "DCMS_ENV/DCMS_HOST not both set in .env -- this host's metrics and alerts will be labelled 'unknown'"
+  fi
+
+  # ADMIN_HOST is PUBLIC_BASE_URL without the scheme. Caddy needs the bare hostname for a
+  # site address; identity needs the URL for the issuer it stamps into every token. If they
+  # disagree, the edge serves a certificate for one name while tokens claim another, and the
+  # symptom is a login that loops rather than an error anyone can read.
+  base_url="$(grep -E '^PUBLIC_BASE_URL=' .env 2>/dev/null | tail -1 | cut -d= -f2-)"
+  admin_host="$(grep -E '^ADMIN_HOST=' .env 2>/dev/null | tail -1 | cut -d= -f2-)"
+  if [ -n "$base_url" ]; then
+    case "$base_url" in
+      */) die "PUBLIC_BASE_URL must not end in a slash (got '$base_url').
+     The compose files append their own paths to it." ;;
+    esac
+    base_host="${base_url#https://}"; base_host="${base_host#http://}"
+    if [ -n "$admin_host" ] && [ "$admin_host" != "$base_host" ]; then
+      die "ADMIN_HOST is '$admin_host' but PUBLIC_BASE_URL is '$base_url'.
+     Caddy would serve '$admin_host' while identity issues tokens for '$base_host'."
+    fi
+    [ -z "$admin_host" ] && warn "ADMIN_HOST unset -- Caddy falls back to its built-in default, which may not be '$base_host'"
+  fi
+fi
+
+echo "  compose: docker compose ${COMPOSE_FILES[*]}"
+[ -n "$IMAGES_FILE" ] && echo "  images:  $IMAGES_FILE"
+
+if [ "$DO_CHECK" = 1 ]; then
+  log "Configuration is valid. Nothing was changed (--check)."
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Which services are we touching?
+# ---------------------------------------------------------------------------
+
+if [ ${#TARGET_SERVICES[@]} -eq 0 ]; then
+  BUILD_LIST=("${APP_SERVICES[@]}")
+  ROLL_ALL=1
+else
+  BUILD_LIST=()
+  for svc in "${TARGET_SERVICES[@]}"; do
+    for app in "${APP_SERVICES[@]}"; do
+      [ "$svc" = "$app" ] && BUILD_LIST+=("$svc")
+    done
+  done
+  ROLL_ALL=0
+fi
+
+# ---------------------------------------------------------------------------
+# Images
+# ---------------------------------------------------------------------------
+
+if [ "$DO_PULL" = 1 ]; then
+  log "Pulling images"
+  if [ "$ROLL_ALL" = 1 ]; then
+    compose pull --ignore-buildable
+  else
+    compose pull --ignore-buildable "${TARGET_SERVICES[@]}"
+  fi
+fi
+
+if [ "$DO_BUILD" = 1 ]; then
+  log "Building ${#BUILD_LIST[@]} service(s) -- serially, one at a time"
+  for svc in "${BUILD_LIST[@]}"; do
+    echo "  building $svc"
+    # Deliberately not backgrounded and deliberately not batched. See lesson 2.
+    compose build "$svc" || die "build failed for $svc; nothing was rolled"
+  done
+fi
+
+# ---------------------------------------------------------------------------
+# Vault seal state
+# ---------------------------------------------------------------------------
+
+# Every service reads its configuration from Vault at startup and refuses to boot on a 503,
+# so deploying into a sealed Vault rolls the whole stack into a crash loop. That is worth one
+# cheap check first: sys/seal-status needs no token, so this costs nothing and no credential.
+#
+# Deliberately NOT a check that the right secrets exist -- that would need a token with read
+# on them, and inventing a privileged CI credential to assert a precondition is a worse trade
+# than letting the services' own startup guards fail the health gate. What this catches is the
+# common case: the host rebooted and nobody unsealed it.
+if [ "$ENVIRONMENT" != "local" ] && compose ps --services 2>/dev/null | grep -qx vault; then
+  log "Checking Vault seal state"
+  seal_status=$(compose exec -T vault vault status -format=json 2>/dev/null || echo '')
+  if [ -z "$seal_status" ]; then
+    warn "could not read Vault's seal status; it may not be running yet"
+  elif echo "$seal_status" | grep -q '"sealed": *true'; then
+    die "Vault is SEALED. Services read their configuration from it at startup and will not boot.
+       Unseal it first (\`vault operator unseal\`, or configure Transit auto-unseal -- see
+       infra/vault/server/seal-transit.hcl.example), then re-run this deploy."
+  else
+    # shamir | transit | awskms | ... -- decides whether recreating Vault is safe below.
+    VAULT_SEAL_TYPE=$(echo "$seal_status" | sed -n 's/.*"type": *"\([a-z]*\)".*/\1/p' | head -1)
+    echo "  vault is unsealed (seal: ${VAULT_SEAL_TYPE:-unknown})"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Mode B build sandbox
+# ---------------------------------------------------------------------------
+
+# site-builder launches this image itself, with `docker run` against the shared daemon, under
+# the fixed name in DCMS_BUILD_SANDBOX_IMAGE. Compose never starts it -- it is profile-gated
+# with `entrypoint: true` purely so there is somewhere to build it -- so a `compose pull` does
+# not fetch it and the host would be left with whatever it built by hand months ago.
+#
+# DCMS_BUILD_REQUIRE_SANDBOX=true makes a missing image a failed BUILD, not a failed deploy,
+# which surfaces as a tenant's site silently not publishing.
+SANDBOX_LOCAL_TAG="${DCMS_BUILD_SANDBOX_IMAGE:-dcms/site-build-sandbox:latest}"
+
+if [ -n "$IMAGES_FILE" ] && grep -q '^  site-build-sandbox:' "$IMAGES_FILE"; then
+  sandbox_ref=$(awk '/^  site-build-sandbox:/{getline; print $2; exit}' "$IMAGES_FILE")
+  if [ -n "$sandbox_ref" ]; then
+    log "Fetching the Mode B build sandbox"
+    echo "  $sandbox_ref"
+    docker pull "$sandbox_ref" || die "could not pull the build sandbox image"
+    # Retagged to the stable local name so site-builder's configuration does not have to
+    # carry a digest that changes on every release.
+    docker tag "$sandbox_ref" "$SANDBOX_LOCAL_TAG"
+    echo "  tagged as $SANDBOX_LOCAL_TAG"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Schema migrations -- BEFORE anything is rolled
+# ---------------------------------------------------------------------------
+
+# Only when deploying the whole stack. Rolling one service does not re-migrate: if that
+# service needed a schema change, the change belongs to a full deploy.
+if [ "$DO_MIGRATE" = 1 ] && [ "$ROLL_ALL" = 1 ]; then
+  log "Running schema migration jobs"
+
+  # Order matters, and it is the dependency order of the schema itself:
+  #
+  #   postgres-bootstrap  creates schemas, extensions and the non-owner roles
+  #   migrate             creates the tables inside them, then applies RLS policies,
+  #                       the obs views and the audit partitions
+  #   identity-migrate    creates identity's own tables and seeds them -- which writes an
+  #                       audit row, so the audit schema has to exist first
+  for job in postgres-bootstrap migrate identity-migrate; do
+    echo "  running $job"
+    if ! compose --profile migrate run --rm "$job"; then
+      die "migration job '$job' failed; nothing was rolled and the running stack is untouched"
+    fi
+  done
+elif [ "$DO_MIGRATE" = 0 ]; then
+  warn "skipping migrations (--no-migrate); new code may be rolling against an old schema"
+fi
+
+# ---------------------------------------------------------------------------
+# Record what we are about to deploy, so --rollback has somewhere to go
+# ---------------------------------------------------------------------------
+
+if [ -n "$IMAGES_FILE" ]; then
+  mkdir -p "$DEPLOY_STATE_DIR"
+  CURRENT="$DEPLOY_STATE_DIR/images.current.yml"
+  # Only rotate when the incoming set actually differs, so a repeated deploy of
+  # the same digests does not overwrite the last genuinely different version
+  # and leave --rollback pointing at what is already running.
+  if [ -f "$CURRENT" ] && ! cmp -s "$CURRENT" "$IMAGES_FILE"; then
+    cp "$CURRENT" "$DEPLOY_STATE_DIR/images.previous.yml"
+  fi
+  cp "$IMAGES_FILE" "$CURRENT"
+fi
+
+# ---------------------------------------------------------------------------
+# Roll
+# ---------------------------------------------------------------------------
+
+log "Rolling services"
+if [ "$ROLL_ALL" = 1 ]; then
+  compose up -d --remove-orphans
+else
+  compose up -d --no-deps "${TARGET_SERVICES[@]}"
+fi
+
+# Configuration is a bind-mounted file for these; a reload would read the stale
+# inode left behind when rsync replaced it. Recreate instead. See lesson 3.
+log "Recreating services whose config is a bind-mounted file"
+for svc in "${CONFIG_MOUNTED_SERVICES[@]}"; do
+  # Not every overlay defines every one of these (caddy is prod-only, the nats
+  # config file is vps-only), so skip what this environment does not have.
+  if compose ps --services 2>/dev/null | grep -qx "$svc"; then
+    if [ "$ROLL_ALL" = 1 ] || printf '%s\n' "${TARGET_SERVICES[@]}" | grep -qx "$svc"; then
+      # Recreating a SHAMIR-sealed Vault seals it, and every service reads its configuration
+      # from Vault at startup -- so an unattended pipeline deploy would take the whole platform
+      # down and leave it down until a human unseals it by hand. A stale Vault config mount is
+      # a far smaller problem than that, so skip it and say so.
+      #
+      # Under Transit auto-unseal there is nothing to skip: Vault comes back unsealed on its
+      # own, which is the entire reason that seal exists.
+      if [ "$svc" = "vault" ] && [ "${VAULT_SEAL_TYPE:-}" = "shamir" ] && [ "$FORCE_RECREATE_VAULT" != 1 ]; then
+        warn "skipping vault recreate -- it is Shamir-sealed, and recreating it would seal the platform.
+       Vault config changes need a deliberate, attended restart:
+         docker compose <the full -f set> up -d --force-recreate --no-deps vault && ./unseal-vault.sh
+       Or pass --recreate-vault to accept the outage, or configure Transit auto-unseal."
+        continue
+      fi
+      echo "  recreating $svc"
+      compose up -d --force-recreate --no-deps "$svc"
+    fi
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# Health gate
+# ---------------------------------------------------------------------------
+
+if [ "$DO_HEALTH" = 0 ]; then
+  log "Health gate skipped (--no-health)"
+  exit 0
+fi
+
+log "Health gate (${HEALTH_TIMEOUT}s per service)"
+
+if [ "$ROLL_ALL" = 1 ]; then
+  CHECK_LIST=("${HEALTH_GATED_SERVICES[@]}")
+else
+  CHECK_LIST=()
+  for svc in "${TARGET_SERVICES[@]}"; do
+    for gated in "${HEALTH_GATED_SERVICES[@]}"; do
+      [ "$svc" = "$gated" ] && CHECK_LIST+=("$svc")
+    done
+  done
+fi
+
+FAILED=()
+for svc in "${CHECK_LIST[@]}"; do
+  cid=$(compose ps -q "$svc" 2>/dev/null | head -1)
+  if [ -z "$cid" ]; then
+    warn "$svc: no container -- not deployed in this environment?"
+    continue
+  fi
+
+  deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
+  status=""
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    # `docker inspect` rather than `compose ps --format json`: the JSON field
+    # names have moved between compose releases and this has to work on
+    # whatever the target host happens to be running.
+    status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null || echo "gone")
+    case "$status" in
+      healthy|running) break ;;
+      exited|dead|gone) break ;;
+    esac
+    sleep 3
+  done
+
+  case "$status" in
+    healthy|running) printf '  \033[1;32mok\033[0m       %s (%s)\n' "$svc" "$status" ;;
+    *)               printf '  \033[1;31mFAILED\033[0m   %s (%s)\n' "$svc" "$status"; FAILED+=("$svc") ;;
+  esac
+done
+
+if [ ${#FAILED[@]} -gt 0 ]; then
+  warn "unhealthy after deploy: ${FAILED[*]}"
+  for svc in "${FAILED[@]}"; do
+    echo "--- last 40 log lines: $svc ---" >&2
+    compose logs --tail 40 "$svc" >&2 || true
+  done
+  if [ -f "$DEPLOY_STATE_DIR/images.previous.yml" ]; then
+    warn "roll back with: scripts/deploy.sh --env $ENVIRONMENT --rollback"
+  fi
+  exit 1
+fi
+
+log "Deploy complete"

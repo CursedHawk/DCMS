@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getAccessToken } from './auth';
+import { runtimeConfig } from './runtime-config';
 
-const adminApiBase = import.meta.env.VITE_ADMIN_API_BASE ?? '/api';
+const adminApiBase = runtimeConfig.adminApiBase;
 const STORAGE_KEY = 'dcms.tenant';
 
 export interface TenantSummary {

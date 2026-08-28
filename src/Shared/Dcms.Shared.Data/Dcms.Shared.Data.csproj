@@ -7,6 +7,7 @@
   <ItemGroup>
     <PackageReference Include="Finbuckle.MultiTenant.AspNetCore" />
     <PackageReference Include="Finbuckle.MultiTenant.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -18,6 +19,7 @@
     <ProjectReference Include="..\Dcms.Shared.Audit\Dcms.Shared.Audit.csproj" />
     <ProjectReference Include="..\Dcms.Shared.Contracts\Dcms.Shared.Contracts.csproj" />
     <ProjectReference Include="..\Dcms.Shared.Kernel\Dcms.Shared.Kernel.csproj" />
+    <ProjectReference Include="..\Dcms.Shared.Vault\Dcms.Shared.Vault.csproj" />
   </ItemGroup>
 
 </Project>

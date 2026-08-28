@@ -1,6 +1,5 @@
 # Writing a DCMS plugin
 
-> Skeleton guide — grows with the SDK (Phases 4–7).
 
 A plugin is a .NET project under `src/Plugins/` referencing
 `Dcms.PluginSdk.Abstractions` and implementing `IPlugin`:
@@ -38,6 +37,20 @@ Instance config is tenant-private. `publicConfigKeys` is an allow-list of keys
 served by `GET /api/{slug}/_config`, so a plugin that later gains a credential
 cannot start leaking it by accident.
 
-Register the plugin in `src/Services/Dcms.ContentApi/Program.cs`
-(`AddDcmsPlugins`) and add a project reference. Add manifest tests to
+## Registering it
+
+Add the plugin to `DcmsPluginSet.AddAll` in `src/Plugins/Dcms.Plugins.All`, and a
+project reference from that project. `Dcms.Plugins.All` is the single source of
+truth for both content-api (runtime) and admin-api (catalog), so registering
+there is all that is needed — content-api calls `AddDcmsPlugins(p => p.AddAll())`
+and there is no runtime DLL loading. Add manifest tests to
 `tests/Dcms.PluginSdk.Tests`.
+
+If the plugin stores tenant rows in a new table, add it to
+`RlsConfigurator.TenantTables` (`src/Shared/Dcms.Shared.Data/Rls`). Grants to the
+least-privilege `dcms_rls` role are schema-wide defaults while the RLS policies are
+opt-in per table, so an entry that is missing is a grant with nothing enforcing the
+tenant predicate. `RlsConfigurator.AssertCoverage` fails admin-api's startup when a
+mapped entity carries a `TenantId` and appears in neither `TenantTables` nor
+`ExemptTables` — if a cross-tenant scan genuinely needs the table unfiltered, add it
+to `ExemptTables` with a comment saying why.

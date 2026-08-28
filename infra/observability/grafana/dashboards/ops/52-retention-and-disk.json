@@ -50,7 +50,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**The telemetry budget: ~20 GB of the 40 GB free on vps1.**\n\n| Store | Retention | Cap | Enforced by |\n|---|---|---|---|\n| Prometheus | 30 d | 8 GB | `--storage.tsdb.retention.size` |\n| Loki | 30 d (90 d audit/security) | ~8 GB | `retention_period` + compactor |\n| Tempo | 7 d | ~4 GB | `block_retention` |\n| Docker json logs | 3 \u00d7 50 MB per container | ~3 GB | the `x-logging` anchor |\n\nLoki has no size cap \u2014 that is not a Loki feature \u2014 so its budget is held by the retention period plus the ingestion-rate limits. If it overruns, the cause is almost always one service logging in a loop, not steady growth.\n\n**If Tempo is the one over budget**, the fix is already written and commented out: `infra/observability/alloy/config.alloy` ships tail sampling set to keep 100%, with the errors-and-slow-plus-10%-baseline policies below it. Uncomment those before shortening retention \u2014 a shorter window breaks the support workflow for everyone, while sampling only loses the uneventful traces."
+        "content": "**The telemetry budget: ~20 GB per environment.**\n\nThe caps below were sized against the 40 GB free on dev (vps1). dev and prod run separate stacks with separate disks, so prod enforces the same caps against its own headroom — raise them there rather than assuming the numbers still fit.\n\n| Store | Retention | Cap | Enforced by |\n|---|---|---|---|\n| Prometheus | 30 d | 8 GB | `--storage.tsdb.retention.size` |\n| Loki | 30 d (90 d audit/security) | ~8 GB | `retention_period` + compactor |\n| Tempo | 7 d | ~4 GB | `block_retention` |\n| Docker json logs | 3 × 50 MB per container | ~3 GB | the `x-logging` anchor |\n\nLoki has no size cap — that is not a Loki feature — so its budget is held by the retention period plus the ingestion-rate limits. If it overruns, the cause is almost always one service logging in a loop, not steady growth.\n\n**If Tempo is the one over budget**, the fix is already written and commented out: `infra/observability/alloy/config.alloy` ships tail sampling set to keep 100%, with the errors-and-slow-plus-10%-baseline policies below it. Uncomment those before shortening retention — a shorter window breaks the support workflow for everyone, while sampling only loses the uneventful traces."
       }
     },
     {
@@ -250,7 +250,7 @@
       "id": 22,
       "type": "table",
       "title": "Projected size at the end of the retention window",
-      "description": "The six-hour peak plus the trend of the peaks over a day, carried to the store's own retention horizon \u2014 30 days for Prometheus and Loki, 7 for Tempo.\n\nThis is the number to compare against the budget, not the current size: a store two weeks into a thirty-day window looks perfectly healthy right up until it isn't, and by the time the plain over-budget alert fires there is nothing left to do but delete data.\n\nThe trend is taken over peaks rather than through the raw series because these stores sawtooth \u2014 a slope fitted to the raw series measures whichever edge it spans. Meaningless for the first day after a deploy; the alert carries the same guard.",
+      "description": "The six-hour peak plus the trend of the peaks over a day, carried to the store's own retention horizon — 30 days for Prometheus and Loki, 7 for Tempo.\n\nThis is the number to compare against the budget, not the current size: a store two weeks into a thirty-day window looks perfectly healthy right up until it isn't, and by the time the plain over-budget alert fires there is nothing left to do but delete data.\n\nThe trend is taken over peaks rather than through the raw series because these stores sawtooth — a slope fitted to the raw series measures whichever edge it spans. Meaningless for the first day after a deploy; the alert carries the same guard.",
       "datasource": {
         "type": "prometheus",
         "uid": "dcms-prometheus"
@@ -525,7 +525,7 @@
           "legendFormat": "series"
         }
       ],
-      "description": "The number that decides whether Prometheus fits in 512 MB. A sudden jump means a label went unbounded \u2014 check what shipped.",
+      "description": "The number that decides whether Prometheus fits in 512 MB. A sudden jump means a label went unbounded — check what shipped.",
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -1048,7 +1048,7 @@
           "legendFormat": "{{reason}}"
         }
       ],
-      "description": "Non-zero means log lines are being dropped at the ingest limit. Those lines are gone \u2014 find the service that is shouting.",
+      "description": "Non-zero means log lines are being dropped at the ingest limit. Those lines are gone — find the service that is shouting.",
       "options": {
         "legend": {
           "displayMode": "list",

@@ -236,7 +236,11 @@ public static class InvitationEndpoints
                 tenantSlug = joined?.Identifier,
                 tenantName = joined?.Name,
             });
-        }).RequireAuthorization().WithAudit(AuditActions.MemberInviteAccepted, "invitation");
+        }).RequireAuthorization()
+          .AllowNonMemberTenant("Accepting an invitation is how the caller becomes a member. "
+                              + "The tenant comes from the invitation token, not the header, "
+                              + "which this endpoint never reads.")
+          .WithAudit(AuditActions.MemberInviteAccepted, "invitation");
 
         return app;
     }

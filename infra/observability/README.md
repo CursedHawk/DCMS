@@ -54,14 +54,20 @@ port is a trap for whoever debugs through a tunnel), Prometheus on 9090, Loki on
 
 ---
 
-## First deployment to vps1
+## First deployment of the observability stack
+
+Written for vps1, which is where it was first done, and applies unchanged to any
+environment: **dev and prod each run their own full LGTM stack** — separate Prometheus,
+Loki, Tempo and Grafana, on separate disks — so this is a per-environment procedure, not
+a one-off. Substitute the environment's own hostnames and its own secrets.
 
 Do these in order. Steps 1–4 are prerequisites; skipping any of them produces a
 container that starts and then fails in a way that looks like a config bug.
 
 ### 1. DNS
 
-`A` record `grafana.highgeek.eu` → `57.128.239.132`.
+`A` record for the environment's Grafana → that host. On dev this is
+`grafana.dev.highgeek.eu` → vps1; on prod, `grafana.highgeek.eu` → the prod VPS.
 
 It must be its own name, **not** something under `*.dcms.highgeek.eu` — that
 wildcard hits the on-demand-TLS catch-all, where site-host's
@@ -92,9 +98,13 @@ least 16 characters and not a placeholder**: admin-api refuses to start in
 Production on a weak one. Leaving it unset is allowed and makes the alert
 endpoint fail closed.
 
-Vault is deliberately not used for any of these. It is Shamir-sealed with no
-auto-unseal, so it is sealed after every reboot — precisely the moment the
-dashboards matter most.
+Vault is deliberately not used for any of these — Grafana, NATS and the rest cannot read
+Vault themselves, and a stack whose job is to tell you the platform is down must not depend
+on the platform being up. With Shamir the point was sharper still: Vault is sealed after
+every reboot, precisely the moment the dashboards matter most. Transit auto-unseal
+(`infra/vault/server/seal-transit.hcl.example`) removes that particular window, but not the
+argument — a sealed or unreachable Vault must never be able to blind the observability
+stack.
 
 ### 3. Bind-mount directories
 
@@ -124,34 +134,35 @@ docker run --rm -v /home/cursedhawk/dcms-data/loki:/x alpine:3 chown -R 10001:10
 If any of these ever comes up in a restart loop with `permission denied` on its data path,
 this is why, and the same one-liner with the right uid is the fix.
 
-### 4. Sync the source — including `infra/`
+### 4. Get `infra/` onto the host
 
-The build happens **on vps1 from tar-synced source**; the checkout there is not a
-git repo and CI does not deploy. The existing sync manifest carries
-`src apps/admin packages pnpm-lock.yaml`, which is not enough any more. It must
-now also carry:
+**Superseded — the pipeline does this.** `scripts/ci/deploy-remote.sh` rsyncs the compose
+files, `infra/` and `scripts/` to the target on every deploy, and the services run images
+pulled by digest from the registry. Nothing is built on a serving host any more, and the
+host no longer needs a source tree.
 
-```
-infra/  docker-compose.yml  docker-compose.prod.yml  docker-compose.vps.yml
-docs/   Directory.Packages.props
-```
+Kept here because the reason it mattered has not changed: **every config file in this
+stack is a bind mount.** Prometheus rules, Alloy's pipeline, the 24 dashboards, the Loki
+and Tempo configs — none of them are in an image. Without `infra/` on the host the
+containers start against paths that do not exist, and the error points at Docker rather
+than at the missing sync. It is the single easiest thing to leave out of a deploy
+artifact, which is why `deploy-remote.sh` names `infra/` explicitly rather than syncing
+whatever happens to be in the working directory.
 
-**This is the single easiest step to miss.** Without `infra/` the new containers
-start against bind mounts that do not exist, and the error you get points at
-Docker rather than at the sync.
-
-From the workstation:
-
-```sh
-tar -czf - infra docker-compose*.yml docs Directory.Packages.props src apps/admin packages pnpm-lock.yaml \
-  | ssh vps1 'tar -xzf - -C ~/baas-dcms'
-```
+For a first provisioning before the pipeline is pointed at a new host, run
+`scripts/ci/deploy-remote.sh` by hand from a checkout rather than reviving the old
+`tar | ssh` line — it carries the same manifest and none of the drift.
 
 ### 5. Postgres: extension, role, restart
 
-`infra/postgres/init/*` runs only on an empty data dir, so the provisioned
-cluster needs the equivalent by hand — the same caveat the runbook already
-carries for the audit schema.
+`infra/postgres/init/*` runs only on an empty data dir, so a cluster provisioned before a
+script was added never sees it — the same caveat the runbook carried for the audit schema.
+
+**This is now automated:** the `postgres-bootstrap` compose job re-applies those scripts
+against the *running* cluster, and `scripts/deploy.sh` runs it first in the job chain on
+every deploy. The steps below are what it does, kept for when you need to do one of them
+by hand or to understand a failure in that job. The one thing bootstrap cannot do for you
+is the Postgres restart in (a), because `shared_preload_libraries` is a startup parameter.
 
 ```sh
 # a) the extension needs shared_preload_libraries, which is now on the postgres

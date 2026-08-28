@@ -34,7 +34,18 @@ public static class MessagesEndpoints
                 return Results.BadRequest(new { error = "tenantId and request are required." });
             }
 
-            var creds = await resolver.ResolveCredentialsAsync(body.TenantId, body.UserId, ct);
+            ResolvedCredentials creds;
+            try
+            {
+                creds = await resolver.ResolveCredentialsAsync(body.TenantId, body.UserId, ct);
+            }
+            catch (AiCredentialScopeException ex)
+            {
+                // A settings problem the caller can fix, and the resolver has already recorded
+                // the refusal — so say what is wrong rather than returning an opaque 500.
+                return Results.BadRequest(new { error = "credential_scope", message = ex.Message });
+            }
+
             if (creds.Provider != AiProvider.Anthropic)
             {
                 // The IDE agent is Claude-specific (Anthropic tool-use wire format).

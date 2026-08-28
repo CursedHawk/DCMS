@@ -6,6 +6,7 @@ using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Data.Visitors;
 using Dcms.Shared.Kernel.Abstractions;
+using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Sites;
@@ -34,8 +35,9 @@ public static class SitePreviewEndpoints
                        + "against the sandbox tenant; recording it here too would double every "
                        + "preview interaction.");
 
-        // Wipe the tenant's preview sandbox (forms / visitors / chat). Authenticated
-        // admin action, scoped to the caller's current tenant.
+        // Wipe the tenant's preview sandbox (forms / visitors / chat). Destructive, so it
+        // takes site:edit like every other site endpoint — a bare RequireAuthorization() here
+        // let any authenticated account, member or not, delete another tenant's sandbox rows.
         app.MapPost("/api/admin/sites/{siteId:guid}/preview/sandbox/reset", async (
             Guid siteId, SitesDbContext sites, FormsDbContext forms,
             VisitorsDbContext visitors, ChatDbContext chat,
@@ -81,7 +83,8 @@ public static class SitePreviewEndpoints
                 });
 
             return Results.Ok(new { deleted });
-        }).RequireAuthorization().WithAudit(AuditActions.SitePreviewReset, "site");
+        }).RequirePermission(PlatformPermissions.SiteEdit)
+          .WithAudit(AuditActions.SitePreviewReset, "site");
 
         return app;
     }

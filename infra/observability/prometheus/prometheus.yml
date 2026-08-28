@@ -14,7 +14,19 @@ global:
   scrape_interval: 15s
   evaluation_interval: 30s
   external_labels:
-    host: vps1
+    # Expanded from the container's environment by --enable-feature=expand-external-labels
+    # (see the prometheus service in docker-compose.yml).
+    #
+    # These were hardcoded to `vps1` while there was one deployment. dev and prod now run
+    # separate, identical stacks from the same image and the same config file, so a literal
+    # here would label prod's series `vps1` and make the first prod alert name the wrong box.
+    #
+    # An undefined variable expands to an EMPTY label rather than failing, which is why the
+    # compose defaults are `unknown` and not `dev`: a series labelled `unknown` is visibly
+    # unconfigured, whereas prod series quietly labelled `dev` is a wrong answer that looks
+    # like a right one.
+    host: ${DCMS_HOST}
+    environment: ${DCMS_ENV}
     platform: dcms
 
 rule_files:

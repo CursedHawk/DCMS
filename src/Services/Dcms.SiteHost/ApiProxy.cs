@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Yarp.ReverseProxy.Forwarder;
 
 namespace Dcms.SiteHost;
@@ -49,6 +50,24 @@ public static class ApiProxy
             await base.TransformRequestAsync(httpContext, proxyRequest, destinationPrefix, cancellationToken);
             proxyRequest.Headers.Remove("X-Dcms-Tenant");
             proxyRequest.Headers.Add("X-Dcms-Tenant", tenantSlug);
+
+            // YARP's default transformer copies headers but adds no X-Forwarded-* of its own,
+            // and UseForwardedHeaders upstream has already consumed Caddy's. Restate them from
+            // what site-host resolved, so content-api's rate limiter and audit trail see the
+            // visitor rather than this proxy. Set rather than appended: the value is the one
+            // address site-host actually trusts, and a chain a client could prepend to is not.
+            proxyRequest.Headers.Remove("X-Forwarded-For");
+            if (httpContext.Connection.RemoteIpAddress is { } clientIp)
+            {
+                // Bracketed for IPv6 — the form ForwardedHeadersMiddleware parses without
+                // having to guess whether a trailing ":1" is a port or the last hextet.
+                var value = clientIp.AddressFamily == AddressFamily.InterNetworkV6
+                    ? $"[{clientIp}]"
+                    : clientIp.ToString();
+                proxyRequest.Headers.TryAddWithoutValidation("X-Forwarded-For", value);
+            }
+            proxyRequest.Headers.Remove("X-Forwarded-Proto");
+            proxyRequest.Headers.TryAddWithoutValidation("X-Forwarded-Proto", httpContext.Request.Scheme);
         }
     }
 }

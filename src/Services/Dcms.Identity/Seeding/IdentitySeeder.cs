@@ -1,5 +1,6 @@
 using Dcms.Identity.Data;
 using Dcms.Identity.Domain;
+using Dcms.Shared.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using OpenIddict.Abstractions;
@@ -8,28 +9,61 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 namespace Dcms.Identity.Seeding;
 
 /// <summary>
-/// Idempotent startup seeding: applies migrations, then creates global roles,
+/// Idempotent migration and seeding: applies the identity migrations, then creates global roles,
 /// the SuperAdmin user, OpenIddict scopes and the SPA + service clients.
-/// Controlled by Identity:Seed (default true in dev).
+///
+/// <para><b>Intended to run as a one-shot job.</b> <c>identity --migrate-only</c> runs it and
+/// exits; the deploy pipeline does that before rolling any service, and services then start with
+/// <c>Identity:Migrate=false</c> and <c>Identity:Seed=false</c>.</para>
+///
+/// <para>The advisory lock is what makes the startup path safe until every environment is on the
+/// job. The seed steps are individually idempotent (each does a <c>FindBy...</c> first), but
+/// idempotent is not the same as concurrency-safe: two instances checking "does this role exist"
+/// at the same time both see no, and both create it. Serialising them makes the check mean what
+/// it looks like it means.</para>
 /// </summary>
 public sealed class IdentitySeeder(
     IServiceProvider services,
     IConfiguration configuration,
     ILogger<IdentitySeeder> logger) : IHostedService
 {
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public Task StartAsync(CancellationToken cancellationToken) => ExecuteAsync(
+        configuration.GetValue("Identity:Migrate", true),
+        configuration.GetValue("Identity:Seed", true),
+        cancellationToken);
+
+    /// <summary>
+    /// Runs migration and/or seeding under the identity advisory lock. Called by the hosted
+    /// service with the configured flags, and by <c>--migrate-only</c> with both forced on --
+    /// that flag means "do not do this at startup", and a migration job is not a startup.
+    /// </summary>
+    public async Task ExecuteAsync(bool migrate, bool seed, CancellationToken cancellationToken)
     {
+        if (!migrate && !seed)
+        {
+            logger.LogInformation(
+                "Identity:Migrate and Identity:Seed are both false; expecting the migration job to have run.");
+            return;
+        }
+
+        var connectionString = configuration.GetConnectionString("Postgres")
+                               ?? throw new InvalidOperationException(
+                                   "ConnectionStrings:Postgres is required to migrate or seed identity.");
+
+        await using var identityLock = await PostgresAdvisoryLock.AcquireAsync(
+            connectionString, PostgresAdvisoryLock.IdentityLockKey, logger, cancellationToken);
+
         using var scope = services.CreateScope();
         var sp = scope.ServiceProvider;
 
-        if (configuration.GetValue("Identity:Migrate", true))
+        if (migrate)
         {
             var db = sp.GetRequiredService<IdentityDbContext>();
             await db.Database.MigrateAsync(cancellationToken);
             logger.LogInformation("Identity database migrated.");
         }
 
-        if (!configuration.GetValue("Identity:Seed", true))
+        if (!seed)
         {
             return;
         }

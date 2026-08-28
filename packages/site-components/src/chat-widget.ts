@@ -8,7 +8,7 @@
  * minimal floating panel. Realtime fan-out (including the agent's replies) is
  * delivered by the hub's per-conversation group.
  */
-import { HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr';
+import { HttpTransportType, HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr';
 import type { HubConnection } from '@microsoft/signalr';
 
 export interface ChatWidgetOptions {
@@ -54,7 +54,13 @@ export function createChatWidget(options: ChatWidgetOptions): ChatWidgetHandle {
   let conversationId = localStorage.getItem(STORAGE_KEY(options.tenant));
 
   const connection: HubConnection = new HubConnectionBuilder()
-    .withUrl(`${hubBase}/hub/chat?tenant=${encodeURIComponent(options.tenant)}`)
+    // skipNegotiation + WebSockets: no server affinity required. See the same change in the
+    // admin console -- with negotiation, the handshake's two requests must reach the same
+    // content-api replica, and neither Caddy nor site-host's proxy pins them.
+    .withUrl(`${hubBase}/hub/chat?tenant=${encodeURIComponent(options.tenant)}`, {
+      skipNegotiation: true,
+      transport: HttpTransportType.WebSockets,
+    })
     .withAutomaticReconnect()
     .configureLogging(LogLevel.Error)
     .build();

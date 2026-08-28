@@ -1,7 +1,8 @@
 import { renewSilently } from '../auth';
 import { adminHeaders } from '../tenants';
+import { runtimeConfig } from '../runtime-config';
 
-const base = import.meta.env.VITE_ADMIN_API_BASE ?? '/api';
+const base = runtimeConfig.adminApiBase;
 
 export class ApiError extends Error {
   constructor(

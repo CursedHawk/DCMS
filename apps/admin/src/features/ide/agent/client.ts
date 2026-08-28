@@ -1,12 +1,13 @@
 import { renewSilently } from '../../../auth';
 import { adminHeaders } from '../../../tenants';
+import { runtimeConfig } from '../../../runtime-config';
 
 // Streaming client for one Claude turn. The agent LOOP and its file tools run in
 // the browser (see useAgentSession); each model turn is POSTed to the admin-api
 // proxy, which injects the user's Vault-stored Anthropic key and streams the
 // Anthropic SSE response straight back. The key never reaches the browser.
 
-const base = import.meta.env.VITE_ADMIN_API_BASE ?? '/api';
+const base = runtimeConfig.adminApiBase;
 const MESSAGES_PATH = '/admin/ai/anthropic/messages';
 
 export interface TextBlock {

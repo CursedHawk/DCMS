@@ -1,5 +1,6 @@
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Propagation;
+using Dcms.Shared.Data;
 using Dcms.Shared.Data.Analytics;
 using Microsoft.EntityFrameworkCore;
 
@@ -36,6 +37,10 @@ namespace Dcms.AdminApi.Analytics;
 /// carrying the policy, the cutoff and the count. Twenty records saying "a table got shorter"
 /// is strictly less informative than one saying what removed how much and why, and the batching
 /// is an implementation detail of not holding a long transaction.</para>
+///
+/// <para><b>One replica per pass</b>, elected by a Postgres advisory lock. The batching above
+/// exists to cap the WAL a single run generates; N replicas each running the full pass would
+/// multiply that by N, which defeats the cap on the exact resource the job protects.</para>
 /// </summary>
 public sealed class AnalyticsRetentionWorker(
     IServiceProvider services,
@@ -112,6 +117,24 @@ public sealed class AnalyticsRetentionWorker(
         }
 
         var cutoff = DateTimeOffset.UtcNow.AddDays(-days);
+
+        var connectionString = configuration.GetConnectionString("Postgres");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            logger.LogWarning("ConnectionStrings:Postgres is not configured; skipping analytics retention.");
+            return;
+        }
+
+        // Whichever replica gets here first does this pass; the others skip and retry next
+        // interval. Six-hourly work with a 90-day window loses nothing by waiting.
+        await using var leadership = await PostgresAdvisoryLock.TryAcquireAsync(
+            connectionString, PostgresAdvisoryLock.AnalyticsRetentionLockKey, logger, ct);
+
+        if (leadership is null)
+        {
+            logger.LogDebug("Another replica is running analytics retention; skipping this pass.");
+            return;
+        }
 
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AnalyticsDbContext>();

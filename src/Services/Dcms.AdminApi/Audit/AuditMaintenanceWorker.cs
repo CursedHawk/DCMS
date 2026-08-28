@@ -1,4 +1,5 @@
 using Dcms.Shared.Audit;
+using Dcms.Shared.Data;
 using Dcms.Shared.Data.Audit;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,9 +18,15 @@ namespace Dcms.AdminApi.Audit;
 /// <para>It also runs once at startup, before the first hour elapses: a service that has been
 /// down across a month boundary needs this month's partition to exist before it takes a
 /// request, not an hour later.</para>
+///
+/// <para>Exactly one replica runs a given pass, elected by a Postgres advisory lock. Every step
+/// is idempotent, so concurrent passes would not corrupt anything -- but they would each do the
+/// same DDL and each publish the same gauges, and a metric written N times by N replicas is not
+/// N times more informative.</para>
 /// </summary>
 public sealed class AuditMaintenanceWorker(
     IServiceProvider services,
+    IConfiguration configuration,
     AuditMetrics metrics,
     ILogger<AuditMaintenanceWorker> logger) : BackgroundService
 {
@@ -58,6 +65,24 @@ public sealed class AuditMaintenanceWorker(
 
     private async Task RunOnceAsync(CancellationToken ct)
     {
+        var connectionString = configuration.GetConnectionString("Postgres");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            logger.LogWarning("ConnectionStrings:Postgres is not configured; skipping audit maintenance.");
+            return;
+        }
+
+        // Whichever replica gets here first does this pass; the others skip it and try again
+        // next interval. Not an error, and not worth a warning -- it is the design working.
+        await using var leadership = await PostgresAdvisoryLock.TryAcquireAsync(
+            connectionString, PostgresAdvisoryLock.AuditMaintenanceLockKey, logger, ct);
+
+        if (leadership is null)
+        {
+            logger.LogDebug("Another replica is running audit maintenance; skipping this pass.");
+            return;
+        }
+
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
 

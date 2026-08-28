@@ -1,14 +1,16 @@
 import { UserManager, WebStorageStateStore, type User } from 'oidc-client-ts';
+import { runtimeConfig } from './runtime-config';
 
 // OIDC config. authority points at the identity service; in dev that is the
-// compose-mapped port 5001. Override via Vite env (VITE_OIDC_*) for other
-// environments. Tokens are obtained with authorization code + PKCE.
-const authority = import.meta.env.VITE_OIDC_AUTHORITY ?? 'http://localhost:5001';
+// compose-mapped port 5001. Resolved at RUNTIME (see runtime-config.ts) rather than baked in
+// at build time, so one image serves every environment. Tokens are obtained with
+// authorization code + PKCE.
+const authority = runtimeConfig.oidcAuthority;
 const origin = window.location.origin;
 
 export const userManager = new UserManager({
   authority,
-  client_id: import.meta.env.VITE_OIDC_CLIENT_ID ?? 'dcms-admin-spa',
+  client_id: runtimeConfig.oidcClientId,
   redirect_uri: `${origin}/auth/callback`,
   post_logout_redirect_uri: `${origin}/`,
   response_type: 'code',

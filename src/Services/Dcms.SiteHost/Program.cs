@@ -6,6 +6,7 @@ using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Hosting;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddDcmsServiceDefaults("site-host");
@@ -28,6 +29,18 @@ var app = builder.Build();
 // First in the pipeline, so an exception anywhere below it becomes a ProblemDetails
 // carrying the trace id instead of a bare Kestrel 500 with no body and nothing to quote.
 app.UseDcmsProblemDetails();
+
+// Caddy terminates TLS and forwards over the compose network, so without this every request
+// here looks like it came from Caddy — including the client address site-host stamps onto the
+// requests it proxies to content-api, which is what content-api's rate limiter partitions on.
+var forwardedHeaders = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+};
+// Only reachable through Caddy on the internal network, so every upstream is trusted.
+forwardedHeaders.KnownIPNetworks.Clear();
+forwardedHeaders.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeaders);
 
 app.UseDcmsSecurityHeaders();
 app.MapDcmsDefaultEndpoints();

@@ -26,7 +26,18 @@ x-prod-env: &prod-env
   Storage__AccessKey: "${MINIO_ROOT_USER}"
   Storage__SecretKey: "${MINIO_ROOT_PASSWORD}"
   VAULT_ADDR: "http://vault:8200"
-  VAULT_TOKEN: "${VAULT_TOKEN}"
+  # Two auth paths, and AppRole wins when both halves are present -- which is what lets this
+  # deployment migrate one service at a time rather than in a single cutover.
+  #
+  # The static token is the legacy path: ONE 72-hour periodic token shared by every service,
+  # with read on secret/data/dcms/*. It expires (nothing renews it, and the failure is
+  # invisible until the next restart), and it gives every container every secret the platform
+  # holds. Per-service AppRoles fix both: each service logs in itself for a short-lived token
+  # scoped to its own path, so there is nothing to renew and nothing shared.
+  #
+  # Per-service ids are layered on in docker-compose.vps.yml, where a host's own credentials
+  # belong. Anything without them falls back to the token below.
+  VAULT_TOKEN: "${VAULT_TOKEN:-}"
   # HMAC key for the audit hash chain. Every service that owns the audit schema
   # needs it; the two that reach the log over NATS (email-worker, site-builder)
   # deliberately do not inherit this anchor and do not need it.
@@ -84,12 +95,19 @@ services:
 
   # Real Vault server (sealed on first boot; operator runs init + unseal).
   vault:
-    command: ["vault", "server", "-config=/vault/config/config.hcl"]
+    # -config points at the DIRECTORY, not a single file. Vault merges every .hcl in it, which
+    # is what lets a host enable Transit auto-unseal by dropping in seal-transit.hcl without
+    # editing the shared config. See infra/vault/server/seal-transit.hcl.example -- and note that a
+    # Shamir-sealed Vault means the platform cannot return from a reboot without a human.
+    command: ["vault", "server", "-config=/vault/config"]
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: ""
       VAULT_ADDR: "http://0.0.0.0:8200"
+      # Read by the seal stanza. Kept out of the mounted file so the token is not on disk in
+      # the repo directory.
+      VAULT_TRANSIT_SEAL_TOKEN: "${VAULT_TRANSIT_SEAL_TOKEN:-}"
     volumes:
-      - ./infra/vault/config.hcl:/vault/config/config.hcl:ro
+      - ./infra/vault/server:/vault/config:ro
       - vault-data:/vault/data
 
   # The dev seeding job is a no-op in prod; secrets are provisioned by the operator.
@@ -98,11 +116,55 @@ services:
     environment:
       VAULT_TOKEN: ""
 
+  # ---------- cluster bootstrap ----------
+  # Real credentials for the three non-owner roles. RLS_DB_PASSWORD in particular matters:
+  # 01-rls.sql hardcodes a development password because initdb cannot pass it one, and a
+  # production cluster must not keep a role with SELECT on every tenant schema on a password
+  # published in this repository.
+  postgres-bootstrap:
+    environment:
+      PGHOST: postgres
+      POSTGRES_USER: dcms
+      POSTGRES_DB: dcms
+      PGPASSWORD: "${POSTGRES_PASSWORD}"
+      SITEBUILDER_DB_PASSWORD: "${SITEBUILDER_DB_PASSWORD}"
+      GRAFANA_DB_PASSWORD: "${GRAFANA_DB_PASSWORD}"
+      RLS_DB_PASSWORD: "${RLS_DB_PASSWORD:-}"
+
+  # ---------- schema migration jobs ----------
+  # These are the only containers in production allowed to run DDL. `scripts/deploy.sh`
+  # runs them before rolling anything; every service below has its own migrate flag off.
+  migrate:
+    environment:
+      <<: *prod-env
+
+  identity-migrate:
+    environment:
+      <<: *prod-env
+      Identity__Issuer: "${PUBLIC_BASE_URL}/"
+      Identity__AllowInsecureHttp: "false"
+      Identity__SigningCertificate: "${IDENTITY_SIGNING_CERTIFICATE:-}"
+      Identity__EncryptionCertificate: "${IDENTITY_ENCRYPTION_CERTIFICATE:-}"
+      Identity__CertificatePassword: "${IDENTITY_CERTIFICATE_PASSWORD:-}"
+      Identity__AllowEphemeralKeys: "${IDENTITY_ALLOW_EPHEMERAL_KEYS:-false}"
+
   identity:
     environment:
       <<: *prod-env
       Identity__Issuer: "${PUBLIC_BASE_URL}/"
       Identity__AllowInsecureHttp: "false"
+      # Migration and seeding are the migration job's work. Left on, every replica
+      # would run DDL and seed concurrently at startup.
+      Identity__Migrate: "false"
+      Identity__Seed: "false"
+      # Persisted OIDC keys. Without these OpenIddict mints per-container keys, so each
+      # replica publishes a different JWKS and every deploy invalidates every live token.
+      # Identity refuses to start in Production without them unless
+      # IDENTITY_ALLOW_EPHEMERAL_KEYS=true, which accepts both consequences.
+      Identity__SigningCertificate: "${IDENTITY_SIGNING_CERTIFICATE:-}"
+      Identity__EncryptionCertificate: "${IDENTITY_ENCRYPTION_CERTIFICATE:-}"
+      Identity__CertificatePassword: "${IDENTITY_CERTIFICATE_PASSWORD:-}"
+      Identity__AllowEphemeralKeys: "${IDENTITY_ALLOW_EPHEMERAL_KEYS:-false}"
 
   admin-api:
     environment:
@@ -113,6 +175,10 @@ services:
       ServiceClient__ClientId: "dcms-admin-api"
       ServiceClient__ClientSecret: "${ADMIN_API_CLIENT_SECRET}"
       Services__AiGateway: "http://ai-gateway:8080"
+      # DDL belongs to the migration job. The RLS coverage assertion still runs at every
+      # startup -- it reads no database and it is what catches a tenant table added
+      # without a policy.
+      Tenancy__Migrate: "false"
 
   content-api:
     environment:
@@ -201,14 +267,18 @@ services:
       Auth__Audience: "dcms-ai-gateway"
       Auth__RequireHttpsMetadata: "true"
 
-  # Git server. Caddy terminates TLS for the HTTP git+web UI (git.highgeek.eu)
+  # Git server. Caddy terminates TLS for the HTTP git+web UI ($GIT_HOST).
+  #
+  # dev and prod run SEPARATE Forgejo instances -- these are the tenants' actual site
+  # repositories, and a dev deployment writing into production's git server would be a
+  # cross-environment data path, not a test.
   # over the internal network; the base file already publishes SSH on :2222 and
   # binds HTTP to loopback. The clone/SSH URLs the UI hands out use the public host.
   forgejo:
     environment:
-      FORGEJO__server__DOMAIN: "git.highgeek.eu"
-      FORGEJO__server__ROOT_URL: "https://git.highgeek.eu/"
-      FORGEJO__server__SSH_DOMAIN: "git.highgeek.eu"
+      FORGEJO__server__DOMAIN: "${GIT_HOST:-git.highgeek.eu}"
+      FORGEJO__server__ROOT_URL: "https://${GIT_HOST:-git.highgeek.eu}/"
+      FORGEJO__server__SSH_DOMAIN: "${GIT_HOST:-git.highgeek.eu}"
       FORGEJO__server__SSH_PORT: "2222"
       FORGEJO__service__DISABLE_REGISTRATION: "true"
       FORGEJO__webhook__ALLOWED_HOST_LIST: "private,loopback"
@@ -227,6 +297,13 @@ services:
       - "443:443"
     environment:
       ACME_EMAIL: "${ACME_EMAIL}"
+      # The three named site blocks in the Caddyfile. Defaults are production's names, so
+      # this is a no-op there; a dev host sets its own in .env. Without these the dev edge
+      # would ask Let's Encrypt for a certificate for production's hostname -- which fails,
+      # and keeps failing against the rate limit.
+      ADMIN_HOST: "${ADMIN_HOST:-admin.highgeek.eu}"
+      GRAFANA_DOMAIN: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
+      GIT_HOST: "${GIT_HOST:-git.highgeek.eu}"
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

@@ -11,6 +11,11 @@ namespace Dcms.Identity.Forgejo;
 /// inline path couldn't complete (e.g. Forgejo was down), with exponential backoff,
 /// until it converges. Mirrors the polling shape of admin-api's OutboxDispatcher and
 /// is resilient to Forgejo/Vault/DB being unavailable.
+///
+/// <para>Rows are claimed with <c>FOR UPDATE SKIP LOCKED</c> so sibling replicas take disjoint
+/// sets. Without it every replica drains the same rows: the same Forgejo account and credential
+/// calls are made N times, and the replicas then race on <c>Remove(row)</c> — one deletes it and
+/// the others' SaveChanges affects zero rows.</para>
 /// </summary>
 public sealed class ForgejoSyncWorker(
     IServiceProvider services,
@@ -19,6 +24,19 @@ public sealed class ForgejoSyncWorker(
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(15);
     private const int MaxAttempts = 12;
+
+    /// <summary>
+    /// Claims a batch for this replica. Columns are EF's default PascalCase identifiers (only the
+    /// table name is snake_cased), so they must be double-quoted in raw SQL.
+    /// </summary>
+    private const string ClaimSql =
+        """
+        SELECT * FROM identity.forgejo_sync_outbox
+        WHERE "NextAttemptAt" <= now()
+        ORDER BY "NextAttemptAt"
+        FOR UPDATE SKIP LOCKED
+        LIMIT 50
+        """;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -47,11 +65,14 @@ public sealed class ForgejoSyncWorker(
         var auditScope = scope.ServiceProvider.GetRequiredService<AuditScope>();
 
         var now = DateTimeOffset.UtcNow;
-        var due = await db.ForgejoSyncOutbox
-            .Where(o => o.NextAttemptAt <= now)
-            .OrderBy(o => o.NextAttemptAt)
-            .Take(50)
-            .ToListAsync(ct);
+
+        // One transaction around the whole pass: the row locks must outlive the Forgejo calls,
+        // or a sibling could claim a row this replica has read but not yet removed. The batch is
+        // capped at 50 and each row is a couple of HTTP calls, so the lock is held for seconds --
+        // and every other replica SKIP LOCKEDs straight past it rather than waiting.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        var due = await db.ForgejoSyncOutbox.FromSqlRaw(ClaimSql).ToListAsync(ct);
 
         foreach (var row in due)
         {
@@ -66,6 +87,14 @@ public sealed class ForgejoSyncWorker(
                 await sync.ApplyOutboxAsync(row, ct);
                 db.ForgejoSyncOutbox.Remove(row);
                 logger.LogInformation("Forgejo sync converged for user {UserId}.", row.UserId);
+            }
+            catch (ForgejoAdoptionRefusedException ex)
+            {
+                // Permanent. Backing off twelve times before dropping it would only delay the
+                // same answer and bury the reason under retry noise.
+                db.ForgejoSyncOutbox.Remove(row);
+                logger.LogError(ex,
+                    "Forgejo sync refused for user {UserId}; dropping row.", row.UserId);
             }
             catch (Exception ex)
             {
@@ -90,6 +119,8 @@ public sealed class ForgejoSyncWorker(
             }
             await db.SaveChangesAsync(ct);
         }
+
+        await tx.CommitAsync(ct);
     }
 
     // 30s, 1m, 2m, 4m … capped at 1h.

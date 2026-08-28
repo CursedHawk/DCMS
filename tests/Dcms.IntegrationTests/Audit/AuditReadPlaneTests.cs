@@ -81,7 +81,7 @@ public class AuditReadPlaneTests(AdminApiFixture fixture)
         var roles = await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", SuperAdmin, "SuperAdmin", slug), ct);
         roles.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var page = await ReadLogAsync(client, slug, ct);
+        var page = await ReadLogWhenPopulatedAsync(client, slug, ct);
         var items = page.GetProperty("items").EnumerateArray().ToList();
 
         // Provisioning a tenant records against it; if nothing at all is here, the read plane
@@ -156,7 +156,7 @@ public class AuditReadPlaneTests(AdminApiFixture fixture)
         var slugA = await NewTenantAsync(client, Guid.NewGuid(), ct);
         var slugB = await NewTenantAsync(client, Guid.NewGuid(), ct);
 
-        var pageA = await ReadLogAsync(client, slugA, ct);
+        var pageA = await ReadLogWhenPopulatedAsync(client, slugA, ct);
         var someRecord = pageA.GetProperty("items").EnumerateArray().First().GetProperty("id").GetGuid();
 
         var res = await client.SendAsync(
@@ -185,5 +185,33 @@ public class AuditReadPlaneTests(AdminApiFixture fixture)
             Req(HttpMethod.Get, "/api/admin/audit", SuperAdmin, "SuperAdmin", slug), ct);
         res.StatusCode.Should().Be(HttpStatusCode.OK);
         return await res.Content.ReadFromJsonAsync<JsonElement>(ct);
+    }
+
+    /// <summary>
+    /// The log, once it has at least one record in it.
+    ///
+    /// <para>Writes do not land in <c>audit.audit_events</c> synchronously. <c>OutboxAuditSink</c>
+    /// commits the record to <c>audit.audit_outbox</c> inside the caller's own transaction — that
+    /// is the whole point, since a record written separately is one a crash can lose — and a
+    /// background dispatcher promotes it afterwards. So a read issued the instant a 201 comes
+    /// back is racing that dispatcher, and gets an empty page. Polling is not papering over a
+    /// flake here; it is the correct way to assert on an eventually-consistent read plane, and
+    /// it is the same shape MediaWorkerTests already uses for the media pipeline.</para>
+    /// </summary>
+    private static async Task<JsonElement> ReadLogWhenPopulatedAsync(
+        HttpClient client, string slug, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        JsonElement page = default;
+        while (DateTime.UtcNow < deadline)
+        {
+            page = await ReadLogAsync(client, slug, ct);
+            if (page.GetProperty("items").GetArrayLength() > 0)
+            {
+                return page;
+            }
+            await Task.Delay(200, ct);
+        }
+        return page;
     }
 }

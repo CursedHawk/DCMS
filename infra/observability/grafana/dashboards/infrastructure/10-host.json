@@ -1,7 +1,7 @@
 {
   "uid": "dcms-host",
   "title": "Host resources",
-  "description": "vps1 CPU, memory, disk with a fill-rate projection, inodes, network and load.",
+  "description": "Host CPU, memory, disk with a fill-rate projection, inodes, network and load.",
   "tags": [
     "dcms",
     "infrastructure",
@@ -50,7 +50,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**vps1: 4 cores, 7.6 GB, no swap, 72 GB disk.**\n\nThe no-swap part shapes how to read this. There is no gradual degradation under memory pressure \u2014 the next step after sustained pressure is the OOM killer choosing a process, and it does not necessarily choose the one that overran. Treat the memory panel as a cliff edge, not a slope."
+        "content": "**Sizing is per environment.** dev (vps1) is 4 cores, 7.6 GB, no swap, 72 GB disk; prod is sized separately. Each environment runs its own Prometheus and its own Grafana, so these panels always describe the host this Grafana belongs to — the `host` external label on every series names it.\n\nThe no-swap part shapes how to read this, and it is true of both. There is no gradual degradation under memory pressure — the next step after sustained pressure is the OOM killer choosing a process, and it does not necessarily choose the one that overran. Treat the memory panel as a cliff edge, not a slope."
       }
     },
     {
@@ -819,7 +819,7 @@
           "legendFormat": "inodes"
         }
       ],
-      "description": "A separate way to run out of filesystem, and one that reports plenty of free bytes while it happens. Many small files \u2014 build artifacts, chunks \u2014 is exactly the workload that does it.",
+      "description": "A separate way to run out of filesystem, and one that reports plenty of free bytes while it happens. Many small files — build artifacts, chunks — is exactly the workload that does it.",
       "options": {
         "legend": {
           "displayMode": "list",

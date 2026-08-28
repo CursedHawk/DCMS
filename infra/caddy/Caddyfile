@@ -19,7 +19,12 @@
 # Admin + identity plane. Normal ACME (this host's DNS must point here). The SPA
 # is served at the root; identity and admin-api are reverse-proxied by path so
 # the browser uses a single same-origin host for OIDC + API calls.
-admin.highgeek.eu {
+# The site addresses below come from the environment, with the production names as
+# defaults. dev and prod deploy the SAME Caddyfile -- it is bind-mounted from the synced
+# infra/ directory -- so a literal hostname here would make the dev edge request an ACME
+# certificate for production's name and fail, repeatedly, against Let's Encrypt's rate limit.
+# `{$VAR:default}` is Caddy's own env syntax, already used for ACME_EMAIL above.
+{$ADMIN_HOST:admin.highgeek.eu} {
 	# Identity-owned paths: OIDC discovery/JWKS, the connect/* protocol endpoints,
 	# the interactive login UI, and the Google external-login callback
 	# (/signin-google, the GoogleHandler's default CallbackPath). Matched
@@ -54,7 +59,7 @@ admin.highgeek.eu {
 # already resolves and would fall through to the on-demand-TLS catch-all below, where
 # site-host's /internal/tls-allowed would correctly refuse to mint a certificate for a
 # hostname no tenant has verified.
-grafana.highgeek.eu {
+{$GRAFANA_DOMAIN:grafana.highgeek.eu} {
 	reverse_proxy grafana:3000
 }
 
@@ -69,7 +74,7 @@ grafana.highgeek.eu {
 # Git server (Forgejo) web UI + HTTP git transport. Normal ACME (this host's DNS
 # must point here). SSH git access is separate, on host port 2222. Large pushes
 # need a generous body limit; Caddy streams git's chunked responses fine.
-git.highgeek.eu {
+{$GIT_HOST:git.highgeek.eu} {
 	reverse_proxy forgejo:3000
 }
 

@@ -24,6 +24,7 @@ using Dcms.Shared.Security;
 using Dcms.Shared.Storage;
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -50,6 +51,28 @@ builder.Services.AddDcmsSearchData(builder.Configuration);
 builder.Services.AddDcmsVisitorsData(builder.Configuration);
 builder.Services.AddDcmsChatData(builder.Configuration);
 builder.Services.Configure<VisitorTokenOptions>(builder.Configuration.GetSection(VisitorTokenOptions.SectionName));
+
+// Prod safety, same shape as admin-api's webhook-secret guards. Visitor:SigningKey is a
+// manual `vault kv put` in the deploy guide — infra/vault/init.sh only writes a placeholder
+// to secret/dcms/content-api — so the way this goes wrong is a step being skipped, not a bad
+// value being chosen. The whole tenant binding in a visitor token is its audience, and the
+// tenant id is not a secret, so an unconfigured key means every visitor session on every
+// tenant is forgeable by anyone who has read this repository. Fail loudly instead.
+if (builder.Environment.IsProduction())
+{
+    var visitor = builder.Configuration.GetSection(VisitorTokenOptions.SectionName).Get<VisitorTokenOptions>()
+                  ?? new VisitorTokenOptions();
+    var key = visitor.SigningKey?.Trim() ?? string.Empty;
+    if (key.Length == 0
+        || key == VisitorTokenOptions.DevelopmentSigningKey
+        || System.Text.Encoding.UTF8.GetByteCount(key) < VisitorTokenOptions.MinimumKeyBytes)
+    {
+        throw new InvalidOperationException(
+            "Refusing to start: Visitor__SigningKey is unset, the development default, or shorter "
+            + $"than {VisitorTokenOptions.MinimumKeyBytes} bytes in Production. Set a strong, unique "
+            + "value (openssl rand -base64 32) at secret/dcms/content-api.");
+    }
+}
 builder.Services.AddSingleton(sp =>
     new VisitorTokenService(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<VisitorTokenOptions>>().Value));
 builder.Services.AddDcmsTenantResolutionByHeader();
@@ -143,6 +166,21 @@ var app = builder.Build();
 // First in the pipeline, so an exception anywhere below it becomes a ProblemDetails
 // carrying the trace id instead of a bare Kestrel 500 with no body and nothing to quote.
 app.UseDcmsProblemDetails();
+
+// Before the rate limiter, which partitions on Connection.RemoteIpAddress, and before the
+// audit middleware, which records it. content-api is reached only through Caddy (for /hub on
+// the admin host) or through site-host's proxy (for tenant domains), so without this every
+// caller on the whole public delivery plane — analytics, form submissions, visitor login,
+// chat — shares one partition keyed on the proxy's address: a single 600/60s bucket for all
+// tenants, and no per-IP throttle on visitor login at all.
+var forwardedHeaders = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+};
+// Only reachable from inside the compose network, so every upstream is a trusted proxy.
+forwardedHeaders.KnownIPNetworks.Clear();
+forwardedHeaders.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeaders);
 
 app.UseDcmsSecurityHeaders();
 app.UseRateLimiter();

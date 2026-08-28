@@ -28,7 +28,11 @@ public sealed class AudioProcessingConsumer(
     protected override async Task ProcessAsync(MediaProcessRequested job, IServiceScope scope, CancellationToken ct)
     {
         var db = scope.ServiceProvider.GetRequiredService<MediaDbContext>();
-        var workDir = Path.Combine(Path.GetTempPath(), $"dcms-aud-{job.AssetId:N}");
+        // Guid, not the asset id: the asset id is the one thing two concurrent runs of
+        // this job would share. A JetStream redelivery that overlaps the original -- or
+        // simply two replicas handed the same asset -- would otherwise transcode into the
+        // same directory and the loser would upload the winner's half-written segments.
+        var workDir = Path.Combine(Path.GetTempPath(), $"dcms-aud-{job.AssetId:N}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(workDir);
         var input = await DownloadToTempAsync(job.OriginalObjectKey, Path.GetExtension(job.OriginalObjectKey), ct);
 

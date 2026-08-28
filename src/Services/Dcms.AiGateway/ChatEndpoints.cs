@@ -21,8 +21,18 @@ public static class ChatEndpoints
                 return Results.BadRequest(new { error = "tenantId and prompt are required." });
             }
 
-            var resolved = await resolver.ResolveAsync(body.TenantId, body.UserId, ct);
             var logger = loggerFactory.CreateLogger("ai-gateway");
+
+            ResolvedProvider resolved;
+            try
+            {
+                resolved = await resolver.ResolveAsync(body.TenantId, body.UserId, ct);
+            }
+            catch (AiCredentialScopeException ex)
+            {
+                return Results.BadRequest(new { error = "credential_scope", message = ex.Message });
+            }
+
             logger.LogInformation("Chat completion via {Provider}/{Model} for tenant {TenantId}",
                 resolved.Provider.ProviderId, resolved.Model, body.TenantId);
 
