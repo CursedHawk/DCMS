@@ -324,7 +324,7 @@ one service at a time rather than as a cutover.
 **Auto-unseal.** With the default Shamir seal a reboot leaves Vault sealed, every service
 refuses to start on the 503, and the platform stays down until a human unseals it — at
 whatever hour it happened, with a key they have to go and fetch. Copy
-`infra/vault/server/seal-transit.hcl.example` to `seal-transit.hcl` on the host to point it
+`infra/vault/server/seal-transit.hcl` to `seal-transit.hcl` on the host to point it
 at the seal Vault on VPSM. That file documents the trade it makes — VPSM also serves GitLab,
 so the seal host is the CI host — and the Shamir→Transit migration, which is not automatic.
 

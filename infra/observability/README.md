@@ -102,7 +102,7 @@ Vault is deliberately not used for any of these — Grafana, NATS and the rest c
 Vault themselves, and a stack whose job is to tell you the platform is down must not depend
 on the platform being up. With Shamir the point was sharper still: Vault is sealed after
 every reboot, precisely the moment the dashboards matter most. Transit auto-unseal
-(`infra/vault/server/seal-transit.hcl.example`) removes that particular window, but not the
+(`infra/vault/server/seal-transit.hcl`) removes that particular window, but not the
 argument — a sealed or unreachable Vault must never be able to blind the observability
 stack.
 

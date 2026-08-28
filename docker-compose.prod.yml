@@ -97,7 +97,7 @@ services:
   vault:
     # -config points at the DIRECTORY, not a single file. Vault merges every .hcl in it, which
     # is what lets a host enable Transit auto-unseal by dropping in seal-transit.hcl without
-    # editing the shared config. See infra/vault/server/seal-transit.hcl.example -- and note that a
+    # editing the shared config. See infra/vault/server/seal-transit.hcl -- and note that a
     # Shamir-sealed Vault means the platform cannot return from a reboot without a human.
     command: ["vault", "server", "-config=/vault/config"]
     environment:
@@ -106,6 +106,14 @@ services:
       # Read by the seal stanza. Kept out of the mounted file so the token is not on disk in
       # the repo directory.
       VAULT_TRANSIT_SEAL_TOKEN: "${VAULT_TRANSIT_SEAL_TOKEN:-}"
+      # Which Transit key on the seal Vault unwraps THIS host's master key. The one value that
+      # differs between dev and production -- the rest of the seal config is committed in
+      # infra/vault/server/seal-transit.hcl, which both environments share.
+      #
+      # No default on purpose. A wrong key name is not a startup error you can miss: Vault
+      # refuses to start at all, which is the right failure. A default would let a production
+      # host silently seal itself against the dev key.
+      VAULT_TRANSIT_SEAL_KEY_NAME: "${VAULT_TRANSIT_SEAL_KEY_NAME:-}"
     volumes:
       - ./infra/vault/server:/vault/config:ro
       - vault-data:/vault/data

@@ -276,7 +276,7 @@ if [ "$ENVIRONMENT" != "local" ] && compose ps --services 2>/dev/null | grep -qx
   elif echo "$seal_status" | grep -q '"sealed": *true'; then
     die "Vault is SEALED. Services read their configuration from it at startup and will not boot.
        Unseal it first (\`vault operator unseal\`, or configure Transit auto-unseal -- see
-       infra/vault/server/seal-transit.hcl.example), then re-run this deploy."
+       infra/vault/server/seal-transit.hcl), then re-run this deploy."
   else
     # shamir | transit | awskms | ... -- decides whether recreating Vault is safe below.
     VAULT_SEAL_TYPE=$(echo "$seal_status" | sed -n 's/.*"type": *"\([a-z]*\)".*/\1/p' | head -1)
@@ -382,7 +382,7 @@ if [ "${VAULT_SEAL_TYPE:-}" = "shamir" ] && [ "$FORCE_RECREATE_VAULT" != 1 ]; th
        ./unseal-vault.sh
 
      Or pass --recreate-vault to accept the outage, or configure Transit auto-unseal
-     (infra/vault/server/seal-transit.hcl.example) so there is nothing to unseal."
+     (infra/vault/server/seal-transit.hcl) so there is nothing to unseal."
   fi
 fi
 

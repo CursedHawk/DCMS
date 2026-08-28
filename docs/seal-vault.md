@@ -69,17 +69,22 @@ needed for the unseal key.
 
 ## Still to do
 
-1. **Unseal the seal Vault at boot.** It is Shamir, so a VPSM reboot leaves it sealed — and
-   then nothing else can auto-unseal either. Until this exists, auto-unseal downstream is only
-   as available as VPSM's uptime.
+1. ~~Unseal the seal Vault at boot.~~ **Done.** `vault-seal-unseal.service` opens it after
+   `docker.service`, and `vault-seal-unseal.timer` re-checks every five minutes — because the
+   container carries `restart: unless-stopped`, so a crash or OOM kill brings it back *sealed*
+   long after boot, with nothing to open it. The script exits immediately when already
+   unsealed. Key at `/etc/vault-seal/unseal.key`, root-only.
+
+   Two things that bit during setup and would bite again: `vault operator unseal -` (key on
+   stdin) is **not** supported by this Vault, and a `oneshot` unit left with
+   `RemainAfterExit=yes` stays `active` forever, which makes every later timer elapse a silent
+   no-op.
 2. **Migrate vps1 from Shamir to Transit.** Not automatic — see
-   `infra/vault/server/seal-transit.hcl.example`. vps1 also needs the CA certificate at a
-   permanent path (it is at `/tmp/seal-ca.crt` from testing) and `VAULT_TRANSIT_SEAL_TOKEN`
-   in its `.env`.
+   `infra/vault/server/seal-transit.hcl`.
 
 ## The trade this makes
 
-Documented in `infra/vault/server/seal-transit.hcl.example`, and worth restating in one line:
+Documented in `infra/vault/server/seal-transit.hcl`, and worth restating in one line:
 root on VPSM already meant the ability to ship arbitrary code to prod through GitLab, and this
 widens that to unwrapping both environments' Vaults.
 
