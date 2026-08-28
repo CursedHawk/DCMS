@@ -122,6 +122,24 @@ integration:
     - docker push "$IMAGE:$CI_COMMIT_SHORT_SHA"
     - docker tag "$IMAGE:$CI_COMMIT_SHORT_SHA" "$IMAGE:dev"
     - docker push "$IMAGE:dev"
+  # ONE image job at a time, and this is not a preference.
+  #
+  # There are more runners than this matrix has entries, so without a resource group all ten
+  # build and push at once -- into a registry that runs inside the GitLab container, on the
+  # same 4-core box that serves GitLab itself. The first run of this pipeline drove the load
+  # average past 50, pinned that container against its memory limit, made the web UI return
+  # 504, and failed seven of the ten pushes. The two that succeeded were the two that finished
+  # before the pile-up.
+  #
+  # The runners are elsewhere, but the registry is not, so parallelism here buys nothing and
+  # costs the box. It is the same lesson the deploy has already learned twice about building
+  # more than two services at once on a small host.
+  #
+  # Layer caching from :dev makes the serial run far cheaper than the first one suggests.
+  resource_group: registry
+  # A superseded pipeline should stop building images nobody will deploy, rather than queue
+  # behind the resource group and delay the one that matters.
+  interruptible: true
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
