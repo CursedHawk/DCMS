@@ -20,7 +20,7 @@ Site source lives in git: Mode A sites are HTML/CSS authored with GrapesJS, Mode
 B sites are React projects edited in the browser IDE. A push to a repo's
 `release` branch builds and deploys it.
 
-## Quick start
+## Quick start (local development only)
 
 ```sh
 docker compose up -d --build
@@ -28,10 +28,20 @@ pwsh scripts/smoke.ps1
 pnpm install && pnpm dev:admin
 ```
 
+This is the local stack: Vault in `-dev` mode, no TLS, development defaults throughout. A
+deployed host is a different shape entirely — images pulled by digest, per-service Vault
+AppRoles, Transit auto-unseal — and is covered in [`docs/setup.md`](docs/setup.md).
+
 ## Docs
 
+**Setting the platform up? Start with [`docs/setup.md`](docs/setup.md)** — all three hosts,
+the Vault chain and the CI/CD pipeline, from nothing to a host that deploys itself.
+
+- `docs/setup.md` — **full platform setup**, ops + dev + prod
+- `docs/vault-secrets.md` — what goes in Vault, where, and what cannot go there yet
+- `docs/seal-vault.md` — the Vault that auto-unseals the others
 - `docs/runbook.md` — ports, credentials and per-feature configuration
-- `docs/deploy-linux.md` — dev, production and VPS deployment
+- `docs/deploy-linux.md` — single-host bring-up in detail
 - `docs/plugins.md` — writing a plugin
 - `docs/mode-a-builder.md` — the GrapesJS visual builder
 - `docs/adr/` — architecture decision records

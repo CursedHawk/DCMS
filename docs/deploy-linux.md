@@ -1,5 +1,10 @@
 # Deploying baas-dcms on Linux with Docker
 
+> **Setting up the platform from scratch? Start with [`setup.md`](setup.md).** It covers all
+> three hosts, the Vault chain and the pipeline. This document is the single-host detail it
+> refers to, and assumes you are bringing a host up by hand.
+
+
 This guide deploys the whole system — 8 .NET services, the admin SPA, and the
 infra (Postgres, Redis, NATS JetStream, MinIO, Vault, Forgejo, Caddy, and the
 Alloy/Prometheus/Loki/Tempo/Grafana telemetry stack) — on a single Linux host
@@ -255,25 +260,29 @@ docker compose exec vault sh -c '
 > Production** when it is unset, the development default, or shorter than 32 bytes.
 > Generate one with `openssl rand -base64 32`.
 
-Create a least-privilege policy + token for the services and put that token in
-`.env` as `VAULT_TOKEN` (AppRole-per-service is the hardening target; a single
-scoped token is the simplest correct start):
+### Policies, AppRoles and the service credentials
+
+**This section used to create a single `dcms` policy and one shared token for every service,
+and called AppRole-per-service "the hardening target". That is done — see
+[`setup.md` §2.6](setup.md#26-policies-approles-and-secret-values).**
+
+The short version:
 
 ```bash
-docker compose exec vault sh -c '
-  cat > /tmp/dcms.hcl <<POLICY
-path "secret/data/dcms/*" { capabilities = ["read"] }
-path "transit/encrypt/dcms-tenant-secrets" { capabilities = ["update"] }
-path "transit/decrypt/dcms-tenant-secrets" { capabilities = ["update"] }
-POLICY
-  vault policy write dcms /tmp/dcms.hcl
-  vault token create -policy=dcms -period=72h
-'
-# Copy the token into .env → VAULT_TOKEN, then it is read by the services.
+VAULT_ADDR=... VAULT_TOKEN=<admin> infra/vault/apply.sh
+infra/vault/apply.sh --print-role-ids
+vault write -f -field=secret_id auth/approle/role/dcms-<service>/secret-id
 ```
 
-> Vault re-seals on every restart. For unattended reboots, configure auto-unseal
-> (cloud KMS / transit) — manual unseal is fine for a single managed host.
+Each service then authenticates as itself and can read only `secret/dcms/shared` and
+`secret/dcms/<service>`. A shared token gave every service every secret, including letting the
+admin plane decrypt tenant AI keys that only ai-gateway should ever read.
+
+**Which values go at which path is [`vault-secrets.md`](vault-secrets.md).**
+
+> Vault re-seals on every restart under Shamir. Configure Transit auto-unseal against the seal
+> Vault — [`seal-vault.md`](seal-vault.md) — or the platform stays down after every reboot
+> until a human fetches a key.
 
 ### 2.4 DNS
 
