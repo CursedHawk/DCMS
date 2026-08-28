@@ -356,6 +356,36 @@ fi
 # Roll
 # ---------------------------------------------------------------------------
 
+# `compose up -d` recreates any container whose DEFINITION changed -- a new image digest, but
+# also a changed mount or command. That is not the same set as the --force-recreate list below,
+# and the first pipeline deploy proved it: Vault's config mount moved from a file to a
+# directory, so the roll recreated Vault, sealed it, and the platform stayed down until someone
+# unsealed it by hand. The guard further down never ran, because it only covers the explicit
+# force-recreate loop.
+#
+# Excluding vault from the service list would not help either -- services depends_on it, so
+# compose would bring it up regardless. So: ask compose what it intends to do, and refuse the
+# whole deploy if that includes recreating a Shamir-sealed Vault. Failing before anything is
+# touched is much better than discovering it afterwards from a stack that will not boot.
+if [ "${VAULT_SEAL_TYPE:-}" = "shamir" ] && [ "$FORCE_RECREATE_VAULT" != 1 ]; then
+  # Compose prints one line per container, e.g. " Container dcms-vault-1  Recreate".
+  # The `vault-[0-9]` anchor matches the Vault service itself and deliberately not
+  # dcms-vault-init-1, which is a one-shot job and is free to be recreated.
+  if compose up -d --remove-orphans --dry-run 2>&1 \
+     | grep -qE "Container [A-Za-z0-9_-]*[-_]vault-[0-9]+ +Recreate"; then
+    die "This deploy would recreate Vault, which is SHAMIR-sealed -- recreating it seals it, and
+     every service reads its configuration from Vault at startup, so the platform would not
+     come back until someone unsealed it by hand. Nothing has been changed.
+
+     Do it attended, then re-run this deploy:
+       docker compose ${COMPOSE_FILES[*]} up -d --force-recreate --no-deps vault
+       ./unseal-vault.sh
+
+     Or pass --recreate-vault to accept the outage, or configure Transit auto-unseal
+     (infra/vault/server/seal-transit.hcl.example) so there is nothing to unseal."
+  fi
+fi
+
 log "Rolling services"
 if [ "$ROLL_ALL" = 1 ]; then
   compose up -d --remove-orphans
