@@ -208,6 +208,8 @@ services:
   email-worker:
     environment:
       <<: *vps-email
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_EMAIL_WORKER:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_EMAIL_WORKER:-}"
 
   ai-gateway:
     environment:

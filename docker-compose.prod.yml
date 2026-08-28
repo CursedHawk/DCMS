@@ -219,6 +219,16 @@ services:
   email-worker:
     environment:
       ASPNETCORE_ENVIRONMENT: "Production"
+      # VAULT_ADDR, without inheriting *prod-env.
+      #
+      # This service deliberately does not merge that anchor -- it reaches the audit log over
+      # NATS and must not hold the audit chain key. But VAULT_ADDR lives in the same anchor,
+      # so skipping it also removed the one variable that makes Vault reachable, and
+      # VaultCredentials.FromEnvironment returns null with no address. The result was a
+      # service that calls AddDcmsVault through AddDcmsServiceDefaults, is handed AppRole
+      # credentials by the vps overlay, and silently reads no configuration from Vault at all.
+      # Harmless while Vault holds only placeholders; invisible once it holds real secrets.
+      VAULT_ADDR: "http://vault:8200"
       DOTNET_ENVIRONMENT: "Production"
       Nats__Url: "nats://nats:4222"
 
@@ -229,6 +239,16 @@ services:
   site-builder:
     environment:
       ASPNETCORE_ENVIRONMENT: "Production"
+      # VAULT_ADDR, without inheriting *prod-env.
+      #
+      # This service deliberately does not merge that anchor -- it reaches the audit log over
+      # NATS and must not hold the audit chain key. But VAULT_ADDR lives in the same anchor,
+      # so skipping it also removed the one variable that makes Vault reachable, and
+      # VaultCredentials.FromEnvironment returns null with no address. The result was a
+      # service that calls AddDcmsVault through AddDcmsServiceDefaults, is handed AppRole
+      # credentials by the vps overlay, and silently reads no configuration from Vault at all.
+      # Harmless while Vault holds only placeholders; invisible once it holds real secrets.
+      VAULT_ADDR: "http://vault:8200"
       DOTNET_ENVIRONMENT: "Production"
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_sitebuilder;Password=${SITEBUILDER_DB_PASSWORD:-dcms-sitebuilder-dev}"
       ConnectionStrings__Redis: "redis:6379"
