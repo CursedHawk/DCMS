@@ -82,13 +82,25 @@ public sealed class TenantMembershipMiddleware(RequestDelegate next)
             return;
         }
 
-        // The query filter pins this to the resolved tenant, so it is an index probe on the
-        // unique (TenantId, UserId) key. Deliberately a membership test rather than a
-        // permission test: a member holding no permissions is still a member, and telling the
-        // two apart is the whole point.
+        // Both columns named explicitly, and query filters ignored, so this probe depends on
+        // nothing ambient.
+        //
+        // TenancyDbContext does put a `TenantId == CurrentTenantId` filter on Memberships, and
+        // relying on it would give the same result today. But this is the authorization gate
+        // for every bare RequireAuthorization() endpoint on the admin plane, and its
+        // correctness would then rest on a filter defined in another file, evaluated against a
+        // tenant this method never compares to the one it resolved. If those two ever diverge
+        // -- a host wiring a different ITenantContext, an upstream IgnoreQueryFilters, a
+        // refactor of CurrentTenantId -- the failure is silent cross-tenant access rather than
+        // an error. Naming both columns costs nothing: (TenantId, UserId) is the unique index,
+        // so this is the same single-row probe either way.
+        //
+        // Deliberately a membership test rather than a permission test: a member holding no
+        // permissions is still a member, and telling the two apart is the whole point.
         var db = context.RequestServices.GetRequiredService<TenancyDbContext>();
         var isMember = await db.Memberships.AsNoTracking()
-            .AnyAsync(m => m.UserId == userId, context.RequestAborted);
+            .IgnoreQueryFilters()
+            .AnyAsync(m => m.TenantId == tenantId && m.UserId == userId, context.RequestAborted);
 
         if (isMember)
         {
