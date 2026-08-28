@@ -79,8 +79,24 @@ needed for the unseal key.
    stdin) is **not** supported by this Vault, and a `oneshot` unit left with
    `RemainAfterExit=yes` stays `active` forever, which makes every later timer elapse a silent
    no-op.
-2. **Migrate vps1 from Shamir to Transit.** Not automatic — see
-   `infra/vault/server/seal-transit.hcl`.
+2. ~~Migrate vps1 from Shamir to Transit.~~ **Done.** vps1 reports
+   `Seal Type: transit`, `Recovery Seal Type: shamir`, and comes back **unsealed** from a
+   container restart with no human action. Its Shamir key is now a *recovery* key.
+
+   The migration cost two hours to a single undocumented asymmetry, recorded in
+   `infra/vault/server/seal-transit.hcl`: the transit seal's `address` and `token` are read
+   from the standard `VAULT_ADDR` / `VAULT_TOKEN`, **not** from `VAULT_TRANSIT_SEAL_ADDRESS` /
+   `VAULT_TRANSIT_SEAL_TOKEN`, which are ignored. Only `key_name` and `mount_path` honour the
+   prefixed form. A wrong token is the nastier of the two: the request arrives with *no* token
+   and returns 403 "permission denied", which reads as a policy failure and is not one. The
+   seal Vault's audit log settled it — `"policies": null` on the denied request.
+
+**An audit device is enabled** on the seal Vault at `/vault/audit/audit.log`. It is what
+diagnosed the above, and it is the only record of use for the box's most sensitive component.
+Note the interaction with disk: Vault **fails requests when it cannot write an audit log**, so
+if VPSM's disk fills, the seal Vault stops answering and nothing downstream can unseal. The
+volume is a few requests per unseal, so this is a reason to keep the disk healthy rather than
+to disable the audit.
 
 ## The trade this makes
 

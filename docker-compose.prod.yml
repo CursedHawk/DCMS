@@ -105,7 +105,15 @@ services:
       VAULT_ADDR: "http://0.0.0.0:8200"
       # Read by the seal stanza. Kept out of the mounted file so the token is not on disk in
       # the repo directory.
-      VAULT_TRANSIT_SEAL_TOKEN: "${VAULT_TRANSIT_SEAL_TOKEN:-}"
+      # The transit seal's TOKEN, like its address, is read from the standard client variable
+      # VAULT_TOKEN -- not from VAULT_TRANSIT_SEAL_TOKEN, which Vault ignores entirely. It
+      # fails in the least helpful way possible: the request reaches the seal Vault with no
+      # token at all and comes back 403 "permission denied", which reads like a policy problem
+      # and sent us to audit the policy, the token's TTL and its CIDR bindings first. The
+      # seal Vault's audit log is what settled it -- `"policies": null` on the denied request.
+      #
+      # Kept under the descriptive name in .env, and mapped here.
+      VAULT_TOKEN: "${VAULT_TRANSIT_SEAL_TOKEN:-}"
       # Which Transit key on the seal Vault unwraps THIS host's master key. The one value that
       # differs between dev and production -- the rest of the seal config is committed in
       # infra/vault/server/seal-transit.hcl, which both environments share.

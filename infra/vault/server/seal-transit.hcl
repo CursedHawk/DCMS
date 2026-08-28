@@ -14,10 +14,17 @@
 #
 # Both are set on the vault service in docker-compose.prod.yml from the host's .env.
 #
-# Note the asymmetry, which cost an hour to discover: `key_name` and `mount_path` have
-# VAULT_TRANSIT_SEAL_* overrides, but `address` does NOT -- it falls back to VAULT_ADDR and
-# silently used 127.0.0.1 when a VAULT_TRANSIT_SEAL_ADDRESS was set. So the address lives
-# here, in the file, where it cannot be quietly ignored.
+# Note the asymmetry, which is not documented anywhere obvious and cost real time twice:
+# `key_name` and `mount_path` have VAULT_TRANSIT_SEAL_* overrides, but `address` and `token`
+# do NOT. Those two fall back to the standard client variables VAULT_ADDR and VAULT_TOKEN, and
+# a VAULT_TRANSIT_SEAL_ADDRESS / VAULT_TRANSIT_SEAL_TOKEN is silently ignored:
+#
+#   - the wrong ADDRESS connects to 127.0.0.1 and fails with "connection refused"
+#   - the wrong TOKEN sends NO token and fails with 403 "permission denied", which looks
+#     exactly like a policy problem and is not one
+#
+# So the address lives here in the file, and the token is mapped onto VAULT_TOKEN by the vault
+# service in docker-compose.prod.yml. Neither can be quietly dropped.
 #
 # ---------------------------------------------------------------------------
 # The trade, stated plainly
