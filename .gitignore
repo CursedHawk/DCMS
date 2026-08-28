@@ -18,6 +18,10 @@ dist/
 coverage/
 
 # Environment / secrets
+# vault-init-secrets.txt holds the unseal key AND the root token. It lives on the
+# deployed host next to the Vault data it protects, which is exactly why it must
+# never be able to reach a working tree and from there a commit.
+vault-init-secrets.txt
 .env
 .env.local
 *.local.json

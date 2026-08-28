@@ -5,8 +5,9 @@
 # ---------------------------------------------------------------------------
 # With Shamir (the default in config.hcl), a reboot leaves Vault SEALED. Every service reads
 # its configuration from Vault at startup and refuses to start on a 503, so the whole platform
-# stays down until a human runs `vault operator unseal` — three times, with keys that have to
-# be somewhere a human can reach at 3am. "Everything is automatically deployable" is not true
+# stays down until a human runs `vault operator unseal` with a key that has to be somewhere a
+# human can reach at 3am. (Shares/threshold are per-deployment; vps1 is 1-of-1, so it is one
+# key, not three -- but one key a human still has to go and fetch.) "Everything is automatically deployable" is not true
 # of a platform that cannot come back from a power cycle without a person.
 #
 # ---------------------------------------------------------------------------
@@ -58,9 +59,9 @@
 # ---------------------------------------------------------------------------
 # Not automatic. Add this file, then:
 #
-#   vault operator unseal   # x3, to get it open one last time
+#   vault operator unseal   # threshold times, to get it open one last time
 #   # restart Vault with this config present, then:
-#   vault operator unseal -migrate   # x3, with the Shamir keys
+#   vault operator unseal -migrate   # threshold times, with the Shamir keys
 #
 # After migration the Shamir keys become RECOVERY keys. Keep them, and keep them OFF both the
 # seal host and the serving host: they are what recovers a Vault whose seal key is lost, and
