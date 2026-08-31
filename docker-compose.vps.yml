@@ -56,21 +56,17 @@ x-vps-resource-auth: &vps-resource-auth
 # SMTP for email-worker, the one service that delivers mail. Everything that wants
 # to send (identity: password resets; content-api: form-submission notifications)
 # publishes to the EMAIL work queue instead, so relay credentials live in exactly
-# one container. Defaults target the in-cluster Mailpit, which captures mail without
-# delivering it — view it via the mailpit container. To deliver real mail, set
-# EMAIL_HOST/PORT/USER/PASSWORD to an SMTP relay and EMAIL_USE_STARTTLS=true in .env.
+# one container.
 #
-# Note for relays that police the envelope sender (iCloud, Gmail): EMAIL_FROM_ADDRESS
+# There is no anchor here any more: the whole Email__* set is in Vault under
+# secret/dcms/email-worker, readable by that service's AppRole and nothing else.
+# Without it email-worker falls back to appsettings, which targets the in-cluster
+# Mailpit — mail is captured rather than delivered, which is the safe direction to
+# fail but is not always an obvious one, so check the path before blaming the relay.
+#
+# Note for relays that police the envelope sender (iCloud, Gmail): Email__FromAddress
 # must be the authenticated account or one of its verified aliases, or the relay
 # rejects the message with a 5xx and email-worker drops it as permanently undeliverable.
-x-vps-email: &vps-email
-  Email__FromAddress: "${EMAIL_FROM_ADDRESS:-no-reply@highgeek.eu}"
-  Email__FromName: "${EMAIL_FROM_NAME:-DCMS}"
-  Email__Host: "${EMAIL_HOST:-mailpit}"
-  Email__Port: "${EMAIL_PORT:-1025}"
-  Email__User: "${EMAIL_USER:-}"
-  Email__Password: "${EMAIL_PASSWORD:-}"
-  Email__UseStartTls: "${EMAIL_USE_STARTTLS:-false}"
 
 services:
   # Vault writes to a bind-mounted dir owned by the deploy user (cursedhawk,
@@ -128,9 +124,35 @@ services:
   #   vault read  -field=role_id      auth/approle/role/dcms-<service>/role-id
   #   vault write -f -field=secret_id auth/approle/role/dcms-<service>/secret-id
   #
-  # The secret id is a credential: this host's .env (chmod 600), never git. Leaving a pair
-  # unset falls that service back to VAULT_TOKEN, which is what lets the migration happen one
-  # service at a time instead of as a single cutover.
+  # The secret id is a credential: this host's .env (chmod 600), never git.
+  #
+  # There is no fallback left. VAULT_TOKEN is empty and the shared token is revoked, so a
+  # service whose pair is missing reaches Vault with no credentials, reads nothing, and
+  # fails its own startup guard. That is the intended end state — during the migration an
+  # unset pair silently meant "use the token that can read everything".
+
+  # ---------- migration jobs ----------
+  #
+  # These run the DDL and then exit, but they are built from the same images and load the
+  # same configuration, so they need the same Vault access: identity-migrate cannot
+  # construct OpenIddict without the signing certificate, and migrate cannot construct the
+  # audit recorder without the chain key. They had no AppRole while those values were also
+  # in .env, which hid the dependency; with .env emptied they would have been the first
+  # thing to fail, before any service rolled.
+  #
+  # They reuse the role of the service whose image they are (secret_id_num_uses is 0, so
+  # the same secret id logs in as many times as it likes) rather than getting roles of
+  # their own — a migration job that could read something its service cannot would be a
+  # second, quieter grant of the same secrets.
+  migrate:
+    environment:
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_ADMIN_API:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_ADMIN_API:-}"
+
+  identity-migrate:
+    environment:
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_IDENTITY:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_IDENTITY:-}"
 
   identity:
     environment:
@@ -141,32 +163,35 @@ services:
       # transport-security requirement (there is no ForwardedHeaders middleware).
       Identity__Issuer: "${PUBLIC_BASE_URL}/"
       Identity__AllowInsecureHttp: "true"
-      # Seed the confidential client secret that admin-api presents for
-      # client-credentials (must equal admin-api's ServiceClient__ClientSecret).
-      Identity__AdminApiService__Secret: "${ADMIN_API_CLIENT_SECRET}"
-      # Platform SuperAdmin login (first-boot seed only).
+      # The confidential client secret admin-api presents for client-credentials, the
+      # SuperAdmin first-boot password, the Google SSO pair and the Forgejo admin token
+      # are all read from secret/dcms/identity now. Identity__AdminApiService__Secret
+      # must still equal admin-api's ServiceClient__ClientSecret — they are the two
+      # sides of one credential, held in two paths so neither service's AppRole implies
+      # the other's. Changing one without the other fails every service-to-service call.
+      #
+      # Google SSO stays optional: with no Authentication__Google__* keys in that path
+      # the sign-in/up pages simply omit the button. The redirect URI to register in
+      # the Google Cloud console is ${PUBLIC_BASE_URL}/signin-google.
+      #
+      # The SuperAdmin EMAIL is not a secret and stays here — admin-api also reads it as
+      # the default alert recipient, and a value in two places is a value that drifts.
       Identity__SuperAdmin__Email: "${SUPERADMIN_EMAIL}"
-      Identity__SuperAdmin__Password: "${SUPERADMIN_PASSWORD}"
       # SPA redirect/sign-out URIs registered for the public admin host.
       Identity__Spa__RedirectUris: "${PUBLIC_BASE_URL}/auth/callback"
       Identity__Spa__PostLogoutUris: "${PUBLIC_BASE_URL}/"
-      # Grafana SSO. Must equal the grafana container's GRAFANA_OIDC_CLIENT_SECRET.
-      # Left unset → the client is not seeded and Grafana falls back to its
-      # break-glass local admin login, which is the safe direction to fail.
+      # Grafana SSO. Must equal the grafana container's GRAFANA_OIDC_CLIENT_SECRET, and
+      # Grafana cannot read Vault — so this one stays in .env on both sides rather than
+      # becoming a value that lives in Vault for one reader and .env for the other.
+      # Left unset → the client is not seeded and Grafana falls back to its break-glass
+      # local admin login, which is the safe direction to fail.
       Identity__Grafana__Secret: "${GRAFANA_OIDC_CLIENT_SECRET:-}"
       Identity__Grafana__RedirectUris: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}/login/generic_oauth"
-      # Google SSO. Left unset → the sign-in/up pages simply omit the Google
-      # button. Provide both in .env to enable it. The authorized redirect URI to
-      # register in the Google Cloud console is:
-      #   ${PUBLIC_BASE_URL}/signin-google  (e.g. https://admin.highgeek.eu/signin-google)
-      Authentication__Google__ClientId: "${GOOGLE_CLIENT_ID:-}"
-      Authentication__Google__ClientSecret: "${GOOGLE_CLIENT_SECRET:-}"
-      # Forgejo user mirror: Identity provisions a Forgejo account per DCMS user and
+      # Forgejo user mirror: identity provisions a Forgejo account per DCMS user and
       # keeps email+password in sync so users can clone/pull/push with their own
-      # credentials. The admin token needs the write:admin scope (user provisioning);
-      # provisioning is a no-op until FORGEJO_ADMIN_TOKEN is set in .env.
+      # credentials. The admin token needs the write:admin scope; provisioning is a
+      # no-op while secret/dcms/identity holds no Forgejo__AdminToken.
       Forgejo__BaseUrl: "http://forgejo:3000"
-      Forgejo__AdminToken: "${FORGEJO_ADMIN_TOKEN:-}"
       Forgejo__PublicUrl: "https://${GIT_HOST:-git.highgeek.eu}"
 
   admin-api:
@@ -175,26 +200,27 @@ services:
       VAULT_SECRET_ID: "${VAULT_SECRET_ID_ADMIN_API:-}"
       <<: *vps-resource-auth
       Auth__Audience: "dcms-admin-api"
-      # Alert delivery. The secret must equal the grafana container's ALERT_WEBHOOK_SECRET.
-      # Recipients default to the platform SuperAdmin, who is the person who would be woken
-      # up anyway; override with a comma-separated ALERT_RECIPIENTS in .env.
+      # Alert delivery. The secret must equal the grafana container's ALERT_WEBHOOK_SECRET,
+      # and Grafana cannot read Vault, so this stays in .env on both sides — moving it
+      # would create a second copy to rotate rather than removing one.
+      # Recipients default to the platform SuperAdmin, who is the person who would be
+      # woken up anyway; override with a comma-separated ALERT_RECIPIENTS in .env.
       Alerting__WebhookSecret: "${ALERT_WEBHOOK_SECRET:-}"
       Alerting__Recipients: "${ALERT_RECIPIENTS:-${SUPERADMIN_EMAIL}}"
-      # Forgejo git backend (see [[vps1-forgejo]]). Token is delivered via .env
-      # (FORGEJO_TOKEN), the same way every other prod secret is — Vault KV is
-      # not used here. admin-api reaches Forgejo over the internal network; the
-      # public URLs are what the IDE shows users for clone.
+      # Forgejo git backend (see [[vps1-forgejo]]). The API token, the write:admin token
+      # for repo collaborator grants, and the push-webhook HMAC secret are all read from
+      # secret/dcms/admin-api. The forgejo CONTAINER needs none of them — they are tokens
+      # minted inside Forgejo and presented to it — which is what makes them movable,
+      # unlike the Postgres and MinIO credentials next door.
+      #
+      # Forgejo__WebhookSecret has no fallback any more. It used to default to a value
+      # published in this repository, which meant a host that never set it verified push
+      # webhooks against a secret anyone could read. Absent, admin-api registers no
+      # webhook rather than a forgeable one; re-provision after setting it.
       Forgejo__BaseUrl: "http://forgejo:3000"
-      Forgejo__Token: "${FORGEJO_TOKEN}"
-      # Admin-scoped token (write:admin) for user/repo authorization (Phase 2 repo
-      # collaborator grants). Falls back to no-op until set in .env.
-      Forgejo__AdminToken: "${FORGEJO_ADMIN_TOKEN:-}"
       Forgejo__PublicUrl: "https://${GIT_HOST:-git.highgeek.eu}"
       Forgejo__SshHost: "${GIT_HOST:-git.highgeek.eu}"
       Forgejo__SshPort: "2222"
-      # HMAC secret for push webhooks (admin-api registers + verifies with it).
-      # Override with FORGEJO_WEBHOOK_SECRET in .env to harden; re-provision after.
-      Forgejo__WebhookSecret: "${FORGEJO_WEBHOOK_SECRET:-dcms-forgejo-webhook}"
 
   content-api:
     environment:
@@ -204,10 +230,10 @@ services:
       # content-api validates platform tokens for chat agents (aud dcms-admin-api).
       Auth__Audience: "dcms-admin-api"
 
-  # Sole holder of the SMTP relay credentials; see x-vps-email above.
+  # Sole holder of the SMTP relay credentials, which it reads from
+  # secret/dcms/email-worker with the AppRole below and nothing else.
   email-worker:
     environment:
-      <<: *vps-email
       VAULT_ROLE_ID: "${VAULT_ROLE_ID_EMAIL_WORKER:-}"
       VAULT_SECRET_ID: "${VAULT_SECRET_ID_EMAIL_WORKER:-}"
 

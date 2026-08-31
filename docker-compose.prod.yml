@@ -12,8 +12,13 @@
 #   * Services run in the Production environment with HTTPS metadata required.
 #
 # Required env (e.g. via a .env file next to this compose):
-#   POSTGRES_PASSWORD, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD, VAULT_TOKEN,
-#   ADMIN_API_CLIENT_SECRET, ACME_EMAIL, PUBLIC_BASE_URL, AUDIT_CHAIN_KEY
+#   POSTGRES_PASSWORD, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD, ACME_EMAIL, PUBLIC_BASE_URL
+#
+# Application secrets are NOT in that list any more. Everything only a .NET service
+# reads — the audit chain key, service client secrets, Forgejo tokens, SMTP credentials,
+# the identity certificates — comes from Vault, per service, over that service's own
+# AppRole. What remains in .env is what a container that cannot speak to Vault needs in
+# order to start at all: Postgres, MinIO, NATS, Grafana, Caddy. See docs/vault-secrets.md.
 
 x-prod-env: &prod-env
   ASPNETCORE_ENVIRONMENT: "Production"
@@ -38,17 +43,20 @@ x-prod-env: &prod-env
   # Per-service ids are layered on in docker-compose.vps.yml, where a host's own credentials
   # belong. Anything without them falls back to the token below.
   VAULT_TOKEN: "${VAULT_TOKEN:-}"
-  # HMAC key for the audit hash chain. Every service that owns the audit schema
-  # needs it; the two that reach the log over NATS (email-worker, site-builder)
-  # deliberately do not inherit this anchor and do not need it.
   #
-  # This key MUST be stable forever. Rotating it makes every previously written
-  # record fail verification, which reads exactly like tampering — so treat it as
-  # append-only configuration, back it up with the rest of .env, and never
-  # regenerate it to "fix" a problem. An empty value is a deliberate startup
-  # failure outside Development: a chain nobody can verify is worse than an
-  # obviously absent one. See docs/adr/0007-audit-logging.md.
-  Audit__ChainKey: "${AUDIT_CHAIN_KEY}"
+  # Audit__ChainKey is NOT here any more. It lives in Vault, in the six per-service
+  # paths of the services that own the audit schema — deliberately not in
+  # secret/dcms/shared, which email-worker and site-builder can also read and which
+  # would hand them a key they reach the audit log over NATS precisely to avoid
+  # holding.
+  #
+  # It was an anchor entry, and that was the problem: one .env value reached every
+  # service that merged the anchor, which is the shape this migration exists to end.
+  # A service now gets the key from its own Vault path or does not start.
+  #
+  # The key MUST still be stable forever — rotating it makes every previously written
+  # record fail verification, which reads exactly like tampering. See
+  # docs/adr/0007-audit-logging.md and docs/vault-secrets.md.
 
 services:
   postgres:
@@ -159,9 +167,6 @@ services:
       <<: *prod-env
       Identity__Issuer: "${PUBLIC_BASE_URL}/"
       Identity__AllowInsecureHttp: "false"
-      Identity__SigningCertificate: "${IDENTITY_SIGNING_CERTIFICATE:-}"
-      Identity__EncryptionCertificate: "${IDENTITY_ENCRYPTION_CERTIFICATE:-}"
-      Identity__CertificatePassword: "${IDENTITY_CERTIFICATE_PASSWORD:-}"
       Identity__AllowEphemeralKeys: "${IDENTITY_ALLOW_EPHEMERAL_KEYS:-false}"
 
   identity:
@@ -173,13 +178,14 @@ services:
       # would run DDL and seed concurrently at startup.
       Identity__Migrate: "false"
       Identity__Seed: "false"
-      # Persisted OIDC keys. Without these OpenIddict mints per-container keys, so each
-      # replica publishes a different JWKS and every deploy invalidates every live token.
-      # Identity refuses to start in Production without them unless
-      # IDENTITY_ALLOW_EPHEMERAL_KEYS=true, which accepts both consequences.
-      Identity__SigningCertificate: "${IDENTITY_SIGNING_CERTIFICATE:-}"
-      Identity__EncryptionCertificate: "${IDENTITY_ENCRYPTION_CERTIFICATE:-}"
-      Identity__CertificatePassword: "${IDENTITY_CERTIFICATE_PASSWORD:-}"
+      # Persisted OIDC keys come from secret/dcms/identity. Without them OpenIddict mints
+      # per-container keys, so each replica publishes a different JWKS and every deploy
+      # invalidates every live token. Identity refuses to start in Production without them
+      # unless IDENTITY_ALLOW_EPHEMERAL_KEYS=true, which accepts both consequences.
+      #
+      # Identity__CertificatePassword is deliberately absent rather than empty: these were
+      # exported with no password, and X509CertificateLoader treats absent and empty alike.
+      # Set it in the Vault path if a future .pfx has an export password.
       Identity__AllowEphemeralKeys: "${IDENTITY_ALLOW_EPHEMERAL_KEYS:-false}"
 
   admin-api:
@@ -189,7 +195,12 @@ services:
       Auth__RequireHttpsMetadata: "true"
       ServiceClient__TokenEndpoint: "http://identity:8080/connect/token"
       ServiceClient__ClientId: "dcms-admin-api"
-      ServiceClient__ClientSecret: "${ADMIN_API_CLIENT_SECRET}"
+      # ServiceClient__ClientSecret is read from this service's own Vault path. Blanked
+      # rather than omitted: the BASE compose sets a dev secret published in this
+      # repository, and with the override gone that value would otherwise survive into a
+      # production container. Vault loads after the environment, so the real secret still
+      # wins; what this removes is the fallback that would quietly take its place.
+      ServiceClient__ClientSecret: ""
       Services__AiGateway: "http://ai-gateway:8080"
       # DDL belongs to the migration job. The RLS coverage assertion still runs at every
       # startup -- it reads no database and it is what catches a tenant table added
@@ -206,7 +217,12 @@ services:
       # shared dcms.ai service client (same secret as admin-api).
       ServiceClient__TokenEndpoint: "http://identity:8080/connect/token"
       ServiceClient__ClientId: "dcms-admin-api"
-      ServiceClient__ClientSecret: "${ADMIN_API_CLIENT_SECRET}"
+      # ServiceClient__ClientSecret is read from this service's own Vault path. Blanked
+      # rather than omitted: the BASE compose sets a dev secret published in this
+      # repository, and with the override gone that value would otherwise survive into a
+      # production container. Vault loads after the environment, so the real secret still
+      # wins; what this removes is the fallback that would quietly take its place.
+      ServiceClient__ClientSecret: ""
       Services__AiGateway: "http://ai-gateway:8080"
 
   media-worker:
@@ -321,6 +337,17 @@ services:
 
   # Public TLS edge for tenant domains.
   caddy:
+    # The public ingress, and until now the one part of the stack a deploy could break
+    # silently: a Caddyfile that fails to parse leaves the container up and every health
+    # signal green while nothing is served. :2019 is Caddy's internal metrics listener,
+    # declared in the Caddyfile itself, so a successful probe proves the running config
+    # was loaded -- not merely that the process started.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:2019/metrics || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     image: caddy:2
     restart: unless-stopped
     depends_on:

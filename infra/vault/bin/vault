@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+# A `vault` that runs inside the DCMS Vault container.
+#
+# None of these hosts installs the Vault binary, and none of them should: the CLI version
+# would drift from the server's, and an operator binary on the host is one more thing to keep
+# patched on a box that already runs the server. Every host does have the container.
+#
+# Put this directory first on PATH and infra/vault/apply.sh runs unmodified:
+#
+#   export VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=...
+#   PATH="$(pwd)/infra/vault/bin:$PATH" infra/vault/apply.sh --check
+#
+# -i so stdin reaches the process: apply.sh pipes every policy in rather than naming a file,
+# because a filename would be resolved inside the container where the repo is not mounted.
+# No -t: a TTY would corrupt the output of anything read by a pipeline.
+exec docker exec -i \
+  -e "VAULT_ADDR=${VAULT_ADDR:-http://127.0.0.1:8200}" \
+  -e "VAULT_TOKEN=${VAULT_TOKEN:-}" \
+  "${DCMS_VAULT_CONTAINER:-dcms-vault-1}" vault "$@"

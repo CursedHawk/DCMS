@@ -1,7 +1,12 @@
 # What goes in Vault, and where
 
 The inventory of every secret DCMS uses: which Vault path holds it, which services read it,
-and which ones **cannot** move to Vault yet and why.
+and which ones **cannot** move to Vault and why.
+
+**Status on vps1 (dev): done.** Every value in Group A below is in Vault and has been removed
+from `.env`. The compose overlays no longer carry a single application secret — a service gets
+its configuration from its own Vault path or it does not start. Production inherits this by
+construction, because it deploys the same three compose files.
 
 ## How a service sees Vault
 
@@ -14,8 +19,13 @@ secret/dcms/<service>     → that service only
 ```
 
 A key is written with `__` where the configuration path has `:` — `Audit__ChainKey` becomes
-`Audit:ChainKey`. Later sources win, so a per-service key overrides the same key in `shared`,
-and both override `appsettings.json`.
+`Audit:ChainKey`.
+
+**Vault is added last, so it wins over environment variables.** That is what made the
+migration reversible at every step: a value could be written into Vault while the same value
+was still in `.env`, with no behavioural change, and only then removed from `.env`. It is also
+the sharp edge — an empty or wrong value in Vault overrides a correct one in the environment,
+so it silently takes precedence rather than silently being ignored.
 
 Each service authenticates with its own AppRole and can read **only those two paths**. Verify
 after any change:
@@ -26,49 +36,64 @@ vault policy read dcms-<service>
 
 ## The split that matters
 
-Not everything can live in Vault today, and the reason is structural rather than a matter of
-effort.
+Not everything can live in Vault, and the reason is structural rather than a matter of effort.
 
-**Postgres, MinIO, NATS, Grafana, Forgejo and Caddy cannot read Vault.** They take plain
-environment variables, so their credentials must exist in the host's `.env` for those
-containers to start at all. Writing the same value into Vault as well does not remove it from
-`.env` — it creates a second copy to rotate, and a rotation that updates one and not the other
-fails in a way that looks like a corrupt password.
+**Postgres, MinIO, NATS, Grafana and Caddy cannot read Vault.** They take plain environment
+variables, so their credentials must exist in the host's `.env` for those containers to start
+at all. Writing the same value into Vault as well does not remove it from `.env` — it creates a
+second copy to rotate, and a rotation that updates one and not the other fails in a way that
+looks like a corrupt password.
 
-So a secret only moves to Vault when **no infrastructure container needs it**. The rest waits
-for Vault Agent to render `.env` fragments from Vault (Part 2 of the deployment plan), which is
-what actually removes the duplication rather than hiding it.
+So a secret moves to Vault when **no infrastructure container needs it**. The rest waits for
+Vault Agent to render `.env` fragments from Vault, which is what actually removes the
+duplication rather than hiding it.
+
+The Forgejo tokens are the case worth understanding, because the obvious classification is
+wrong. `FORGEJO_TOKEN`, `FORGEJO_ADMIN_TOKEN` and `FORGEJO_WEBHOOK_SECRET` look like Forgejo's
+credentials and were originally filed as such. They are not: they are tokens minted *inside*
+Forgejo and *presented to* it by identity and admin-api. The forgejo container's own
+environment is `USER_UID` and `USER_GID`. So they moved.
 
 ---
 
-## Group A — belongs in Vault now (no infra container needs it)
+## Group A — in Vault, and only in Vault
 
-### `secret/dcms/content-api`
+### `secret/dcms/identity`
 
 | Key | What it is |
 |---|---|
-| `Visitor__SigningKey` | HMAC key for visitor session tokens. **Already in Vault and in use.** |
-| `Audit__ChainKey` | same value as admin-api's |
-| `ServiceClient__ClientSecret` | same value as admin-api's; content-api validates platform tokens |
+| `Audit__ChainKey` | HMAC key for the audit hash chain |
+| `Identity__SigningCertificate` | base64 PKCS#12, signs every token |
+| `Identity__EncryptionCertificate` | base64 PKCS#12 |
+| `Identity__CertificatePassword` | absent — these were exported with no password, and `X509CertificateLoader` treats absent and empty alike |
+| `Identity__AdminApiService__Secret` | must equal admin-api's `ServiceClient__ClientSecret` |
+| `Identity__SuperAdmin__Password` | first-boot seed only |
+| `Authentication__Google__ClientId` / `__ClientSecret` | Google SSO; omit both to hide the button |
+| `Forgejo__AdminToken` | provisions a Forgejo user per DCMS user |
 
-Vault-only by design: it appears in no compose file and no `.env`, and content-api refuses to
-start in Production when it is unset, the development default, or under 32 bytes. The tenant
-binding in a visitor token is its audience, and a tenant id is not a secret — so an
-unconfigured key makes every visitor session on every tenant forgeable by anyone who has read
-this repository.
+Rotating the **signing** certificate invalidates every token signed with the old one. Configure
+the new one alongside the old before removing the old, or do it in a maintenance window.
+
+`Identity__SuperAdmin__Email` is deliberately **not** here. It is not a secret, and admin-api
+reads the same value as its default alert recipient — a value in two places is a value that
+drifts. It stays in `.env` as `SUPERADMIN_EMAIL`.
+
+To confirm identity is really signing with the certificate in Vault rather than a cached copy,
+compare the published JWKS `x5t` against the certificate's SHA-1 thumbprint:
 
 ```bash
-vault kv put secret/dcms/content-api Visitor__SigningKey="$(openssl rand -base64 32)"
+vault kv get -field=Identity__SigningCertificate secret/dcms/identity | base64 -d > /tmp/s.pfx
+openssl pkcs12 -in /tmp/s.pfx -clcerts -nokeys -passin pass: -nodes \
+  | openssl x509 -outform DER | openssl dgst -sha1 -binary | base64 | tr '+/' '-_' | tr -d '='
+curl -s "$PUBLIC_BASE_URL/.well-known/jwks" | grep x5t
+rm -f /tmp/s.pfx
 ```
-
-Rotating it invalidates every live visitor session. Nothing else breaks.
 
 ### `secret/dcms/admin-api`
 
 | Key | What it is |
 |---|---|
 | `Audit__ChainKey` | HMAC key for the audit hash chain |
-| `Alerting__WebhookSecret` | bearer token Grafana presents to `POST /api/internal/alerts` |
 | `ServiceClient__ClientSecret` | the secret admin-api presents to identity for client-credentials |
 | `Forgejo__Token`, `Forgejo__AdminToken`, `Forgejo__WebhookSecret` | git server API access |
 
@@ -76,26 +101,25 @@ Rotating it invalidates every live visitor session. Nothing else breaks.
 record fail verification — the chain cannot be re-linked, and `audit verify` reports tampering
 that never happened.
 
-`Alerting__WebhookSecret` is also needed by the **Grafana container**, which cannot read Vault,
-so it stays in `.env` as well until Vault Agent. It is listed here because admin-api is the
-side that compares it; a mismatch rejects every alert, and a rejected alert looks exactly like
-having nothing to alert about.
+`Forgejo__WebhookSecret` no longer has a compose default. It used to fall back to a value
+published in this repository, so a host that never set it verified push webhooks against a
+secret anyone could read. Absent, admin-api registers no webhook rather than a forgeable one.
 
-### `secret/dcms/identity`
+### `secret/dcms/content-api`
 
 | Key | What it is |
 |---|---|
+| `Visitor__SigningKey` | HMAC key for visitor session tokens |
 | `Audit__ChainKey` | same value as admin-api's |
-| `Identity__SigningCertificate` | base64 PKCS#12, signs every token |
-| `Identity__EncryptionCertificate` | base64 PKCS#12 |
-| `Identity__CertificatePassword` | export password, empty if generated with `-passout pass:` |
-| `Identity__AdminApiService__Secret` | must equal admin-api's `ServiceClient__ClientSecret` |
-| `Identity__SuperAdmin__Email` / `__Password` | first-boot seed only |
-| `Authentication__Google__ClientId` / `__ClientSecret` | Google SSO; omit both to hide the button |
-| `Forgejo__AdminToken` | provisions a Forgejo user per DCMS user |
+| `ServiceClient__ClientSecret` | same value as admin-api's; content-api validates platform tokens |
 
-Rotating the **signing** certificate invalidates every token signed with the old one. Configure
-the new one alongside the old before removing the old, or do it in a maintenance window.
+`Visitor__SigningKey` has never had any source but Vault: it appears in no compose file and no
+`.env`, and content-api refuses to start in Production when it is unset, the development
+default, or under 32 bytes. The tenant binding in a visitor token is its audience, and a tenant
+id is not a secret — so an unconfigured key makes every visitor session on every tenant
+forgeable by anyone who has read this repository.
+
+Rotating it invalidates every live visitor session. Nothing else breaks.
 
 ### `secret/dcms/email-worker`
 
@@ -105,11 +129,14 @@ the new one alongside the old before removing the old, or do it in a maintenance
 | `Email__FromAddress`, `Email__FromName` | envelope sender |
 
 email-worker is the only service that speaks SMTP — everything else publishes to the EMAIL
-work queue — so these belong in exactly one place. Relays that police the envelope sender
-(iCloud, Gmail) reject a `FromAddress` that is not the authenticated account or a verified
-alias, with a 5xx that email-worker treats as permanently undeliverable.
+work queue — so these belong in exactly one place, and that place is now a path only its
+AppRole can read. Relays that police the envelope sender (iCloud, Gmail) reject a
+`FromAddress` that is not the authenticated account or a verified alias, with a 5xx that
+email-worker treats as permanently undeliverable.
 
-**This path does not exist yet.** Create it before moving the values.
+With the path empty the service falls back to `appsettings`, which targets the in-cluster
+Mailpit: mail is captured rather than delivered. That is the safe direction to fail but not an
+obvious one, so check this path before blaming the relay.
 
 ### `secret/dcms/media-worker`, `secret/dcms/site-host`
 
@@ -117,43 +144,42 @@ alias, with a 5xx that email-worker treats as permanently undeliverable.
 |---|---|
 | `Audit__ChainKey` | same value as admin-api's |
 
-### `secret/dcms/site-builder`
-
-Nothing yet. Its Postgres and MinIO credentials are Group B, and it deliberately holds no
-audit chain key.
-
-### A note on `Audit__ChainKey`
-
-The **same value** goes into six paths: `identity`, `admin-api`, `content-api`, `media-worker`,
-`site-host`, `ai-gateway` — every service that writes the audit log directly, which is exactly
-the set that merges the `*prod-env` anchor today.
-
-It is deliberately **not** in `secret/dcms/shared`, even though six copies is uglier than one.
-`site-builder` and `email-worker` reach the audit log over NATS and must not hold the chain key
-at all; `shared` is readable by every AppRole, so putting it there would hand it to both and
-quietly undo that separation. Six copies of one value that must never change is a smaller
-problem than a key that two services should not be able to read.
-
 ### `secret/dcms/ai-gateway`
 
 | Key | What it is |
 |---|---|
-| `Ai__Defaults__Provider`, `Ai__Defaults__Model`, `Ai__Defaults__CheapModel` | **already set** — not secrets, just configuration that differs per environment |
+| `Ai__Defaults__Provider`, `Ai__Defaults__Model`, `Ai__Defaults__CheapModel` | not secrets, just configuration that differs per environment |
 | `Audit__ChainKey` | same value as admin-api's |
 
 Tenant AI provider keys are **not** stored here. They live encrypted in the database, wrapped
 with `transit/keys/dcms-tenant-secrets`, which is why admin-api holds encrypt and ai-gateway
 holds decrypt and neither holds both.
 
+### `secret/dcms/site-builder`
+
+Nothing. Its Postgres and MinIO credentials are Group B, and it deliberately holds no audit
+chain key.
+
 ### `secret/dcms/shared`
 
-Currently a `placeholder`. Reserved for values genuinely common to every service. Resist
-putting anything here that only some services should hold — the per-service split is the whole
-point of the AppRole work, and `shared` is the one path that bypasses it.
+A `placeholder`, and it should stay that way unless something is genuinely common to every
+service. `shared` is the one path that bypasses the per-service split, so anything put there
+is handed to all eight roles at once.
+
+### A note on `Audit__ChainKey`
+
+The **same value** goes into six paths: `identity`, `admin-api`, `content-api`, `media-worker`,
+`site-host`, `ai-gateway` — every service that writes the audit log directly.
+
+It is deliberately **not** in `secret/dcms/shared`, even though six copies is uglier than one.
+`site-builder` and `email-worker` reach the audit log over NATS and must not hold the chain key
+at all; `shared` is readable by every AppRole, so putting it there would hand it to both and
+quietly undo that separation. Six copies of one value that must never change is a smaller
+problem than a key two services should not be able to read.
 
 ---
 
-## Group B — must stay in `.env` until Vault Agent
+## Group B — stays in `.env`, and why
 
 Each is read by a container that cannot talk to Vault.
 
@@ -163,9 +189,10 @@ Each is read by a container that cannot talk to Vault.
 | `SITEBUILDER_DB_PASSWORD`, `RLS_DB_PASSWORD`, `GRAFANA_DB_USER`, `GRAFANA_DB_PASSWORD` | `postgres-bootstrap`, which creates the roles |
 | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `SITEBUILDER_MINIO_USER`, `SITEBUILDER_MINIO_PASSWORD` | the minio container and its init job |
 | `NATS_APP_PASSWORD`, `NATS_SYS_PASSWORD` | the nats container (`${VAR:?}` — a missing one fails the whole compose invocation) |
-| `GRAFANA_ADMIN_PASSWORD`, `GRAFANA_OIDC_CLIENT_SECRET`, `ALERT_WEBHOOK_SECRET` | the grafana container |
+| `GRAFANA_ADMIN_PASSWORD` | the grafana container |
+| `GRAFANA_OIDC_CLIENT_SECRET` | grafana **and** identity, which seeds the client — moving it would create a second copy to rotate, not remove one |
+| `ALERT_WEBHOOK_SECRET` | grafana **and** admin-api, which compares it; same reason. A mismatch rejects every alert, and a rejected alert looks exactly like having nothing to alert about |
 | `ACME_EMAIL` | caddy |
-| `FORGEJO_ADMIN_TOKEN`, `FORGEJO_TOKEN`, `FORGEJO_WEBHOOK_SECRET` | forgejo, plus identity and admin-api |
 | `VAULT_ROLE_ID_*`, `VAULT_SECRET_ID_*` | the credentials used to reach Vault — necessarily outside it |
 | `VAULT_TRANSIT_SEAL_TOKEN`, `VAULT_TRANSIT_SEAL_KEY_NAME` | the vault container's own seal |
 
@@ -174,7 +201,7 @@ live in Vault, and every bootstrap chain terminates somewhere.
 
 **Not secrets at all**, though they live in the same file: `DCMS_ENV`, `DCMS_HOST`,
 `PUBLIC_BASE_URL`, `ADMIN_HOST`, `GRAFANA_DOMAIN`, `GRAFANA_ROOT_URL`, `GIT_HOST`,
-`EMAIL_FROM_*`, `ALERT_RECIPIENTS`, `DCMS_BUILD_RUNTIME`, `IDENTITY_ALLOW_EPHEMERAL_KEYS`.
+`SUPERADMIN_EMAIL`, `ALERT_RECIPIENTS`, `DCMS_BUILD_RUNTIME`, `IDENTITY_ALLOW_EPHEMERAL_KEYS`.
 
 ---
 
@@ -193,56 +220,75 @@ sync outbox. `infra/vault/apply.sh` uses `vault write -f`, which is a no-op on a
 
 ---
 
-## Writing the values
+## Operator access
+
+Nothing routine uses the root token. `infra/vault/policies/dcms-ops.hcl` covers everything
+`apply.sh` does and everything writing a secret value needs, and it is attached to the
+`dcms-ops` AppRole whose credentials live in `~/.dcms/vault-ops.env` on the host.
+
+```bash
+cd infra/vault
+export VAULT_ADDR=http://127.0.0.1:8200
+export PATH="$PWD/bin:$PATH"          # a `vault` that execs into the container
+set -a; . ~/.dcms/vault-ops.env; set +a
+export VAULT_TOKEN=$(vault write -field=token auth/approle/login \
+  role_id=$VAULT_OPS_ROLE_ID secret_id=$VAULT_OPS_SECRET_ID)
+./apply.sh --check
+```
+
+No host installs the Vault binary — `infra/vault/bin/vault` execs into the running container,
+which is also why `apply.sh` pipes every policy on stdin rather than naming a file: a filename
+would be resolved inside the container, where this directory is not mounted.
+
+The policy denies writing `sys/policies/acl/dcms-ops`, so an ops credential cannot grant
+itself more. `apply.sh` therefore reports and skips that one line when run as ops, and applies
+everything after it — changing what an operator may do is not an operator-level change.
+
+The root token is **not** revoked. On Vault 2.0.4 `sys/generate-root/attempt` returns 403
+without a root token (verified with an ops token, an invalid token, and no token header at
+all), so the recovery key cannot mint a replacement and revoking is irreversible. See
+`~/.dcms/README` on either host.
+
+## Writing and checking values
 
 ```bash
 export VAULT_ADDR=... VAULT_TOKEN=<admin>
-
-vault kv put secret/dcms/content-api  Visitor__SigningKey="$(openssl rand -base64 32)"
-vault kv put secret/dcms/admin-api    Audit__ChainKey="$(openssl rand -base64 32)" ...
+vault kv put secret/dcms/content-api Visitor__SigningKey="$(openssl rand -base64 32)"
 ```
 
 `vault kv put` **replaces the whole secret**. To add one key without dropping the others use
-`vault kv patch`, or you will silently delete the rest of the path.
+`vault kv patch`, or you will silently delete the rest of the path. Values given on the command
+line also land in shell history and in `ps`; for anything long-lived, pipe JSON on stdin
+instead:
 
-## Checking before a deploy
+```bash
+echo '{"Audit__ChainKey":"..."}' | vault kv patch -mount=secret dcms/admin-api -
+```
+
+Before a deploy:
 
 ```bash
 VAULT_ADDR=... VAULT_TOKEN=<admin> infra/vault/apply.sh --check
 ```
 
-It asserts presence, never reads a value, and exits non-zero on anything missing. It currently
-knows about `content-api → Visitor__SigningKey` and `admin-api → Audit__ChainKey`; extend
-`required_keys_for()` as values move out of `.env`, so that the assertion grows with the
-migration instead of lagging it.
+It asserts presence, never reads a value, and exits non-zero on anything missing. `required_keys_for()`
+in that script is the list, and it has to keep tracking this document: a path missing a key is
+now a service that does not start, so the assertion is what turns that into a deploy that stops
+before anything rolls.
 
-## Order to migrate in
+## Adding a service, or a key to an existing one
 
-1. Values **only** application services read (Group A) — nothing else has to change.
-2. Extend `required_keys_for()` for each one as it lands, so a missing value fails the deploy
-   rather than a service.
-3. Remove the corresponding line from `.env` **only after** a deploy has proven the service
-   reads it from Vault. Both sources present is a safe intermediate state; Vault-only with a
-   typo is not.
-4. Group B waits for Vault Agent. Moving it earlier duplicates rather than migrates.
+1. Write the value into the service's own path. Never `shared` unless every service needs it.
+2. Add it to `required_keys_for()` in `infra/vault/apply.sh`.
+3. If the value is currently also in a compose overlay, deploy once with both present — Vault
+   wins, so this is a no-op — and only then remove the compose line and the `.env` line.
+   Both sources present is a safe intermediate state; Vault-only with a typo is not.
+4. Verify with the AppRole itself, not with a root token. A root token proves the value is
+   there; it does not prove the service can read it, and the policy is the half that gets
+   forgotten.
 
-
----
-
-## Open gap found while writing this
-
-**content-api and ai-gateway run with an ephemeral Data Protection key ring.** Both log
-`Storing keys in a directory that may not be persisted outside of the container` and
-`No XML encryptor configured` at startup. identity and admin-api are correct — they call
-`AddDcmsDataProtection` and persist to `dataprotection.data_protection_keys` — but the other
-two were never wired up.
-
-It matters for content-api in particular: it is the public delivery plane, it hosts the chat
-hub, and anything ASP.NET protects there (antiforgery among others) is readable only by the
-replica that wrote it and only until that container is recreated. It is the same defect Phase B
-fixed for identity, in a service that has not been given the fix.
-
-Not fixed here because this document is an inventory, not a change. It belongs with the
-statelessness work: `AddDcmsDataProtection` in both services, and `secret/dcms/*` needs no new
-key for it — the ring lives in Postgres, and Transit wrapping is already behind
-`DataProtection:ProtectWithTransit`.
+```bash
+T=$(vault write -field=token auth/approle/login \
+      role_id=$VAULT_ROLE_ID_X secret_id=$VAULT_SECRET_ID_X)
+VAULT_TOKEN=$T vault kv get secret/dcms/<service>
+```

@@ -1,6 +1,13 @@
 # .NET
 bin/
 obj/
+
+# ...except the Vault CLI shim, which is a directory meant to go on PATH and is not build
+# output. `bin/` above matches at any depth, so this file is invisible to git without the
+# negation -- and it is referenced by infra/vault/apply.sh and docs/vault-secrets.md, so a
+# silently unversioned copy would work on the box it was written on and nowhere else.
+!infra/vault/bin/
+!infra/vault/bin/vault
 artifacts/
 *.user
 .vs/

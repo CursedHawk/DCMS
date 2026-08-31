@@ -51,21 +51,59 @@ No read of the key material, no delete, no rotate, and no sight of the other env
 key. Verified from vps1: the dev token encrypts and decrypts with `dcms-unseal-dev` and gets
 `permission denied` on `dcms-unseal-prod`.
 
-Both tokens are **periodic and orphaned** — orphaned so that revoking the root token, which
-should happen, does not take the seal tokens with it.
+Both tokens are **periodic and orphaned** — orphaned so that revoking the root token does not
+take the seal tokens with it, and periodic because a seal token that expires means that
+environment's Vault never comes back from its next restart.
+
+### The operator role
+
+`infra/vault/seal/seal-ops.hcl`, attached to the `seal-ops` AppRole alongside both unseal
+policies. It exists so nothing routine needs the root token: it can create and inspect the
+per-environment transit keys, write the `dcms-unseal-*` policies, and mint and revoke seal
+tokens for an environment.
+
+It cannot seal this Vault (which would take dev and production down together), delete a
+transit key (which would permanently brick that environment's Vault — the master key is
+wrapped with it and nothing else can unwrap), touch the audit device, generate a root token,
+or rewrite its own policy.
+
+It does carry `sudo` on `auth/token/create`, for one reason: Vault requires root or sudo to
+create a **periodic** token, and a seal token must be periodic. `sudo` lifts that restriction
+and nothing else — the subset rule still holds, so this token cannot create a child with a
+policy it does not itself have.
+
+```bash
+set -a; . ~/.dcms/vault-seal-ops.env; set +a
+T=$(docker exec vault vault write -field=token auth/approle/login \
+      role_id=$VAULT_SEAL_OPS_ROLE_ID secret_id=$VAULT_SEAL_OPS_SECRET_ID)
+docker exec -e VAULT_TOKEN="$T" vault vault token create \
+      -policy=dcms-unseal-prod -period=768h
+```
 
 ## Secrets, and where they are
 
-On VPSM, mode 0400, owned by the deploy user — **not** in this repo and not in any image:
+On VPSM, 0600 inside a 0700 `~/.dcms` — **not** in this repo, not in any image, and not in
+`~/baas-dcms`, which CI rsyncs into and which is a git worktree:
 
 | File | Holds |
 |---|---|
-| `~/.vault-seal-init.json` | the seal Vault's own unseal key **and** its root token |
-| `~/.vault-seal-token-dev.json` | the transit token for vps1 |
-| `~/.vault-seal-token-prod.json` | the transit token for the production host |
+| `~/.dcms/vault-seal-ops.env` | the `seal-ops` AppRole. The credential for everyday use |
+| `~/.dcms/vault-seal-recovery.json` | the seal Vault's unseal keys, recovery keys **and** root token |
+| `~/.dcms/README` | what to take offline, and the root-token decision below |
+| `/etc/vault-seal/unseal.key` | root-only copy of the unseal key, read by the systemd timer |
 
-The root token should be revoked once provisioning is finished; the init file is then only
-needed for the unseal key.
+### Why the root token is still live
+
+It should be revoked, and on most Vault deployments it would be: revoke it, and regenerate one
+from the recovery keys when it is next needed. **That does not work here.** On Vault 2.0.4
+`sys/generate-root/attempt` returns 403 without a root token — verified on both Vaults, with
+an ops token, with an invalid token, and with no token header at all. The recovery keys cannot
+mint a replacement, so revoking root is a one-way door leaving only the ops AppRole, which by
+design cannot rewrite its own policy or manage audit devices.
+
+That is a decision to take deliberately rather than a step to perform quietly. The exposure
+has been reduced instead: root is out of the synced deploy directory, it is 0600 in a 0700
+directory, and nothing routine uses it.
 
 ## Still to do
 
