@@ -126,6 +126,17 @@ services:
       MINIO_ROOT_PASSWORD: dcms-dev-secret
 
   vault:
+    # 200 only when Vault is initialised, unsealed and active; a sealed Vault answers 503
+    # and shows up here as unhealthy. That is the state worth surfacing -- every service
+    # reads its configuration from Vault at startup, so a sealed Vault is not a degraded
+    # dependency, it is a platform that cannot boot. Nothing depends_on this condition
+    # (services use service_started), so an unhealthy Vault reports rather than blocks.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8200/v1/sys/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
     image: hashicorp/vault:latest
     logging: *default-logging
     cap_add:
@@ -156,6 +167,14 @@ services:
   # the data volume; the git repositories live under /data/git. A push to a site's
   # default branch fires a webhook back to admin-api to trigger the offline build.
   forgejo:
+    # Forgejo holds the tenant site repositories, which are the one thing on this host that
+    # is not reproducible from the registry and this repository.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     image: codeberg.org/forgejo/forgejo:11
     logging: *default-logging
     restart: unless-stopped
@@ -414,6 +433,16 @@ services:
       Auth__Audience: "dcms-ai-gateway"
 
   admin-spa:
+    # 127.0.0.1 rather than localhost, and that is not pedantry: nginx here is configured
+    # `listen 80;` which binds IPv4 only, while localhost resolves to ::1 first inside the
+    # container. The probe against localhost fails with "connection refused" on a perfectly
+    # healthy container -- a healthcheck that reports a fault it invented itself.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     build:
       context: .
       dockerfile: apps/admin/Dockerfile
@@ -524,6 +553,12 @@ services:
       - alloy-data:/stores/alloy:ro
 
   prometheus:
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     image: prom/prometheus:v3.7.3
     restart: unless-stopped
     logging: *default-logging
@@ -584,6 +619,12 @@ services:
       - tempo-data:/var/tempo
 
   grafana:
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     image: grafana/grafana:12.3.1
     restart: unless-stopped
     logging: *default-logging

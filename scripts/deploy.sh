@@ -62,9 +62,20 @@ CONFIG_MOUNTED_SERVICES=(caddy alloy prometheus loki tempo grafana nats vault)
 
 # Health-gated after a roll. The workers expose /health/live but carry no
 # inbound traffic, so a slow start is not an outage; they are still checked.
+#
+# caddy, admin-spa and forgejo are here because "every service is healthy" was not the same
+# claim as "the platform works". All eight .NET services can pass while a Caddyfile that
+# failed to parse leaves nothing reachable from outside, and the deploy still reports green.
+# Caddy's probe hits the metrics listener declared in the Caddyfile, so it fails when the
+# running config is not the one that was shipped.
+#
+# Not gated, because their images ship no shell and no HTTP client to probe with: nats, loki,
+# tempo, alloy. Losing them costs telemetry rather than service, which is the right side of
+# the line to be stuck on -- but it is a gap, not a decision.
 HEALTH_GATED_SERVICES=(
   identity admin-api content-api ai-gateway
   media-worker email-worker site-builder site-host
+  caddy admin-spa forgejo
 )
 
 DEPLOY_STATE_DIR="${DCMS_DEPLOY_STATE_DIR:-$REPO_ROOT/.deploy}"
@@ -302,7 +313,22 @@ if [ -n "$IMAGES_FILE" ] && grep -q '^  site-build-sandbox:' "$IMAGES_FILE"; the
   if [ -n "$sandbox_ref" ]; then
     log "Fetching the Mode B build sandbox"
     echo "  $sandbox_ref"
-    docker pull "$sandbox_ref" || die "could not pull the build sandbox image"
+    # A pull failure is only fatal if the host does not already have this exact digest.
+    #
+    # CI logs the target host into the registry and out again in an EXIT trap, so an
+    # attended deploy -- a config-only change rolled by hand, or a rollback during an
+    # incident -- runs with no registry credentials at all. Every other image in the
+    # overlay is already local by then and compose does not re-fetch it; this one is
+    # pulled explicitly, so it was the single thing turning "re-apply the compose files"
+    # into "first go and find a deploy token". The digest is pinned either way, so
+    # accepting the local copy accepts exactly the image the overlay names.
+    if ! docker pull "$sandbox_ref"; then
+      if docker image inspect "$sandbox_ref" >/dev/null 2>&1; then
+        warn "could not pull the build sandbox; the pinned digest is already present locally, continuing"
+      else
+        die "could not pull the build sandbox image, and it is not present locally"
+      fi
+    fi
     # Retagged to the stable local name so site-builder's configuration does not have to
     # carry a digest that changes on every release.
     docker tag "$sandbox_ref" "$SANDBOX_LOCAL_TAG"
@@ -349,7 +375,14 @@ if [ -n "$IMAGES_FILE" ]; then
   if [ -f "$CURRENT" ] && ! cmp -s "$CURRENT" "$IMAGES_FILE"; then
     cp "$CURRENT" "$DEPLOY_STATE_DIR/images.previous.yml"
   fi
-  cp "$IMAGES_FILE" "$CURRENT"
+  # ...and skip the copy entirely when the overlay handed to us IS the recorded one.
+  # `cp a a` is an error, and under `set -e` that error aborted the deploy at the last
+  # step before rolling -- after the migration jobs had already run. Re-applying the
+  # current digests is not an odd thing to do: it is what an attended config-only deploy
+  # does, and what someone re-running a half-finished deploy does.
+  if [ ! "$IMAGES_FILE" -ef "$CURRENT" ]; then
+    cp "$IMAGES_FILE" "$CURRENT"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
