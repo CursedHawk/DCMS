@@ -122,21 +122,32 @@ integration:
     - docker push "$IMAGE:$CI_COMMIT_SHORT_SHA"
     - docker tag "$IMAGE:$CI_COMMIT_SHORT_SHA" "$IMAGE:dev"
     - docker push "$IMAGE:dev"
-  # ONE image job at a time, and this is not a preference.
+  # THREE image jobs at a time -- a lane count, not "as many as there are runners".
   #
-  # There are more runners than this matrix has entries, so without a resource group all ten
-  # build and push at once -- into a registry that runs inside the GitLab container, on the
-  # same 4-core box that serves GitLab itself. The first run of this pipeline drove the load
-  # average past 50, pinned that container against its memory limit, made the web UI return
-  # 504, and failed seven of the ten pushes. The two that succeeded were the two that finished
-  # before the pile-up.
+  # The eight runners are on another machine, so build CPU is free. The registry is not: it
+  # runs INSIDE the GitLab container (`gitlab-ctl status` lists it next to puma, postgresql
+  # and sidekiq), sharing one memory cgroup on a 4-core box. That is why the unrestricted
+  # first run of this pipeline took down the WEB UI rather than merely being slow -- ten
+  # concurrent pushes drove the load average past 50, pinned the container against its
+  # memory limit, returned 504, and failed seven of the ten pushes.
   #
-  # The runners are elsewhere, but the registry is not, so parallelism here buys nothing and
-  # costs the box. It is the same lesson the deploy has already learned twice about building
-  # more than two services at once on a small host.
+  # So the lane count is sized against the registry, not the runners. Three is the most that
+  # leaves useful headroom against the GitLab container's limit at its idle baseline. Raise
+  # or lower it by editing the LANE letters below; nothing else has to change. If jobs run
+  # more serially than the lanes allow, the cap is `concurrent` in the runner host's
+  # config.toml rather than anything here.
   #
-  # Layer caching from :dev makes the serial run far cheaper than the first one suggests.
-  resource_group: registry
+  # Lanes are assigned by COST, not round-robin. admin-spa (node:24-alpine) and
+  # site-build-sandbox (node:24-slim) are the two builds that share no layers with anything
+  # else, so they go in different lanes -- putting both in one would give that lane the
+  # wall-clock of a serial run and make the other two wait on it. Lane c carries four .NET
+  # services precisely because they share the SDK and runtime layers, so all but the first
+  # are nearly free.
+  #
+  # resource_group expands CI/CD variables (Gitlab::Ci::Pipeline::Seed::Processable::
+  # ResourceGroup calls ExpandVariables.expand over the job's own variables), and matrix
+  # entries are job variables -- which is what makes a per-lane group possible at all.
+  resource_group: registry-$LANE
   # A superseded pipeline should stop building images nobody will deploy, rather than queue
   # behind the resource group and delay the one that matters.
   interruptible: true
@@ -148,27 +159,37 @@ build-image:
   parallel:
     matrix:
       - SERVICE: identity
+        LANE: a
         DOCKERFILE: src/Services/Dcms.Identity/Dockerfile
       - SERVICE: admin-api
+        LANE: b
         DOCKERFILE: src/Services/Dcms.AdminApi/Dockerfile
       - SERVICE: content-api
+        LANE: c
         DOCKERFILE: src/Services/Dcms.ContentApi/Dockerfile
       - SERVICE: media-worker
+        LANE: a
         DOCKERFILE: src/Services/Dcms.MediaWorker/Dockerfile
       # email-worker and site-build-sandbox were missing from this matrix entirely, so
       # email-worker had never had a registry image and the Mode B build sandbox had to be
       # built by hand on the host.
       - SERVICE: email-worker
+        LANE: c
         DOCKERFILE: src/Services/Dcms.EmailWorker/Dockerfile
       - SERVICE: site-builder
+        LANE: c
         DOCKERFILE: src/Services/Dcms.SiteBuilder/Dockerfile
       - SERVICE: site-build-sandbox
+        LANE: b
         DOCKERFILE: src/Services/Dcms.SiteBuilder/sandbox.Dockerfile
       - SERVICE: site-host
+        LANE: b
         DOCKERFILE: src/Services/Dcms.SiteHost/Dockerfile
       - SERVICE: ai-gateway
+        LANE: c
         DOCKERFILE: src/Services/Dcms.AiGateway/Dockerfile
       - SERVICE: admin-spa
+        LANE: a
         DOCKERFILE: apps/admin/Dockerfile
 
 # ---------------------------------------------------------------------------
