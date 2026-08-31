@@ -73,6 +73,25 @@ public abstract class MediaConsumerBase(
         var job = msg.Data;
         if (job is null)
         {
+            // A message this consumer cannot read. Previously this acked and returned in
+            // silence, which is the worst available behaviour: the job disappears, the asset
+            // stays in Processing forever, and nothing anywhere records that it happened.
+            // The upload looks successful to the tenant and the media never appears.
+            //
+            // It also made the failure undiagnosable. Every outward signal was healthy -- the
+            // stream held the message, the consumer existed with the right filter, delivery
+            // and ack counters were clean -- because the message really had been delivered
+            // and really had been acked. Three runs of a test went into establishing that
+            // nothing had gone wrong, which is exactly what a silent branch buys you.
+            //
+            // So: say what happened, mark the asset, and only then ack. Still ack, because
+            // the message is genuinely unreadable and redelivering it forever would block the
+            // work queue behind a poison message.
+            var reason = msg.Error?.Message ?? "message payload could not be deserialized";
+            logger.LogError(
+                "{Consumer} received a message on {Subject} it could not deserialize ({Reason}); " +
+                "acking to avoid a poison message. Sequence {Sequence}.",
+                DurableName, msg.Subject, reason, msg.Metadata?.Sequence.Stream);
             await msg.AckAsync(cancellationToken: ct);
             return;
         }

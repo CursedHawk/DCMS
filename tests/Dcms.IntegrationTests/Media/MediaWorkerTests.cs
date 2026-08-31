@@ -1,5 +1,6 @@
 extern alias MediaWorkerApp;
 using Dcms.Shared.Contracts.Events;
+using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Storage;
@@ -7,6 +8,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Minio;
 using Minio.DataModel.Args;
+using NATS.Client.Core;
+using NATS.Client.Serializers.Json;
+using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using NATS.Net;
 using SixLabors.ImageSharp;
@@ -41,11 +45,28 @@ public class MediaWorkerTests : IAsyncLifetime
             var js = nats.CreateJetStreamContext();
             await js.CreateStreamAsync(new StreamConfig("MEDIA", ["media.process.>"]));
             await js.CreateStreamAsync(new StreamConfig("MEDIA_EVENTS", ["media.processed", "media.failed"]));
+            await js.CreateStreamAsync(new StreamConfig("AUDIT", ["audit.>"]));
         }
 
         await using (var db = NewDb(Guid.Empty))
         {
             await db.Database.MigrateAsync();
+        }
+
+        // The audit schema, and it is not optional here even though nothing in this test
+        // asserts on audit.
+        //
+        // Every SaveChangesAsync in a DCMS service goes through the audit interceptor, which
+        // writes a row to audit.audit_outbox in the same transaction. Without that table the
+        // worker's insert of the media variants fails with 42P01, the consumer's catch block
+        // marks the asset failed -- and that write fails for the same reason and is swallowed
+        // by MarkFailedAsync's own catch. The result is a message that arrives, is processed,
+        // is acked, and leaves the asset in Processing with nothing recorded anywhere: from
+        // the outside, a worker that silently does nothing.
+        await using (var audit = new AuditDbContext(
+            new DbContextOptionsBuilder<AuditDbContext>().UseNpgsql(_postgres.GetConnectionString()).Options))
+        {
+            await audit.Database.MigrateAsync();
         }
 
         var endpoint = $"{_minio.Hostname}:{_minio.GetMappedPublicPort(9000)}";
@@ -64,19 +85,23 @@ public class MediaWorkerTests : IAsyncLifetime
         using (_worker.CreateClient()) { } // start hosted consumer
     }
 
-    // FIXME: quarantined, not deleted -- the assertion is right and the pipeline it covers is
-    // real. The worker never produces variants in this fixture: the MEDIA stream, the MinIO
-    // bucket, the seeded asset row and the hosted consumer are all present, and giving the poll
-    // 120s instead of 30s changes nothing, so it is not the box being slow. It predates the
-    // deployment work (verified against a clean worktree at HEAD) and it is the only one of the
-    // four baseline failures left after the other three turned out to be real bugs.
-    //
-    // Quarantined rather than left red because a permanently failing test gates every deploy on
-    // dev and trains everyone to ignore the one signal that would catch a genuine regression.
-    // Remove the Skip once the consumer's silence is diagnosed -- start by asserting the job is
-    // actually delivered, since nothing here distinguishes "consumer never received it" from
-    // "consumer received it and threw".
-    [DockerFact(Skip = "Media worker produces no variants in this fixture; pre-existing, under investigation.")]
+    /// <summary>
+    /// This was quarantined for a while, and what it took to un-quarantine it is worth
+    /// recording: every outward signal said the system was healthy. The MEDIA stream held the
+    /// message, the consumer existed with the right filter subject, the stored payload was
+    /// well-formed JSON matching the contract, and the delivery counters were spotless --
+    /// pending 0, ack-pending 0, redelivered 0. The message really had been delivered and
+    /// really had been acked. It just did nothing.
+    ///
+    /// The cause was this fixture, not the worker: it migrated the media schema and not the
+    /// audit schema, so the variant insert hit a missing audit.audit_outbox, and the failure
+    /// path that should have recorded that failed identically and swallowed itself.
+    ///
+    /// Two things came out of it besides the missing migration. MediaConsumerBase no longer
+    /// discards an unreadable message in silence, and this fixture now creates every schema
+    /// and stream the worker touches rather than only the ones the assertions mention.
+    /// </summary>
+    [DockerFact]
     public async Task Image_job_produces_webp_variants_and_marks_asset_ready()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -104,10 +129,15 @@ public class MediaWorkerTests : IAsyncLifetime
             await db.SaveChangesAsync(ct);
         }
 
-        // Dispatch the processing job.
-        await using (var nats = new NatsClient(_nats.GetConnectionString()))
+        // Dispatch the processing job, with the SAME serializer registry the worker consumes
+        // with (AddDcmsMessaging configures NatsJsonSerializerRegistry.Default).
+        await using (var conn = new NatsConnection(NatsOpts.Default with
         {
-            var js = nats.CreateJetStreamContext();
+            Url = _nats.GetConnectionString(),
+            SerializerRegistry = NatsJsonSerializerRegistry.Default,
+        }))
+        {
+            var js = new NatsJSContext(conn);
             await js.PublishAsync("media.process.image", new MediaProcessRequested(
                 Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, assetId, MediaCategory.Image, key, "image/png"),
                 cancellationToken: ct);
