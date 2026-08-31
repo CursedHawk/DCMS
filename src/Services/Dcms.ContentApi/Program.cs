@@ -13,6 +13,7 @@ using Dcms.Shared.Hosting;
 using Dcms.ContentApi.Visitors;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
+using Dcms.Shared.Data.DataProtection;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Search;
@@ -22,6 +23,7 @@ using Dcms.Shared.Messaging;
 using Dcms.Shared.Messaging.Email;
 using Dcms.Shared.Security;
 using Dcms.Shared.Storage;
+using Dcms.Shared.Vault;
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -50,6 +52,26 @@ builder.Services.AddSingleton<Dcms.ContentApi.Delivery.IGeoIpResolver, Dcms.Cont
 builder.Services.AddDcmsSearchData(builder.Configuration);
 builder.Services.AddDcmsVisitorsData(builder.Configuration);
 builder.Services.AddDcmsChatData(builder.Configuration);
+
+// Data Protection, persisted to Postgres and shared with every other service.
+//
+// content-api is the public delivery plane and it hosts the chat hub, which is what makes
+// this load-bearing rather than tidy: SignalR protects the connection token it hands out at
+// /negotiate with an IDataProtector. With the default in-container key ring, a negotiate
+// answered by one replica produces a token no other replica can unprotect, so the follow-up
+// connect fails -- and it fails as an ordinary reconnect, so it reads as a flaky websocket
+// rather than as a configuration fault. The same ring is recreated on every container
+// restart, which turns one deploy into a round of failed reconnects even at a single replica.
+//
+// Transit wrapping is registered only when the ring is configured to be wrapped: the
+// encryptor resolves ITransitEncryptor, and registering the client unconditionally would
+// give content-api a hard Vault dependency on every key operation, not just at startup.
+if (builder.Configuration.GetValue("DataProtection:ProtectWithTransit", false))
+{
+    builder.Services.AddDcmsVaultTransit();
+}
+builder.Services.AddDcmsDataProtection(builder.Configuration);
+
 builder.Services.Configure<VisitorTokenOptions>(builder.Configuration.GetSection(VisitorTokenOptions.SectionName));
 
 // Prod safety, same shape as admin-api's webhook-secret guards. Visitor:SigningKey is a
