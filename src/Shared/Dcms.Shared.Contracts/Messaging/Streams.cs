@@ -16,6 +16,13 @@ public static class Streams
     public const string Chat = "CHAT";
     public const string Email = "EMAIL";
     public const string Audit = "AUDIT";
+
+    /// <summary>
+    /// Inbound notification requests from services that cannot reach the notifications
+    /// schema. Same shape as AUDIT's inbound half: admin-api owns the tables, everyone
+    /// else asks it to write.
+    /// </summary>
+    public const string Notify = "NOTIFY";
 }
 
 public static class Subjects
@@ -74,4 +81,15 @@ public static class Subjects
     /// record is the audit schema, not this stream.
     /// </summary>
     public const string AuditRecorded = "audit.recorded";
+
+    // NOTIFY
+    //
+    // One subject, inbound only. admin-api raises its own notifications in-process — it owns
+    // the schema — so this exists for the services that do not: content-api (form
+    // submissions) today, and any later producer without database access to the schema.
+    //
+    // There is deliberately no outbound "notification.raised" fan-out. Delivery to browsers
+    // is the SignalR hub's job, and a second copy on the bus would be a second thing to keep
+    // consistent with the table that is already the system of record.
+    public const string NotifyRaise = "notify.raise";
 }

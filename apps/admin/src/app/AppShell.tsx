@@ -5,6 +5,7 @@ import { Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../components/ui/button';
 import { CenteredSpinner } from '../components/ui/spinner';
+import { useNotificationHub } from '../features/notifications/useNotificationHub';
 import { useMyPermissions } from '../lib/permissions';
 import { login, register } from '../auth';
 import { useAuth } from '../useAuth';
@@ -21,6 +22,11 @@ export function AppShell() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  // One connection for the whole app, opened here rather than in the bell so that unmounting
+  // the popover does not drop the socket. `sub` is the platform user id, which the toast
+  // rule compares against a notification's actor to avoid toasting your own actions back.
+  useNotificationHub(!!user, user?.profile.sub);
 
   if (loading) {
     return <CenteredSpinner />;

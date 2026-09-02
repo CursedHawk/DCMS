@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { NotificationBell } from '../features/notifications/NotificationBell';
 import { LANGUAGES, setLanguage } from '../lib/i18n';
 import { useTheme } from '../lib/theme';
 import { logout } from '../auth';
@@ -38,6 +39,10 @@ export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
       </button>
 
       <div className="flex-1" />
+
+      {/* Notifications. Enabled once there is a signed-in user: the bell's query and hub
+          connection both need a token and a tenant. */}
+      <NotificationBell enabled={!!user} />
 
       {/* Language */}
       <DropdownMenu>

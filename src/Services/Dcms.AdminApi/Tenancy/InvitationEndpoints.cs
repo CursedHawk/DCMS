@@ -4,6 +4,8 @@ using System.Net;
 using System.Security.Cryptography;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
+using Dcms.AdminApi.Notifications;
+using Dcms.Shared.Data.Notifications;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Messaging;
@@ -129,6 +131,10 @@ public static class InvitationEndpoints
             var token = GenerateToken();
             invitation.TokenHash = HashToken(token);
             invitation.ExpiresAt = DateTimeOffset.UtcNow.Add(Lifetime);
+            // Resending gives the invitation a fresh deadline, so the "it lapsed" report is
+            // owed again. Without this the sweeper, which skips anything already stamped,
+            // would never mention this invitation again however many times it was resent.
+            invitation.ExpiredNotifiedAt = null;
             await db.SaveChangesAsync(ct);
 
             var link = BuildAcceptLink(http, token);
@@ -164,6 +170,7 @@ public static class InvitationEndpoints
         // query filters are bypassed and tenant ids are set explicitly.
         app.MapPost("/api/admin/invitations/accept", async (
             AcceptInvitationRequest body, CurrentUser me, TenancyDbContext db,
+            INotificationPublisher notifications,
             TenancyPermissionResolver permissions, IEventPublisher events, CancellationToken ct) =>
         {
             var userId = me.RequireUserId();
@@ -218,6 +225,26 @@ public static class InvitationEndpoints
             await permissions.InvalidateAsync(tenantId, userId, ct);
             await events.PublishAsync(Subjects.MembershipChanged,
                 new MembershipChanged(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, userId), ct);
+
+            // Raised here rather than off membership.changed, because that event carries only
+            // (tenant, user) — it cannot say which invitation was accepted or by which email,
+            // and it also fires for role edits and removals. RaiseAsync swallows its own
+            // failures, so a notification problem cannot cost someone their membership.
+            await notifications.RaiseAsync(new NotificationRequest(
+                TenantId: tenantId,
+                Kind: NotificationKinds.InvitationAccepted,
+                Severity: NotificationSeverity.Success,
+                RequiredPermission: PlatformPermissions.MembersManage,
+                TitleKey: NotificationKinds.TitleKey(NotificationKinds.InvitationAccepted),
+                BodyKey: NotificationKinds.BodyKey(NotificationKinds.InvitationAccepted),
+                DedupeKey: $"invitation.accepted:{invitation.Id:N}",
+                Params: new { email = invitation.Email },
+                LinkPath: "/members",
+                ResourceType: "invitation",
+                ResourceId: invitation.Id,
+                // The accepter is the actor: they know they just joined, so they get the bell
+                // entry without a toast, while the admins who invited them get both.
+                ActorUserId: userId), ct);
 
             // The SPA selects tenants by slug (the X-Dcms-Tenant header), and an
             // invitee accepting their first invitation has no tenant selected at

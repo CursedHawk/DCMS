@@ -1,3 +1,5 @@
+using Dcms.AdminApi.Notifications;
+using Dcms.Shared.Data.Notifications;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.PluginSdk.Abstractions;
@@ -268,7 +270,8 @@ public static class TenancyEndpoints
 
         app.MapPost("/api/admin/members/{membershipId:guid}/roles", async (
             Guid membershipId, AssignRoleRequest body, TenancyDbContext db, ITenantContext tenant,
-            IEventPublisher events, TenancyPermissionResolver permissions,
+            IEventPublisher events, TenancyPermissionResolver permissions, CurrentUser me,
+            INotificationPublisher notifications,
             Dcms.AdminApi.Sites.Git.RepoAccessReconciler repoAccess, CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;
@@ -297,13 +300,20 @@ public static class TenancyEndpoints
                     new MembershipChanged(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, membership.UserId), ct);
                 // Sync the user's Forgejo repo access to their new permission set.
                 await repoAccess.ReconcileUserAsync(tenantId, membership.UserId, membership.Email, ct);
+
+                // Raised here rather than off membership.changed: that event carries only
+                // (tenant, user) and fires identically for a grant, a revoke and an
+                // invitation acceptance, so a consumer cannot tell them apart or name the role.
+                await notifications.RaiseAsync(RoleChangeNotification(
+                    tenantId, membership, body.RoleId, granted: true, actor: me.UserId), ct);
             }
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRoleGranted, "membership");
 
         app.MapDelete("/api/admin/members/{membershipId:guid}/roles/{roleId:guid}", async (
             Guid membershipId, Guid roleId, TenancyDbContext db, ITenantContext tenant,
-            IEventPublisher events, TenancyPermissionResolver permissions,
+            IEventPublisher events, TenancyPermissionResolver permissions, CurrentUser me,
+            INotificationPublisher notifications,
             Dcms.AdminApi.Sites.Git.RepoAccessReconciler repoAccess, CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;
@@ -323,6 +333,9 @@ public static class TenancyEndpoints
                     new MembershipChanged(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, membership.UserId), ct);
                 // Sync the user's Forgejo repo access to their reduced permission set.
                 await repoAccess.ReconcileUserAsync(tenantId, membership.UserId, membership.Email, ct);
+
+                await notifications.RaiseAsync(RoleChangeNotification(
+                    tenantId, membership, roleId, granted: false, actor: me.UserId), ct);
             }
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRoleRevoked, "membership");
@@ -452,5 +465,30 @@ public static class TenancyEndpoints
     private sealed record CreateTenantRequest(string Slug, string? Name, Guid? OwnerUserId, string? OwnerEmail);
     private sealed record CreateRoleRequest(string Name, string[] Permissions);
     private sealed record UpdateRoleRequest(string? Name, string[] Permissions);
+    /// <summary>
+    /// "Someone's access changed." Addressed to whoever manages members, and explicitly also
+    /// to the affected member, who otherwise finds out by discovering a page has disappeared.
+    /// Warning rather than Info: a permission change is the kind of thing a workspace owner
+    /// should see even if it turns out to be routine.
+    /// </summary>
+    private static NotificationRequest RoleChangeNotification(
+        Guid tenantId, TenantMembership membership, Guid roleId, bool granted, Guid? actor) =>
+        new(
+            TenantId: tenantId,
+            Kind: NotificationKinds.MemberRoleChanged,
+            Severity: NotificationSeverity.Warning,
+            RequiredPermission: PlatformPermissions.MembersManage,
+            TitleKey: NotificationKinds.TitleKey(NotificationKinds.MemberRoleChanged),
+            BodyKey: NotificationKinds.BodyKey(NotificationKinds.MemberRoleChanged),
+            // Not the membership alone: the same member can legitimately gain and lose the
+            // same role repeatedly, and each of those is a distinct thing worth reporting.
+            DedupeKey: $"member.role.changed:{membership.Id:N}:{roleId:N}:{(granted ? "grant" : "revoke")}:{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
+            Params: new { email = membership.Email, change = granted ? "granted" : "revoked" },
+            LinkPath: "/members",
+            ResourceType: "membership",
+            ResourceId: membership.Id,
+            ActorUserId: actor,
+            ExtraUserIds: [membership.UserId]);
+
     private sealed record AssignRoleRequest(Guid RoleId);
 }

@@ -14,6 +14,7 @@ CREATE SCHEMA IF NOT EXISTS forms;
 CREATE SCHEMA IF NOT EXISTS ai;
 CREATE SCHEMA IF NOT EXISTS audit;
 CREATE SCHEMA IF NOT EXISTS social;
+CREATE SCHEMA IF NOT EXISTS notifications;
 
 -- Read-only reporting views for Grafana. Owned by the superuser, exposed to dcms_grafana
 -- and to nobody else; see infra/postgres/init/03-observability-role.sh.

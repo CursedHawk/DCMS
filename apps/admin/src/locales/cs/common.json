@@ -931,5 +931,83 @@
       "empty": "Zatím nic nezaznamenáno",
       "emptyHint": "Změny této položky se objeví zde."
     }
+  },
+  "notifications": {
+    "title": "Oznámení",
+    "pageDescription": "Vše, co se v tomto pracovním prostoru událo, když jste byli pryč.",
+    "empty": "Máte vše přečteno",
+    "emptyDescription": "Nasazení, pozvánky a nahrané soubory se objeví zde.",
+    "markAllRead": "Označit vše jako přečtené",
+    "dismiss": "Odstranit",
+    "view": "Zobrazit",
+    "viewAll": "Zobrazit všechna oznámení",
+    "selectPrompt": "Vyberte oznámení a přečtěte si je celé.",
+    "unreadCount": "{{count}} nepřečtených oznámení",
+    "unreadCount_few": "{{count}} nepřečtená oznámení",
+    "unreadCount_one": "{{count}} nepřečtené oznámení",
+    "time": {
+      "now": "právě teď",
+      "minutes": "před {{count}} min",
+      "hours": "před {{count}} h",
+      "days": "před {{count}} d"
+    },
+    "kinds": {
+      "site_published": {
+        "title": "Web nasazen",
+        "body": "Sestavení webu {{site}} bylo dokončeno a web je online."
+      },
+      "site_build_failed": {
+        "title": "Sestavení webu selhalo",
+        "body": "Web {{site}} se nepodařilo sestavit: {{reason}}"
+      },
+      "media_processed": {
+        "title": "Soubor připraven",
+        "body": "Zpracování souboru {{file}} bylo dokončeno."
+      },
+      "media_failed": {
+        "title": "Zpracování selhalo",
+        "body": "Soubor {{file}} se nepodařilo zpracovat: {{reason}}"
+      },
+      "content_published": {
+        "title": "Obsah publikován",
+        "body": "{{slug}} ({{contentType}}) je nyní online."
+      },
+      "content_unpublished": {
+        "title": "Publikování zrušeno",
+        "body": "{{slug}} ({{contentType}}) již není veřejný."
+      },
+      "invitation_accepted": {
+        "title": "Pozvánka přijata",
+        "body": "{{email}} přijal(a) pozvánku a připojil(a) se do pracovního prostoru."
+      },
+      "invitation_expired": {
+        "title": "Pozvánka vypršela",
+        "body": "Pozvánka pro {{email}} vypršela dříve, než byla přijata."
+      },
+      "domain_verified": {
+        "title": "Doména ověřena",
+        "body": "Doména {{hostname}} je ověřena a obsluhuje provoz."
+      },
+      "plugin_instance_changed": {
+        "title": "Plugin změněn",
+        "body": "Plugin {{plugin}} byl v tomto pracovním prostoru změněn ({{state}})."
+      },
+      "form_submitted": {
+        "title": "Nové odeslání formuláře",
+        "body": "Někdo odeslal formulář {{form}}."
+      },
+      "chat_conversation_started": {
+        "title": "Nová konverzace",
+        "body": "Návštěvník zahájil konverzaci a čeká na operátora."
+      },
+      "social_token_expiring": {
+        "title": "Vyžadováno opětovné připojení",
+        "body": "Připojení ke službě {{provider}} brzy vyprší a je třeba je znovu autorizovat."
+      },
+      "member_role_changed": {
+        "title": "Změna přístupu člena",
+        "body": "Uživateli {{email}} byla změněna role v tomto pracovním prostoru ({{change}})."
+      }
+    }
   }
 }

@@ -36,6 +36,9 @@ public static class PostgresAdvisoryLock
     /// <summary>Elects the single replica that refreshes Meta long-lived access tokens.</summary>
     public const long MetaTokenRefreshLockKey = 0x44434D5300000006;
 
+    /// <summary>Notification retention. One replica per sweep; the others skip the pass.</summary>
+    public const long NotificationRetentionLockKey = 0x44434D5300000007;
+
     /// <summary>
     /// Blocks until the lock is held. Deliberately blocking rather than
     /// <c>pg_try_advisory_lock</c>: a second instance arriving mid-migration should wait and then

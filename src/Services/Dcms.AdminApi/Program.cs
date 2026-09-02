@@ -8,6 +8,7 @@ using Dcms.AdminApi.Chat;
 using Dcms.AdminApi.Cms;
 using Dcms.AdminApi.Forms;
 using Dcms.AdminApi.Media;
+using Dcms.AdminApi.Notifications;
 using Dcms.AdminApi.Openapi;
 using Dcms.AdminApi.Plugins;
 using Dcms.AdminApi.Tenancy;
@@ -24,6 +25,7 @@ using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
+using Dcms.Shared.Data.Notifications;
 using Dcms.Shared.Data.Social;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Search;
@@ -48,6 +50,39 @@ builder.Services.AddDcmsCaching(builder.Configuration);
 builder.Services.AddDcmsEmailQueue();
 builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
 
+// The notification hub's token arrives in the query string: the WebSocket transport cannot
+// set an Authorization header. Scoped to /api/hub so a leaked URL from anywhere else in the
+// API is not a way to authenticate with a token in a log line or a Referer.
+builder.Services.Configure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
+    Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme, jwt =>
+    {
+        jwt.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var token = context.Request.Query["access_token"];
+                if (!string.IsNullOrEmpty(token) &&
+                    context.HttpContext.Request.Path.StartsWithSegments("/api/hub"))
+                {
+                    context.Token = token;
+                }
+                return Task.CompletedTask;
+            },
+        };
+    });
+
+// Notification fan-out across replicas. The channel prefix MUST differ from content-api's
+// "dcms-chat": both services share one Redis, and a shared prefix would cross-deliver
+// between the two hubs.
+var notificationSignalR = builder.Services.AddSignalR();
+var signalRRedis = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(signalRRedis))
+{
+    notificationSignalR.AddStackExchangeRedis(signalRRedis + ",abortConnect=false",
+        options => options.Configuration.ChannelPrefix =
+            StackExchange.Redis.RedisChannel.Literal("dcms-notify"));
+}
+
 // Tenancy: shared TenancyDbContext + header-based tenant resolution.
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddDcmsObjectStorage(builder.Configuration);
@@ -64,6 +99,7 @@ builder.Services.AddDcmsAnalyticsData(builder.Configuration);
 builder.Services.AddDcmsVisitorsData(builder.Configuration);
 builder.Services.AddDcmsChatData(builder.Configuration);
 builder.Services.AddDcmsFormsData(builder.Configuration);
+builder.Services.AddDcmsNotificationsData(builder.Configuration);
 builder.Services.AddDcmsAuditData(builder.Configuration);
 // Registered so the migration job can create the shared Data Protection key ring.
 // admin-api does not consume it -- it authenticates with bearer tokens and sets no
@@ -95,6 +131,25 @@ builder.Services.AddHostedService<AnalyticsConsumer>();
 // forever on a host with 40 GB free. The daily rollups next to it already hold the aggregate.
 builder.Services.AddHostedService<AnalyticsRetentionWorker>();
 builder.Services.AddHostedService<ChatFanoutConsumer>();
+
+// In-app notifications. Each consumer turns one already-published subject into a
+// notification, so the producing services are untouched. All are shared durables: the work
+// is a database write that exactly one replica must do, and the SignalR Redis backplane is
+// what carries the push to browsers connected to the others.
+builder.Services.AddScoped<INotificationPublisher, NotificationPublisher>();
+builder.Services.AddHostedService<SitePublishedNotificationConsumer>();
+builder.Services.AddHostedService<SiteBuildFailedNotificationConsumer>();
+builder.Services.AddHostedService<MediaProcessedNotificationConsumer>();
+builder.Services.AddHostedService<MediaFailedNotificationConsumer>();
+builder.Services.AddHostedService<ContentPublishedNotificationConsumer>();
+builder.Services.AddHostedService<ContentUnpublishedNotificationConsumer>();
+builder.Services.AddHostedService<DomainVerifiedNotificationConsumer>();
+builder.Services.AddHostedService<PluginInstanceNotificationConsumer>();
+builder.Services.AddHostedService<NotificationIngestConsumer>();
+// Invitation expiry is the one source with no event behind it -- it is a passive column
+// that nothing has ever swept. See InvitationExpiryWorker.
+builder.Services.AddHostedService<InvitationExpiryWorker>();
+builder.Services.AddHostedService<NotificationRetentionWorker>();
 builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditChainWriter>();
 // Brings in the records from the two services that cannot reach the audit schema, so
 // everything still reaches the chain by one path.
@@ -318,6 +373,12 @@ app.MapContentEndpoints();
 app.MapMediaEndpoints();
 app.MapSiteEndpoints();
 app.MapSiteDeletion();
+app.MapNotificationEndpoints();
+// Mounted under /api so it rides the existing edge route to admin-api -- no Caddy change,
+// and no matcher ordering against content-api's /hub/* for the chat hub.
+app.MapHub<NotificationHub>("/api/hub/notifications")
+    .AuditExempt("SignalR transport endpoint, not an action. The notifications it carries "
+               + "are records of actions that were audited where they happened.");
 app.MapAuditEndpoints();
 app.MapAlertEndpoints();
 app.MapSitePreview();

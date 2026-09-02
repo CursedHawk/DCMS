@@ -4,7 +4,11 @@ using System.Text.Json;
 using Dcms.Plugins.Forms;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Forms;
+using Dcms.Shared.Contracts.Events;
+using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Kernel.Abstractions;
+using Dcms.Shared.Messaging;
+using Dcms.Shared.Security;
 using Dcms.Shared.Messaging.Email;
 using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
@@ -32,7 +36,8 @@ public static class FormSubmissionEndpoints
         app.MapPost("/api/{slug}/forms/{formName}", async (
             string slug, string formName, JsonElement body, HttpContext http,
             ITenantContext tenant, CmsDbContext cms, FormsDbContext forms,
-            IEmailQueue email, DcmsMetrics metrics, ILoggerFactory loggerFactory, CancellationToken ct) =>
+            IEmailQueue email, IEventPublisher events, DcmsMetrics metrics,
+            ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
             {
@@ -108,6 +113,41 @@ public static class FormSubmissionEndpoints
                 {
                     loggerFactory.CreateLogger(typeof(FormSubmissionEndpoints)).LogWarning(
                         ex, "Failed to queue notification for submission {SubmissionId}.", submission.Id);
+                }
+            }
+
+            // In-app notification for the tenant's admins, independent of the email above:
+            // email notification is opt-in per form, but a submission is always worth showing
+            // in the bell. content-api cannot write the notifications schema (admin-api owns
+            // it), so this goes over the bus and admin-api's ingest consumer does the insert.
+            // Sandbox submissions stay silent for the same reason they send no mail.
+            if (!submission.IsSandbox)
+            {
+                try
+                {
+                    await events.PublishAsync(Subjects.NotifyRaise, new NotificationRaiseRequested(
+                        EventId: Guid.NewGuid(),
+                        OccurredAt: DateTimeOffset.UtcNow,
+                        TenantId: tenantId,
+                        Kind: "form.submitted",
+                        Severity: "Info",
+                        // Whoever may read submissions is exactly who should hear about one.
+                        RequiredPermission: PlatformPermissions.ContentRead,
+                        // Underscored, not dotted: i18next treats "." as its key separator, so
+                        // a dotted kind would be resolved as a nested lookup and never match.
+                        TitleKey: "notifications.kinds.form_submitted.title",
+                        BodyKey: "notifications.kinds.form_submitted.body",
+                        ParamsJson: JsonSerializer.Serialize(new { form = definition.Title }),
+                        // The submission id, so a JetStream redelivery collapses onto one row.
+                        DedupeKey: $"form.submitted:{submission.Id:N}",
+                        LinkPath: "/forms",
+                        ResourceType: "form_submission",
+                        ResourceId: submission.Id), ct);
+                }
+                catch (Exception ex)
+                {
+                    loggerFactory.CreateLogger(typeof(FormSubmissionEndpoints)).LogWarning(
+                        ex, "Failed to raise notification for submission {SubmissionId}.", submission.Id);
                 }
             }
 

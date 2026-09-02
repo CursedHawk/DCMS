@@ -67,10 +67,13 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Dev: admin-api from compose (override) listens on 5002.
+      // Dev: admin-api from compose (override) listens on 5002. ws:true because the
+      // notification hub is mounted under /api/hub/notifications -- in production that lets
+      // it ride the existing /api edge route instead of needing its own.
       '/api': {
         target: 'http://localhost:5002',
         changeOrigin: true,
+        ws: true,
       },
       // Dev: the chat SignalR hub lives on content-api (5003); ws:true upgrades.
       '/hub': {

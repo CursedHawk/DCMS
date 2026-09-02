@@ -105,6 +105,9 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options, ITenan
             e.Property(i => i.TokenHash).HasMaxLength(128).IsRequired();
             e.HasIndex(i => i.TokenHash);
             e.HasIndex(i => new { i.TenantId, i.Email });
+            // The expiry sweeper's claim query: unaccepted, past expiry, not yet reported.
+            // Cross-tenant by design, so this index deliberately does not lead with TenantId.
+            e.HasIndex(i => new { i.AcceptedAt, i.ExpiredNotifiedAt, i.ExpiresAt });
             e.HasQueryFilter(i => i.TenantId == CurrentTenantId);
         });
     }

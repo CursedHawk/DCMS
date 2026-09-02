@@ -919,5 +919,82 @@
       "empty": "Nothing recorded yet",
       "emptyHint": "Changes to this item will appear here."
     }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "pageDescription": "Everything that happened in this workspace while you were away.",
+    "empty": "You're all caught up",
+    "emptyDescription": "Deployments, invitations and uploads will show up here as they happen.",
+    "markAllRead": "Mark all read",
+    "dismiss": "Dismiss",
+    "view": "View",
+    "viewAll": "View all notifications",
+    "selectPrompt": "Select a notification to read it in full.",
+    "unreadCount": "{{count}} unread notifications",
+    "unreadCount_one": "{{count}} unread notification",
+    "time": {
+      "now": "just now",
+      "minutes": "{{count}} min ago",
+      "hours": "{{count}} h ago",
+      "days": "{{count}} d ago"
+    },
+    "kinds": {
+      "site_published": {
+        "title": "Site deployed",
+        "body": "{{site}} finished building and is live."
+      },
+      "site_build_failed": {
+        "title": "Site build failed",
+        "body": "{{site}} could not be built: {{reason}}"
+      },
+      "media_processed": {
+        "title": "Upload ready",
+        "body": "{{file}} finished processing and is ready to use."
+      },
+      "media_failed": {
+        "title": "Upload failed",
+        "body": "{{file}} could not be processed: {{reason}}"
+      },
+      "content_published": {
+        "title": "Content published",
+        "body": "{{slug}} ({{contentType}}) is now live."
+      },
+      "content_unpublished": {
+        "title": "Content unpublished",
+        "body": "{{slug}} ({{contentType}}) is no longer public."
+      },
+      "invitation_accepted": {
+        "title": "Invitation accepted",
+        "body": "{{email}} accepted their invitation and joined the workspace."
+      },
+      "invitation_expired": {
+        "title": "Invitation expired",
+        "body": "The invitation for {{email}} expired before it was accepted."
+      },
+      "domain_verified": {
+        "title": "Domain verified",
+        "body": "{{hostname}} is verified and now serving."
+      },
+      "plugin_instance_changed": {
+        "title": "Plugin {{state}}",
+        "body": "The {{plugin}} plugin was {{state}} for this workspace."
+      },
+      "form_submitted": {
+        "title": "New form submission",
+        "body": "Someone submitted the {{form}} form."
+      },
+      "chat_conversation_started": {
+        "title": "New chat conversation",
+        "body": "A visitor started a conversation and is waiting for an agent."
+      },
+      "social_token_expiring": {
+        "title": "Reconnect required",
+        "body": "The connection to {{provider}} expires soon and needs reauthorising."
+      },
+      "member_role_changed": {
+        "title": "Member access changed",
+        "body": "{{email}} was {{change}} a role in this workspace."
+      }
+    }
   }
 }

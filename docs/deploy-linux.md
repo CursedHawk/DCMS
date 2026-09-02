@@ -479,10 +479,18 @@ runs them before rolling anything, and a failing job stops the deploy with the
 running stack untouched:
 
 ```bash
+$C run --rm nats-init                             # JetStream streams, retired durables
+$C run --rm minio-init                            # object-storage buckets and policies
 $C --profile migrate run --rm postgres-bootstrap  # schemas, extensions, non-owner roles
 $C --profile migrate run --rm migrate             # tables, RLS policies, obs views
 $C --profile migrate run --rm identity-migrate    # identity + OpenIddict, seeding
 ```
+
+`nats-init` and `minio-init` have no profile, so a plain `up -d` starts them too — but
+it starts the *existing* exited container and ignores its exit code. Running them here
+gives the deploy a fresh container built from the definition that was just rsync'd, and
+a failure that stops the deploy instead of surfacing days later as a consumer that
+receives nothing. Both scripts are idempotent, so `up -d` re-running them costs nothing.
 
 The order is the schema's own dependency order. `postgres-bootstrap` re-applies
 `infra/postgres/init/*` against a running cluster — those scripts are all written
@@ -510,13 +518,20 @@ carries chat messages across replicas:
 $C up -d --scale content-api=3
 ```
 
-⚠️ **The SignalR hub is not yet safe to scale.** The backplane solves message
-fan-out, not connection affinity: both clients call `.withUrl()` with default
-options, so `POST /negotiate` and the follow-up transport connect must land on
-the same replica, and nothing at the edge guarantees that. Static delivery and
-the REST API scale fine at any replica count; `/hub/chat` will drop connections
-until the clients set `skipNegotiation: true`. Also note the rate limiter is
-in-process, so the effective limit is `RateLimiting:PermitLimit` × replicas.
+**SignalR hubs scale, but only because every client skips negotiation.** The
+backplane solves message fan-out, not connection affinity: with negotiation,
+`POST /negotiate` and the follow-up transport connect must land on the same
+replica and nothing at the edge guarantees that. All three clients — the admin
+chat console, the embeddable visitor widget, and the notification hook — set
+`skipNegotiation: true` with a WebSockets-only transport, which removes the
+requirement. ⚠️ A new hub client that omits it will drop connections at random
+once a service is scaled past one replica, and will do so intermittently enough
+to look like a network problem.
+
+Note the two hubs live in different services: `/hub/chat` in content-api,
+`/api/hub/notifications` in admin-api. Scaling either scales its own hub. Note
+also that the rate limiter is in-process, so the effective limit is
+`RateLimiting:PermitLimit` × replicas.
 
 **Logs / status:**
 

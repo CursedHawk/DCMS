@@ -38,6 +38,10 @@ const FormsPage = page(() => import('./features/forms/FormsPage'), 'FormsPage');
 const InviteAcceptPage = page(() => import('./features/invitations/InviteAcceptPage'), 'InviteAcceptPage');
 const MediaPage = page(() => import('./features/media/MediaPage'), 'MediaPage');
 const MembersPage = page(() => import('./features/members/MembersPage'), 'MembersPage');
+const NotificationsPage = page(
+  () => import('./features/notifications/NotificationsPage'),
+  'NotificationsPage',
+);
 const OpenApiPage = page(() => import('./features/openapi/OpenApiPage'), 'OpenApiPage');
 const PluginsPage = page(() => import('./features/plugins/PluginsPage'), 'PluginsPage');
 const RolesPage = page(() => import('./features/roles/RolesPage'), 'RolesPage');
@@ -99,6 +103,7 @@ const workspaceRoute = child('/workspace', WorkspacePage);
 const analyticsRoute = child('/analytics', AnalyticsPage);
 const auditRoute = child('/audit', AuditPage);
 const chatRoute = child('/chat', ChatPage);
+const notificationsRoute = child('/notifications', NotificationsPage);
 const inviteRoute = child('/invite/accept', InviteAcceptPage);
 
 const editorRoute = createRoute({
@@ -131,6 +136,7 @@ export const routeTree = rootRoute.addChildren([
     analyticsRoute,
     auditRoute,
     chatRoute,
+    notificationsRoute,
     inviteRoute,
   ]),
 ]);

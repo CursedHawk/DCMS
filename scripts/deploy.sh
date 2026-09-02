@@ -24,9 +24,10 @@
 #   --env dev|prod       Overlay set to use. Default: $DCMS_ENV, else prod.
 #   --check              Preflight only: resolve and validate the overlay set,
 #                        then stop. Changes nothing. Run this first.
-#   --no-migrate         Skip the schema migration jobs. They run by default: the
-#                        services no longer migrate at startup, so skipping this
-#                        rolls new code against an old schema.
+#   --no-migrate         Skip the provisioning and schema migration jobs -- JetStream
+#                        streams, MinIO buckets, then the two EF migration jobs. They
+#                        run by default: the services no longer migrate at startup, so
+#                        skipping this rolls new code against an old schema.
 #   --build              Build images locally, serially, before rolling.
 #   --pull               Pull images from the registry before rolling.
 #   --images FILE        Extra compose overlay pinning image digests. Recorded
@@ -109,7 +110,7 @@ while [ $# -gt 0 ]; do
     --no-health)  DO_HEALTH=0; shift ;;
     --recreate-vault) FORCE_RECREATE_VAULT=1; shift ;;
     --timeout)    HEALTH_TIMEOUT="$2"; shift 2 ;;
-    -h|--help)    sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)    sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*)           echo "deploy: unknown option $1" >&2; exit 2 ;;
     *)            TARGET_SERVICES+=("$1"); shift ;;
   esac
@@ -334,6 +335,37 @@ if [ -n "$IMAGES_FILE" ] && grep -q '^  site-build-sandbox:' "$IMAGES_FILE"; the
     docker tag "$sandbox_ref" "$SANDBOX_LOCAL_TAG"
     echo "  tagged as $SANDBOX_LOCAL_TAG"
   fi
+fi
+
+# ---------------------------------------------------------------------------
+# Message streams and object storage -- BEFORE anything is rolled
+# ---------------------------------------------------------------------------
+
+# nats-init and minio-init are ordinary services with no profile, so the `up -d` further
+# down starts them regardless. Running them HERE, explicitly, buys two things:
+#
+#   1. An exit code. As a side effect of `up -d` their failure is invisible -- the deploy
+#      reports success, and the stream that was never created surfaces days later as a
+#      consumer receiving nothing, which reads as an application bug.
+#   2. A container built from the CURRENT definition. `up -d` restarts the existing exited
+#      one, and both scripts arrive by rsync -- so the deploy that provisions a new stream
+#      is precisely the one at risk of re-running the copy that does not know about it.
+#
+# `run --rm` is the same idiom as the migration jobs below, for the same reason. Both
+# scripts are idempotent, so the later `up -d` re-running them costs nothing.
+if [ "$DO_MIGRATE" = 1 ] && [ "$ROLL_ALL" = 1 ] && [ "$ENVIRONMENT" != "local" ]; then
+  log "Provisioning message streams and object storage"
+  # Resolved once, and matched with a here-string rather than a pipe: `compose ... | grep -q`
+  # under `set -o pipefail` reports the pipeline as failed when grep exits on the first match
+  # and compose takes SIGPIPE, so a SUCCESSFUL match could silently skip the job.
+  DEFINED_SERVICES=$(compose config --services 2>/dev/null || true)
+  for job in nats-init minio-init; do
+    grep -qx "$job" <<<"$DEFINED_SERVICES" || continue
+    echo "  running $job"
+    if ! compose run --rm "$job"; then
+      die "provisioning job '$job' failed; nothing was rolled and the running stack is untouched"
+    fi
+  done
 fi
 
 # ---------------------------------------------------------------------------

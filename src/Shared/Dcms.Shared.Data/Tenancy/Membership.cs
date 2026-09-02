@@ -52,5 +52,13 @@ public sealed class Invitation : TenantEntity
     public DateTimeOffset? AcceptedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>
+    /// When the "this invitation lapsed" notification was raised. Expiry is otherwise a
+    /// purely passive property — <see cref="IsPending"/> computes it at read time and no job
+    /// has ever run over this table — so a sweeper needs somewhere to record that it has
+    /// already reported a given invitation, or every poll would notify again.
+    /// </summary>
+    public DateTimeOffset? ExpiredNotifiedAt { get; set; }
+
     public bool IsPending => AcceptedAt is null && ExpiresAt > DateTimeOffset.UtcNow;
 }

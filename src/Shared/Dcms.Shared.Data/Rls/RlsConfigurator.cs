@@ -60,6 +60,13 @@ public static class RlsConfigurator
         ("social", "meta_sync_states"),
         ("social", "meta_media_map"),
         ("social", "meta_oauth_states"),
+        // Both notification tables are per-tenant and hold, in ParamsJson, interpolation
+        // values lifted from tenant content (site names, member emails). They are also a
+        // worked example of why this list is checked at startup: recipients is written by a
+        // background consumer with no ambient tenant, so the query filter is not the thing
+        // standing between one tenant's bell and another's.
+        ("notifications", "notifications"),
+        ("notifications", "recipients"),
         // Audit rows carry a TenantId and must be covered like any other tenant table.
         // Guid.Empty marks platform-scope records (logins, tenant provisioning): the policy
         // compares equality against the GUC, so those rows are invisible to tenant readers,

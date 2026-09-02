@@ -15,10 +15,68 @@ for i in $(seq 1 30); do
   sleep 1
 done
 
+# Subjects are CONVERGED on an existing stream; everything else about it is left alone.
+#
+# The distinction matters. Adding a subject is additive and safe -- nothing that was being
+# delivered stops being delivered -- and it is the change this file actually sees, because
+# Streams.cs grows a subject whenever a feature does. Leaving that to a human meant the
+# script "provisioned" a stream that silently rejected the new subject on every cluster
+# except a freshly created one, and the symptom is an event nobody receives.
+#
+# Retention is the opposite: work <-> limits cannot be edited in place, changing it decides
+# whether a message survives being acked, and for AUDIT it is a compliance property. So a
+# mismatch is reported loudly and changed by a person, not by a deploy.
+converge_subjects() {
+  name="$1"; desired="$2"
+
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  (jq unavailable; cannot verify $name's subject list)" >&2
+    return 0
+  fi
+
+  info=$(nats --server "$NATS_URL" stream info "$name" -j 2>/dev/null) || return 0
+  current=$(echo "$info" | jq -r '.config.subjects | join(",")')
+
+  missing=""
+  for s in $(echo "$desired" | tr ',' ' '); do
+    case ",$current," in
+      *",$s,"*) ;;
+      *) missing="${missing:+$missing,}$s" ;;
+    esac
+  done
+
+  if [ -n "$missing" ]; then
+    echo "  adding subject(s) to $name: $missing"
+    nats --server "$NATS_URL" stream edit "$name" --subjects "$current,$missing" -f
+  fi
+}
+
+# Reports, never fixes. See converge_subjects for why this one is a person's decision.
+check_retention() {
+  name="$1"; desired="$2"
+
+  command -v jq >/dev/null 2>&1 || return 0
+  info=$(nats --server "$NATS_URL" stream info "$name" -j 2>/dev/null) || return 0
+  actual=$(echo "$info" | jq -r '.config.retention')
+
+  case "$desired" in
+    work) want="workqueue" ;;
+    *)    want="$desired" ;;
+  esac
+
+  if [ "$actual" != "$want" ]; then
+    echo "  WARNING: $name has '$actual' retention, expected '$want'." >&2
+    echo "  Retention cannot be edited in place; the stream has to be recreated," >&2
+    echo "  which discards its backlog. Not something a deploy should decide." >&2
+  fi
+}
+
 ensure_stream() {
   name="$1"; subjects="$2"; retention="$3"
   if nats --server "$NATS_URL" stream info "$name" >/dev/null 2>&1; then
     echo "stream $name exists"
+    converge_subjects "$name" "$subjects"
+    check_retention "$name" "$retention"
   else
     nats --server "$NATS_URL" stream add "$name" \
       --subjects "$subjects" \
@@ -78,8 +136,11 @@ AUDIT_MAX_AGE="${AUDIT_MAX_AGE:-720h}"
 ensure_audit_stream() {
   if nats --server "$NATS_URL" stream info AUDIT >/dev/null 2>&1; then
     echo "stream AUDIT exists"
-    # ensure_stream never reconfigures an existing stream. For AUDIT that is worth calling
-    # out: a stream created with the wrong retention has to be edited by hand. See the runbook.
+    converge_subjects AUDIT "audit.>"
+    # Subjects converge; retention, max-age and discard policy do not. For AUDIT that is the
+    # whole point -- they are compliance properties, and a stream created with the wrong ones
+    # has to be edited by hand. check_retention reports it. See the runbook.
+    check_retention AUDIT limits
     return
   fi
   nats --server "$NATS_URL" stream add AUDIT \
@@ -105,7 +166,35 @@ ensure_stream SITES_EVENTS "site.published,site.build.failed"        limits
 ensure_stream ANALYTICS    "analytics.>"                             limits
 ensure_stream CHAT         "chat.>"                                  limits
 ensure_stream EMAIL        "email.>"                                 work
+# Inbound notification requests from services that cannot write the notifications
+# schema. limits retention, not work: a work queue removes a message on ack and permits
+# only one consumer per subject filter, which would make admin-api's ingest the only
+# thing that could ever read this.
+ensure_stream NOTIFY       "notify.>"                                limits
 ensure_audit_stream
+
+# ---------------------------------------------------------------------------
+# Retired durables
+#
+# A durable consumer outlives the code that bound it, and an orphaned one holds the
+# stream's ack floor down forever -- so the stream keeps every message behind it and
+# grows without bound, while every outward sign says the deploy went fine. Clearing
+# one used to be a runbook chore performed once, by whoever read the runbook.
+#
+# Add a line here when a durable's binder is deleted or converted to an ephemeral
+# consumer. It is safe while the service runs: nothing binds these any more.
+# ---------------------------------------------------------------------------
+retire_consumer() {
+  stream="$1"; consumer="$2"
+  if nats --server "$NATS_URL" consumer info "$stream" "$consumer" >/dev/null 2>&1; then
+    nats --server "$NATS_URL" consumer rm "$stream" "$consumer" -f
+    echo "retired consumer $stream/$consumer"
+  fi
+}
+
+# site-host moved to an ephemeral ordered consumer so every replica sees every
+# site.published, rather than one replica seeing each.
+retire_consumer SITES site-host-cache
 
 echo "JetStream provisioning complete."
 nats --server "$NATS_URL" stream ls

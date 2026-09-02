@@ -1036,3 +1036,133 @@ The "empty" starter flavour is left minimal on purpose — that is what it is fo
 (1 new: the starter ships the layer, speaks the Mode A contract, tracks route
 changes, and the default page actually wires it up — a collector nobody calls is
 worse than none, because it looks done).
+
+---
+
+## ✅ In-app notifications (bell + toasts, SignalR)
+
+Built end to end; **not yet deployed**. Architecture and the three decisions that
+needed a record live in `docs/adr/0009-in-app-notifications.md`; this section is
+the "where things are" note.
+
+**Schema** — new `notifications` schema, `NotificationsDbContext`
+(`src/Shared/Dcms.Shared.Data/Notifications/`), two tables: `notifications` (the
+event, i18n `TitleKey`/`BodyKey` + `ParamsJson` rather than rendered prose, since
+the SPA ships en+cs) and `recipients` (one row per addressee, with `ReadAt` /
+`DismissedAt`). Fan-out on write: the audience is resolved at raise time from the
+permission that already gates the underlying feature, so a notification can never
+be seen by someone who could not see the resource. Both tables are registered in
+`RlsConfigurator.TenantTables` — omitting them fails startup, by design.
+
+**Idempotency** is a `UNIQUE (TenantId, DedupeKey)` plus a caught `23505`, not a
+check-then-insert: JetStream is at-least-once *and* admin-api is multi-replica,
+so the check-then-insert still races. The awkward case is invitation expiry,
+where resend rolls `ExpiresAt` — the dedupe key therefore includes the deadline,
+and resend clears the new `Invitation.ExpiredNotifiedAt` stamp. Without both, a
+resent invitation could never be reported expired a second time.
+
+**Sources** (14 kinds, `Notifications/NotificationKinds.cs`): site published /
+build failed, media processed / failed, content published / unpublished,
+invitation accepted / expired, member role changed, domain verified, plugin
+instance toggled, form submitted, chat conversation started, social token
+expiring. Four are new shared-durable consumers over the existing `*_EVENTS`
+streams — **no producer changes at all**, those events were already published and
+in two cases (`MEDIA_EVENTS`) had literally zero consumers. The rest are
+in-process raises at the point of the state change, and `ChatFanoutConsumer`'s
+`LogDebug` finally does the thing its doc comment said it was there for.
+
+`InvitationExpiryWorker` is the only source with no event behind it — a 5-minute
+poll with `FOR UPDATE SKIP LOCKED`. It stamps and commits *before* notifying:
+losing one notification to a crash beats notifying forever.
+
+**Consumers are shared durables, not ephemeral-ordered.** `SiteCacheInvalidator`
+is ephemeral because it mutates per-replica in-memory state; here one replica
+writes the rows and the SignalR Redis backplane pushes to connections on every
+other. Copying that pattern would insert N duplicate rows per notification.
+
+**Hub** at `/api/hub/notifications`, deliberately under `/api/*` rather than the
+`/hub/*` the option sketch had: `infra/caddy/Caddyfile` is bind-mounted and needs
+a **container restart** (a reload reads a stale inode), and a prod edge restart to
+ship a bell is a bad trade. Cost was two one-liners — `ws: true` on the vite `/api`
+proxy and `/api/hub` on the rate-limiter exemption. Backplane channel prefix is
+`dcms-notify`; it **must** stay distinct from content-api's `dcms-chat`.
+
+**Toasts** are severity-gated and self-suppressing: always toast Warning/Error,
+toast Info/Success only when `actorUserId !== me`. Publishing your own site should
+fill the bell, not interrupt you.
+
+**Two traps worth remembering.**
+
+1. *i18next's key separator is `.`* and `lib/i18n.ts` doesn't override it, so
+   `t('notifications.kinds.site.published.title')` resolves as a nested lookup and
+   never matches a flat `"site.published"` key — every notification would have
+   rendered its raw key. Kinds are slugged (`NotificationKinds.Slug()`, dots →
+   underscores) before becoming keys, and `NotificationTranslationTests` (30 cases,
+   no containers) now locks both directions: every kind has en+cs title and body,
+   and no locale carries an entry for a kind that no longer exists. That second
+   half immediately earned itself by catching a `member.joined` key left behind
+   when the kind was replaced by `member.role.changed`.
+2. `@microsoft/signalr` is imported **dynamically inside the hook's effect**. The
+   bell mounts in the shell on every page, so a static import would have put the
+   55.8 kB signalr chunk on the critical path for people who never see a
+   notification. Verified in the build output: entry stays 109 kB, signalr is a
+   separate chunk.
+
+**Deployment is `git push`, and the gaps that made that untrue are closed.** The
+`notifications` schema and grants are in `infra/postgres/init/*`, which
+`postgres-bootstrap` re-applies on every deploy; the tables come from
+`TenancyMigrator`; `NOTIFY` comes from `provision-streams.sh`. Three things had to
+change for that to actually hold — see the section below.
+
+**Verified.** `dotnet build` clean; 112 unit, 53 plugin-SDK, 156 integration
+(1 skipped, 0 failed) — the pre-existing local failure noted in the working
+memory did not reproduce. SPA `tsc --noEmit` clean and `vite build` succeeds.
+Not run yet: the live end-to-end pass (publish a site, watch the badge move) and
+the `--scale admin-api=2` backplane check — no local stack is up on this box.
+
+## ✅ Deploy automation: closing the "and then do this by hand" gaps
+
+Prompted by the notifications work, which was about to ship with a runbook step
+saying "create the schema on vps1 first". The rule is now that a push to `master`
+is the entire procedure — anything a deploy needs, the deploy does.
+
+**The schema step was already automated and the docs hadn't caught up.**
+`postgres-bootstrap` re-applies `infra/postgres/init/*` against the running
+cluster before every deploy (all of those scripts are idempotent; Postgres just
+never re-runs them itself, because `docker-entrypoint-initdb.d` fires only on an
+empty data directory). Both "existing clusters need the schema by hand" blocks in
+the runbook — `audit` and `notifications` — were stale and are gone. Adding a
+schema is now: add the line to `00-schemas.sql` and `01-rls.sql`.
+
+**Three things were genuinely not automated.**
+
+1. *Stream subjects never converged.* `ensure_stream` created a stream or did
+   nothing, so adding a subject to an existing stream took effect on a fresh
+   cluster and nowhere else — and the symptom is not an error, it is an event
+   nobody receives. `provision-streams.sh` now unions the desired subjects into an
+   existing stream's list. Retention deliberately still does not converge: work ⇄
+   limits cannot be edited in place, changing it decides whether a message
+   survives being acked, and on AUDIT it is a compliance property. A mismatch
+   warns and stays a person's decision.
+
+2. *Provisioning had no exit code.* `nats-init` and `minio-init` ran as a side
+   effect of `compose up -d`, which starts the *existing exited* container and
+   ignores what it returns. So the run that was supposed to create a new stream
+   was both unchecked and the one most likely to be executing a pre-rsync copy of
+   the script. `scripts/deploy.sh` now runs both with `compose run --rm` in a
+   provisioning step before the migration jobs — fresh container, current mounts,
+   and a failure that stops the deploy with the stack untouched.
+
+3. *Retired durables were a runbook chore.* An orphaned durable consumer holds its
+   stream's ack floor down forever, so the stream grows without bound while
+   everything looks healthy. `provision-streams.sh` ends with a `retire_consumer`
+   list that clears them on every deploy; the "One-time cleanup" runbook section
+   for `SITES/site-host-cache` is now one line of script instead. Deleting a
+   durable's binder means adding a line there.
+
+**Verified against a throwaway NATS**, by seeding the exact stale states an old
+cluster has: `SITES_EVENTS` carrying only `site.published` gained
+`site.build.failed` and was unchanged on the next run; a `NOTIFY` created with
+work-queue retention produced the warning and was left alone; an orphaned
+`site-host-cache` durable on `SITES` was cleared. Script exits 0 throughout, and
+`sh -n` passes — it runs under nats-box's `sh`, not bash.

@@ -2,6 +2,9 @@ using System.Net;
 using System.Text;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Data;
+using Dcms.AdminApi.Notifications;
+using Dcms.Shared.Security;
+using Dcms.Shared.Data.Notifications;
 using Dcms.Shared.Data.Social;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Messaging.Email;
@@ -158,7 +161,35 @@ public sealed class MetaTokenRefreshWorker(
                 connection.Id);
 
             await NotifyAsync(connection, ct);
+            await RaiseNotificationAsync(connection, ct);
         }
+    }
+
+    /// <summary>
+    /// The in-app half of the reauth notice. The email above reaches only the one admin who
+    /// connected the account, and only if they still have a mailbox anyone reads; the bell
+    /// reaches everyone who could actually fix it. RaiseAsync swallows its own failures.
+    /// </summary>
+    private async Task RaiseNotificationAsync(MetaConnection connection, CancellationToken ct)
+    {
+        using var scope = services.CreateScope();
+        var publisher = scope.ServiceProvider.GetRequiredService<INotificationPublisher>();
+
+        await publisher.RaiseAsync(new NotificationRequest(
+            TenantId: connection.TenantId,
+            Kind: NotificationKinds.SocialTokenExpiring,
+            Severity: NotificationSeverity.Warning,
+            RequiredPermission: PlatformPermissions.PluginsManage,
+            TitleKey: NotificationKinds.TitleKey(NotificationKinds.SocialTokenExpiring),
+            BodyKey: NotificationKinds.BodyKey(NotificationKinds.SocialTokenExpiring),
+            // Per connection per day: the refresh pass runs repeatedly and would otherwise
+            // re-raise this on every sweep until somebody reauthorises. Same shape as the
+            // email's own DedupeKey.
+            DedupeKey: $"social.token.expiring:{connection.Id:N}:{DateTimeOffset.UtcNow:yyyyMMdd}",
+            Params: new { provider = connection.AccountName },
+            LinkPath: "/plugins",
+            ResourceType: "meta_connection",
+            ResourceId: connection.Id), ct);
     }
 
     /// <summary>

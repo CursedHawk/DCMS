@@ -212,6 +212,12 @@ public static class AuditActions
     public const string AnalyticsPruned = "analytics.retention.pruned";
 
     /// <summary>
+    /// A notification-retention sweep. Set-based, so there is no before-image: one record per
+    /// pass carrying the cutoff and the row counts, not one per deleted row.
+    /// </summary>
+    public const string NotificationsPruned = "notifications.retention.pruned";
+
+    /// <summary>
     /// Somebody took a copy of the log out of the platform. Recorded in the log itself, which
     /// is the only place it can be: an export leaves no other trace, and the first question
     /// after a leak is who had the data.

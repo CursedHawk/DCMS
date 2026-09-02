@@ -334,23 +334,21 @@ TS, reaches the hub through site-host's `/hub` proxy).
   Vault-held key — that, plus off-box anchors, is the real control. Verify from
   the SPA (Audit log → Verify chain) or `GET /api/admin/audit/verify`.
 
-- **Existing clusters need the schema by hand.** `infra/postgres/init/*` only
-  runs on a fresh cluster, so on vps1 apply the grants before deploying:
+- **The schema is created by the deploy, not by hand.** `infra/postgres/init/*`
+  runs only on an empty data directory, so this used to need a manual
+  `CREATE SCHEMA audit` plus grants on any cluster older than the feature. The
+  `postgres-bootstrap` job re-applies those scripts against the running cluster
+  on every deploy — they are all idempotent — and `scripts/deploy.sh` runs it
+  first of the three migration jobs. The tables, partitions and trigger then come
+  from `TenancyMigrator` + `AuditSchemaConfigurator`.
 
-  ```sql
-  CREATE SCHEMA IF NOT EXISTS audit;
-  GRANT USAGE ON SCHEMA audit TO dcms_rls;
-  ALTER DEFAULT PRIVILEGES FOR ROLE dcms IN SCHEMA audit GRANT SELECT ON TABLES TO dcms_rls;
-  ```
-
-  The tables, partitions and trigger are created by `TenancyMigrator` +
-  `AuditSchemaConfigurator` on startup and are idempotent.
-
-- **The `AUDIT` stream is create-only.** `provision-streams.sh` never
-  reconfigures an existing stream. AUDIT must be `limits` retention with
-  `--max-age 0 --discard new`; a stream created with work-queue retention would
-  allow only one consumer and drop messages on ack. Fix an existing one with
-  `nats stream edit AUDIT`.
+- **The `AUDIT` stream's policy is create-only.** `provision-streams.sh`
+  converges an existing stream's *subject list* but never its retention, max-age
+  or discard policy: for AUDIT those are compliance properties, and changing
+  retention means recreating the stream and discarding its backlog. AUDIT must be
+  `limits` retention with `--discard new`; a stream created with work-queue
+  retention would allow only one consumer and drop messages on ack. Provisioning
+  prints a warning when it finds a mismatch — fix it with `nats stream edit AUDIT`.
 
 - **Two audit subjects, opposite directions.** `audit.submitted` is *inbound* —
   email-worker and site-builder publish there because they cannot reach the
@@ -521,22 +519,64 @@ TS, reaches the hub through site-host's `/hub` proxy).
 over loopback (the internal cached-read target is p95 < 30 ms). Override with
 `-e BASE=… -e TENANT=… -e SLUG=… -e CONTENT_TYPE=…`.
 
-## One-time cleanup: the old site-host cache consumer
+## In-app notifications
 
-`site-host` used to bind a **shared durable** JetStream consumer named `site-host-cache` on
-the `SITES` stream. It now uses an ephemeral ordered consumer, so every replica sees every
-`site.published` rather than one replica seeing each — but the old durable is not removed by
-the deploy, and an orphaned durable holds back the stream's ack floor indefinitely.
+The bell in the admin SPA. Notifications are raised by durable consumers in admin-api
+that translate already-published events, so most producers were untouched. See
+[ADR 0009](adr/0009-in-app-notifications.md).
 
-Delete it once, after the first deploy that includes this change:
+- **Nothing to do by hand.** The `notifications` schema and its `dcms_rls` grants are in
+  `infra/postgres/init/*`, which `postgres-bootstrap` re-applies on every deploy; the
+  tables come from `TenancyMigrator`; the `NOTIFY` stream comes from `nats-init`. All
+  three run before any service is rolled, and a failure stops the deploy. Push to
+  `master` is the whole procedure.
 
-```sh
-C="docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.vps.yml"
-$C exec nats nats consumer ls SITES                 # expect site-host-cache, plus the real ones
-$C exec nats nats consumer rm SITES site-host-cache
-```
+  (The `dcms_rls` grant is the part that looks optional and is not. The app connects as
+  the table owner, so skipping it breaks nothing visible — it breaks the RLS isolation
+  test, which is the thing that proves one tenant cannot read another's notifications.)
 
-Removing it is safe while site-host is running: nothing binds it any more.
+- **The `NOTIFY` stream** carries `notify.>` with `limits` retention. Provisioning
+  converges subjects on an existing stream but not retention, so if this one somehow
+  exists as a work queue it warns and you fix it with `nats stream edit NOTIFY` — a work
+  queue would permit only one consumer per subject filter.
+
+- **The hub is at `/api/hub/notifications`, not `/hub/...`.** That is deliberate: it
+  rides the existing `/api/*` route to admin-api, so **no Caddyfile change was needed**
+  and the edge did not have to be restarted. `/hub/*` on the admin host still goes to
+  content-api for chat. Both are exempt from rate limiting.
+
+- **The backplane channel prefix is `dcms-notify`.** content-api's chat hub uses
+  `dcms-chat` on the same Redis. If notifications ever appear in the chat console or
+  vice versa, these have collided.
+
+- **No Redis connection string means no backplane**, silently, exactly as for chat. With
+  more than one admin-api replica that shows up as "some admins get the toast, some do
+  not" — the consumer wrote the row on one replica and the push never left it. The bell
+  still fills in on the next fetch, which is what makes this easy to miss.
+
+- **Nothing appearing at all?** In order: is the `NOTIFY`/`SITES_EVENTS`/`MEDIA_EVENTS`
+  stream present (`nats stream ls`); are the durables consuming
+  (`nats consumer report SITES_EVENTS` — look for `admin-api-notify-*`); and does the
+  tenant have anyone holding the gating permission? The last one is not an error and is
+  logged at Debug: a notification with no audience is dropped, by design.
+
+- **Retention** is 90 days after a notification is read or dismissed
+  (`Notifications:RetentionDays`), swept daily under an advisory lock so one replica
+  does the work. Unread notifications are never swept.
+
+## Retired JetStream durables
+
+A durable consumer outlives the code that bound it, and an orphaned one holds the stream's
+ack floor down forever — the stream keeps every message behind it and grows without bound,
+while every outward sign says the deploy went fine.
+
+`provision-streams.sh` ends with a `retire_consumer` list and clears them on every deploy,
+so this is no longer a chore anybody has to remember. **When you delete a durable's binder
+or convert it to an ephemeral consumer, add a line there** — that is the whole procedure.
+
+The one entry today is `SITES/site-host-cache`: `site-host` used to bind a shared durable
+and now uses an ephemeral ordered consumer, so every replica sees every `site.published`
+rather than one replica seeing each.
 
 ## Production profile
 

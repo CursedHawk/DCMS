@@ -214,7 +214,12 @@ public static class DcmsHostingExtensions
             options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
             {
                 var path = httpContext.Request.Path;
-                if (path.StartsWithSegments("/health") || path.StartsWithSegments("/hub"))
+                // /api/hub is admin-api's notification hub; /hub is content-api's chat hub.
+                // A long-lived WebSocket is not what this limiter is for, and a reconnect
+                // storm after a deploy would otherwise trip it for every admin at once.
+                if (path.StartsWithSegments("/health")
+                    || path.StartsWithSegments("/hub")
+                    || path.StartsWithSegments("/api/hub"))
                 {
                     return RateLimitPartition.GetNoLimiter("unlimited");
                 }
