@@ -37,6 +37,14 @@ public static class VaultTransitServiceCollectionExtensions
     public const string TenantSecretsKey = "dcms-tenant-secrets";
 
     /// <summary>
+    /// Tenant Meta (Facebook/Instagram) OAuth tokens. A key of its own rather than
+    /// <see cref="TenantSecretsKey"/> because admin-api needs to *decrypt* these — it is the
+    /// service that calls the Graph API — and reusing the AI key would have extended that
+    /// decrypt over every tenant's AI provider key too. See infra/vault/policies/dcms-admin-api.hcl.
+    /// </summary>
+    public const string SocialTokensKey = "dcms-social-tokens";
+
+    /// <summary>
     /// Registers an IVaultClient and the Transit encryptor, using the same credential
     /// resolution as the configuration provider — AppRole when available, token otherwise.
     ///

@@ -7,6 +7,7 @@ import type { RegistryWidgetsType, WidgetProps } from '@rjsf/utils';
 import { Page, PageHeader } from '../../components/Page';
 import { SchemaForm } from '../../components/SchemaForm';
 import { MediaPicker } from '../media/MediaPicker';
+import { MetaConnectionWidget } from './MetaConnectionWidget';
 import { EmptyState } from '../../components/ui/empty-state';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -53,7 +54,12 @@ function MediaFieldWidget({ value, onChange }: WidgetProps) {
   );
 }
 
-const configWidgets: RegistryWidgetsType = { media: MediaFieldWidget };
+const configWidgets: RegistryWidgetsType = {
+  media: MediaFieldWidget,
+  // `"format": "meta-connection"` -- the Instagram/Facebook plugins' connectionId.
+  // A connection is the product of an OAuth round trip, so it cannot be typed in.
+  'meta-connection': MetaConnectionWidget,
+};
 
 export function PluginsPage() {
   const { t } = useTranslation();
@@ -425,6 +431,9 @@ function ConfigDialog({
                 formData={config}
                 onChange={setConfig}
                 widgets={configWidgets}
+                // The Meta widget's Sync-now button needs the instance it belongs to,
+                // which is a fact about this dialog rather than about the field.
+                formContext={{ instanceId: instance.id }}
               />
             </div>
           ) : null}

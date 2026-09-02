@@ -3,6 +3,7 @@ using Dcms.ContentApi.Chat;
 using Dcms.ContentApi.Delivery;
 using Dcms.ContentApi.Forms;
 using Dcms.ContentApi.Plugins;
+using Dcms.ContentApi.Social;
 using Dcms.PluginSdk.Runtime;
 using Dcms.Plugins.All;
 using Dcms.PluginSdk.Abstractions;
@@ -176,6 +177,16 @@ builder.Services.AddHttpClient("ai-gateway", (sp, client) =>
     var baseUrl = sp.GetRequiredService<IConfiguration>()["Services:AiGateway"] ?? "http://localhost:5007";
     client.BaseAddress = new Uri(baseUrl);
 });
+// admin-api, for Instagram stories. content-api holds no Meta credential of its own -- it is
+// the internet-facing service and is granted neither direction on the social transit key -- so
+// the live fetch hops through the admin plane on a dcms.social service token.
+builder.Services.AddHttpClient(Dcms.ContentApi.Social.StoryDeliveryEndpoints.HttpClientName, (sp, client) =>
+{
+    var baseUrl = sp.GetRequiredService<IConfiguration>()["Services:AdminApi"] ?? "http://localhost:5002";
+    client.BaseAddress = new Uri(baseUrl);
+    // A story fetch sits on a page request. Better a missing story strip than a hung page.
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
 builder.Services.AddSingleton<ChatBotResponder>();
 
 builder.Services.AddDcmsPlugins(plugins => plugins.AddAll());
@@ -220,6 +231,9 @@ app.MapBranding();
 app.MapPluginConfig();
 app.MapVisitorAuth();
 app.MapChatDelivery();
+// Before the generic content delivery for readability; ASP.NET routing decides on segment
+// literalness rather than registration order, so `instagram-story` wins either way.
+app.MapStoryDelivery();
 app.MapContentDelivery();
 app.MapTagDelivery();
 app.MapMediaDelivery();

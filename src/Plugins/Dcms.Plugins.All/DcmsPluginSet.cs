@@ -5,9 +5,11 @@ using Dcms.Plugins.Blog;
 using Dcms.Plugins.Branding;
 using Dcms.Plugins.Carousel;
 using Dcms.Plugins.Events;
+using Dcms.Plugins.Facebook;
 using Dcms.Plugins.FileDownloads;
 using Dcms.Plugins.Forms;
 using Dcms.Plugins.ImageGallery;
+using Dcms.Plugins.Instagram;
 using Dcms.Plugins.LiveChat;
 using Dcms.Plugins.Roster;
 using Dcms.Plugins.Search;
@@ -29,9 +31,11 @@ public static class DcmsPluginSet
         .Add<BrandingPlugin>()
         .Add<CarouselPlugin>()
         .Add<EventsPlugin>()
+        .Add<FacebookPlugin>()
         .Add<FileDownloadsPlugin>()
         .Add<FormsPlugin>()
         .Add<ImageGalleryPlugin>()
+        .Add<InstagramPlugin>()
         .Add<LiveChatPlugin>()
         .Add<RosterPlugin>()
         .Add<SearchPlugin>()

@@ -224,6 +224,9 @@ services:
       # wins; what this removes is the fallback that would quietly take its place.
       ServiceClient__ClientSecret: ""
       Services__AiGateway: "http://ai-gateway:8080"
+      # Instagram stories: content-api asks admin-api rather than holding a Meta token, which
+      # is what keeps decrypt on dcms-social-tokens off the internet-facing service.
+      Services__AdminApi: "http://admin-api:8080"
 
   media-worker:
     environment:

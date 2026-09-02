@@ -127,6 +127,10 @@ public sealed class IdentitySeeder(
 
         await EnsureScopeAsync(manager, DcmsOAuth.Scopes.Admin, "DCMS Admin API", DcmsOAuth.Resources.AdminApi, ct);
         await EnsureScopeAsync(manager, DcmsOAuth.Scopes.Ai, "DCMS AI Gateway", DcmsOAuth.Resources.AiGateway, ct);
+        // Same resource as dcms.admin -- it is admin-api that answers -- but a separate scope,
+        // so the service token content-api carries is only good for the endpoints that named it.
+        await EnsureScopeAsync(
+            manager, DcmsOAuth.Scopes.Social, "DCMS Social (service)", DcmsOAuth.Resources.AdminApi, ct);
     }
 
     private static async Task EnsureScopeAsync(
@@ -205,6 +209,7 @@ public sealed class IdentitySeeder(
                     Permissions.Endpoints.Token,
                     Permissions.GrantTypes.ClientCredentials,
                     Permissions.Prefixes.Scope + DcmsOAuth.Scopes.Ai,
+                    Permissions.Prefixes.Scope + DcmsOAuth.Scopes.Social,
                 },
             }, ct);
             logger.LogInformation("Seeded admin-api service client.");

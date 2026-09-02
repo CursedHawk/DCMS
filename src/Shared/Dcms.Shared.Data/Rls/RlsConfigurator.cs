@@ -51,6 +51,15 @@ public static class RlsConfigurator
         ("chat", "conversations"),
         ("chat", "messages"),
         ("forms", "form_submissions"),
+        // Every table here holds or gates access to a tenant's Meta OAuth tokens.
+        // meta_oauth_states is tenant-filtered like the rest even though the OAuth
+        // callback reads it with IgnoreQueryFilters: the callback is anonymous and has
+        // no tenant context, so that row is what *establishes* the tenant. RLS still
+        // applies to it for any non-owner reader, which is the point.
+        ("social", "meta_connections"),
+        ("social", "meta_sync_states"),
+        ("social", "meta_media_map"),
+        ("social", "meta_oauth_states"),
         // Audit rows carry a TenantId and must be covered like any other tenant table.
         // Guid.Empty marks platform-scope records (logins, tenant provisioning): the policy
         // compares equality against the GUC, so those rows are invisible to tenant readers,

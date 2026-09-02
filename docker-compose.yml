@@ -349,6 +349,9 @@ services:
       ServiceClient__ClientId: "dcms-admin-api"
       ServiceClient__ClientSecret: "dcms-admin-api-dev-secret"
       Services__AiGateway: "http://ai-gateway:8080"
+      # Instagram stories. content-api holds no Meta credential -- it asks admin-api, which
+      # is the only service granted decrypt on the dcms-social-tokens transit key.
+      Services__AdminApi: "http://admin-api:8080"
 
   media-worker:
     build:

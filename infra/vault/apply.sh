@@ -150,6 +150,14 @@ echo "  transit key dcms-tenant-secrets present"
 vault write -f transit/keys/dcms-dataprotection >/dev/null
 echo "  transit key dcms-dataprotection present"
 
+# Tenant Meta (Facebook/Instagram) OAuth tokens. Deliberately a SEPARATE key from
+# dcms-tenant-secrets: admin-api needs to decrypt these (it is what calls the Graph API), and
+# putting them on the AI key would have handed the admin plane decrypt over every tenant's AI
+# provider key as a side effect. Same warning as above -- never recreate it, or every stored
+# connection becomes unreadable and every tenant has to reconnect.
+vault write -f transit/keys/dcms-social-tokens >/dev/null
+echo "  transit key dcms-social-tokens present"
+
 echo "==> Policies"
 for svc in $SERVICES; do
   vault policy write "dcms-$svc" - < "policies/dcms-$svc.hcl" >/dev/null

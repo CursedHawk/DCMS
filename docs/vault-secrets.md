@@ -96,6 +96,9 @@ rm -f /tmp/s.pfx
 | `Audit__ChainKey` | HMAC key for the audit hash chain |
 | `ServiceClient__ClientSecret` | the secret admin-api presents to identity for client-credentials |
 | `Forgejo__Token`, `Forgejo__AdminToken`, `Forgejo__WebhookSecret` | git server API access |
+| `Social__Meta__AppId`, `Social__Meta__AppSecret` | the Meta app behind Facebook Login for Business — Pages, and the Instagram accounts linked to them |
+| `Social__Instagram__AppId`, `Social__Instagram__AppSecret` | the Instagram Login app, for professional accounts with no Facebook Page |
+| `Social__RedirectUri` | the OAuth callback, registered verbatim in the Meta app — `https://<admin host>/api/admin/social/callback` |
 
 **`Audit__ChainKey` must be stable forever.** Rotating it makes every previously written audit
 record fail verification — the chain cannot be re-linked, and `audit verify` reports tampering
@@ -104,6 +107,17 @@ that never happened.
 `Forgejo__WebhookSecret` no longer has a compose default. It used to fall back to a value
 published in this repository, so a host that never set it verified push webhooks against a
 secret anyone could read. Absent, admin-api registers no webhook rather than a forgeable one.
+
+**The `Social__*` keys are optional, and their absence is a feature.** With no app id and
+secret, `MetaSocialOptions.IsConfigured` is false, the connect endpoint answers 501 and the
+admin UI hides the button — the same shape as Google SSO in identity, so a dev machine needs no
+Meta app at all. Set only the pair you have: an installation with a Facebook app and no
+Instagram Login app offers the Facebook path and nothing else.
+
+One redirect URI serves every tenant. Which tenant a callback belongs to comes from the
+single-use `social.meta_oauth_states` row named by the `state` parameter, not from the URL —
+the callback is necessarily anonymous, because Meta redirects a browser to it with no bearer
+token.
 
 ### `secret/dcms/content-api`
 
@@ -211,12 +225,24 @@ live in Vault, and every bootstrap chain terminates somewhere.
 |---|---|
 | `transit/keys/dcms-tenant-secrets` | tenant AI provider keys, stored encrypted in the database |
 | `transit/keys/dcms-dataprotection` | the ASP.NET Data Protection key ring, when `DataProtection:ProtectWithTransit` is on |
+| `transit/keys/dcms-social-tokens` | tenant Meta (Facebook/Instagram) OAuth tokens in `social.meta_connections` |
 
 A new key of the same name **cannot decrypt existing ciphertext**. Recreating
 `dcms-tenant-secrets` makes every tenant's stored provider key unreadable; recreating
 `dcms-dataprotection` invalidates the key ring, which logs everyone out and strands the Forgejo
-sync outbox. `infra/vault/apply.sh` uses `vault write -f`, which is a no-op on an existing key
-— that is deliberate, not laziness.
+sync outbox; recreating `dcms-social-tokens` makes every stored Meta connection unreadable and
+every tenant has to reconnect their account by hand. `infra/vault/apply.sh` uses
+`vault write -f`, which is a no-op on an existing key — that is deliberate, not laziness.
+
+`dcms-social-tokens` is the one key a single service holds **both** directions on, which is
+worth explaining rather than leaving to look like an oversight. The encrypt/decrypt split works
+for AI keys because two different services want the two halves — admin-api takes the key in,
+ai-gateway spends it. Nothing like that is true here: admin-api is the service that calls the
+Graph API, on a background timer with no request in sight, so whoever holds decrypt *is* the
+admin plane. What the separate key buys is containment — this grant reaches Meta tokens and
+nothing else. content-api is granted neither direction on either key; it reads live Instagram
+stories through an internal admin-api endpoint precisely so a tenant credential never has to be
+decryptable by the service exposed to the internet.
 
 ---
 

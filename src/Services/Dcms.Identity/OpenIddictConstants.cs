@@ -17,6 +17,14 @@ public static class DcmsOAuth
     {
         public const string Admin = "dcms.admin";   // admin-api resource scope
         public const string Ai = "dcms.ai";         // ai-gateway resource scope
+
+        /// <summary>
+        /// content-api → admin-api, for Instagram stories. Maps to the admin-api resource like
+        /// <see cref="Admin"/>, but is deliberately its own scope: content-api is the
+        /// internet-facing service, and the endpoint it needs is one narrow read. Reusing
+        /// dcms.admin would have handed it a token indistinguishable from the SPA's.
+        /// </summary>
+        public const string Social = "dcms.social";
     }
 
     public static class Resources

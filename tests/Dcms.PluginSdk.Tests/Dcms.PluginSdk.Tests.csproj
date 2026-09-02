@@ -27,6 +27,9 @@
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Events\Dcms.Plugins.Events.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.FileDownloads\Dcms.Plugins.FileDownloads.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Forms\Dcms.Plugins.Forms.csproj" />
+    <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Facebook\Dcms.Plugins.Facebook.csproj" />
+    <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Instagram\Dcms.Plugins.Instagram.csproj" />
+    <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Meta.Core\Dcms.Plugins.Meta.Core.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.ImageGallery\Dcms.Plugins.ImageGallery.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.LiveChat\Dcms.Plugins.LiveChat.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Roster\Dcms.Plugins.Roster.csproj" />

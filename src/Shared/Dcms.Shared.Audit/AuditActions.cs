@@ -160,6 +160,25 @@ public static class AuditActions
     public const string SshKeyRemoved = "auth.sshkey.removed";
     public const string TokenIssued = "auth.token.issued";
 
+    // ---- social (Meta connections) ----
+
+    /// <summary>
+    /// An admin started a Meta consent flow. Recorded at the start, not only on success,
+    /// because the callback that completes it is anonymous by necessity — this is the last
+    /// point at which we can attribute the connection to a named person.
+    /// </summary>
+    public const string ConnectionStarted = "social.connection.started";
+
+    public const string ConnectionRevoked = "social.connection.revoked";
+
+    /// <summary>
+    /// An admin pressed "sync now". Its own action rather than the generic
+    /// <see cref="PluginInstanceActioned"/>: this one spends a tenant's Meta rate budget and
+    /// decrypts their credential, and sharing a key with enable/disable would make "who
+    /// triggered the sync that hit the rate limit?" unanswerable from the log.
+    /// </summary>
+    public const string SocialSyncRequested = "social.sync.requested";
+
     // ---- security ----
     public const string PermissionDenied = "security.permission.denied";
     public const string Unauthenticated = "security.unauthenticated";

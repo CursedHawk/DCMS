@@ -8,6 +8,7 @@ using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Search;
 using Dcms.Shared.Data.Sites;
+using Dcms.Shared.Data.Social;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Data.Visitors;
 using Dcms.Shared.Kernel.Abstractions;
@@ -53,6 +54,7 @@ public class RlsCoverageTests
         new VisitorsDbContext(Options<VisitorsDbContext>(), Tenant, Sandbox),
         new ChatDbContext(Options<ChatDbContext>(), Tenant, Sandbox),
         new FormsDbContext(Options<FormsDbContext>(), Tenant, Sandbox),
+        new SocialDbContext(Options<SocialDbContext>(), Tenant),
         new AuditDbContext(Options<AuditDbContext>()),
     ];
 
@@ -70,6 +72,24 @@ public class RlsCoverageTests
         {
             foreach (var context in contexts) context.Dispose();
         }
+    }
+
+    [Fact]
+    public void The_table_holding_meta_oauth_tokens_is_covered()
+    {
+        // Same shape as the user_ai_settings miss below, and the same silence: the tokens stay
+        // encrypted whether or not a policy exists, so nothing looks wrong from the outside.
+        // meta_connections holds a tenant's live Facebook/Instagram credentials.
+        using var social = new SocialDbContext(Options<SocialDbContext>(), Tenant);
+
+        var entity = social.Model.GetEntityTypes()
+            .Single(e => e.ClrType == typeof(MetaConnection));
+
+        var schema = entity.GetSchema() ?? social.Model.GetDefaultSchema();
+        (schema, entity.GetTableName()).Should().Be(("social", "meta_connections"));
+
+        var act = () => RlsConfigurator.AssertCoverage([social], NullLogger.Instance);
+        act.Should().NotThrow();
     }
 
     [Fact]

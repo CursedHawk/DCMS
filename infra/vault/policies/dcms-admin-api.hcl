@@ -34,3 +34,25 @@ path "secret/metadata/dcms/admin-api" {
 path "transit/encrypt/dcms-tenant-secrets" {
   capabilities = ["update"]
 }
+
+# Tenant Meta OAuth tokens (social.meta_connections). admin-api gets BOTH directions here,
+# which is a deliberate exception to the split above, so it is worth saying why rather than
+# leaving it to look like an oversight.
+#
+# The split for AI keys works because two different services want the two directions: admin-api
+# takes the key in, ai-gateway spends it. Nothing like that is true here -- admin-api is the
+# service that calls the Graph API, on a background timer with no request in sight, so whoever
+# holds decrypt IS the admin plane. The alternative was a whole new service to hold one
+# credential, which buys a container and a deploy surface rather than a security boundary.
+#
+# What the separate key does buy is containment: this grant reaches Meta tokens and nothing
+# else. content-api, the public-facing service, is granted neither direction on either key --
+# it reaches stories through an internal admin-api endpoint instead, precisely so a token never
+# has to be decryptable by the service exposed to the internet.
+path "transit/encrypt/dcms-social-tokens" {
+  capabilities = ["update"]
+}
+
+path "transit/decrypt/dcms-social-tokens" {
+  capabilities = ["update"]
+}

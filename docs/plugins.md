@@ -54,3 +54,43 @@ tenant predicate. `RlsConfigurator.AssertCoverage` fails admin-api's startup whe
 mapped entity carries a `TenantId` and appears in neither `TenantTables` nor
 `ExemptTables` — if a cross-tenant scan genuinely needs the table unfiltered, add it
 to `ExemptTables` with a comment saying why.
+
+## When a plugin needs a third-party credential
+
+The Instagram and Facebook plugins are the reference case, and the shape is worth copying
+because almost none of it lives in the plugin.
+
+**The plugin projects hold no runtime logic at all.** `Dcms.Plugins.Instagram` and
+`Dcms.Plugins.Facebook` declare a manifest, content types and a config schema, and nothing
+else — the OAuth flow, the Graph client, the sync worker and the media mirroring all live in
+`src/Services/Dcms.AdminApi/Social/`. That is not a stylistic choice: `IPluginEndpointBuilder`
+refuses `MapGet`/`MapPost` (see `PluginRouteTable`), so bespoke endpoints belong to a host
+service. Forms does the same thing in `Dcms.ContentApi/Forms/`.
+
+**Model the third-party data as ordinary content types and most of the work disappears.** A
+synced Instagram post is a `cms.content_items` row like any other, so the delivery API, the
+Redis cache, the per-tenant OpenAPI document, the GrapesJS block palette and the search index
+all serve it with no code in any of those places. Set `Searchable: true` and pick a `SlugField`
+that the upstream already guarantees unique — for Meta it is the media id, which is what makes
+a re-sync an upsert rather than a diff.
+
+**Credentials never go in instance config.** The config holds a `connectionId`; the token lives
+encrypted in `social.meta_connections` under its own Vault Transit key. `publicConfigKeys` then
+lists only what a site may read (`accountUsername`, `showStories`) — deliberately not
+`connectionId`, which is not a secret in itself but is the handle to one. The plugin tests
+assert the allow-list contains no credential key, because that allow-list is the thing standing
+between a new config field and a public leak.
+
+**Bound what you pull, in the fetch and not in the retention.** Every Meta instance declares
+`maxPosts` / `maxReels` caps with a `maximum` in the JSON Schema that `PluginConfigValidator`
+re-checks server-side — a schema is the browser's story, and the config endpoint takes JSON
+from anywhere. The caps stop the *pagination*, not just what is kept: an implementation that
+downloads an entire account and then keeps the newest five passes every row-count test while
+doing exactly the thing the caps exist to prevent, so the tests that matter count upstream
+requests (`MetaFeedFetcherTests`).
+
+**A public service must not be able to decrypt a tenant credential.** Instagram stories are
+fetched live rather than synced, and content-api — which is internet-facing — has no grant on
+`dcms-social-tokens`. It asks admin-api over a client-credentials token scoped `dcms.social`,
+and `ServicePrincipalGuard` confines that token to the endpoints that named the scope. See
+`docs/vault-secrets.md`.

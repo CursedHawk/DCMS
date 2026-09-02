@@ -11,6 +11,7 @@ using Dcms.Shared.Data.Observability;
 using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Search;
 using Dcms.Shared.Data.Sites;
+using Dcms.Shared.Data.Social;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Data.Visitors;
 using Dcms.Shared.Data;
@@ -69,6 +70,7 @@ public static class DcmsMigrationRunner
         await scoped.GetRequiredService<VisitorsDbContext>().Database.MigrateAsync(ct);
         await scoped.GetRequiredService<ChatDbContext>().Database.MigrateAsync(ct);
         await scoped.GetRequiredService<FormsDbContext>().Database.MigrateAsync(ct);
+        await scoped.GetRequiredService<SocialDbContext>().Database.MigrateAsync(ct);
 
         // The shared Data Protection key ring. admin-api does not use it — it is bearer-token
         // only — but it owns every schema on this database, and identity must not run DDL of
@@ -133,6 +135,7 @@ public static class DcmsMigrationRunner
                 scoped.GetRequiredService<VisitorsDbContext>(),
                 scoped.GetRequiredService<ChatDbContext>(),
                 scoped.GetRequiredService<FormsDbContext>(),
+                scoped.GetRequiredService<SocialDbContext>(),
                 scoped.GetRequiredService<AuditDbContext>(),
             ],
             logger);

@@ -30,6 +30,12 @@ public static class PostgresAdvisoryLock
     /// <summary>Six-hourly analytics event pruning.</summary>
     public const long AnalyticsRetentionLockKey = 0x44434D5300000004;
 
+    /// <summary>Elects the single replica that syncs Meta (Facebook/Instagram) feeds per pass.</summary>
+    public const long MetaSyncLockKey = 0x44434D5300000005;
+
+    /// <summary>Elects the single replica that refreshes Meta long-lived access tokens.</summary>
+    public const long MetaTokenRefreshLockKey = 0x44434D5300000006;
+
     /// <summary>
     /// Blocks until the lock is held. Deliberately blocking rather than
     /// <c>pg_try_advisory_lock</c>: a second instance arriving mid-migration should wait and then

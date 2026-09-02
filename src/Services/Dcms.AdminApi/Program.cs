@@ -15,6 +15,7 @@ using Dcms.Plugins.All;
 using Dcms.PluginSdk.Runtime;
 using Dcms.Shared.Caching;
 using Dcms.AdminApi.Sites;
+using Dcms.AdminApi.Social;
 using Dcms.Shared.Data.Ai;
 using Dcms.Shared.Data.Analytics;
 using Dcms.Shared.Data.DataProtection;
@@ -23,6 +24,7 @@ using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
+using Dcms.Shared.Data.Social;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Search;
 using Dcms.Shared.Data.Sites;
@@ -54,6 +56,9 @@ builder.Services.AddDcmsCmsData(builder.Configuration);
 builder.Services.AddDcmsMediaData(builder.Configuration);
 builder.Services.AddDcmsSitesData(builder.Configuration);
 builder.Services.AddDcmsAiData(builder.Configuration);
+builder.Services.AddDcmsSocialData(builder.Configuration);
+// Shared by the upload endpoint and the Meta feed sync -- see MediaIngestService.
+builder.Services.AddScoped<Dcms.AdminApi.Media.MediaIngestService>();
 builder.Services.AddDcmsSearchData(builder.Configuration);
 builder.Services.AddDcmsAnalyticsData(builder.Configuration);
 builder.Services.AddDcmsVisitorsData(builder.Configuration);
@@ -128,6 +133,59 @@ builder.Services.AddHttpClient("content-api", (sp, client) =>
 // Forgejo git server: source of truth for Mode B site source. The machine token
 // arrives via Vault (secret/dcms/admin-api, Forgejo__Token); git operations are
 // no-ops until it's set (ForgejoOptions.Enabled).
+// The Meta OAuth callback is necessarily anonymous -- Meta redirects a browser to it with no
+// bearer token -- so it is the one unauthenticated write path on the admin plane. The state
+// token is 256 bits of randomness and guessing it is hopeless, but each guess still costs a
+// database lookup, so the endpoint gets its own limiter. A NAMED policy rather than a global
+// one: admin-api has never had rate limiting, and quietly throttling the whole admin SPA while
+// adding a social feature would be a surprising way to find that out.
+builder.Services.AddRateLimiter(limiter =>
+{
+    limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    limiter.AddPolicy(Dcms.AdminApi.Social.MetaOAuthEndpoints.CallbackRateLimitPolicy, http =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+});
+
+// Meta (Facebook/Instagram) social feeds. Absent credentials mean the feature simply does not
+// offer itself -- same shape as Google SSO in identity, so dev needs no Meta app.
+builder.Services.Configure<Dcms.AdminApi.Social.MetaSocialOptions>(
+    builder.Configuration.GetSection(Dcms.AdminApi.Social.MetaSocialOptions.SectionName));
+builder.Services.AddHttpClient<Dcms.AdminApi.Social.MetaOAuthClient>(client =>
+{
+    // Every URL is absolute (the two login paths live on different hosts), so no BaseAddress.
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddHttpClient<Dcms.AdminApi.Social.MetaGraphClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+// Downloads from Meta's CDN. A longer timeout than the Graph calls (these are files, not
+// JSON) but still bounded, because a stalled download must not hold a sync pass open.
+builder.Services.AddHttpClient(Dcms.AdminApi.Social.MetaMediaMirror.HttpClientName, client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(2);
+});
+builder.Services.AddScoped<Dcms.AdminApi.Social.MetaFeedFetcher>();
+builder.Services.AddScoped<Dcms.AdminApi.Social.MetaMediaMirror>();
+builder.Services.AddScoped<Dcms.AdminApi.Social.MetaFeedSyncService>();
+// Off by default in tests and anywhere without a Meta app: an enabled worker with no
+// credentials would just log failures every minute.
+if (builder.Configuration.GetValue("Social:SyncEnabled", true))
+{
+    builder.Services.AddHostedService<Dcms.AdminApi.Social.MetaSyncWorker>();
+    // Gated on the same switch. A Meta long-lived token cannot be renewed once it has
+    // expired, so without this every connected account stops about sixty days after it was
+    // connected -- and turning syncing off is exactly when nobody would notice.
+    builder.Services.AddHostedService<Dcms.AdminApi.Social.MetaTokenRefreshWorker>();
+}
+
 builder.Services.Configure<Dcms.AdminApi.Sites.Git.ForgejoOptions>(
     builder.Configuration.GetSection(Dcms.AdminApi.Sites.Git.ForgejoOptions.SectionName));
 
@@ -240,7 +298,14 @@ app.UseMultiTenant();
 // checked, and the endpoints that survive still see a tenant context. Without this, an
 // endpoint guarded by a bare RequireAuthorization() trusts X-Dcms-Tenant outright.
 app.UseTenantMembership();
+// Beside the membership check, and for the same reason: a client-credentials token has no user
+// behind it, so the membership check waves it through and a bare RequireAuthorization() then
+// accepts it. This confines a service token to the endpoints that named its scope.
+app.UseServicePrincipalGuard();
 app.UseAuthorization();
+
+// Only endpoints that opt in with RequireRateLimiting are affected; there is no global limiter.
+app.UseRateLimiter();
 
 app.MapDcmsDefaultEndpoints();
 app.MapTenancyEndpoints();
@@ -258,6 +323,8 @@ app.MapAlertEndpoints();
 app.MapSitePreview();
 app.MapFormSubmissionEndpoints();
 app.MapAiSettingsEndpoints();
+app.MapMetaOAuthEndpoints();
+app.MapMetaStoriesEndpoints();
 app.MapAiGenerationEndpoints();
 app.MapAiAgentEndpoints();
 app.MapAnalyticsDashboard();

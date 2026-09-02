@@ -35,6 +35,9 @@
     <ProjectReference Include="..\..\src\Services\Dcms.MediaWorker\Dcms.MediaWorker.csproj" Aliases="MediaWorkerApp" />
     <ProjectReference Include="..\..\src\Services\Dcms.SiteBuilder\Dcms.SiteBuilder.csproj" Aliases="SiteBuilderApp" />
     <ProjectReference Include="..\..\src\Services\Dcms.SiteHost\Dcms.SiteHost.csproj" Aliases="SiteHostApp" />
+    <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Facebook\Dcms.Plugins.Facebook.csproj" />
+    <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Instagram\Dcms.Plugins.Instagram.csproj" />
+    <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Meta.Core\Dcms.Plugins.Meta.Core.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Media\Dcms.Shared.Media.csproj" />
   </ItemGroup>
 

@@ -8,8 +8,13 @@ namespace Dcms.IntegrationTests.Tenancy;
 
 /// <summary>
 /// Test authentication: builds a principal from request headers (X-Test-Sub,
-/// X-Test-Roles, X-Test-Email) so isolation/permission tests can act as
+/// X-Test-Roles, X-Test-Email, X-Test-Scope) so isolation/permission tests can act as
 /// different users without minting real OIDC tokens.
+///
+/// <para>X-Test-Scope stands in for a client-credentials token's granted scopes. A caller
+/// whose X-Test-Sub is not a user guid is a service principal, which is exactly what
+/// <c>ServicePrincipalGuard</c> exists to confine — so the tests that prove it confines
+/// anything need a way to be one.</para>
 /// </summary>
 public sealed class TestAuthHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -36,6 +41,12 @@ public sealed class TestAuthHandler(
             {
                 claims.Add(new Claim("role", role.Trim()));
             }
+        }
+
+        // Space-delimited, as OpenIddict writes it, so the guard parses a real token's shape.
+        if (Request.Headers.TryGetValue("X-Test-Scope", out var scope) && !string.IsNullOrEmpty(scope))
+        {
+            claims.Add(new Claim("scope", scope.ToString()));
         }
 
         var identity = new ClaimsIdentity(claims, SchemeName, "name", "role");

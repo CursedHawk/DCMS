@@ -22,16 +22,13 @@ public static class MediaEndpoints
     public static IEndpointRouteBuilder MapMediaEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/admin/media", async (
-            IFormFile file, [FromForm] Guid? folderId, MediaSanitizer sanitizer, MediaDbContext db,
-            IObjectStorage storage, IOptions<StorageOptions> storageOptions, IEventPublisher events,
-            ITenantContext tenant, CurrentUser me, CancellationToken ct) =>
+            IFormFile file, [FromForm] Guid? folderId, MediaIngestService ingest, MediaDbContext db,
+            CurrentUser me, CancellationToken ct) =>
         {
-            if (file.Length == 0)
+            if (file.Length > MediaIngestService.MaxInlineBytes)
             {
-                return Results.BadRequest(new { error = "Empty file." });
-            }
-            if (file.Length > MaxInlineBytes)
-            {
+                // Checked before buffering: the point of the limit is not to read 2 GB into
+                // memory first and then object to its size.
                 return Results.BadRequest(new { error = "File exceeds the 50 MB inline upload limit." });
             }
 
@@ -43,89 +40,18 @@ public static class MediaEndpoints
 
             await using var buffer = new MemoryStream();
             await file.CopyToAsync(buffer, ct);
-            var bytes = buffer.ToArray();
 
-            // A wider header than a magic number needs, so a text SVG with an
-            // <?xml …?> prolog or a leading comment is still recognisable.
-            var sniff = ContentSniffer.Sniff(bytes.AsSpan(0, Math.Min(bytes.Length, 1024)));
-            if (sniff is null)
+            var result = await ingest.IngestAsync(
+                buffer.ToArray(), file.FileName, folderId, me.UserId, ct);
+
+            if (!result.Ok) return Results.BadRequest(new { error = result.Error });
+
+            return Results.Created($"/api/admin/media/{result.AssetId}", new
             {
-                return Results.BadRequest(new { error = "Unsupported or unrecognized file type." });
-            }
-
-            var contentType = sniff.ContentType;
-            // Re-encode images to strip metadata / neutralize polyglots. SVG can't
-            // be raster-re-encoded, so it takes the XML-sanitizer path (strips
-            // scripts, event handlers and dangerous URIs) instead.
-            var isSvg = contentType == "image/svg+xml";
-            if (sniff.Category == MediaCategory.Image)
-            {
-                try
-                {
-                    if (isSvg)
-                    {
-                        bytes = SvgSanitizer.Sanitize(bytes);
-                    }
-                    else
-                    {
-                        var sanitized = sanitizer.SanitizeImage(bytes);
-                        bytes = sanitized.Data;
-                        contentType = sanitized.ContentType;
-                    }
-                }
-                catch (MediaSanitizationException ex)
-                {
-                    return Results.BadRequest(new { error = ex.Message });
-                }
-            }
-
-            // SVG is a vector image with no derived renditions: like a File, it is
-            // Ready on upload and never dispatched to the raster worker.
-            var hasDerivedRenditions = sniff.Category != MediaCategory.File && !isSvg;
-
-            var tenantId = tenant.TenantId!.Value;
-            var assetId = Guid.NewGuid();
-            var ext = MediaExtensions.ToExtension(contentType);
-            var key = StorageKeys.MediaOriginal(tenantId, assetId, ext);
-
-            await using (var upload = new MemoryStream(bytes))
-            {
-                await storage.PutAsync(storageOptions.Value.MediaBucket, key, upload, bytes.Length, contentType, ct);
-            }
-
-            var asset = new MediaAsset
-            {
-                Id = assetId,
-                TenantId = tenantId,
-                Category = sniff.Category,
-                FileName = Path.GetFileName(file.FileName),
-                ContentType = contentType,
-                SizeBytes = bytes.Length,
-                Sha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)),
-                OriginalKey = key,
-                FolderId = folderId,
-                Status = hasDerivedRenditions ? MediaStatus.Uploaded : MediaStatus.Ready,
-                CreatedBy = me.UserId,
-            };
-            db.Assets.Add(asset);
-            await db.SaveChangesAsync(ct);
-
-            // Dispatch async processing for media that has derived renditions.
-            var subject = MediaExtensions.ProcessSubject(sniff.Category);
-            if (hasDerivedRenditions && !string.IsNullOrEmpty(subject))
-            {
-                asset.Status = MediaStatus.Processing;
-                await db.SaveChangesAsync(ct);
-                await events.PublishAsync(subject, new MediaProcessRequested(
-                    Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, assetId, sniff.Category, key, contentType), ct);
-            }
-
-            return Results.Created($"/api/admin/media/{assetId}", new
-            {
-                id = assetId,
-                category = sniff.Category.ToString(),
-                contentType,
-                status = asset.Status.ToString(),
+                id = result.AssetId,
+                category = result.Category.ToString(),
+                contentType = result.ContentType,
+                status = result.Status.ToString(),
             });
         }).RequirePermission(PlatformPermissions.MediaWrite).DisableAntiforgery().WithAudit(AuditActions.MediaUploaded, "media_asset");
 
