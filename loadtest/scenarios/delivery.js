@@ -74,12 +74,17 @@ export default function () {
   // interest is what content-api costs on a MISS, which is what every iteration here is.
   if (tenant.mediaIds && tenant.mediaIds.length > 0) {
     const assetId = tenant.mediaIds[__ITER % tenant.mediaIds.length];
+    // 404 is a legitimate answer here: the webp ladder skips rungs above the source
+    // width, so a 240px fixture has no webp-640 variant. The check below allowed for
+    // that, but k6's BUILT-IN http_req_failed does not consult checks -- it counts any
+    // non-2xx -- so a correctly-working ladder was reporting as a 4% error rate and
+    // failing the run's error threshold. responseCallback is what actually teaches k6
+    // which statuses are expected for this one request.
     const media = http.get(`${base}/api/media/${assetId}/webp-640`, {
-      headers, tags: { kind: 'media' },
+      headers,
+      tags: { kind: 'media' },
+      responseCallback: http.expectedStatuses(200, 404),
     });
-    // 404 is a legitimate answer: the webp ladder skips rungs above the source width, so
-    // a 240px fixture has no webp-640 variant. Counting that as failure would report the
-    // ladder working correctly as a 25% error rate.
     check(media, { 'media 200/404': (r) => r.status === 200 || r.status === 404 });
   }
 }
