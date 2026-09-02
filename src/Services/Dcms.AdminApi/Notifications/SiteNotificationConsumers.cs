@@ -36,7 +36,11 @@ public sealed class SitePublishedNotificationConsumer(
             RequiredPermission: PlatformPermissions.SitePublish,
             TitleKey: NotificationKinds.TitleKey(NotificationKinds.SitePublished),
             BodyKey: NotificationKinds.BodyKey(NotificationKinds.SitePublished),
-            DedupeKey: evt.EventId.ToString("N"),
+            // The BUILD, not the event. A build succeeding is one fact however many times
+            // site-builder announces it -- and it announced each build three times until
+            // AckHeartbeat stopped the redelivered rebuilds, which is how one publish put
+            // three identical "your site is live" rows in the bell.
+            DedupeKey: $"site.published:{evt.BuildId:N}",
             Params: new { site = name },
             LinkPath: $"/sites/{evt.SiteId}",
             ResourceType: "site",
@@ -68,7 +72,7 @@ public sealed class SiteBuildFailedNotificationConsumer(
             RequiredPermission: PlatformPermissions.SitePublish,
             TitleKey: NotificationKinds.TitleKey(NotificationKinds.SiteBuildFailed),
             BodyKey: NotificationKinds.BodyKey(NotificationKinds.SiteBuildFailed),
-            DedupeKey: evt.EventId.ToString("N"),
+            DedupeKey: $"site.build.failed:{evt.BuildId:N}",
             // Truncated: a build error can be a whole compiler dump, and this string is
             // rendered inside a popover. The full log stays behind the link.
             Params: new { site = name, reason = Truncate(evt.Reason, 200) },

@@ -33,7 +33,10 @@ public sealed class ContentPublishedNotificationConsumer(
             RequiredPermission: PlatformPermissions.ContentPublish,
             TitleKey: NotificationKinds.TitleKey(NotificationKinds.ContentPublished),
             BodyKey: NotificationKinds.BodyKey(NotificationKinds.ContentPublished),
-            DedupeKey: evt.EventId.ToString("N"),
+            // The item plus the moment: an item can legitimately be published again later
+            // and that is news, but a redelivery of one publish carries the same
+            // OccurredAt and must not be.
+            DedupeKey: $"content.published:{evt.ContentItemId:N}:{evt.OccurredAt.UtcTicks}",
             Params: new { slug = evt.Slug, contentType = evt.ContentType },
             LinkPath: $"/content/{evt.PluginInstanceId}",
             ResourceType: "content_item",
@@ -64,7 +67,7 @@ public sealed class ContentUnpublishedNotificationConsumer(
             RequiredPermission: PlatformPermissions.ContentPublish,
             TitleKey: NotificationKinds.TitleKey(NotificationKinds.ContentUnpublished),
             BodyKey: NotificationKinds.BodyKey(NotificationKinds.ContentUnpublished),
-            DedupeKey: evt.EventId.ToString("N"),
+            DedupeKey: $"content.unpublished:{evt.ContentItemId:N}:{evt.OccurredAt.UtcTicks}",
             Params: new { slug = evt.Slug, contentType = evt.ContentType },
             LinkPath: $"/content/{evt.PluginInstanceId}",
             ResourceType: "content_item",

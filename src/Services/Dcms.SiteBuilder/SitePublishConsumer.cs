@@ -40,6 +40,20 @@ public sealed class SitePublishConsumer(
     private const string DurableName = "site-builder";
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
+    // A build takes minutes -- Mode B runs npm install plus vite build in a sandbox container,
+    // and three minutes is ordinary. The JetStream default AckWait is 30 SECONDS, so every
+    // publish was redelivered while its build was still running and the same build ran again,
+    // and again. Nothing failed and nothing logged: the only visible trace was one
+    // site.published event per run, which is how a single publish produced three "your site is
+    // live" notifications (vps1 consumer_seq 134 against stream_seq 102 -- 32 rebuilds).
+    //
+    // The deadline stays short enough to notice a dead worker; AckHeartbeat renews it for as
+    // long as the build is actually running. MaxDeliver then caps a crash loop: a build that
+    // kills the process every time gets three attempts rather than forever.
+    private static readonly TimeSpan AckWait = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan AckHeartbeatInterval = TimeSpan.FromSeconds(40);
+    private const int MaxDeliver = 3;
+
     private string Bucket => storageOptions.Value.SitesBucket;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -55,6 +69,8 @@ public sealed class SitePublishConsumer(
                         FilterSubject = Subjects.SitePublishRequested,
                         AckPolicy = ConsumerConfigAckPolicy.Explicit,
                         MaxAckPending = 2,
+                        AckWait = AckWait,
+                        MaxDeliver = MaxDeliver,
                     },
                     stoppingToken);
 
@@ -83,6 +99,11 @@ public sealed class SitePublishConsumer(
             await msg.AckAsync(cancellationToken: ct);
             return;
         }
+        // Renews this message's redelivery lease for as long as the build is running. Without
+        // it the build outlives AckWait and JetStream hands the job to the next delivery while
+        // this one is still working -- see the AckWait field above.
+        await using var lease = AckHeartbeat.Start(msg, AckHeartbeatInterval, logger);
+
         // Puts back the person who clicked publish. Their context came through the content
         // outbox row, out of the dispatcher and across JetStream to get here — this is the far
         // end of that chain, and the record below is the reason the chain exists.

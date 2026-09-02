@@ -560,6 +560,23 @@ that translate already-published events, so most producers were untouched. See
   tenant have anyone holding the gating permission? The last one is not an error and is
   logged at Debug: a notification with no audience is dropped, by design.
 
+- **Seeing the same notification several times?** It is almost certainly not the
+  notification layer. The dedupe key names the *fact* (`site.published:{buildId}`), so
+  duplicates mean the fact genuinely happened more than once — a producer whose job
+  outlived its JetStream `AckWait` and was redelivered mid-flight, doing the work again.
+  Check `nats consumer info <STREAM> <durable>`: if `delivered.consumer_seq` runs well
+  ahead of `delivered.stream_seq`, that consumer is redelivering. `ack_wait` is in
+  nanoseconds; the JetStream default of 30 s is far too short for a site build or a video
+  transcode. The fix is `AckWait` plus an `AckHeartbeat` around the work, not a longer
+  deadline alone — see `Dcms.Shared.Messaging/AckHeartbeat.cs`.
+
+- **A burst of stale notifications right after deploying a new consumer** is the
+  `*_EVENTS` backlog: those streams keep seven days and a brand-new durable starts at the
+  beginning. New consumers are created with `DeliverPolicy.New`, and
+  `NotificationConsumerBase.MaxEventAge` (24 h) drops anything older regardless — delivery
+  policy is immutable on a durable that already exists, so the age guard is what covers
+  the ones already out there.
+
 - **Retention** is 90 days after a notification is read or dismissed
   (`Notifications:RetentionDays`), swept daily under an advisory lock so one replica
   does the work. Unread notifications are never swept.

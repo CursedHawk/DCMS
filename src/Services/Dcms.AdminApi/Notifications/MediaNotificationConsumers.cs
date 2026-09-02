@@ -40,7 +40,7 @@ public sealed class MediaFailedNotificationConsumer(
             RequiredPermission: PlatformPermissions.MediaWrite,
             TitleKey: NotificationKinds.TitleKey(NotificationKinds.MediaFailed),
             BodyKey: NotificationKinds.BodyKey(NotificationKinds.MediaFailed),
-            DedupeKey: evt.EventId.ToString("N"),
+            DedupeKey: $"media.failed:{evt.AssetId:N}",
             Params: new { file = name, reason = evt.Reason },
             LinkPath: "/media",
             ResourceType: "media_asset",
@@ -80,7 +80,10 @@ public sealed class MediaProcessedNotificationConsumer(
             RequiredPermission: PlatformPermissions.MediaWrite,
             TitleKey: NotificationKinds.TitleKey(NotificationKinds.MediaProcessed),
             BodyKey: NotificationKinds.BodyKey(NotificationKinds.MediaProcessed),
-            DedupeKey: evt.EventId.ToString("N"),
+            // The ASSET, not the event. media-worker had the same redelivered-job bug as
+            // site-builder, so a video long enough to outlast AckWait announced itself
+            // once per run. An asset finishing processing is one fact.
+            DedupeKey: $"media.processed:{evt.AssetId:N}",
             Params: new { file = asset?.FileName ?? evt.AssetId.ToString("N")[..8] },
             LinkPath: "/media",
             ResourceType: "media_asset",

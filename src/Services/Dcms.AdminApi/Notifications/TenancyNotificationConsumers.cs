@@ -32,7 +32,7 @@ public sealed class DomainVerifiedNotificationConsumer(
             RequiredPermission: PlatformPermissions.DomainsManage,
             TitleKey: NotificationKinds.TitleKey(NotificationKinds.DomainVerified),
             BodyKey: NotificationKinds.BodyKey(NotificationKinds.DomainVerified),
-            DedupeKey: evt.EventId.ToString("N"),
+            DedupeKey: $"domain.verified:{evt.DomainId:N}",
             Params: new { hostname = evt.Hostname },
             LinkPath: "/domains",
             ResourceType: "domain",
@@ -72,7 +72,10 @@ public sealed class PluginInstanceNotificationConsumer(
             RequiredPermission: PlatformPermissions.PluginsManage,
             TitleKey: NotificationKinds.TitleKey(NotificationKinds.PluginInstanceChanged),
             BodyKey: NotificationKinds.BodyKey(NotificationKinds.PluginInstanceChanged),
-            DedupeKey: evt.EventId.ToString("N"),
+            // Enabling and disabling the same plugin are different facts, and the same
+            // plugin can legitimately be toggled again later -- so the transition and its
+            // moment are both in the key, while a redelivery of one publish is not.
+            DedupeKey: $"plugin.instance.changed:{evt.InstanceId:N}:{evt.Kind}:{evt.OccurredAt.UtcTicks}",
             Params: new { plugin = evt.PluginId, state = evt.Kind.ToString() },
             LinkPath: "/plugins",
             ResourceType: "plugin_instance",

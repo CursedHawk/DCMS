@@ -11,7 +11,18 @@ namespace Dcms.AdminApi.Notifications;
 /// underlying feature, so a notification cannot reveal something its recipient could not open.
 /// </param>
 /// <param name="DedupeKey">
-/// Identifies the underlying occurrence — normally the source event's id. Unique per tenant.
+/// Identifies the underlying <b>fact</b>, and is unique per tenant.
+///
+/// <para>Not the source event's id, which is the mistake this comment exists to prevent. An
+/// event id identifies a <i>publish</i>, and a producer that announces the same fact twice
+/// mints a fresh one each time — so keying on it deduplicates redelivery and nothing else.
+/// That is precisely what happened: a site build outlived its JetStream ack deadline, ran
+/// three times, published <c>site.published</c> three times with three event ids, and put
+/// three identical rows in one admin's bell.</para>
+///
+/// <para>Key on the thing the notification is <i>about</i> — the build id, the asset id, the
+/// item plus the moment it was published. The test is: if this arrived twice, would the
+/// recipient consider it the same piece of news?</para>
 /// </param>
 /// <param name="ExtraUserIds">
 /// Recipients to include regardless of permission, for notifications with a specific

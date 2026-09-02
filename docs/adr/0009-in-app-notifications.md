@@ -84,13 +84,28 @@ else's — 403 confirms it exists.
 
 ### Idempotency is a unique index, not consumer bookkeeping
 
-`UNIQUE (TenantId, DedupeKey)`, where the key identifies the *underlying
-occurrence* — normally the source event's id. Consumers insert optimistically and
-treat Postgres `23505` as "already handled", then ack. JetStream is at-least-once
-and a redelivery must not notify twice; a check-then-insert would still race
-between replicas, and this cannot.
+`UNIQUE (TenantId, DedupeKey)`. Consumers insert optimistically and treat Postgres
+`23505` as "already handled", then ack. JetStream is at-least-once and a
+redelivery must not notify twice; a check-then-insert would still race between
+replicas, and this cannot.
 
-The subtlety is invitation expiry, where the key is
+**The key names the fact, never the event id.** This was originally the event id,
+which reads as obviously right and is wrong: an event id identifies a *publish*,
+and a producer announcing the same fact twice mints a new one each time. The first
+site published after these consumers shipped produced three identical rows,
+because site-builder's ack deadline was 30 seconds against a three-minute build —
+JetStream redelivered the job mid-flight, the build ran three times, and each run
+published `site.published` with a fresh `Guid.NewGuid()`. Three keys, three
+notifications, and the unique index never saw a collision.
+
+The producer bug is fixed (`AckHeartbeat` renews the lease while the work runs),
+but the durable guarantee is the key: `site.published:{buildId}`,
+`media.processed:{assetId}`, `content.published:{itemId}:{occurredAt}`. The test
+is whether a recipient would call two arrivals the same piece of news. A source
+scan (`NotificationDedupeKeyTests`) fails the build if a consumer goes back to the
+event id.
+
+The other subtlety is invitation expiry, where the key is
 `{invitationId}:{expiresAt.UtcTicks}`. Resending an invitation rolls `ExpiresAt`
 and clears `ExpiredNotifiedAt`, so the same invitation can legitimately lapse more
 than once; including the deadline lets the second lapse notify while still

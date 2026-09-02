@@ -31,6 +31,16 @@ public abstract class MediaConsumerBase(
     protected abstract string DurableName { get; }
     protected virtual int MaxAckPending => 2;
 
+    // Transcoding a video takes minutes and the JetStream default AckWait is 30 SECONDS, so a
+    // healthy job was redelivered mid-flight and processed again -- publishing media.processed
+    // once per run. That was invisible until MEDIA_EVENTS gained a consumer; the same bug in
+    // site-builder is what made one site publish produce three "your site is live"
+    // notifications. AckHeartbeat renews the lease while the work is genuinely running, so the
+    // deadline can stay short enough to still notice a dead worker.
+    private static readonly TimeSpan AckWait = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan AckHeartbeatInterval = TimeSpan.FromSeconds(40);
+    private const int MaxDeliverLimit = 3;
+
     protected IServiceProvider Services => services;
     protected IObjectStorage Storage => storage;
     protected string Bucket => storageOptions.Value.MediaBucket;
@@ -48,6 +58,8 @@ public abstract class MediaConsumerBase(
                         FilterSubject = Subject,
                         AckPolicy = ConsumerConfigAckPolicy.Explicit,
                         MaxAckPending = MaxAckPending,
+                        AckWait = AckWait,
+                        MaxDeliver = MaxDeliverLimit,
                     },
                     stoppingToken);
 
@@ -95,6 +107,9 @@ public abstract class MediaConsumerBase(
             await msg.AckAsync(cancellationToken: ct);
             return;
         }
+        // Renews this message's redelivery lease for as long as the job runs -- see AckWait.
+        await using var lease = AckHeartbeat.Start(msg, AckHeartbeatInterval, logger);
+
         using var scope = services.CreateScope();
 
         // The person who uploaded the asset, carried from the upload request. Without it the

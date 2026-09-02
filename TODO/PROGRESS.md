@@ -1166,3 +1166,61 @@ cluster has: `SITES_EVENTS` carrying only `site.published` gained
 work-queue retention produced the warning and was left alone; an orphaned
 `site-host-cache` durable on `SITES` was cleared. Script exits 0 throughout, and
 `sh -n` passes — it runs under nats-box's `sh`, not bash.
+
+## ✅ Duplicate "your site is live" notifications — three bugs in a trench coat
+
+Reported as: published Moordoor once, got three identical deploy notifications
+some minutes apart. Investigated on vps1; the site was built three times.
+
+**Root cause: site-builder's JetStream ack deadline was 30 seconds against a
+three-minute build.** `SitePublishConsumer` set `MaxAckPending` but never
+`AckWait`, so it inherited the JetStream default. A build outlives that deadline,
+JetStream decides the worker died, and redelivers — the loop processes messages
+serially, so the redeliveries queue up and each one rebuilds the same site from
+scratch. Every run reaches `events.PublishAsync(SitePublished, new SitePublished(
+Guid.NewGuid(), ...))`, so one publish emitted three `site.published` events with
+three different event ids.
+
+The evidence, for the next person: `nats consumer info SITES site-builder` showed
+`consumer_seq 134` against `stream_seq 102` — **32 redeliveries** — with
+`ack_wait: 30000000000` and `max_deliver: -1`. `sites.site_builds` had exactly one
+row for the publish, created 15:20:53 with `CompletedAt` 15:24:01: three minutes
+of wall clock for a build that takes ~55 s, because `CompletedAt` was overwritten
+by each rerun. The three notifications land at 15:22:08, 15:23:03 and 15:24:01 —
+one per rerun.
+
+Fixed with `AckWait = 2 min` plus a **heartbeat**, not a longer deadline alone. A
+long deadline means a genuinely dead worker holds the message for the whole
+window; `Dcms.Shared.Messaging/AckHeartbeat.cs` sends in-progress acks every 40 s
+while the work runs, so the deadline stays short enough to notice a dead worker
+and a live one keeps renewing it. `MaxDeliver = 3` caps a crash loop.
+
+**`MediaConsumerBase` had exactly the same bug** and it is worse there — a video
+transcode is the canonical thing that outlasts 30 seconds. Invisible until
+`MEDIA_EVENTS` gained its first consumer. Same fix.
+
+**Second bug: the notification consumers replayed a week of history.** Three more
+rows appeared at 14:47, seconds apart, matching no build — that was the first
+deploy of these consumers. A new durable starts at the beginning of the stream and
+`*_EVENTS` keeps seven days, so the 08-27 build's (also triplicated) events were
+turned into notifications on the spot. New durables are now created with
+`DeliverPolicy.New`, set **only on create** because the field is immutable on an
+existing consumer and sending it on an update is an error. `MaxEventAge` (24 h)
+is the backstop that covers durables already deployed, and the case the policy
+cannot: a long outage where the backlog drains at once.
+
+**Third: the dedupe key was the event id**, which is why the unique index that
+exists to prevent exactly this never fired. An event id identifies a *publish*,
+not the fact — so it collapses redelivery of one message and nothing else. Keys
+now name the fact (`site.published:{buildId}`, `media.processed:{assetId}`,
+`content.published:{itemId}:{occurredAt}`), which would have produced one row even
+with the producer bug present. `NotificationDedupeKeyTests` is a source scan that
+fails the build if a consumer reverts to the event id — verified by reintroducing
+the old line and watching it fail.
+
+Worth keeping: **all three had to be wrong for the symptom to appear**, and only
+the third was in code written for this feature. The first was a latent bug in
+site-builder that had been silently rebuilding every site since it was written;
+nothing surfaced it because a rebuild is idempotent and nobody counts
+`site.published` events. Adding a consumer to a stream is how you find out what
+the producer has really been doing.
