@@ -98,6 +98,40 @@ public sealed partial class ForgejoUserSync
     }
 
     /// <summary>
+    /// Queue a sync instead of performing one, for callers on a latency-critical path.
+    ///
+    /// <para><b>Why this exists.</b> <see cref="EnsureAsync"/> tries Forgejo inline and only
+    /// falls back to the outbox on failure. On registration and password reset that is right:
+    /// they happen once, and the user is waiting for the account to exist anyway. On <i>login</i>
+    /// it was not. Login called it on every sign-in as a self-heal, which meant an unconditional
+    /// <c>PATCH /api/v1/admin/users/{name}</c> on the critical path of every authentication —
+    /// measured at <b>421 ms of a 539 ms login</b>, 78% of the whole request, against about 9 ms
+    /// of Postgres. Rewriting a password that had not changed, every time.</para>
+    ///
+    /// <para>This keeps the self-heal exactly as it was and only moves it off the request.
+    /// <see cref="ForgejoSyncWorker"/> polls every 15 seconds and applies the row through the
+    /// same <see cref="SyncInlineAsync"/> the inline path uses, so convergence is unchanged in
+    /// substance and merely deferred by seconds — which is far inside the window before anyone
+    /// uses the git credentials the sync maintains.</para>
+    ///
+    /// <para>Never throws: a failure to even queue is logged and swallowed, because nothing
+    /// here is worth failing an authentication over.</para>
+    /// </summary>
+    public async Task DeferAsync(DcmsUser user, string? password, CancellationToken ct)
+    {
+        if (!Enabled || string.IsNullOrWhiteSpace(user.Email)) return;
+        try
+        {
+            EnqueueAsync(user, password);
+            await _db.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to enqueue deferred Forgejo sync for {UserId}.", user.Id);
+        }
+    }
+
+    /// <summary>
     /// Apply one outbox row (called by <see cref="ForgejoSyncWorker"/>): decrypt the
     /// password, run the same sync as the inline path, and persist. Throws on failure
     /// so the worker can back off and retry; the row is left for the caller to manage.

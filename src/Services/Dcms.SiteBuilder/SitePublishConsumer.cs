@@ -54,6 +54,29 @@ public sealed class SitePublishConsumer(
     private static readonly TimeSpan AckHeartbeatInterval = TimeSpan.FromSeconds(40);
     private const int MaxDeliver = 3;
 
+    /// <summary>
+    /// How many builds run at once. <b>One by default, and that is a decision rather than an
+    /// oversight.</b>
+    ///
+    /// <para>This loop used to await each handler inline while passing
+    /// <c>MaxAckPending = 2</c> to JetStream, which reads as "two builds at a time" and was
+    /// not: <c>MaxAckPending</c> only bounds how many messages may be outstanding un-acked.
+    /// The effective concurrency was always 1. The same confusion in the media worker cost a
+    /// 17.5-second queue on an idle host, so it is spelled out here rather than left to be
+    /// rediscovered.</para>
+    ///
+    /// <para>Unlike media, raising it is not free. A Mode B build runs npm install plus vite
+    /// build inside a sandbox container allotted <c>DCMS_BUILD_CPUS</c> (default 2) and
+    /// <c>DCMS_BUILD_MEM</c> (default 2g), so two concurrent builds claim four cores and four
+    /// gigabytes -- the entire single-host deployment. The default therefore preserves the
+    /// behaviour this service has always actually had; <c>DCMS_BUILD_CONCURRENCY</c> raises it
+    /// on a host with the headroom to spare.</para>
+    /// </summary>
+    private static readonly int MaxConcurrency =
+        int.TryParse(Environment.GetEnvironmentVariable("DCMS_BUILD_CONCURRENCY"), out var c) && c > 0
+            ? c
+            : 1;
+
     private string Bucket => storageOptions.Value.SitesBucket;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -68,16 +91,23 @@ public sealed class SitePublishConsumer(
                     {
                         FilterSubject = Subjects.SitePublishRequested,
                         AckPolicy = ConsumerConfigAckPolicy.Explicit,
-                        MaxAckPending = 2,
+                        // Deliberately one more than MaxConcurrency: JetStream may hold the
+                        // next job ready while the current build runs, without ever handing
+                        // out more work than there are builders to take it.
+                        MaxAckPending = MaxConcurrency + 1,
                         AckWait = AckWait,
                         MaxDeliver = MaxDeliver,
                     },
                     stoppingToken);
 
-                await foreach (var msg in consumer.ConsumeAsync<SitePublishRequested>(cancellationToken: stoppingToken))
-                {
-                    await HandleAsync(msg, stoppingToken);
-                }
+                await Parallel.ForEachAsync(
+                    consumer.ConsumeAsync<SitePublishRequested>(cancellationToken: stoppingToken),
+                    new ParallelOptions
+                    {
+                        MaxDegreeOfParallelism = MaxConcurrency,
+                        CancellationToken = stoppingToken,
+                    },
+                    async (msg, ct) => await HandleAsync(msg, ct));
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

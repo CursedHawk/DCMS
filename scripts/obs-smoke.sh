@@ -64,6 +64,23 @@ for metric in dcms_audit_outbox_depth http_server_request_duration_seconds_count
 done
 
 echo
+echo "== every service is exporting, not just some of them"
+#
+# The checks above count each metric GLOBALLY, and that is precisely how two services stayed
+# dark for months. site-builder and email-worker opt out of the *service-env compose anchor
+# for least privilege, and the OTLP endpoint lived inside it -- so they exported nothing at
+# all, while six services reporting kept every global count non-zero and this script green.
+#
+# So: assert per service. dotnet_process_cpu_time_seconds_total is the right probe because
+# every .NET service emits it on a timer whether or not it is doing any work, so its absence
+# means "not exporting" and never "idle".
+for svc in $SERVICES; do
+    n=$(fetch "http://localhost:9090/api/v1/query?query=count(dotnet_process_cpu_time_seconds_total%7Bservice%3D%22$svc%22%7D)" |
+        grep -o '"value":\[[^]]*\]' | head -1)
+    [ -n "$n" ] && ok "$svc is exporting metrics" || fail "$svc exports NO metrics (check OTEL_EXPORTER_OTLP_ENDPOINT)"
+done
+
+echo
 echo "== logs"
 #
 # Two questions, deliberately separated, because conflating them is the mistake this whole

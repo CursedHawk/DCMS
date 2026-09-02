@@ -10,12 +10,28 @@ x-logging: &default-logging
     max-size: "50m"
     max-file: "3"
 
-x-service-env: &service-env
+# Telemetry, and NOTHING else. Split out of x-service-env because these two are not
+# credentials and every service needs them -- including the two that deliberately refuse
+# the rest of that anchor.
+#
+# site-builder and email-worker opt out of *service-env for least privilege (scoped
+# Postgres role, scoped MinIO account, no Vault token). Because the OTEL variables lived
+# inside it, they opted out of telemetry too -- silently, since AddDcmsServiceDefaults
+# builds the pipelines unconditionally and only attaches an exporter when the endpoint is
+# set. The result was two of eight services in no Prometheus series at all: 172 site builds
+# recorded nowhere, the site-builds and email dashboards permanently blank,
+# dcms:tenant_builds:rate1h unable to fire, and no trace ever leaving either process.
+# obs-smoke.sh could not catch it either, because it counts each metric globally rather
+# than per service.
+x-otel-env: &otel-env
   # Turns the OpenTelemetry export on. AddDcmsServiceDefaults builds the tracer, meter and
   # log pipelines unconditionally but only attaches an exporter when this is set, so an
   # unset value means "collect nothing, cost nothing" for a bare `dotnet run`.
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy:4317"
   OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+
+x-service-env: &service-env
+  <<: *otel-env
   ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev"
   ConnectionStrings__Redis: "redis:6379"
   Nats__Url: "nats://nats:4222"
@@ -344,6 +360,22 @@ services:
     <<: *service-defaults
     environment:
       <<: *service-env
+      # The public delivery plane's per-IP rate limit, settable per host.
+      #
+      # The default is unchanged (600 requests / 60 s, AddDcmsRateLimiting in
+      # src/Shared/Dcms.Shared.Hosting/DcmsHostingExtensions.cs). It is parameterised
+      # because a load test is, by definition, a single IP: at 600/min any measurement
+      # above ~10 req/s stops measuring content-api and starts measuring the limiter, and
+      # the run reports 429s as if they were the platform's answer.
+      #
+      # Raise it for a measurement window and PUT IT BACK. The limiter is a DoS control,
+      # and `loadtest/scenarios/ratelimit.js` exists to re-assert that it still bites at
+      # whatever value the host keeps -- because a control raised for convenience and
+      # never restored is the one nobody checks again.
+      #
+      # Note it is in-process, so the effective ceiling is PermitLimit x replica count.
+      RateLimiting__PermitLimit: "${RATE_LIMIT_PERMITS:-600}"
+      RateLimiting__WindowSeconds: "${RATE_LIMIT_WINDOW_SECONDS:-60}"
       # AI Chatbot: content-api calls ai-gateway for visitor replies.
       ServiceClient__TokenEndpoint: "http://dcms-identity:8080/connect/token"
       ServiceClient__ClientId: "dcms-admin-api"
@@ -374,7 +406,10 @@ services:
       context: .
       dockerfile: src/Services/Dcms.EmailWorker/Dockerfile
     <<: *service-defaults
+    # Telemetry only -- deliberately still no *service-env. The relay credentials are the
+    # whole point of this service being separate, and they come from Vault.
     environment:
+      <<: *otel-env
       Nats__Url: "nats://nats:4222"
 
   site-builder:
@@ -388,6 +423,10 @@ services:
     # compromised build (or the builder itself) cannot reach other tenants' data or
     # platform secrets. See infra/postgres/init/02-service-roles.sh and infra/minio/init.sh.
     environment:
+      # Telemetry only. The least-privilege intent above is untouched: these two variables
+      # are an OTLP endpoint and a protocol name, not credentials, and without them this
+      # service exports no metrics, traces or logs whatsoever.
+      <<: *otel-env
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_sitebuilder;Password=dcms-sitebuilder-dev"
       ConnectionStrings__Redis: "redis:6379"
       Nats__Url: "nats://nats:4222"

@@ -23,7 +23,9 @@ public sealed class VideoProcessingConsumer(
 {
     protected override string Subject => Subjects.MediaProcessVideo;
     protected override string DurableName => "media-worker-video";
-    protected override int MaxAckPending => 1; // transcoding is CPU-heavy
+    // One at a time, and now that actually holds: ffmpeg saturates every core it is given,
+    // so a second concurrent transcode would slow both without finishing sooner.
+    protected override int MaxConcurrency => 1;
 
     protected override async Task ProcessAsync(MediaProcessRequested job, IServiceScope scope, CancellationToken ct)
     {

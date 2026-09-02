@@ -29,7 +29,23 @@ public abstract class MediaConsumerBase(
 {
     protected abstract string Subject { get; }
     protected abstract string DurableName { get; }
-    protected virtual int MaxAckPending => 2;
+
+    /// <summary>
+    /// How many messages this consumer handles <b>at the same time</b>.
+    ///
+    /// <para>This used to be called <c>MaxAckPending</c> and was passed straight to
+    /// <see cref="ConsumerConfig"/>, which made it look like a concurrency setting when it was
+    /// nothing of the kind: <c>MaxAckPending</c> is JetStream's bound on how many messages may
+    /// be outstanding un-acked, and the loop below awaited each handler inline, so exactly one
+    /// job ran at a time no matter what the number said. <c>ImageProcessingConsumer</c> asking
+    /// for 4 therefore got 1, and a load test measured a 17.5-second p95 queue while three of
+    /// the host's four cores sat idle.</para>
+    ///
+    /// <para>It is now the degree of parallelism <i>and</i> the ack-pending bound, deliberately
+    /// the same number: there is no reason to let JetStream hand out more work than there are
+    /// handlers to run it, and keeping one number means the two cannot drift apart again.</para>
+    /// </summary>
+    protected virtual int MaxConcurrency => 2;
 
     // Transcoding a video takes minutes and the JetStream default AckWait is 30 SECONDS, so a
     // healthy job was redelivered mid-flight and processed again -- publishing media.processed
@@ -57,16 +73,26 @@ public abstract class MediaConsumerBase(
                     {
                         FilterSubject = Subject,
                         AckPolicy = ConsumerConfigAckPolicy.Explicit,
-                        MaxAckPending = MaxAckPending,
+                        // Same number as the parallelism below -- see MaxConcurrency.
+                        MaxAckPending = MaxConcurrency,
                         AckWait = AckWait,
                         MaxDeliver = MaxDeliverLimit,
                     },
                     stoppingToken);
 
-                await foreach (var msg in consumer.ConsumeAsync<MediaProcessRequested>(cancellationToken: stoppingToken))
-                {
-                    await HandleAsync(msg, stoppingToken);
-                }
+                // Parallel.ForEachAsync over the consume stream, rather than `await foreach`
+                // with an inline `await HandleAsync(...)`. The latter is what made every media
+                // job serial. HandleAsync is safe to run concurrently: it opens its own DI
+                // scope per message, catches everything ProcessAsync can throw, and acks on
+                // both paths, so one failing job cannot take the loop down with it.
+                await Parallel.ForEachAsync(
+                    consumer.ConsumeAsync<MediaProcessRequested>(cancellationToken: stoppingToken),
+                    new ParallelOptions
+                    {
+                        MaxDegreeOfParallelism = MaxConcurrency,
+                        CancellationToken = stoppingToken,
+                    },
+                    async (msg, ct) => await HandleAsync(msg, ct));
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

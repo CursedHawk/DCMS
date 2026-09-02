@@ -25,7 +25,10 @@ public sealed class ImageProcessingConsumer(
 {
     protected override string Subject => Subjects.MediaProcessImage;
     protected override string DurableName => "media-worker-image";
-    protected override int MaxAckPending => 4;
+    // Four at a time. Image work is a MinIO download, an ImageSharp re-encode per rung of
+    // the webp ladder, and a MinIO upload each -- so it interleaves I/O and CPU well, and
+    // one job measured at 4.7s used a single core of the four available.
+    protected override int MaxConcurrency => 4;
 
     protected override async Task ProcessAsync(MediaProcessRequested job, IServiceScope scope, CancellationToken ct)
     {

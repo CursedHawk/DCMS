@@ -70,8 +70,15 @@ public static class AccountEndpoints
 
             // Self-heal: login is the one place we have the plaintext for existing users,
             // so backfill/repair their Forgejo account + password on every sign-in.
+            //
+            // DEFERRED, not inline. Doing this synchronously put an unconditional Forgejo
+            // admin-API PATCH on the critical path of every authentication: 421 ms of a
+            // 539 ms login, against ~9 ms of Postgres for the sign-in itself. The row is
+            // picked up by ForgejoSyncWorker within 15 seconds and applied through the same
+            // code path, so the self-heal is unchanged -- it simply no longer happens while
+            // the user waits. See ForgejoUserSync.DeferAsync.
             var user = await userManager.FindByEmailAsync(email);
-            if (user is not null) await forgejo.EnsureAsync(user, password, ct);
+            if (user is not null) await forgejo.DeferAsync(user, password, ct);
 
             var success = audit.Declare(AuditActions.LoginSucceeded)
                 .Platform()

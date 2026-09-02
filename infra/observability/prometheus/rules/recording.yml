@@ -17,8 +17,17 @@ groups:
       # AuditLogSilentDuringTraffic alert reads it as real traffic and fires forever, because
       # probes are deliberately not audited. A permanently-firing alert is a disabled alert,
       # and that one is the flagship: it is what detects the audit log going quiet.
+      # [2m], not [1m], and the name is kept because six dashboard panels read it.
+      #
+      # Application metrics arrive over OTLP at the SDK's default 60-SECOND export interval
+      # (measured on vps1: count_over_time(...[10m]) returns exactly 10 samples). rate() needs
+      # two samples inside its window, so rate(x[1m]) over a 60s-spaced series returns nothing
+      # at all -- no error, just an empty result. This rule produced NO SERIES from the day it
+      # was written, and the panels reading it were blank, which on a low-traffic platform
+      # looks exactly like a correct graph. It is still a per-second rate; only the lookback
+      # widened, so the panels need no change.
       - record: dcms:http_requests:rate1m
-        expr: sum by (service) (rate(http_server_request_duration_seconds_count{http_route!~"/health.*|/metrics"}[1m]))
+        expr: sum by (service) (rate(http_server_request_duration_seconds_count{http_route!~"/health.*|/metrics"}[2m]))
 
       - record: dcms:http_requests:rate5m
         expr: sum by (service) (rate(http_server_request_duration_seconds_count{http_route!~"/health.*|/metrics"}[5m]))
