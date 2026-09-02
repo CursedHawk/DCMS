@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
