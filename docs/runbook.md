@@ -512,12 +512,33 @@ TS, reaches the hub through site-host's `/hub` proxy).
   increments `dcms.audit.chain_broken`, so a finding cannot be discovered on one
   operator's screen and nowhere else.
 
-### Load smoke (Phase 12)
+### Load and stress testing
 
-`k6 run scripts/load-smoke.js` ramps to 50 VUs against content-api's cached reads
-(`/api/openapi.json`, `/api/{slug}/{type}`). Thresholds: <1% errors, p95 < 150 ms
-over loopback (the internal cached-read target is p95 < 30 ms). Override with
-`-e BASE=… -e TENANT=… -e SLUG=… -e CONTENT_TYPE=…`.
+`loadtest/` is the harness: eight scenarios covering the delivery plane, hosted
+sites, the admin plane, the publish pipeline, media processing and site builds,
+pointed at an environment by profile and leaving an evidence bundle behind.
+See [`loadtest/README.md`](../loadtest/README.md) — it carries the procedure for
+reading a bundle and the list of open bottleneck hypotheses.
+
+```sh
+export DCMS_LOADTEST_USER=… DCMS_LOADTEST_PASSWORD=…      # a platform SuperAdmin
+node loadtest/seed/provision.mjs --env vps1
+./loadtest/run.sh --env vps1 --scenario delivery --vus 10 --duration 2m
+node loadtest/seed/teardown.mjs --env vps1
+```
+
+Two things to know before the first run:
+
+- **content-api's per-IP rate limit is 600 req / 60 s**, in-process, so any run
+  above ~10 req/s from one source measures the limiter rather than the platform.
+  `RATE_LIMIT_PERMITS` raises it for a measurement window; put it back afterwards
+  and re-assert it with the `ratelimit` scenario.
+- **Access tokens live ten minutes**, so `run.sh` refuses an authenticated run
+  longer than eight. `delivery`, `sitehost` and `ratelimit` need no token and are
+  the ones to soak with.
+
+(This replaces the Phase 12 `scripts/load-smoke.js` smoke, which covered two
+cached content-api reads; the `delivery` scenario is its superset.)
 
 ## In-app notifications
 

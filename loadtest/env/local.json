@@ -1,0 +1,58 @@
+{
+  // Local docker compose on the dev box. Safe to hammer, but this is also the build
+  // machine (4 cores) and the load generator shares those cores with the platform it
+  // is measuring — absolute numbers here do not transfer to a deployed host. Use it
+  // to prove a scenario is correct, then measure on vps1.
+  "name": "local",
+  "mode": "edge",
+
+  "edge": {
+    "admin": "http://localhost:5002",
+    "identity": "http://dcms-identity:8080",
+    "content": "http://localhost:5003",
+    "siteHost": "http://localhost:5006",
+    "spaRedirectUri": "http://localhost:5000/auth/callback"
+  },
+
+  "internal": {
+    "admin": "http://admin-api:8080",
+    "identity": "http://identity:8080",
+    "content": "http://content-api:8080",
+    "siteHost": "http://site-host:8080",
+    "spaRedirectUri": "http://localhost:5000/auth/callback"
+  },
+
+  "auth": {
+    "username": "${DCMS_LOADTEST_USER:-admin@dcms.local}",
+    "password": "${DCMS_LOADTEST_PASSWORD:-Admin!23456}",
+    "clientId": "dcms-admin-spa",
+    "scope": "openid profile email roles dcms.admin offline_access"
+  },
+
+  "seed": {
+    "tenantPrefix": "loadtest",
+    "tenants": 2,
+    "contentPerTenant": 50,
+    "mediaPerTenant": 5
+  },
+
+  "load": { "vus": 10, "duration": "1m", "ramp": "15s" },
+
+  "thresholds": {
+    "errorRate": 0.01,
+    "deliveryP95": 300,
+    "siteHostP95": 400,
+    "adminP95": 800
+  },
+
+  "observability": {
+    "composeFiles": "-f docker-compose.yml",
+    "deployPath": ".",
+    "prometheus": "http://localhost:9090",
+    "tempo": "http://tempo:3200",
+    "loki": "http://loki:3100",
+    "postgresService": "postgres",
+    "postgresUser": "dcms",
+    "postgresDb": "dcms"
+  }
+}

@@ -1,0 +1,7 @@
+# Evidence bundles: large, per-run, and reproducible from the scripts that made them.
+runs/
+
+# The fixture estate is per-environment state written by seed/provision.mjs. It names
+# tenant ids and provisioned hostnames that mean nothing on another deployment, and it
+# goes stale the moment teardown runs.
+fixtures/

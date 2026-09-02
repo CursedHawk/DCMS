@@ -1,0 +1,83 @@
+{
+  // vps1 — the dev deployment, reached over public HTTPS. This is the primary
+  // measurement target: real Caddy edge, real MinIO/Postgres/NATS, real container
+  // limits on a 4-core / 7.6 GB host.
+  //
+  // Every public name comes from the environment rather than being written here, for
+  // the same reason docker-compose.vps.yml stopped hardcoding them: dev and prod share
+  // this shape, and a literal hostname in a shared file is how a dev run ends up
+  // pointed at production. The default below is what vps1's own .env actually sets --
+  // note that is `admin.highgeek.eu`, NOT the `admin.dev.highgeek.eu` that the
+  // deploy:dev job in .gitlab-ci.yml declares as its environment URL. vps1 runs with
+  // DCMS_ENV=dev while serving that hostname; trust the host's .env, not the CI label.
+  //
+  //   export DCMS_LOADTEST_USER=... DCMS_LOADTEST_PASSWORD=...
+  "name": "vps1",
+  "mode": "edge",
+
+  "edge": {
+    "admin": "${PUBLIC_BASE_URL:-https://admin.highgeek.eu}",
+    "identity": "${PUBLIC_BASE_URL:-https://admin.highgeek.eu}",
+    "content": "${PUBLIC_BASE_URL:-https://admin.highgeek.eu}",
+    "siteHost": "${PUBLIC_BASE_URL:-https://admin.highgeek.eu}",
+    "spaRedirectUri": "${PUBLIC_BASE_URL:-https://admin.highgeek.eu}/auth/callback"
+  },
+
+  // Reached only when running with --via ssh:<host>, from a k6 container attached to
+  // the compose network. Service names are the compose aliases, not published ports —
+  // on a deployed host the application services publish none.
+  "internal": {
+    "admin": "http://admin-api:8080",
+    "identity": "http://identity:8080",
+    "content": "http://content-api:8080",
+    "siteHost": "http://site-host:8080",
+    "spaRedirectUri": "${PUBLIC_BASE_URL:-https://admin.highgeek.eu}/auth/callback"
+  },
+
+  "ssh": "${DCMS_VPS1_SSH:-vps1}",
+
+  "auth": {
+    "username": "${DCMS_LOADTEST_USER}",
+    "password": "${DCMS_LOADTEST_PASSWORD}",
+    "clientId": "dcms-admin-spa",
+    "scope": "openid profile email roles dcms.admin offline_access"
+  },
+
+  "seed": {
+    "tenantPrefix": "loadtest",
+    "tenants": 5,
+    "contentPerTenant": 200,
+    "mediaPerTenant": 20
+    // Site domains are NOT configured here. The seeder calls
+    // POST /api/admin/domains/provisioned, which mints a hostname under the
+    // platform-owned managed zone (Domains:ManagedZone, default dcms.highgeek.eu) and
+    // marks it verified on creation. That avoids the TXT-record challenge entirely --
+    // Domains:AutoVerify is off on a deployed host, so a hand-invented hostname could
+    // never be verified without real DNS.
+  },
+
+  "load": { "vus": 50, "duration": "5m", "ramp": "30s" },
+
+  "thresholds": {
+    "errorRate": 0.01,
+    "deliveryP95": 300,
+    "siteHostP95": 400,
+    "adminP95": 800
+  },
+
+  "observability": {
+    // The full three-file set, always. A partial -f set has already caused an outage
+    // on this host by resolving services against the wrong overlay.
+    "composeFiles": "-f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.vps.yml -f docker-compose.images.yml",
+    // Where those compose files live on the host -- `docker compose -f` resolves
+    // them relative to the working directory, so the collector must cd here first.
+    // Read from the running stack's own labels, not guessed.
+    "deployPath": "${DCMS_VPS1_PATH:-/home/cursedhawk/baas-dcms}",
+    "prometheus": "http://localhost:9090",
+    "tempo": "http://tempo:3200",
+    "loki": "http://loki:3100",
+    "postgresService": "postgres",
+    "postgresUser": "dcms",
+    "postgresDb": "dcms"
+  }
+}

@@ -45,5 +45,7 @@ the Vault chain and the CI/CD pipeline, from nothing to a host that deploys itse
 - `docs/plugins.md` — writing a plugin
 - `docs/mode-a-builder.md` — the GrapesJS visual builder
 - `docs/adr/` — architecture decision records
+- `loadtest/README.md` — load and stress testing: scenarios, evidence bundles,
+  and how to read one
 - `infra/observability/README.md` — the telemetry stack
 - `TODO/PROGRESS.md` — working notes, newest round last

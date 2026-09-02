@@ -410,8 +410,9 @@ $C up -d --force-recreate --no-deps caddy
 curl -fsS https://admin.example.com/health            # via Caddy → admin-api (if exposed)
 $C ps
 $C logs --since=5m caddy site-host
-# Optional load smoke against content-api (install k6 on a client):
-k6 run -e BASE=https://<a-tenant-domain> -e TENANT=<slug> -e SLUG=<instance> scripts/load-smoke.js
+# Optional load run against the deployed host (k6 runs in a container, nothing to install).
+# See loadtest/README.md; raise RATE_LIMIT_PERMITS for the window and put it back after.
+./loadtest/run.sh --env vps1 --scenario delivery --vus 10 --duration 2m
 ```
 
 ---
