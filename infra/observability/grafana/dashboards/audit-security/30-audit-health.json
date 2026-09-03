@@ -50,7 +50,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**The six meters from `docs/runbook.md`, with the alert conditions it already specified.**\n\nRead the first panel differently from the rest. `dcms.audit.recorded` **flat-lining is the alarm**, not a spike \u2014 a silent audit log and an idle platform produce identical output, so the absence of signal is the signal. That property is also why these metrics went a whole release without exporting at all: the meter was never subscribed with `AddMeter`, the SDK dropped every instrument without an error, and the symptom was indistinguishable from a quiet week. `DcmsMeterRegistrationTests` now fails the build if that recurs.\n\n`dcms.audit.chain_broken` has no threshold on purpose. Any non-zero value is an incident: a chain that fails verification is indistinguishable from one that was tampered with."
+        "content": "**The six meters from `docs/runbook.md`, with the alert conditions it already specified.**\n\nRead the first panel differently from the rest. `dcms.audit.recorded` **flat-lining is the alarm**, not a spike — a silent audit log and an idle platform produce identical output, so the absence of signal is the signal. That property is also why these metrics went a whole release without exporting at all: the meter was never subscribed with `AddMeter`, the SDK dropped every instrument without an error, and the symptom was indistinguishable from a quiet week. `DcmsMeterRegistrationTests` now fails the build if that recurs.\n\n`dcms.audit.chain_broken` has no threshold on purpose. Any non-zero value is an incident: a chain that fails verification is indistinguishable from one that was tampered with."
       }
     },
     {
@@ -138,13 +138,13 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(increase(dcms_audit_sink_failed_total[1h]))",
+          "expr": "(sum(increase(dcms_audit_sink_failed_total[1h]))) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "fail"
         }
       ],
-      "description": "A record the sink refused. Each one survives only in a Critical log line \u2014 find it below before it ages out.",
+      "description": "A record the sink refused. Each one survives only in a Critical log line — find it below before it ages out.",
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -202,13 +202,13 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(increase(dcms_audit_chain_broken_total[24h]))",
+          "expr": "(sum(increase(dcms_audit_chain_broken_total[24h]))) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "broken"
         }
       ],
-      "description": "An incident, not a threshold. Do not rotate Audit__ChainKey in response \u2014 every record written under the old key stops verifying, which looks exactly like tampering.",
+      "description": "An incident, not a threshold. Do not rotate Audit__ChainKey in response — every record written under the old key stops verifying, which looks exactly like tampering.",
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -266,7 +266,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(increase(dcms_audit_producer_gap_total[1h]))",
+          "expr": "(sum(increase(dcms_audit_producer_gap_total[1h]))) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "gaps"
@@ -605,7 +605,7 @@
           "format": "table"
         }
       ],
-      "description": "An anchor is what lets a month whose rows were dropped by retention still be shown to have been intact. A month with no sealed_at is either the current one or one that refused to seal \u2014 and a segment refuses to seal precisely when its chain does not verify, so retention leaves it alone. Look for 'Refusing to seal audit segment' at Critical.",
+      "description": "An anchor is what lets a month whose rows were dropped by retention still be shown to have been intact. A month with no sealed_at is either the current one or one that refused to seal — and a segment refuses to seal precisely when its chain does not verify, so retention leaves it alone. Look for 'Refusing to seal audit segment' at Critical.",
       "options": {
         "showHeader": true,
         "footer": {
@@ -655,7 +655,7 @@
           "queryType": "range"
         }
       ],
-      "description": "These lines are logged at Critical as a routing instruction, not because they are errors. The runbook is explicit that an anchor existing only in the database it attests to is not an off-box anchor \u2014 this panel, and the 90-day Loki retention behind it, is what makes it one.",
+      "description": "These lines are logged at Critical as a routing instruction, not because they are errors. The runbook is explicit that an anchor existing only in the database it attests to is not an off-box anchor — this panel, and the 90-day Loki retention behind it, is what makes it one.",
       "options": {
         "showTime": true,
         "showLabels": false,

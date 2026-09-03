@@ -73,7 +73,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(rate(dcms_content_published_total[1h])) * 3600",
+          "expr": "(sum(rate(dcms_content_published_total[1h])) * 3600) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "pub"
@@ -245,7 +245,8 @@
                 "value": 60
               }
             ]
-          }
+          },
+          "noValue": "none yet"
         },
         "overrides": []
       }
@@ -330,7 +331,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(increase(dcms_messages_consumed_total{outcome=\"failure\"}[1h]))",
+          "expr": "(sum(increase(dcms_messages_consumed_total{outcome=\"failure\"}[1h]))) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "fail"
@@ -393,7 +394,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(rate(dcms_search_query_total[1h])) * 3600",
+          "expr": "(sum(rate(dcms_search_query_total[1h])) * 3600) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "q"
@@ -647,7 +648,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "nats_consumer_num_pending{stream_name=~\"CMS|SITES|MEDIA|EMAIL\"}",
+          "expr": "jetstream_consumer_num_pending{stream_name=~\"CMS|SITES|MEDIA|EMAIL\"}",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "{{stream_name}}/{{consumer_name}}"

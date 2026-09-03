@@ -248,7 +248,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(minio_node_drive_free_bytes)",
+          "expr": "sum(minio_cluster_capacity_usable_free_bytes)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "free"

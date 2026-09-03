@@ -255,6 +255,11 @@ prometheus.exporter.cadvisor "containers" {
 prometheus.exporter.postgres "db" {
   data_source_names = ["postgresql://" + env("POSTGRES_EXPORTER_USER") + ":" + env("POSTGRES_EXPORTER_PASSWORD") + "@postgres:5432/dcms?sslmode=disable"]
 
+  // PostgreSQL 17 moved checkpoint counters out of pg_stat_bgwriter and the built-in
+  // collector has not followed, so the Postgres dashboard's checkpoint panel had nothing to
+  // read. See the file for what it adds and why.
+  custom_queries_config_path = "/etc/alloy/postgres-queries.yaml"
+
   autodiscovery {
     enabled = false
   }
@@ -389,6 +394,12 @@ prometheus.scrape "infra" {
     // MinIO speaks Prometheus natively; MINIO_PROMETHEUS_AUTH_TYPE=public makes the
     // cluster endpoint readable on the internal network without a bearer token.
     { __address__ = "minio:9000", __metrics_path__ = "/minio/v2/metrics/cluster", service = "minio" },
+    // Per-bucket usage lives on a SECOND endpoint. The cluster endpoint carries totals only,
+    // so scraping it alone left every per-bucket panel ("Total stored", "Objects", "Bucket
+    // usage") empty — and with no bucket breakdown there is no way to see which of media,
+    // sites or build-logs is growing. Bucket metrics are refreshed by the scanner rather than
+    // on request, so they move on the order of minutes, not seconds.
+    { __address__ = "minio:9000", __metrics_path__ = "/minio/v2/metrics/bucket", service = "minio" },
     // Caddy's metrics handler on an internal-only listener. Deliberately NOT the admin API
     // on :2019, which can rewrite the running config.
     { __address__ = "caddy:2019", service = "caddy" },

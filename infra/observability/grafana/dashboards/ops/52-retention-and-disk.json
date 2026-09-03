@@ -1234,7 +1234,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "nats_stream_total_bytes",
+          "expr": "jetstream_stream_total_bytes",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "{{stream_name}}"

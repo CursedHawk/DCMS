@@ -375,7 +375,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(dcms:http_requests:by_route:rate5m{http_response_status_code=\"429\"})",
+          "expr": "(sum(dcms:http_requests:by_route:rate5m{http_response_status_code=\"429\"})) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "limited"
@@ -747,7 +747,7 @@
           "legendFormat": "builds {{tenant_id}}"
         }
       ],
-      "description": "Per-request traffic is deliberately NOT broken down by tenant here \u2014 that would multiply every route and status series by the tenant count. Ask Business \u2192 Tenant explorer instead; it reads Postgres, which holds cardinality without keeping it resident.",
+      "description": "Per-request traffic is deliberately NOT broken down by tenant here — that would multiply every route and status series by the tenant count. Ask Business → Tenant explorer instead; it reads Postgres, which holds cardinality without keeping it resident.",
       "options": {
         "legend": {
           "displayMode": "table",

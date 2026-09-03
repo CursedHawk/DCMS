@@ -14,6 +14,20 @@
 	on_demand_tls {
 		ask http://site-host:8080/internal/tls-allowed
 	}
+
+	# Per-request HTTP metrics. Caddy 2.7 made these opt-in — without this the /metrics
+	# listener below still answers, but it carries only Caddy's own admin and config
+	# gauges, so caddy_http_requests_total and caddy_http_responses_total simply do not
+	# exist and every edge panel on the storage/edge dashboard reads "No data". That is
+	# indistinguishable from an edge serving no traffic, which is the failure this is
+	# supposed to detect.
+	#
+	# The cost is a label set per host and per handler. On a platform whose edge routes a
+	# bounded set of tenant domains that is small; if custom domains ever run to thousands,
+	# revisit — the cardinality is in hostnames, not in paths.
+	servers {
+		metrics
+	}
 }
 
 # Admin + identity plane. Normal ACME (this host's DNS must point here). The SPA

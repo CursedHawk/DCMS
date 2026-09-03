@@ -181,7 +181,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "count(changes(container_start_time_seconds{name=~\"dcms-.*\"}[24h]) > 0)",
+          "expr": "(count(changes(container_start_time_seconds{name=~\"dcms-.*\"}[24h]) > 0)) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "restarts"

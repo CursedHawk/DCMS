@@ -40,7 +40,7 @@
     {
       "id": 32,
       "type": "row",
-      "title": "Email \u2014 the one process that speaks SMTP",
+      "title": "Email — the one process that speaks SMTP",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -70,7 +70,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(increase(dcms_email_sent_total[24h]))",
+          "expr": "(sum(increase(dcms_email_sent_total[24h]))) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "sent"
@@ -130,7 +130,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(increase(dcms_email_failed_total[24h]))",
+          "expr": "(sum(increase(dcms_email_failed_total[24h]))) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "failed"
@@ -193,7 +193,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(nats_consumer_num_pending{stream_name=\"EMAIL\"})",
+          "expr": "sum(jetstream_consumer_num_pending{stream_name=\"EMAIL\"})",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "pending"
@@ -314,7 +314,7 @@
     {
       "id": 37,
       "type": "row",
-      "title": "AI gateway \u2014 the cost centre",
+      "title": "AI gateway — the cost centre",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -344,7 +344,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(increase(dcms_ai_tokens_total[24h]))",
+          "expr": "(sum(increase(dcms_ai_tokens_total[24h]))) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "tokens"
@@ -404,7 +404,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(increase(dcms_ai_tokens_total{direction=\"input\"}[24h]))",
+          "expr": "(sum(increase(dcms_ai_tokens_total{direction=\"input\"}[24h]))) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "in"
@@ -464,7 +464,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(increase(dcms_ai_tokens_total{direction=\"output\"}[24h]))",
+          "expr": "(sum(increase(dcms_ai_tokens_total{direction=\"output\"}[24h]))) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "out"
@@ -559,7 +559,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "noValue": "none yet"
         },
         "overrides": []
       }

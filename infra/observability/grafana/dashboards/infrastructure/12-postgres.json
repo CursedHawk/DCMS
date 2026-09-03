@@ -836,7 +836,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "rate(pg_stat_bgwriter_checkpoints_timed_total[15m])",
+          "expr": "rate(pg_stat_checkpointer_num_timed[15m])",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "scheduled"
@@ -846,7 +846,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "rate(pg_stat_bgwriter_checkpoints_req_total[15m])",
+          "expr": "rate(pg_stat_checkpointer_num_requested[15m])",
           "refId": "B",
           "format": "time_series",
           "legendFormat": "requested"

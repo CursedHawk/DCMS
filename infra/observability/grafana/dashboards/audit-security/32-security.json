@@ -57,7 +57,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(increase(dcms_auth_login_total{outcome=\"failed\"}[24h]))",
+          "expr": "(sum(increase(dcms_auth_login_total{outcome=\"failed\"}[24h]))) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "failed"
@@ -124,7 +124,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(increase(dcms_auth_login_total{outcome=\"lockedout\"}[24h]))",
+          "expr": "(sum(increase(dcms_auth_login_total{outcome=\"lockedout\"}[24h]))) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "locked"
@@ -373,7 +373,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(dcms:http_requests:by_route:rate5m{http_response_status_code=\"429\"})",
+          "expr": "(sum(dcms:http_requests:by_route:rate5m{http_response_status_code=\"429\"})) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "429"
@@ -603,7 +603,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**This panel is intentionally empty.**\n\nEvery service connects to Postgres as `dcms`, a cluster superuser. ADR 0007 is blunt that the append-only trigger and the `REVOKE UPDATE, DELETE` on the audit tables stop *accidents*, not *attackers*: anyone holding the application's credentials can turn them off. The audit log records every change the application makes, and by construction it cannot see a change made with `psql`.\n\nClosing that gap needs logical-replication CDC: a row change with no matching audit record is, by definition, a write that bypassed the application. The metric name is reserved \u2014 `dcms.cdc.unaudited_change` \u2014 and the design is in `docs/adr/0008-observability.md`. It is deliberately not built yet; `wal_level` is still `replica` and turning it on costs WAL volume on a disk-constrained host for no benefit until something reads the slot.\n\nUntil then this is a **known gap**, recorded here rather than left implied."
+        "content": "**This panel is intentionally empty.**\n\nEvery service connects to Postgres as `dcms`, a cluster superuser. ADR 0007 is blunt that the append-only trigger and the `REVOKE UPDATE, DELETE` on the audit tables stop *accidents*, not *attackers*: anyone holding the application's credentials can turn them off. The audit log records every change the application makes, and by construction it cannot see a change made with `psql`.\n\nClosing that gap needs logical-replication CDC: a row change with no matching audit record is, by definition, a write that bypassed the application. The metric name is reserved — `dcms.cdc.unaudited_change` — and the design is in `docs/adr/0008-observability.md`. It is deliberately not built yet; `wal_level` is still `replica` and turning it on costs WAL volume on a disk-constrained host for no benefit until something reads the slot.\n\nUntil then this is a **known gap**, recorded here rather than left implied."
       }
     }
   ]

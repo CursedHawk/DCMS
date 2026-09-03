@@ -532,6 +532,8 @@ services:
       POSTGRES_EXPORTER_PASSWORD: "${GRAFANA_DB_PASSWORD:-dcms-grafana-dev}"
     volumes:
       - ./infra/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # Extra postgres_exporter collectors for views the built-in ones miss on PG 18.
+      - ./infra/observability/alloy/postgres-queries.yaml:/etc/alloy/postgres-queries.yaml:ro
       - alloy-data:/var/lib/alloy/data
       # cAdvisor reads cgroup accounting from the host filesystem rather than from the
       # Docker API, so these four are what it actually needs. All read-only. The Docker

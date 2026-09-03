@@ -1,0 +1,35 @@
+# Custom collectors for the embedded postgres_exporter.
+#
+# Only what the built-in collectors cannot reach on this server version goes here. Each
+# entry becomes `<key>_<metric>` in Prometheus, so `pg_stat_checkpointer.num_timed` is
+# scraped as `pg_stat_checkpointer_num_timed`.
+
+# PostgreSQL 17 split checkpoint accounting out of pg_stat_bgwriter into its own view, and
+# postgres_exporter's bgwriter collector still reads the old columns — so on PG 18 it emits
+# buffers_alloc/buffers_clean/maxwritten_clean and silently drops every checkpoint counter.
+# The Postgres dashboard's "Checkpoints" panel asked for pg_stat_bgwriter_checkpoints_timed_total
+# and pg_stat_bgwriter_checkpoints_req_total, neither of which has existed since the upgrade.
+#
+# Requested checkpoints are the interesting series: a timed checkpoint is the server keeping
+# its own schedule, whereas a requested one means WAL hit max_wal_size before the interval
+# elapsed — i.e. the write load has outgrown the checkpoint settings.
+pg_stat_checkpointer:
+  query: |
+    SELECT num_timed, num_requested, write_time, sync_time, buffers_written
+    FROM pg_stat_checkpointer
+  metrics:
+    - num_timed:
+        usage: COUNTER
+        description: Checkpoints started because checkpoint_timeout elapsed.
+    - num_requested:
+        usage: COUNTER
+        description: Checkpoints started because max_wal_size was reached or one was requested.
+    - write_time:
+        usage: COUNTER
+        description: Milliseconds spent writing checkpoint buffers to disk.
+    - sync_time:
+        usage: COUNTER
+        description: Milliseconds spent syncing checkpoint files to disk.
+    - buffers_written:
+        usage: COUNTER
+        description: Buffers written during checkpoints.

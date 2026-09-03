@@ -332,7 +332,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "max(dotnet_thread_pool_queue_length{service=~\"$service\"})",
+          "expr": "max(dotnet_thread_pool_queue_length_total{service=~\"$service\"})",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "queue"
@@ -691,7 +691,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "dotnet_gc_heap_size_bytes{service=~\"$service\"}",
+          "expr": "dotnet_gc_last_collection_heap_size_bytes{service=~\"$service\"}",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "{{gc_heap_generation}}"
@@ -751,7 +751,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "dotnet_kestrel_active_connections{service=~\"$service\"}",
+          "expr": "kestrel_active_connections{service=~\"$service\"}",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "{{service}}"
@@ -761,7 +761,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "dotnet_kestrel_queued_connections{service=~\"$service\"}",
+          "expr": "kestrel_queued_connections{service=~\"$service\"}",
           "refId": "B",
           "format": "time_series",
           "legendFormat": "queued {{service}}"

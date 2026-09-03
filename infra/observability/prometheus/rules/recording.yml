@@ -47,8 +47,22 @@ groups:
       - record: dcms:http_requests:by_route:rate5m
         expr: sum by (service, http_route, http_response_status_code) (rate(http_server_request_duration_seconds_count[5m]))
 
+      # The `or` arm is what makes a healthy platform legible. rate() over a selector that
+      # matches nothing returns an EMPTY VECTOR, not zero — so on a platform serving traffic
+      # with no 5xx at all, this rule produced no series, the error-ratio rule below divided
+      # nothing by something and produced no series either, and every panel built on it
+      # ("Error ratio", "Availability by service", "Error budget burn rate") read "No data".
+      # Perfect health and a broken pipeline rendered identically, and the SLO dashboard was
+      # blank precisely while it had the best news to report.
+      #
+      # Multiplying the request rate by zero mints an explicit 0 for every service that is
+      # serving anything, which is the correct reading: zero errors per second. Services with
+      # no traffic at all still contribute nothing, which is also correct — they have no
+      # error ratio to report.
       - record: dcms:http_errors:rate5m
-        expr: sum by (service) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+        expr: |
+          sum by (service) (rate(http_server_request_duration_seconds_count{http_response_status_code=~"5.."}[5m]))
+            or (dcms:http_requests:rate5m * 0)
 
       # The error ratio, guarded against a zero denominator. Without the guard an idle
       # service reports NaN, and a NaN in an alert expression is not "no errors" — it simply

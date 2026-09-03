@@ -118,7 +118,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(increase(dcms_media_processed_total{outcome=\"failure\"}[24h]))",
+          "expr": "(sum(increase(dcms_media_processed_total{outcome=\"failure\"}[24h]))) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "fail"
@@ -302,7 +302,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(nats_consumer_num_pending{stream_name=\"MEDIA\"})",
+          "expr": "sum(jetstream_consumer_num_pending{stream_name=\"MEDIA\"})",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "pending"
