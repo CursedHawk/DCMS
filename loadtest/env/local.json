@@ -33,7 +33,12 @@
     "tenantPrefix": "loadtest",
     "tenants": 2,
     "contentPerTenant": 50,
-    "mediaPerTenant": 5
+    "mediaPerTenant": 5,
+    // Fewer pages than vps1: locally this is a correctness fixture, not a measurement.
+    "modeAPages": 4,
+    // See env/vps1.json for why this is opt-in. Locally there is usually no sandbox image
+    // at all, so a Mode B seed fails on the first build rather than after the install.
+    "modeB": false
   },
 
   "load": { "vus": 10, "duration": "1m", "ramp": "15s" },

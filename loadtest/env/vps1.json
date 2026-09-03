@@ -47,7 +47,21 @@
     "tenantPrefix": "loadtest",
     "tenants": 5,
     "contentPerTenant": 200,
-    "mediaPerTenant": 20
+    "mediaPerTenant": 20,
+
+    // Pages in each Mode A (StaticPrerender) fixture site. A Mode A build is pure string
+    // assembly with no Node and no sandbox, so its cost is very nearly linear in pages --
+    // this is the knob that decides where the sitebuild scenario's Mode A number sits.
+    "modeAPages": 12,
+
+    // Mode B (ReactApp) fixture sites are OFF by default, and the default is not timidity.
+    // Each Mode B build runs a package install and a vite build inside a per-build sandbox
+    // container holding DCMS_BUILD_CPUS=2 and DCMS_BUILD_MEM=2g, so on a 4-core/7.6 GB host
+    // two of them are the whole box -- and seeding one tenant costs minutes before any
+    // measurement starts. Turn it on deliberately, for a run whose subject is Mode B:
+    //
+    //   node loadtest/seed/provision.mjs --env vps1 -e seed.modeB=true -e seed.tenants=2
+    "modeB": false
     // Site domains are NOT configured here. The seeder calls
     // POST /api/admin/domains/provisioned, which mints a hostname under the
     // platform-owned managed zone (Domains:ManagedZone, default dcms.highgeek.eu) and

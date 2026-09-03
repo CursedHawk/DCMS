@@ -63,13 +63,39 @@ domain is just a `Host` header.
 | `admin` | admin-api list endpoints, permission cache, audit | yes | yes |
 | `publish` | outbox → NATS → cache invalidation, end to end | yes | yes |
 | `media` | media-worker, ImageSharp, MinIO writes | yes | **no — run alone** |
-| `sitebuild` | site-builder, build queue | yes | **no — run alone** |
+| `sitebuild` | site-builder, build queue, all three render modes | yes | **no — run alone** |
 | `ratelimit` | content-api's per-IP limiter, deliberately | no | alone |
 | `mixed` | all of the above at realistic ratios | yes | — |
 
 `media` and `sitebuild` are marked because of arithmetic, not caution: the image consumer
-runs `MaxAckPending=4`, the site-build consumer `MaxAckPending=2`, and each Mode B build
-sandbox is allotted `DCMS_BUILD_CPUS=2`. Two concurrent builds claim the whole host.
+runs four handlers, the site-build consumer one by default (`DCMS_BUILD_CONCURRENCY`), and
+each Mode B build sandbox is allotted `DCMS_BUILD_CPUS=2` and `DCMS_BUILD_MEM=2g`. Two
+concurrent Mode B builds claim the whole host.
+
+### `sitebuild --build-mode`
+
+The three render modes are three different programs, and one duration threshold across them
+would be meaningless for any of them. Pick one:
+
+| `--build-mode` | Pipeline | What it costs | Needs |
+|---|---|---|---|
+| `StaticFiles` (default) | Mode C: unzip a staged bundle into the artifact prefix | the **floor** — queue, dispatch, MinIO writes, activation, with the build itself nearly free | nothing extra |
+| `StaticPrerender` | Mode A: read committed HTML/CSS from Forgejo, assemble pages in C# | floor plus a git read plus work linear in `seed.modeAPages` | Forgejo |
+| `ReactApp` | Mode B: package install + `vite build` in a per-build sandbox container | minutes; the only mode that competes for host CPU | `seed.modeB=true` when seeding, **and the sandbox image on the host** |
+| `all` | round-robins over whichever modes the fixtures have | contention *between* pipelines | — |
+
+The interesting number is not any one of these. It is Mode A minus Mode C — the assembler's
+real cost, with the queue and the object writes subtracted out — and Mode B minus Mode A,
+which is the whole Node toolchain.
+
+`site_publish_to_live_ms` is queue wait **plus** work; `dcms_site_build_duration_seconds` in
+the bundle is the work alone. The gap between them is the wait, and that is what a VU count
+above the consumer's concurrency is for.
+
+> **Mode B needs `dcms/site-build-sandbox:latest` present on the host.** It is the one image
+> no container ever references between builds, so `docker image prune -a` deletes it and
+> nothing else — which is exactly how it went missing on vps1. `scripts/deploy.sh` now fails
+> the deploy if the tag does not resolve.
 
 ### The eight-minute ceiling
 
@@ -104,16 +130,27 @@ That scenario exists so this one cannot happen quietly.
 ## The fixture estate
 
 `seed/provision.mjs` builds, per tenant: a blog plugin instance, N published posts, M
-uploaded images across the webp ladder's rungs, and a **Mode C (StaticFiles)** site with a
-provisioned domain and a succeeded build.
+uploaded images across the webp ladder's rungs, a **Mode C (StaticFiles)** site with a
+provisioned domain and a succeeded build, and a **Mode A (StaticPrerender)** site in
+Forgejo with a built `release` branch. A **Mode B (ReactApp)** site is added when
+`seed.modeB=true`.
 
-Three choices worth knowing:
+Four choices worth knowing:
 
-- **Mode C sites.** Modes A and B publish through git — Forgejo, a release branch, and for
-  Mode B a sandboxed container build. Seeding through that would make every site-host
-  measurement depend on the build pipeline being healthy. Mode C reaches the same place
-  (artifacts in the sites bucket, a resolvable domain) by the shortest path that is still
-  the real one. `sitebuild` exercises the build pipeline on purpose.
+- **Only the Mode C site gets a domain.** Every site-host and delivery measurement runs
+  against it, and it is seeded by upload rather than through git so those measurements do
+  not depend on the build pipeline being healthy. The git-backed sites exist to be *built*,
+  which is `sitebuild`'s job, so they need no hostname.
+- **The git-backed sites publish `?branch=release`.** Publishing from the default branch
+  merges into release and returns no build id — the build then comes from Forgejo's push
+  webhook, so a seeder taking that path would have to guess which build was its own.
+  Publishing while already on release enqueues directly and returns the id to wait on.
+- **Mode B's source is fetched, not written.** `GET /api/admin/sites/{id}/starter-files?flavor=starter`
+  returns the scaffold the IDE seeds a new React app with — package.json, lockfile, vite
+  config, and a client generated from that tenant's own OpenAPI. Mode A's source is
+  generated in `seed/sites.mjs` instead, shaped like the builder's `starterFiles()` but
+  deliberately independent of it: that function lives in a TypeScript app that would have to
+  be built first, and a one-page starter cannot show a cost that is linear in pages.
 - **Provisioned domains.** `POST /api/admin/domains/provisioned` mints a hostname under the
   platform-owned managed zone, verified on creation. The ordinary domain endpoint issues a
   TXT challenge that `Domains:AutoVerify=false` would never let a script satisfy.

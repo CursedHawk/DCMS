@@ -4,6 +4,11 @@
 #   ./loadtest/run.sh --env local --scenario delivery
 #   ./loadtest/run.sh --env vps1 --scenario sitehost --vus 25 --duration 3m
 #   ./loadtest/run.sh --env vps1 --scenario delivery --mode internal --via vps1
+#   ./loadtest/run.sh --env vps1 --scenario sitebuild --build-mode StaticPrerender
+#
+# --build-mode picks which site render pipeline the sitebuild scenario exercises
+# (StaticFiles | StaticPrerender | ReactApp | all). -E passes any other variable straight
+# through to the scenario; --build-mode is just the one worth a named flag.
 #
 # Produces loadtest/runs/<timestamp>-<scenario>-<env>/ holding the k6 summary, the raw
 # samples, and everything collect.sh gathers for exactly the window k6 was running.
@@ -17,6 +22,9 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 ENVNAME="local"; SCENARIO=""; VIA=""; MODE_OVERRIDE=""
 COLLECT=1; SEED=0; TEARDOWN=0
 declare -a OVERRIDES=()
+# Scenario-specific k6 variables. Kept separate from OVERRIDES, which are profile-field
+# overrides consumed by Node before k6 is ever started.
+declare -a SCENARIO_ENV=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -30,7 +38,9 @@ while [ $# -gt 0 ]; do
         --teardown) TEARDOWN=1; shift ;;
         --no-collect) COLLECT=0; shift ;;
         -e|--set)   OVERRIDES+=(-e "$2"); shift 2 ;;
-        -h|--help)  sed -n '2,14p' "$0"; exit 0 ;;
+        --build-mode) SCENARIO_ENV+=(-e "BUILD_MODE=$2"); shift 2 ;;
+        -E)         SCENARIO_ENV+=(-e "$2"); shift 2 ;;
+        -h|--help)  sed -n '2,20p' "$0"; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -122,6 +132,7 @@ K6_ENV=(
     -e "VUS=$VUS" -e "DURATION=$DURATION" -e "RAMP=$RAMP"
     -e "ERROR_RATE=$ERROR_RATE" -e "DELIVERY_P95=$DELIVERY_P95"
     -e "SITEHOST_P95=$SITEHOST_P95" -e "ADMIN_P95=$ADMIN_P95"
+    "${SCENARIO_ENV[@]+"${SCENARIO_ENV[@]}"}"
 )
 
 # Docker's own -e sets the container environment; k6 populates __ENV from its OWN -e flags.

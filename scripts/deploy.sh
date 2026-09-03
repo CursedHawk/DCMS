@@ -337,6 +337,30 @@ if [ -n "$IMAGES_FILE" ] && grep -q '^  site-build-sandbox:' "$IMAGES_FILE"; the
   fi
 fi
 
+# Post-condition, deliberately OUTSIDE the block above, because the interesting failure is
+# not the pull -- it is the image going missing between deploys.
+#
+# This image is the only one on the host that no container ever references: site-builder
+# starts it with `docker run` per build, so it is unreferenced whenever a build is not in
+# flight, which is almost always. `docker image prune -a` -- the obvious thing to reach for
+# on a host whose disk alert is firing, and which leaves every service image alone because a
+# running container holds it -- deletes exactly this one and nothing else. It was found
+# missing on vps1 that way, with a green deploy history and no error anywhere: the symptom is
+# a tenant's Mode B publish failing, days later, with a message about the sandbox.
+#
+# So check the tag resolves rather than trusting that a pull ran at some point in the past.
+# A config-only re-apply with no --images has nothing to pull and still has to be told.
+if ! docker image inspect "$SANDBOX_LOCAL_TAG" >/dev/null 2>&1; then
+  if [ -n "$IMAGES_FILE" ]; then
+    die "the Mode B build sandbox ($SANDBOX_LOCAL_TAG) is not present after the pull.
+     Every ReactApp site publish will fail until it is. Re-run the deploy from CI, which
+     holds the registry credentials this host deliberately does not."
+  fi
+  warn "the Mode B build sandbox ($SANDBOX_LOCAL_TAG) is missing and this run has no --images
+     overlay to pull it from. ReactApp (Mode B) site publishes will fail until a full deploy
+     restores it; Mode A and Mode C are unaffected."
+fi
+
 # ---------------------------------------------------------------------------
 # Message streams and object storage -- BEFORE anything is rolled
 # ---------------------------------------------------------------------------

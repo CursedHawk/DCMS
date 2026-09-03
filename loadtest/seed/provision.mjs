@@ -17,6 +17,7 @@ import { login, inspect } from '../lib/auth.mjs';
 import { AdminApi, HttpError } from '../lib/api.mjs';
 import { writeFixtures, fixturesPath } from '../lib/fixtures.mjs';
 import { png, siteBundle } from './assets.mjs';
+import { modeASource } from './sites.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -73,6 +74,14 @@ async function main() {
     const media = await ensureMedia(scoped, mediaPerTenant, slug);
     const site = await ensureSite(scoped, slug);
 
+    // The git-backed modes. Mode A is cheap (pure C# string assembly) so it is always
+    // seeded; Mode B runs a sandboxed package install per build and is opt-in.
+    const sitesByMode = { StaticFiles: site };
+    sitesByMode.StaticPrerender = await ensureGitSite(scoped, slug, 'StaticPrerender', profile.seed);
+    if (profile.seed.modeB) {
+      sitesByMode.ReactApp = await ensureGitSite(scoped, slug, 'ReactApp', profile.seed);
+    }
+
     fixtures.tenants.push({
       slug,
       tenantId: tenant.tenantId,
@@ -84,6 +93,9 @@ async function main() {
       itemSlugs: items,
       mediaIds: media,
       site,
+      // Keyed by the render mode's own name so a scenario can say which pipeline it means
+      // rather than which fixture it happens to have been given.
+      sitesByMode,
     });
   }
 
@@ -94,7 +106,8 @@ async function main() {
   log(`estate: ${fixtures.tenants.length} tenants, `
     + `${fixtures.tenants.reduce((n, x) => n + x.itemSlugs.length, 0)} published items, `
     + `${fixtures.tenants.reduce((n, x) => n + x.mediaIds.length, 0)} media assets, `
-    + `${fixtures.tenants.filter((x) => x.site?.domain).length} live sites`);
+    + `${fixtures.tenants.filter((x) => x.site?.domain).length} live sites, `
+    + `git-backed: ${modeSummary(fixtures.tenants)}`);
 }
 
 /**
@@ -241,6 +254,82 @@ async function ensureSite(api, tenantSlug) {
   return { siteId, domain: domain.hostname, buildId, pages: 8, buildSeconds: built.seconds };
 }
 
+/**
+ * A git-backed fixture site: Mode A (StaticPrerender) or Mode B (ReactApp).
+ *
+ * These publish through Forgejo rather than through an upload, so seeding one is four
+ * steps rather than two: write the source into the draft, provision the repo (which
+ * commits that source and creates the `release` branch), then build the release head.
+ *
+ * `?branch=release` matters. Publishing from the default branch MERGES it into release and
+ * returns no build id — the build is then triggered by Forgejo's push webhook, so a seeder
+ * that took that path would have to guess which build was its own and would fail wherever
+ * the webhook could not reach admin-api. Publishing while already on release skips the
+ * merge and enqueues the build directly (SiteEndpoints.cs, the `sourceBranch == release`
+ * arm), which is the same code path the scenario uses and returns the id to wait on.
+ *
+ * Idempotent like everything else here: an existing site with a succeeded build is adopted
+ * as-is. A Mode B build costs minutes, and re-running the seeder must not spend them again.
+ */
+async function ensureGitSite(api, tenantSlug, renderMode, seed) {
+  const label = renderMode === 'ReactApp' ? 'b' : 'a';
+  const name = `loadtest-site-${label}-${tenantSlug}`;
+
+  const sites = await api.get('/api/admin/sites');
+  let site = (sites.items ?? sites).find((s) => s.name === name);
+  if (!site) {
+    site = await api.post('/api/admin/sites', { name, renderMode });
+  }
+  const siteId = site.id;
+
+  const existingBuilds = await api.get(`/api/admin/sites/${siteId}/builds?limit=5`);
+  const live = (existingBuilds.items ?? existingBuilds).find((b) => b.status === 'Succeeded');
+  if (live) {
+    const current = await api.get(`/api/admin/sites/${siteId}`);
+    log(`  ${tenantSlug}: ${renderMode} site already built (${Object.keys(current.definition?.files ?? {}).length} files)`);
+    return { siteId, renderMode, buildId: live.id, fileCount: Object.keys(current.definition?.files ?? {}).length };
+  }
+
+  // Mode B's source is fetched from the platform, not written here: `starter-files` returns
+  // the scaffold the IDE seeds a new React app with, generated against THIS tenant's
+  // OpenAPI. Anything else would be measuring a project no tenant actually has.
+  const source = renderMode === 'ReactApp'
+    ? (await api.get(`/api/admin/sites/${siteId}/starter-files?flavor=starter`)).files
+    : modeASource(name, seed.modeAPages ?? 12).files;
+
+  const current = await api.get(`/api/admin/sites/${siteId}`);
+  if (Object.keys(current.definition?.files ?? {}).length === 0) {
+    await api.put(`/api/admin/sites/${siteId}/definition`, { files: source });
+  }
+
+  // Commits the draft as the repo's initial history and creates `release` off it.
+  const repo = await api.post(`/api/admin/sites/${siteId}/git/provision`, {});
+
+  const { buildId } = await api.post(
+    `/api/admin/sites/${siteId}/publish?branch=release`, {}, { expect: [200, 202] });
+  const built = await waitForBuild(api, siteId, buildId, renderMode === 'ReactApp' ? 900_000 : 300_000);
+  log(`  ${tenantSlug}: ${renderMode} site built in ${built.seconds.toFixed(1)}s (${repo.repo})`);
+
+  return {
+    siteId,
+    renderMode,
+    repo: repo.repo,
+    buildId,
+    fileCount: Object.keys(source).length,
+    buildSeconds: built.seconds,
+  };
+}
+
+function modeSummary(tenants) {
+  const counts = new Map();
+  for (const t of tenants) {
+    for (const mode of Object.keys(t.sitesByMode ?? {})) {
+      counts.set(mode, (counts.get(mode) ?? 0) + 1);
+    }
+  }
+  return [...counts].map(([mode, n]) => `${n}x ${mode}`).join(', ') || 'none';
+}
+
 async function waitForBuild(api, siteId, buildId, timeoutMs = 180_000) {
   const started = Date.now();
   for (;;) {
@@ -248,8 +337,16 @@ async function waitForBuild(api, siteId, buildId, timeoutMs = 180_000) {
     const build = (builds.items ?? builds).find((b) => b.id === buildId);
     if (build?.status === 'Succeeded') return { seconds: (Date.now() - started) / 1000 };
     if (build?.status === 'Failed') {
-      throw new Error(`Site build ${buildId} failed. Check site-builder logs; a Mode C build only `
-        + `extracts the uploaded bundle, so a failure here is infrastructure, not site code.`);
+      // The build log is stored for Mode B (the IDE shows it), so point at it rather than
+      // leaving "it failed" as the whole report -- a failing pnpm install is the single
+      // most likely thing to go wrong here and its reason is in that log.
+      const log = await api.get(`/api/admin/sites/${siteId}/builds/${buildId}/log`, { raw: true })
+        .catch(() => null);
+      throw new Error(`Site build ${buildId} failed.`
+        + (log ? ` Build log: /api/admin/sites/${siteId}/builds/${buildId}/log` : '')
+        + ` A Mode C build only extracts an uploaded bundle and a Mode A build is pure string`
+        + ` assembly, so a failure in either is infrastructure. A Mode B failure is usually the`
+        + ` sandbox: check that ${'$DCMS_BUILD_SANDBOX_IMAGE'} exists on the host.`);
     }
     if (Date.now() - started > timeoutMs) {
       throw new Error(`Site build ${buildId} still '${build?.status ?? 'unknown'}' after ${timeoutMs / 1000}s. `
