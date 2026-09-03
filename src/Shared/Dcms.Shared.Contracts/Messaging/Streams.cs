@@ -47,7 +47,66 @@ public static class Subjects
     public const string MediaFailed = "media.failed";
 
     // SITES (work queue)
-    public const string SitePublishRequested = "site.publish.requested";
+    //
+    // One subject per render mode, because the three cost wildly different amounts and they
+    // used to share a queue. Measured on a 4-core host: a Mode C publish is an unzip and
+    // takes ~340 ms, a Mode A publish assembles committed HTML/CSS in-process and takes
+    // ~1 s, and a Mode B publish runs a package install plus a vite build inside a sandbox
+    // container and takes ~30 s. On one consumer with in-order delivery, that made the Mode C
+    // publish's p95 **34.8 seconds** whenever a Mode B build was running -- 95x -- while its
+    // minimum stayed at 338 ms. Head-of-line blocking, not saturation: it was not slow, it
+    // was waiting.
+    //
+    // Splitting the SUBJECT rather than the concurrency is what fixes it. Raising the
+    // consumer's concurrency does not: a Mode B sandbox is allotted DCMS_BUILD_CPUS (2) of
+    // the host's four, so two of them at once are the whole machine, and nothing would stop
+    // both slots holding a Mode B build. Separate subjects let separate consumers drain at
+    // their own rates, so an expensive build can never be in front of a cheap one.
+    //
+    // Which subject goes in which lane is site-builder's configuration (SiteBuildLane), not
+    // a property of the wire -- so moving Mode A between lanes costs one line there and
+    // nothing here.
+
+    /// <summary>Mode C (StaticFiles): extract an already-staged bundle. Sub-second.</summary>
+    public const string SitePublishRequestedStaticFiles = "site.publish.requested.staticfiles";
+
+    /// <summary>Mode A (StaticPrerender): assemble committed HTML/CSS in-process. About a second.</summary>
+    public const string SitePublishRequestedStaticPrerender = "site.publish.requested.staticprerender";
+
+    /// <summary>Mode B (ReactApp): install and build in a sandbox container. Tens of seconds.</summary>
+    public const string SitePublishRequestedReactApp = "site.publish.requested.reactapp";
+
+    /// <summary>
+    /// The pre-split subject. <b>Nothing publishes here any more</b> — it exists so a message
+    /// written by an admin-api from before the split still has a consumer during the rolling
+    /// deploy that introduces it. The SITES stream is work-queue retention, so a message no
+    /// consumer's filter matches is never delivered and never removed: the build would sit in
+    /// Queued until the reaper failed it, and the author would be told their publish failed
+    /// for no reason anyone could see.
+    ///
+    /// <para>Retire the <c>site-builder</c> durable a release after the split has shipped —
+    /// there is a <c>retire_consumer</c> helper in infra/nats/provision-streams.sh, and the
+    /// lane logs a warning whenever it actually drains something, so "is it still needed" is
+    /// a question the logs answer.</para>
+    /// </summary>
+    public const string SitePublishRequestedLegacy = "site.publish.requested";
+
+    /// <summary>
+    /// The subject a publish of <paramref name="renderMode"/> belongs on.
+    ///
+    /// <para>Matched case-insensitively against the render mode as it travels on the message —
+    /// a string, not the enum, because Contracts deliberately does not reference the data
+    /// layer. An unrecognised mode routes to the prerender subject, which mirrors what the
+    /// builder does with it: <c>BuildAsync</c> dispatches ReactApp and StaticFiles explicitly
+    /// and treats everything else as Mode A. Routing an unknown mode to the cheap lane instead
+    /// would put a build of unknown cost in front of the ones the lane exists to keep fast.</para>
+    /// </summary>
+    public static string SitePublishSubjectFor(string? renderMode) =>
+        string.Equals(renderMode, "StaticFiles", StringComparison.OrdinalIgnoreCase)
+            ? SitePublishRequestedStaticFiles
+            : string.Equals(renderMode, "ReactApp", StringComparison.OrdinalIgnoreCase)
+                ? SitePublishRequestedReactApp
+                : SitePublishRequestedStaticPrerender;
 
     // SITES_EVENTS
     public const string SitePublished = "site.published";

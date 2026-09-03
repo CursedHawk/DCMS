@@ -161,6 +161,11 @@ ensure_stream TENANCY      "tenant.>,plugin.instance.>,membership.>" limits
 ensure_stream CMS          "content.>"                               limits
 ensure_stream MEDIA        "media.process.>"                         work
 ensure_stream MEDIA_EVENTS "media.processed,media.failed"            limits
+# The wildcard is load-bearing. Publishes are routed by render mode --
+# site.publish.requested.staticfiles / .staticprerender / .reactapp -- so that site-builder
+# can drain them on separate consumers and a 30-second React build never sits in front of a
+# 340-millisecond bundle extract. `site.publish.>` already covered every one of those, which
+# is why the split needed no stream change; keep it a wildcard.
 ensure_stream SITES        "site.publish.>"                          work
 ensure_stream SITES_EVENTS "site.published,site.build.failed"        limits
 ensure_stream ANALYTICS    "analytics.>"                             limits
@@ -195,6 +200,18 @@ retire_consumer() {
 # site-host moved to an ephemeral ordered consumer so every replica sees every
 # site.published, rather than one replica seeing each.
 retire_consumer SITES site-host-cache
+
+# The pre-split publish subject. `site-builder` still binds site.publish.requested so that a
+# message written by an admin-api from before the queue split is still built during the
+# rolling deploy that introduces it -- a work-queue stream never delivers or removes a message
+# no filter matches, so without it that build would sit in Queued until the reaper failed it.
+#
+# UNCOMMENT ONE RELEASE AFTER THE SPLIT SHIPPED (2026-09-03), and delete the Legacy() lane in
+# src/Services/Dcms.SiteBuilder/SiteBuildLane.cs in the same change. That lane logs a warning
+# for every message it drains, so the logs answer "is anything still publishing there" before
+# you do.
+#
+# retire_consumer SITES site-builder
 
 echo "JetStream provisioning complete."
 nats --server "$NATS_URL" stream ls

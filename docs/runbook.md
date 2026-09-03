@@ -142,7 +142,20 @@ admin-api owns the `sites` schema (sites + site_builds). Site editing:
 `GET/POST /api/admin/sites`, `PUT /api/admin/sites/{id}/definition` (component
 tree JSON), `POST /api/admin/sites/{id}/publish` (snapshots the definition into
 a build and emits `site.publish.requested`). Domains link to a site via
-`POST /api/admin/domains/{id}/site`. site-builder consumes the publish job and
+`POST /api/admin/domains/{id}/site`.
+
+The publish job is routed by render mode — `site.publish.requested.staticfiles`,
+`.staticprerender` or `.reactapp` — and site-builder drains those on **separate consumers**:
+`site-builder-git` takes Modes A and B, `site-builder-static` takes Mode C. They cost two
+orders of magnitude apart (measured on vps1: ~340 ms, ~1 s and ~30 s), and JetStream delivers
+in order, so on one consumer a Mode C publish behind a running Mode B build had a p95 of
+**34.8 seconds** while its minimum stayed at 338 ms. Which lane is backed up is the "Queue
+depth by lane" panel on the Site builds dashboard; `nats consumer report SITES` says the same
+thing from the command line. `DCMS_BUILD_CONCURRENCY` sizes the git lane (default 1 — a Mode B
+sandbox holds two of four cores) and `DCMS_BUILD_CONCURRENCY_STATIC` the static one
+(default 2). Lane membership lives in `src/Services/Dcms.SiteBuilder/SiteBuildLane.cs`.
+
+site-builder consumes the publish job and
 prerenders the component tree to static HTML **in C#** (`SiteRenderer` — layout
 primitives render directly, data-bound/plugin components become hydration
 placeholders; no Node dependency), uploads artifacts to
@@ -615,6 +628,14 @@ or convert it to an ephemeral consumer, add a line there** — that is the whole
 The one entry today is `SITES/site-host-cache`: `site-host` used to bind a shared durable
 and now uses an ephemeral ordered consumer, so every replica sees every `site.published`
 rather than one replica seeing each.
+
+`SITES/site-builder` is queued behind it, commented out. It is the pre-split publish subject's
+lane: nothing publishes to `site.publish.requested` any more, but a message written by an
+admin-api from before the split still needs a consumer during the rolling deploy that
+introduces it — `SITES` is work-queue retention, so a message no filter matches is never
+delivered *and* never removed, and the build would sit in Queued until the reaper failed it.
+The lane logs a warning for every message it drains, so before uncommenting that line, check
+whether it has caught anything in the last release.
 
 ## Production profile
 

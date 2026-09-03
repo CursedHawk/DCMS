@@ -68,9 +68,15 @@ domain is just a `Host` header.
 | `mixed` | all of the above at realistic ratios | yes | — |
 
 `media` and `sitebuild` are marked because of arithmetic, not caution: the image consumer
-runs four handlers, the site-build consumer one by default (`DCMS_BUILD_CONCURRENCY`), and
-each Mode B build sandbox is allotted `DCMS_BUILD_CPUS=2` and `DCMS_BUILD_MEM=2g`. Two
-concurrent Mode B builds claim the whole host.
+runs four handlers, the git build lane one by default (`DCMS_BUILD_CONCURRENCY`), and each
+Mode B build sandbox is allotted `DCMS_BUILD_CPUS=2` and `DCMS_BUILD_MEM=2g`. Two concurrent
+Mode B builds claim the whole host.
+
+Note that `--build-mode all` no longer measures what it originally did. Publishes are routed
+by render mode onto separate subjects and site-builder drains the git-backed modes
+(`site-builder-git`) separately from static bundles (`site-builder-static`), so the 95x
+head-of-line blocking that run first found is gone by construction. It is now a regression
+test for the split: Mode C's p95 under `all` should stay close to its p95 alone.
 
 ### `sitebuild --build-mode`
 

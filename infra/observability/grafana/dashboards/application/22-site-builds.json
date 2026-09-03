@@ -287,7 +287,8 @@
           }
         },
         "overrides": []
-      }
+      },
+      "description": "Across every build lane. site-builder drains git-backed publishes (site-builder-git) separately from static-bundle ones (site-builder-static) so an expensive React build cannot sit in front of a cheap extract — which one is backed up is the panel below."
     },
     {
       "id": 26,
@@ -411,6 +412,62 @@
       }
     },
     {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Queue depth by lane",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "sum by (consumer_name) (jetstream_consumer_num_pending{stream_name=\"SITES\"})",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "{{consumer_name}}"
+        }
+      ],
+      "description": "site-builder-git carries Modes A and B, site-builder-static carries Mode C, and they drain independently. Before the split all three shared one consumer, and because JetStream delivers in order a 340 ms bundle extract behind a running 30 s React build had a p95 of 34.8 seconds. A rising git lane beside a flat static lane is this working; both rising together means the host is short of capacity rather than the queue being mis-shaped. site-builder is the legacy pre-split lane and should stay at zero.",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never"
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short",
+          "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
       "id": 28,
       "type": "timeseries",
       "title": "Builds by outcome",
@@ -422,7 +479,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 12
       },
       "targets": [
         {
@@ -481,7 +538,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 4
+        "y": 12
       },
       "targets": [
         {
@@ -542,7 +599,7 @@
         "h": 11,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 20
       },
       "targets": [
         {
@@ -592,7 +649,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 31
       },
       "targets": [
         {

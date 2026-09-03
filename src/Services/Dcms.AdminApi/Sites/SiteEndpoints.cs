@@ -497,9 +497,10 @@ public static class SiteEndpoints
             db.Builds.Add(build);
             await db.SaveChangesAsync(ct);
 
-            await events.PublishAsync(Subjects.SitePublishRequested, new SitePublishRequested(
+            var mode = site.RenderMode.ToString();
+            await events.PublishAsync(Subjects.SitePublishSubjectFor(mode), new SitePublishRequested(
                 Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, site.Id, build.Id,
-                site.RenderMode.ToString(), await AnalyticsEnabledAsync(cms, tenantId, ct)), ct);
+                mode, await AnalyticsEnabledAsync(cms, tenantId, ct)), ct);
 
             return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{build.Id}", new { buildId = build.Id });
         }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SitePublishRequested, "site");
@@ -1024,9 +1025,10 @@ public static class SiteEndpoints
 
             await db.SaveChangesAsync(ct);
 
-            await events.PublishAsync(Subjects.SitePublishRequested, new SitePublishRequested(
+            var pushedMode = site.RenderMode.ToString();
+            await events.PublishAsync(Subjects.SitePublishSubjectFor(pushedMode), new SitePublishRequested(
                 Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id,
-                site.RenderMode.ToString(), await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct);
+                pushedMode, await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct);
 
             log.LogInformation("Queued build {BuildId} from git push {Sha} to {Repo}", build.Id, afterSha, repoFull);
             return Results.Ok(new { buildId = build.Id });
@@ -1095,9 +1097,10 @@ public static class SiteEndpoints
         build.ArtifactPrefix = $"{site.TenantId}/{site.Id}/{build.Id}";
         db.Builds.Add(build);
         await db.SaveChangesAsync(ct);
-        await events.PublishAsync(Subjects.SitePublishRequested, new SitePublishRequested(
+        var releaseMode = site.RenderMode.ToString();
+        await events.PublishAsync(Subjects.SitePublishSubjectFor(releaseMode), new SitePublishRequested(
             Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id,
-            site.RenderMode.ToString(), await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct);
+            releaseMode, await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct);
         return build.Id;
     }
 

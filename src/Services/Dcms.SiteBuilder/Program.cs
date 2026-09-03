@@ -26,7 +26,13 @@ builder.Services.AddDcmsSitesData(builder.Configuration);
 builder.Services.AddNullTenantContext();
 builder.Services.AddSingleton<StaticSiteAssembler>();
 builder.Services.AddSingleton<ReactAppBuilder>();
-builder.Services.AddHostedService<SitePublishConsumer>();
+// One consumer per queue lane, so an expensive build can never be in front of a cheap one.
+// See SiteBuildLane: the lanes are the policy, and this loop is the whole of the wiring.
+foreach (var lane in SiteBuildLane.All())
+{
+    builder.Services.AddSingleton<IHostedService>(sp =>
+        ActivatorUtilities.CreateInstance<SitePublishConsumer>(sp, lane));
+}
 
 var app = builder.Build();
 // First in the pipeline, so an exception anywhere below it becomes a ProblemDetails

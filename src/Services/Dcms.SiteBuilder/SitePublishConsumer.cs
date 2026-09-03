@@ -19,14 +19,20 @@ using NATS.Client.JetStream.Models;
 namespace Dcms.SiteBuilder;
 
 /// <summary>
-/// Consumes site.publish.requested: turns the build's definition snapshot into
-/// static artifacts (Mode A assembles the builder's HTML/CSS source, Mode B runs
-/// the site's own React build, Mode C extracts an uploaded bundle), uploads them
-/// to dcms-sites, activates the build and emits site.published. Cross-tenant (no
-/// ambient tenant), so query filters are bypassed. Resilient to NATS being
-/// unavailable.
+/// Drains one <see cref="SiteBuildLane"/> of the site publish queue: turns each build's
+/// definition snapshot into static artifacts (Mode A assembles the builder's HTML/CSS source,
+/// Mode B runs the site's own React build, Mode C extracts an uploaded bundle), uploads them
+/// to dcms-sites, activates the build and emits site.published. Cross-tenant (no ambient
+/// tenant), so query filters are bypassed. Resilient to NATS being unavailable.
+///
+/// <para>One instance runs per lane — see <see cref="SiteBuildLane"/> for why there is more
+/// than one, and note that the work below does not depend on which lane delivered the
+/// message: <see cref="BuildAsync"/> dispatches on the job's own render mode, so a message
+/// arriving on the "wrong" lane still builds correctly. The lane decides only what waits
+/// behind what.</para>
 /// </summary>
 public sealed class SitePublishConsumer(
+    SiteBuildLane lane,
     INatsJSContext jetStream,
     IServiceProvider services,
     IObjectStorage storage,
@@ -37,7 +43,6 @@ public sealed class SitePublishConsumer(
     DcmsMetrics metrics,
     ILogger<SitePublishConsumer> logger) : BackgroundService
 {
-    private const string DurableName = "site-builder";
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
     // A build takes minutes -- Mode B runs npm install plus vite build in a sandbox container,
@@ -55,27 +60,16 @@ public sealed class SitePublishConsumer(
     private const int MaxDeliver = 3;
 
     /// <summary>
-    /// How many builds run at once. <b>One by default, and that is a decision rather than an
-    /// oversight.</b>
+    /// How many builds this lane runs at once, and it is per lane rather than per service for
+    /// the reason the lanes exist at all — see <see cref="SiteBuildLane"/>.
     ///
-    /// <para>This loop used to await each handler inline while passing
-    /// <c>MaxAckPending = 2</c> to JetStream, which reads as "two builds at a time" and was
-    /// not: <c>MaxAckPending</c> only bounds how many messages may be outstanding un-acked.
-    /// The effective concurrency was always 1. The same confusion in the media worker cost a
-    /// 17.5-second queue on an idle host, so it is spelled out here rather than left to be
-    /// rediscovered.</para>
-    ///
-    /// <para>Unlike media, raising it is not free. A Mode B build runs npm install plus vite
-    /// build inside a sandbox container allotted <c>DCMS_BUILD_CPUS</c> (default 2) and
-    /// <c>DCMS_BUILD_MEM</c> (default 2g), so two concurrent builds claim four cores and four
-    /// gigabytes -- the entire single-host deployment. The default therefore preserves the
-    /// behaviour this service has always actually had; <c>DCMS_BUILD_CONCURRENCY</c> raises it
-    /// on a host with the headroom to spare.</para>
+    /// <para>Worth keeping the older warning attached to it: this loop used to await each
+    /// handler inline while passing <c>MaxAckPending = 2</c> to JetStream, which reads as "two
+    /// builds at a time" and was not. <c>MaxAckPending</c> only bounds how many messages may
+    /// be outstanding un-acked; the effective concurrency was always 1. The same confusion in
+    /// the media worker cost a 17.5-second queue on an idle host.</para>
     /// </summary>
-    private static readonly int MaxConcurrency =
-        int.TryParse(Environment.GetEnvironmentVariable("DCMS_BUILD_CONCURRENCY"), out var c) && c > 0
-            ? c
-            : 1;
+    private int MaxConcurrency => lane.Concurrency;
 
     private string Bucket => storageOptions.Value.SitesBucket;
 
@@ -85,20 +79,32 @@ public sealed class SitePublishConsumer(
         {
             try
             {
+                var config = new ConsumerConfig(lane.DurableName)
+                {
+                    AckPolicy = ConsumerConfigAckPolicy.Explicit,
+                    // Deliberately one more than MaxConcurrency: JetStream may hold the next
+                    // job ready while the current build runs, without ever handing out more
+                    // work than there are builders to take it.
+                    MaxAckPending = MaxConcurrency + 1,
+                    AckWait = AckWait,
+                    MaxDeliver = MaxDeliver,
+                };
+
+                // One filter or many. A single-subject lane sets FilterSubject because that is
+                // what every JetStream version understands; multi-subject filters need a 2.10+
+                // server, which this deployment has, and setting both fields at once is an
+                // error rather than a belt-and-braces.
+                if (lane.FilterSubjects.Length == 1)
+                {
+                    config.FilterSubject = lane.FilterSubjects[0];
+                }
+                else
+                {
+                    config.FilterSubjects = lane.FilterSubjects;
+                }
+
                 var consumer = await jetStream.CreateOrUpdateConsumerAsync(
-                    Streams.Sites,
-                    new ConsumerConfig(DurableName)
-                    {
-                        FilterSubject = Subjects.SitePublishRequested,
-                        AckPolicy = ConsumerConfigAckPolicy.Explicit,
-                        // Deliberately one more than MaxConcurrency: JetStream may hold the
-                        // next job ready while the current build runs, without ever handing
-                        // out more work than there are builders to take it.
-                        MaxAckPending = MaxConcurrency + 1,
-                        AckWait = AckWait,
-                        MaxDeliver = MaxDeliver,
-                    },
-                    stoppingToken);
+                    Streams.Sites, config, stoppingToken);
 
                 await Parallel.ForEachAsync(
                     consumer.ConsumeAsync<SitePublishRequested>(cancellationToken: stoppingToken),
@@ -115,7 +121,8 @@ public sealed class SitePublishConsumer(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Site builder unavailable; retrying in 5s.");
+                logger.LogWarning(ex,
+                    "Site build lane {Lane} unavailable; retrying in 5s.", lane.DurableName);
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
         }
@@ -129,6 +136,15 @@ public sealed class SitePublishConsumer(
             await msg.AckAsync(cancellationToken: ct);
             return;
         }
+        if (lane.WarnOnMessage)
+        {
+            logger.LogWarning(
+                "Build {BuildId} ({Mode}) arrived on the pre-split subject {Subject}. That means "
+                + "an admin-api older than the queue split published it — expected only during a "
+                + "rolling deploy. If this keeps appearing, something is still publishing there.",
+                job.BuildId, job.RenderMode, Subjects.SitePublishRequestedLegacy);
+        }
+
         // Renews this message's redelivery lease for as long as the build is running. Without
         // it the build outlives AckWait and JetStream hands the job to the next delivery while
         // this one is still working -- see the AckWait field above.
