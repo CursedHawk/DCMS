@@ -25,6 +25,19 @@ public sealed class ForgejoOptions
     /// <summary>Public HTTPS base shown to users for HTTP clone URLs (e.g. https://git.highgeek.eu).</summary>
     public string PublicUrl { get; set; } = "http://localhost:3000";
 
+    /// <summary>
+    /// How long a confirmed mirror is trusted before a sign-in re-asserts it.
+    ///
+    /// <para>Sign-in is the only place the platform holds a user's plaintext password, so it
+    /// is where a mirror that drifted out of band gets repaired. It is not, however, a place
+    /// the mirror normally needs repairing: every path that <i>changes</i> a credential —
+    /// register, reset, change-password — already syncs Forgejo inline. So the self-heal is
+    /// for the rare case (a failed provision, a restored backup, an account edited on the git
+    /// server directly), and running it on every single sign-in bought nothing for the price
+    /// of one admin write per login.</para>
+    /// </summary>
+    public TimeSpan LoginResyncInterval { get; set; } = TimeSpan.FromHours(24);
+
     /// <summary>User provisioning is active only once an admin token has been configured.</summary>
     public bool Enabled => !string.IsNullOrWhiteSpace(AdminToken);
 }

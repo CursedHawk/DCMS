@@ -68,17 +68,19 @@ public static class AccountEndpoints
                 return Results.Redirect($"/account/login?error=1&returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
             }
 
-            // Self-heal: login is the one place we have the plaintext for existing users,
-            // so backfill/repair their Forgejo account + password on every sign-in.
+            // Self-heal: login is the one place we have the plaintext for existing users, so
+            // it is where a Forgejo mirror that drifted out of band gets repaired.
             //
-            // DEFERRED, not inline. Doing this synchronously put an unconditional Forgejo
-            // admin-API PATCH on the critical path of every authentication: 421 ms of a
-            // 539 ms login, against ~9 ms of Postgres for the sign-in itself. The row is
-            // picked up by ForgejoSyncWorker within 15 seconds and applied through the same
-            // code path, so the self-heal is unchanged -- it simply no longer happens while
-            // the user waits. See ForgejoUserSync.DeferAsync.
+            // DEFERRED AND CONDITIONAL. Inline, this put an unconditional Forgejo admin-API
+            // PATCH on the critical path of every authentication: 421 ms of a 539 ms login,
+            // against ~9 ms of Postgres for the sign-in itself. Deferring it to
+            // ForgejoSyncWorker took that off the request but still rewrote an unchanged
+            // password fifteen seconds later, and still wrote an outbox row here. Neither is
+            // needed on a mirror that is already current -- every path that CHANGES a
+            // credential syncs inline -- so the common sign-in now does neither.
+            // See ForgejoUserSync.DeferLoginResyncAsync for when it does still fire.
             var user = await userManager.FindByEmailAsync(email);
-            if (user is not null) await forgejo.DeferAsync(user, password, ct);
+            if (user is not null) await forgejo.DeferLoginResyncAsync(user, password, ct);
 
             var success = audit.Declare(AuditActions.LoginSucceeded)
                 .Platform()

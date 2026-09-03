@@ -132,6 +132,44 @@ public sealed partial class ForgejoUserSync
     }
 
     /// <summary>
+    /// The sign-in self-heal: re-assert the mirror, but only when it could actually be wrong.
+    ///
+    /// <para><b>Why this is conditional.</b> Deferring the sync took the Forgejo <c>PATCH</c>
+    /// off the login request, but it did not stop the write happening — it moved it to
+    /// <see cref="ForgejoSyncWorker"/>, which fifteen seconds later rewrote a password that
+    /// had not changed. Every sign-in still cost one admin write on the git server, plus the
+    /// <c>INSERT</c> of a Data-Protection-encrypted password into the outbox on the request
+    /// itself.</para>
+    ///
+    /// <para>None of that work was ever needed on the common path, because <b>every path that
+    /// changes a credential already syncs inline</b>: register, password reset, and
+    /// change-password all call <see cref="EnsureAsync"/> while the user waits, which is
+    /// right — the account has to exist before they use it. What login adds is repair for a
+    /// mirror that went wrong some other way: a provision that failed, a Forgejo restored
+    /// from an older backup, an account edited on the git server directly. That is worth
+    /// re-checking daily, not sixty times a day.</para>
+    ///
+    /// <para>So: sync when the mirror is missing, when it exists without a usable git
+    /// password, or when the last confirmed sync is older than
+    /// <see cref="ForgejoOptions.LoginResyncInterval"/>. Otherwise do nothing at all — no
+    /// Forgejo call, and no database write on the authentication path.</para>
+    /// </summary>
+    public async Task DeferLoginResyncAsync(DcmsUser user, string password, CancellationToken ct)
+    {
+        if (!Enabled || string.IsNullOrWhiteSpace(user.Email)) return;
+        if (!NeedsLoginResync(user)) return;
+        await DeferAsync(user, password, ct);
+    }
+
+    private bool NeedsLoginResync(DcmsUser user) =>
+        // Never mirrored, or mirrored without the git password this sign-in can supply.
+        user.ForgejoUsername is null
+        || !user.HasGitPassword
+        // Mirrored by a build that predates the stamp, so its age is unknown: treat as due.
+        || user.ForgejoSyncedAt is not { } syncedAt
+        || DateTimeOffset.UtcNow - syncedAt >= _opts.LoginResyncInterval;
+
+    /// <summary>
     /// Apply one outbox row (called by <see cref="ForgejoSyncWorker"/>): decrypt the
     /// password, run the same sync as the inline path, and persist. Throws on failure
     /// so the worker can back off and retry; the row is left for the caller to manage.
