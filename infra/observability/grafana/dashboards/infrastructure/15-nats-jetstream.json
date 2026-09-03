@@ -50,7 +50,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**JetStream is where the platform's work actually queues.** Three of the ten streams are work queues \u2014 `MEDIA`, `SITES`, `EMAIL` \u2014 and a backlog on one of those is a user-visible delay: an unprocessed upload, an unbuilt site, an unsent password reset.\n\n`AUDIT` is the exception to every rule here. It is `limits` retention with `--discard new`, deliberately: an audit publisher must see an error rather than have its message silently trimmed. The consequence is that a full AUDIT stream starts *refusing* audit writes, which is why its size has its own alert."
+        "content": "**JetStream is where the platform's work actually queues.** Three of the ten streams are work queues — `MEDIA`, `SITES`, `EMAIL` — and a backlog on one of those is a user-visible delay: an unprocessed upload, an unbuilt site, an unsent password reset.\n\n`AUDIT` is the exception to every rule here. It is `limits` retention with `--discard new`, deliberately: an audit publisher must see an error rather than have its message silently trimmed. The consequence is that a full AUDIT stream starts *refusing* audit writes, which is why its size has its own alert."
       }
     },
     {
@@ -73,7 +73,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "gnatsd_varz_start > 0",
+          "expr": "gnatsd_varz_start > bool 0",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "up",
@@ -98,18 +98,39 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "fixed"
+            "mode": "thresholds"
           },
-          "mappings": [],
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "down",
+                  "color": "red",
+                  "index": 0
+                },
+                "1": {
+                  "text": "up",
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "red",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
               }
             ]
-          }
+          },
+          "noValue": "no data from nats-exporter"
         },
         "overrides": []
       }
