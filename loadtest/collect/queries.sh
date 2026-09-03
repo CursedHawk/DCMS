@@ -57,9 +57,10 @@ pipeline_messages_consumed|sum by (stream, subject, outcome) (rate(dcms_messages
 pipeline_media_duration|histogram_quantile(0.95, sum by (kind, le) (rate(dcms_media_process_duration_seconds_bucket[5m])))
 pipeline_media_processed|sum by (kind, outcome) (rate(dcms_media_processed_total[5m]))
 pipeline_site_build_duration|histogram_quantile(0.95, sum by (mode, le) (rate(dcms_site_build_duration_seconds_bucket[5m])))
-pipeline_jetstream_pending|nats_consumer_num_pending
-pipeline_jetstream_ack_pending|nats_consumer_num_ack_pending
-pipeline_jetstream_redelivered|nats_consumer_num_redelivered
+pipeline_jetstream_pending|sum by (stream_name, consumer_name) (jetstream_consumer_num_pending)
+pipeline_jetstream_ack_pending|sum by (stream_name, consumer_name) (jetstream_consumer_num_ack_pending)
+pipeline_jetstream_redelivered|sum by (stream_name, consumer_name) (jetstream_consumer_num_redelivered)
+pipeline_jetstream_stream_messages|sum by (stream_name) (jetstream_stream_total_messages)
 store_pg_connections|sum(pg_stat_activity_count)
 store_pg_max_connections|pg_settings_max_connections
 store_pg_cache_hit|rate(pg_stat_database_blks_hit[2m]) / clamp_min(rate(pg_stat_database_blks_hit[2m]) + rate(pg_stat_database_blks_read[2m]), 0.000001)

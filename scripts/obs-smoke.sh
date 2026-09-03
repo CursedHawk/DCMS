@@ -64,6 +64,32 @@ for metric in dcms_audit_outbox_depth http_server_request_duration_seconds_count
 done
 
 echo
+echo "== the infrastructure exporters the dashboards read"
+#
+# Seventy-seven of the 224 Prometheus panels on this stack once returned nothing, and the
+# causes were not application bugs: the NATS exporter namespaces its series under `gnatsd_`
+# and `jetstream_` rather than `nats_`, MinIO publishes per-bucket usage on a second
+# endpoint that was not scraped, Caddy 2.7 made HTTP server metrics opt-in, and PostgreSQL
+# 17 moved checkpoint counters to a view postgres_exporter does not read. Every one of those
+# is a scrape or a name, invisible from inside the application, and each showed up as a
+# panel reading "No data" -- which is what a broken pipeline looks like too.
+#
+# One probe per exporter, and each is a GAUGE that exists without traffic, for the same
+# reason the block above prefers dcms_audit_outbox_depth to a counter: on a quiet platform a
+# counter's absence means nothing, so a check on one cannot tell "unwired" from "idle".
+for probe in \
+    "jetstream_consumer_num_pending|NATS JetStream per-consumer depth (nats-exporter, -jsz=all)" \
+    "gnatsd_varz_connections|NATS server stats (nats-exporter, -varz)" \
+    "minio_bucket_usage_total_bytes|MinIO per-bucket usage (/minio/v2/metrics/bucket scrape)" \
+    "caddy_http_requests_in_flight|Caddy HTTP server metrics (the Caddyfile's servers{metrics})" \
+    "pg_stat_checkpointer_num_timed|Postgres checkpoints (alloy postgres-queries.yaml)"; do
+    metric=${probe%%|*}; what=${probe#*|}
+    n=$(fetch "http://localhost:9090/api/v1/query?query=count($metric)" |
+        grep -o '"value":\[[^]]*\]' | head -1)
+    [ -n "$n" ] && ok "$what" || fail "$metric has no series — $what is not reaching Prometheus"
+done
+
+echo
 echo "== every service is exporting, not just some of them"
 #
 # The checks above count each metric GLOBALLY, and that is precisely how two services stayed
