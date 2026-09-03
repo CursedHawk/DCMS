@@ -1130,11 +1130,24 @@ public static class SiteEndpoints
         }
     }
 
+    /// <summary>
+    /// How long a build may sit in Queued/Building before a later publish declares it dead.
+    ///
+    /// <para>This has to exceed what a build is actually ALLOWED to take, and at 15 minutes it
+    /// did not: <c>ReactAppBuilder</c> permits 10 minutes for the package install and 8 for
+    /// the build itself, so a Mode B site on a cold dependency cache could be reaped while it
+    /// was still running perfectly well. The result was a build that reported Failed and then
+    /// Succeeded — the reaper's row, overwritten minutes later by the builder's own — which
+    /// is worse than either outcome alone, because the author had already been told it broke.
+    /// Reaping exists for a crashed builder or a lost message, not for a slow one.</para>
+    /// </summary>
+    private static readonly TimeSpan BuildStaleAfter = TimeSpan.FromMinutes(25);
+
     /// <summary>Mark builds stuck in Queued/Building past the timeout as Failed, so a crashed
     /// builder or lost message can't permanently block a site's publishing.</summary>
     private static async Task ReapStaleBuildsAsync(SitesDbContext db, Guid siteId, CancellationToken ct)
     {
-        var cutoff = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(15);
+        var cutoff = DateTimeOffset.UtcNow - BuildStaleAfter;
         var stale = await db.Builds.IgnoreQueryFilters()
             .Where(b => b.SiteId == siteId
                 && (b.Status == SiteBuildStatus.Queued || b.Status == SiteBuildStatus.Building)
@@ -1143,7 +1156,7 @@ public static class SiteEndpoints
         foreach (var b in stale)
         {
             b.Status = SiteBuildStatus.Failed;
-            b.Error ??= "Build timed out — no result within 15 minutes.";
+            b.Error ??= $"Build timed out — no result within {BuildStaleAfter.TotalMinutes:0} minutes.";
             b.CompletedAt = DateTimeOffset.UtcNow;
         }
         if (stale.Count > 0) await db.SaveChangesAsync(ct);
