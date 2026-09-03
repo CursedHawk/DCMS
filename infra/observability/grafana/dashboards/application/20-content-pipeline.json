@@ -454,7 +454,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(rate(dcms_content_published_total[15m])) * 3600",
+          "expr": "(sum(rate(dcms_content_published_total[15m])) * 3600) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "published/h"
@@ -464,7 +464,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(rate(dcms_content_unpublished_total[15m])) * 3600",
+          "expr": "(sum(rate(dcms_content_unpublished_total[15m])) * 3600) or vector(0)",
           "refId": "B",
           "format": "time_series",
           "legendFormat": "unpublished/h"

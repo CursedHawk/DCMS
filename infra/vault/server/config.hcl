@@ -32,7 +32,18 @@ listener "tcp" {
 }
 
 telemetry {
-  prometheus_retention_time = "30s"
+  # This is the window a metric survives in Vault's in-memory Prometheus sink, and at 30s it
+  # was SHORTER THAN THE SCRAPE INTERVAL. Alloy's `infra` job runs on the default 60s, so
+  # every timer and counter Vault publishes -- vault_core_handle_request and its _count,
+  # which are the request rate and latency the storage/edge dashboard graphs -- had expired
+  # before anything came to read them. The two gauges that survived (vault_core_unsealed,
+  # vault_core_active) are emitted fresh on every request to the endpoint, which is why the
+  # seal-state panel worked and made the rest look like Vault simply being idle.
+  #
+  # Ten minutes is comfortably past any scrape interval this stack is likely to use. The
+  # cost is bounded: it retains a fixed, small set of Vault's own metrics in memory, and
+  # Vault's own default is 24 hours.
+  prometheus_retention_time = "10m"
   disable_hostname          = true
 }
 

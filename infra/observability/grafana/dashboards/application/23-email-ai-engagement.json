@@ -261,7 +261,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(rate(dcms_email_sent_total[15m])) * 900",
+          "expr": "(sum(rate(dcms_email_sent_total[15m])) * 900) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "sent"
@@ -716,7 +716,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(rate(dcms_search_query_total[15m])) * 900",
+          "expr": "(sum(rate(dcms_search_query_total[15m])) * 900) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "queries"
@@ -834,7 +834,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(rate(dcms_form_submission_total[1h])) * 3600",
+          "expr": "(sum(rate(dcms_form_submission_total[1h])) * 3600) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "submissions"

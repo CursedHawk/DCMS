@@ -602,7 +602,8 @@
             "mode": "palette-classic"
           },
           "unit": "bytes",
-          "min": 0
+          "min": 0,
+          "noValue": "redis has no maxmemory limit set"
         },
         "overrides": []
       }

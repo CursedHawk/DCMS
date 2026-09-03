@@ -942,7 +942,8 @@
             "mode": "palette-classic"
           },
           "unit": "bytes",
-          "min": 0
+          "min": 0,
+          "noValue": "no replication slots — single-node"
         },
         "overrides": []
       }
