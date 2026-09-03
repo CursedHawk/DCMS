@@ -18,6 +18,9 @@ builder.Services.AddDcmsMediaData(builder.Configuration);
 // commit in the same transaction as the variants it writes.
 builder.Services.AddDcmsAuditData(builder.Configuration);
 builder.Services.AddNullTenantContext();
+// Sanitising moved off the admin-api request path and into this worker, so the sanitizer is
+// registered here now rather than only there. See ImageProcessingConsumer.
+builder.Services.AddSingleton<MediaSanitizer>();
 builder.Services.AddSingleton<WebpLadderGenerator>();
 builder.Services.AddSingleton<VideoTranscoder>();
 builder.Services.AddSingleton<AudioTranscoder>();

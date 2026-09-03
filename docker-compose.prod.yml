@@ -307,6 +307,10 @@ services:
       NETWORKS: "1"
       VERSION: "1"
       POST: "1"
+      # Same reason as docker-socket-proxy-ro in the base file: `option httplog` narrates
+      # every proxied request at info, and site-builder polls this one while a build runs.
+      # `warning` keeps denials and backend failures and drops the narration.
+      LOG_LEVEL: "warning"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 

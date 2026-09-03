@@ -21,13 +21,16 @@ import { toast } from 'sonner';
 import { Button } from '../../components/ui/button';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { ApiError, api } from '../../lib/api';
+import { useAuth } from '../../useAuth';
 import { cn } from '../../lib/cn';
 import {
   MergeDialog,
   RELEASE_BRANCH,
   Resizer,
+  expectBuild,
   gitApi,
   useDraftSession,
+  useSiteLiveUpdates,
   useStoredWidth,
   useVfs,
 } from '../site-source';
@@ -119,6 +122,18 @@ export function BuilderPage({ siteId }: { siteId: string }) {
     queryFn: () => api.get<{ name: string }>(`/admin/sites/${siteId}`),
   });
 
+  // Live deployments and commits, shared with the Mode B IDE — both modes publish through the
+  // same release branch and render the same Deployments panel.
+  const { user } = useAuth();
+  const [branchMoved, setBranchMoved] = useState(false);
+  useSiteLiveUpdates({
+    siteId,
+    branch,
+    myUserId: user?.profile.sub,
+    onCommit: () => setBranchMoved(true),
+  });
+  useEffect(() => setBranchMoved(false), [branch]);
+
   const session = useDraftSession({ siteId, seed: () => starterFiles(site.data?.name) });
 
   // Blocks that need a plugin (forms, blog lists) are only offered when that
@@ -199,6 +214,7 @@ export function BuilderPage({ siteId }: { siteId: string }) {
       queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
       if (branch === RELEASE_BRANCH) {
         toast.success(t('editor.publishQueued'));
+        expectBuild(siteId);
         setSidebarView('deploy');
       } else {
         setPublishMerge(true);
@@ -346,18 +362,28 @@ export function BuilderPage({ siteId }: { siteId: string }) {
         open={publishMerge}
         onOpenChange={setPublishMerge}
         onMerged={() => {
+          // See IdePage: the build this merge causes is created by the push webhook after the
+          // merge returns, so the refetch below cannot see it yet. The marker keeps the
+          // Deployments panel looking until it appears.
+          expectBuild(siteId);
           queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
+          queryClient.invalidateQueries({ queryKey: ['git-changes', siteId] });
           queryClient.invalidateQueries({ queryKey: ['site-builds', siteId] });
           setSidebarView('deploy');
         }}
       />
 
-      {/* Someone else changed a file we also edited; autosave is paused until reload. */}
-      {conflict && (
+      {/* Someone else changed a file we also edited (autosave is paused until reload), or --
+          via the site hub -- committed to this branch at all. Both are fixed by reloading. */}
+      {(conflict || branchMoved) && (
         <Banner
           tone="destructive"
           icon={<AlertTriangle className="h-4 w-4 shrink-0" />}
-          message={t('ide.conflictWarning', { files: conflict.join(', ') })}
+          message={
+            conflict
+              ? t('ide.conflictWarning', { files: conflict.join(', ') })
+              : t('ide.branchMovedWarning', { branch })
+          }
           action={
             <Button size="sm" variant="outline" onClick={() => session.openBranch(branch)}>
               <RefreshCw className="h-4 w-4" /> {t('ide.reloadLatest')}

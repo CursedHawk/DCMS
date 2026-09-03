@@ -413,7 +413,7 @@ public static class SiteEndpoints
         app.MapPost("/api/admin/sites/{id:guid}/publish", async (
             Guid id, string? branch, SitesDbContext db, CmsDbContext cms, ITenantContext tenant,
             IEventPublisher events, CurrentUser user, Dcms.AdminApi.Sites.Git.SiteGitService git,
-            CancellationToken ct) =>
+            ISiteLiveUpdates live, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null)
@@ -437,7 +437,7 @@ public static class SiteEndpoints
                 {
                     // Already on release: deploy the current release head (force a fresh build
                     // even if the tree is unchanged — this is the "redeploy" affordance).
-                    var buildId = await EnqueueReleaseBuildAsync(db, cms, events, git, site, ct);
+                    var buildId = await EnqueueReleaseBuildAsync(db, cms, events, git, site, live, user.UserId, ct);
                     return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{buildId}", new { released = true, buildId });
                 }
 
@@ -445,7 +445,10 @@ public static class SiteEndpoints
                 if (outcome.UpToDate)
                     return Results.Ok(new { released = false, upToDate = true });
                 if (outcome.Merged)
+                {
+                    await AnnounceCommitAsync(live, site, release, outcome.Sha, $"Publish {sourceBranch} to {release}", user, ct);
                     return Results.Accepted($"/api/admin/sites/{site.Id}", new { released = true, sha = outcome.Sha, branch = release });
+                }
                 return Results.Ok(new
                 {
                     released = false,
@@ -501,6 +504,7 @@ public static class SiteEndpoints
             await events.PublishAsync(Subjects.SitePublishSubjectFor(mode), new SitePublishRequested(
                 Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, site.Id, build.Id,
                 mode, await AnalyticsEnabledAsync(cms, tenantId, ct)), ct);
+            await live.BuildQueuedAsync(tenantId, build, user.UserId, ct);
 
             return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{build.Id}", new { buildId = build.Id });
         }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SitePublishRequested, "site");
@@ -664,7 +668,7 @@ public static class SiteEndpoints
         // is planned).
         app.MapPost("/api/admin/sites/{id:guid}/git/commit", async (
             Guid id, CommitRequest body, SitesDbContext db, ITenantContext tenant, CurrentUser user,
-            Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+            Dcms.AdminApi.Sites.Git.SiteGitService git, ISiteLiveUpdates live, CancellationToken ct) =>
         {
             if (!git.Enabled) return Results.Problem("Git backend is not configured.", statusCode: 503);
             if (string.IsNullOrWhiteSpace(body.Message))
@@ -770,6 +774,12 @@ public static class SiteEndpoints
             draft.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
 
+            // Everyone else with this site open is told the branch moved. It matters most for
+            // the person editing the SAME branch: their draft is now based on a commit that is
+            // no longer HEAD, and the first they knew of it used to be a 409 branch-moved when
+            // they tried to commit their own work.
+            await AnnounceCommitAsync(live, site, target, sha, body.Message?.Trim(), user, ct);
+
             return Results.Ok(new { sha, branch = target });
         }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.GitCommitted, "site");
 
@@ -813,8 +823,8 @@ public static class SiteEndpoints
         // build. Returns { merged, sha } | { upToDate } | { conflict, files:[{ path,
         // releaseContent (base/ours), branchContent (incoming/theirs), baseContent }] }.
         app.MapPost("/api/admin/sites/{id:guid}/git/merge", async (
-            Guid id, MergeRequest body, SitesDbContext db,
-            Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+            Guid id, MergeRequest body, SitesDbContext db, CurrentUser user,
+            Dcms.AdminApi.Sites.Git.SiteGitService git, ISiteLiveUpdates live, CancellationToken ct) =>
         {
             if (!git.Enabled) return Results.Problem("Git backend is not configured.", statusCode: 503);
             if (string.IsNullOrWhiteSpace(body.Head))
@@ -832,7 +842,11 @@ public static class SiteEndpoints
 
             var outcome = await git.MergeAsync(site.GitRepoFullName, @base, body.Head!.Trim(), ct);
             if (outcome.Merged || outcome.UpToDate)
+            {
+                if (outcome.Merged)
+                    await AnnounceCommitAsync(live, site, @base, outcome.Sha, $"Merge {body.Head!.Trim()} into {@base}", user, ct);
                 return Results.Ok(new { merged = outcome.Merged, upToDate = outcome.UpToDate, sha = outcome.Sha });
+            }
             return Results.Ok(new
             {
                 merged = false,
@@ -852,7 +866,7 @@ public static class SiteEndpoints
         // merge (→ build when base is release). A null resolution value deletes the file.
         app.MapPost("/api/admin/sites/{id:guid}/git/merge/resolve", async (
             Guid id, ResolveMergeRequest body, SitesDbContext db, CurrentUser user,
-            Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+            Dcms.AdminApi.Sites.Git.SiteGitService git, ISiteLiveUpdates live, CancellationToken ct) =>
         {
             if (!git.Enabled) return Results.Problem("Git backend is not configured.", statusCode: 503);
             if (string.IsNullOrWhiteSpace(body.Head))
@@ -866,6 +880,7 @@ public static class SiteEndpoints
             var resolutions = body.Resolutions ?? new Dictionary<string, string?>();
             var sha = await git.ResolveMergeAsync(
                 site.GitRepoFullName, @base, body.Head!.Trim(), resolutions, user.Name, user.Email, ct);
+            await AnnounceCommitAsync(live, site, @base, sha, $"Merge {body.Head!.Trim()} into {@base}", user, ct);
             return Results.Ok(new { merged = true, sha });
         }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.GitMergeResolved, "site");
 
@@ -922,7 +937,7 @@ public static class SiteEndpoints
         // external `git push`); pushes to feature/dev branches never build.
         app.MapPost("/api/internal/git/webhook", async (
             HttpRequest request, SitesDbContext db, CmsDbContext cms, IEventPublisher events,
-            Dcms.AdminApi.Sites.Git.SiteGitService git,
+            Dcms.AdminApi.Sites.Git.SiteGitService git, ISiteLiveUpdates live,
             IOptions<Dcms.AdminApi.Sites.Git.ForgejoOptions> gitOptions,
             IAuditRecorder audit, AuditScope scope,
             ILoggerFactory loggerFactory, CancellationToken ct) =>
@@ -987,6 +1002,18 @@ public static class SiteEndpoints
             var branch = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
             if (gitRef != $"refs/heads/{branch}") return Results.Ok(new { ignored = "not release branch" });
 
+            // The push is news for anyone with the site open regardless of what happens to the
+            // build below -- including a push made with a plain `git push` from outside the
+            // platform entirely, which is otherwise completely invisible to the IDE. Announced
+            // BEFORE the coalescing check on purpose: a push that gets folded into a build
+            // already in flight still moved the branch, and that is the half people need.
+            //
+            // The pusher's name comes off the payload and is therefore self-asserted, exactly
+            // as the audit comment above says: a label to show, never an identity, so no actor
+            // id travels with it.
+            await AnnounceCommitAsync(
+                live, site, branch, afterSha, PushedCommitMessage(root), PushedAuthor(root), null, ct);
+
             // Fail builds wedged in Queued/Building past the timeout so a crashed builder
             // can't permanently block this site (the coalescing check below would skip
             // forever otherwise).
@@ -1030,6 +1057,8 @@ public static class SiteEndpoints
                 Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id,
                 pushedMode, await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct);
 
+            await live.BuildQueuedAsync(site.TenantId, build, null, ct);
+
             log.LogInformation("Queued build {BuildId} from git push {Sha} to {Repo}", build.Id, afterSha, repoFull);
             return Results.Ok(new { buildId = build.Id });
         }).AllowAnonymous().WithAudit(AuditActions.GitPushReceived, "site", AuditCategory.System);
@@ -1061,25 +1090,67 @@ public static class SiteEndpoints
         // unchanged (recovers from a failed build or a wedged queue — the tree-diff no-op
         // in the normal push path can't otherwise re-trigger).
         app.MapPost("/api/admin/sites/{id:guid}/builds", async (
-            Guid id, SitesDbContext db, CmsDbContext cms, IEventPublisher events,
-            Dcms.AdminApi.Sites.Git.SiteGitService git, CancellationToken ct) =>
+            Guid id, SitesDbContext db, CmsDbContext cms, IEventPublisher events, CurrentUser user,
+            Dcms.AdminApi.Sites.Git.SiteGitService git, ISiteLiveUpdates live, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
             if (!site.RenderMode.IsGitBacked() || site.GitRepoFullName is null || !git.Enabled)
                 return Results.BadRequest(new { error = "This site has no git-backed release to rebuild." });
-            var buildId = await EnqueueReleaseBuildAsync(db, cms, events, git, site, ct);
+            var buildId = await EnqueueReleaseBuildAsync(db, cms, events, git, site, live, user.UserId, ct);
             return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{buildId}", new { buildId });
         }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteBuildCreated, "site");
 
         return app;
     }
 
+    /// <summary>
+    /// Tells everyone with this site open that <paramref name="branch"/> moved.
+    ///
+    /// <para>A no-op without a sha: a merge that changed nothing has none, and announcing a
+    /// commit that does not exist would put a phantom row in every open editor's history.</para>
+    /// </summary>
+    private static Task AnnounceCommitAsync(
+        ISiteLiveUpdates live, Site site, string branch, string? sha, string? message,
+        CurrentUser user, CancellationToken ct) =>
+        AnnounceCommitAsync(live, site, branch, sha, message, user.Name ?? user.Email, user.UserId, ct);
+
+    private static async Task AnnounceCommitAsync(
+        ISiteLiveUpdates live, Site site, string branch, string? sha, string? message,
+        string? author, Guid? actorUserId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(sha)) return;
+        await live.CommitPushedAsync(site.TenantId, new CommitUpdate(
+            SiteId: site.Id,
+            Branch: branch,
+            Sha: sha,
+            ShortSha: SiteLiveUpdates.Short(sha)!,
+            Message: message,
+            Author: author,
+            ActorUserId: actorUserId,
+            OccurredAt: DateTimeOffset.UtcNow), ct);
+    }
+
+    /// <summary>The head commit's subject line out of a Forgejo push payload, if it has one.</summary>
+    private static string? PushedCommitMessage(JsonElement root) =>
+        root.TryGetProperty("head_commit", out var head) && head.ValueKind == JsonValueKind.Object
+        && head.TryGetProperty("message", out var msg)
+            ? msg.GetString()?.Split('\n')[0]
+            : null;
+
+    /// <summary>The pusher's display name off the payload. Self-asserted: a label, not an identity.</summary>
+    private static string? PushedAuthor(JsonElement root) =>
+        root.TryGetProperty("pusher", out var pusher) && pusher.ValueKind == JsonValueKind.Object
+        && pusher.TryGetProperty("username", out var name)
+            ? name.GetString()
+            : null;
+
     /// <summary>Queue a build of the current <c>release</c> tree and request it. Reaps any
     /// stale in-flight builds first so a wedged queue can't block the new one.</summary>
     private static async Task<Guid> EnqueueReleaseBuildAsync(
         SitesDbContext db, CmsDbContext cms, IEventPublisher events,
-        Dcms.AdminApi.Sites.Git.SiteGitService git, Site site, CancellationToken ct)
+        Dcms.AdminApi.Sites.Git.SiteGitService git, Site site, ISiteLiveUpdates live,
+        Guid? actorUserId, CancellationToken ct)
     {
         await ReapStaleBuildsAsync(db, site.Id, ct);
         var release = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
@@ -1101,6 +1172,7 @@ public static class SiteEndpoints
         await events.PublishAsync(Subjects.SitePublishSubjectFor(releaseMode), new SitePublishRequested(
             Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id,
             releaseMode, await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct);
+        await live.BuildQueuedAsync(site.TenantId, build, actorUserId, ct);
         return build.Id;
     }
 

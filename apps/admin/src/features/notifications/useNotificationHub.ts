@@ -8,6 +8,7 @@ import { getAccessToken } from '../../auth';
 import { runtimeConfig } from '../../runtime-config';
 import { getCurrentTenantSlug } from '../../tenants';
 import { type Notification, notificationsKey, parseParams } from './api';
+import { linkTarget } from './linkPath';
 
 /**
  * Opens the notification hub for the signed-in user and keeps the bell live.
@@ -110,7 +111,7 @@ function maybeToast(
   n: Notification,
   myUserId: string | undefined,
   t: (key: string, options?: Record<string, unknown>) => string,
-  navigate: (opts: { to: string }) => void,
+  navigate: (opts: ReturnType<typeof linkTarget>) => void,
 ) {
   const isSelfInflicted = !!myUserId && n.actorUserId === myUserId;
   const important = n.severity === 'Warning' || n.severity === 'Error';
@@ -123,7 +124,7 @@ function maybeToast(
   const options = {
     description: body,
     action: n.linkPath
-      ? { label: t('notifications.view'), onClick: () => navigate({ to: n.linkPath as string }) }
+      ? { label: t('notifications.view'), onClick: () => navigate(linkTarget(n.linkPath as string)) }
       : undefined,
   };
 

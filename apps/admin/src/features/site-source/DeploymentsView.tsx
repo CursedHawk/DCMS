@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/cn';
 import type { GitBuild, GitBuildStatus } from './git';
-import { gitApi } from './git';
+import { EXPECT_BUILD_WINDOW_MS, expectBuild, expectingBuildSince, gitApi } from './git';
 import { useRelativeTime } from './useRelativeTime';
 
 // The Deployments view: every build of the site's `release` branch, newest first,
@@ -21,15 +21,30 @@ export function DeploymentsView({ siteId }: { siteId: string }) {
   const builds = useQuery({
     queryKey: ['site-builds', siteId],
     queryFn: () => gitApi.builds(siteId),
-    // Poll while something is in flight so the panel reflects progress on its own.
-    refetchInterval: (q) =>
-      (q.state.data ?? []).some((b) => b.status === 'Queued' || b.status === 'Building') ? 2500 : false,
+    refetchInterval: (q) => {
+      const list = q.state.data ?? [];
+      if (list.some((b) => b.status === 'Queued' || b.status === 'Building')) return 2500;
+
+      // Also poll for a while after a publish, even though nothing is in flight YET.
+      //
+      // This is the gap that made a publish look like it did nothing. Publishing from a
+      // feature branch merges into `release`, and the build is created afterwards by the push
+      // webhook — so at the moment the panel refreshed, the list genuinely contained no
+      // running build. The old condition read that as "idle", stopped polling, and the panel
+      // sat on the previous deployment while the real one ran to completion behind it.
+      //
+      // The hub push is what normally closes this window; this is the fallback for when the
+      // socket is unavailable, and it stops on its own the moment a build shows up (the branch
+      // above takes over) or the window expires.
+      return Date.now() - expectingBuildSince(siteId) < EXPECT_BUILD_WINDOW_MS ? 2000 : false;
+    },
   });
 
   const rebuild = useMutation({
     mutationFn: () => gitApi.rebuild(siteId),
     onSuccess: () => {
       toast.success(t('ide.git.rebuildQueued'));
+      expectBuild(siteId);
       queryClient.invalidateQueries({ queryKey: ['site-builds', siteId] });
     },
     onError: () => toast.error(t('errors.generic')),

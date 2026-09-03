@@ -567,6 +567,21 @@ services:
       VERSION: "1"
       INFO: "1"
       POST: "0"
+      # HAProxy's `option httplog` writes one line PER PROXIED REQUEST at syslog level info,
+      # and its two clients poll continuously -- Alloy's log discovery every refresh, and its
+      # embedded cAdvisor inspecting every container on every housekeeping pass. On this host
+      # that was tens of lines a second of "GET /v1.53/containers/<id>/json 200", forever.
+      #
+      # Which would be merely ugly if the lines stayed here. They do not: loki.source.docker
+      # scrapes every container's stdout, so this one container was the single largest writer
+      # into an 8 GB Loki budget -- spending the retention window that exists for the audit
+      # anchors and the service logs on a proxy narrating its own health checks.
+      #
+      # `warning` is the level below info, so the per-request lines stop and everything that
+      # is actually worth reading -- a denied method, a backend that will not connect, a
+      # config error at startup -- still reaches the log. Quieting a proxy is only safe when
+      # its failures are still audible, and at this level they are.
+      LOG_LEVEL: "warning"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 

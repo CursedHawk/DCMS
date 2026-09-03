@@ -23,6 +23,7 @@ import {
   useMarkRead,
   useNotifications,
 } from './api';
+import { linkTarget } from './linkPath';
 
 const severityIcon: Record<NotificationSeverity, typeof Info> = {
   Info,
@@ -53,7 +54,7 @@ export function NotificationBell({ enabled }: { enabled: boolean }) {
   const openNotification = (n: Notification) => {
     if (!n.readAt) markRead.mutate(n.id);
     setOpen(false);
-    if (n.linkPath) void navigate({ to: n.linkPath });
+    if (n.linkPath) void navigate(linkTarget(n.linkPath));
   };
 
   return (

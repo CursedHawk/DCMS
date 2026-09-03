@@ -130,3 +130,30 @@ export const gitApi = {
   // Force a fresh build+deploy of the current release head (recovers a failed/wedged build).
   rebuild: (siteId: string) => api.post<{ buildId: string }>(`/admin/sites/${siteId}/builds`, {}),
 };
+
+/**
+ * How long after triggering a publish the Deployments panel keeps looking for the build it
+ * caused. Generous on purpose: the build row is written by the push webhook, which Forgejo
+ * delivers on its own schedule, and a panel that gave up at five seconds would be wrong in
+ * exactly the case it exists for.
+ */
+export const EXPECT_BUILD_WINDOW_MS = 90_000;
+
+const expectedBuilds = new Map<string, number>();
+
+/**
+ * Records that a build has just been asked for and has not appeared yet.
+ *
+ * Module state rather than query cache or a store, because it is neither server data nor UI
+ * state — it is a note about something in flight elsewhere, read once per refetch decision and
+ * never rendered. Keeping it out of the cache also keeps it out of the invalidation that the
+ * publish itself triggers, which would otherwise erase the very marker it just set.
+ */
+export function expectBuild(siteId: string): void {
+  expectedBuilds.set(siteId, Date.now());
+}
+
+/** When a build was last expected for this site; 0 if never. */
+export function expectingBuildSince(siteId: string): number {
+  return expectedBuilds.get(siteId) ?? 0;
+}

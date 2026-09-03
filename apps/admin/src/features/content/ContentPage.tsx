@@ -1,3 +1,4 @@
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { FileText, LayoutGrid, Plus, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -108,9 +109,19 @@ function statusTone(status: string): 'success' | 'warning' | 'secondary' {
 
 export function ContentPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const instances = usePluginInstances();
   const catalog = usePluginCatalog();
   const [selected, setSelected] = useState<{ instanceId: string; type: string } | null>(null);
+
+  // Deep link from a notification: ?instance=<pluginInstanceId>&type=<contentType>&item=<id>.
+  // `strict: false` because no route here declares a search schema — these params are optional
+  // everywhere and only this page reads them.
+  const deepLink = useSearch({ strict: false }) as {
+    instance?: string;
+    type?: string;
+    item?: string;
+  };
 
   const manifestFor = (pluginId: string) => catalog.data?.find((m) => m.id === pluginId);
 
@@ -126,12 +137,29 @@ export function ContentPage() {
     [instances.data, catalog.data],
   );
 
-  // Default to the first collection once data lands.
+  // Select the collection a deep link names, else default to the first one, once data lands.
+  //
+  // The deep link wins even over a selection the user already made, because arriving here from
+  // a notification IS the user asking for that collection — but only while the link is in the
+  // URL, which is why clearing it below (once the modal has been opened) hands control back.
   useEffect(() => {
-    if (selected || authorable.length === 0) return;
+    if (authorable.length === 0) return;
+
+    const linked = deepLink.instance
+      ? authorable.find((g) => g.instance.id === deepLink.instance)
+      : undefined;
+    if (linked) {
+      const type = linked.types.find((ct) => ct.name === deepLink.type) ?? linked.types[0];
+      if (type && (selected?.instanceId !== linked.instance.id || selected.type !== type.name)) {
+        setSelected({ instanceId: linked.instance.id, type: type.name });
+      }
+      return;
+    }
+
+    if (selected) return;
     const first = authorable.find((g) => g.types.length > 0);
     if (first) setSelected({ instanceId: first.instance.id, type: first.types[0].name });
-  }, [authorable, selected]);
+  }, [authorable, selected, deepLink.instance, deepLink.type]);
 
   const activeGroup = authorable.find((g) => g.instance.id === selected?.instanceId);
   const activeType = activeGroup?.types.find((ct) => ct.name === selected?.type);
@@ -180,6 +208,12 @@ export function ContentPage() {
                 key={`${activeGroup.instance.id}:${activeType.name}`}
                 instance={activeGroup.instance}
                 contentType={activeType}
+                openItemId={
+                  deepLink.instance === activeGroup.instance.id ? deepLink.item : undefined
+                }
+                onDeepLinkConsumed={() =>
+                  void navigate({ to: '/content' as string, search: {} as never, replace: true })
+                }
               />
             ) : (
               <EmptyState icon={FileText} title={t('content.selectCollection')} />
@@ -248,9 +282,14 @@ function InstanceNav({
 function CollectionView({
   instance,
   contentType,
+  openItemId,
+  onDeepLinkConsumed,
 }: {
   instance: PluginInstance;
   contentType: ContentTypeDef;
+  /** Item to open in the editor on arrival, from a notification deep link. */
+  openItemId?: string;
+  onDeepLinkConsumed?: () => void;
 }) {
   const { t } = useTranslation();
   // includeDraft so the list can show a real title, not just the slug.
@@ -259,6 +298,18 @@ function CollectionView({
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const [tag, setTag] = useState('all');
+
+  // Open the linked item, then strip the link out of the URL. Stripping it matters: without
+  // it, closing the modal would immediately reopen it (the effect would still see the item in
+  // the search params), and the back button would put the user in the same loop.
+  useEffect(() => {
+    if (!openItemId) return;
+    setEditorItem(openItemId);
+    onDeepLinkConsumed?.();
+    // Deliberately keyed on the item alone: onDeepLinkConsumed is a fresh closure each render
+    // and including it would re-run this on every one of them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openItemId]);
 
   const titleField = titleFieldOf(contentType);
 

@@ -370,7 +370,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "rate(container_cpu_usage_seconds_total{name=~\"dcms-media-worker.*\"}[5m])",
+          "expr": "max(rate(container_cpu_usage_seconds_total{name=~\"dcms-media-worker.*\"}[5m]))",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "cpu"

@@ -22,6 +22,7 @@ export * from './paths';
 export * from './useDiffStats';
 export * from './useDraftSession';
 export * from './useRelativeTime';
+export * from './useSiteLiveUpdates';
 export * from './vfs';
 
 export { BinaryFileView } from './BinaryFileView';

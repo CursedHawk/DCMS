@@ -1,24 +1,13 @@
 using Dcms.Shared.Contracts.Events;
+using Dcms.Shared.Media;
 
 namespace Dcms.AdminApi.Media;
 
 internal static class MediaExtensions
 {
-    public static string ToExtension(string contentType) => contentType switch
-    {
-        "image/jpeg" => ".jpg",
-        "image/png" => ".png",
-        "image/gif" => ".gif",
-        "image/webp" => ".webp",
-        "image/svg+xml" => ".svg",
-        "video/mp4" => ".mp4",
-        "audio/mpeg" => ".mp3",
-        "audio/wav" => ".wav",
-        "audio/ogg" => ".ogg",
-        "application/pdf" => ".pdf",
-        "application/zip" => ".zip",
-        _ => ".bin",
-    };
+    /// <summary>Kept as a forwarder so the endpoints read the same as before; the table itself
+    /// moved to <see cref="MediaFileExtensions"/>, which the media worker also reads.</summary>
+    public static string ToExtension(string contentType) => MediaFileExtensions.ToExtension(contentType);
 
     public static string ProcessSubject(MediaCategory category) => category switch
     {

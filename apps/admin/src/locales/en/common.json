@@ -637,13 +637,19 @@
       "upToDate": "Release is already up to date.",
       "viewDiff": "View both versions",
       "resolveInScm": "Resolve the changes in Source Control, then publish.",
-      "rebuildQueued": "Redeploy queued"
+      "rebuildQueued": "Redeploy queued",
+      "liveBranchMoved": "{{author}} committed to {{branch}} — the branch you are editing",
+      "liveCommitted": "{{author}} committed to {{branch}}",
+      "someone": "Someone"
     },
     "deploy": {
       "title": "Deployments",
       "redeploy": "Redeploy",
       "empty": "No deployments yet. Publish to build and deploy your site.",
-      "noLog": "No build log available."
+      "noLog": "No build log available.",
+      "liveStarted": "A new deployment was started",
+      "liveSucceeded": "A deployment finished and is now live",
+      "liveFailed": "A deployment failed"
     },
     "explorer": "Explorer",
     "restored": "Draft restored from this version",
@@ -689,7 +695,8 @@
     "refreshGenerated": "Refresh API",
     "refreshGeneratedHint": "Re-generate the DCMS-owned files — openapi.json, the typed client in src/api/, and the analytics + cookie-consent layer in src/dcms/ — from this workspace’s current plugins. Your own files are not touched.",
     "generatedRefreshed": "Refreshed {{count}} generated files",
-    "generatedUpToDate": "Generated files are already up to date"
+    "generatedUpToDate": "Generated files are already up to date",
+    "branchMovedWarning": "Someone else committed to {{branch}} while you were editing. Reload to build on their work (your unsaved changes will be lost)."
   },
   "openapi": {
     "title": "API documentation",

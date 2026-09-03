@@ -146,6 +146,33 @@ prometheus.relabel "otel_service" {
     target_label  = "service"
     replacement   = "$1"
   }
+
+  // And pin `instance` to that same name, which is the fix for "every panel shows each
+  // service seven times".
+  //
+  // A .NET service mints its service.instance.id as a FRESH RANDOM GUID at startup
+  // (AuditServiceIdentity.Instance -- deliberately, so the audit log's per-process sequence
+  // restarts rather than colliding). Prometheus's OTLP mapping turns that into the `instance`
+  // label, and `instance` is part of a series' identity: every deploy, every restart, every
+  // OOM kill therefore created a COMPLETE NEW SET of series for that service, with the old
+  // set left behind in the TSDB for the full retention window.
+  //
+  // Nothing errors. The panels simply grow another line per service per restart, all of them
+  // carrying the same {{service}} legend, all but one of them flat-lining where the old
+  // process stopped -- until "GC collections by service" is thirty overlapping lines and
+  // nobody can read it. And it is not only cosmetic: `sum by (service)` over the ~5 minutes
+  // where the old series is not yet stale double-counts across a restart.
+  //
+  // Per-process identity is the audit log's requirement, not metrics'. There is one replica
+  // of each service on this host, and compose stops the old container before starting the
+  // new one, so collapsing them cannot merge two live processes. A counter that resets across
+  // a restart is exactly what rate() already knows how to read.
+  rule {
+    source_labels = ["job"]
+    regex         = "dcms/(.*)"
+    target_label  = "instance"
+    replacement   = "$1"
+  }
 }
 
 otelcol.exporter.loki "default" {
@@ -359,9 +386,31 @@ prometheus.scrape "host" {
 
 prometheus.scrape "containers" {
   targets         = prometheus.exporter.cadvisor.containers.targets
-  forward_to      = [prometheus.remote_write.default.receiver]
+  forward_to      = [prometheus.relabel.cadvisor_identity.receiver]
   job_name        = "cadvisor"
   scrape_interval = "30s"
+}
+
+// The same problem as `instance` above, one layer down: cAdvisor stamps every container
+// series with `id` (the cgroup path, which contains the container ID) and `image` (the image
+// digest). Both change every time a container is RECREATED -- which on this host is every
+// deploy -- so `container_memory_working_set_bytes{name="dcms-admin-api-1"}` is not one
+// series over time, it is one series per deploy, and the containers dashboard drew each
+// container as many overlapping lines as there had been deploys inside the time range.
+//
+// `name` is the stable identity and it is what every panel and every alert here selects on.
+// Dropping the other two collapses the fan-out at the source, which also stops the TSDB
+// paying for a full copy of every container's metrics on every deploy.
+//
+// Kept: cpu, interface, device, failure_type and the rest of the genuine per-series
+// dimensions -- those distinguish real measurements, not restarts of the same one.
+prometheus.relabel "cadvisor_identity" {
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  rule {
+    action = "labeldrop"
+    regex  = "id|image"
+  }
 }
 
 prometheus.scrape "postgres" {

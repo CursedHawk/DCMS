@@ -747,7 +747,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "container_memory_working_set_bytes{name=~\"dcms-.*\"}",
+          "expr": "max by (name) (container_memory_working_set_bytes{name=~\"dcms-.*\"})",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "{{name}}"
@@ -811,7 +811,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "rate(container_cpu_usage_seconds_total{name=~\"dcms-.*\"}[5m])",
+          "expr": "max by (name) (rate(container_cpu_usage_seconds_total{name=~\"dcms-.*\"}[5m]))",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "{{name}}"

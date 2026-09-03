@@ -107,7 +107,6 @@ builder.Services.AddDcmsAuditData(builder.Configuration);
 builder.Services.AddDcmsDataProtection(builder.Configuration);
 builder.Services.AddDcmsVaultTransit();
 builder.Services.AddScoped<AiPromptBuilder>();
-builder.Services.AddSingleton<MediaSanitizer>();
 builder.Services.AddDcmsTenantResolutionByHeader();
 builder.Services.AddScoped<CurrentUser>();
 builder.Services.AddScoped<TenantProvisioning>();
@@ -296,6 +295,10 @@ builder.Services.AddHttpClient<Dcms.AdminApi.Sites.Git.ForgejoClient>((sp, clien
 builder.Services.AddScoped<Dcms.AdminApi.Sites.Git.SiteGitService>();
 builder.Services.AddScoped<Dcms.AdminApi.Sites.Git.RepoAccessReconciler>();
 builder.Services.AddScoped<Dcms.AdminApi.Sites.SiteDeleter>();
+// Live deployment/commit fan-out to everyone with a site open in the IDE. Singleton because
+// it holds nothing per-request -- IHubContext is itself a singleton -- and because the site
+// event consumers reach it from background scopes.
+builder.Services.AddSingleton<Dcms.AdminApi.Sites.ISiteLiveUpdates, Dcms.AdminApi.Sites.SiteLiveUpdates>();
 builder.Services.AddScoped<TenantDeleter>();
 
 var app = builder.Build();
@@ -379,6 +382,11 @@ app.MapNotificationEndpoints();
 app.MapHub<NotificationHub>("/api/hub/notifications")
     .AuditExempt("SignalR transport endpoint, not an action. The notifications it carries "
                + "are records of actions that were audited where they happened.");
+// Same reasoning, and the same /api mount so it rides the existing edge route: live build and
+// commit state for one site's workspace. See SiteHub.
+app.MapHub<Dcms.AdminApi.Sites.SiteHub>("/api/hub/sites")
+    .AuditExempt("SignalR transport endpoint, not an action. The builds and commits it "
+               + "carries are audited where they are performed.");
 app.MapAuditEndpoints();
 app.MapAlertEndpoints();
 app.MapSitePreview();

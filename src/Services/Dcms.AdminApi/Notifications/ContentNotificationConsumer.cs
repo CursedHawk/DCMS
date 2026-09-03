@@ -38,7 +38,7 @@ public sealed class ContentPublishedNotificationConsumer(
             // OccurredAt and must not be.
             DedupeKey: $"content.published:{evt.ContentItemId:N}:{evt.OccurredAt.UtcTicks}",
             Params: new { slug = evt.Slug, contentType = evt.ContentType },
-            LinkPath: $"/content/{evt.PluginInstanceId}",
+            LinkPath: ContentLink.For(evt.PluginInstanceId, evt.ContentType, evt.ContentItemId),
             ResourceType: "content_item",
             ResourceId: evt.ContentItemId));
 }
@@ -69,7 +69,30 @@ public sealed class ContentUnpublishedNotificationConsumer(
             BodyKey: NotificationKinds.BodyKey(NotificationKinds.ContentUnpublished),
             DedupeKey: $"content.unpublished:{evt.ContentItemId:N}:{evt.OccurredAt.UtcTicks}",
             Params: new { slug = evt.Slug, contentType = evt.ContentType },
-            LinkPath: $"/content/{evt.PluginInstanceId}",
+            LinkPath: ContentLink.For(evt.PluginInstanceId, evt.ContentType, evt.ContentItemId),
             ResourceType: "content_item",
             ResourceId: evt.ContentItemId));
+}
+
+/// <summary>
+/// Where a content notification points in the admin SPA.
+///
+/// <para>It used to be <c>/content/{pluginInstanceId}</c>, and there has never been a route
+/// that matches it: the SPA has exactly one content route, <c>/content</c>, and an item is
+/// edited in a MODAL over the collection list, not on a page of its own. So every "your item
+/// is live" notification led to Not Found — the notification worked, the link was the thing
+/// that did not, and it had never worked at all.</para>
+///
+/// <para>Query parameters rather than path segments, because that is what the destination
+/// actually is: one page, told which collection to select and which item to open. A path
+/// segment would have meant inventing a route for a screen that does not exist.</para>
+///
+/// <para>The SPA also rewrites the old <c>/content/{guid}</c> form on the way to the router
+/// (see <c>resolveLinkPath</c>), because the rows already stored in the notifications table
+/// still carry it and are read for as long as the retention window lasts.</para>
+/// </summary>
+public static class ContentLink
+{
+    public static string For(Guid pluginInstanceId, string contentType, Guid contentItemId) =>
+        $"/content?instance={pluginInstanceId}&type={Uri.EscapeDataString(contentType)}&item={contentItemId}";
 }

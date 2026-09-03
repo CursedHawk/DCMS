@@ -646,13 +646,19 @@
       "upToDate": "Release je již aktuální.",
       "viewDiff": "Zobrazit obě verze",
       "resolveInScm": "Vyřešte změny ve Správě zdroje a poté publikujte.",
-      "rebuildQueued": "Opětovné nasazení zařazeno"
+      "rebuildQueued": "Opětovné nasazení zařazeno",
+      "liveBranchMoved": "{{author}} odeslal commit do větve {{branch}} — do větve, kterou upravujete",
+      "liveCommitted": "{{author}} odeslal commit do větve {{branch}}",
+      "someone": "Někdo"
     },
     "deploy": {
       "title": "Nasazení",
       "redeploy": "Nasadit znovu",
       "empty": "Zatím žádná nasazení. Publikováním web sestavíte a nasadíte.",
-      "noLog": "Není k dispozici žádný log sestavení."
+      "noLog": "Není k dispozici žádný log sestavení.",
+      "liveStarted": "Bylo spuštěno nové nasazení",
+      "liveSucceeded": "Nasazení bylo dokončeno a je nyní živé",
+      "liveFailed": "Nasazení selhalo"
     },
     "explorer": "Průzkumník",
     "restored": "Koncept obnoven z této verze",
@@ -701,7 +707,8 @@
     "refreshGenerated": "Obnovit API",
     "refreshGeneratedHint": "Znovu vygeneruje soubory spravované DCMS — openapi.json, typovaného klienta v src/api/ a vrstvu analytiky a souhlasu s cookies v src/dcms/ — podle aktuálních pluginů tohoto prostoru. Vašich souborů se to nedotkne.",
     "generatedRefreshed": "Obnoveno {{count}} vygenerovaných souborů",
-    "generatedUpToDate": "Vygenerované soubory jsou aktuální"
+    "generatedUpToDate": "Vygenerované soubory jsou aktuální",
+    "branchMovedWarning": "Někdo jiný odeslal commit do větve {{branch}}, zatímco jste upravovali. Načtěte znovu, abyste navázali na jeho práci (neuložené změny budou ztraceny)."
   },
   "openapi": {
     "title": "API dokumentace",

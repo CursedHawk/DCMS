@@ -43,7 +43,7 @@ import { can, Perm, repoRead, repoWrite, useMyPermissions } from '../../lib/perm
 import { useNavigate } from '@tanstack/react-router';
 import { accountApi } from '../account/accountApi';
 import type { GitChange, GitCommit } from './git';
-import { gitApi } from './git';
+import { expectBuild, gitApi } from './git';
 import { MergeDialog } from './MergeDialog';
 import { RELEASE_BRANCH } from './constants';
 import { useDiffStats } from './useDiffStats';
@@ -444,8 +444,13 @@ export function SourceControlView({
         open={mergeOpen}
         onOpenChange={setMergeOpen}
         onMerged={() => {
+          // A merge into `release` builds. Nothing here told the Deployments panel that, so a
+          // publish started from this view left it showing the previous deployment until the
+          // user reloaded -- the same gap the IDE toolbar's publish had.
+          expectBuild(siteId);
           queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
           queryClient.invalidateQueries({ queryKey: ['git-changes', siteId] });
+          queryClient.invalidateQueries({ queryKey: ['site-builds', siteId] });
         }}
       />
 

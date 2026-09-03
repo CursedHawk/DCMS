@@ -38,14 +38,19 @@ public static class MediaEndpoints
                 return Results.BadRequest(new { error = "Unknown folder." });
             }
 
-            await using var buffer = new MemoryStream();
-            await file.CopyToAsync(buffer, ct);
+            // Streamed straight into the ingest service, which hashes it and hands it to MinIO
+            // without ever materialising a byte[]. Buffering here (and passing .ToArray()) cost
+            // two copies of a 50 MB upload in the request's working set for no benefit.
+            await using var upload = file.OpenReadStream();
 
             var result = await ingest.IngestAsync(
-                buffer.ToArray(), file.FileName, folderId, me.UserId, ct);
+                upload, file.Length, file.FileName, folderId, me.UserId, ct);
 
             if (!result.Ok) return Results.BadRequest(new { error = result.Error });
 
+            // The response says Processing for anything with renditions to build, and that is
+            // the whole contract: the bytes are stored, the work is queued, and the client
+            // polls or waits for the media.processed notification rather than for this request.
             return Results.Created($"/api/admin/media/{result.AssetId}", new
             {
                 id = result.AssetId,
@@ -345,6 +350,27 @@ public static class MediaEndpoints
             }
             else
             {
+                // The original is only servable once the worker has been over it. Sanitising
+                // moved off the request path (see MediaIngestService), so between the upload
+                // returning and media-worker finishing, the stored original is exactly the
+                // bytes the uploader sent -- EXIF, polyglot payloads and all. Serving those is
+                // the one thing that would turn "upload is fast now" into a vulnerability.
+                //
+                // 409 rather than 404: the asset exists and this will succeed shortly, which is
+                // a different thing for a client to do with than "no such asset". Failed says
+                // so explicitly, because that one never becomes servable.
+                if (asset.Status is MediaStatus.Uploaded or MediaStatus.Processing)
+                {
+                    return Results.Json(
+                        new { error = "This asset is still being processed.", status = asset.Status.ToString() },
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+                if (asset.Status == MediaStatus.Failed)
+                {
+                    return Results.Json(
+                        new { error = asset.Error ?? "This asset could not be processed.", status = "Failed" },
+                        statusCode: StatusCodes.Status409Conflict);
+                }
                 key = asset.OriginalKey;
                 contentType = asset.ContentType;
             }

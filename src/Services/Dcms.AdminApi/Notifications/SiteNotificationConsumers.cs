@@ -1,3 +1,4 @@
+using Dcms.AdminApi.Sites;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Notifications;
@@ -28,6 +29,13 @@ public sealed class SitePublishedNotificationConsumer(
         SitePublished evt, IServiceProvider scope, CancellationToken ct)
     {
         var name = await SiteNameLookup.ResolveAsync(scope, evt.TenantId, evt.SiteId, ct);
+
+        // Before the bell: the IDE's Deployments panel is watching this build right now, and a
+        // notification is a different thing from a live status. Deduplication is deliberately
+        // NOT applied here -- a redelivered event pushes the same terminal state twice, which
+        // costs one redundant refresh, whereas suppressing it would risk a panel that never
+        // learns the build finished.
+        await SiteBuildBroadcast.TerminalAsync(scope, evt.TenantId, evt.SiteId, evt.BuildId, ct);
 
         return new NotificationRequest(
             TenantId: evt.TenantId,
@@ -64,6 +72,8 @@ public sealed class SiteBuildFailedNotificationConsumer(
         SiteBuildFailed evt, IServiceProvider scope, CancellationToken ct)
     {
         var name = await SiteNameLookup.ResolveAsync(scope, evt.TenantId, evt.SiteId, ct);
+
+        await SiteBuildBroadcast.TerminalAsync(scope, evt.TenantId, evt.SiteId, evt.BuildId, ct);
 
         return new NotificationRequest(
             TenantId: evt.TenantId,
@@ -102,5 +112,57 @@ internal static class SiteNameLookup
             .Select(s => s.Name)
             .FirstOrDefaultAsync(ct);
         return string.IsNullOrWhiteSpace(name) ? siteId.ToString("N")[..8] : name;
+    }
+}
+
+/// <summary>
+/// Pushes a finished build's row to everyone with that site open.
+///
+/// <para>Read back from the database rather than assembled from the event, because the two
+/// consumers here see only "published" and "failed" while the panel renders the whole row —
+/// the log key, the completion time, and whether this build is the one now serving the site.
+/// Guessing any of those from the event would put a subtly wrong row on screen next to the
+/// right one from the next refresh.</para>
+///
+/// <para>Swallows everything. A failed push means somebody's panel refreshes a little later;
+/// letting it throw would fail the message and re-run a notification that already landed.</para>
+/// </summary>
+internal static class SiteBuildBroadcast
+{
+    public static async Task TerminalAsync(
+        IServiceProvider scope, Guid tenantId, Guid siteId, Guid buildId, CancellationToken ct)
+    {
+        try
+        {
+            var db = scope.GetRequiredService<SitesDbContext>();
+            var build = await db.Builds.AsNoTracking().IgnoreQueryFilters()
+                .FirstOrDefaultAsync(b => b.Id == buildId && b.SiteId == siteId, ct);
+            if (build is null) return;
+
+            var activeBuildId = await db.Sites.AsNoTracking().IgnoreQueryFilters()
+                .Where(s => s.Id == siteId && s.TenantId == tenantId)
+                .Select(s => s.ActiveBuildId)
+                .FirstOrDefaultAsync(ct);
+
+            var live = scope.GetRequiredService<ISiteLiveUpdates>();
+            await live.BuildChangedAsync(tenantId, new BuildUpdate(
+                SiteId: siteId,
+                Id: build.Id,
+                Status: build.Status.ToString(),
+                GitCommitSha: build.GitCommitSha,
+                ShortSha: SiteLiveUpdates.Short(build.GitCommitSha),
+                Error: build.Error,
+                HasLog: build.LogObjectKey is not null,
+                CreatedAt: build.CreatedAt,
+                CompletedAt: build.CompletedAt,
+                Active: activeBuildId == build.Id,
+                ActorUserId: null), ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            scope.GetRequiredService<ILoggerFactory>()
+                .CreateLogger(typeof(SiteBuildBroadcast))
+                .LogWarning(ex, "Could not push the finished state of build {Build}.", buildId);
+        }
     }
 }

@@ -288,7 +288,7 @@
         },
         "overrides": []
       },
-      "description": "Across every build lane. site-builder drains git-backed publishes (site-builder-git) separately from static-bundle ones (site-builder-static) so an expensive React build cannot sit in front of a cheap extract — which one is backed up is the panel below."
+      "description": "Across every build lane. site-builder drains git-backed publishes (site-builder-git) separately from static-bundle ones (site-builder-static) so an expensive React build cannot sit in front of a cheap extract \u2014 which one is backed up is the panel below."
     },
     {
       "id": 26,
@@ -310,7 +310,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "container_memory_working_set_bytes{name=~\"dcms-site-builder.*\"}",
+          "expr": "max(container_memory_working_set_bytes{name=~\"dcms-site-builder.*\"})",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "mem"

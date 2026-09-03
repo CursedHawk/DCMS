@@ -271,7 +271,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(rate(dotnet_gc_pause_time_seconds_total{service=~\"$service\"}[5m]))",
+          "expr": "sum(max by (service) (rate(dotnet_gc_pause_time_seconds_total{service=~\"$service\"}[5m])))",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "gc"
@@ -392,7 +392,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(rate(dotnet_exceptions_total{service=~\"$service\"}[5m]))",
+          "expr": "sum(max by (service) (rate(dotnet_exceptions_total{service=~\"$service\"}[5m])))",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "exc"
@@ -578,7 +578,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum by (le) (rate(http_server_request_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval]))",
+          "expr": "sum by (le) (max by (service, le) (rate(http_server_request_duration_seconds_bucket{service=~\"$service\"}[$__rate_interval])))",
           "refId": "A",
           "format": "heatmap",
           "legendFormat": "{{le}}"
@@ -628,7 +628,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (http_route, le) (rate(http_server_request_duration_seconds_bucket{service=~\"$service\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (http_route, le) (max by (service, http_route, le) (rate(http_server_request_duration_seconds_bucket{service=~\"$service\"}[5m]))))",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "{{http_route}}"
@@ -691,7 +691,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "dotnet_gc_last_collection_heap_size_bytes{service=~\"$service\"}",
+          "expr": "max by (gc_heap_generation) (dotnet_gc_last_collection_heap_size_bytes{service=~\"$service\"})",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "{{gc_heap_generation}}"
@@ -751,7 +751,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "kestrel_active_connections{service=~\"$service\"}",
+          "expr": "max by (service) (kestrel_active_connections{service=~\"$service\"})",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "{{service}}"
@@ -761,7 +761,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "kestrel_queued_connections{service=~\"$service\"}",
+          "expr": "max by (service) (kestrel_queued_connections{service=~\"$service\"})",
           "refId": "B",
           "format": "time_series",
           "legendFormat": "queued {{service}}"
@@ -820,7 +820,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum by (server_address) (rate(http_client_request_duration_seconds_count{service=~\"$service\"}[5m]))",
+          "expr": "sum by (server_address) (max by (service, server_address) (rate(http_client_request_duration_seconds_count{service=~\"$service\"}[5m])))",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "{{server_address}}"

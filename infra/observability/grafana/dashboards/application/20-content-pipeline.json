@@ -648,7 +648,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "jetstream_consumer_num_pending{stream_name=~\"CMS|SITES|MEDIA|EMAIL\"}",
+          "expr": "max by (stream_name, consumer_name) (jetstream_consumer_num_pending{stream_name=~\"CMS|SITES|MEDIA|EMAIL\"})",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "{{stream_name}}/{{consumer_name}}"

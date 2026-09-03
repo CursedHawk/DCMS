@@ -40,7 +40,7 @@
     {
       "id": 24,
       "type": "row",
-      "title": "MinIO — media and site artifacts",
+      "title": "MinIO \u2014 media and site artifacts",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -430,7 +430,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "minio_bucket_usage_total_bytes",
+          "expr": "max by (bucket) (minio_bucket_usage_total_bytes)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "{{bucket}}"
@@ -539,7 +539,7 @@
     {
       "id": 33,
       "type": "row",
-      "title": "Caddy — the TLS edge",
+      "title": "Caddy \u2014 the TLS edge",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -799,7 +799,7 @@
     {
       "id": 38,
       "type": "row",
-      "title": "Vault — sealed is the thing to watch",
+      "title": "Vault \u2014 sealed is the thing to watch",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -835,7 +835,7 @@
           "legendFormat": "sealed"
         }
       ],
-      "description": "There is no auto-unseal on this host. A reboot leaves Vault sealed and the platform crash-looping until someone runs unseal-vault.sh — and without this panel the first notification of that is a user.",
+      "description": "There is no auto-unseal on this host. A reboot leaves Vault sealed and the platform crash-looping until someone runs unseal-vault.sh \u2014 and without this panel the first notification of that is a user.",
       "options": {
         "reduceOptions": {
           "calcs": [

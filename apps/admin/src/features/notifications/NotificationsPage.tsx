@@ -16,6 +16,7 @@ import {
   useMarkRead,
   useNotifications,
 } from './api';
+import { linkTarget } from './linkPath';
 import { formatRelative } from './NotificationBell';
 
 const severityIcon: Record<NotificationSeverity, typeof Info> = {
@@ -161,7 +162,7 @@ function Detail({ notification }: { notification: Notification | null }) {
         <Button
           className="mt-4"
           size="sm"
-          onClick={() => void navigate({ to: notification.linkPath as string })}
+          onClick={() => void navigate(linkTarget(notification.linkPath as string))}
         >
           {t('notifications.view')}
         </Button>

@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Button } from '../../components/ui/button';
 import { CenteredSpinner } from '../../components/ui/spinner';
 import { ApiError, api } from '../../lib/api';
+import { useAuth } from '../../useAuth';
 import {
   BinaryFileView,
   DiffEditor,
@@ -16,12 +17,14 @@ import {
   RELEASE_BRANCH,
   Resizer,
   StatusBar,
+  expectBuild,
   gitApi,
   ideApi,
   isBinaryPath,
   loadOpenDocs,
   saveOpenDocs,
   useDraftSession,
+  useSiteLiveUpdates,
   useStoredWidth,
   useVfs,
 } from '../site-source';
@@ -82,6 +85,22 @@ export function IdePage({ siteId }: { siteId: string }) {
     queryKey: ['site', siteId],
     queryFn: () => api.get<SiteData>(`/admin/sites/${siteId}`),
   });
+
+  // Live deployments and commits for everyone with this site open. `sub` identifies this user
+  // so the hook can tell your own publish (which already toasted) from a colleague's.
+  const { user } = useAuth();
+  const [branchMoved, setBranchMoved] = useState(false);
+  useSiteLiveUpdates({
+    siteId,
+    branch,
+    myUserId: user?.profile.sub,
+    // Somebody else committed to the branch in this editor. The banner the conflict path
+    // already renders is the right place to say so, and it comes with the reload button.
+    onCommit: () => setBranchMoved(true),
+  });
+
+  // A branch switch or a reload settles it; clearing on `branch` covers both.
+  useEffect(() => setBranchMoved(false), [branch]);
 
   // The shared working-draft session: load a branch, autosave granular deltas,
   // detect conflicts. `seed` returns null on purpose — a brand-new Mode B site
@@ -194,6 +213,7 @@ export function IdePage({ siteId }: { siteId: string }) {
       queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
       if (branch === RELEASE_BRANCH) {
         toast.success(t('editor.publishQueued'));
+        expectBuild(siteId);
         setSidebarView('deploy');
       } else {
         setPublishMerge(true);
@@ -262,18 +282,26 @@ export function IdePage({ siteId }: { siteId: string }) {
         open={publishMerge}
         onOpenChange={setPublishMerge}
         onMerged={() => {
+          // Marked before the invalidate: the merge has landed but the build row it causes is
+          // written by the push webhook a moment later, so the refetch this triggers will not
+          // see it. The marker is what keeps the panel looking until it does.
+          expectBuild(siteId);
           queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
+          queryClient.invalidateQueries({ queryKey: ['git-changes', siteId] });
           queryClient.invalidateQueries({ queryKey: ['site-builds', siteId] });
           setSidebarView('deploy');
         }}
       />
 
-      {/* Conflict banner: someone else changed a file we also edited. */}
-      {conflict && (
+      {/* Conflict banner: someone else changed a file we also edited, or -- via the site hub --
+          committed to the branch this editor has open at all. Both have the same remedy. */}
+      {(conflict || branchMoved) && (
         <div className="flex shrink-0 items-center gap-2 border-b bg-destructive/10 px-3 py-2 text-sm text-destructive">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span className="min-w-0 flex-1">
-            {t('ide.conflictWarning', { files: conflict.join(', ') })}
+            {conflict
+              ? t('ide.conflictWarning', { files: conflict.join(', ') })
+              : t('ide.branchMovedWarning', { branch })}
           </span>
           <Button
             size="sm"
