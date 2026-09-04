@@ -90,6 +90,27 @@ builder.Services.AddHttpClient<LogJanitorClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 
+// Refuse to start without a database credential, rather than starting and failing at the
+// first query.
+//
+// The whole connection string lives in secret/dcms/platform-api, so a host with no AppRole
+// gets no credential at all — VaultCredentials.FromEnvironment returns null, the provider is
+// skipped, and configuration simply has no ConnectionStrings:Postgres. That service starts,
+// answers /health/live (which by design runs no checks), passes the deploy's health gate, and
+// is broken. A green deploy hiding a dead service is the failure this platform writes guards
+// against everywhere else — identity refuses to boot without signing certificates, admin-api
+// refuses a weak alert secret in Production — so this refuses too, and says exactly what to run.
+if (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Postgres")))
+{
+    throw new InvalidOperationException(
+        "No ConnectionStrings:Postgres. platform-api reads it from Vault at "
+        + "secret/dcms/platform-api and from nowhere else -- it is deliberately absent from "
+        + "every compose file. On a new host: run `infra/vault/apply.sh` to create this "
+        + "service's policy and AppRole, `infra/vault/apply.sh --seed` to generate the "
+        + "credential, and put VAULT_ROLE_ID_PLATFORM_API / VAULT_SECRET_ID_PLATFORM_API in "
+        + ".env (`apply.sh --print-role-ids` prints the role id).");
+}
+
 var app = builder.Build();
 
 // First in the pipeline, so an exception anywhere below it becomes a ProblemDetails carrying

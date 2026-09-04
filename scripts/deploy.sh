@@ -168,6 +168,19 @@ fi
 
 log "Preflight ($ENVIRONMENT)"
 
+# Reads one key out of .env, or nothing when it is absent.
+#
+# Not merely tidier than an inline grep -- it fixes a way this script could fail with no
+# message at all. Under `set -euo pipefail`, `x="$(grep KEY .env | tail -1 | cut ...)"` fails
+# the whole pipeline when grep matches nothing, the assignment inherits that status, and -e
+# exits silently. Every check below is about a variable that is legitimately ABSENT sometimes,
+# so the very case each one exists to warn about was the case that killed the deploy before it
+# could warn. That is what a PLATFORM_HOST-less .env did: "Preflight (dev)" and then exit 1.
+env_value() {
+  grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2- || true
+}
+
+
 docker compose version >/dev/null 2>&1 || die "docker compose plugin not available"
 
 # Compose substitutes ${VAR} from .env. Two NATS passwords use the ${VAR:?}
@@ -190,8 +203,8 @@ compose config --quiet || die "compose configuration is invalid; nothing was cha
 # A MISMATCH is not: deploying the prod overlay onto a host whose .env still says
 # DCMS_ENV=dev produces prod alerts that name dev, and they look entirely plausible.
 if [ "$ENVIRONMENT" != "local" ]; then
-  env_declared="$(grep -E '^DCMS_ENV=' .env 2>/dev/null | tail -1 | cut -d= -f2-)"
-  host_declared="$(grep -E '^DCMS_HOST=' .env 2>/dev/null | tail -1 | cut -d= -f2-)"
+  env_declared="$(env_value DCMS_ENV)"
+  host_declared="$(env_value DCMS_HOST)"
   if [ -n "$env_declared" ] && [ "$env_declared" != "$ENVIRONMENT" ]; then
     die "DCMS_ENV in .env is '$env_declared' but this is a '$ENVIRONMENT' deploy.
      Telemetry from this host would be labelled as the other environment.
@@ -205,8 +218,8 @@ if [ "$ENVIRONMENT" != "local" ]; then
   # site address; identity needs the URL for the issuer it stamps into every token. If they
   # disagree, the edge serves a certificate for one name while tokens claim another, and the
   # symptom is a login that loops rather than an error anyone can read.
-  base_url="$(grep -E '^PUBLIC_BASE_URL=' .env 2>/dev/null | tail -1 | cut -d= -f2-)"
-  admin_host="$(grep -E '^ADMIN_HOST=' .env 2>/dev/null | tail -1 | cut -d= -f2-)"
+  base_url="$(env_value PUBLIC_BASE_URL)"
+  admin_host="$(env_value ADMIN_HOST)"
   if [ -n "$base_url" ]; then
     case "$base_url" in
       */) die "PUBLIC_BASE_URL must not end in a slash (got '$base_url').
@@ -227,7 +240,7 @@ if [ "$ENVIRONMENT" != "local" ]; then
 
   # Not fatal: an unset PLATFORM_HOST means Caddy uses its built-in default, which simply fails
   # ACME for a name this host does not own. Every other site block keeps working.
-  platform_host="$(grep -E '^PLATFORM_HOST=' .env 2>/dev/null | tail -1 | cut -d= -f2-)"
+  platform_host="$(env_value PLATFORM_HOST)"
   [ -z "$platform_host" ] \
     && warn "PLATFORM_HOST unset -- the platform console falls back to Caddy's built-in default hostname, and needs a DNS A record pointing here before it can get a certificate"
 fi

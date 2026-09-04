@@ -724,6 +724,25 @@ runs in a bare postgres image that cannot reach Vault), the `migrate` job sets t
 from Vault and creates the `platform` schema, and `identity-migrate` seeds the
 `dcms-platform-spa` OIDC client.
 
+### First deploy to a host: Vault must be provisioned, and the deploy says so
+
+platform-api reads its whole database credential from Vault, so a host with no AppRole for it
+has no credential at all — and it **refuses to start** rather than coming up and failing at the
+first query. The message names the three commands. Run them once per host:
+
+```sh
+export VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=<admin token>
+PATH="$(pwd)/infra/vault/bin:$PATH" infra/vault/apply.sh              # policy + AppRole
+PATH="$(pwd)/infra/vault/bin:$PATH" infra/vault/apply.sh --seed       # generate the secrets
+PATH="$(pwd)/infra/vault/bin:$PATH" infra/vault/apply.sh --print-role-ids
+# then put VAULT_ROLE_ID_PLATFORM_API / VAULT_SECRET_ID_PLATFORM_API in .env
+# (and VAULT_ROLE_ID_LOG_JANITOR / VAULT_SECRET_ID_LOG_JANITOR if you enable that profile)
+```
+
+Until then the deploy rolls everything else and fails its health gate on platform-api, with the
+instruction in that container's logs. That is deliberate: a green deploy that shipped a service
+which cannot reach its database is worse than a red one that says which command is missing.
+
 ### Least privilege, and what it means when something breaks
 
 platform-api connects as `dcms_platform`: `USAGE` on `obs`, read/write on
