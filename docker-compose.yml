@@ -594,6 +594,17 @@ services:
       Edge__Auth__Authority: "${PUBLIC_BASE_URL:-http://localhost:8080}"
       Edge__Auth__InternalAuthority: "http://identity:8080"
       Edge__Auth__ClientSecret: "${EDGE_OIDC_CLIENT_SECRET:-}"
+      # Rate limiting, partitioned on the real TCP peer -- the edge is the first hop, so unlike
+      # the downstream limiters this one is not counting a header it assembled itself, and one
+      # process is counting rather than one per replica. The generous number is a ceiling on one
+      # address saturating the platform; the small one is what makes credential stuffing slow.
+      Edge__RateLimiting__PermitLimit: "${EDGE_RATE_LIMIT:-1200}"
+      Edge__RateLimiting__AuthPermitLimit: "${EDGE_AUTH_RATE_LIMIT:-30}"
+      # Output caching for published tenant pages. OFF by default and measured before it is
+      # trusted -- loadtest/ exists for that comparison, and a cache in front of every tenant's
+      # site is a way to be confidently wrong in public.
+      Edge__Cache__Enabled: "${EDGE_CACHE_ENABLED:-false}"
+      Edge__Cache__Seconds: "${EDGE_CACHE_SECONDS:-60}"
 
   # A throwaway ACME certificate authority, for proving the edge's issuance path without
   # spending a Let's Encrypt rate limit. OFF unless asked for: `--profile acmetest`.

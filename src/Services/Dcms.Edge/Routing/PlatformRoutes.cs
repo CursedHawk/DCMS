@@ -1,6 +1,10 @@
 using Dcms.Edge.Auth;
+using Dcms.Edge.Protection;
 using Dcms.Edge.Transforms;
 using Yarp.ReverseProxy.Configuration;
+using Yarp.ReverseProxy.Health;
+using Yarp.ReverseProxy.LoadBalancing;
+using Yarp.ReverseProxy.SessionAffinity;
 
 namespace Dcms.Edge.Routing;
 
@@ -68,7 +72,7 @@ public static class PlatformRoutes
     ];
 
     public static (IReadOnlyList<RouteConfig> Routes, IReadOnlyList<ClusterConfig> Clusters) Build(
-        EdgeOptions options, bool authEnabled = false)
+        EdgeOptions options, bool authEnabled = false, bool cacheEnabled = false)
     {
         var admin = options.AdminHost;
         var platform = options.PlatformHost;
@@ -90,7 +94,13 @@ public static class PlatformRoutes
         // The cost is CORS: the two SPAs are no longer same-origin with the token endpoint, so
         // identity's Cors:AllowedOrigins has to name them. That list already existed for the
         // dev split-port case; production now genuinely depends on it.
-        routes.Add(CatchAll("auth", [options.AuthHost], Identity, order: 50));
+        routes.Add(CatchAll("auth", [options.AuthHost], Identity, order: 50) with
+        {
+            // The one surface where the attack is cheap and the prize is an account. Everything
+            // else here is limited to keep a service standing up; this is limited to make
+            // credential stuffing slow.
+            RateLimiterPolicy = EdgeRateLimiting.AuthPolicy,
+        });
 
         // ---- Platform console APIs (Caddy: the platform.* site block) ----
         //
@@ -169,6 +179,11 @@ public static class PlatformRoutes
             Order = 100,
             Match = new RouteMatch { Path = "/{**catch-all}" },
             Metadata = new Dictionary<string, string> { [PublicPlaneMetadataKey] = "true" },
+            // Only when the cache is registered. Naming a policy the container does not have
+            // fails YARP's validation of the config as a whole, which would leave the edge with
+            // an empty route table and every host on the platform a 404 -- the same coupling the
+            // authorization policies have, for the same reason.
+            OutputCachePolicy = cacheEnabled ? EdgeOutputCache.PublicPolicy : null,
         });
 
         var u = options.Upstreams;
@@ -211,13 +226,78 @@ public static class PlatformRoutes
             Match = new RouteMatch { Hosts = hosts, Path = "/{**catch-all}" },
         };
 
-    private static ClusterConfig Cluster(string clusterId, string address)
-        => new()
+    /// <summary>
+    /// A cluster, from one address or several comma-separated ones.
+    ///
+    /// <para><b>Health checks, load balancing and session affinity are attached only when there
+    /// is more than one destination, and that is a correctness decision rather than an
+    /// optimisation.</b> With a single destination every one of them is an outage amplifier: a
+    /// health policy that marks the only destination unhealthy does not route around anything,
+    /// it makes the edge answer 503 for a service that is merely slow — turning a flapping probe
+    /// into a hard failure, and hiding the real response the client would otherwise have seen.
+    /// Passive checks have the same shape: the reactivation period becomes downtime rather than
+    /// a pause in rotation.</para>
+    ///
+    /// <para>So they switch themselves on the moment a cluster is given a second address, and
+    /// stay out of the way until then. Scaling a service becomes an address list in
+    /// configuration rather than a change here.</para>
+    /// </summary>
+    private static ClusterConfig Cluster(string clusterId, string addresses)
+    {
+        var destinations = addresses
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select((address, i) => (Key: $"{clusterId}-{i}", Address: address))
+            .ToDictionary(d => d.Key, d => new DestinationConfig { Address = d.Address });
+
+        if (destinations.Count <= 1)
+        {
+            return new ClusterConfig { ClusterId = clusterId, Destinations = destinations };
+        }
+
+        return new ClusterConfig
         {
             ClusterId = clusterId,
-            Destinations = new Dictionary<string, DestinationConfig>
+            Destinations = destinations,
+            // Two random destinations, the less loaded wins. Cheaper than LeastRequests at this
+            // scale and markedly better than round-robin when one replica is degraded rather
+            // than down -- which is the case health checks are worst at noticing.
+            LoadBalancingPolicy = LoadBalancingPolicies.PowerOfTwoChoices,
+            HealthCheck = new HealthCheckConfig
             {
-                [clusterId] = new DestinationConfig { Address = address },
+                Active = new ActiveHealthCheckConfig
+                {
+                    Enabled = true,
+                    Interval = TimeSpan.FromSeconds(10),
+                    Timeout = TimeSpan.FromSeconds(5),
+                    Policy = HealthCheckConstants.ActivePolicy.ConsecutiveFailures,
+                    // The liveness probe, not the full one: a replica whose database is
+                    // unreachable is not a replica to route around, because so is every other.
+                    Path = "/health/live",
+                },
+                Passive = new PassiveHealthCheckConfig
+                {
+                    Enabled = true,
+                    Policy = HealthCheckConstants.PassivePolicy.TransportFailureRate,
+                    ReactivationPeriod = TimeSpan.FromSeconds(30),
+                },
             },
+            Metadata = new Dictionary<string, string>
+            {
+                [ConsecutiveFailuresHealthPolicyOptions.ThresholdMetadataName] = "3",
+            },
+            // Only for the hub-bearing cluster. SignalR's negotiate and the connection that
+            // follows must reach the same replica: without a backplane, a WebSocket that lands
+            // on a different one than negotiated is a connection that establishes and then
+            // receives nothing, which presents as "chat is broken sometimes".
+            SessionAffinity = clusterId == ContentApi
+                ? new SessionAffinityConfig
+                {
+                    Enabled = true,
+                    Policy = SessionAffinityConstants.Policies.Cookie,
+                    FailurePolicy = SessionAffinityConstants.FailurePolicies.Redistribute,
+                    AffinityKeyName = "dcms.affinity",
+                }
+                : null,
         };
+    }
 }

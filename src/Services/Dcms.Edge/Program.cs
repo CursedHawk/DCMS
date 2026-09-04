@@ -1,6 +1,7 @@
 using Dcms.Edge;
 using Dcms.Edge.Auth;
 using Dcms.Edge.Certificates;
+using Dcms.Edge.Protection;
 using Dcms.Edge.Routing;
 using Dcms.Edge.Transforms;
 using Dcms.Shared.Caching;
@@ -66,6 +67,15 @@ builder.Services.AddHealthChecks()
 // why a missing secret opens the loop rather than closing the door.
 builder.AddEdgeAuthentication();
 
+// Shedding load costs nothing downstream, and this is the only hop where the client address is
+// the actual TCP peer rather than a header the edge itself assembled.
+builder.AddEdgeRateLimiting();
+
+// Off unless Edge:Cache:Enabled. See EdgeOutputCache for why a cache in front of every tenant's
+// site is measured before it is trusted -- and for the one setting whose absence turns it into
+// a cross-tenant content leak.
+builder.AddEdgeOutputCache();
+
 builder.Services.AddReverseProxy().AddTransforms(context =>
 {
     // Caddy's reverse_proxy passes the client's Host through untouched; YARP replaces it with
@@ -126,6 +136,17 @@ app.MapDcmsDefaultEndpoints();
 // that matter most.
 app.UseAuthentication();
 app.UseAuthorization();
+
+// After authorization, so a refused request is refused before it is counted, and a signed-in
+// operator is not throttled out of the console by an anonymous flood from the same NAT.
+app.UseRateLimiter();
+
+// Before the proxy, so a cache hit is served without a downstream request at all -- which is
+// the entire point. A no-op when the cache is not registered.
+if (EdgeOutputCache.IsEnabled(app.Configuration))
+{
+    app.UseOutputCache();
+}
 
 // The edge's own handful of endpoints, namespaced under /.edge/ because every host it serves
 // belongs to somebody else.

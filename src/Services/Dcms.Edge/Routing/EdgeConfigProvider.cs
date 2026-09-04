@@ -1,4 +1,5 @@
 using Dcms.Edge.Auth;
+using Dcms.Edge.Protection;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Yarp.ReverseProxy.Configuration;
@@ -26,6 +27,7 @@ public sealed class EdgeConfigProvider : IProxyConfigProvider
     private readonly IOptionsMonitor<EdgeOptions> options;
     private readonly DatabaseRouteSource databaseRoutes;
     private readonly bool authEnabled;
+    private readonly bool cacheEnabled;
     private readonly ILogger<EdgeConfigProvider> logger;
     private readonly Lock gate = new();
     private volatile EdgeConfig current;
@@ -34,6 +36,7 @@ public sealed class EdgeConfigProvider : IProxyConfigProvider
         IOptionsMonitor<EdgeOptions> options,
         DatabaseRouteSource databaseRoutes,
         IOptions<EdgeAuthOptions> auth,
+        IConfiguration configuration,
         ILogger<EdgeConfigProvider> logger)
     {
         this.options = options;
@@ -43,6 +46,9 @@ public sealed class EdgeConfigProvider : IProxyConfigProvider
         // left serving 404s. The flag and the policy registration must come from the same
         // reading of configuration, so neither can move without the other.
         authEnabled = auth.Value.Enabled;
+        // Same coupling, same reason: an OutputCachePolicy naming a policy nobody registered
+        // fails validation of the whole table, not of that route.
+        cacheEnabled = EdgeOutputCache.IsEnabled(configuration);
         this.logger = logger;
         current = BuildConfig(options.CurrentValue);
     }
@@ -72,7 +78,7 @@ public sealed class EdgeConfigProvider : IProxyConfigProvider
 
     private EdgeConfig BuildConfig(EdgeOptions edgeOptions)
     {
-        var (staticRoutes, clusters) = PlatformRoutes.Build(edgeOptions, authEnabled);
+        var (staticRoutes, clusters) = PlatformRoutes.Build(edgeOptions, authEnabled, cacheEnabled);
 
         // Static first, overlay second. A database row may not replace a platform route: the
         // operator hosts are how the platform is administered, and a route table that can lock

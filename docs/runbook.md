@@ -741,6 +741,56 @@ is deleted. If it is ever off, the domains it would have carried are simply issu
 ordinary way — fine for a handful, and a rate-limit problem for a few dozen, because
 Let's Encrypt allows ~50 certificates per registered domain per week.
 
+### Rate limiting, caching and scaling out
+
+**Rate limiting** runs at the edge as well as in each service, and the two are not
+duplicates. A service partitions on `RemoteIpAddress`, which behind a proxy is what
+`UseForwardedHeaders` reconstructed from a chain the edge assembled — and each replica
+counts separately, so three content-api replicas admit three times the configured
+limit. At the edge the address is the actual TCP peer, one process counts, and a
+refused request costs no downstream work. `EDGE_RATE_LIMIT` is the generous ceiling
+(a tenant page pulls dozens of assets); `EDGE_AUTH_RATE_LIMIT` covers the sign-in
+surface only, where the attack is cheap and the prize is an account. The ACME
+challenge, `/health` and WebSocket upgrades are exempt — throttling any of those
+causes the failure the limiter exists to prevent.
+
+**Output caching** (`EDGE_CACHE_ENABLED`) is off. Measure it with `loadtest/` before
+and after rather than assuming: a cache in front of every tenant's site is a way to
+be confidently wrong in public. It never caches `/api`, `/hub`, a request carrying a
+cookie, or a response setting one, and it varies by `Host` — that last one is the
+line between a cache and serving one tenant's page to another, and it is asserted by
+a test because getting it wrong is silent.
+
+**Scaling a service out** is a comma-separated address list in `Edge__Upstreams__*`.
+Health checks, `PowerOfTwoChoices` load balancing, and (for content-api) cookie
+session affinity switch themselves on at the second address and stay out of the way
+until then. That is deliberate: with one destination every one of them is an outage
+amplifier — a health policy that marks the only destination unhealthy does not route
+around anything, it makes the edge answer 503 for a service that is merely slow.
+Affinity is only on content-api because SignalR's negotiate and the connection that
+follows must reach the same replica; without it a WebSocket establishes and receives
+nothing, which presents as "chat is broken sometimes".
+
+### Why `/api` and `/hub` on tenant domains still go through site-host
+
+The plan for this work assumed the edge could forward them straight to content-api,
+"since the edge already resolves host → tenant for TLS". It does not: it asks
+site-host `/internal/tls-allowed` whether a hostname is *allowed*, never which tenant
+it belongs to, precisely so the most exposed process on the platform holds no grant
+on `tenancy.domains`.
+
+Folding `SiteHost/ApiProxy` in would therefore mean either widening that grant or
+replicating the host → tenant cache at the edge. Both put the platform's most
+safety-critical lookup in a second place with its own TTL and its own invalidation
+path, where a stale entry is not a slow page but one tenant's data answered to
+another. What it buys is one internal hop on traffic that is mostly form
+submissions and chat, because the pages themselves are statically built.
+
+So it stays where it is. The version worth building later is the opposite direction:
+teach content-api to resolve a tenant from the `Host` header (falling back to
+`X-Dcms-Tenant` for the operator plane), which keeps the resolution in a service that
+already owns tenancy and lets the edge forward without knowing anything.
+
 **Deleting Caddy**, once the edge has been green for a week: the `caddy` service in
 `docker-compose.prod.yml`, `infra/caddy/`, the `caddy-data`/`caddy-config` volumes, the
 edge's `/caddy-data` mount and `Edge__Certificates__ImportFromCaddyPath`, and the
