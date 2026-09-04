@@ -96,22 +96,37 @@ public sealed class CertificateRenewalService(
             .Select(c => c.Hostname)
             .ToListAsync(ct);
 
-        // Everything we are allowed to hold a certificate for and do not.
+        // Everything we are allowed to serve and cannot.
         //
         // This is what makes "the store is empty" a self-correcting state rather than a
-        // permanent one. Without it a hostname with no row is only ever attempted inside a
-        // visitor's TLS handshake, bounded by OnDemandTimeoutSeconds -- and a full ACME order
-        // usually takes longer than that, so the first visit fails, records a failure, backs
-        // off, and the next visit fails further away. Nothing recovers it; a browser just gets
-        // ERR_CONNECTION_CLOSED forever.
-        var held = await db.Certificates.AsNoTracking()
-            .Select(c => c.Hostname)
-            .ToListAsync(ct);
-        var heldSet = held.ToHashSet(StringComparer.Ordinal);
-        var missing = (await allowList.AllowedHostnamesAsync(ct))
+        // permanent one. Without it a hostname with no certificate is only ever attempted
+        // inside a visitor's TLS handshake, bounded by OnDemandTimeoutSeconds -- and a full
+        // ACME order usually takes longer than that, so the first visit fails, records a
+        // failure, backs off, and the next visit fails further away. Nothing recovers it; a
+        // browser just gets ERR_CONNECTION_CLOSED forever.
+        //
+        // HELD MEANS A USABLE KEY, NOT A ROW. RecordFailureAsync writes a placeholder row --
+        // hostname, error, failure count, no key and NotAfter at -infinity -- so a hostname
+        // that has only ever failed HAS a row and serves nothing. Counting those as held is
+        // how a completely dark platform reported "3 missing" while nine hostnames were
+        // refusing every handshake: the number an operator reads first, understating the
+        // outage by a factor of three.
+        var heldSet = (await db.Certificates.AsNoTracking()
+                .Where(c => c.EncryptedPrivateKey != "")
+                .Select(c => c.Hostname)
+                .ToListAsync(ct))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var unusable = (await allowList.AllowedHostnamesAsync(ct))
             .Select(CertificateStoreNormalize)
             .Where(h => !heldSet.Contains(h))
             .ToList();
+
+        // A placeholder row is already in `due` (its NotAfter is -infinity), so ordering it
+        // here as well would spend two of the CA's ~50 weekly certificates on one hostname.
+        // The count above is what gets reported; this is what gets ordered.
+        var dueSet = due.ToHashSet(StringComparer.Ordinal);
+        var missing = unusable.Where(h => !dueSet.Contains(h)).ToList();
 
         var renewed = 0;
         var issued = 0;
@@ -127,86 +142,132 @@ public sealed class CertificateRenewalService(
         {
             logger.LogError(
                 "Certificate sweep skipped: Vault Transit is unusable, so no certificate can be "
-                + "stored. {Missing} hostnames have none and {Due} are due. Check "
+                + "stored. {Missing} hostnames cannot serve TLS and {Due} are due. Check "
                 + "VAULT_ROLE_ID_EDGE / VAULT_SECRET_ID_EDGE and that infra/vault/apply.sh has "
                 + "been run. Not ordering, because an order that cannot be stored still spends "
                 + "the CA rate limit.",
-                missing.Count, due.Count);
-            metrics.SetEdgeCertificateState("missing", missing.Count);
+                unusable.Count, due.Count);
+            metrics.SetEdgeCertificateState("missing", unusable.Count);
             metrics.SetEdgeCertificateState("due", due.Count);
             return;
         }
 
+        // Serially, and inside the advisory lock. The CA rate-limits by account, and a burst of
+        // parallel orders -- which is exactly what a cold start looks like -- is the shape that
+        // trips it.
+        var deferred = new List<string>();
+
         foreach (var hostname in missing)
         {
-            // Serially and inside the same advisory lock as the renewals below, for the same
-            // reason: the CA rate-limits by account, and a burst of parallel orders -- which is
-            // exactly what a cold start looks like -- is the shape that trips it.
-            if (await store.RetryNotBeforeAsync(hostname, config, ct) is not null)
+            switch (await OrderAsync(hostname, isRenewal: false, config, deferred, ct))
             {
-                continue;
-            }
-
-            try
-            {
-                var certificate = await issuer.IssueAsync(hostname, ct);
-                await store.SaveAsync(
-                    hostname, certificate.PemChain, certificate.PemPrivateKey, CertificateSource.DcmsManaged, ct);
-                metrics.EdgeCertificate("issued");
-                issued++;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "First issuance failed for {Hostname}.", hostname);
-                await store.RecordFailureAsync(hostname, ex.Message, CancellationToken.None);
-                metrics.EdgeCertificate("failed");
-                failed++;
+                case true: issued++; break;
+                case false: failed++; break;
             }
         }
 
         foreach (var hostname in due)
         {
-            // Serially, not in parallel. The CA rate-limits by account, and a burst of parallel
-            // orders after an outage is exactly the shape that trips it.
-            if (await store.RetryNotBeforeAsync(hostname, config, ct) is not null)
+            switch (await OrderAsync(hostname, isRenewal: true, config, deferred, ct))
             {
-                continue;
+                case true: renewed++; break;
+                case false: failed++; break;
             }
+        }
 
-            try
-            {
-                var certificate = await issuer.IssueAsync(hostname, ct);
-                await store.SaveAsync(
-                    hostname, certificate.PemChain, certificate.PemPrivateKey, CertificateSource.DcmsManaged, ct);
-                metrics.EdgeCertificate("renewed");
-                renewed++;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Renewal failed for {Hostname}.", hostname);
-                await store.RecordFailureAsync(hostname, ex.Message, CancellationToken.None);
-                metrics.EdgeCertificate("failed");
-                failed++;
-            }
+        // Named, not just counted. A hostname inside its backoff is skipped silently otherwise,
+        // and that is the shape of "I fixed the cause and nothing happened": after six failures
+        // the wait is hours, so an operator who repairs Vault at noon sees no certificate and no
+        // explanation until mid-afternoon. Saying which hostnames are waiting, and until when,
+        // is the difference between a wait and an unexplained silence.
+        if (deferred.Count > 0)
+        {
+            logger.LogWarning(
+                "Deferred by failure backoff this pass: {Deferred}. Their retry times are in "
+                + "edge.certificates.LastAttemptAt + the doubling backoff; the recorded cause is "
+                + "in LastError.",
+                string.Join(", ", deferred));
         }
 
         // Published on every pass, including an empty one. These are the numbers an alert is
         // built on, and renewal stopping is invisible until it is catastrophic: nothing about a
         // working platform says it has stopped, until every tenant's site goes to a browser
         // warning on the same afternoon.
-        var total = await db.Certificates.CountAsync(ct);
+        var total = await db.Certificates.CountAsync(c => c.EncryptedPrivateKey != "", ct);
         var failing = await db.Certificates.CountAsync(c => c.ConsecutiveFailures > 0, ct);
         metrics.SetEdgeCertificateState("total", total);
         metrics.SetEdgeCertificateState("due", due.Count);
-        metrics.SetEdgeCertificateState("missing", missing.Count);
+        metrics.SetEdgeCertificateState("missing", unusable.Count);
         metrics.SetEdgeCertificateState("failing", failing);
 
         // Logged even when everything is zero, for the same reason. A sweep that finds nothing
         // to do and a sweep that is not running produce identical silence otherwise.
         logger.LogInformation(
-            "Certificate sweep: {Missing} missing, {Issued} issued, {Due} due, {Renewed} renewed, "
-            + "{Failed} failed, {Total} held.",
-            missing.Count, issued, due.Count, renewed, failed, total);
+            "Certificate sweep: {Missing} cannot serve TLS, {Issued} issued, {Due} due, "
+            + "{Renewed} renewed, {Failed} failed, {Total} usable.",
+            unusable.Count, issued, due.Count, renewed, failed, total);
+    }
+
+    /// <summary>
+    /// Orders one certificate. True issued, false failed, null deferred by the backoff.
+    ///
+    /// <para><b>The CA's failures and ours are recorded differently, and that distinction is
+    /// load-bearing.</b> <c>RecordFailureAsync</c> drives an exponentially doubling backoff that
+    /// exists to protect the account's rate limit from a hostname whose authorization keeps
+    /// failing — a tenant whose DNS record was deleted after verification. Applying it to a
+    /// failure that never reached the CA punishes the platform for its own outage: when Vault
+    /// Transit was unreachable, six such "failures" were recorded against every platform
+    /// hostname, so repairing Vault would have been followed by hours of the sweep skipping
+    /// them for a backoff no CA ever asked for.</para>
+    ///
+    /// <para>So only <c>IssueAsync</c> throwing extends it. A store failure after a successful
+    /// order is logged loudly and left retryable: the CA has already spent the certificate, and
+    /// the next pass should take it the moment whatever broke is fixed.</para>
+    /// </summary>
+    private async Task<bool?> OrderAsync(
+        string hostname, bool isRenewal, CertificateOptions config, List<string> deferred, CancellationToken ct)
+    {
+        if (await store.RetryNotBeforeAsync(hostname, config, ct) is not null)
+        {
+            deferred.Add(hostname);
+            return null;
+        }
+
+        IssuedCertificate certificate;
+        try
+        {
+            certificate = await issuer.IssueAsync(hostname, ct);
+        }
+        catch (Exception ex)
+        {
+            // The CA said no. This is what the backoff is for.
+            logger.LogError(ex, "{What} failed for {Hostname}.", isRenewal ? "Renewal" : "Issuance", hostname);
+            await store.RecordFailureAsync(hostname, ex.Message, CancellationToken.None);
+            metrics.EdgeCertificate("failed");
+            return false;
+        }
+
+        try
+        {
+            await store.SaveAsync(
+                hostname, certificate.PemChain, certificate.PemPrivateKey, CertificateSource.DcmsManaged, ct);
+        }
+        catch (Exception ex)
+        {
+            // Ours, not the CA's -- so no backoff. Deliberately loud: a certificate was issued
+            // and then thrown away, which spends the account's weekly budget for nothing.
+            logger.LogError(
+                ex,
+                "A certificate was ISSUED for {Hostname} and could not be stored, so it is lost. "
+                + "The CA counted it against the rate limit. Not backing off: the next pass "
+                + "should retry as soon as the store is working.",
+                hostname);
+            metrics.EdgeCertificate("failed");
+            return false;
+        }
+
+        metrics.EdgeCertificate(isRenewal ? "renewed" : "issued");
+        return true;
     }
 
     /// <summary>Same normalisation the store keys on, so "held" and "allowed" compare.</summary>

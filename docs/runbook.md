@@ -738,13 +738,29 @@ fails the next one further away. A browser shows `ERR_CONNECTION_CLOSED` and not
 recovers it. The `Missing` stat on the *Storage, edge and Vault* dashboard is the panel
 that says so; it should read 0, and anything above 0 after two sweeps is an outage.
 
+**"Missing" counts hostnames that cannot serve TLS, not rows.** A hostname that has only ever
+failed still has a row — `RecordFailureAsync` writes one carrying the error and the failure
+count, with no key. Counting those as held is how a completely dark platform once reported
+"3 missing" while nine hostnames were refusing every handshake.
+
+**A failure that never reached the CA does not extend the backoff.** The doubling backoff
+exists to stop one tenant's deleted DNS record from spending the account's weekly budget. It
+applies only to `IssueAsync` throwing. A certificate that was issued and then could not be
+stored is logged loudly — the CA counted it — and left immediately retryable, because
+otherwise repairing our own outage is followed by hours of the sweep skipping the hostnames it
+just became able to fix. Anything deferred by a backoff is named in the sweep's log line.
+
 Two things have to be in place for the sweep to issue anything, and both fail loudly in
 `docker compose logs edge` (`EdgeTlsPreflight` checks them 5s after start):
 
 1. **Vault Transit.** Private keys are encrypted with the `dcms-tls-keys` key, so no
    certificate can be stored without it. That needs `infra/vault/apply.sh` to have been
    run and `VAULT_ROLE_ID_EDGE` / `VAULT_SECRET_ID_EDGE` in `.env`
-   (`infra/vault/provision-host.sh` issues them).
+   (`infra/vault/provision-host.sh` issues them). **This is what took the platform down
+   once:** `apply.sh` gained `edge` and `provision-host.sh` kept its own copy of the service
+   list, which did not — so `--all` issued credentials to every service except the one
+   terminating TLS. There is one list now (`infra/vault/services.sh`), and `scripts/deploy.sh`
+   refuses to deploy when a service declares `VAULT_ROLE_ID` with nothing in it.
 2. **DNS.** Let's Encrypt validates over HTTP-01, so each hostname must already resolve
    to this host.
 

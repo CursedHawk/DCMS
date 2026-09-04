@@ -132,6 +132,35 @@ public sealed class CertificateSweepTests : IAsyncLifetime
     }
 
     [DockerFact]
+    public async Task Treats_a_hostname_that_has_only_ever_failed_as_having_no_certificate()
+    {
+        // RecordFailureAsync writes a placeholder row -- hostname, error, failure count, no key.
+        // Counting that as "held" is how a completely dark platform reported "3 missing" while
+        // nine hostnames were refusing every handshake, understating the outage by a factor of
+        // three in the one number an operator reads first. The row must still be reissued, and
+        // exactly once: it is already due (NotAfter is -infinity), so ordering it as missing too
+        // would spend two of the CA's ~50 weekly certificates on one hostname.
+        var store = BuildStore();
+        await store.RecordFailureAsync(
+            "admin.highgeek.eu", "Vault Transit was requested but Vault is not configured.",
+            TestContext.Current.CancellationToken);
+
+        var issuer = new FakeAcme();
+        var service = BuildSweep(issuer, allowed: ["admin.highgeek.eu"], backoffSeconds: 0);
+
+        await RunOneSweepAsync(service, until: () => issuer.Ordered.Count >= 1);
+
+        issuer.Ordered.Should().ContainSingle().Which.Should().Be("admin.highgeek.eu");
+
+        using var scope = services.CreateScope();
+        var row = await scope.ServiceProvider.GetRequiredService<EdgeDbContext>()
+            .Certificates.AsNoTracking()
+            .FirstAsync(c => c.Hostname == "admin.highgeek.eu", TestContext.Current.CancellationToken);
+        row.EncryptedPrivateKey.Should().NotBeEmpty();
+        row.LastError.Should().BeNull();
+    }
+
+    [DockerFact]
     public async Task Orders_nothing_at_all_when_Vault_Transit_is_unusable()
     {
         // Every private key is encrypted through Transit, so an order placed while it is broken
@@ -148,6 +177,28 @@ public sealed class CertificateSweepTests : IAsyncLifetime
         await service.StopAsync(CancellationToken.None);
 
         issuer.Ordered.Should().BeEmpty();
+    }
+
+    [DockerFact]
+    public async Task Does_not_back_off_when_the_failure_was_ours_rather_than_the_CAs()
+    {
+        // The backoff protects the CA's rate limit from a hostname whose authorization keeps
+        // failing. A certificate that was ISSUED and then could not be stored is our outage, not
+        // the CA's answer -- and applying the doubling backoff to it is what turns a ten-minute
+        // repair into hours of the sweep skipping the hostname for a wait no CA asked for. That
+        // is precisely what happened when the edge had no Vault AppRole.
+        var issuer = new FakeAcme();
+        var service = BuildSweep(issuer, allowed: ["admin.highgeek.eu"], storeBroken: true);
+
+        await RunOneSweepAsync(service, until: () => issuer.Ordered.Count >= 1);
+
+        using var scope = services.CreateScope();
+        var row = await scope.ServiceProvider.GetRequiredService<EdgeDbContext>()
+            .Certificates.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Hostname == "admin.highgeek.eu", TestContext.Current.CancellationToken);
+
+        // No failure row at all, so nothing to back off from: the next pass retries immediately.
+        row?.ConsecutiveFailures.Should().Be(0);
     }
 
     /// <summary>
@@ -174,7 +225,11 @@ public sealed class CertificateSweepTests : IAsyncLifetime
     }
 
     private EdgeCerts.CertificateRenewalService BuildSweep(
-        FakeAcme issuer, string[] allowed, bool transitBroken = false)
+        FakeAcme issuer,
+        string[] allowed,
+        bool transitBroken = false,
+        bool storeBroken = false,
+        int backoffSeconds = 300)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -183,26 +238,32 @@ public sealed class CertificateSweepTests : IAsyncLifetime
             })
             .Build();
 
+        var container = transitBroken ? ServicesWith<BrokenTransit>()
+            : storeBroken ? ServicesWith<ProbeOnlyTransit>()
+            : services;
+
         return new EdgeCerts.CertificateRenewalService(
-            transitBroken ? BrokenTransitServices() : services,
-            BuildStore(),
+            container,
+            new EdgeCerts.CertificateStore(container, new MemoryCache(new MemoryCacheOptions()),
+                TimeProvider.System, NullLogger<EdgeCerts.CertificateStore>.Instance),
             new FakeAllowList(allowed),
             issuer,
-            Options.Create(new EdgeCerts.CertificateOptions { TlsEnabled = true }),
+            Options.Create(new EdgeCerts.CertificateOptions
+            {
+                TlsEnabled = true,
+                FailureBackoffSeconds = backoffSeconds,
+            }),
             configuration,
             new DcmsMetrics(meters),
             TimeProvider.System,
             NullLogger<EdgeCerts.CertificateRenewalService>.Instance);
     }
 
-    /// <summary>
-    /// The same container, with Transit replaced by one that throws — which is what an
-    /// unprovisioned <c>dcms-edge</c> AppRole looks like from inside the process.
-    /// </summary>
-    private ServiceProvider BrokenTransitServices()
+    /// <summary>The same container, with a different Transit implementation.</summary>
+    private ServiceProvider ServicesWith<T>() where T : class, ITransitEncryptor
     {
         var collection = new ServiceCollection();
-        collection.AddSingleton<ITransitEncryptor, BrokenTransit>();
+        collection.AddSingleton<ITransitEncryptor, T>();
         collection.AddDbContext<EdgeDbContext>(options =>
             options.UseNpgsql(postgres.GetConnectionString(), npgsql =>
                 npgsql.MigrationsHistoryTable("__ef_migrations_history", EdgeDbContext.Schema)));
@@ -272,6 +333,21 @@ public sealed class CertificateSweepTests : IAsyncLifetime
     {
         public Task<string> EncryptAsync(string keyName, ReadOnlyMemory<byte> plaintext, CancellationToken ct = default)
             => Task.FromResult("vault:v1:" + Convert.ToBase64String(plaintext.Span));
+
+        public Task<byte[]> DecryptAsync(string keyName, string ciphertext, CancellationToken ct = default)
+            => Task.FromResult(Convert.FromBase64String(ciphertext["vault:v1:".Length..]));
+    }
+
+    /// <summary>
+    /// Answers the sweep's Transit probe and fails everything else — a store that is broken in a
+    /// way the health check cannot see.
+    /// </summary>
+    private sealed class ProbeOnlyTransit : ITransitEncryptor
+    {
+        public Task<string> EncryptAsync(string keyName, ReadOnlyMemory<byte> plaintext, CancellationToken ct = default)
+            => System.Text.Encoding.UTF8.GetString(plaintext.Span) == "edge-sweep"
+                ? Task.FromResult("vault:v1:" + Convert.ToBase64String(plaintext.Span))
+                : throw new InvalidOperationException("transit/encrypt failed");
 
         public Task<byte[]> DecryptAsync(string keyName, string ciphertext, CancellationToken ct = default)
             => Task.FromResult(Convert.FromBase64String(ciphertext["vault:v1:".Length..]));
