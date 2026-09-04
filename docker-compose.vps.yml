@@ -373,6 +373,9 @@ services:
   #
   # Remove this binding at the Phase 3 cutover, when the edge takes 80/443 for real.
   edge:
+    environment:
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_EDGE:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_EDGE:-}"
     ports:
       - "127.0.0.1:8090:8080"
 

@@ -287,6 +287,7 @@ services:
       POSTGRES_DB: dcms
       PGPASSWORD: "dcms-dev"
       SITEBUILDER_DB_PASSWORD: "dcms-sitebuilder-dev"
+      EDGE_DB_PASSWORD: "dcms-edge-dev"
       GRAFANA_DB_PASSWORD: "dcms-grafana-dev"
       RLS_DB_PASSWORD: "dcms-rls-dev"
 
@@ -488,13 +489,12 @@ services:
   # publishes no host port: Caddy still owns :80/:443 and TLS, and forwards a scratch hostname
   # here so the route table can be proved against the real stack before anything is swapped.
   #
-  # Deliberately does NOT inherit *service-env. Routing needs NATS and nothing else -- no
-  # Postgres connection, no MinIO account, no Vault token -- and the public ingress is the last
-  # place to hold credentials it has no use for. It DOES inherit *otel-env: that is the
+  # Deliberately does NOT inherit *service-env, which would hand it the `dcms` OWNER connection
+  # string and a MinIO account. The public ingress is the last place to hold credentials it has
+  # no use for: it gets the scoped dcms_edge role instead, Redis for ACME challenge tokens, and
+  # a Vault grant covering exactly one Transit key. It DOES inherit *otel-env -- that is the
   # distinction site-builder and email-worker got wrong, and it cost two services their entire
   # telemetry signal without a single error.
-  #
-  # Phase 2 adds the certificate store, and with it a scoped Postgres role and a Vault AppRole.
   edge:
     build:
       context: .
@@ -502,7 +502,13 @@ services:
     restart: unless-stopped
     logging: *default-logging
     depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
       nats:
+        condition: service_started
+      vault:
         condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/live || exit 1"]
@@ -513,6 +519,13 @@ services:
     environment:
       <<: *otel-env
       Nats__Url: "nats://nats:4222"
+      ConnectionStrings__Redis: "redis:6379"
+      # The scoped role from infra/postgres/init/05-edge-role.sh, not the dcms owner. The edge
+      # reads and writes the `edge` schema and nothing else -- notably NOT tenancy.domains,
+      # which it asks site-host about over HTTP instead.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_edge;Password=dcms-edge-dev"
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_TOKEN: "dcms-dev-root"
       # The four hostnames DCMS owns. Same values, same defaults and the same reason as the
       # Caddy block: dev and production run the same image, so a name baked into the code
       # would make the dev edge answer for production's.
@@ -520,6 +533,32 @@ services:
       Edge__PlatformHost: "${PLATFORM_HOST:-platform.highgeek.eu}"
       Edge__GrafanaHost: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
       Edge__GitHost: "${GIT_HOST:-git.highgeek.eu}"
+      # TLS off until the cutover: Caddy still owns :80/:443 and two processes cannot bind the
+      # same port. Everything below it is inert while this is false.
+      Edge__Certificates__TlsEnabled: "${EDGE_TLS_ENABLED:-false}"
+      # STAGING by default, and that is the safety property rather than a placeholder. Let's
+      # Encrypt allows ~50 certificates per registered domain per week and counts failed
+      # authorizations too, so a dev deployment that inherited production's directory would
+      # spend production's budget on throwaway hostnames -- and the symptom is every real
+      # tenant's issuance failing at once. Production sets this explicitly.
+      Edge__Certificates__AcmeDirectory: "${ACME_DIRECTORY:-https://acme-staging-v02.api.letsencrypt.org/directory}"
+      Edge__Certificates__ContactEmail: "${ACME_EMAIL:-}"
+
+  # A throwaway ACME certificate authority, for proving the edge's issuance path without
+  # spending a Let's Encrypt rate limit. OFF unless asked for: `--profile acmetest`.
+  # See infra/acme-test/README.md for how to drive an issuance through it.
+  pebble:
+    profiles: ["acmetest"]
+    image: ghcr.io/letsencrypt/pebble:v2.6.0
+    restart: "no"
+    logging: *default-logging
+    command: ["-config", "/test/config/pebble-config.json", "-dnsserver", "127.0.0.11:53"]
+    environment:
+      # Pebble sleeps a random 0-15s before validating, to shake out clients that assume it is
+      # instant. Ours polls, so the delay only makes the test slower.
+      PEBBLE_VA_NOSLEEP: "1"
+    volumes:
+      - ./infra/acme-test/pebble-config.json:/test/config/pebble-config.json:ro
 
   ai-gateway:
     build:

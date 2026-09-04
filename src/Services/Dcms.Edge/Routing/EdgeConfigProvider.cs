@@ -23,13 +23,18 @@ namespace Dcms.Edge.Routing;
 public sealed class EdgeConfigProvider : IProxyConfigProvider
 {
     private readonly IOptionsMonitor<EdgeOptions> options;
+    private readonly DatabaseRouteSource databaseRoutes;
     private readonly ILogger<EdgeConfigProvider> logger;
     private readonly Lock gate = new();
     private volatile EdgeConfig current;
 
-    public EdgeConfigProvider(IOptionsMonitor<EdgeOptions> options, ILogger<EdgeConfigProvider> logger)
+    public EdgeConfigProvider(
+        IOptionsMonitor<EdgeOptions> options,
+        DatabaseRouteSource databaseRoutes,
+        ILogger<EdgeConfigProvider> logger)
     {
         this.options = options;
+        this.databaseRoutes = databaseRoutes;
         this.logger = logger;
         current = BuildConfig(options.CurrentValue);
     }
@@ -57,9 +62,28 @@ public sealed class EdgeConfigProvider : IProxyConfigProvider
             current.Routes.Count, current.Clusters.Count);
     }
 
-    private static EdgeConfig BuildConfig(EdgeOptions edgeOptions)
+    private EdgeConfig BuildConfig(EdgeOptions edgeOptions)
     {
-        var (routes, clusters) = PlatformRoutes.Build(edgeOptions);
+        var (staticRoutes, clusters) = PlatformRoutes.Build(edgeOptions);
+
+        // Static first, overlay second. A database row may not replace a platform route: the
+        // operator hosts are how the platform is administered, and a route table that can lock
+        // an operator out of the console that edits it is a table nobody should be editing.
+        var clusterIds = clusters.Select(c => c.ClusterId).ToHashSet(StringComparer.Ordinal);
+        var staticIds = staticRoutes.Select(r => r.RouteId).ToHashSet(StringComparer.Ordinal);
+
+        var routes = new List<RouteConfig>(staticRoutes);
+        foreach (var overlay in databaseRoutes.Load(clusterIds))
+        {
+            if (staticIds.Contains(overlay.RouteId))
+            {
+                logger.LogWarning(
+                    "Ignoring edge route {RouteId}: it collides with a platform route.", overlay.RouteId);
+                continue;
+            }
+            routes.Add(overlay);
+        }
+
         return new EdgeConfig(routes, clusters);
     }
 

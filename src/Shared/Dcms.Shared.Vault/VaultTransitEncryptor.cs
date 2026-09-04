@@ -45,6 +45,14 @@ public static class VaultTransitServiceCollectionExtensions
     public const string SocialTokensKey = "dcms-social-tokens";
 
     /// <summary>
+    /// TLS private keys for tenant domains, held by the edge. A key of its own for the same
+    /// reason as the two above: the edge is the most exposed process on the platform, and a
+    /// shared Transit key would let a compromise there decrypt every tenant's AI provider key
+    /// and Meta token as well. Its Vault policy grants decrypt on this key and nothing else.
+    /// </summary>
+    public const string TlsKeysKey = "dcms-tls-keys";
+
+    /// <summary>
     /// Registers an IVaultClient and the Transit encryptor, using the same credential
     /// resolution as the configuration provider — AppRole when available, token otherwise.
     ///

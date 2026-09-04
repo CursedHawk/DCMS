@@ -15,6 +15,10 @@ CREATE SCHEMA IF NOT EXISTS ai;
 CREATE SCHEMA IF NOT EXISTS audit;
 CREATE SCHEMA IF NOT EXISTS social;
 CREATE SCHEMA IF NOT EXISTS notifications;
+-- TLS certificates, the ACME account, and the edge's route overlay. No tenant column on any of
+-- them: a certificate belongs to a hostname, and which tenant owns that hostname is already
+-- recorded (and already tenant-filtered) in tenancy.domains.
+CREATE SCHEMA IF NOT EXISTS edge;
 
 -- Read-only reporting views for Grafana. Owned by the superuser, exposed to dcms_grafana
 -- and to nobody else; see infra/postgres/init/03-observability-role.sh.

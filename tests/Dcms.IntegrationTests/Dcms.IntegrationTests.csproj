@@ -32,6 +32,7 @@
     <ProjectReference Include="..\..\src\Services\Dcms.AdminApi\Dcms.AdminApi.csproj" Aliases="AdminApiApp" />
     <ProjectReference Include="..\..\src\Services\Dcms.AiGateway\Dcms.AiGateway.csproj" Aliases="AiGatewayApp" />
     <ProjectReference Include="..\..\src\Services\Dcms.ContentApi\Dcms.ContentApi.csproj" />
+    <ProjectReference Include="..\..\src\Services\Dcms.Edge\Dcms.Edge.csproj" Aliases="EdgeApp" />
     <ProjectReference Include="..\..\src\Services\Dcms.Identity\Dcms.Identity.csproj" Aliases="IdentityApp" />
     <ProjectReference Include="..\..\src\Services\Dcms.MediaWorker\Dcms.MediaWorker.csproj" Aliases="MediaWorkerApp" />
     <ProjectReference Include="..\..\src\Services\Dcms.PlatformApi\Dcms.PlatformApi.csproj" Aliases="PlatformApiApp" />

@@ -5,6 +5,7 @@ using Dcms.Shared.Data.Analytics;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.DataProtection;
+using Dcms.Shared.Data.Edge;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Observability;
@@ -84,6 +85,10 @@ public static class DcmsMigrationRunner
         // its own now that migrations are a job.
         await scoped.GetRequiredService<DataProtectionDbContext>().Database.MigrateAsync(ct);
 
+        // The edge's certificates, ACME account and route overlay. No tenant column on any of
+        // them -- see EdgeCertificate for why that is deliberate -- so they take no part in RLS.
+        await scoped.GetRequiredService<EdgeDbContext>().Database.MigrateAsync(ct);
+
         var audit = scoped.GetRequiredService<AuditDbContext>();
         await audit.Database.MigrateAsync(ct);
 
@@ -155,6 +160,9 @@ public static class DcmsMigrationRunner
                 scoped.GetRequiredService<SocialDbContext>(),
                 scoped.GetRequiredService<NotificationsDbContext>(),
                 scoped.GetRequiredService<AuditDbContext>(),
+                // Listed even though nothing in it is tenant-scoped: the assertion's job is to
+                // catch a TenantId nobody registered, and a context it never sees cannot fail it.
+                scoped.GetRequiredService<EdgeDbContext>(),
             ],
             logger);
 }

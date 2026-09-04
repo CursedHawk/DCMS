@@ -40,6 +40,13 @@ public static class PostgresAdvisoryLock
     public const long NotificationRetentionLockKey = 0x44434D5300000007;
 
     /// <summary>
+    /// Elects the single edge replica that renews TLS certificates per sweep. Two replicas
+    /// renewing the same hostname would double the orders counted against the CA's rate limit
+    /// and leave the loser's row overwriting the winner's.
+    /// </summary>
+    public const long EdgeCertificateRenewalLockKey = 0x44434D5300000008;
+
+    /// <summary>
     /// Blocks until the lock is held. Deliberately blocking rather than
     /// <c>pg_try_advisory_lock</c>: a second instance arriving mid-migration should wait and then
     /// find there is nothing left to do. Giving up and carrying on would let it serve traffic

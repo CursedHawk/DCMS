@@ -61,6 +61,11 @@
     <PackageVersion Include="StackExchange.Redis" Version="2.13.17" />
     <PackageVersion Include="VaultSharp" Version="1.17.5.1" />
     <PackageVersion Include="Yarp.ReverseProxy" Version="2.3.0" />
+    <!-- ACME (Let's Encrypt) client for the edge's certificate issuance. This is the library
+         LettuceEncrypt is itself built on; LettuceEncrypt is in maintenance mode and needs its
+         domain list up front, which is the one thing a platform issuing per-tenant certificates
+         cannot supply. Kept behind IAcmeIssuer so it can be swapped. -->
+    <PackageVersion Include="Certes" Version="3.0.4" />
   </ItemGroup>
 
   <ItemGroup Label="Media">

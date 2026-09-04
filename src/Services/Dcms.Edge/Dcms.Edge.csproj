@@ -1,13 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
+    <PackageReference Include="Certes" />
     <PackageReference Include="Yarp.ReverseProxy" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Caching\Dcms.Shared.Caching.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Contracts\Dcms.Shared.Contracts.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Hosting\Dcms.Shared.Hosting.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Messaging\Dcms.Shared.Messaging.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Vault\Dcms.Shared.Vault.csproj" />
   </ItemGroup>
 
 </Project>

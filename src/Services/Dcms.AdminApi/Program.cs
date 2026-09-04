@@ -20,6 +20,7 @@ using Dcms.AdminApi.Social;
 using Dcms.Shared.Data.Ai;
 using Dcms.Shared.Data.Analytics;
 using Dcms.Shared.Data.DataProtection;
+using Dcms.Shared.Data.Edge;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Data.Cms;
@@ -110,6 +111,10 @@ builder.Services.AddDcmsPlatformData(builder.Configuration);
 // admin-api does not consume it -- it authenticates with bearer tokens and sets no
 // cookies -- but it owns the DDL for every schema in this database.
 builder.Services.AddDcmsDataProtection(builder.Configuration);
+// Same reason again: the edge's certificate, ACME-account and route tables are created by this
+// image running --migrate-only. admin-api reads none of them today; Phase 5 gives it the
+// certificate-status and custom-upload endpoints, which is when it starts to.
+builder.Services.AddDcmsEdgeData(builder.Configuration);
 builder.Services.AddDcmsVaultTransit();
 builder.Services.AddScoped<AiPromptBuilder>();
 builder.Services.AddDcmsTenantResolutionByHeader();

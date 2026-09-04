@@ -152,6 +152,7 @@ services:
       POSTGRES_DB: dcms
       PGPASSWORD: "${POSTGRES_PASSWORD}"
       SITEBUILDER_DB_PASSWORD: "${SITEBUILDER_DB_PASSWORD}"
+      EDGE_DB_PASSWORD: "${EDGE_DB_PASSWORD:-dcms-edge-dev}"
       GRAFANA_DB_PASSWORD: "${GRAFANA_DB_PASSWORD}"
       RLS_DB_PASSWORD: "${RLS_DB_PASSWORD:-}"
 
@@ -330,6 +331,38 @@ services:
     environment:
       <<: *prod-env
       Services__ContentApi: "http://content-api:8080"
+
+  # Like site-builder and platform-api, the edge deliberately does NOT inherit *prod-env: that
+  # anchor carries the `dcms` OWNER connection string and the MinIO root account, and this is the
+  # one process an anonymous request from the internet reaches first. It gets the scoped
+  # dcms_edge role, which reaches the `edge` schema and nothing else.
+  #
+  # VAULT_ADDR and DCMS_REFUSE_DEV_VAULT are restated for exactly the reason spelled out on
+  # site-builder: they live in that same anchor, and skipping it is how a service ends up
+  # calling AddDcmsVault and silently reading nothing. Here that would be worse than silent --
+  # Transit is what decrypts the TLS private keys, so a missing address means no certificate
+  # loads and no certificate can be issued.
+  edge:
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      DOTNET_ENVIRONMENT: "Production"
+      DCMS_REFUSE_DEV_VAULT: "true"
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_TOKEN: "${VAULT_TOKEN:-}"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_edge;Password=${EDGE_DB_PASSWORD:-dcms-edge-dev}"
+      ConnectionStrings__Redis: "redis:6379"
+      Nats__Url: "nats://nats:4222"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy:4317"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+      Edge__AdminHost: "${ADMIN_HOST:-admin.highgeek.eu}"
+      Edge__PlatformHost: "${PLATFORM_HOST:-platform.highgeek.eu}"
+      Edge__GrafanaHost: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
+      Edge__GitHost: "${GIT_HOST:-git.highgeek.eu}"
+      # Still false: Caddy owns :80/:443 until the cutover. Flipping this before the port swap
+      # would leave two processes wanting the same port and the deploy failing at `up`.
+      Edge__Certificates__TlsEnabled: "${EDGE_TLS_ENABLED:-false}"
+      Edge__Certificates__AcmeDirectory: "${ACME_DIRECTORY:-https://acme-staging-v02.api.letsencrypt.org/directory}"
+      Edge__Certificates__ContactEmail: "${ACME_EMAIL}"
 
   ai-gateway:
     environment:

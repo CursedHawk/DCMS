@@ -39,7 +39,7 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-SERVICES="identity admin-api content-api media-worker site-builder site-host ai-gateway email-worker platform-api log-janitor"
+SERVICES="identity admin-api content-api media-worker site-builder site-host ai-gateway email-worker platform-api edge log-janitor"
 
 # Keys that must exist in secret/dcms/shared for any deployment to work. Presence only --
 # this never reads a value.
@@ -242,6 +242,14 @@ echo "  transit key dcms-dataprotection present"
 # connection becomes unreadable and every tenant has to reconnect.
 vault write -f transit/keys/dcms-social-tokens >/dev/null
 echo "  transit key dcms-social-tokens present"
+
+# TLS private keys and the ACME account key, held by the edge. A separate key again, and for the
+# sharpest version of the same reason: the edge is the process an anonymous request from the
+# internet reaches first, and a shared key would make a compromise there decrypt every tenant's
+# AI provider key and Meta token too. Same warning as above -- recreating it makes every stored
+# certificate unusable, and the platform reissues them all at once against the CA's rate limit.
+vault write -f transit/keys/dcms-tls-keys >/dev/null
+echo "  transit key dcms-tls-keys present"
 
 echo "==> Policies"
 for svc in $SERVICES; do
