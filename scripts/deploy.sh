@@ -371,6 +371,43 @@ if [ "$ENVIRONMENT" != "local" ] && compose ps --services 2>/dev/null | grep -qx
 fi
 
 # ---------------------------------------------------------------------------
+# Vault configuration
+# ---------------------------------------------------------------------------
+
+# Apply the policies, roles, transit keys and per-service AppRole credentials that this
+# commit describes. Idempotent, and it never rotates a credential that already exists.
+#
+# WHY THIS IS PART OF THE DEPLOY. The policies live in infra/vault/policies/ and the service
+# list in infra/vault/services.sh -- they are version-controlled, they ship with every deploy,
+# and until now applying them was a command a human had to remember to run. Nobody did after
+# `edge` was added, so the dcms-edge policy, its AppRole and the dcms-tls-keys transit key
+# never existed on this host at all. The edge could not encrypt a private key, held no
+# certificate for anything, and refused every TLS handshake on every hostname -- the entire
+# platform unreachable because config that was committed was never applied.
+#
+# Deliberately AFTER the seal check above (a sealed Vault rejects all of this) and BEFORE the
+# roll (a service must find its credential in .env when it starts).
+#
+# CI holds no Vault credential and gains none here: apply.sh authenticates with the host's own
+# dcms-ops AppRole from ~/.dcms/vault-ops.env. A host without one is warned about and skipped
+# rather than failed -- an unapplied policy is a bad deploy, but refusing to deploy at all is
+# how the last repair got stuck behind the thing it was repairing.
+if [ "$ENVIRONMENT" != "local" ] && [ -x infra/vault/apply.sh ] \
+   && compose ps --services 2>/dev/null | grep -qx vault; then
+  log "Applying Vault configuration"
+  if [ -n "${VAULT_TOKEN:-}" ] || [ -f "${DCMS_VAULT_OPS_ENV:-$HOME/.dcms/vault-ops.env}" ]; then
+    VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}" \
+    PATH="$REPO_ROOT/infra/vault/bin:$PATH" \
+      infra/vault/apply.sh || warn "Vault configuration did not apply cleanly -- see above.
+       Services whose policy or credential is missing will fail their own startup guard."
+  else
+    warn "no ops AppRole at ${DCMS_VAULT_OPS_ENV:-$HOME/.dcms/vault-ops.env} and no VAULT_TOKEN --
+       skipping. Policies and per-service credentials in this commit are NOT applied on this
+       host. Provision it one, or run infra/vault/apply.sh here with a token."
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Mode B build sandbox
 # ---------------------------------------------------------------------------
 

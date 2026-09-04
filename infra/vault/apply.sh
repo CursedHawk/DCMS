@@ -114,6 +114,43 @@ command -v vault >/dev/null || { echo "apply.sh: the vault CLI is required" >&2;
 : "${VAULT_ADDR:?VAULT_ADDR must be set}"
 
 # ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+#
+# Log in with the host's own ops AppRole when no token was supplied. This is the credential
+# that exists for exactly this work -- dcms-ops, provisioned once per host into
+# ~/.dcms/vault-ops.env (0600 in a 0700 directory, deliberately outside the tree CI rsyncs
+# into) -- and using it means applying the Vault configuration needs no secret carried in by
+# hand, pasted into a terminal, or left in a shell's history.
+#
+# That matters more than convenience. This script had not been re-run since `edge` was added
+# to its service list, so the dcms-edge policy, its AppRole and the dcms-tls-keys transit key
+# did not exist at all on the deployed host. Every TLS handshake on every hostname was refused
+# because a command whose only prerequisite was a token nobody had to hand went un-run.
+#
+# An explicit VAULT_TOKEN still wins: root, or a scoped token minted for one run.
+OPS_ENV="${DCMS_VAULT_OPS_ENV:-$HOME/.dcms/vault-ops.env}"
+if [ -z "${VAULT_TOKEN:-}" ] && [ -f "$OPS_ENV" ]; then
+  # In a subshell so the file's VAULT_ADDR cannot silently retarget this run at another Vault.
+  VAULT_TOKEN=$(
+    . "$OPS_ENV"
+    vault write -field=token auth/approle/login \
+      role_id="$VAULT_OPS_ROLE_ID" secret_id="$VAULT_OPS_SECRET_ID"
+  ) || { echo "apply.sh: could not log in with the ops AppRole in $OPS_ENV" >&2; exit 1; }
+  export VAULT_TOKEN
+  echo "==> Authenticated with the host's dcms-ops AppRole ($OPS_ENV)"
+fi
+
+if [ -z "${VAULT_TOKEN:-}" ]; then
+  echo "apply.sh: no VAULT_TOKEN, and no ops AppRole at $OPS_ENV" >&2
+  echo "  Set VAULT_TOKEN for this run, or provision the host an ops credential there." >&2
+  exit 2
+fi
+
+# The ops policy cannot rewrite itself, by design -- see the dcms-ops step below, which reports
+# and skips a 403 there rather than failing the run.
+
+# ---------------------------------------------------------------------------
 # seed: generate the machine-only secrets that are absent
 # ---------------------------------------------------------------------------
 
