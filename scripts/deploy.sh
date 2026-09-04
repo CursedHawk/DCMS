@@ -220,26 +220,10 @@ if [ "$ENVIRONMENT" != "local" ]; then
     [ -z "$admin_host" ] && warn "ADMIN_HOST unset -- Caddy falls back to its built-in default, which may not be '$base_host'"
   fi
 
-  # The platform console's Postgres role.
-  #
-  # Both postgres-bootstrap (which creates the role) and platform-api (which connects as it)
-  # fall back to the same development password when this is unset, so the deploy SUCCEEDS and
-  # the console works -- while production runs a role that can read every tenant's reporting
-  # views under a password published in this repository. That is the failure this checks for:
-  # not a broken deploy, a working one that is quietly wrong.
-  #
-  # Fatal on prod, a warning on dev, matching how this platform already treats the alerting
-  # secret: dev is a place to notice the message, prod is not.
-  platform_pw="$(grep -E '^PLATFORM_DB_PASSWORD=' .env 2>/dev/null | tail -1 | cut -d= -f2-)"
-  if [ -z "$platform_pw" ] || [ "$platform_pw" = "dcms-platform-dev" ]; then
-    if [ "$ENVIRONMENT" = "prod" ]; then
-      die "PLATFORM_DB_PASSWORD is unset (or still the development default) in .env.
-     The dcms_platform role would be created with the password published in
-     infra/postgres/init/04-platform-role.sh. Set it to something long and random,
-     then deploy again -- postgres-bootstrap converges the password on every run."
-    fi
-    warn "PLATFORM_DB_PASSWORD unset -- the dcms_platform role keeps the development password from 04-platform-role.sh"
-  fi
+  # There is deliberately no check here for the platform console's database password. It is
+  # not in .env any more -- it lives in Vault, in secret/dcms/platform-api and the matching
+  # Platform__DbPassword under secret/dcms/admin-api, and `infra/vault/apply.sh --check` is
+  # what asserts both are present. A grep of .env would only ever find its absence.
 
   # Not fatal: an unset PLATFORM_HOST means Caddy uses its built-in default, which simply fails
   # ACME for a name this host does not own. Every other site block keeps working.

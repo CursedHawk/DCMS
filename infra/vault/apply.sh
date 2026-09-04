@@ -7,14 +7,24 @@
 # for a secrets manager is itself sensitive and has to live somewhere with its own backup and
 # locking story. Everything here is convergent, so re-running is the whole mechanism.
 #
-# Secret VALUES are never written by this script. Those are entered by an operator, once, and
-# the pipeline only asserts they exist (see --check). A deploy that could rewrite secrets is a
-# deploy that can silently replace them.
+# Secret VALUES are never written by this script, with one bounded exception. Values are
+# entered by an operator, once, and the pipeline only asserts they exist (see --check): a
+# deploy that could rewrite secrets is a deploy that can silently replace them.
+#
+# `--seed` is that exception, and it is narrow on purpose. It writes only secrets that (a) no
+# human ever needs to know, because nothing outside this platform consumes them, and (b) do
+# not yet exist. It NEVER overwrites. An operator inventing a database password by hand is not
+# more secure than 32 bytes from urandom -- it is less -- but rewriting one that services are
+# already using is an outage, so the two cases are kept strictly apart.
+#
+# Secrets a human must know or that come from outside (SMTP, Forgejo, Google, the SuperAdmin
+# password) are never seeded. They have no correct value this script could invent.
 #
 # Usage:
 #   VAULT_ADDR=... VAULT_TOKEN=<admin token> infra/vault/apply.sh [--check] [--print-role-ids]
 #
 #   --check           Assert required paths and keys exist. Changes nothing. Exit 1 if not.
+#   --seed            Generate the MACHINE-ONLY secrets that are absent. Never overwrites.
 #   --print-role-ids  Print each service's role_id (not secret). For provisioning a node.
 #
 # No host needs the vault binary installed. Every policy is piped on stdin rather than passed
@@ -29,7 +39,7 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-SERVICES="identity admin-api content-api media-worker site-builder site-host ai-gateway email-worker"
+SERVICES="identity admin-api content-api media-worker site-builder site-host ai-gateway email-worker platform-api log-janitor"
 
 # Keys that must exist in secret/dcms/shared for any deployment to work. Presence only --
 # this never reads a value.
@@ -47,15 +57,29 @@ REQUIRED_SHARED=""
 #   Authentication__Google__*   optional -- absent simply hides the sign-in button
 #   Email__User/__Password      a relay on a private network may need no auth
 #   Alerting__WebhookSecret     shared with the Grafana container, so it stays in .env
+#
+# Two pairs here must AGREE, and `--seed` generates each pair together so they cannot disagree
+# at creation time:
+#
+#   admin-api/Platform__DbPassword  ==  the password inside
+#   platform-api/ConnectionStrings__Postgres
+#     admin-api is the schema owner and the only thing that can ALTER the dcms_platform role;
+#     platform-api is the only thing that connects as it. Neither can hold the other's copy:
+#     the config provider reads secret/dcms/<own service> and nothing else.
+#
+#   platform-api/Observability__LogJanitorSecret  ==  log-janitor/LOG_JANITOR_SECRET
+#     One is the caller, the other the callee. A mismatch is a 401 on truncate and nothing else.
 required_keys_for() {
   case "$1" in
     identity)     echo "Audit__ChainKey Identity__AdminApiService__Secret Identity__SuperAdmin__Password Identity__SigningCertificate Identity__EncryptionCertificate" ;;
-    admin-api)    echo "Audit__ChainKey ServiceClient__ClientSecret Forgejo__Token Forgejo__AdminToken Forgejo__WebhookSecret" ;;
+    admin-api)    echo "Audit__ChainKey ServiceClient__ClientSecret Forgejo__Token Forgejo__AdminToken Forgejo__WebhookSecret Platform__DbPassword" ;;
     content-api)  echo "Audit__ChainKey ServiceClient__ClientSecret Visitor__SigningKey" ;;
     media-worker) echo "Audit__ChainKey" ;;
     site-host)    echo "Audit__ChainKey" ;;
     ai-gateway)   echo "Audit__ChainKey Ai__Defaults__Provider Ai__Defaults__Model" ;;
     email-worker) echo "Email__Host Email__Port Email__FromAddress" ;;
+    platform-api) echo "ConnectionStrings__Postgres Observability__LogJanitorSecret" ;;
+    log-janitor)  echo "LOG_JANITOR_SECRET" ;;
     *)            echo "" ;;
   esac
 }
@@ -64,6 +88,7 @@ MODE="apply"
 for arg in "$@"; do
   case "$arg" in
     --check)          MODE="check" ;;
+    --seed)           MODE="seed" ;;
     --print-role-ids) MODE="role-ids" ;;
     *) echo "apply.sh: unknown argument $arg" >&2; exit 2 ;;
   esac
@@ -71,6 +96,66 @@ done
 
 command -v vault >/dev/null || { echo "apply.sh: the vault CLI is required" >&2; exit 2; }
 : "${VAULT_ADDR:?VAULT_ADDR must be set}"
+
+# ---------------------------------------------------------------------------
+# seed: generate the machine-only secrets that are absent
+# ---------------------------------------------------------------------------
+
+# 32 bytes of urandom, base64url, no padding. Safe inside a Postgres connection string and a
+# bearer header without quoting, which is the whole reason for restricting the alphabet.
+generate_secret() {
+  head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n'
+}
+
+# Writes one key only if it is absent. Every seeded value goes through here, so "never
+# overwrite" is one function rather than a rule each caller has to remember.
+seed_key() {
+  path="$1"; key="$2"; value="$3"
+  if vault kv get -field="$key" "$path" >/dev/null 2>&1; then
+    echo "  keep    $path -> $key (already set)"
+    return 0
+  fi
+  vault kv patch -mount=secret "${path#secret/}" "$key=$value" >/dev/null 2>&1 \
+    || vault kv put -mount=secret "${path#secret/}" "$key=$value" >/dev/null
+  echo "  seeded  $path -> $key"
+}
+
+if [ "$MODE" = "seed" ]; then
+  echo "==> Seeding machine-only secrets (existing values are never replaced)"
+
+  # The dcms_platform role's password, in the two paths that must agree. Generated ONCE here
+  # and written to both, which is what stops them from disagreeing: admin-api ALTERs the role
+  # to this value, platform-api connects with it, and neither can read the other's path.
+  if vault kv get -field=Platform__DbPassword secret/dcms/admin-api >/dev/null 2>&1 \
+     && vault kv get -field=ConnectionStrings__Postgres secret/dcms/platform-api >/dev/null 2>&1; then
+    echo "  keep    the platform DB password (both halves already set)"
+  else
+    platform_pw="$(generate_secret)"
+    seed_key secret/dcms/admin-api Platform__DbPassword "$platform_pw"
+    # The whole connection string, not just the password: it is what the config provider maps
+    # to ConnectionStrings:Postgres, and assembling it in compose would put half a credential
+    # back in a file we are trying to empty.
+    seed_key secret/dcms/platform-api ConnectionStrings__Postgres \
+      "Host=postgres;Port=5432;Database=dcms;Username=dcms_platform;Password=$platform_pw"
+  fi
+
+  # The token platform-api authenticates to the log-janitor sidecar with. Seeded even when the
+  # janitor is not deployed: it costs nothing, and it means enabling the profile later is a
+  # compose flag rather than a secrets task.
+  if vault kv get -field=Observability__LogJanitorSecret secret/dcms/platform-api >/dev/null 2>&1 \
+     && vault kv get -field=LOG_JANITOR_SECRET secret/dcms/log-janitor >/dev/null 2>&1; then
+    echo "  keep    the log-janitor token (both halves already set)"
+  else
+    janitor_secret="$(generate_secret)"
+    seed_key secret/dcms/platform-api Observability__LogJanitorSecret "$janitor_secret"
+    seed_key secret/dcms/log-janitor LOG_JANITOR_SECRET "$janitor_secret"
+  fi
+
+  echo
+  echo "Seeded. Secrets that must come from outside this platform are NOT seeded and remain"
+  echo "an operator's job -- run --check to see which are still missing."
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # check: assert, change nothing

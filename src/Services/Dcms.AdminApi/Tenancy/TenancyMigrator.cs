@@ -102,6 +102,16 @@ public static class DcmsMigrationRunner
             await RlsConfigurator.ApplyAsync(tenancy, logger, ct);
         }
 
+        // The platform console's Postgres login. Created without a password by
+        // infra/postgres/init/04-platform-role.sh -- that script runs in a bare postgres image
+        // with no way to reach Vault -- and closed here, from a process that can. See
+        // PlatformRoleConfigurator for why this belongs to admin-api rather than platform-api.
+        await PlatformRoleConfigurator.ApplyAsync(
+            scoped.GetRequiredService<TenancyDbContext>(),
+            configuration[PlatformRoleConfigurator.PasswordConfigKey],
+            logger,
+            ct);
+
         // Reporting views for Grafana. After the migrations, because every view reads tables
         // they create; before the backfill, because it changes nothing the backfill depends on
         // and a failure here is logged rather than thrown.

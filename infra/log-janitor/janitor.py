@@ -37,8 +37,64 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 CONTAINERS_ROOT = os.environ.get("CONTAINERS_ROOT", "/var/lib/docker/containers")
 DOCKER_API = os.environ.get("DOCKER_API", "http://docker-socket-proxy-ro:2375")
 PROJECT = os.environ.get("COMPOSE_PROJECT", "dcms")
-SECRET = os.environ.get("LOG_JANITOR_SECRET", "")
 PORT = int(os.environ.get("PORT", "8080"))
+
+VAULT_ADDR = os.environ.get("VAULT_ADDR", "").rstrip("/")
+VAULT_TOKEN = os.environ.get("VAULT_TOKEN", "")
+VAULT_ROLE_ID = os.environ.get("VAULT_ROLE_ID", "")
+VAULT_SECRET_ID = os.environ.get("VAULT_SECRET_ID", "")
+VAULT_PATH = os.environ.get("VAULT_PATH", "secret/data/dcms/log-janitor")
+
+
+def _vault(path, token, method="GET", body=None):
+    req = urllib.request.Request(
+        f"{VAULT_ADDR}/v1/{path}",
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"X-Vault-Token": token, "Content-Type": "application/json"},
+        method=method,
+    )
+    with urllib.request.urlopen(req, timeout=10) as response:
+        return json.load(response)
+
+
+def load_secret():
+    """
+    The shared token platform-api authenticates with, read from Vault at startup.
+
+    Read here rather than injected as an environment variable so this sidecar holds no secret
+    in any file -- the same rule the .NET services follow, reached the same way. AppRole in
+    production; a dev-mode root token when one is set, which is what a bare `docker compose up`
+    provides.
+
+    Read ONCE at startup and kept in memory. This process does one thing and restarts cheaply,
+    so re-reading per request would add a Vault round trip to every call and a Vault outage to
+    every truncate, in exchange for a rotation story a restart already provides.
+    """
+    if not VAULT_ADDR:
+        return os.environ.get("LOG_JANITOR_SECRET", "")
+
+    token = VAULT_TOKEN
+    if VAULT_ROLE_ID and VAULT_SECRET_ID:
+        # AppRole wins when both halves are present, matching VaultCredentials.FromEnvironment
+        # on the .NET side -- production sets these and blanks the dev token.
+        login = _vault(
+            "auth/approle/login", "",
+            method="POST",
+            body={"role_id": VAULT_ROLE_ID, "secret_id": VAULT_SECRET_ID},
+        )
+        token = login["auth"]["client_token"]
+
+    if not token:
+        return ""
+
+    return _vault(VAULT_PATH, token)["data"]["data"].get("LOG_JANITOR_SECRET", "")
+
+
+try:
+    SECRET = load_secret()
+except Exception as exc:  # noqa: BLE001 - reported, then the server fails closed below
+    print(f"log-janitor: could not read the secret from Vault: {exc}", flush=True)
+    SECRET = ""
 
 # Docker container ids are 64 hex characters. Anything else never becomes a path.
 ID_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -109,7 +165,7 @@ class Handler(BaseHTTPRequestHandler):
         # Fails closed. An unset secret means the sidecar is running misconfigured, and the
         # safe reading of that is "refuse everything", not "allow everything".
         if not SECRET:
-            self._send(503, {"error": "LOG_JANITOR_SECRET is not set; refusing every request"})
+            self._send(503, {"error": "no secret loaded (Vault unreachable or the key is absent); refusing every request"})
             return
 
         supplied = (self.headers.get("Authorization") or "").removeprefix("Bearer ").strip()
@@ -177,5 +233,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"log-janitor: listening on :{PORT}, project={PROJECT}, secret={'set' if SECRET else 'UNSET'}", flush=True)
+    source = "vault" if VAULT_ADDR else "environment"
+    print(
+        f"log-janitor: listening on :{PORT}, project={PROJECT}, "
+        f"secret={'set' if SECRET else 'UNSET'} (from {source})",
+        flush=True,
+    )
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

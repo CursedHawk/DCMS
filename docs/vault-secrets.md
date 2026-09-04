@@ -74,6 +74,24 @@ environment is `USER_UID` and `USER_GID`. So they moved.
 Rotating the **signing** certificate invalidates every token signed with the old one. Configure
 the new one alongside the old before removing the old, or do it in a maintenance window.
 
+### Platform console
+
+| Path | Key | Notes |
+|---|---|---|
+| `secret/dcms/platform-api` | `ConnectionStrings__Postgres` | The whole string, password included. Absent from every compose file. |
+| `secret/dcms/platform-api` | `Observability__LogJanitorSecret` | Must equal `log-janitor`'s copy below. |
+| `secret/dcms/admin-api` | `Platform__DbPassword` | Must equal the password inside the connection string above. |
+| `secret/dcms/log-janitor` | `LOG_JANITOR_SECRET` | The narrowest policy on the platform: this one key, this one path. |
+
+All four are **generated** by `infra/vault/apply.sh --seed` — nothing outside this platform
+consumes them, so there is no correct value a human could choose that urandom does not choose
+better. `--seed` never overwrites an existing value.
+
+Two paths hold the same DB password because the config provider reads
+`secret/dcms/<own service>` and nothing else: admin-api is the only thing that can `ALTER` the
+role (it is the schema owner), platform-api the only thing that logs in as it. `--seed` writes
+both halves from one generated value.
+
 `Identity__SuperAdmin__Email` is deliberately **not** here. It is not a secret, and admin-api
 reads the same value as its default alert recipient — a value in two places is a value that
 drifts. It stays in `.env` as `SUPERADMIN_EMAIL`.

@@ -25,22 +25,39 @@
 # Not default_transaction_read_only, unlike dcms_grafana: this role does write, to exactly one
 # table. The `platform` schema grants below are the whole of its write surface.
 #
+# NO PASSWORD IS SET HERE, and that is the point.
+#
+# This runs in a bare `postgres` image with no Vault client and no way to get one — it has
+# neither curl nor wget, only perl — so any password it could set would have to arrive through
+# the environment, which is the file we are trying to stop keeping secrets in. So this script
+# creates the role and its grants and stops there: a role with no password cannot log in, and
+# the deploy is ordered so that nothing tries to.
+#
+# The password is set immediately afterwards by the `migrate` job, which runs the admin-api
+# image -- a service that already has the Vault config provider, already connects as the schema
+# owner, and is therefore already strictly more privileged than the role it is configuring.
+# See PlatformRoleConfigurator.
+#
+# Between the two, the role exists and cannot be used from anywhere that matters: the official
+# image's pg_hba ends with `host all all all scram-sha-256`, and scram against a role with no
+# stored password fails. (The `trust` lines above it cover the unix socket and 127.0.0.1 inside
+# the container, which are already unauthenticated for every role including the owner -- so
+# they are not a window this opens.)
+#
 # Runs on FIRST cluster init and again on every deploy via the `postgres-bootstrap` job, which
 # re-applies infra/postgres/init/* against the running cluster. Every statement is idempotent.
 set -e
 
-PW="${PLATFORM_DB_PASSWORD:-dcms-platform-dev}"
-
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-  --set=pf_pw="$PW" --set=owner="$POSTGRES_USER" <<'SQL'
--- \gexec rather than a DO block: psql interpolates :'pf_pw' in a plain statement but not
--- inside dollar-quoted body text. Same pattern as 02-service-roles.sh and 03-observability-role.sh.
-SELECT format('CREATE ROLE dcms_platform LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS', :'pf_pw')
+  --set=owner="$POSTGRES_USER" <<'SQL'
+-- \gexec rather than a DO block, matching 02-service-roles.sh and 03-observability-role.sh.
+SELECT 'CREATE ROLE dcms_platform LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS'
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dcms_platform')
 \gexec
 
--- Always converge the password/attributes for an existing role.
-ALTER ROLE dcms_platform LOGIN PASSWORD :'pf_pw' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+-- Converge the attributes, never the password: this script has none to converge, and an
+-- ALTER without a PASSWORD clause leaves the existing one untouched.
+ALTER ROLE dcms_platform LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 
 -- A console page that plans badly must not hold a connection indefinitely. The console
 -- refreshes on a timer like a dashboard does, so a slow query fails repeatedly rather than
@@ -70,4 +87,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE :"owner" IN SCHEMA platform
   GRANT USAGE, SELECT ON SEQUENCES TO dcms_platform;
 SQL
 
-echo "platform-api DB role provisioned."
+echo "platform-api DB role provisioned (password is set by the migrate job from Vault)."

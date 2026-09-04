@@ -288,7 +288,6 @@ services:
       PGPASSWORD: "dcms-dev"
       SITEBUILDER_DB_PASSWORD: "dcms-sitebuilder-dev"
       GRAFANA_DB_PASSWORD: "dcms-grafana-dev"
-      PLATFORM_DB_PASSWORD: "dcms-platform-dev"
       RLS_DB_PASSWORD: "dcms-rls-dev"
 
   # ---------- schema migration jobs ----------
@@ -520,7 +519,17 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
-      LOG_JANITOR_SECRET: "${LOG_JANITOR_SECRET:-}"
+      # No secret in this file. The janitor reads LOG_JANITOR_SECRET from
+      # secret/dcms/log-janitor using its own AppRole, exactly as every .NET service does —
+      # its policy is the narrowest on the platform: one key, one path, and not even
+      # secret/dcms/shared.
+      #
+      # VAULT_TOKEN is the dev-mode fallback and is empty in production, where the vps overlay
+      # supplies the AppRole instead.
+      VAULT_ADDR: "${VAULT_ADDR_INTERNAL:-http://vault:8200}"
+      VAULT_TOKEN: "${VAULT_DEV_TOKEN:-dcms-dev-root}"
+      VAULT_ROLE_ID: ""
+      VAULT_SECRET_ID: ""
       COMPOSE_PROJECT: "dcms"
       DOCKER_API: "http://docker-socket-proxy-ro:2375"
       PYTHONDONTWRITEBYTECODE: "1"
@@ -569,7 +578,12 @@ services:
     <<: *service-defaults
     environment:
       <<: *otel-env
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_platform;Password=dcms-platform-dev"
+      # ConnectionStrings__Postgres is DELIBERATELY ABSENT here and in every overlay: it
+      # carries the dcms_platform password, so it lives in secret/dcms/platform-api and nowhere
+      # else. Dev gets it from infra/vault/init.sh; production from `apply.sh --seed`. A value
+      # here would also win over Vault, which loads after the environment.
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_TOKEN: "dcms-dev-root"
       ConnectionStrings__Redis: "redis:6379"
       Nats__Url: "nats://nats:4222"
       Auth__Authority: "http://dcms-identity:8080/"
@@ -581,10 +595,10 @@ services:
       Observability__TempoUrl: "http://tempo:3200"
       Observability__NatsMonitoringUrl: "http://nats:8222"
       Observability__VaultUrl: "http://vault:8200"
-      # Empty disables container-log truncation in the console, which is the default: the
-      # janitor only exists when the `logjanitor` compose profile is up.
+      # The URL is not a secret and stays here; the SECRET comes from
+      # secret/dcms/platform-api. Empty URL disables container-log truncation in the console,
+      # which is the default: the janitor only exists when the `logjanitor` profile is up.
       Observability__LogJanitorUrl: "${LOG_JANITOR_URL:-}"
-      Observability__LogJanitorSecret: "${LOG_JANITOR_SECRET:-}"
 
   platform-spa:
     # 127.0.0.1 rather than localhost for the same reason as admin-spa below: nginx binds IPv4

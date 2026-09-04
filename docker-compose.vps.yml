@@ -103,6 +103,23 @@ services:
   # Host-specific sandbox wiring: DCMS_BUILD_WORK_HOST_ROOT is the host path that
   # backs the builder's /var/build-work bind (see the build-work volume below), which
   # the nested `docker run` needs to mount each per-build dir into the sandbox.
+  # The platform console's API and the log-janitor sidecar, each with its own AppRole. The
+  # janitor's policy reads exactly one key from one path -- it is the container with write
+  # access to Docker's container directory, so it gets the narrowest secret reach in the stack.
+  platform-api:
+    environment:
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_PLATFORM_API:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_PLATFORM_API:-}"
+
+  log-janitor:
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+      # Blanked, not omitted: the base file sets a dev root token, and without this that value
+      # would survive into a production container.
+      VAULT_TOKEN: ""
+      VAULT_ROLE_ID: "${VAULT_ROLE_ID_LOG_JANITOR:-}"
+      VAULT_SECRET_ID: "${VAULT_SECRET_ID_LOG_JANITOR:-}"
+
   site-builder:
     environment:
       VAULT_ROLE_ID: "${VAULT_ROLE_ID_SITE_BUILDER:-}"

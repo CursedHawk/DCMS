@@ -691,15 +691,38 @@ identity, tenants from admin-api, each behind the service that owns the schema.
 
 ### What a deploy needs in `.env`
 
+**No secret for this console lives in `.env`.** Everything sensitive is in Vault and is
+generated, not chosen:
+
+```sh
+PATH="$(pwd)/infra/vault/bin:$PATH" VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=<admin> \
+  infra/vault/apply.sh --seed     # generates what is absent, never overwrites
+```
+
+| Vault path | Key | Read by |
+|---|---|---|
+| `secret/dcms/platform-api` | `ConnectionStrings__Postgres` | platform-api, to connect |
+| `secret/dcms/admin-api` | `Platform__DbPassword` | the migrate job, to `ALTER` the role |
+| `secret/dcms/platform-api` | `Observability__LogJanitorSecret` | platform-api, to call the janitor |
+| `secret/dcms/log-janitor` | `LOG_JANITOR_SECRET` | the janitor, to check the caller |
+
+The two pairs must agree; `--seed` writes each pair together so they cannot disagree at
+creation, and `--check` asserts all four before a deploy rolls anything. Rotating the DB
+password is: change both halves, re-run the `migrate` job, restart platform-api.
+
+What stays in `.env` is what is **not** a secret, and what Caddy — which cannot read Vault —
+needs to build a site address:
+
 | Variable | Effect if unset |
 |---|---|
 | `PLATFORM_HOST` | Caddy falls back to `platform.highgeek.eu`; ACME fails until a DNS A record points here. Warned by `deploy.sh`. |
-| `PLATFORM_DB_PASSWORD` | The `dcms_platform` role keeps the development password from `04-platform-role.sh`. **Fatal on a prod deploy**, warned on dev. |
 | `PLATFORM_ORIGIN` | Optional. Narrows which origins may frame Grafana; defaults to the platform host plus the localhost dev origins. |
-| `LOG_JANITOR_URL` / `LOG_JANITOR_SECRET` | Container-log truncation stays off, and the console says so. This is the intended default. |
+| `LOG_JANITOR_URL` | Container-log truncation stays off, and the console says so. This is the intended default. |
 
-Everything else is automatic: `postgres-bootstrap` creates the role, the `migrate` job creates
-the `platform` schema, and `identity-migrate` seeds the `dcms-platform-spa` OIDC client.
+Everything else is automatic: `postgres-bootstrap` creates the role **without a password** (it
+runs in a bare postgres image that cannot reach Vault), the `migrate` job sets that password
+from Vault and creates the `platform` schema, and `identity-migrate` seeds the
+`dcms-platform-spa` OIDC client.
 
 ### Least privilege, and what it means when something breaks
 

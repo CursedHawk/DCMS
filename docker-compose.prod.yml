@@ -153,7 +153,6 @@ services:
       PGPASSWORD: "${POSTGRES_PASSWORD}"
       SITEBUILDER_DB_PASSWORD: "${SITEBUILDER_DB_PASSWORD}"
       GRAFANA_DB_PASSWORD: "${GRAFANA_DB_PASSWORD}"
-      PLATFORM_DB_PASSWORD: "${PLATFORM_DB_PASSWORD}"
       RLS_DB_PASSWORD: "${RLS_DB_PASSWORD:-}"
 
   # ---------- schema migration jobs ----------
@@ -339,7 +338,18 @@ services:
       ASPNETCORE_ENVIRONMENT: "Production"
       DOTNET_ENVIRONMENT: "Production"
       VAULT_ADDR: "http://vault:8200"
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_platform;Password=${PLATFORM_DB_PASSWORD:-dcms-platform-dev}"
+      # Refuse a dev-mode Vault, exactly as *prod-env does for the services that inherit it.
+      # This service reads its ENTIRE database credential from Vault, so a Vault it cannot
+      # trust is not something to fall back from -- it is a reason not to start.
+      DCMS_REFUSE_DEV_VAULT: "true"
+      # Blanked, not omitted. The base compose sets the dev root token published in this
+      # repository, and without this line that value survives into a production container --
+      # the same trap content-api's ServiceClient__ClientSecret documents two blocks below.
+      # The vps overlay supplies the AppRole that actually authenticates this service.
+      VAULT_TOKEN: ""
+      # ConnectionStrings__Postgres is DELIBERATELY ABSENT. It carries the dcms_platform
+      # password, so it comes from secret/dcms/platform-api and from nowhere else — leaving a
+      # value here would also override Vault, which loads after the environment.
       ConnectionStrings__Redis: "redis:6379"
       Nats__Url: "nats://nats:4222"
       Auth__Authority: "http://identity:8080/"
