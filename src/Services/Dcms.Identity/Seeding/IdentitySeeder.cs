@@ -162,40 +162,14 @@ public sealed class IdentitySeeder(
                             ?? "http://localhost:5173/;http://localhost:5000/")
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        if (await manager.FindByClientIdAsync(DcmsOAuth.Clients.AdminSpa, ct) is null)
-        {
-            var descriptor = new OpenIddictApplicationDescriptor
-            {
-                ClientId = DcmsOAuth.Clients.AdminSpa,
-                ClientType = ClientTypes.Public,
-                ConsentType = ConsentTypes.Implicit,
-                DisplayName = "DCMS Admin SPA",
-                Permissions =
-                {
-                    Permissions.Endpoints.Authorization,
-                    Permissions.Endpoints.Token,
-                    Permissions.Endpoints.EndSession,
-                    Permissions.GrantTypes.AuthorizationCode,
-                    Permissions.GrantTypes.RefreshToken,
-                    Permissions.ResponseTypes.Code,
-                    Permissions.Scopes.Email,
-                    Permissions.Scopes.Profile,
-                    Permissions.Scopes.Roles,
-                    Permissions.Prefixes.Scope + DcmsOAuth.Scopes.Admin,
-                },
-                Requirements = { Requirements.Features.ProofKeyForCodeExchange },
-            };
-            foreach (var uri in spaRedirects)
-            {
-                descriptor.RedirectUris.Add(new Uri(uri));
-            }
-            foreach (var uri in spaPostLogout)
-            {
-                descriptor.PostLogoutRedirectUris.Add(new Uri(uri));
-            }
-            await manager.CreateAsync(descriptor, ct);
-            logger.LogInformation("Seeded admin SPA client.");
-        }
+        await EnsurePublicSpaClientAsync(
+            manager,
+            DcmsOAuth.Clients.AdminSpa,
+            "DCMS Admin SPA",
+            [DcmsOAuth.Scopes.Admin],
+            spaRedirects,
+            spaPostLogout,
+            ct);
 
         // The platform console. A separate public client rather than another redirect URI on
         // the admin SPA: the two are served from different hosts, and a shared client would let
@@ -213,41 +187,14 @@ public sealed class IdentitySeeder(
                                   ?? "http://localhost:5174/;http://localhost:5010/")
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        if (await manager.FindByClientIdAsync(DcmsOAuth.Clients.PlatformSpa, ct) is null)
-        {
-            var descriptor = new OpenIddictApplicationDescriptor
-            {
-                ClientId = DcmsOAuth.Clients.PlatformSpa,
-                ClientType = ClientTypes.Public,
-                ConsentType = ConsentTypes.Implicit,
-                DisplayName = "DCMS Platform Console",
-                Permissions =
-                {
-                    Permissions.Endpoints.Authorization,
-                    Permissions.Endpoints.Token,
-                    Permissions.Endpoints.EndSession,
-                    Permissions.GrantTypes.AuthorizationCode,
-                    Permissions.GrantTypes.RefreshToken,
-                    Permissions.ResponseTypes.Code,
-                    Permissions.Scopes.Email,
-                    Permissions.Scopes.Profile,
-                    Permissions.Scopes.Roles,
-                    Permissions.Prefixes.Scope + DcmsOAuth.Scopes.Platform,
-                    Permissions.Prefixes.Scope + DcmsOAuth.Scopes.Admin,
-                },
-                Requirements = { Requirements.Features.ProofKeyForCodeExchange },
-            };
-            foreach (var uri in platformRedirects)
-            {
-                descriptor.RedirectUris.Add(new Uri(uri));
-            }
-            foreach (var uri in platformPostLogout)
-            {
-                descriptor.PostLogoutRedirectUris.Add(new Uri(uri));
-            }
-            await manager.CreateAsync(descriptor, ct);
-            logger.LogInformation("Seeded platform console SPA client.");
-        }
+        await EnsurePublicSpaClientAsync(
+            manager,
+            DcmsOAuth.Clients.PlatformSpa,
+            "DCMS Platform Console",
+            [DcmsOAuth.Scopes.Platform, DcmsOAuth.Scopes.Admin],
+            platformRedirects,
+            platformPostLogout,
+            ct);
 
         if (await manager.FindByClientIdAsync(DcmsOAuth.Clients.AdminApiService, ct) is null)
         {
@@ -338,4 +285,99 @@ public sealed class IdentitySeeder(
         await manager.CreateAsync(descriptor, ct);
         logger.LogInformation("Seeded Grafana OIDC client.");
     }
+
+    /// <summary>
+    /// Creates a public code+PKCE client, or brings an existing one's URIs back in line with
+    /// configuration.
+    ///
+    /// <para><b>Why this converges rather than only creating.</b> Both SPA clients used to be
+    /// seeded once and never touched again, so a client first created on a host whose
+    /// configuration was wrong stayed wrong for the life of that database — no redeploy could
+    /// repair it, and the only symptom is OpenIddict refusing the sign-in with
+    /// "The specified 'redirect_uri' is not valid for this client application". That is exactly
+    /// what happened to the platform console: the seeder runs in the identity-migrate job, and
+    /// that job had not been given the public redirect URIs, so the client was registered
+    /// against localhost.</para>
+    ///
+    /// <para>The redirect URIs come from configuration and from nowhere else, so configuration
+    /// is allowed to be the authority on them. Everything else about an existing client is left
+    /// alone.</para>
+    /// </summary>
+    private async Task EnsurePublicSpaClientAsync(
+        IOpenIddictApplicationManager manager,
+        string clientId,
+        string displayName,
+        IReadOnlyList<string> resourceScopes,
+        IReadOnlyList<string> redirectUris,
+        IReadOnlyList<string> postLogoutUris,
+        CancellationToken ct)
+    {
+        var descriptor = new OpenIddictApplicationDescriptor
+        {
+            ClientId = clientId,
+            ClientType = ClientTypes.Public,
+            ConsentType = ConsentTypes.Implicit,
+            DisplayName = displayName,
+            Permissions =
+            {
+                Permissions.Endpoints.Authorization,
+                Permissions.Endpoints.Token,
+                Permissions.Endpoints.EndSession,
+                Permissions.GrantTypes.AuthorizationCode,
+                Permissions.GrantTypes.RefreshToken,
+                Permissions.ResponseTypes.Code,
+                Permissions.Scopes.Email,
+                Permissions.Scopes.Profile,
+                Permissions.Scopes.Roles,
+            },
+            Requirements = { Requirements.Features.ProofKeyForCodeExchange },
+        };
+
+        foreach (var scope in resourceScopes)
+        {
+            descriptor.Permissions.Add(Permissions.Prefixes.Scope + scope);
+        }
+        foreach (var uri in redirectUris)
+        {
+            descriptor.RedirectUris.Add(new Uri(uri));
+        }
+        foreach (var uri in postLogoutUris)
+        {
+            descriptor.PostLogoutRedirectUris.Add(new Uri(uri));
+        }
+
+        var existing = await manager.FindByClientIdAsync(clientId, ct);
+        if (existing is null)
+        {
+            await manager.CreateAsync(descriptor, ct);
+            logger.LogInformation("Seeded {Client} with {Count} redirect URI(s).", clientId, redirectUris.Count);
+            return;
+        }
+
+        var current = new OpenIddictApplicationDescriptor();
+        await manager.PopulateAsync(current, existing, ct);
+
+        if (current.RedirectUris.SetEquals(descriptor.RedirectUris)
+            && current.PostLogoutRedirectUris.SetEquals(descriptor.PostLogoutRedirectUris))
+        {
+            return;
+        }
+
+        // Only the URIs. Anything else an operator changed on the client stays as they left it.
+        var before = string.Join(", ", current.RedirectUris.Select(u => u.ToString()));
+        current.RedirectUris.Clear();
+        current.PostLogoutRedirectUris.Clear();
+        foreach (var uri in descriptor.RedirectUris) current.RedirectUris.Add(uri);
+        foreach (var uri in descriptor.PostLogoutRedirectUris) current.PostLogoutRedirectUris.Add(uri);
+
+        await manager.PopulateAsync(existing, current, ct);
+        await manager.UpdateAsync(existing, ct);
+
+        logger.LogInformation(
+            "Updated {Client} redirect URIs from configuration. Was: {Before}. Now: {After}.",
+            clientId,
+            string.IsNullOrEmpty(before) ? "(none)" : before,
+            string.Join(", ", descriptor.RedirectUris.Select(u => u.ToString())));
+    }
+
 }

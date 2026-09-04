@@ -758,6 +758,18 @@ Until then the deploy rolls everything else and fails its health gate on platfor
 instruction in that container's logs. That is deliberate: a green deploy that shipped a service
 which cannot reach its database is worse than a red one that says which command is missing.
 
+`PLATFORM_HOST` has a second reader, and forgetting that cost a sign-in outage.
+`identity-migrate` -- not `identity` -- is the job that runs `IdentitySeeder`, and the seeder
+registers the console's OIDC redirect URI as `https://$PLATFORM_HOST/auth/callback`. Config set
+only on the `identity` service reaches the seeder never, so the client was registered against
+`localhost` and OpenIddict refused every sign-in with *"The specified 'redirect_uri' is not
+valid for this client application"*. Both services now merge one `x-vps-identity-seed` anchor,
+and the seeder **converges** the two SPA clients' redirect URIs onto configuration instead of
+only creating them -- so changing `PLATFORM_HOST` or `PUBLIC_BASE_URL` and redeploying repairs
+a mis-registered client, and `identity-migrate`'s log names the old and new URIs when it does.
+The Grafana client is still create-once: changing `GRAFANA_DOMAIN` means deleting that row
+before the next deploy re-seeds it.
+
 ### Least privilege, and what it means when something breaks
 
 platform-api connects as `dcms_platform`: `USAGE` on `obs`, read/write on
