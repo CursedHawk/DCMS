@@ -12,7 +12,8 @@ pnpm dev:admin                 # admin SPA with hot reload on :5173
 
 Dev ports: admin SPA 5000 (container) / 5173 (vite), identity 5001 (and 8080 for
 the OIDC issuer alias), admin-api 5002, content-api 5003, media-worker 5004,
-site-builder 5005, site-host 5006, ai-gateway 5007, Postgres 5432, Redis 6379,
+site-builder 5005, site-host 5006, ai-gateway 5007, platform-api 5008,
+platform-spa 5010, Postgres 5432, Redis 6379,
 NATS 4222 (monitor 8222), MinIO 9000 (console 9001), Vault 8200, Mailpit 8025
 (SMTP 1025). email-worker and Forgejo publish no host port. Telemetry ports are
 listed in [`infra/observability/README.md`](../infra/observability/README.md).
@@ -681,6 +682,58 @@ Grafana is at **https://grafana.highgeek.eu**, OIDC against the DCMS identity
 service, **platform SuperAdmin only**. There is no host port; it is reachable
 only through Caddy. `GF_SECURITY_ADMIN_PASSWORD` is a break-glass local login for
 the case where identity itself is what is down.
+
+## Platform console (platform.highgeek.eu)
+
+The operations console for platform superadmins. Backed by **platform-api**, which owns
+platform authorization and observability and nothing else: users are reached over HTTP from
+identity, tenants from admin-api, each behind the service that owns the schema.
+
+### What a deploy needs in `.env`
+
+| Variable | Effect if unset |
+|---|---|
+| `PLATFORM_HOST` | Caddy falls back to `platform.highgeek.eu`; ACME fails until a DNS A record points here. Warned by `deploy.sh`. |
+| `PLATFORM_DB_PASSWORD` | The `dcms_platform` role keeps the development password from `04-platform-role.sh`. **Fatal on a prod deploy**, warned on dev. |
+| `PLATFORM_ORIGIN` | Optional. Narrows which origins may frame Grafana; defaults to the platform host plus the localhost dev origins. |
+| `LOG_JANITOR_URL` / `LOG_JANITOR_SECRET` | Container-log truncation stays off, and the console says so. This is the intended default. |
+
+Everything else is automatic: `postgres-bootstrap` creates the role, the `migrate` job creates
+the `platform` schema, and `identity-migrate` seeds the `dcms-platform-spa` OIDC client.
+
+### Least privilege, and what it means when something breaks
+
+platform-api connects as `dcms_platform`: `USAGE` on `obs`, read/write on
+`platform.role_permissions`, and **no grant on any other schema**. Two consequences worth
+knowing before debugging it:
+
+- **It cannot write audit rows.** Records ride JetStream (`AddDcmsAuditOverNats`) and admin-api's
+  writer appends them. If audit rows from the console are missing, look at NATS, not Postgres.
+- **It cannot delete audit data**, and that is not a setting. There is no grant to remove.
+
+### The console is empty or refuses everyone
+
+- **A blank console for a real operator** — they hold no platform permission. `SuperAdmin`
+  bypasses the check entirely; anyone else needs rows in `platform.role_permissions`. The
+  Access page edits them, and a change takes effect within the 5-minute `pperm:` cache.
+- **Storage page shows no stores** — it distinguishes the two causes. "No store sizes reported
+  yet" means Prometheus answered and the `store-usage` sidecar has not; "not answering" means
+  Prometheus is down.
+- **Monitoring shows a blank frame** — Grafana refused to be framed. Check
+  `GF_SECURITY_ALLOW_EMBEDDING` and that `frame-ancestors` names this host. Note the cookie
+  works only because the console and Grafana share the registrable domain; moving the console
+  to a different domain breaks it silently.
+
+### Purging logs
+
+Loki is the only real delete primitive. Selectors are narrowed server-side with
+`category!="audit", category!="security"` and the effective selector is returned — audit and
+security streams are held 90 days as an integrity control and aiming at them is refused.
+Deletes apply after Loki's 2-hour delay and can be cancelled until then, from the same page.
+
+Prometheus needs `--web.enable-admin-api` (set, with the exposure noted in `docker-compose.yml`);
+Tempo has no delete API at all. Container-log truncation needs the `logjanitor` compose profile,
+which is off by default because that sidecar holds write access to Docker's container directory.
 
 ### Somebody reports a trace id
 

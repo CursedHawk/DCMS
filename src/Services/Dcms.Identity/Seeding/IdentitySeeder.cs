@@ -131,6 +131,8 @@ public sealed class IdentitySeeder(
         // so the service token content-api carries is only good for the endpoints that named it.
         await EnsureScopeAsync(
             manager, DcmsOAuth.Scopes.Social, "DCMS Social (service)", DcmsOAuth.Resources.AdminApi, ct);
+        await EnsureScopeAsync(
+            manager, DcmsOAuth.Scopes.Platform, "DCMS Platform Console", DcmsOAuth.Resources.PlatformApi, ct);
     }
 
     private static async Task EnsureScopeAsync(
@@ -193,6 +195,58 @@ public sealed class IdentitySeeder(
             }
             await manager.CreateAsync(descriptor, ct);
             logger.LogInformation("Seeded admin SPA client.");
+        }
+
+        // The platform console. A separate public client rather than another redirect URI on
+        // the admin SPA: the two are served from different hosts, and a shared client would let
+        // a token minted for admin.highgeek.eu be replayed into platform.highgeek.eu's callback.
+        //
+        // It asks for dcms.admin as well as dcms.platform because the console calls three APIs
+        // same-origin through Caddy — platform-api for observability and ops, identity for the
+        // user directory, and admin-api for tenancy and audit, which already own those. Nothing
+        // here grants anything: every one of those endpoints is gated on SuperAdmin or a
+        // platform permission on the server side.
+        var platformRedirects = (configuration["Identity:PlatformSpa:RedirectUris"]
+                                 ?? "http://localhost:5174/auth/callback;http://localhost:5010/auth/callback")
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var platformPostLogout = (configuration["Identity:PlatformSpa:PostLogoutUris"]
+                                  ?? "http://localhost:5174/;http://localhost:5010/")
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (await manager.FindByClientIdAsync(DcmsOAuth.Clients.PlatformSpa, ct) is null)
+        {
+            var descriptor = new OpenIddictApplicationDescriptor
+            {
+                ClientId = DcmsOAuth.Clients.PlatformSpa,
+                ClientType = ClientTypes.Public,
+                ConsentType = ConsentTypes.Implicit,
+                DisplayName = "DCMS Platform Console",
+                Permissions =
+                {
+                    Permissions.Endpoints.Authorization,
+                    Permissions.Endpoints.Token,
+                    Permissions.Endpoints.EndSession,
+                    Permissions.GrantTypes.AuthorizationCode,
+                    Permissions.GrantTypes.RefreshToken,
+                    Permissions.ResponseTypes.Code,
+                    Permissions.Scopes.Email,
+                    Permissions.Scopes.Profile,
+                    Permissions.Scopes.Roles,
+                    Permissions.Prefixes.Scope + DcmsOAuth.Scopes.Platform,
+                    Permissions.Prefixes.Scope + DcmsOAuth.Scopes.Admin,
+                },
+                Requirements = { Requirements.Features.ProofKeyForCodeExchange },
+            };
+            foreach (var uri in platformRedirects)
+            {
+                descriptor.RedirectUris.Add(new Uri(uri));
+            }
+            foreach (var uri in platformPostLogout)
+            {
+                descriptor.PostLogoutRedirectUris.Add(new Uri(uri));
+            }
+            await manager.CreateAsync(descriptor, ct);
+            logger.LogInformation("Seeded platform console SPA client.");
         }
 
         if (await manager.FindByClientIdAsync(DcmsOAuth.Clients.AdminApiService, ct) is null)

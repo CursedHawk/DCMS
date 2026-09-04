@@ -3,26 +3,24 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { AuthedImage } from '../../components/AuthedImage';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
 import {
+  Badge,
+  Button,
+  CenteredSpinner,
+  cn,
   Dialog,
   DialogBody,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from '../../components/ui/dialog';
-import { Input } from '../../components/ui/input';
-import {
+  Input,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../components/ui/select';
-import { CenteredSpinner } from '../../components/ui/spinner';
+} from '@dcms/admin-ui';
 import { fetchObjectUrl, mediaContentPath } from '../../lib/api';
-import { cn } from '../../lib/cn';
 import { MediaThumb } from './MediaThumb';
 import {
   type MediaFolder,

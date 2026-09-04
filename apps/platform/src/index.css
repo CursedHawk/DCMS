@@ -1,0 +1,170 @@
+@import 'tailwindcss';
+@import '@dcms/admin-ui/theme.css';
+
+/*
+ * Tailwind detects content by walking up from THIS file, so the shared components in
+ * packages/admin-ui are outside the scan. Name that directory explicitly.
+ */
+@source '../../../packages/admin-ui/src';
+
+/*
+ * The platform console's palette.
+ *
+ * Same token NAMES as the admin SPA — that is the contract @dcms/admin-ui's components are
+ * written against, so every Button and Table works here unchanged — with different VALUES.
+ * Declared after the import so these win at equal specificity.
+ *
+ * Why re-skin at all, when a shared design system usually argues for the opposite: dev and
+ * production run identical images, and this console is the one with the irreversible buttons.
+ * An operator who cannot tell at a glance which console they are in, and which environment it
+ * points at, is the actual hazard here. Looking alike is the bug.
+ *
+ * Two rules hold the palette together:
+ *   1. The brand hue (teal) is never a status. It reads as instrumentation — a dial face —
+ *      and it is used for structure and emphasis, never to say "good".
+ *   2. The state ramp (green / amber / red) is reserved for state, so amber always means
+ *      watch this and never means "accent". A palette where the brand colour and the warning
+ *      colour are the same hue is a palette that cannot warn.
+ */
+:root {
+  /* Cool grey-green paper. Not white (this is a screen people stare at during an incident)
+     and not cream (which would put it in the wrong family entirely). */
+  --background: 180 8% 96%;
+  --foreground: 197 30% 12%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 197 30% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 197 30% 12%;
+
+  /* Instrument teal. */
+  --primary: 191 84% 27%;
+  --primary-foreground: 180 20% 98%;
+
+  --secondary: 185 14% 92%;
+  --secondary-foreground: 197 30% 12%;
+  --muted: 185 14% 92%;
+  --muted-foreground: 196 12% 42%;
+  --accent: 191 50% 92%;
+  --accent-foreground: 191 84% 22%;
+
+  /* State ramp, deliberately outside the brand hue. */
+  --destructive: 6 63% 46%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 132 55% 40%;
+  --warning: 38 78% 57%;
+
+  --border: 190 12% 86%;
+  --input: 190 12% 86%;
+  --ring: 191 84% 27%;
+
+  /* Squarer than the admin SPA's 0.65rem. A console of measured bars and aligned ceilings
+     reads better with less rounding; this is the one place the two apps differ structurally
+     rather than only in colour. */
+  --radius: 0.375rem;
+
+  --sidebar: 197 34% 13%;
+  --sidebar-foreground: 185 18% 92%;
+  --sidebar-muted: 195 12% 62%;
+  --sidebar-accent: 187 68% 45%;
+}
+
+.dark {
+  /* Deep blue-green graphite. Not #0B0B0B-style tinted black: this ground is visibly cool,
+     which is what keeps the teal readable on it. */
+  --background: 197 28% 9%;
+  --foreground: 185 16% 92%;
+
+  --card: 197 26% 12%;
+  --card-foreground: 185 16% 92%;
+  --popover: 197 26% 12%;
+  --popover-foreground: 185 16% 92%;
+
+  --primary: 187 68% 45%;
+  --primary-foreground: 197 40% 8%;
+
+  --secondary: 197 20% 17%;
+  --secondary-foreground: 185 16% 92%;
+  --muted: 197 20% 17%;
+  --muted-foreground: 193 10% 60%;
+  --accent: 191 40% 20%;
+  --accent-foreground: 187 68% 70%;
+
+  --destructive: 6 62% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 132 45% 52%;
+  --warning: 38 76% 62%;
+
+  --border: 197 18% 22%;
+  --input: 197 18% 22%;
+  --ring: 187 68% 45%;
+
+  --sidebar: 197 32% 10%;
+  --sidebar-foreground: 185 18% 90%;
+  --sidebar-muted: 195 10% 55%;
+  --sidebar-accent: 187 68% 45%;
+}
+
+/*
+ * IBM Plex, drawn for technical and industrial products. The mono is not texture: trace ids,
+ * byte counts, durations and tenant slugs are the actual content of this console, and they
+ * need to align in a column and be transcribable over a phone call.
+ *
+ * Both have full system fallbacks. This console is opened when the platform is down, so it
+ * has to be legible if the font request never completes.
+ */
+@theme inline {
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    /* Plex's default figures are proportional; tabular is what makes a column of byte counts
+       and durations line up under each other. */
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/*
+ * The capacity rail.
+ *
+ * The signature device, and the reason it exists rather than a progress bar: every quantity
+ * in this console means something only against its ceiling. "3.1 GB" is not information;
+ * "3.1 of 8 GB, over a 30-day window" is. The ceiling tick is drawn as a hard edge rather
+ * than implied by the track's end, so a rail at 96% and a rail at 100% are distinguishable
+ * at a glance — which is the difference between a warning and an outage.
+ */
+.rail {
+  position: relative;
+  height: 0.5rem;
+  border-radius: 2px;
+  background-color: hsl(var(--muted));
+  overflow: hidden;
+}
+
+.rail-fill {
+  height: 100%;
+  border-radius: 2px 0 0 2px;
+  background-color: hsl(var(--primary));
+  transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.rail-fill[data-state='watch'] { background-color: hsl(var(--warning)); }
+.rail-fill[data-state='critical'] { background-color: hsl(var(--destructive)); }
+
+/* The ceiling. A 2px stop at the far edge of the track, so "full" is a place, not an
+   absence of remaining track. */
+.rail::after {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  width: 2px;
+  background-color: hsl(var(--foreground) / 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-fill { transition: none; }
+}

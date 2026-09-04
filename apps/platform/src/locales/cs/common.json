@@ -1,0 +1,16 @@
+{
+  "errors": {
+    "generic": "Něco se pokazilo.",
+    "traceId": "Trace {{id}}",
+    "copyId": "Kopírovat id",
+    "copied": "Zkopírováno"
+  },
+  "actions": {
+    "copy": "Kopírovat",
+    "copied": "Zkopírováno",
+    "cancel": "Zrušit"
+  },
+  "common": {
+    "confirmType": "Pro potvrzení napište {{value}}"
+  }
+}

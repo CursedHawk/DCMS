@@ -4,15 +4,13 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { RegistryWidgetsType, WidgetProps } from '@rjsf/utils';
-import { Page, PageHeader } from '../../components/Page';
-import { SchemaForm } from '../../components/SchemaForm';
-import { MediaPicker } from '../media/MediaPicker';
-import { MetaConnectionWidget } from './MetaConnectionWidget';
-import { EmptyState } from '../../components/ui/empty-state';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { Card, CardContent } from '../../components/ui/card';
 import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CenteredSpinner,
+  cn,
   Dialog,
   DialogBody,
   DialogContent,
@@ -20,15 +18,23 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../components/ui/dialog';
-import { Input, Textarea } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
-import { CenteredSpinner } from '../../components/ui/spinner';
-import { Switch } from '../../components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
+  EmptyState,
+  Input,
+  Label,
+  Page,
+  PageHeader,
+  Switch,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Textarea,
+  toastApiError,
+} from '@dcms/admin-ui';
+import { SchemaForm } from '../../components/SchemaForm';
+import { MediaPicker } from '../media/MediaPicker';
+import { MetaConnectionWidget } from './MetaConnectionWidget';
 import { api } from '../../lib/api';
-import { toastApiError } from '../../lib/errors';
-import { cn } from '../../lib/cn';
 import {
   type PluginInstance,
   type PluginManifest,

@@ -1,9 +1,7 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '../../components/ui/button';
-import { EmptyState } from '../../components/ui/empty-state';
-import { CenteredSpinner } from '../../components/ui/spinner';
+import { Button, CenteredSpinner, EmptyState } from '@dcms/admin-ui';
 import { api } from '../../lib/api';
 import { Perm, can, useMyPermissions } from '../../lib/permissions';
 import { AuditRecordDialog } from './AuditRecordDialog';

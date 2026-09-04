@@ -3,16 +3,16 @@ import { Eye, GitMerge } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button } from '../../components/ui/button';
 import {
+  Button,
+  cn,
   Dialog,
   DialogBody,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../components/ui/dialog';
-import { cn } from '../../lib/cn';
+} from '@dcms/admin-ui';
 import { RELEASE_BRANCH } from './constants';
 import type { MergeConflictFile } from './git';
 import { gitApi } from './git';

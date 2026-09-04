@@ -53,8 +53,8 @@ REPO_ROOT=$(pwd)
 
 # Built from this repo, in dependency-ish order. Serial builds follow this order.
 APP_SERVICES=(
-  identity admin-api content-api ai-gateway
-  media-worker email-worker site-builder site-host admin-spa
+  identity admin-api content-api ai-gateway platform-api
+  media-worker email-worker site-builder site-host admin-spa platform-spa
 )
 
 # Configuration arrives as a bind-mounted file. These must be force-recreated
@@ -74,9 +74,9 @@ CONFIG_MOUNTED_SERVICES=(caddy alloy prometheus loki tempo grafana nats vault)
 # tempo, alloy. Losing them costs telemetry rather than service, which is the right side of
 # the line to be stuck on -- but it is a gap, not a decision.
 HEALTH_GATED_SERVICES=(
-  identity admin-api content-api ai-gateway
+  identity admin-api content-api ai-gateway platform-api
   media-worker email-worker site-builder site-host
-  caddy admin-spa forgejo
+  caddy admin-spa platform-spa forgejo
 )
 
 DEPLOY_STATE_DIR="${DCMS_DEPLOY_STATE_DIR:-$REPO_ROOT/.deploy}"
@@ -219,6 +219,33 @@ if [ "$ENVIRONMENT" != "local" ]; then
     fi
     [ -z "$admin_host" ] && warn "ADMIN_HOST unset -- Caddy falls back to its built-in default, which may not be '$base_host'"
   fi
+
+  # The platform console's Postgres role.
+  #
+  # Both postgres-bootstrap (which creates the role) and platform-api (which connects as it)
+  # fall back to the same development password when this is unset, so the deploy SUCCEEDS and
+  # the console works -- while production runs a role that can read every tenant's reporting
+  # views under a password published in this repository. That is the failure this checks for:
+  # not a broken deploy, a working one that is quietly wrong.
+  #
+  # Fatal on prod, a warning on dev, matching how this platform already treats the alerting
+  # secret: dev is a place to notice the message, prod is not.
+  platform_pw="$(grep -E '^PLATFORM_DB_PASSWORD=' .env 2>/dev/null | tail -1 | cut -d= -f2-)"
+  if [ -z "$platform_pw" ] || [ "$platform_pw" = "dcms-platform-dev" ]; then
+    if [ "$ENVIRONMENT" = "prod" ]; then
+      die "PLATFORM_DB_PASSWORD is unset (or still the development default) in .env.
+     The dcms_platform role would be created with the password published in
+     infra/postgres/init/04-platform-role.sh. Set it to something long and random,
+     then deploy again -- postgres-bootstrap converges the password on every run."
+    fi
+    warn "PLATFORM_DB_PASSWORD unset -- the dcms_platform role keeps the development password from 04-platform-role.sh"
+  fi
+
+  # Not fatal: an unset PLATFORM_HOST means Caddy uses its built-in default, which simply fails
+  # ACME for a name this host does not own. Every other site block keeps working.
+  platform_host="$(grep -E '^PLATFORM_HOST=' .env 2>/dev/null | tail -1 | cut -d= -f2-)"
+  [ -z "$platform_host" ] \
+    && warn "PLATFORM_HOST unset -- the platform console falls back to Caddy's built-in default hostname, and needs a DNS A record pointing here before it can get a certificate"
 fi
 
 echo "  compose: docker compose ${COMPOSE_FILES[*]}"

@@ -1,23 +1,21 @@
 import { ArrowLeft, ArrowRight, ImagePlus, Layers, X } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '../../components/ui/button';
 import {
+  Button,
+  CenteredSpinner,
+  cn,
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../components/ui/dialog';
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../components/ui/select';
-import { CenteredSpinner } from '../../components/ui/spinner';
-import { cn } from '../../lib/cn';
+} from '@dcms/admin-ui';
 import { MediaThumb } from './MediaThumb';
 import { MediaUploader } from './MediaUploader';
 import { ROOT_FOLDER, type MediaCategory, useMedia, useMediaFolders } from './api';

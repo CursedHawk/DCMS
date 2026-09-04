@@ -96,9 +96,15 @@ builder.Services
             .AllowRefreshTokenFlow()
             .AllowClientCredentialsFlow();
 
+        // MUST list every scope in DcmsOAuth.Scopes. This is a second place the same fact is
+        // written -- IdentitySeeder creates the scope ROW, this permits it to be REQUESTED --
+        // and the two failing to agree is silent in exactly the wrong direction: seeding logs
+        // success, discovery omits the scope, and the token request fails at the point a user
+        // is trying to sign in. dcms.platform shipped in the seeder and not here once already.
         options.RegisterScopes(
             Scopes.Email, Scopes.Profile, Scopes.Roles,
-            DcmsOAuth.Scopes.Admin, DcmsOAuth.Scopes.Ai, DcmsOAuth.Scopes.Social);
+            DcmsOAuth.Scopes.Admin, DcmsOAuth.Scopes.Ai, DcmsOAuth.Scopes.Social,
+            DcmsOAuth.Scopes.Platform);
 
         // A fixed issuer keeps tokens valid regardless of which host reaches the
         // server (SPA via localhost, services via the compose hostname). When set,
@@ -171,9 +177,20 @@ builder.Services
 // The account-settings API authenticates with OpenIddict-validated access tokens
 // (bearer), not the interactive Identity cookie — so require that scheme explicitly.
 builder.Services.AddAuthorization(options =>
+{
     options.AddPolicy(Dcms.Identity.Endpoints.AccountApiEndpoints.PolicyName, policy => policy
         .AddAuthenticationSchemes(OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)
-        .RequireAuthenticatedUser()));
+        .RequireAuthenticatedUser());
+
+    // The platform console's user directory. Same bearer scheme as the account API, plus the
+    // SuperAdmin global role -- these endpoints can lock an account and mint another
+    // SuperAdmin, so they are deliberately NOT behind the platform permission model that
+    // platform-api uses: that model is data, and the role that can edit it lives here.
+    options.AddPolicy(Dcms.Identity.Endpoints.PlatformUserEndpoints.PolicyName, policy => policy
+        .AddAuthenticationSchemes(OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)
+        .RequireAuthenticatedUser()
+        .RequireRole(Dcms.Identity.Domain.GlobalRoles.SuperAdmin));
+});
 builder.Services.AddHostedService<IdentitySeeder>();
 
 // Forgejo user mirror: provision a Forgejo account per DCMS user and keep the
@@ -206,8 +223,15 @@ builder.Services.AddDcmsEmailQueue();
 // The admin SPA (oidc-client-ts) fetches the discovery document, JWKS and token
 // endpoint cross-origin, which requires CORS on those responses. Origins are the
 // SPA hosts; prod overrides via Cors__AllowedOrigins__0 = PUBLIC_BASE_URL.
+// Dev defaults for a bare `dotnet run` with no compose: the admin SPA's vite server and
+// container, then the platform console's. Deployed environments override this with
+// Cors__AllowedOrigins__n, and behind Caddy both SPAs are same-origin with /connect/* anyway —
+// this list only matters where the SPA and identity are on different ports.
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?? ["http://localhost:5173", "http://localhost:5000"];
+    ?? [
+        "http://localhost:5173", "http://localhost:5000",
+        "http://localhost:5174", "http://localhost:5010",
+    ];
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
     .WithOrigins(corsOrigins)
     .AllowAnyHeader()
@@ -260,6 +284,7 @@ app.UseAuthorization();
 app.MapDcmsDefaultEndpoints();
 app.MapAccountEndpoints();
 app.MapAccountApiEndpoints();
+app.MapPlatformUserEndpoints();
 app.MapAuthorizationEndpoints();
 app.MapGet("/", () => Results.Ok(new { service = "identity" }));
 app.Run();

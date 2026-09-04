@@ -3,13 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Check, Code2, Copy, Download, FileJson, Rocket } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Page, PageHeader } from '../../components/Page';
-import { Button } from '../../components/ui/button';
-import { EmptyState } from '../../components/ui/empty-state';
-import { CenteredSpinner } from '../../components/ui/spinner';
+import { Button, CenteredSpinner, EmptyState, Page, PageHeader, useTheme } from '@dcms/admin-ui';
 import { api } from '../../lib/api';
-import { useTheme } from '../../lib/theme';
-
 const AI_PREAMBLE =
   'This is the OpenAPI document for a tenant content API. Each tag is a configured ' +
   'plugin instance; its description states intent. Use it to write a client.\n\n';

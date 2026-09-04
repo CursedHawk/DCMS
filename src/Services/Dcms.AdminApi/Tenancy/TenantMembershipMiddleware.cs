@@ -71,7 +71,30 @@ public sealed class TenantMembershipMiddleware(RequestDelegate next)
 
         if (me.IsSuperAdmin)
         {
+            // Before the suspension gate, deliberately. A suspended tenant is exactly the one a
+            // platform operator needs to reach — to inspect it, and above all to resume it. A
+            // gate that locked SuperAdmins out too would make suspension a one-way door.
             await next(context);
+            return;
+        }
+
+        // Suspension is enforced here rather than endpoint by endpoint, for the same reason the
+        // membership check is: this is the one place every tenant-scoped admin request passes
+        // through, so a new endpoint is covered by default instead of by remembering.
+        //
+        // The delivery plane is enforced separately, in site-host — suspending a tenant has to
+        // stop the public site, not just the admin UI, and neither half implies the other.
+        if (tenant.IsSuspended)
+        {
+            var suspendAudit = context.RequestServices.GetRequiredService<IAuditRecorder>();
+            suspendAudit.Record(AuditActions.PermissionDenied)
+                .InTenant(tenantId)
+                .As(AuditCategory.Security, AuditSeverity.Warning)
+                .For("tenant", tenantId, tenant.TenantSlug)
+                .With("path", context.Request.Path.Value)
+                .Denied("tenant is suspended");
+
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return;
         }
 

@@ -56,7 +56,7 @@ docker version && docker compose version
   20 GB disk**. The site-builder image also bundles Node + ffmpeg-adjacent
   toolchains. On a 4-core host, build services **serially** — building more than
   two at once thrashes the box.
-- **Ports:** dev exposes `5000-5007`, `5432`, `6379`, `4222/8222`, `9000/9001`,
+- **Ports:** dev exposes `5000-5010`, `5432`, `6379`, `4222/8222`, `9000/9001`,
   `8200`, `8025`. Prod exposes only `80`/`443` (Caddy) plus whatever you choose
   for the admin/identity ingress.
 - **Outbound network at build time** (NuGet, npm, Debian/Alpine packages).
@@ -115,7 +115,8 @@ curl -fsS localhost:5003/api/_plugins | jq length   # → 16
 
 Dev endpoints: admin SPA `:5000`, identity `:5001`, admin-api `:5002`,
 content-api `:5003`, media-worker `:5004`, site-builder `:5005`, site-host
-`:5006`, ai-gateway `:5007`, Postgres `:5432`, Redis `:6379`, NATS `:4222`
+`:5006`, ai-gateway `:5007`, platform-api `:5008`, platform-spa `:5010`,
+Postgres `:5432`, Redis `:6379`, NATS `:4222`
 (monitor `:8222`), MinIO `:9000` (console `:9001`), Vault `:8200`, Mailpit `:8025`.
 Seeded platform admin: `admin@dcms.local` / `Admin!23456`.
 

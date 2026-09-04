@@ -3,33 +3,35 @@ import { BadgeCheck, Globe, Link2, Plus, ShieldAlert, Star, Trash2 } from 'lucid
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { CopyButton } from '../../components/CopyButton';
-import { Page, PageHeader } from '../../components/Page';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { Card, CardContent } from '../../components/ui/card';
 import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CenteredSpinner,
+  CopyButton,
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../components/ui/dialog';
-import { EmptyState } from '../../components/ui/empty-state';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
-import {
+  EmptyState,
+  Input,
+  Label,
+  Page,
+  PageHeader,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../components/ui/select';
-import { CenteredSpinner } from '../../components/ui/spinner';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  toastApiError,
+} from '@dcms/admin-ui';
 import { api } from '../../lib/api';
-import { toastApiError } from '../../lib/errors';
-
 interface Domain {
   id: string;
   hostname: string;

@@ -1,9 +1,13 @@
 import { FileCode, FileJson, LayoutTemplate, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog';
-import { CenteredSpinner } from '../../components/ui/spinner';
-import { cn } from '../../lib/cn';
-
+import {
+  CenteredSpinner,
+  cn,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@dcms/admin-ui';
 export type StarterFlavor = 'empty' | 'openapi' | 'client' | 'starter';
 
 // Shown once when a brand-new (empty) ReactApp site is opened: pick what to seed

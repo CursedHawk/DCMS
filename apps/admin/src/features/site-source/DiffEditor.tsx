@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type * as Monaco from 'monaco-editor';
-import { useTheme } from '../../lib/theme';
+import { useTheme } from '@dcms/admin-ui';
 import { languageOf } from './paths';
 import { applyEditorTheme, monaco, setupMonaco } from './monaco-setup';
 

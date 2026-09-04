@@ -22,6 +22,8 @@ builder.Services.AddDcmsAuditData(builder.Configuration);
 builder.Services.AddNullTenantContext();
 builder.Services.AddSingleton<DomainResolver>();
 builder.Services.AddHostedService<SiteCacheInvalidator>();
+// Suspension has to reach the delivery plane promptly, not at the next cache TTL.
+builder.Services.AddHostedService<TenantStatusInvalidator>();
 
 var contentApi = builder.Configuration["Services:ContentApi"] ?? "http://localhost:5003";
 

@@ -40,6 +40,21 @@ public enum PluginInstanceChangeKind
     Deleted,
 }
 
+/// <summary>
+/// A tenant was suspended or resumed. Carries the slug as well as the id because site-host
+/// keys its domain cache on neither — it needs the slug to log intelligibly, and an event a
+/// consumer has to make a second call to understand is an event that will be misused.
+/// </summary>
+public sealed record TenantStatusChanged(
+    Guid EventId,
+    DateTimeOffset OccurredAt,
+    Guid TenantId,
+    string Slug,
+    bool Suspended) : IDcmsEvent
+{
+    public int Version => 1;
+}
+
 public sealed record MembershipChanged(
     Guid EventId,
     DateTimeOffset OccurredAt,

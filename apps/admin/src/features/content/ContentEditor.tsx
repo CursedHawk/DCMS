@@ -4,20 +4,20 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
+  Badge,
+  Button,
+  CenteredSpinner,
   Dialog,
   DialogBody,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../components/ui/dialog';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
-import { CenteredSpinner } from '../../components/ui/spinner';
+  Input,
+  Label,
+  toastApiError,
+} from '@dcms/admin-ui';
 import { api } from '../../lib/api';
-import { toastApiError } from '../../lib/errors';
 import {
   type ContentFieldDef,
   type ContentTypeDef,

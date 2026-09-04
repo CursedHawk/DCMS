@@ -1,0 +1,112 @@
+using Dcms.PlatformApi.Authz;
+using Dcms.PlatformApi.Observability;
+using Dcms.PlatformApi.Purge;
+using Dcms.PlatformApi.Reporting;
+using Dcms.PlatformApi.Stores;
+using Dcms.Shared.Audit.Http;
+using Dcms.Shared.Caching;
+using Dcms.Shared.Data.Platform;
+using Dcms.Shared.Hosting;
+using Dcms.Shared.Messaging;
+using Dcms.Shared.Security;
+using Dcms.Shared.Security.Authorization;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Vault config provider, Serilog (console + OTLP), OpenTelemetry, health endpoints and the
+// ProblemDetails handler that puts a trace id on every failure. The OTLP half is gated on
+// OTEL_EXPORTER_OTLP_ENDPOINT: a service that skips the *otel-env compose anchor builds its
+// pipelines and exports nothing, which is invisible until a dashboard panel reads "No data".
+builder.AddDcmsServiceDefaults("platform-api");
+
+builder.Services.AddDcmsCaching(builder.Configuration);
+builder.Services.AddDcmsMessaging(builder.Configuration);
+
+// Audit records ride JetStream instead of being written straight to Postgres, exactly as
+// email-worker and site-builder do — and here for the same reason those do it. The
+// least-privilege dcms_platform role below has no grant on the `audit` schema, so this
+// service could not append to the hash chain even if it wanted to; admin-api's writer owns
+// that. The consequence is worth stating plainly, because this service holds the platform's
+// delete buttons: a purge is audited by publishing, and a purge whose publish fails must fail
+// with it rather than proceed unrecorded.
+builder.Services.AddDcmsAuditOverNats();
+builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
+
+// The console's own table: which global role holds which platform permission. This is the
+// ONLY schema platform-api writes, and with `obs` it is the only one it can read — the
+// connection is the least-privilege dcms_platform role (infra/postgres/init/04-platform-role.sh),
+// which has no grant on identity, tenancy or any tenant schema. Users are reached over HTTP
+// from identity, tenants over HTTP from admin-api; each schema stays behind its owner.
+builder.Services.AddDcmsPlatformData(builder.Configuration);
+
+// Platform-console authorization. There is deliberately no AddDcmsPermissionAuthorization
+// here and no tenant resolution anywhere in this service: nothing it serves is scoped to a
+// tenant, so there is no ambient tenant to get wrong.
+builder.Services.AddDcmsPlatformPermissionAuthorization();
+builder.Services.AddScoped<PlatformPermissionResolver>();
+builder.Services.AddScoped<IPlatformPermissionResolver>(sp =>
+    sp.GetRequiredService<PlatformPermissionResolver>());
+builder.Services.AddHostedService<PlatformRoleSeeder>();
+
+// Read-only access to the obs.* reporting views — the console's cross-tenant read model.
+builder.Services.AddScoped<ObservabilityQuery>();
+
+// The telemetry stores. All internal names on the compose network; none publishes a host port
+// in production, so reaching them at all requires already being inside.
+//
+// Ten-second timeouts throughout: this console is opened when something is wrong, and a store
+// that has stopped answering must show as unreachable rather than hang the page that would
+// have told you so.
+builder.Services.Configure<ObservabilityOptions>(
+    builder.Configuration.GetSection(ObservabilityOptions.SectionName));
+
+var observability = builder.Configuration.GetSection(ObservabilityOptions.SectionName)
+    .Get<ObservabilityOptions>() ?? new ObservabilityOptions();
+
+builder.Services.AddHttpClient<PrometheusClient>(client =>
+{
+    client.BaseAddress = new Uri(observability.PrometheusUrl);
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+
+builder.Services.AddHttpClient<LokiClient>(client =>
+{
+    client.BaseAddress = new Uri(observability.LokiUrl);
+    client.Timeout = TimeSpan.FromSeconds(10);
+    // auth_enabled is false on this Loki, which means every request belongs to the single
+    // tenant named "fake". The delete API still wants the header, and omitting it fails in a
+    // way that reads like a permissions problem rather than a missing header.
+    client.DefaultRequestHeaders.Add("X-Scope-OrgID", "fake");
+});
+
+builder.Services.AddHttpClient<LogJanitorClient>(client =>
+{
+    // An empty base address is the disabled state; the endpoint checks LogJanitorEnabled before
+    // ever resolving this client, so the placeholder is never dialled.
+    client.BaseAddress = new Uri(
+        string.IsNullOrWhiteSpace(observability.LogJanitorUrl)
+            ? "http://log-janitor.disabled"
+            : observability.LogJanitorUrl);
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+
+var app = builder.Build();
+
+// First in the pipeline, so an exception anywhere below it becomes a ProblemDetails carrying
+// the trace id instead of a bare Kestrel 500 with no body and nothing to quote.
+app.UseDcmsProblemDetails();
+
+app.UseDcmsAudit();
+app.UseAuthentication();
+app.UseAuthorization();
+
+app.MapDcmsDefaultEndpoints();
+app.MapPlatformAuthzEndpoints();
+app.MapPlatformOverviewEndpoints();
+app.MapPlatformStoreEndpoints();
+app.MapPlatformPurgeEndpoints();
+app.MapGet("/", () => Results.Ok(new { service = "platform-api" }));
+
+app.Run();
+
+public partial class Program;

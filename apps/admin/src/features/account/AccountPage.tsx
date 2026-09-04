@@ -3,12 +3,16 @@ import { KeyRound, Trash2, Lock, GitBranch } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Page, PageHeader } from '../../components/Page';
-import { Button } from '../../components/ui/button';
-import { Card, CardContent } from '../../components/ui/card';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
-import { CenteredSpinner } from '../../components/ui/spinner';
+import {
+  Button,
+  Card,
+  CardContent,
+  CenteredSpinner,
+  Input,
+  Label,
+  Page,
+  PageHeader,
+} from '@dcms/admin-ui';
 import { accountApi } from './accountApi';
 import { DeleteAccountCard } from './DeleteAccountCard';
 

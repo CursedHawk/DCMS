@@ -2,8 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { Check, RotateCcw, Send, Sparkles, Square, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '../../../components/ui/button';
-import { cn } from '../../../lib/cn';
+import { Button, cn } from '@dcms/admin-ui';
 import { useAgentSession } from './useAgentSession';
 
 // The router's typed route union is intentionally loose here (see routes.tsx); a

@@ -1,19 +1,21 @@
 import { Languages, LogOut, Monitor, Moon, Search, Settings, Sun } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
-import { Button } from '../components/ui/button';
 import {
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '../components/ui/dropdown-menu';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  useTheme,
+} from '@dcms/admin-ui';
 import { NotificationBell } from '../features/notifications/NotificationBell';
 import { LANGUAGES, setLanguage } from '../lib/i18n';
-import { useTheme } from '../lib/theme';
 import { logout } from '../auth';
 import { useAuth } from '../useAuth';
 import { TenantSwitcher } from './TenantSwitcher';

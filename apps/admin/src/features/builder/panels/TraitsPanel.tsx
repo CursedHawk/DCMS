@@ -2,8 +2,7 @@ import type { Editor } from 'grapesjs';
 import { X } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '../../../components/ui/button';
-import { Input, Textarea } from '../../../components/ui/input';
+import { Button, Input, Textarea } from '@dcms/admin-ui';
 import { MediaPicker } from '../../media/MediaPicker';
 import { useEditorEvent, useSelected } from './useEditorEvent';
 

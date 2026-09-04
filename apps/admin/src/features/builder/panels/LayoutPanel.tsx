@@ -9,10 +9,7 @@ import { ArrowDownToLine, ArrowUpToLine, LayoutTemplate, Plus, Star, Trash2 } fr
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button } from '../../../components/ui/button';
-import { Checkbox } from '../../../components/ui/checkbox';
-import { Input } from '../../../components/ui/input';
-import { cn } from '../../../lib/cn';
+import { Button, Checkbox, cn, Input } from '@dcms/admin-ui';
 import { useVfs } from '../../site-source';
 import { useBuilder } from '../store';
 

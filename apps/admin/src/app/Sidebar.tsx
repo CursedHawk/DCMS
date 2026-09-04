@@ -2,7 +2,7 @@ import { Link, useRouterState } from '@tanstack/react-router';
 import { motion } from 'framer-motion';
 import { PanelLeftClose, PanelLeftOpen, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '../lib/cn';
+import { cn } from '@dcms/admin-ui';
 import { type MyPermissions, can } from '../lib/permissions';
 import { NAV, NAV_GROUPS } from './nav';
 

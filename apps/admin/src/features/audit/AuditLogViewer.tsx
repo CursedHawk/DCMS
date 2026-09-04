@@ -3,19 +3,20 @@ import { Download, ShieldCheck, ShieldX } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { Card, CardContent } from '../../components/ui/card';
-import { EmptyState } from '../../components/ui/empty-state';
-import { Input } from '../../components/ui/input';
 import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CenteredSpinner,
+  EmptyState,
+  Input,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../components/ui/select';
-import { CenteredSpinner } from '../../components/ui/spinner';
+} from '@dcms/admin-ui';
 import { ApiError, api } from '../../lib/api';
 import { Perm, can, useMyPermissions } from '../../lib/permissions';
 import { AuditRecordDialog } from './AuditRecordDialog';

@@ -2,21 +2,27 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { FileText, LayoutGrid, Plus, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Page, PageHeader } from '../../components/Page';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { EmptyState } from '../../components/ui/empty-state';
-import { Input } from '../../components/ui/input';
 import {
+  Badge,
+  Button,
+  CenteredSpinner,
+  cn,
+  EmptyState,
+  Input,
+  Page,
+  PageHeader,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../components/ui/select';
-import { CenteredSpinner } from '../../components/ui/spinner';
-import { TBody, TD, TH, THead, TR, Table } from '../../components/ui/table';
-import { cn } from '../../lib/cn';
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from '@dcms/admin-ui';
 import {
   type ContentTypeDef,
   type PluginInstance,

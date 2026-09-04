@@ -4,8 +4,7 @@ import { AlertTriangle, ArrowLeft, Eye, EyeOff, RefreshCw, Rocket, RotateCcw } f
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button } from '../../components/ui/button';
-import { CenteredSpinner } from '../../components/ui/spinner';
+import { Button, CenteredSpinner } from '@dcms/admin-ui';
 import { ApiError, api } from '../../lib/api';
 import { useAuth } from '../../useAuth';
 import {

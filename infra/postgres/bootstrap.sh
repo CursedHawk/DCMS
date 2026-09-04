@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Applies the cluster-level bootstrap -- schemas, extensions and the three non-owner roles --
+# Applies the cluster-level bootstrap -- schemas, extensions and the non-owner roles --
 # to an ALREADY-RUNNING Postgres.
 #
 # The scripts in init/ are mounted into /docker-entrypoint-initdb.d, which Postgres runs
@@ -68,5 +68,8 @@ PGHOST="$PGHOST" sh /init/02-service-roles.sh
 
 echo "postgres-bootstrap: dcms_grafana role"
 PGHOST="$PGHOST" sh /init/03-observability-role.sh
+
+echo "postgres-bootstrap: dcms_platform role"
+PGHOST="$PGHOST" sh /init/04-platform-role.sh
 
 echo "postgres-bootstrap: complete."

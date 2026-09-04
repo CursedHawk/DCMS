@@ -2,21 +2,22 @@ import { Folder, FolderInput, Image as ImageIcon, Search, Trash2, UploadCloud, X
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Page, PageHeader } from '../../components/Page';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
 import {
+  Badge,
+  Button,
+  CenteredSpinner,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '../../components/ui/dropdown-menu';
-import { EmptyState } from '../../components/ui/empty-state';
-import { Input } from '../../components/ui/input';
-import { CenteredSpinner } from '../../components/ui/spinner';
-import { cn } from '../../lib/cn';
+  EmptyState,
+  Input,
+  Page,
+  PageHeader,
+} from '@dcms/admin-ui';
 import { FolderRail } from './FolderRail';
 import { MediaDetailDialog } from './MediaDetailDialog';
 import { MediaThumb } from './MediaThumb';

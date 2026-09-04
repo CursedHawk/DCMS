@@ -246,6 +246,16 @@ services:
       Identity__AllowInsecureHttp: "true"
       Identity__Spa__RedirectUris: "http://localhost:5173/auth/callback;http://localhost:5000/auth/callback"
       Identity__Spa__PostLogoutUris: "http://localhost:5173/;http://localhost:5000/"
+      # The platform console: 5174 is its vite dev server, 5010 its nginx container.
+      Identity__PlatformSpa__RedirectUris: "http://localhost:5174/auth/callback;http://localhost:5010/auth/callback"
+      Identity__PlatformSpa__PostLogoutUris: "http://localhost:5174/;http://localhost:5010/"
+      # Dev only: the SPAs reach identity cross-origin here (vite on 5173/5174 -> identity on
+      # 5001). Behind Caddy both are same-origin with /connect/*, which is why prod overrides
+      # this with just PUBLIC_BASE_URL.
+      Cors__AllowedOrigins__0: "http://localhost:5173"
+      Cors__AllowedOrigins__1: "http://localhost:5000"
+      Cors__AllowedOrigins__2: "http://localhost:5174"
+      Cors__AllowedOrigins__3: "http://localhost:5010"
       # Grafana SSO against the dev stack, where Grafana is published on 3001.
       Identity__Grafana__Secret: "${GRAFANA_OIDC_CLIENT_SECRET:-grafana-dev-secret}"
       Identity__Grafana__RedirectUris: "http://localhost:3001/login/generic_oauth"
@@ -278,6 +288,7 @@ services:
       PGPASSWORD: "dcms-dev"
       SITEBUILDER_DB_PASSWORD: "dcms-sitebuilder-dev"
       GRAFANA_DB_PASSWORD: "dcms-grafana-dev"
+      PLATFORM_DB_PASSWORD: "dcms-platform-dev"
       RLS_DB_PASSWORD: "dcms-rls-dev"
 
   # ---------- schema migration jobs ----------
@@ -332,6 +343,16 @@ services:
       Identity__AllowInsecureHttp: "true"
       Identity__Spa__RedirectUris: "http://localhost:5173/auth/callback;http://localhost:5000/auth/callback"
       Identity__Spa__PostLogoutUris: "http://localhost:5173/;http://localhost:5000/"
+      # The platform console: 5174 is its vite dev server, 5010 its nginx container.
+      Identity__PlatformSpa__RedirectUris: "http://localhost:5174/auth/callback;http://localhost:5010/auth/callback"
+      Identity__PlatformSpa__PostLogoutUris: "http://localhost:5174/;http://localhost:5010/"
+      # Dev only: the SPAs reach identity cross-origin here (vite on 5173/5174 -> identity on
+      # 5001). Behind Caddy both are same-origin with /connect/*, which is why prod overrides
+      # this with just PUBLIC_BASE_URL.
+      Cors__AllowedOrigins__0: "http://localhost:5173"
+      Cors__AllowedOrigins__1: "http://localhost:5000"
+      Cors__AllowedOrigins__2: "http://localhost:5174"
+      Cors__AllowedOrigins__3: "http://localhost:5010"
       Identity__Grafana__Secret: "${GRAFANA_OIDC_CLIENT_SECRET:-grafana-dev-secret}"
       Identity__Grafana__RedirectUris: "http://localhost:3001/login/generic_oauth"
 
@@ -473,6 +494,125 @@ services:
       <<: *service-env
       Auth__Authority: "http://dcms-identity:8080/"
       Auth__Audience: "dcms-ai-gateway"
+
+  # Truncates a DCMS container's Docker json log file, and nothing else.
+  #
+  # OFF BY DEFAULT, and that is the design rather than caution. This is the only container in
+  # the stack with write access to /var/lib/docker/containers, which is root-owned and close to
+  # root on the host. A deployment that does not want that capability should not have to remove
+  # anything to be rid of it, so it lives behind a profile and the console reports the feature
+  # as unavailable when it is absent. Start it with `--profile logjanitor`.
+  #
+  # Keep it in proportion before enabling it: the x-logging anchor already caps container logs
+  # at 3 x 50 MB each, so this is a convenience under disk pressure, not a leak being plugged.
+  #
+  # What limits it, beyond the profile: it only ever calls truncate(0); the container must
+  # belong to THIS compose project, checked by resolving the name through the READ-ONLY socket
+  # proxy and comparing com.docker.compose.project; the path is rebuilt from the resolved id and
+  # re-checked to be inside the containers root; and the bearer token is compared in constant
+  # time. It runs as root because the log files are root-owned and truncating one needs write
+  # permission on it -- every other privilege is dropped here.
+  log-janitor:
+    profiles: ["logjanitor"]
+    build:
+      context: .
+      dockerfile: infra/log-janitor/Dockerfile
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      LOG_JANITOR_SECRET: "${LOG_JANITOR_SECRET:-}"
+      COMPOSE_PROJECT: "dcms"
+      DOCKER_API: "http://docker-socket-proxy-ro:2375"
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      # The ONLY writable mount, and the reason this container exists.
+      - /var/lib/docker/containers:/var/lib/docker/containers
+    depends_on:
+      docker-socket-proxy-ro:
+        condition: service_started
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 32m
+    # No published port. Reachable only from the compose network, and only platform-api calls it.
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health')\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # The platform console's API: cross-tenant operations for platform superadmins.
+  #
+  # Deliberately does NOT inherit *service-env, and the reason is the whole design. This is
+  # the service holding the platform's delete buttons -- Loki purges, Prometheus series
+  # deletion, container log truncation -- so it runs the least-privilege `dcms_platform`
+  # Postgres role, which has SELECT on the `obs` reporting views and read/write on exactly
+  # one table (`platform.role_permissions`) and NO grant on identity, tenancy, cms, media or
+  # any tenant schema. Users are reached over HTTP from identity, tenants over HTTP from
+  # admin-api; each schema stays behind the service that owns it. See
+  # infra/postgres/init/04-platform-role.sh.
+  #
+  # No VAULT_TOKEN and no storage credentials: it holds no secrets of its own today.
+  # Audit records ride JetStream (AddDcmsAuditOverNats) because the audit schema is out of
+  # this role's reach by construction -- admin-api's writer appends them to the chain.
+  #
+  # *otel-env is spelled out explicitly. Opting out of *service-env for least privilege is
+  # exactly how site-builder and email-worker lost all telemetry silently: the OTEL variables
+  # used to live inside that anchor, and a service without them builds its pipelines and
+  # exports nothing. That failure is invisible until a dashboard panel reads "No data".
+  platform-api:
+    build:
+      context: .
+      dockerfile: src/Services/Dcms.PlatformApi/Dockerfile
+    <<: *service-defaults
+    environment:
+      <<: *otel-env
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_platform;Password=dcms-platform-dev"
+      ConnectionStrings__Redis: "redis:6379"
+      Nats__Url: "nats://nats:4222"
+      Auth__Authority: "http://dcms-identity:8080/"
+      Auth__Audience: "dcms-platform-api"
+      # Where the console's read-only clients point. All internal: none of these publish a
+      # host port in production, so the compose network is the only way to reach them.
+      Observability__PrometheusUrl: "http://prometheus:9090"
+      Observability__LokiUrl: "http://loki:3100"
+      Observability__TempoUrl: "http://tempo:3200"
+      Observability__NatsMonitoringUrl: "http://nats:8222"
+      Observability__VaultUrl: "http://vault:8200"
+      # Empty disables container-log truncation in the console, which is the default: the
+      # janitor only exists when the `logjanitor` compose profile is up.
+      Observability__LogJanitorUrl: "${LOG_JANITOR_URL:-}"
+      Observability__LogJanitorSecret: "${LOG_JANITOR_SECRET:-}"
+
+  platform-spa:
+    # 127.0.0.1 rather than localhost for the same reason as admin-spa below: nginx binds IPv4
+    # only, while localhost resolves to ::1 first inside the container.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    build:
+      context: .
+      dockerfile: apps/platform/Dockerfile
+    # Runtime, not build args: the image is environment-agnostic and these are substituted into
+    # index.html at container start. DCMS_ENVIRONMENT_NAME is not cosmetic — it drives the band
+    # that tells an operator which platform they are about to change.
+    environment:
+      DCMS_OIDC_AUTHORITY: "http://dcms-identity:8080"
+      DCMS_OIDC_CLIENT_ID: "dcms-platform-spa"
+      DCMS_ENVIRONMENT_NAME: "development"
+      DCMS_ADMIN_BASE: "http://localhost:5000"
+      DCMS_GRAFANA_BASE: "http://localhost:3001"
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      platform-api:
+        condition: service_started
+    mem_limit: 32m
 
   admin-spa:
     # 127.0.0.1 rather than localhost, and that is not pedantry: nginx here is configured
@@ -644,6 +784,15 @@ services:
       - --web.enable-lifecycle
       # Alloy pushes; without this the remote-write endpoint 404s.
       - --web.enable-remote-write-receiver
+      # Series deletion, for the platform console's Storage page. Worth naming what this opens
+      # rather than slipping it in: the admin API is delete_series, clean_tombstones AND
+      # snapshot, it has no authentication of its own, and Prometheus applies no authorization
+      # to it. So the control is entirely that Prometheus publishes no host port in production
+      # and only Alloy, Grafana and platform-api can reach it on the compose network — where
+      # the console gates the same operations behind platform:logs:purge and audits each one
+      # before it runs. Remove this flag and the console reports Prometheus as un-purgeable,
+      # which is a supported state rather than a broken one.
+      - --web.enable-admin-api
       # Lets prometheus.yml's external_labels read DCMS_HOST / DCMS_ENV below. Without the
       # flag Prometheus takes `${DCMS_HOST}` as a literal label value.
       - --enable-feature=expand-external-labels
@@ -699,6 +848,46 @@ services:
       ALERT_WEBHOOK_SECRET: "${ALERT_WEBHOOK_SECRET:-}"
       GF_SERVER_ROOT_URL: "${GRAFANA_ROOT_URL:-http://localhost:3001/}"
       GF_SERVER_DOMAIN: "${GRAFANA_DOMAIN:-localhost}"
+      # Embedding, for the platform console's Monitoring page. Two settings, and BOTH are
+      # required — with either one missing the iframe is blank and the browser says why only
+      # in the console, which reads as "the console is broken" rather than "Grafana refused".
+      #
+      #   1. allow_embedding defaults to false, which sends X-Frame-Options: deny.
+      #   2. content_security_policy is on in grafana.ini, and its default template ends
+      #      frame-ancestors 'self'. This replaces that one directive; everything else in the
+      #      template is Grafana's own default, copied verbatim.
+      #
+      # The default lists the production console AND the two dev origins, because
+      # ${PLATFORM_ORIGIN} is interpolated by Compose from the host environment — a value
+      # set in another service's `environment:` would not reach it, so there is no way to
+      # vary this from the dev override file. Set PLATFORM_ORIGIN in .env to narrow it.
+      # Leaving localhost in costs little: framing Grafana from a page on the operator's
+      # own machine needs the attacker to already be serving on their localhost.
+      #
+      # $$NONCE and $$ROOT_PATH are doubled on purpose: they are Grafana's OWN template
+      # placeholders, and a single $ would be interpolated away by Compose — leaving a CSP
+      # with an empty nonce and a bare ws:// origin, which blocks Grafana's own scripts.
+      #
+      # Set here rather than in grafana.ini because the host name belongs with the other
+      # {$VAR} host configuration, and that file is bind-mounted by both dev and production.
+      #
+      # Cookies need no change: platform.highgeek.eu and grafana.highgeek.eu share the
+      # registrable domain, so the iframe's requests are same-SITE and the existing
+      # cookie_samesite=lax session rides along. That stops being true the moment the console
+      # moves to a different registrable domain, and the symptom is a silently blank frame.
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_SECURITY_CONTENT_SECURITY_POLICY_TEMPLATE: >-
+        script-src 'self' 'unsafe-eval' 'unsafe-inline' 'strict-dynamic' $$NONCE;
+        object-src 'none';
+        font-src 'self';
+        style-src 'self' 'unsafe-inline' blob:;
+        img-src * data:;
+        base-uri 'self';
+        connect-src 'self' grafana.com ws://$$ROOT_PATH wss://$$ROOT_PATH;
+        manifest-src 'self';
+        media-src 'none';
+        form-action 'self';
+        frame-ancestors 'self' ${PLATFORM_ORIGIN:-https://${PLATFORM_HOST:-platform.highgeek.eu} http://localhost:5174 http://localhost:5010};
       # The same two values under their plain names, plus the identity host: grafana.ini
       # reads them with $__env{} for [server] and for the OIDC auth_url the browser is
       # redirected to. GF_* env vars override the ini, so these three exist for the ini's

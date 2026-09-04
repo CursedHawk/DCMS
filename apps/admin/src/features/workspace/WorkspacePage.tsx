@@ -3,24 +3,26 @@ import { Building2, Crown, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { ConfirmDeleteDialog } from '../../components/ConfirmDeleteDialog';
-import { Page, PageHeader } from '../../components/Page';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { Card, CardContent } from '../../components/ui/card';
-import { EmptyState } from '../../components/ui/empty-state';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
 import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CenteredSpinner,
+  ConfirmDeleteDialog,
+  EmptyState,
+  Input,
+  Label,
+  Page,
+  PageHeader,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../components/ui/select';
-import { CenteredSpinner } from '../../components/ui/spinner';
+  toastApiError,
+} from '@dcms/admin-ui';
 import { api } from '../../lib/api';
-import { toastApiError } from '../../lib/errors';
 import { setCurrentTenantSlug } from '../../tenants';
 
 interface WorkspaceMember {

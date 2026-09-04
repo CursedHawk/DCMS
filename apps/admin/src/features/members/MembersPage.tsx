@@ -3,31 +3,35 @@ import { MailPlus, Plus, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { CopyButton } from '../../components/CopyButton';
-import { Page, PageHeader } from '../../components/Page';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { Checkbox } from '../../components/ui/checkbox';
 import {
+  Badge,
+  Button,
+  CenteredSpinner,
+  Checkbox,
+  CopyButton,
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../components/ui/dialog';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '../../components/ui/dropdown-menu';
-import { EmptyState } from '../../components/ui/empty-state';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
-import { CenteredSpinner } from '../../components/ui/spinner';
-import { TBody, TD, TH, THead, TR, Table } from '../../components/ui/table';
+  EmptyState,
+  Input,
+  Label,
+  Page,
+  PageHeader,
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  toastApiError,
+  TR,
+} from '@dcms/admin-ui';
 import { api } from '../../lib/api';
-import { toastApiError } from '../../lib/errors';
 import { useInvitations, useMembers, useRoles } from '../rbac/api';
 
 /** Short absolute date, e.g. "19 Aug 2026" in the active locale. */

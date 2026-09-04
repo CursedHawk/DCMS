@@ -180,6 +180,10 @@ services:
       # SPA redirect/sign-out URIs registered for the public admin host.
       Identity__Spa__RedirectUris: "${PUBLIC_BASE_URL}/auth/callback"
       Identity__Spa__PostLogoutUris: "${PUBLIC_BASE_URL}/"
+      # The platform console is served from its own host, so it needs its own registered
+      # redirect. Falls back to the production name for the same reason ADMIN_HOST does.
+      Identity__PlatformSpa__RedirectUris: "https://${PLATFORM_HOST:-platform.highgeek.eu}/auth/callback"
+      Identity__PlatformSpa__PostLogoutUris: "https://${PLATFORM_HOST:-platform.highgeek.eu}/"
       # Grafana SSO. Must equal the grafana container's GRAFANA_OIDC_CLIENT_SECRET, and
       # Grafana cannot read Vault — so this one stays in .env on both sides rather than
       # becoming a value that lives in Vault for one reader and .env for the other.

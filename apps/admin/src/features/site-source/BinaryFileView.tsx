@@ -1,7 +1,7 @@
 import { Download, FileBox } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '../../components/ui/button';
+import { Button } from '@dcms/admin-ui';
 import { base64ToBytes, dataUriFor, isPreviewableImage } from './binary';
 import { downloadFile } from './fileio';
 import { useVfs } from './vfs';

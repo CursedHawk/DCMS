@@ -84,6 +84,20 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
             return null;
         }
 
+        // The delivery-plane half of suspension, and the half that actually matters: stopping
+        // an operator's admin access while the public site keeps serving would suspend nothing
+        // anyone can see. Enforced here rather than at the endpoint because every route to a
+        // tenant's content goes through this resolver.
+        //
+        // Treated as "no route" rather than a distinct status: the caller is an anonymous
+        // visitor on the public internet, and whether a hostname is unclaimed, unpublished or
+        // suspended is not their business. TenantStatusInvalidator drops the cached entry the
+        // moment the status changes, so this does not wait out the five-minute TTL.
+        if (tenant.Status == TenantStatus.Suspended)
+        {
+            return null;
+        }
+
         return new SiteRoute(domain.TenantId, tenant.Identifier, siteId, build.ArtifactPrefix);
     }
 

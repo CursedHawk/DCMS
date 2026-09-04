@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
+import { type MyPermissions } from '@dcms/admin-client';
 import { api } from './api';
 import { getCurrentTenantSlug } from '../tenants';
 
-export interface MyPermissions {
-  isSuperAdmin: boolean;
-  permissions: string[];
-}
+// `can` and the MyPermissions shape are shared with the platform SPA; the keys below are
+// tenant-scoped and belong to this app.
+export { can, type MyPermissions } from '@dcms/admin-client';
 
-/** Platform permission keys (mirrors PlatformPermissions on the server). */
+/** Tenant permission keys (mirrors PlatformPermissions on the server). */
 export const Perm = {
   TenantSettings: 'tenant:settings',
   MembersManage: 'members:manage',
@@ -42,10 +42,4 @@ export function useMyPermissions(enabled: boolean) {
     staleTime: 60_000,
     queryFn: () => api.get<MyPermissions>('/admin/me/permissions'),
   });
-}
-
-/** True if the user holds the permission (SuperAdmin holds everything). */
-export function can(me: MyPermissions | undefined, permission: string): boolean {
-  if (!me) return false;
-  return me.isSuperAdmin || me.permissions.includes(permission);
 }

@@ -111,6 +111,36 @@ public static class TenancyEndpoints
             return Results.Ok(tenants);
         }).RequireAuthorization();
 
+        // ---- Cross-tenant lifecycle: suspend / resume (SuperAdmin, no ambient tenant) ----
+        //
+        // TenantStatus.Suspended was declared when the tenancy model was written and then read
+        // by nothing at all: no endpoint set it and no code branched on it, so a "suspended"
+        // tenant behaved exactly like an active one. These two endpoints and the two
+        // enforcement points they rely on (TenantMembershipMiddleware for the admin plane,
+        // site-host's DomainResolver for the delivery plane) are what make the status mean
+        // something.
+        //
+        // The tenant is named in the ROUTE rather than the X-Dcms-Tenant header on purpose: an
+        // operator suspending a tenant is not working inside it, and requiring the header would
+        // mean the console had to switch context to a tenant it is about to shut off.
+        app.MapPost("/api/admin/tenants/{tenantId:guid}/suspend", async (
+            Guid tenantId, CurrentUser me, TenancyDbContext db, IAuditRecorder audit,
+            IEventPublisher events, ILoggerFactory loggerFactory, CancellationToken ct) =>
+                await SetTenantStatusAsync(
+                    tenantId, TenantStatus.Suspended, me, db, audit, events,
+                    loggerFactory.CreateLogger("TenantLifecycle"), ct))
+            .RequireAuthorization()
+            .WithAudit(AuditActions.PlatformTenantSuspended, "tenant");
+
+        app.MapPost("/api/admin/tenants/{tenantId:guid}/resume", async (
+            Guid tenantId, CurrentUser me, TenancyDbContext db, IAuditRecorder audit,
+            IEventPublisher events, ILoggerFactory loggerFactory, CancellationToken ct) =>
+                await SetTenantStatusAsync(
+                    tenantId, TenantStatus.Active, me, db, audit, events,
+                    loggerFactory.CreateLogger("TenantLifecycle"), ct))
+            .RequireAuthorization()
+            .WithAudit(AuditActions.PlatformTenantResumed, "tenant");
+
         // ---- Tenant-scoped: roles (requires X-Dcms-Tenant) ----
         app.MapGet("/api/admin/roles", async (TenancyDbContext db, ITenantContext tenant, CancellationToken ct) =>
         {
@@ -489,6 +519,93 @@ public static class TenancyEndpoints
             ResourceId: membership.Id,
             ActorUserId: actor,
             ExtraUserIds: [membership.UserId]);
+
+    /// <summary>
+    /// Sets a tenant's status, records it and tells the delivery plane.
+    ///
+    /// <para>The publish is not optional garnish. site-host caches domain -> tenant
+    /// resolution, so without this a suspended tenant keeps serving its public site until an
+    /// unrelated cache expiry — a suspension that works in the console and not in the world.
+    /// It is published AFTER the commit, so a consumer can never observe a status the database
+    /// has not accepted.</para>
+    /// </summary>
+    private static async Task<IResult> SetTenantStatusAsync(
+        Guid tenantId,
+        TenantStatus status,
+        CurrentUser me,
+        TenancyDbContext db,
+        IAuditRecorder audit,
+        IEventPublisher events,
+        ILogger logger,
+        CancellationToken ct)
+    {
+        if (!me.IsSuperAdmin)
+        {
+            return Results.Forbid();
+        }
+
+        // IgnoreQueryFilters: tenants is not a tenant-scoped table, but this endpoint runs with
+        // no ambient tenant at all, and being explicit costs nothing.
+        var tenant = await db.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(x => x.Id == tenantId.ToString(), ct);
+
+        if (tenant is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (tenant.Status == status)
+        {
+            // Idempotent: the console can retry, and two operators can click at once, without
+            // producing a second audit record for a change that did not happen.
+            audit.Discard(audit.Declared!);
+            return Results.NoContent();
+        }
+
+        var suspended = status == TenantStatus.Suspended;
+        tenant.Status = status;
+
+        // BEFORE SaveChangesAsync, and that ordering is load-bearing. The EF interceptor drains
+        // the audit buffer into the transaction that commits the change, so anything added to
+        // the entry afterwards is written nowhere -- the record still appears, silently missing
+        // whatever the handler knew. Enriching first is what puts the new status in the row.
+        audit.Declared?
+            .Platform()
+            .For("tenant", tenantId, tenant.Identifier)
+            .With("status", status.ToString());
+
+        await db.SaveChangesAsync(ct);
+
+        // Best-effort, and deliberately not allowed to fail the request.
+        //
+        // The status is already committed by the line above. Throwing here would report failure
+        // for a change that happened -- the worst answer available, because the operator retries
+        // and the second call is a no-op that also looks wrong. The cost of a missed publish is
+        // bounded and already understood: site-host's route cache expires within five minutes,
+        // which is the same backstop SiteCacheInvalidator relies on. A suspension that takes
+        // effect in under five minutes instead of instantly is a delay; a 500 that hides a
+        // completed suspension is a lie.
+        try
+        {
+            await events.PublishAsync(
+                suspended ? Subjects.TenantSuspended : Subjects.TenantResumed,
+                new TenantStatusChanged(
+                    Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, tenant.Identifier, suspended),
+                ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "Tenant {Slug} status committed as {Status}, but the invalidation event could not "
+                + "be published. site-host will pick this up within its route-cache TTL.",
+                tenant.Identifier,
+                status);
+        }
+
+        return Results.NoContent();
+    }
 
     private sealed record AssignRoleRequest(Guid RoleId);
 }

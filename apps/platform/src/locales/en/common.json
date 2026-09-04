@@ -1,0 +1,16 @@
+{
+  "errors": {
+    "generic": "Something went wrong.",
+    "traceId": "Trace {{id}}",
+    "copyId": "Copy id",
+    "copied": "Copied"
+  },
+  "actions": {
+    "copy": "Copy",
+    "copied": "Copied",
+    "cancel": "Cancel"
+  },
+  "common": {
+    "confirmType": "Type {{value}} to confirm"
+  }
+}

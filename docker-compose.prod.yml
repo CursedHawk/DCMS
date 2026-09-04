@@ -153,6 +153,7 @@ services:
       PGPASSWORD: "${POSTGRES_PASSWORD}"
       SITEBUILDER_DB_PASSWORD: "${SITEBUILDER_DB_PASSWORD}"
       GRAFANA_DB_PASSWORD: "${GRAFANA_DB_PASSWORD}"
+      PLATFORM_DB_PASSWORD: "${PLATFORM_DB_PASSWORD}"
       RLS_DB_PASSWORD: "${RLS_DB_PASSWORD:-}"
 
   # ---------- schema migration jobs ----------
@@ -213,6 +214,7 @@ services:
       Auth__Authority: "http://identity:8080/"
       Auth__RequireHttpsMetadata: "true"
       Cors__AllowedOrigins__0: "${PUBLIC_BASE_URL}"
+      Cors__AllowedOrigins__1: "https://${PLATFORM_HOST:-platform.highgeek.eu}"
       # AI Chatbot: content-api calls ai-gateway for visitor replies, reusing the
       # shared dcms.ai service client (same secret as admin-api).
       ServiceClient__TokenEndpoint: "http://identity:8080/connect/token"
@@ -326,6 +328,46 @@ services:
       Auth__Audience: "dcms-ai-gateway"
       Auth__RequireHttpsMetadata: "true"
 
+  # Like site-builder, platform-api deliberately does NOT inherit *prod-env: it runs the
+  # least-privilege dcms_platform role and must not be handed the owner connection string or
+  # the audit chain key. VAULT_ADDR is set explicitly for the reason spelled out on
+  # site-builder above -- it lives in that same anchor, and skipping the anchor is how a
+  # service ends up calling AddDcmsVault and silently reading nothing from Vault. It holds no
+  # Vault secrets today; this is here so that the day it does, it works.
+  platform-api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: "Production"
+      DOTNET_ENVIRONMENT: "Production"
+      VAULT_ADDR: "http://vault:8200"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_platform;Password=${PLATFORM_DB_PASSWORD:-dcms-platform-dev}"
+      ConnectionStrings__Redis: "redis:6379"
+      Nats__Url: "nats://nats:4222"
+      Auth__Authority: "http://identity:8080/"
+      Auth__Audience: "dcms-platform-api"
+      Auth__RequireHttpsMetadata: "true"
+      Observability__PrometheusUrl: "http://prometheus:9090"
+      Observability__LokiUrl: "http://loki:3100"
+      Observability__TempoUrl: "http://tempo:3200"
+      Observability__NatsMonitoringUrl: "http://nats:8222"
+      Observability__VaultUrl: "http://vault:8200"
+      # vps1 is 4 cores / 7.6 GB and swapless, with ~2.2 GB already committed to the
+      # observability stack's limits. A ninth .NET service goes in with a ceiling rather than
+      # on trust; watch infrastructure/11-containers.json for OOM kills after the first deploy.
+    mem_limit: 256m
+
+  platform-spa:
+    environment:
+      DCMS_OIDC_AUTHORITY: "${PUBLIC_BASE_URL}"
+      DCMS_OIDC_CLIENT_ID: "dcms-platform-spa"
+      # The API bases stay same-origin paths: Caddy routes /api/platform/*, /api/identity/* and
+      # /api/* under the platform host to their three owners.
+      DCMS_ADMIN_BASE: "${PUBLIC_BASE_URL}"
+      DCMS_GRAFANA_BASE: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
+      # Drives the band across the top of the console. DCMS_ENV is already the variable that
+      # says which environment this host is, and deploy.sh asserts it matches --env, so this
+      # cannot drift from reality without the deploy failing first.
+      DCMS_ENVIRONMENT_NAME: "${DCMS_ENV:-development}"
+
   # Git server. Caddy terminates TLS for the HTTP git+web UI ($GIT_HOST).
   #
   # dev and prod run SEPARATE Forgejo instances -- these are the tenants' actual site
@@ -372,6 +414,7 @@ services:
       # would ask Let's Encrypt for a certificate for production's hostname -- which fails,
       # and keeps failing against the rate limit.
       ADMIN_HOST: "${ADMIN_HOST:-admin.highgeek.eu}"
+      PLATFORM_HOST: "${PLATFORM_HOST:-platform.highgeek.eu}"
       GRAFANA_DOMAIN: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
       GIT_HOST: "${GIT_HOST:-git.highgeek.eu}"
     volumes:

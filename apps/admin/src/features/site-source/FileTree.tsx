@@ -14,7 +14,7 @@ import {
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { cn } from '../../lib/cn';
+import { cn } from '@dcms/admin-ui';
 import { isPreviewableImage } from './binary';
 import { downloadFile, downloadProjectZip, readUpload, type UploadResult } from './fileio';
 import { isToolchainFile } from './paths';

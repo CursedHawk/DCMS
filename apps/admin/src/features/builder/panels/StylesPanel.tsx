@@ -2,8 +2,7 @@ import type { Editor } from 'grapesjs';
 import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Input } from '../../../components/ui/input';
-import { cn } from '../../../lib/cn';
+import { cn, Input } from '@dcms/admin-ui';
 import { useEditorEvent, useSelected } from './useEditorEvent';
 
 /**

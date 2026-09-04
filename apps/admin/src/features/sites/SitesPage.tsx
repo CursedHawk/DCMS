@@ -4,33 +4,31 @@ import { PanelsTopLeft, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { ConfirmDeleteDialog } from '../../components/ConfirmDeleteDialog';
-import { Page, PageHeader } from '../../components/Page';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
 import {
+  Badge,
+  Button,
+  Card,
+  CenteredSpinner,
+  ConfirmDeleteDialog,
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '../../components/ui/dialog';
-import { EmptyState } from '../../components/ui/empty-state';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
-import {
+  EmptyState,
+  Input,
+  Label,
+  Page,
+  PageHeader,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../components/ui/select';
-import { CenteredSpinner } from '../../components/ui/spinner';
-import { Card } from '../../components/ui/card';
+  toastApiError,
+} from '@dcms/admin-ui';
 import { api } from '../../lib/api';
-import { toastApiError } from '../../lib/errors';
-
 interface SiteSummary {
   id: string;
   name: string;

@@ -3,8 +3,7 @@ import type { Editor } from 'grapesjs';
 import { ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, LayoutGrid, List, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Input } from '../../../components/ui/input';
-import { cn } from '../../../lib/cn';
+import { cn, Input } from '@dcms/admin-ui';
 import { useCustomPayload } from './useEditorEvent';
 
 /**

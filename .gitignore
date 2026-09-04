@@ -68,3 +68,7 @@ docker-compose.images.yml
 # Load-test output (see loadtest/.gitignore for the detail)
 loadtest/runs/
 loadtest/fixtures/
+
+# Python bytecode (the log-janitor sidecar).
+__pycache__/
+*.py[cod]

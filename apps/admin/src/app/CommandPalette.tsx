@@ -2,7 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Dialog, DialogContent } from '../components/ui/dialog';
+import { Dialog, DialogContent } from '@dcms/admin-ui';
 import { type MyPermissions, can } from '../lib/permissions';
 import { NAV } from './nav';
 

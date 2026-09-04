@@ -3,30 +3,34 @@ import { Check, Inbox, Mail, Search, Trash2, Undo2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Page, PageHeader } from '../../components/Page';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
 import {
+  Badge,
+  Button,
+  CenteredSpinner,
+  cn,
   Dialog,
   DialogBody,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../components/ui/dialog';
-import { EmptyState } from '../../components/ui/empty-state';
-import { Input } from '../../components/ui/input';
-import {
+  EmptyState,
+  Input,
+  Page,
+  PageHeader,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../components/ui/select';
-import { CenteredSpinner } from '../../components/ui/spinner';
-import { TBody, TD, TH, THead, TR, Table } from '../../components/ui/table';
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+} from '@dcms/admin-ui';
 import { api } from '../../lib/api';
-import { cn } from '../../lib/cn';
 import { Perm, can, useMyPermissions } from '../../lib/permissions';
 import {
   type FormDef,

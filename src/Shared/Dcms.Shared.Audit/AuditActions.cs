@@ -269,6 +269,38 @@ public static class AuditActions
     /// <summary>More unnamed changes in one save than a single record enumerates.</summary>
     public const string ChangesTruncated = "data.saved";
 
+    // ---- platform console ----
+    //
+    // Written with TenantId = Guid.Empty (AuditEntry.Platform()): these are acts on the
+    // platform itself, not inside any tenant. Until the console existed nothing READ those
+    // rows; the platform-scope audit reader is what makes them worth writing.
+
+    public const string PlatformUserLocked = "platform.user.locked";
+    public const string PlatformUserUnlocked = "platform.user.unlocked";
+    public const string PlatformUserPasswordReset = "platform.user.password.reset";
+    public const string PlatformUserEmailConfirmed = "platform.user.email.confirmed";
+
+    /// <summary>
+    /// A global role granted or revoked. Kept distinct from the lock/unlock actions because
+    /// this is the one that can create another SuperAdmin — the single most consequential
+    /// thing the console can do, and the first row anyone reviewing a compromise looks for.
+    /// </summary>
+    public const string PlatformRoleGranted = "platform.user.role.granted";
+    public const string PlatformRoleRevoked = "platform.user.role.revoked";
+
+    /// <summary>Which global role holds which console permission.</summary>
+    public const string PlatformPermissionsChanged = "platform.role.permissions.changed";
+
+    public const string PlatformTenantSuspended = "platform.tenant.suspended";
+    public const string PlatformTenantResumed = "platform.tenant.resumed";
+
+    /// <summary>
+    /// Irreversible deletion from a telemetry store. Recorded BEFORE the delete runs, not
+    /// after: an action whose record is written only on success is invisible in exactly the
+    /// case that matters most.
+    /// </summary>
+    public const string PlatformLogsPurged = "platform.logs.purged";
+
     /// <summary>Plugin-contributed action key, mirroring PlatformPermissions.ForPlugin.</summary>
     public static string ForPlugin(string pluginId, string action) => $"plugin.{pluginId}.{action}";
 

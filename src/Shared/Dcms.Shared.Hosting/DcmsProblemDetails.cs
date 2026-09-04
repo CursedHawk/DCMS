@@ -39,24 +39,38 @@ public sealed class DcmsExceptionHandler(
         var traceId = Activity.Current?.TraceId.ToString();
         var requestId = context.Response.Headers[AuditMiddleware.CorrelationHeader].ToString();
 
+        // A malformed request body is the client's fault, and ASP.NET Core says so: model
+        // binding throws BadHttpRequestException carrying StatusCode 400. Reporting it as 500
+        // is not merely untidy — every one of those lands in http_requests_total{status="500"},
+        // which is what dcms:http_error_ratio and the HighErrorRate alert are computed from. A
+        // client looping on a bad payload would page somebody about a server that is fine.
+        var status = exception is BadHttpRequestException badRequest
+            ? badRequest.StatusCode
+            : StatusCodes.Status500InternalServerError;
+
         // Logged before the response is written: a client that disconnects mid-write must not
         // be able to make the record of its own failure disappear.
-        logger.LogError(
+        //
+        // A client error is logged as a warning rather than an error, for the same reason it is
+        // not a 500: it is not a fault in this service, and a log level that says otherwise
+        // sends someone to read stack traces about somebody else's typo.
+        logger.Log(
+            status >= StatusCodes.Status500InternalServerError ? LogLevel.Error : LogLevel.Warning,
             exception,
-            "Unhandled exception on {Method} {Path} (trace {TraceId}, request {RequestId})",
+            "Unhandled exception on {Method} {Path} → {Status} (trace {TraceId}, request {RequestId})",
             context.Request.Method,
             context.Request.Path,
+            status,
             traceId,
             requestId);
 
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.StatusCode = status;
 
         // A person in a browser gets a page; an API client gets the problem document below.
         // Same two identifiers either way — only the presentation differs.
         if (DcmsErrorPage.PrefersHtml(context.Request))
         {
-            await DcmsErrorPage.WriteAsync(
-                context, StatusCodes.Status500InternalServerError, traceId, requestId);
+            await DcmsErrorPage.WriteAsync(context, status, traceId, requestId);
             return true;
         }
 
@@ -79,9 +93,15 @@ public sealed class DcmsExceptionHandler(
             Exception = exception,
             ProblemDetails = new ProblemDetails
             {
-                Status = StatusCodes.Status500InternalServerError,
-                Title = "An unexpected error occurred.",
-                Detail = "Quote the traceId when reporting this.",
+                Status = status,
+                // A 400 is not "unexpected" and telling the caller to quote a trace id for
+                // their own malformed payload sends them to ask an operator about a typo.
+                Title = status >= StatusCodes.Status500InternalServerError
+                    ? "An unexpected error occurred."
+                    : "The request could not be read.",
+                Detail = status >= StatusCodes.Status500InternalServerError
+                    ? "Quote the traceId when reporting this."
+                    : "Check the request body and try again.",
                 Extensions = extensions,
             },
         });

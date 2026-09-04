@@ -1,7 +1,6 @@
 import { Film, HardDrive, Image as ImageIcon, Music, File as FileIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Skeleton } from '../../components/ui/skeleton';
-import { cn } from '../../lib/cn';
+import { cn, Skeleton } from '@dcms/admin-ui';
 import { type MediaCategory, type MediaUsage, formatSize } from './api';
 
 /** Colour + icon per media category, shared by the meter and the grid. */

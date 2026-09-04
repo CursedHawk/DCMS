@@ -12,7 +12,7 @@ import {
 import { BookText, FileCode2, FileJson, GitCompare, Palette, X } from 'lucide-react';
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '../../../lib/cn';
+import { cn } from '@dcms/admin-ui';
 import {
   DiffEditor,
   MonacoEditor,

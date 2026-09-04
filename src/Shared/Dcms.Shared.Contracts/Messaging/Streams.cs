@@ -30,6 +30,15 @@ public static class Subjects
     // TENANCY
     public const string TenantCreated = "tenant.created";
     public const string TenantDomainVerified = "tenant.domain.verified";
+
+    /// <summary>
+    /// Tenant suspended or resumed. Consumed by site-host, which caches domain -> tenant
+    /// resolution: without an invalidation signal a suspension would appear to work in the
+    /// console and keep serving the public site until a cache entry happened to expire, which
+    /// is the worst kind of half-working.
+    /// </summary>
+    public const string TenantSuspended = "tenant.suspended";
+    public const string TenantResumed = "tenant.resumed";
     public const string PluginInstanceChanged = "plugin.instance.changed";
     public const string MembershipChanged = "membership.changed";
 

@@ -1,0 +1,80 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { adminApi, platformApi } from '../../lib/api';
+
+export interface StoreRow {
+  store: string;
+  usedBytes: number;
+  budgetBytes: number;
+  peakBytes: number;
+  projectedBytes: number;
+  growthBytesPerSecond: number;
+  retentionSeconds: number;
+  canPurge: boolean;
+  purgeNote: string | null;
+}
+
+export interface StoresResponse {
+  stores: StoreRow[];
+  dockerLogPurgeAvailable: boolean;
+  prometheusUnreachable: boolean;
+  /** Prometheus answered, but the store-usage sidecar has not reported yet. */
+  awaitingStoreMetrics: boolean;
+}
+
+export interface LokiDeleteRequest {
+  requestId: string;
+  query: string;
+  startTime: string;
+  endTime: string;
+  status: string;
+}
+
+export function useStores() {
+  return useQuery({
+    queryKey: ['platform-stores'],
+    queryFn: () => platformApi.get<StoresResponse>('/stores'),
+    refetchInterval: 60_000,
+  });
+}
+
+export function usePendingPurges() {
+  return useQuery({
+    queryKey: ['platform-loki-purges'],
+    queryFn: () => platformApi.get<LokiDeleteRequest[]>('/purge/loki'),
+    // The two-hour cancellation window is the safety net; a stale list is a net nobody can see.
+    refetchInterval: 30_000,
+  });
+}
+
+export function usePurgeLoki() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { selector: string; start: string; end: string }) =>
+      platformApi.post<{ effectiveSelector: string; message: string }>('/purge/loki', body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['platform-loki-purges'] }),
+  });
+}
+
+export function useCancelPurge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (requestId: string) => platformApi.del<void>(`/purge/loki/${encodeURIComponent(requestId)}`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['platform-loki-purges'] }),
+  });
+}
+
+export function useTruncateContainerLog() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (container: string) =>
+      platformApi.post<{ freedBytes: number; message: string }>('/purge/docker-logs', { container }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['platform-stores'] }),
+  });
+}
+
+export function usePruneAnalytics() {
+  return useMutation({
+    mutationFn: (olderThanDays: number) =>
+      adminApi.post<{ deleted: number; note: string }>('/admin/analytics/prune', { olderThanDays }),
+  });
+}

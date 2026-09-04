@@ -19,26 +19,24 @@ import {
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button } from '../../components/ui/button';
 import {
+  Button,
+  CenteredSpinner,
+  cn,
   Dialog,
   DialogBody,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../components/ui/dialog';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '../../components/ui/dropdown-menu';
-import { CenteredSpinner } from '../../components/ui/spinner';
+} from '@dcms/admin-ui';
 import { ApiError } from '../../lib/api';
-import { cn } from '../../lib/cn';
 import { can, Perm, repoRead, repoWrite, useMyPermissions } from '../../lib/permissions';
 import { useNavigate } from '@tanstack/react-router';
 import { accountApi } from '../account/accountApi';

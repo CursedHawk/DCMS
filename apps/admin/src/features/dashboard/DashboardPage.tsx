@@ -2,8 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { motion } from 'framer-motion';
 import { FileText, Globe, Image, PanelsTopLeft, Plug, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Card } from '../../components/ui/card';
-import { Page, PageHeader } from '../../components/Page';
+import { Card, Page, PageHeader } from '@dcms/admin-ui';
 import { useAuth } from '../../useAuth';
 
 const QUICK: { to: string; icon: LucideIcon; key: string; tone: string }[] = [

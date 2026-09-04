@@ -1,16 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Badge } from '../../components/ui/badge';
 import {
+  Badge,
+  CenteredSpinner,
   Dialog,
   DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '../../components/ui/dialog';
-import { CenteredSpinner } from '../../components/ui/spinner';
+} from '@dcms/admin-ui';
 import { api } from '../../lib/api';
 import type { AuditRecord, FieldChange } from './types';
 

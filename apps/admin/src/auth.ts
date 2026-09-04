@@ -1,84 +1,26 @@
-import { UserManager, WebStorageStateStore, type User } from 'oidc-client-ts';
+import { createAuth } from '@dcms/admin-client';
 import { runtimeConfig } from './runtime-config';
 
-// OIDC config. authority points at the identity service; in dev that is the
-// compose-mapped port 5001. Resolved at RUNTIME (see runtime-config.ts) rather than baked in
-// at build time, so one image serves every environment. Tokens are obtained with
-// authorization code + PKCE.
-const authority = runtimeConfig.oidcAuthority;
-const origin = window.location.origin;
-
-export const userManager = new UserManager({
-  authority,
-  client_id: runtimeConfig.oidcClientId,
-  redirect_uri: `${origin}/auth/callback`,
-  post_logout_redirect_uri: `${origin}/`,
-  response_type: 'code',
+/*
+ * The admin SPA's OIDC client. The authority points at the identity service; in dev that is
+ * the compose-mapped port 5001. Resolved at RUNTIME (see runtime-config.ts) rather than baked
+ * in at build time, so one image serves every environment. Tokens are obtained with
+ * authorization code + PKCE.
+ *
+ * The flow itself — the StrictMode replay guard, renew-on-read — lives in
+ * `@dcms/admin-client` because the platform SPA needs exactly the same behaviour.
+ */
+const auth = createAuth({
+  authority: runtimeConfig.oidcAuthority,
+  clientId: runtimeConfig.oidcClientId,
   scope: 'openid profile email roles dcms.admin offline_access',
-  userStore: new WebStorageStateStore({ store: window.localStorage }),
-  automaticSilentRenew: true,
 });
 
-export function login(): Promise<void> {
-  return userManager.signinRedirect();
-}
-
-// Same authorization-code flow as login(), but carries a hint so the identity
-// server lands the user on the sign-up form instead of the sign-in form. The
-// flag rides along as returnUrl and survives the round-trip back to /connect/authorize.
-export function register(): Promise<void> {
-  return userManager.signinRedirect({ extraQueryParams: { dcms_flow: 'register' } });
-}
-
-export function logout(): Promise<void> {
-  return userManager.signoutRedirect();
-}
-
-// signinRedirectCallback() exchanges the single-use authorization code for
-// tokens. Under React StrictMode the callback effect mounts twice, so a naive
-// call runs the exchange twice; the second attempt reuses the same code, which
-// OpenIddict rejects as a replay AND revokes the tokens just issued to the first
-// call — leaving the user signed out even though the identity cookie was set.
-// Memoise so the exchange runs exactly once and both mounts await one result.
-let signinCallback: Promise<User> | null = null;
-
-export function completeSignin(): Promise<User> {
-  signinCallback ??= userManager.signinRedirectCallback();
-  return signinCallback;
-}
-
-// automaticSilentRenew only schedules a renewal while the app is running: it
-// hangs off the "access token expiring" timer, which never fires for a token
-// that was already expired when the page loaded. So after the tab has been
-// closed longer than the access-token lifetime, getUser() hands back a stale
-// user — the shell renders "signed in" off the ID-token profile while every API
-// call 401s. Renew on read instead, using the refresh token (offline_access).
-let renewal: Promise<User | null> | null = null;
-
-export function renewSilently(): Promise<User | null> {
-  renewal ??= userManager
-    .signinSilent()
-    .catch(async (err: unknown) => {
-      // Refresh token expired/revoked, or no session at the identity server:
-      // drop the stale user so the UI falls back to the sign-in screen.
-      console.warn('OIDC silent renew failed; signing out locally.', err);
-      await userManager.removeUser();
-      return null;
-    })
-    .finally(() => {
-      renewal = null;
-    });
-  return renewal;
-}
-
-/** The current user, silently renewed first if its access token has expired. */
-export async function getUser(): Promise<User | null> {
-  const user = await userManager.getUser();
-  if (!user || !user.expired) return user;
-  return renewSilently();
-}
-
-export async function getAccessToken(): Promise<string | undefined> {
-  const user = await getUser();
-  return user?.access_token;
-}
+export const userManager = auth.userManager;
+export const login = auth.login;
+export const register = auth.register;
+export const logout = auth.logout;
+export const completeSignin = auth.completeSignin;
+export const renewSilently = auth.renewSilently;
+export const getUser = auth.getUser;
+export const getAccessToken = auth.getAccessToken;

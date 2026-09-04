@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@dcms/admin-client": "workspace:*",
+    "@dcms/admin-ui": "workspace:*",
     "@dcms/api-client": "workspace:*",
     "@dcms/gjs-blocks": "workspace:*",
     "@dcms/gjs-parse": "workspace:*",

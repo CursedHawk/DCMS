@@ -188,9 +188,25 @@ build-image:
       - SERVICE: ai-gateway
         LANE: c
         DOCKERFILE: src/Services/Dcms.AiGateway/Dockerfile
+      - SERVICE: platform-api
+        LANE: a
+        DOCKERFILE: src/Services/Dcms.PlatformApi/Dockerfile
       - SERVICE: admin-spa
         LANE: a
         DOCKERFILE: apps/admin/Dockerfile
+      # Lane b, not a: this is a second node build that shares no layers with the .NET images,
+      # and putting it in admin-spa's lane would serialise the two SPA builds behind each other
+      # for no benefit — the lanes exist to bound registry concurrency, not build concurrency.
+      - SERVICE: platform-spa
+        LANE: b
+        DOCKERFILE: apps/platform/Dockerfile
+      # Built even though it is off by default. The deploy pulls images and never builds on the
+      # host, so an operator who turns on the `logjanitor` profile there would otherwise hit a
+      # compose file that wants a build context vps1 does not have. A 60 MB image that nothing
+      # starts costs a registry layer; a profile that cannot be enabled costs an evening.
+      - SERVICE: log-janitor
+        LANE: c
+        DOCKERFILE: infra/log-janitor/Dockerfile
 
 # ---------------------------------------------------------------------------
 # promote
@@ -218,7 +234,8 @@ promote-images:
     - |
       set -e
       for SERVICE in identity admin-api content-api media-worker email-worker \
-                     site-builder site-build-sandbox site-host ai-gateway admin-spa; do
+                     site-builder site-build-sandbox site-host ai-gateway platform-api \
+                     admin-spa platform-spa log-janitor; do
         IMAGE="$CI_REGISTRY_IMAGE/$SERVICE"
         if ! docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_SHORT_SHA" >/dev/null 2>&1; then
           echo "No image at $IMAGE:$CI_COMMIT_SHORT_SHA."

@@ -2,12 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Bell, CheckCheck, CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { EmptyState } from '../../components/ui/empty-state';
-import { CenteredSpinner } from '../../components/ui/spinner';
-import { Page, PageHeader } from '../../components/Page';
-import { cn } from '../../lib/cn';
+import { Badge, Button, CenteredSpinner, cn, EmptyState, Page, PageHeader } from '@dcms/admin-ui';
 import {
   type Notification,
   type NotificationSeverity,

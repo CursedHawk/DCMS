@@ -2,7 +2,7 @@ import type { Editor } from 'grapesjs';
 import { Database, Palette, Settings, SlidersHorizontal } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '../../lib/cn';
+import { cn } from '@dcms/admin-ui';
 import { BindingPanel } from './panels/BindingPanel';
 import { SettingsPanel } from './panels/SettingsPanel';
 import { StylesPanel } from './panels/StylesPanel';

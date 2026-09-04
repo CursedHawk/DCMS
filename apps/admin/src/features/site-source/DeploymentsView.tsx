@@ -3,8 +3,7 @@ import { CheckCircle2, ChevronDown, ChevronRight, CircleDot, Loader2, RotateCw, 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button } from '../../components/ui/button';
-import { cn } from '../../lib/cn';
+import { Button, cn } from '@dcms/admin-ui';
 import type { GitBuild, GitBuildStatus } from './git';
 import { EXPECT_BUILD_WINDOW_MS, expectBuild, expectingBuildSince, gitApi } from './git';
 import { useRelativeTime } from './useRelativeTime';

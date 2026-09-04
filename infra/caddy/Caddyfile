@@ -64,6 +64,41 @@
 	}
 }
 
+# Platform operations console. Same-origin with all three APIs it talks to, which is what
+# lets it call them with no CORS anywhere — admin-api has none at all, and this is the
+# established pattern on this stack.
+#
+# Order inside the block matters as much as the block's position: the two specific /api/
+# prefixes must come before the general one, or admin-api would answer for all of them.
+#
+# This must be a NAMED site block above the on-demand-TLS catch-all at the bottom. Left to the
+# catch-all, site-host's /internal/tls-allowed would correctly refuse to mint a certificate for
+# a hostname no tenant has verified, and the console would simply never get TLS.
+{$PLATFORM_HOST:platform.highgeek.eu} {
+	# Identity-owned paths: OIDC discovery/JWKS, the connect/* protocol endpoints and the
+	# interactive login UI. Matched case-insensitively for the same reason as the admin host.
+	@identity path_regexp (?i)^/(connect|account|signin-google|\.well-known)(/|$)
+	handle @identity {
+		reverse_proxy identity:8080
+	}
+	# The console's own API: observability, ops, platform roles.
+	handle /api/platform/* {
+		reverse_proxy platform-api:8080
+	}
+	# The user directory, served by the service that owns users.
+	handle /api/identity/* {
+		reverse_proxy identity:8080
+	}
+	# Tenancy and the audit log, which admin-api already owns.
+	handle /api/* {
+		reverse_proxy admin-api:8080
+	}
+	# Everything else is the static console (nginx does SPA fallback).
+	handle {
+		reverse_proxy platform-spa:80
+	}
+}
+
 # Observability. Grafana publishes no host port at all, so this block is the only way in
 # from outside the compose network — and Grafana itself only admits platform SuperAdmins,
 # via OIDC against identity (role_attribute_strict, so an unmatched user is refused rather

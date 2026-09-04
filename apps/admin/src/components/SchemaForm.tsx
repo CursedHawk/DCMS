@@ -2,7 +2,7 @@ import Form from '@rjsf/core';
 import type { IconButtonProps, RJSFSchema, RegistryWidgetsType, UiSchema } from '@rjsf/utils';
 import validator from '@rjsf/validator-ajv8';
 import { ArrowDown, ArrowUp, Copy, Plus, X } from 'lucide-react';
-import { Button } from './ui/button';
+import { Button } from '@dcms/admin-ui';
 
 /**
  * RJSF's stock buttons render their only content as `<i class="glyphicon ...">`,

@@ -12,23 +12,32 @@ import {
   YAxis,
 } from 'recharts';
 import { toast } from 'sonner';
-import { ConfirmDeleteDialog } from '../../components/ConfirmDeleteDialog';
-import { Page, PageHeader } from '../../components/Page';
-import { Button } from '../../components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
-import { EmptyState } from '../../components/ui/empty-state';
-import { Input } from '../../components/ui/input';
 import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CenteredSpinner,
+  ConfirmDeleteDialog,
+  EmptyState,
+  Input,
+  Page,
+  PageHeader,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../components/ui/select';
-import { CenteredSpinner } from '../../components/ui/spinner';
-import { TBody, TD, TH, THead, TR, Table } from '../../components/ui/table';
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  toastApiError,
+  TR,
+} from '@dcms/admin-ui';
 import { api } from '../../lib/api';
-import { toastApiError } from '../../lib/errors';
 import { type MyPermissions, Perm, can, useMyPermissions } from '../../lib/permissions';
 
 interface Analytics {

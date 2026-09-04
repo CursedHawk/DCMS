@@ -2,15 +2,15 @@ import { Check, FolderPlus, Folder, Images, Inbox, MoreVertical, Pencil, Trash2,
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button } from '../../components/ui/button';
 import {
+  Button,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '../../components/ui/dropdown-menu';
-import { Input } from '../../components/ui/input';
-import { cn } from '../../lib/cn';
+  Input,
+} from '@dcms/admin-ui';
 import { ROOT_FOLDER, type MediaFolder, useCreateFolder, useDeleteFolder, useRenameFolder } from './api';
 
 /**

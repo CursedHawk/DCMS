@@ -3,23 +3,29 @@ import { Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Page, PageHeader } from '../../components/Page';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
 import {
+  Badge,
+  Button,
+  CenteredSpinner,
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../components/ui/dialog';
-import { EmptyState } from '../../components/ui/empty-state';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
-import { CenteredSpinner } from '../../components/ui/spinner';
-import { TBody, TD, TH, THead, TR, Table } from '../../components/ui/table';
+  EmptyState,
+  Input,
+  Label,
+  Page,
+  PageHeader,
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  toastApiError,
+  TR,
+} from '@dcms/admin-ui';
 import { api } from '../../lib/api';
-import { toastApiError } from '../../lib/errors';
 import { type Role, usePermissionCatalog, useRoles } from '../rbac/api';
 import { PermissionMatrix } from './PermissionMatrix';
 

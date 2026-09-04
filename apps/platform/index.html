@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Inlined as a data URI so it costs no request, and deliberately NOT the admin SPA's mark:
+      the two consoles are most often open in adjacent tabs, and the tab favicon is the fastest
+      way to tell them apart. A teal dial, matching the console's own palette.
+    -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%224%22%20fill%3D%22%23101a1d%22%2F%3E%3Ccircle%20cx%3D%2216%22%20cy%3D%2216%22%20r%3D%228.5%22%20fill%3D%22none%22%20stroke%3D%22%2322b8cf%22%20stroke-width%3D%222%22%2F%3E%3Cpath%20d%3D%22M16%2016V9.5%22%20stroke%3D%22%2322b8cf%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%2F%3E%3C%2Fsvg%3E" />
+    <title>DCMS Platform</title>
+
+    <!--
+      IBM Plex, from Google's CDN with a full system fallback in index.css.
+
+      Worth naming the tradeoff: this console is opened when the platform is broken, so it must
+      not depend on the platform to render. It does not — fonts.googleapis.com is independent
+      of DCMS, and `display=swap` plus the fallback stack means a failed font request costs
+      appearance and nothing else.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <!--
+      Runtime configuration, substituted by docker-entrypoint.sh at container start. The
+      placeholders are deliberately not Vite's %VITE_*% syntax, so Vite leaves them alone and
+      the entrypoint owns them; under `vite dev` they arrive literal and runtime-config.ts
+      recognises and ignores them. Same mechanism as the admin SPA, and for the same reason:
+      one image has to be promotable from dev to production.
+    -->
+    <script>
+      window.__DCMS_CONFIG__ = {
+        oidcAuthority: '__DCMS_OIDC_AUTHORITY__',
+        oidcClientId: '__DCMS_OIDC_CLIENT_ID__',
+        platformApiBase: '__DCMS_PLATFORM_API_BASE__',
+        identityApiBase: '__DCMS_IDENTITY_API_BASE__',
+        adminApiBase: '__DCMS_ADMIN_API_BASE__',
+        adminBase: '__DCMS_ADMIN_BASE__',
+        grafanaBase: '__DCMS_GRAFANA_BASE__',
+        environmentName: '__DCMS_ENVIRONMENT_NAME__',
+      };
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

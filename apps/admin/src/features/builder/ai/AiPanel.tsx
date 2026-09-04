@@ -4,17 +4,20 @@ import { AlertTriangle, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button } from '../../../components/ui/button';
 import {
+  Button,
   Dialog,
   DialogBody,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '../../../components/ui/dialog';
-import { Textarea } from '../../../components/ui/input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+  Textarea,
+} from '@dcms/admin-ui';
 import { useBuilder } from '../store';
 import { UnusableGenerationError, aiApi, type GeneratedSite } from './api';
 import {

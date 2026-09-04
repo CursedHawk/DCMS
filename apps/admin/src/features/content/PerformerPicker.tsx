@@ -1,16 +1,16 @@
 import { ArrowDown, ArrowUp, UserPlus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
 import {
+  Badge,
+  Button,
+  Input,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../components/ui/select';
-import { Switch } from '../../components/ui/switch';
+  Switch,
+} from '@dcms/admin-ui';
 import { usePluginInstances } from '../plugins/api';
 import { useContentItemsOfType } from './api';
 

@@ -12,16 +12,18 @@ import {
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
-import { Card, CardContent } from '../../components/ui/card';
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CenteredSpinner,
+  cn,
+  Progress,
+  toastApiError,
+} from '@dcms/admin-ui';
 import { ResourceHistory } from '../audit/ResourceHistory';
-import { Progress } from '../../components/ui/progress';
-import { CenteredSpinner } from '../../components/ui/spinner';
-import { cn } from '../../lib/cn';
 import { api } from '../../lib/api';
-import { toastApiError } from '../../lib/errors';
-
 interface StaticBundle {
   name?: string;
   size?: number;

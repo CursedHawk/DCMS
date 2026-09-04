@@ -18,6 +18,10 @@
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Kernel\Dcms.Shared.Kernel.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Contracts\Dcms.Shared.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Media\Dcms.Shared.Media.csproj" />
+    <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Security\Dcms.Shared.Security.csproj" />
+    <!-- The platform console's purge guard is the one piece of that service worth testing in
+         isolation: it is the thing standing between an operator and the audit evidence. -->
+    <ProjectReference Include="..\..\src\Services\Dcms.PlatformApi\Dcms.PlatformApi.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Messaging\Dcms.Shared.Messaging.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Hosting\Dcms.Shared.Hosting.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Telemetry\Dcms.Shared.Telemetry.csproj" />

@@ -26,6 +26,7 @@ using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Notifications;
+using Dcms.Shared.Data.Platform;
 using Dcms.Shared.Data.Social;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Search;
@@ -101,6 +102,10 @@ builder.Services.AddDcmsChatData(builder.Configuration);
 builder.Services.AddDcmsFormsData(builder.Configuration);
 builder.Services.AddDcmsNotificationsData(builder.Configuration);
 builder.Services.AddDcmsAuditData(builder.Configuration);
+// admin-api owns no platform-console data and reads none of it. It registers the context
+// solely so the migrate job (this image, --migrate-only) creates the schema as the owner;
+// platform-api then reaches the rows through the least-privilege dcms_platform role.
+builder.Services.AddDcmsPlatformData(builder.Configuration);
 // Registered so the migration job can create the shared Data Protection key ring.
 // admin-api does not consume it -- it authenticates with bearer tokens and sets no
 // cookies -- but it owns the DDL for every schema in this database.
@@ -388,6 +393,7 @@ app.MapHub<Dcms.AdminApi.Sites.SiteHub>("/api/hub/sites")
     .AuditExempt("SignalR transport endpoint, not an action. The builds and commits it "
                + "carries are audited where they are performed.");
 app.MapAuditEndpoints();
+app.MapAnalyticsPruneEndpoints();
 app.MapAlertEndpoints();
 app.MapSitePreview();
 app.MapFormSubmissionEndpoints();

@@ -1,3 +1,4 @@
+using Dcms.AdminApi.Tenancy;
 using System.Text.Json;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
@@ -35,6 +36,8 @@ public static class AuditEndpoints
             AuditDbContext db,
             TenancyDbContext tenancy,
             ITenantContext tenantContext,
+            CurrentUser me,
+            string? scope,
             string? action,
             string? category,
             string? outcome,
@@ -48,16 +51,37 @@ public static class AuditEndpoints
             int? limit,
             CancellationToken ct) =>
         {
+            // scope=platform reads the records that belong to the PLATFORM rather than to any
+            // tenant -- AuditEntry.Platform() writes them with TenantId = Guid.Empty. Until the
+            // platform console existed these rows were written and read by nothing: the tenant
+            // view below surfaces a platform row only when it names one of that tenant's own
+            // members, so a tenant suspension or a log purge, which name no user at all, were
+            // invisible to every reader on the platform.
+            //
+            // SuperAdmin only, and not behind audit:read: that is a TENANT permission, and a
+            // tenant admin holding it must not thereby read the platform's own log.
+            var platformScope = string.Equals(scope, "platform", StringComparison.OrdinalIgnoreCase);
+            if (platformScope && !me.IsSuperAdmin)
+            {
+                return Results.Forbid();
+            }
+
             var tenantId = tenantContext.TenantId;
-            if (tenantId is null)
+            if (!platformScope && tenantId is null)
             {
                 return Results.BadRequest(new { error = "No tenant selected." });
             }
 
             var take = Math.Clamp(limit ?? 50, 1, MaxPageSize);
 
+            // No tenant header is required in platform scope, which is the point: an operator
+            // reading the platform's log is not working inside any tenant.
+            var visible = platformScope
+                ? db.Events.AsNoTracking().Where(e => e.TenantId == Guid.Empty)
+                : await VisibleAsync(db, tenancy, tenantId!.Value, ct);
+
             var query = ApplyFilters(
-                await VisibleAsync(db, tenancy, tenantId.Value, ct),
+                visible,
                 new AuditFilter(action, category, outcome, resourceType, resourceId, actorId, from, to));
 
             // Keyset, not offset: the log only grows, and an offset page walks further into the
@@ -82,7 +106,7 @@ public static class AuditEndpoints
                 rows.RemoveAt(rows.Count - 1);
             }
 
-            var viewingTenantId = tenantId.Value;
+            var viewingTenantId = platformScope ? Guid.Empty : tenantId!.Value;
             var items = rows.Select(e => Project(e, viewingTenantId)).ToList();
             var last = rows.Count > 0 ? rows[^1] : null;
 

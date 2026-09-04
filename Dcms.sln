@@ -107,6 +107,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dcms.Plugins.Instagram", "s
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dcms.Plugins.Facebook", "src\Plugins\Dcms.Plugins.Facebook\Dcms.Plugins.Facebook.csproj", "{C8CFFC9B-73FD-4B49-A913-2A69FF320303}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dcms.PlatformApi", "src\Services\Dcms.PlatformApi\Dcms.PlatformApi.csproj", "{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -657,6 +659,18 @@ Global
 		{C8CFFC9B-73FD-4B49-A913-2A69FF320303}.Release|x64.Build.0 = Release|Any CPU
 		{C8CFFC9B-73FD-4B49-A913-2A69FF320303}.Release|x86.ActiveCfg = Release|Any CPU
 		{C8CFFC9B-73FD-4B49-A913-2A69FF320303}.Release|x86.Build.0 = Release|Any CPU
+		{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD}.Debug|x64.Build.0 = Debug|Any CPU
+		{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD}.Debug|x86.Build.0 = Debug|Any CPU
+		{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD}.Release|x64.ActiveCfg = Release|Any CPU
+		{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD}.Release|x64.Build.0 = Release|Any CPU
+		{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD}.Release|x86.ActiveCfg = Release|Any CPU
+		{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -711,5 +725,6 @@ Global
 		{DF6BDDB5-759C-4CF9-BCD1-3027A79A67D4} = {58D3A2C3-F96F-5E57-2C6B-ECE59D6A18FC}
 		{1617733C-9721-40C5-8CCC-1BB648AE5155} = {58D3A2C3-F96F-5E57-2C6B-ECE59D6A18FC}
 		{C8CFFC9B-73FD-4B49-A913-2A69FF320303} = {58D3A2C3-F96F-5E57-2C6B-ECE59D6A18FC}
+		{E8266AC8-6014-4CA1-83D2-DF18F2CC99CD} = {984BB9B3-3FA3-BE33-9484-CAC21695A33C}
 	EndGlobalSection
 EndGlobal
