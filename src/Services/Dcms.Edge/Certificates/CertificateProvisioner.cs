@@ -46,7 +46,12 @@ public sealed class CertificateProvisioner(
 
         // Re-read under the single-flight guard: while this request was queueing, the issuance
         // it was queueing behind may already have produced the certificate.
-        if (await store.GetAsync(hostname, ct) is { } existing)
+        //
+        // Unless an operator asked for a new one. That is the whole of what the "reissue now"
+        // button does -- without this check it would find the certificate it is trying to
+        // replace, decide there was nothing to do, and report success.
+        if (await store.GetAsync(hostname, ct) is { } existing
+            && !await store.IsReissueRequestedAsync(hostname, ct))
         {
             return existing;
         }

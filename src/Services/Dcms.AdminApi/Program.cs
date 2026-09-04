@@ -381,6 +381,7 @@ app.MapTenantAdminEndpoints();
 app.MapMyAccountEndpoints();
 app.MapInvitationEndpoints();
 app.MapDomainEndpoints();
+app.MapDomainCertificateEndpoints();
 app.MapPluginEndpoints();
 app.MapContentEndpoints();
 app.MapMediaEndpoints();

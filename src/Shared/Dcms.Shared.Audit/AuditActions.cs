@@ -50,6 +50,13 @@ public static class AuditActions
     public const string DomainPrimarySet = "domain.primary.set";
     public const string DomainRemoved = "domain.removed";
 
+    /// <summary>An operator asked for a certificate to be reissued before it was due.</summary>
+    public const string DomainCertificateReissued = "domain.certificate.reissued";
+    /// <summary>A tenant installed their own certificate for a domain they had verified.</summary>
+    public const string DomainCertificateUploaded = "domain.certificate.uploaded";
+    /// <summary>An uploaded certificate was dropped, returning the domain to DCMS-managed issuance.</summary>
+    public const string DomainCertificateRemoved = "domain.certificate.removed";
+
     // ---- content ----
     public const string ContentCreated = "content.created";
     public const string ContentUpdated = "content.updated";

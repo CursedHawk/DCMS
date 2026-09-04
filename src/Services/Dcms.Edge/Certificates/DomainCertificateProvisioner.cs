@@ -26,6 +26,7 @@ namespace Dcms.Edge.Certificates;
 public sealed class DomainCertificateProvisioner(
     INatsJSContext jetStream,
     CertificateProvisioner provisioner,
+    ICertificateStore store,
     IOptions<CertificateOptions> options,
     ILogger<DomainCertificateProvisioner> logger) : BackgroundService
 {
@@ -58,9 +59,14 @@ public sealed class DomainCertificateProvisioner(
                     }
 
                     logger.LogInformation("Domain {Hostname} verified; pre-issuing a certificate.", hostname);
+                    // Dropped first, because this subject now also carries "an operator uploaded
+                    // a certificate" and "an operator asked for a reissue". The cached entry
+                    // expires when the certificate does, so without this the edge would keep
+                    // serving the one that was just replaced -- for as long as it had left.
                     // Failures are recorded on the certificate row by the provisioner and are not
                     // rethrown: one domain whose DNS is still propagating must not stop the
                     // consumer and with it every later domain.
+                    store.Invalidate(hostname);
                     await provisioner.EnsureAsync(hostname, stoppingToken);
                 }
             }

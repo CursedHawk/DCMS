@@ -107,6 +107,9 @@ public sealed class CertificateStore(
         row.LastAttemptAt = clock.GetUtcNow();
         row.LastError = null;
         row.ConsecutiveFailures = 0;
+        // Whatever asked for this is now satisfied, whichever path got here -- the operator's
+        // button, the event it published, or the sweep that would have caught it within the hour.
+        row.ReissueRequestedAt = null;
         row.UpdatedAt = clock.GetUtcNow();
         await db.SaveChangesAsync(ct);
 
@@ -166,6 +169,23 @@ public sealed class CertificateStore(
     }
 
     public void Invalidate(string hostname) => cache.Remove(CacheKey(Normalize(hostname)));
+
+    /// <summary>
+    /// Whether an operator has asked for this hostname to be reissued before it is due.
+    ///
+    /// <para>Read straight from the row rather than cached: it is checked once per issuance
+    /// attempt, not per handshake, and a cached "no" would make the reissue button do nothing
+    /// for as long as the cache held — which is exactly the kind of button nobody trusts again.
+    /// </para>
+    /// </summary>
+    public async Task<bool> IsReissueRequestedAsync(string hostname, CancellationToken ct)
+    {
+        var normalized = Normalize(hostname);
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
+        return await db.Certificates.AsNoTracking()
+            .AnyAsync(c => c.Hostname == normalized && c.ReissueRequestedAt != null, ct);
+    }
 
     private async Task<CachedCertificate?> LoadAsync(string hostname, CancellationToken ct)
     {

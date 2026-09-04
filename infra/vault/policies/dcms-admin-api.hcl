@@ -56,3 +56,15 @@ path "transit/encrypt/dcms-social-tokens" {
 path "transit/decrypt/dcms-social-tokens" {
   capabilities = ["update"]
 }
+
+# Uploaded TLS private keys (edge.certificates, Source = Custom). admin-api is where a tenant
+# uploads their own certificate, so it needs encrypt.
+#
+# Encrypt ONLY, and the reasoning is the AI-key split rather than the Meta exception: two
+# different services want the two directions here. admin-api takes the key in; the EDGE spends
+# it, at handshake time, and it is the only thing that ever reads one back. So a compromise of
+# the admin plane -- the broadest HTTP surface on the platform and the most privileged users --
+# cannot turn the stored ciphertext into a key that impersonates a tenant's site.
+path "transit/encrypt/dcms-tls-keys" {
+  capabilities = ["update"]
+}

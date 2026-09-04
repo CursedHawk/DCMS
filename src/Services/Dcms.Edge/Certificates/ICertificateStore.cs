@@ -22,6 +22,13 @@ public interface ICertificateStore
     Task<DateTimeOffset?> RetryNotBeforeAsync(string hostname, CertificateOptions options, CancellationToken ct);
 
     void Invalidate(string hostname);
+
+    /// <summary>
+    /// Whether an operator has asked for this hostname to be reissued before it is due. Both the
+    /// event-driven path and the hourly sweep consult it, so a dropped message costs an hour
+    /// rather than the reissue.
+    /// </summary>
+    Task<bool> IsReissueRequestedAsync(string hostname, CancellationToken ct);
 }
 
 /// <summary>Whether a hostname may be issued a certificate at all. See <see cref="TlsAllowList"/>.</summary>

@@ -46,6 +46,18 @@ public sealed class EdgeCertificate
     public DateTimeOffset? RenewedAt { get; set; }
 
     /// <summary>
+    /// Set when an operator asks for a fresh certificate before this one is due.
+    ///
+    /// <para>A durable request rather than a message, because that is the difference between a
+    /// button that works and one that usually works: admin-api writes this and publishes an
+    /// event to make the edge act now, and the hourly renewal sweep also picks up anything
+    /// flagged — so a dropped message costs an hour, not the reissue. Cleared by
+    /// <c>CertificateStore.SaveAsync</c>, which is the only thing that can honestly say it is
+    /// done.</para>
+    /// </summary>
+    public DateTimeOffset? ReissueRequestedAt { get; set; }
+
+    /// <summary>
     /// When issuance or renewal was last attempted, successful or not, and what went wrong.
     /// Surfaced in the admin UI: the whole point of moving certificates into the product is that
     /// "why has this domain no certificate" has an answer someone can read.

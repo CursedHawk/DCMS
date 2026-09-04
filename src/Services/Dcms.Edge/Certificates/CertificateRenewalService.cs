@@ -79,7 +79,10 @@ public sealed class CertificateRenewalService(
             // Custom certificates are excluded on purpose: the platform holds no authority to
             // reissue one, so a sweep that "renewed" it would silently replace a tenant's own
             // certificate with a Let's Encrypt one. Expiry is reported instead, in the admin UI.
-            .Where(c => c.Source == CertificateSource.DcmsManaged && c.NotAfter <= threshold)
+            // ReissueRequestedAt is the backstop for the operator's "reissue now" button: the
+            // event admin-api publishes makes it immediate, and this makes it certain.
+            .Where(c => c.Source == CertificateSource.DcmsManaged
+                        && (c.NotAfter <= threshold || c.ReissueRequestedAt != null))
             .Select(c => c.Hostname)
             .ToListAsync(ct);
 
