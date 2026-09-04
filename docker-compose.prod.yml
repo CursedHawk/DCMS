@@ -172,6 +172,18 @@ services:
   identity:
     environment:
       <<: *prod-env
+      # The console is served from its own host but signs in against THIS issuer, so its
+      # discovery, token and userinfo calls are cross-origin and need naming here. It went in
+      # on content-api by mistake first: the console's sign-in failed at the very first fetch
+      # with no Access-Control-Allow-Origin, which is a confusing way to learn that the wrong
+      # service was told about it.
+      Cors__AllowedOrigins__0: "${PUBLIC_BASE_URL}"
+      Cors__AllowedOrigins__1: "https://${PLATFORM_HOST:-platform.highgeek.eu}"
+      # Blanked, not omitted. The base file lists the two localhost dev origins, and compose
+      # MERGES environment maps -- so without these a production identity would keep accepting
+      # credentialed cross-origin requests from anything served on an operator's own machine.
+      Cors__AllowedOrigins__2: ""
+      Cors__AllowedOrigins__3: ""
       Identity__Issuer: "${PUBLIC_BASE_URL}/"
       Identity__AllowInsecureHttp: "false"
       # Migration and seeding are the migration job's work. Left on, every replica
@@ -213,7 +225,6 @@ services:
       Auth__Authority: "http://identity:8080/"
       Auth__RequireHttpsMetadata: "true"
       Cors__AllowedOrigins__0: "${PUBLIC_BASE_URL}"
-      Cors__AllowedOrigins__1: "https://${PLATFORM_HOST:-platform.highgeek.eu}"
       # AI Chatbot: content-api calls ai-gateway for visitor replies, reusing the
       # shared dcms.ai service client (same secret as admin-api).
       ServiceClient__TokenEndpoint: "http://identity:8080/connect/token"

@@ -113,6 +113,11 @@ if (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Postgre
 
 var app = builder.Build();
 
+// Fails now, with the two settings named, rather than on the first request to touch auth --
+// which on this platform is the compose healthcheck, and which reported an options stack trace
+// instead of "your Authority is http and RequireHttpsMetadata is true".
+app.Services.ValidateDcmsResourceAuthentication();
+
 // First in the pipeline, so an exception anywhere below it becomes a ProblemDetails carrying
 // the trace id instead of a bare Kestrel 500 with no body and nothing to quote.
 app.UseDcmsProblemDetails();

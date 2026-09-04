@@ -108,6 +108,13 @@ services:
   # access to Docker's container directory, so it gets the narrowest secret reach in the stack.
   platform-api:
     environment:
+      # The same anchor every other resource server uses. Without it this service kept the
+      # prod file's Auth__Authority of http://identity:8080/ alongside RequireHttpsMetadata
+      # true, and JwtBearer refuses that combination -- not at startup, but on the first
+      # request to touch authentication, which includes /health/live. The container came up,
+      # answered 500 to its own healthcheck, and failed the deploy gate.
+      <<: *vps-resource-auth
+      Auth__Audience: "dcms-platform-api"
       VAULT_ROLE_ID: "${VAULT_ROLE_ID_PLATFORM_API:-}"
       VAULT_SECRET_ID: "${VAULT_SECRET_ID_PLATFORM_API:-}"
 

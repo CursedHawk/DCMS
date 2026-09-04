@@ -227,11 +227,20 @@ builder.Services.AddDcmsEmailQueue();
 // container, then the platform console's. Deployed environments override this with
 // Cors__AllowedOrigins__n, and behind Caddy both SPAs are same-origin with /connect/* anyway —
 // this list only matters where the SPA and identity are on different ports.
-var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?? [
+// Blank entries are dropped rather than passed through. Production blanks the dev origins the
+// base compose file sets -- compose MERGES environment maps, so omitting them would leave them
+// in place -- and an empty string is not an origin anything should be matched against.
+var corsOrigins = (builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+    .Where(o => !string.IsNullOrWhiteSpace(o))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
+if (corsOrigins.Length == 0)
+{
+    corsOrigins = [
         "http://localhost:5173", "http://localhost:5000",
         "http://localhost:5174", "http://localhost:5010",
     ];
+}
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
     .WithOrigins(corsOrigins)
     .AllowAnyHeader()
