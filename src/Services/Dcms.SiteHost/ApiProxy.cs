@@ -52,7 +52,7 @@ public static class ApiProxy
             proxyRequest.Headers.Add("X-Dcms-Tenant", tenantSlug);
 
             // YARP's default transformer copies headers but adds no X-Forwarded-* of its own,
-            // and UseForwardedHeaders upstream has already consumed Caddy's. Restate them from
+            // and UseForwardedHeaders upstream has already consumed the edge's. Restate them from
             // what site-host resolved, so content-api's rate limiter and audit trail see the
             // visitor rather than this proxy. Set rather than appended: the value is the one
             // address site-host actually trusts, and a chain a client could prepend to is not.

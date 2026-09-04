@@ -125,7 +125,7 @@ public sealed class DcmsMetrics : IDisposable
         // The edge's own request counter, tagged by the hostname it was asked for.
         //
         // This is the one deliberate exception to the cardinality rule above, and it is
-        // inherited rather than invented: the Caddyfile carried the same label set for the same
+        // inherited rather than invented: the edge that came before carried the same label set for the same
         // reason, and said so. A series per tenant domain is what makes "which site is being
         // hit" answerable at all, and the domain count is bounded by the tenants who have
         // verified one. If custom domains ever run to thousands, this is the thing to revisit

@@ -6,10 +6,10 @@
 
 
 This guide deploys the whole system — 8 .NET services, the admin SPA, and the
-infra (Postgres, Redis, NATS JetStream, MinIO, Vault, Forgejo, Caddy, and the
+infra (Postgres, Redis, NATS JetStream, MinIO, Vault, Forgejo, and the
 Alloy/Prometheus/Loki/Tempo/Grafana telemetry stack) — on a single Linux host
 using Docker Compose. It covers a **quick start** (dev/staging, all-in-one) and a
-**production deployment** (real Vault, Caddy TLS for tenant domains, secrets from
+**production deployment** (real Vault, edge-terminated TLS for tenant domains, secrets from
 the environment).
 
 Three compose files matter: `docker-compose.yml` is the base, `docker-compose.prod.yml`
@@ -57,8 +57,8 @@ docker version && docker compose version
   toolchains. On a 4-core host, build services **serially** — building more than
   two at once thrashes the box.
 - **Ports:** dev exposes `5000-5010`, `5432`, `6379`, `4222/8222`, `9000/9001`,
-  `8200`, `8025`. Prod exposes only `80`/`443` (Caddy) plus whatever you choose
-  for the admin/identity ingress.
+  `8200`, `8025`. Prod exposes only `80`/`443` (the edge); everything else, the
+  admin and identity plane included, is reached through it.
 - **Outbound network at build time** (NuGet, npm, Debian/Alpine packages).
 
 Get the code:
@@ -134,9 +134,11 @@ docker compose down -v        # stop and delete all volumes (full reset)
 The prod profile (`docker-compose.prod.yml`) is used **instead of** the dev
 override and changes the security-relevant pieces:
 
-- **Caddy** is the public ingress and terminates TLS for tenant custom domains
-  (on-demand TLS, gated by site-host so certs are only issued for verified
-  domains).
+- **`edge`** (`Dcms.Edge`) is the public ingress. It terminates TLS for the platform
+  hostnames and every tenant custom domain, issuing through Let's Encrypt and storing
+  each certificate in `edge.certificates` with the private key encrypted by Vault
+  Transit. Issuance is gated by site-host, so a certificate is only ordered for a
+  verified+linked domain.
 - **Vault** runs in real server mode (file storage, **no dev root token**); the
   services refuse to start against a dev token (`DCMS_REFUSE_DEV_VAULT=true`).
 - All secrets come from the host environment — no dev defaults are baked in.
@@ -162,7 +164,7 @@ ADMIN_API_CLIENT_SECRET=<long-random-secret>
 # Public base URL of the identity/admin plane (used as the token issuer)
 PUBLIC_BASE_URL=https://admin.example.com
 
-# Let's Encrypt account email for Caddy on-demand TLS
+# Let's Encrypt account email for the edge's ACME account
 ACME_EMAIL=ops@example.com
 
 # Platform SuperAdmin seeded by identity on first boot
@@ -290,10 +292,15 @@ admin plane decrypt tenant AI keys that only ai-gateway should ever read.
 - **Admin/identity plane:** point `admin.example.com` (your `PUBLIC_BASE_URL`
   host) at the server. See step 2.6 for exposing it.
 - **Tenant sites:** each tenant custom domain (e.g. `www.acme.com`) gets a DNS
-  `A`/`AAAA` record to the server. Caddy issues a TLS cert on first request, but
-  **only after** site-host confirms the domain is verified+linked — so verify the
+  `A`/`AAAA` record to the server. The edge issues a TLS cert for it — on the
+  `tenant.domain.verified` event, and otherwise on the next hourly sweep — but
+  **only after** site-host confirms the domain is verified+linked, so verify the
   domain in the admin panel first (TXT record `_dcms-verify.<host>`), then link it
   to a published site.
+- **Platform hostnames:** `admin.`, `platform.`, `auth.`, `grafana.` and `git.` each
+  need their own A record before the edge can be issued a certificate for them. They
+  bypass the tenant allow-list (they are not rows in `tenancy.domains`), so DNS is the
+  only prerequisite — but it is a hard one.
 
 ### 2.4a Vault: policies, AppRoles and auto-unseal
 
@@ -376,41 +383,36 @@ $C up -d --build
 ```
 
 admin-api runs all EF migrations and applies the RLS policies on startup
-("All databases migrated." / "Row-Level Security policies applied"). Caddy comes
+("All databases migrated." / "Row-Level Security policies applied"). The edge comes
 up on `80`/`443`.
 
-### 2.6 Expose the admin + identity plane (optional but usual)
+### 2.6 The admin, identity and console planes
 
-The prod Caddy proxies **tenant domains → site-host**. To also serve the admin
-SPA and identity over TLS on `admin.example.com`, add site blocks to
-`infra/caddy/Caddyfile` (these use normal ACME, not on-demand):
+There is nothing to add: the edge's route table already carries them, built from
+`ADMIN_HOST`, `PLATFORM_HOST`, `AUTH_HOST`, `GRAFANA_DOMAIN` and `GIT_HOST` (see
+`Dcms.Edge/Routing/PlatformRoutes.cs`). It is code, not a bind-mounted config file,
+which is the whole reason a hostname change is a deploy rather than an edit-and-hope.
 
-```caddyfile
-admin.example.com {
-    handle /connect/* { reverse_proxy identity:8080 }
-    handle /.well-known/* { reverse_proxy identity:8080 }
-    handle /api/* { reverse_proxy admin-api:8080 }
-    handle { reverse_proxy admin-spa:80 }
-}
-```
+What is required is that each of those names resolves to this host, and that
+`PUBLIC_BASE_URL` and `ADMIN_HOST` agree — `scripts/deploy.sh` refuses to deploy if
+they do not, because an edge and an issuer that disagree about the host's own name
+produce a login loop rather than an error message.
 
-Then set `PUBLIC_BASE_URL=https://admin.example.com`, rebuild the SPA so the
-OIDC authority is baked in, and reload Caddy:
+Check the route table without DNS by supplying the Host header yourself:
 
 ```bash
-$C up -d --build admin-spa
-# NOT `caddy reload`. The Caddyfile is a bind-mounted FILE; replacing it gives
-# the container a stale inode, so a reload re-reads the old content and reports
-# success. Recreate the container instead.
-$C up -d --force-recreate --no-deps caddy
+curl -si -H 'Host: admin.example.com' http://127.0.0.1/api/admin/domains
+curl -si -H 'Host: auth.example.com'  http://127.0.0.1/.well-known/openid-configuration
 ```
 
 ### 2.7 Verify production
 
 ```bash
-curl -fsS https://admin.example.com/health            # via Caddy → admin-api (if exposed)
+curl -fsS https://admin.example.com/health            # via the edge → admin-api
 $C ps
-$C logs --since=5m caddy site-host
+$C logs --since=5m edge site-host
+# Every sweep is logged, including one that did nothing. "0 missing" is the line to want.
+$C logs edge | grep 'Certificate sweep'
 # Optional load run against the deployed host (k6 runs in a container, nothing to install).
 # See loadtest/README.md; raise RATE_LIMIT_PERMITS for the window and put it back after.
 ./loadtest/run.sh --env vps1 --scenario delivery --vus 10 --duration 2m
@@ -564,8 +566,9 @@ restart (`restart: unless-stopped`).
 | "Refusing to start: `Visitor__SigningKey` …" | The manual Vault step in 2.3 was skipped, or the key is under 32 bytes. |
 | "Refusing to start: `Forgejo__WebhookSecret` …" | Empty or a known default. Set `FORGEJO_WEBHOOK_SECRET` and re-register the site webhooks. |
 | "Refusing to start: tenant-scoped table(s) … no Row-Level Security policy" | A new tenant table needs an entry in `RlsConfigurator.TenantTables` (or `ExemptTables`, with a reason). |
-| SPA login redirect fails | Issuer mismatch — `dcms-identity` hosts entry (dev) or `PUBLIC_BASE_URL` + identity exposed via Caddy (prod). |
-| Tenant domain has no cert | Domain not verified+linked yet — site-host's `/internal/tls-allowed` returns 404, so Caddy won't mint a cert. Verify the TXT record and link a published site. |
+| SPA login redirect fails | Issuer mismatch — `dcms-identity` hosts entry (dev), or `PUBLIC_BASE_URL`/`AUTH_HOST` disagreeing with what the edge routes (prod). |
+| Tenant domain has no cert | Domain not verified+linked yet — site-host's `/internal/tls-allowed` returns 404, so the edge won't order one. Verify the TXT record and link a published site. |
+| Every hostname gives `ERR_CONNECTION_CLOSED` | The certificate store is empty and issuance is failing. `$C logs edge` — `EdgeTlsPreflight` names the cause; usually Vault Transit is unreachable (`infra/vault/apply.sh` not run, or `VAULT_ROLE_ID_EDGE`/`VAULT_SECRET_ID_EDGE` missing from `.env`). |
 | `429 Too Many Requests` on content-api | Per-IP rate limit (default 600/60s). Tune `RateLimiting:PermitLimit` / `WindowSeconds`. |
 | Build fails pulling packages | Host needs outbound access to NuGet/npm/distro mirrors at build time. |
 

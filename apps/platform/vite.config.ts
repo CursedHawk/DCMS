@@ -8,7 +8,7 @@ export default defineConfig({
     // 5173 belongs to the admin SPA; both run at once during development.
     port: 5174,
     proxy: {
-      // Same-origin in every deployed environment (Caddy routes all three by prefix), so the
+      // Same-origin in every deployed environment (the edge routes all three by prefix), so the
       // dev server has to reproduce that or the SPA would need CORS it never needs in production.
       '/api/platform': { target: 'http://localhost:5008', changeOrigin: true },
       '/api/identity': { target: 'http://localhost:5001', changeOrigin: true },

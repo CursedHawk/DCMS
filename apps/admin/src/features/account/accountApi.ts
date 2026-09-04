@@ -1,10 +1,11 @@
 import { getAccessToken } from '../../auth';
 import { runtimeConfig } from '../../runtime-config';
 
-// The account API is served by the identity service under /account/api/*. In prod
-// it is same-origin (Caddy routes /account → identity); in dev the OIDC authority
-// origin is used (identity enables CORS for the SPA origin). Auth is the bearer
-// access token — no tenant header (account settings are tenant-agnostic).
+// The account API is served by the identity service under /account/api/*. Identity has
+// its own host (AUTH_HOST), so this is cross-origin in every deployment and identity's
+// Cors:AllowedOrigins must list the console's origin. Falls back to the current origin
+// only for a bare dev run with no authority configured. Auth is the bearer access token
+// — no tenant header (account settings are tenant-agnostic).
 const identityBase = runtimeConfig.oidcAuthority || window.location.origin;
 
 export interface AccountMe {

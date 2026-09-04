@@ -280,7 +280,7 @@ public static class InvitationEndpoints
 
     /// <summary>
     /// Absolute link to the SPA's accept page. The admin SPA and admin-api share one
-    /// public origin behind Caddy (see infra/caddy/Caddyfile), so the incoming
+    /// public origin behind the edge, so the incoming
     /// request's scheme+host is the SPA's origin.
     /// </summary>
     private static string BuildAcceptLink(HttpContext http, string token) =>

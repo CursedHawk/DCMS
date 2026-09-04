@@ -10,7 +10,7 @@ groups:
       # Per-second is the base unit; the minute/hour/day panels multiply it, which is
       # correct for a rate and avoids keeping four near-identical series.
       # Probe routes are excluded from every one of these, and it matters more than it
-      # looks. Compose polls /health/live on eight containers every ten seconds and Caddy
+      # looks. Compose polls /health/live on eight containers every ten seconds and the edge
       # polls /health; on an idle platform that is 0.8 req/s of pure self-inspection, which
       # is *all* of the traffic. Left in, a requests-per-second panel shows a flat line that
       # has nothing to do with anyone using the platform — and, worse, the

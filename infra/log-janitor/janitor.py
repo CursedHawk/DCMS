@@ -6,7 +6,7 @@ WHAT THIS HOLDS, STATED PLAINLY. This process has write access to
 /var/lib/docker/containers, which is root-owned and close to root on the host. It exists
 because the Docker API has no "clear this container's logs" call -- the logs are files, and
 emptying one means truncating it. Isolating that capability in a container that does one thing
-is better than giving it to platform-api, which is internet-facing through Caddy.
+is better than giving it to platform-api, which is internet-facing through the edge.
 
 It is OFF BY DEFAULT (compose profile "logjanitor"). A deployment that does not want this
 capability does not run it, and the console reports the feature as unavailable rather than

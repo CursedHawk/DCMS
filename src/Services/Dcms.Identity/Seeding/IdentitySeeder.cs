@@ -176,7 +176,7 @@ public sealed class IdentitySeeder(
         // a token minted for admin.highgeek.eu be replayed into platform.highgeek.eu's callback.
         //
         // It asks for dcms.admin as well as dcms.platform because the console calls three APIs
-        // same-origin through Caddy — platform-api for observability and ops, identity for the
+        // same-origin through the edge — platform-api for observability and ops, identity for the
         // user directory, and admin-api for tenancy and audit, which already own those. Nothing
         // here grants anything: every one of those endpoints is gated on SuperAdmin or a
         // platform permission on the server side.

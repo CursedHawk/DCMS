@@ -35,4 +35,11 @@ public interface ICertificateStore
 public interface ITlsAllowList
 {
     Task<bool> IsAllowedAsync(string hostname, CancellationToken ct);
+
+    /// <summary>
+    /// Every tenant hostname that may hold a certificate right now, so the edge can issue ahead
+    /// of the first visitor instead of inside their handshake. Empty when site-host cannot be
+    /// reached — the caller treats that as "nothing new to do", never as "nothing is allowed".
+    /// </summary>
+    Task<IReadOnlyList<string>> AllowedHostnamesAsync(CancellationToken ct);
 }

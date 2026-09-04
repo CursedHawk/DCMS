@@ -16,3 +16,4 @@ as their implementation phase lands.
 - [0007](0007-audit-logging.md) — Platform-wide audit logging: transactional outbox + HMAC hash chain
 - [0008](0008-observability.md) — Observability: OpenTelemetry into a single-host LGTM stack
 - [0009](0009-in-app-notifications.md) — In-app notifications: admin-api hub, fan-out on write
+- [0010](0010-yarp-edge.md) — The public edge is a .NET service (`Dcms.Edge`), not Caddy

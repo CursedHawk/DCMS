@@ -73,7 +73,7 @@ echo "== the infrastructure exporters the dashboards read"
 # Seventy-seven of the 224 Prometheus panels on this stack once returned nothing, and the
 # causes were not application bugs: the NATS exporter namespaces its series under `gnatsd_`
 # and `jetstream_` rather than `nats_`, MinIO publishes per-bucket usage on a second
-# endpoint that was not scraped, Caddy 2.7 made HTTP server metrics opt-in, and PostgreSQL
+# endpoint that was not scraped, and PostgreSQL
 # 17 moved checkpoint counters to a view postgres_exporter does not read. Every one of those
 # is a scrape or a name, invisible from inside the application, and each showed up as a
 # panel reading "No data" -- which is what a broken pipeline looks like too.
@@ -85,7 +85,6 @@ for probe in \
     "jetstream_consumer_num_pending|NATS JetStream per-consumer depth (nats-exporter, -jsz=all)" \
     "gnatsd_varz_connections|NATS server stats (nats-exporter, -varz)" \
     "minio_bucket_usage_total_bytes|MinIO per-bucket usage (/minio/v2/metrics/bucket scrape)" \
-    "caddy_http_requests_in_flight|Caddy HTTP server metrics (retire this line when Caddy goes)" \
     "pg_stat_checkpointer_num_timed|Postgres checkpoints (alloy postgres-queries.yaml)"; do
     metric=${probe%%|*}; what=${probe#*|}
     n=$(fetch "http://localhost:9090/api/v1/query?query=count($metric)" |
@@ -93,9 +92,9 @@ for probe in \
     [ -n "$n" ] && ok "$what" || fail "$metric has no series — $what is not reaching Prometheus"
 done
 
-# The edge's certificate inventory, skipped only where the ports have been handed back to
-# Caddy. The renewal sweep does not run with TLS off, so there the gauge legitimately has no
-# series and asserting on it would fail a healthy stack. Everywhere else an absent gauge means
+# The edge's certificate inventory, skipped where TLS is off. The renewal sweep does not run
+# then, so the gauge legitimately has no series and asserting on it would fail a healthy dev
+# stack. Everywhere else an absent gauge means
 # the sweep has stopped -- the one failure that stays invisible until every tenant's site goes
 # to a browser warning on the same afternoon. Published on every pass including an empty one,
 # so like the probes above it distinguishes "unwired" from "idle".

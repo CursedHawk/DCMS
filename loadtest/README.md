@@ -41,14 +41,14 @@ Override anything by dotted path: `--vus 25`, `--duration 3m`, or `-e thresholds
 
 ### Two modes, and why both exist
 
-- **`edge`** (default) — through Caddy over public HTTPS. What a real client sees, TLS and
+- **`edge`** (default) — through `Dcms.Edge` over public HTTPS. What a real client sees, TLS and
   rate limiting included.
 - **`internal`** — services addressed by compose alias, from a container on the stack's own
   network. Needs `--via <ssh-host>`.
 
 Run the same scenario in both and difference the p95: that is what separates *the edge is
 slow* from *the service is slow*. Internal mode is also the only way to load the delivery
-and site planes without DNS — Caddy routes `/api` on the admin host to **admin-api**, so
+and site planes without DNS — the edge routes `/api` on the admin host to **admin-api**, so
 content delivery is reachable only through a tenant domain, and in internal mode that
 domain is just a `Host` header.
 

@@ -16,7 +16,7 @@ storage "file" {
 
 listener "tcp" {
   address     = "0.0.0.0:8200"
-  tls_disable = "true" # TLS is terminated at Caddy; Vault is on the internal network only.
+  tls_disable = "true" # TLS is terminated at the edge; Vault is on the internal network only.
 
   # Lets Alloy scrape /v1/sys/metrics without a token. Vault's telemetry reports seal
   # state, request rates and lease counts — operational facts, no secret material — and

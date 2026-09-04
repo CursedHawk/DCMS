@@ -337,10 +337,10 @@ if (args.Contains("--migrate-only"))
     return;
 }
 
-// Behind the Caddy TLS edge admin-api is reached over plain HTTP on the internal
+// Behind the TLS edge admin-api is reached over plain HTTP on the internal
 // network, so Request.Scheme would be "http". Honour X-Forwarded-Proto/Host so
 // absolute links we mint for users (invitation accept links) point at the public
-// https origin. admin-api is only reachable through Caddy, so all proxies are
+// https origin. admin-api is only reachable through the edge, so all proxies are
 // trusted.
 var forwardedHeaders = new ForwardedHeadersOptions
 {
@@ -388,7 +388,7 @@ app.MapMediaEndpoints();
 app.MapSiteEndpoints();
 app.MapSiteDeletion();
 app.MapNotificationEndpoints();
-// Mounted under /api so it rides the existing edge route to admin-api -- no Caddy change,
+// Mounted under /api so it rides the existing edge route to admin-api -- no route change,
 // and no matcher ordering against content-api's /hub/* for the chat hub.
 app.MapHub<NotificationHub>("/api/hub/notifications")
     .AuditExempt("SignalR transport endpoint, not an action. The notifications it carries "

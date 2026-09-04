@@ -5,7 +5,7 @@ const base = runtimeConfig.adminApiBase;
 
 /**
  * Base for the chat SignalR hub (hosted by content-api). Reached same-origin in
- * every deployment — Vite proxies /hub in dev, Caddy routes /hub/* to content-api
+ * every deployment — Vite proxies /hub in dev, the edge routes /hub/* to content-api
  * in prod — so the default is relative. Override with VITE_CONTENT_API_BASE only
  * to point at a content-api on a different origin.
  */

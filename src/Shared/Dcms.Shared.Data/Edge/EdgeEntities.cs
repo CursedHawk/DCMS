@@ -106,7 +106,7 @@ public sealed class AcmeAccount
 /// configuration so the edge can serve them before Postgres answers, and this table carries what
 /// only the running platform knows. A row is picked up on the next reload, which the domain
 /// events already trigger — no restart, and none of the stale-inode problem the bind-mounted
-/// Caddyfile had.</para>
+/// a bind-mounted config file had.</para>
 /// </summary>
 public sealed class EdgeRoute
 {

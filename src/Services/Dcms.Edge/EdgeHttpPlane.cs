@@ -30,8 +30,8 @@ public static class EdgeHttpPlane
         var certificates = app.ApplicationServices.GetRequiredService<IOptions<CertificateOptions>>().Value;
         if (!certificates.TlsEnabled)
         {
-            // Nothing to redirect to. While Caddy still terminates TLS, the edge is reached over
-            // plain HTTP on the internal network and every request would bounce forever.
+            // Nothing to redirect to. With TLS off the edge is reached over plain HTTP -- in
+            // dev, or behind something else -- and every request would bounce forever.
             return app;
         }
 

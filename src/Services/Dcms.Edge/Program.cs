@@ -47,18 +47,20 @@ builder.Services.AddSingleton<IAcmeIssuer, CertesAcmeIssuer>();
 builder.Services.AddSingleton<CertificateProvisioner>();
 builder.Services.AddHttpClient<TlsAllowList>(client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddSingleton<ITlsAllowList>(sp => sp.GetRequiredService<TlsAllowList>());
-builder.Services.AddSingleton<CaddyCertificateImporter>();
 builder.Services.AddHostedService<CertificateRenewalService>();
 builder.Services.AddHostedService<DomainCertificateProvisioner>();
+// Issues the platform's OWN hostnames up front, and reports the one failure that otherwise has
+// no symptom other than every host refusing TLS at once. See EdgeTlsPreflight.
+builder.Services.AddHostedService<EdgeTlsPreflight>();
 
 // Opens the TLS listener when Edge:Certificates:TlsEnabled is set. Registered as an options
 // configurator rather than configured inline, because the SNI callback needs the container and
 // the container does not exist yet when ConfigureKestrel runs.
 builder.Services.AddSingleton<IConfigureOptions<KestrelServerOptions>, EdgeTlsConfigurator>();
 
-// The check the Caddy container's probe was reaching for and could only approximate: a proxy
-// that starts with an empty route table is a broken deploy that answers every request with a
-// 404, and nothing about the process says so.
+// A proxy that starts with an empty route table is a broken deploy that answers every request
+// with a 404, and nothing about the process itself says so. Liveness is not the question here;
+// "did the route table load" is.
 builder.Services.AddHealthChecks()
     .AddCheck<RouteTableHealthCheck>("edge-routes", tags: ["ready"]);
 
@@ -78,8 +80,8 @@ builder.AddEdgeOutputCache();
 
 builder.Services.AddReverseProxy().AddTransforms(context =>
 {
-    // Caddy's reverse_proxy passes the client's Host through untouched; YARP replaces it with
-    // the destination's host unless told otherwise. That difference is not cosmetic here:
+    // YARP replaces the client's Host with the destination's host unless told otherwise, and
+    // that default is not survivable here:
     // site-host resolves a tenant from Request.Host, so with YARP's default every custom domain
     // would resolve to nothing and serve a 404 — a total outage of the delivery plane that no
     // health check would notice. Preserved globally, which is also what identity, admin-api,
@@ -97,19 +99,6 @@ builder.Services.AddReverseProxy().AddTransforms(context =>
 });
 
 var app = builder.Build();
-
-// Before the server starts listening, not from a hosted service: a hosted service's start order
-// relative to Kestrel is a detail of how the host was built, and importing certificates AFTER
-// the TLS listener opens would leave a window in which every tenant domain has none.
-//
-// Only for the deploy that performs the cutover, which is the one that mounts Caddy's data
-// directory read-only. Every deploy after it finds no path and does nothing. See
-// CaddyCertificateImporter for why skipping this makes the cutover an outage.
-if (app.Configuration["Edge:Certificates:ImportFromCaddyPath"] is { Length: > 0 } caddyDataPath)
-{
-    await app.Services.GetRequiredService<CaddyCertificateImporter>()
-        .ImportAsync(caddyDataPath, CancellationToken.None);
-}
 
 // First in the pipeline, so an exception anywhere below it becomes a ProblemDetails carrying
 // the trace id instead of a bare Kestrel 500 with no body and nothing to quote.

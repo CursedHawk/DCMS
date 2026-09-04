@@ -195,7 +195,7 @@ GRAFANA_ROOT_URL=https://grafana.dev.example.com/
 GIT_HOST=git.dev.example.com
 ```
 
-`ADMIN_HOST` exists because a Caddy site address is a hostname while an OIDC issuer is a URL —
+`ADMIN_HOST` exists because the edge's route table keys on a hostname while an OIDC issuer is a URL —
 one fact needed in two shapes. `scripts/deploy.sh` refuses to deploy when they disagree,
 because an edge serving one name while identity issues tokens for another produces a login
 loop rather than an error anyone can read.
@@ -360,12 +360,14 @@ re-applies an exact previous release rather than trusting where a tag points now
 | `git.<env>.example.com` | serving host | normal ACME |
 | tenant custom domains | serving host | **on-demand**, gated |
 
-Tenant domains use Caddy on-demand TLS with an `ask` endpoint: site-host answers
-`GET /internal/tls-allowed?domain=…` with 200 only for verified, linked domains, so Caddy never
-mints a certificate for a hostname no tenant owns.
+Tenant domains are gated: site-host answers `GET /internal/tls-allowed?domain=…` with 200
+only for verified, linked domains, so the edge never orders a certificate for a hostname no
+tenant owns. Its sibling `GET /internal/tls-hostnames` returns the whole list, which is what
+the hourly sweep uses to issue the certificates it does not already hold — the platform's own
+names included, since those bypass the tenant gate.
 
 Grafana must be its **own name**, not something under a wildcard that already resolves —
-otherwise it falls through to the on-demand catch-all and is correctly refused a certificate.
+otherwise it falls through to the catch-all and is correctly refused a certificate.
 
 ---
 
@@ -404,9 +406,10 @@ builds run on the runners but the *pushes* all land on the machine that also ser
 That drove load past 50, pinned GitLab against its memory limit, made the web UI 504, and
 failed seven of ten jobs.
 
-**`caddy reload` after changing the Caddyfile.** It is a bind-mounted *file*; replacing it
-leaves the container on a stale inode, so the reload re-reads the old content and reports
-success. Recreate the container instead.
+**Reloading a container whose config is a bind-mounted *file*** (Alloy, Prometheus, the
+NATS server). Replacing the file leaves the container on a stale inode, so the reload re-reads
+the old content and reports success. Recreate the container instead — which is why the edge's
+route table is code and database rows rather than a file.
 
 **Recreating a Shamir-sealed Vault.** It comes back sealed, and every service reads its
 configuration from Vault at startup. `deploy.sh` refuses this and explains the attended

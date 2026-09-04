@@ -20,11 +20,11 @@ export const MODE = __ENV.MODE || 'edge';
 /**
  * Where a tenant's *delivery* surface lives, which is not the same place in both modes.
  *
- * Caddy routes /api on the admin host to admin-api; content delivery is only reachable
+ * The edge routes /api on the admin host to admin-api; content delivery is only reachable
  * through a tenant domain, where site-host proxies /api on to content-api and injects the
  * tenant slug (src/Services/Dcms.SiteHost/ApiProxy.cs). So:
  *
- *   edge     -> https://<tenant-domain>/api/...   through Caddy and site-host, the real path
+ *   edge     -> https://<tenant-domain>/api/...   through the edge and site-host, the real path
  *   internal -> http://content-api:8080/api/...   with the tenant header set by hand
  *
  * The internal form skips both the edge and site-host's proxy hop, which is the point:

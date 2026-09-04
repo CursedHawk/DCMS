@@ -16,7 +16,7 @@ namespace Dcms.Identity.Endpoints;
 /// password-reset token and keep the security stamp consistent. Reimplementing any of that
 /// against raw rows from another service would be a bug farm, and giving another service write
 /// access to <c>AspNetUsers</c> would make "who can change a password" a question with two
-/// answers. The console reaches these endpoints same-origin through Caddy, carrying the
+/// answers. The console reaches these endpoints same-origin through the edge, carrying the
 /// operator's own token — so every row written here is attributable to a person, not to a
 /// service principal.</para>
 ///

@@ -4,7 +4,7 @@ namespace Dcms.Edge;
 /// The platform-plane edge configuration: the hostnames DCMS owns and the internal address of
 /// every service behind the edge.
 ///
-/// <para>Four of these are the values the Caddyfile took from the environment
+/// <para>Four of these come from the environment
 /// (<c>ADMIN_HOST</c>, <c>PLATFORM_HOST</c>, <c>GRAFANA_DOMAIN</c>, <c>GIT_HOST</c>), and they
 /// carry the same defaults for the same reason: dev and production deploy the same image, so a
 /// hostname baked in here would make the dev edge answer for production's name.</para>

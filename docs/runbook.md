@@ -576,7 +576,7 @@ that translate already-published events, so most producers were untouched. See
   queue would permit only one consumer per subject filter.
 
 - **The hub is at `/api/hub/notifications`, not `/hub/...`.** That is deliberate: it
-  rides the existing `/api/*` route to admin-api, so **no Caddyfile change was needed**
+  rides the existing `/api/*` route to admin-api, so **no route change was needed**
   and the edge did not have to be restarted. `/hub/*` on the admin host still goes to
   content-api for chat. Both are exempt from rate limiting.
 
@@ -681,8 +681,6 @@ Differences from dev (`docker-compose.prod.yml`):
   `edge.certificates` with the private key encrypted through Vault Transit; ACME email
   via `ACME_EMAIL`, directory pinned per-host (vps1 sets the real one in
   `docker-compose.vps.yml`).
-- **Caddy** is still defined and still running, published on loopback only. It exists
-  solely so the ports can be handed back without a deploy — see below.
 - **Vault** runs in real server mode (`infra/vault/server/config.hcl`, file storage, no
   dev root token). The operator runs `vault operator init` + unseal on first boot
   and provisions the KV/Transit paths + per-service AppRoles (layout mirrors
@@ -696,25 +694,17 @@ Differences from dev (`docker-compose.prod.yml`):
 
 Postgres RLS (ADR 0005) is enabled in every profile as defense-in-depth.
 
-### Handing the ports back to Caddy
+### The edge is the only ingress
 
-The edge is the ingress by default; Caddy is defined, running on loopback, and has
-never stopped renewing its own certificates. So the rollback costs nothing and needs
-no pipeline round trip — which matters, because a bad ingress is every tenant site at
-once. Five lines in `.env`, then `$C up -d caddy edge`:
+There is no second proxy to fall back to. `EDGE_TLS_ENABLED=false` is the one lever,
+and it does not restore service — it drops the edge to plain HTTP on `:80`, which is
+useful for diagnosing a TLS problem and nothing else. The recovery path for a bad
+ingress is a fix pushed to `master`, so treat a change to the route table or the
+certificate code as the highest-risk change in the repository.
 
-```sh
-EDGE_TLS_ENABLED=false
-CADDY_HTTP_PUBLISH=80
-CADDY_HTTPS_PUBLISH=443
-EDGE_HTTP_PUBLISH=127.0.0.1:8090
-EDGE_HTTPS_PUBLISH=127.0.0.1:8453
-```
-
-Going back to the edge is deleting them again. The one thing neither direction can undo
-is HSTS — leave `EDGE_HSTS_MAX_AGE` at 0 until the edge has been green for a while,
-because a browser that has seen the header refuses plain HTTP for the full max-age no
-matter which proxy is answering.
+The one thing no lever undoes is HSTS: leave `EDGE_HSTS_MAX_AGE` at 0 unless you mean
+it, because a browser that has seen the header refuses plain HTTP for the full max-age
+no matter what is answering.
 
 **Checking the edge is actually serving.** The Host header is the whole of what the
 route table matches, so check with it explicitly:
@@ -734,12 +724,33 @@ unreachable, the platform is not degraded — nobody can sign in to anything.
 how the renewal sweep having stopped is found before the certificates expire rather than
 after. `docker compose logs edge` reports every sweep, including one that renewed nothing.
 
-**Certificates on first cutover.** `EDGE_IMPORT_FROM_CADDY` (default `/caddy-data`,
-mounted read-only) copies what Caddy already holds into `edge.certificates` instead of
-reissuing it. Idempotent and skips everything already known, so it stays on until Caddy
-is deleted. If it is ever off, the domains it would have carried are simply issued the
-ordinary way — fine for a handful, and a rate-limit problem for a few dozen, because
-Let's Encrypt allows ~50 certificates per registered domain per week.
+**Where certificates come from.** Every one of them is issued by the edge. The renewal
+sweep (`CertificateRenewalService`) runs at startup and then hourly, and it does two
+things per pass: renew what is inside the 30-day window, and **issue what is missing** —
+every hostname on the allow-list (`GET /internal/tls-hostnames` on site-host, plus the
+platform's own `admin.` / `platform.` / `auth.` / `grafana.` / `git.`) that has no row in
+`edge.certificates`. That backfill is what makes an empty store a self-correcting state.
+
+It matters because on-demand issuance inside a TLS handshake is bounded by
+`OnDemandTimeoutSeconds` and a full ACME order usually takes longer: a hostname that is
+only ever attempted on demand fails the first visit, records a failure, backs off, and
+fails the next one further away. A browser shows `ERR_CONNECTION_CLOSED` and nothing
+recovers it. The `Missing` stat on the *Storage, edge and Vault* dashboard is the panel
+that says so; it should read 0, and anything above 0 after two sweeps is an outage.
+
+Two things have to be in place for the sweep to issue anything, and both fail loudly in
+`docker compose logs edge` (`EdgeTlsPreflight` checks them 5s after start):
+
+1. **Vault Transit.** Private keys are encrypted with the `dcms-tls-keys` key, so no
+   certificate can be stored without it. That needs `infra/vault/apply.sh` to have been
+   run and `VAULT_ROLE_ID_EDGE` / `VAULT_SECRET_ID_EDGE` in `.env`
+   (`infra/vault/provision-host.sh` issues them).
+2. **DNS.** Let's Encrypt validates over HTTP-01, so each hostname must already resolve
+   to this host.
+
+Pace matters on a cold start: Let's Encrypt allows ~50 certificates per registered
+domain per week. The sweep orders serially under an advisory lock for exactly that
+reason, and a failed authorization counts against the same budget as a successful one.
 
 ### Rate limiting, caching and scaling out
 
@@ -790,11 +801,6 @@ So it stays where it is. The version worth building later is the opposite direct
 teach content-api to resolve a tenant from the `Host` header (falling back to
 `X-Dcms-Tenant` for the operator plane), which keeps the resolution in a service that
 already owns tenancy and lets the edge forward without knowing anything.
-
-**Deleting Caddy**, once the edge has been green for a week: the `caddy` service in
-`docker-compose.prod.yml`, `infra/caddy/`, the `caddy-data`/`caddy-config` volumes, the
-edge's `/caddy-data` mount and `Edge__Certificates__ImportFromCaddyPath`, and the
-`caddy_http_requests_in_flight` probe in `scripts/obs-smoke.sh`.
 
 ## Observability
 
@@ -865,12 +871,13 @@ The two pairs must agree; `--seed` writes each pair together so they cannot disa
 creation, and `--check` asserts all four before a deploy rolls anything. Rotating the DB
 password is: change both halves, re-run the `migrate` job, restart platform-api.
 
-What stays in `.env` is what is **not** a secret, and what Caddy — which cannot read Vault —
+What stays in `.env` is what is **not** a secret, and what the infrastructure containers —
+which cannot read Vault —
 needs to build a site address:
 
 | Variable | Effect if unset |
 |---|---|
-| `PLATFORM_HOST` | Caddy falls back to `platform.highgeek.eu`; ACME fails until a DNS A record points here. Warned by `deploy.sh`. |
+| `PLATFORM_HOST` | The edge falls back to `platform.highgeek.eu`; ACME fails until a DNS A record points here. Warned by `deploy.sh`. |
 | `PLATFORM_ORIGIN` | Optional. Narrows which origins may frame Grafana; defaults to the platform host plus the localhost dev origins. |
 | `LOG_JANITOR_URL` | Container-log truncation stays off, and the console says so. This is the intended default. |
 
@@ -906,7 +913,7 @@ is idempotent (a service with both ids set is left alone; `--rotate` replaces th
 validates the token before touching anything, and it never prints or stores a secret value.
 `--all` covers every service, which is what a brand-new host wants.
 
-`PLATFORM_HOST` still belongs in `.env` by hand: it is not a secret, and Caddy needs it to
+`PLATFORM_HOST` still belongs in `.env` by hand: it is not a secret, and the edge needs it to
 build a site address.
 
 Until then the deploy rolls everything else and fails its health gate on platform-api, with the
@@ -1023,7 +1030,7 @@ as `observability.alert.notified`.
 
 ### Deployment gotchas that have already bitten
 
-- **A config change had no effect.** Alloy's and Caddy's configs are bind-mounted *files*;
+- **A config change had no effect.** Alloy's config is a bind-mounted *file*;
   a plain restart reads the old inode. `up -d --force-recreate <service>`.
 - **A store restart-loops on `permission denied`.** Its data directory is owned by a
   different uid than the process. These are named volumes with `o: bind`, which Docker
@@ -1050,7 +1057,7 @@ empty to steady state, extrapolated across thirty days, is a scare rather than a
   unset on it. The wiring is gated on that variable and silent without it.
 - **Everything green but users cannot reach the site** — look at the `public-*` blackbox
   probes, not the per-service ones. The internal probes only prove a service answers on the
-  compose network, which stays true when DNS, Caddy or a certificate is the problem.
+  compose network, which stays true when DNS, the edge or a certificate is the problem.
 - **Everything missing at once** — check `alloy`. Its UI (port 12345, not
   published; tunnel to it) shows every pipeline component's state and is the
   fastest way to see what stopped.

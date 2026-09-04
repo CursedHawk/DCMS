@@ -30,9 +30,9 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
     }
 
     /// <summary>
-    /// On-demand TLS gate for Caddy: a hostname may be issued a certificate only
-    /// if it is a verified domain linked to a site (a published build is not
-    /// required — the cert can be minted ahead of the first publish).
+    /// TLS gate for the edge: a hostname may be issued a certificate only if it is
+    /// a verified domain linked to a site (a published build is not required — the
+    /// cert can be minted ahead of the first publish).
     /// </summary>
     public async Task<bool> IsTlsAllowedAsync(string host, CancellationToken ct)
     {
@@ -41,6 +41,31 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
         return await tenancy.Domains.IgnoreQueryFilters().AsNoTracking()
             .AnyAsync(d => d.Hostname == hostname && d.VerifiedAt != null && d.SiteId != null, ct);
+    }
+
+    /// <summary>
+    /// Every hostname that may hold a certificate right now.
+    ///
+    /// <para>The edge asks for this so it can issue ahead of the first visitor instead of inside
+    /// their TLS handshake. That distinction is not a nicety: a full ACME order routinely takes
+    /// longer than a handshake can wait, so a domain whose certificate is only ever attempted
+    /// on demand fails the first visit, records a failure, backs off, and fails the next one
+    /// further away — which is what an empty certificate store looks like from a browser.</para>
+    ///
+    /// <para>Answered here rather than read from tenancy by the edge, for the same reason
+    /// <c>IsTlsAllowedAsync</c> is: the edge is the most exposed process on the platform and
+    /// holds no grant on <c>tenancy.domains</c>. This is the same query it already trusts us
+    /// for, returning the set instead of one answer.</para>
+    /// </summary>
+    public async Task<IReadOnlyList<string>> TlsAllowedHostnamesAsync(CancellationToken ct)
+    {
+        using var scope = services.CreateScope();
+        var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
+        return await tenancy.Domains.IgnoreQueryFilters().AsNoTracking()
+            .Where(d => d.VerifiedAt != null && d.SiteId != null)
+            .Select(d => d.Hostname)
+            .OrderBy(h => h)
+            .ToListAsync(ct);
     }
 
     public void Invalidate(string host) => cache.Remove(Key(Normalize(host)));

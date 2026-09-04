@@ -395,7 +395,8 @@ export function DomainsPage() {
 /**
  * The certificate state for one domain.
  *
- * Until the edge moved inside the product this could not be shown at all: Caddy's /data was the
+ * Until the edge moved inside the product this could not be shown at all: a proxy's own data
+ * directory was the
  * only record that a hostname had a certificate, when it expired, or why issuance had failed.
  * The last of those is the one that matters — "why is my domain showing a browser warning" now
  * has an answer somebody can read, in the CA's own words.

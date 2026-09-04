@@ -10,7 +10,7 @@ namespace Dcms.Edge.Certificates;
 /// Opens the TLS listener and answers each handshake with the right certificate for the name the
 /// client asked for.
 ///
-/// <para>This is the piece that replaces Caddy's automatic HTTPS. Kestrel's
+/// <para>This is the platform's automatic HTTPS. Kestrel's
 /// <see cref="TlsHandshakeCallbackOptions"/> hands us the SNI name before the handshake
 /// completes, which is what makes one listener able to serve every tenant domain from a store
 /// rather than from a fixed list of bindings.</para>
@@ -58,6 +58,33 @@ public sealed class EdgeTlsConfigurator(
 
     private async ValueTask<SslServerAuthenticationOptions> SelectCertificateAsync(TlsHandshakeCallbackContext context)
     {
+        try
+        {
+            return await SelectAsync(context);
+        }
+        catch (AuthenticationException ex)
+        {
+            // Logged before it is rethrown. Aborting is the right answer, but an aborted
+            // handshake reaches the browser as a bare ERR_CONNECTION_CLOSED with nothing at
+            // either end to say why -- and when it happens to every hostname at once, which is
+            // what an empty certificate store looks like, that is the difference between reading
+            // one log line and guessing.
+            logger.LogError("TLS handshake refused: {Reason}", ex.Message);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Anything else here is a bug or a broken dependency -- a Transit key the edge cannot
+            // decrypt with, a certificate row that will not parse. Same reasoning: it must not
+            // reach a visitor as an unexplained closed connection.
+            logger.LogError(ex, "TLS handshake failed while selecting a certificate for {ServerName}.",
+                context.ClientHelloInfo.ServerName);
+            throw;
+        }
+    }
+
+    private async ValueTask<SslServerAuthenticationOptions> SelectAsync(TlsHandshakeCallbackContext context)
+    {
         var serverName = context.ClientHelloInfo.ServerName;
         if (string.IsNullOrWhiteSpace(serverName))
         {
@@ -94,9 +121,19 @@ public sealed class EdgeTlsConfigurator(
             // would put a browser warning in front of a visitor and teach them to click through
             // it, on the tenant's own domain.
             throw new AuthenticationException(
-                $"No certificate is available for '{hostname}'.");
+                $"no certificate is available for '{hostname}'. If this is a platform hostname, "
+                + "check the startup log for the TLS preflight; if it is a tenant domain, check "
+                + "edge.certificates.LastError.");
         }
 
-        return new SslServerAuthenticationOptions { ServerCertificateContext = credential };
+        return new SslServerAuthenticationOptions
+        {
+            ServerCertificateContext = credential,
+            // Stated explicitly. The callback owns these options entirely -- Kestrel does not
+            // fill in the endpoint's protocols behind it -- so leaving this unset means no ALPN
+            // extension is offered back and every client silently drops to HTTP/1.1, whatever
+            // the listener was configured to allow.
+            ApplicationProtocols = [SslApplicationProtocol.Http2, SslApplicationProtocol.Http11],
+        };
     }
 }

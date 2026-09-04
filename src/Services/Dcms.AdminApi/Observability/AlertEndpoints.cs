@@ -63,7 +63,7 @@ public static class AlertEndpoints
             // no signature to verify. A bearer is replayable in a way an HMAC is not.
             //
             // What makes that acceptable here is that this route is unreachable from outside:
-            // admin-api publishes no host port, and infra/caddy/Caddyfile routes /api/* on
+            // admin-api publishes no host port, and the edge routes /api/* on
             // admin.highgeek.eu to admin-api — so a public request for /api/internal/alerts
             // does arrive. It is therefore NOT internal by network alone, which is exactly why
             // the secret is checked in constant time and why Program.cs refuses to start in

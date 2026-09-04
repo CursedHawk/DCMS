@@ -59,16 +59,15 @@ APP_SERVICES=(
 
 # Configuration arrives as a bind-mounted file. These must be force-recreated
 # after the tree is synced -- see lesson 3 above.
-CONFIG_MOUNTED_SERVICES=(caddy alloy prometheus loki tempo grafana nats vault)
+CONFIG_MOUNTED_SERVICES=(alloy prometheus loki tempo grafana nats vault)
 
 # Health-gated after a roll. The workers expose /health/live but carry no
 # inbound traffic, so a slow start is not an outage; they are still checked.
 #
-# caddy, admin-spa and forgejo are here because "every service is healthy" was not the same
-# claim as "the platform works". All eight .NET services can pass while a Caddyfile that
-# failed to parse leaves nothing reachable from outside, and the deploy still reports green.
-# Caddy's probe hits the metrics listener declared in the Caddyfile, so it fails when the
-# running config is not the one that was shipped.
+# edge, admin-spa and forgejo are here because "every service is healthy" was not the same
+# claim as "the platform works". All eight .NET services can pass while nothing is reachable
+# from outside, and the deploy still reports green. The edge's probe is /health, which runs
+# RouteTableHealthCheck -- an ingress that loaded no routes is unhealthy, not merely alive.
 #
 # Not gated, because their images ship no shell and no HTTP client to probe with: nats, loki,
 # tempo, alloy. Losing them costs telemetry rather than service, which is the right side of
@@ -76,7 +75,7 @@ CONFIG_MOUNTED_SERVICES=(caddy alloy prometheus loki tempo grafana nats vault)
 HEALTH_GATED_SERVICES=(
   identity admin-api content-api ai-gateway platform-api
   media-worker email-worker site-builder site-host edge
-  caddy admin-spa platform-spa forgejo
+  admin-spa platform-spa forgejo
 )
 
 DEPLOY_STATE_DIR="${DCMS_DEPLOY_STATE_DIR:-$REPO_ROOT/.deploy}"
@@ -517,8 +516,8 @@ fi
 # inode left behind when rsync replaced it. Recreate instead. See lesson 3.
 log "Recreating services whose config is a bind-mounted file"
 for svc in "${CONFIG_MOUNTED_SERVICES[@]}"; do
-  # Not every overlay defines every one of these (caddy is prod-only, the nats
-  # config file is vps-only), so skip what this environment does not have.
+  # Not every overlay defines every one of these (the nats config file is
+  # vps-only), so skip what this environment does not have.
   if compose ps --services 2>/dev/null | grep -qx "$svc"; then
     if [ "$ROLL_ALL" = 1 ] || printf '%s\n' "${TARGET_SERVICES[@]}" | grep -qx "$svc"; then
       # Recreating a SHAMIR-sealed Vault seals it, and every service reads its configuration

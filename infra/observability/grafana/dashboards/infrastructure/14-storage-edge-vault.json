@@ -824,7 +824,7 @@
           "legendFormat": "total"
         }
       ],
-      "description": "Rows in edge.certificates that are currently usable -- the certificates this edge can complete a handshake with. Caddy could only answer this by listing a directory inside a container; here it is a table, which is the point of moving the edge into the product.",
+      "description": "Rows in edge.certificates that are currently usable -- the certificates this edge can complete a handshake with. It is a table rather than a directory inside a container, which is what makes every panel on this row possible.",
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -925,6 +925,71 @@
       }
     },
     {
+      "id": 45,
+      "type": "stat",
+      "title": "Missing",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 18
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "sum(dcms_edge_certificates{state=\"missing\"}) or vector(0)",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "missing"
+        }
+      ],
+      "description": "Hostnames the edge is ALLOWED to serve and holds no certificate for: the platform's own names plus every verified tenant domain. The sweep issues these on every pass, so a non-zero value that persists means issuance is failing rather than pending -- and a hostname counted here refuses the TLS handshake outright, which a browser reports as ERR_CONNECTION_CLOSED with nothing in it to diagnose. This is the panel that says why. It should sit at zero; anything above it after two sweeps is an outage in progress.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
       "id": 44,
       "type": "stat",
       "title": "Failing",
@@ -950,7 +1015,7 @@
           "legendFormat": "failing"
         }
       ],
-      "description": "Hostnames whose last issuance attempt failed and are inside the backoff. Usually a tenant's DNS record that was removed after verification -- edge.certificates keeps the CA's own sentence in LastError, which is the half Caddy logged once and discarded. Anything non-zero for more than a day is worth chasing: failed authorizations count against the same Let's Encrypt budget as successful ones.",
+      "description": "Hostnames whose last issuance attempt failed and are inside the backoff. Usually a tenant's DNS record that was removed after verification -- edge.certificates keeps the CA's own sentence in LastError rather than logging it once and discarding it. Anything non-zero for more than a day is worth chasing: failed authorizations count against the same Let's Encrypt budget as successful ones.",
       "options": {
         "reduceOptions": {
           "calcs": [

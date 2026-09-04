@@ -5,18 +5,18 @@
 # It layers three host-specific concerns on top of the generic prod profile:
 #
 #  1. Persistence — every stateful volume is bind-mounted under
-#     /home/cursedhawk/dcms-data (Postgres, Redis, NATS, MinIO, Vault, Caddy),
+#     /home/cursedhawk/dcms-data (Postgres, Redis, NATS, MinIO, Vault),
 #     so all data lives in one operator-visible directory instead of anonymous
 #     Docker volumes.
 #
-#  2. Edge-TLS auth wiring — Caddy terminates TLS and reaches identity over
+#  2. Edge-TLS auth wiring — the edge terminates TLS and reaches identity over
 #     plain HTTP on the internal network, while tokens are issued under the
-#     public HTTPS issuer (https://admin.highgeek.eu/). Resource servers must
+#     public HTTPS issuer (https://auth.highgeek.eu/). Resource servers must
 #     therefore discover metadata at the *internal* http URL but validate the
 #     *public* https issuer; identity disables OpenIddict's transport-security
 #     requirement because TLS is already terminated at the edge. (The generic
 #     prod profile leaves these at values that assume HTTPS all the way to
-#     identity, which does not hold for a single-host Caddy edge.)
+#     identity, which does not hold for a single-host edge.)
 #
 #  3. Seeding/secrets that the prod profile sets on the consumer but not the
 #     issuer: the confidential admin-api client secret and the SuperAdmin login
@@ -41,8 +41,8 @@
 #   GRAFANA_DOMAIN    grafana.dev.highgeek.eu
 #   GIT_HOST          git.dev.highgeek.eu
 #
-# ADMIN_HOST is the bare-hostname form of PUBLIC_BASE_URL, needed because a Caddy site
-# address is a hostname rather than a URL. scripts/deploy.sh asserts the two agree, so they
+# ADMIN_HOST is the bare-hostname form of PUBLIC_BASE_URL, needed because the edge's route
+# table keys on a hostname rather than a URL. scripts/deploy.sh asserts the two agree, so they
 # cannot drift into a state where the edge and the issuer disagree about who this host is.
 
 # Everything IdentitySeeder reads. It runs in the identity-migrate job, not in the identity
@@ -302,8 +302,8 @@ services:
     environment:
       DCMS_OIDC_AUTHORITY: "https://${AUTH_HOST:-auth.highgeek.eu}"
 
-  # Grafana publishes no host port in any profile — Caddy is the only route in
-  # (infra/caddy/Caddyfile), the same shape as admin-spa and forgejo.
+  # Grafana publishes no host port in any profile — the edge is the only route in, the same
+  # shape as admin-spa and forgejo. That is what makes X-WEBAUTH-USER safe to trust.
   #
   # Its hostname used to be hardcoded here. That override silently won over the base
   # compose's ${GRAFANA_ROOT_URL} / ${GRAFANA_DOMAIN}, so those variables looked configurable
@@ -372,9 +372,9 @@ services:
       VAULT_SECRET_ID: "${VAULT_SECRET_ID_SITE_HOST:-}"
 
   # The YARP edge: vps1's public ingress on :80 and :443, terminating TLS for the platform
-  # hostnames and every tenant custom domain. Caddy is still defined (docker-compose.prod.yml)
-  # but published only on loopback, so handing the ports back is an .env change and a
-  # `compose up -d` -- the rollback is written out on the caddy service itself.
+  # hostnames and every tenant custom domain. There is no second ingress to fall back to:
+  # certificates live in edge.certificates, encrypted with Vault Transit, and the renewal
+  # sweep issues the ones that are missing as well as renewing the ones that are due.
   #
   # Verify from the host with an explicit Host header, which is the whole of what the route
   # table keys on:
@@ -415,12 +415,6 @@ volumes:
   vault-data:
     driver: local
     driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/vault }
-  caddy-data:
-    driver: local
-    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/caddy-data }
-  caddy-config:
-    driver: local
-    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/caddy-config }
   forgejo-data:
     driver: local
     driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/forgejo }

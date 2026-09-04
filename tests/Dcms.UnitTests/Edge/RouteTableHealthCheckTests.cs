@@ -7,7 +7,7 @@ using Yarp.ReverseProxy.Configuration;
 namespace Dcms.UnitTests.Edge;
 
 /// <summary>
-/// The check that replaces Caddy's probe, and the reason it exists rather than a liveness ping.
+/// Why the edge's readiness probe asserts a route table rather than a live process.
 /// </summary>
 public class RouteTableHealthCheckTests
 {
@@ -18,7 +18,7 @@ public class RouteTableHealthCheckTests
 
         var result = await check.CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
-        // This is the failure Caddy's healthcheck comment warned about, in a different language:
+        // The failure a liveness ping cannot see:
         // the process is fine, Kestrel is listening, and every request gets a 404. Nothing else
         // about the container says so, which is exactly why a deploy could ship it unnoticed.
         result.Status.Should().Be(HealthStatus.Unhealthy);

@@ -18,7 +18,7 @@ namespace Dcms.AdminApi.Tenancy;
 /// The certificate half of a domain, which the product could not see at all until the edge moved
 /// inside it.
 ///
-/// <para>Caddy's <c>/data</c> was the only record that a hostname had a certificate, when it
+/// <para>A file-based edge's data directory was the only record that a hostname had a certificate, when it
 /// expired, or why issuance had failed — so the admin UI could say "verified" and nothing else,
 /// and "why is my domain showing a browser warning" had no answer anybody could read. These
 /// endpoints exist because <c>edge.certificates</c> is now an ordinary table.</para>
@@ -56,7 +56,7 @@ public static class DomainCertificateEndpoints
                 notAfter = c.NotAfter,
                 renewedAt = c.RenewedAt,
                 reissueRequested = c.ReissueRequestedAt != null,
-                // The CA's own sentence, which is the half Caddy logged once and discarded. It
+                // The CA's own sentence, kept rather than logged once and discarded. It
                 // is usually the only thing that says which DNS record is wrong.
                 lastError = c.LastError,
                 lastAttemptAt = c.LastAttemptAt,

@@ -37,7 +37,7 @@ export function ChatPage() {
       // skipNegotiation + WebSockets so the connection needs no server affinity.
       //
       // With negotiation, `POST /negotiate` and the follow-up transport connect must reach the
-      // SAME content-api replica -- nothing at the edge (Caddy, or site-host's YARP proxy)
+      // SAME content-api replica -- nothing on the path (the edge, or site-host's YARP proxy)
       // guarantees that, so a scaled content-api drops connections at random. The Redis
       // backplane fans messages OUT across replicas; it does nothing about which replica a
       // single client's two handshake requests land on.

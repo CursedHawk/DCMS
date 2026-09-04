@@ -80,7 +80,7 @@ export async function loadProfile(name, { overrides = {}, env = process.env } = 
 /**
  * The base URLs a scenario should use, given the profile's mode.
  *
- * `edge` goes through Caddy over public HTTPS — what a real client sees, TLS and
+ * `edge` goes through Dcms.Edge over public HTTPS — what a real client sees, TLS and
  * rate limiting included. `internal` addresses the services directly on the compose
  * network, which is the only way to tell "the edge is slow" from "the service is
  * slow". Running the same scenario in both and differencing the p95 is the point of

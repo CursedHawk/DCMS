@@ -6,10 +6,9 @@ namespace Dcms.Edge.Routing;
 /// <summary>
 /// Reports unhealthy when the edge has no routes.
 ///
-/// <para>This replaces the probe the Caddy container used, and it exists for the reason that
-/// probe's comment spelled out: the public ingress was the one part of the stack a deploy could
-/// break silently. A Caddyfile that failed to parse left the container up and every health
-/// signal green while nothing was served. A proxy that starts with an empty route table is the
+/// <para>The public ingress is the one part of the stack a deploy can break silently: a config
+/// that fails to load leaves the container up and every health signal green while nothing is
+/// served. A proxy that starts with an empty route table is the
 /// same failure in a different language — the process is fine, and it answers every request with
 /// a 404.</para>
 ///

@@ -347,14 +347,16 @@ prometheus.exporter.blackbox "probes" {
   }
 
   // The public names, over the real internet path: out through the host's NAT, back in
-  // through Caddy, TLS and all. Everything above proves a service answers on the compose
+  // through the edge, TLS and all. Everything above proves a service answers on the compose
   // network, which is exactly what stayed true while grafana.highgeek.eu resolved to a
-  // different server entirely and Caddy could not obtain a certificate for it. An internal
+  // different server entirely and the edge could not obtain a certificate for it. An internal
   // probe cannot see that class of failure; this one is the only thing that can.
   //
   // `fail_if_not_ssl` is what makes it a TLS check rather than a reachability check, and it
-  // is also what populates probe_ssl_earliest_cert_expiry — the certificate-expiry panel on
-  // the Caddy dashboard has nothing to plot without it.
+  // is also what populates probe_ssl_earliest_cert_expiry — the edge dashboard's
+  // certificate-expiry panel has nothing to plot without it. It is also the ONLY external
+  // check on issuance: dcms_edge_certificates says what the store holds, this says what a
+  // browser is actually served.
   //
   // 302 is valid: Grafana's root redirects to /login for a signed-out visitor.
   target {
@@ -449,9 +451,9 @@ prometheus.scrape "infra" {
     // sites or build-logs is growing. Bucket metrics are refreshed by the scanner rather than
     // on request, so they move on the order of minutes, not seconds.
     { __address__ = "minio:9000", __metrics_path__ = "/minio/v2/metrics/bucket", service = "minio" },
-    // Caddy's metrics handler on an internal-only listener. Deliberately NOT the admin API
-    // on :2019, which can rewrite the running config.
-    { __address__ = "caddy:2019", service = "caddy" },
+    // The edge is NOT scraped here. It is a .NET service and pushes over OTLP through
+    // *otel-env like every other one -- its YARP and Kestrel meters, and dcms_edge_*, all
+    // arrive that way. A scrape target for it would be a second, silently divergent path.
     // Vault: seal state above all. There is no auto-unseal on this host, so a reboot leaves
     // the platform down until someone runs unseal-vault.sh — and this is what says so.
     { __address__ = "vault:8200", __metrics_path__ = "/v1/sys/metrics", service = "vault" },

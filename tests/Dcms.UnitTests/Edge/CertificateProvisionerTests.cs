@@ -57,7 +57,7 @@ public class CertificateProvisionerTests
 
         result.Should().BeNull();
         // Kept because it is the sentence that tells whoever configured the DNS what to fix.
-        // The edge this replaces had nowhere to put it: Caddy logged it and moved on.
+        // A file-based edge had nowhere to put it: it logged the error and moved on.
         await store.Received(1).RecordFailureAsync(
             "broken.tenant.example", Arg.Is<string>(e => e.Contains("NXDOMAIN")), Arg.Any<CancellationToken>());
     }

@@ -21,7 +21,7 @@ namespace Dcms.AdminApi.Social;
 /// the public service to save one hop would undo it. So content-api asks admin-api, and the
 /// credential never leaves the admin plane.</para>
 ///
-/// <para><b>Why it is not "internal by network".</b> Caddy routes <c>/api/*</c> on the admin
+/// <para><b>Why it is not "internal by network".</b> The edge routes <c>/api/*</c> on the admin
 /// host to admin-api, so a public request for <c>/api/internal/*</c> genuinely arrives. The
 /// path is a naming convention, not a boundary — the guard is the client-credentials token and
 /// the <c>dcms.social</c> scope, checked by <see cref="ServicePrincipalGuard"/>.</para>

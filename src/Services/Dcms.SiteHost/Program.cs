@@ -32,14 +32,14 @@ var app = builder.Build();
 // carrying the trace id instead of a bare Kestrel 500 with no body and nothing to quote.
 app.UseDcmsProblemDetails();
 
-// Caddy terminates TLS and forwards over the compose network, so without this every request
-// here looks like it came from Caddy — including the client address site-host stamps onto the
+// The edge terminates TLS and forwards over the compose network, so without this every request
+// here looks like it came from the edge — including the client address site-host stamps onto the
 // requests it proxies to content-api, which is what content-api's rate limiter partitions on.
 var forwardedHeaders = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
 };
-// Only reachable through Caddy on the internal network, so every upstream is trusted.
+// Only reachable through the edge on the internal network, so every upstream is trusted.
 forwardedHeaders.KnownIPNetworks.Clear();
 forwardedHeaders.KnownProxies.Clear();
 app.UseForwardedHeaders(forwardedHeaders);
@@ -47,12 +47,23 @@ app.UseForwardedHeaders(forwardedHeaders);
 app.UseDcmsSecurityHeaders();
 app.MapDcmsDefaultEndpoints();
 
-// Caddy on-demand TLS authorization: 200 only for verified+linked domains, so
-// certificates are never issued for hostnames we don't actually host.
+// TLS authorization for the edge: 200 only for verified+linked domains, so certificates are
+// never issued for hostnames we don't actually host -- a public IP attracts names strangers
+// have pointed at it, and issuing for those spends our CA budget on their domains.
 app.MapGet("/internal/tls-allowed", async (string? domain, DomainResolver resolver, CancellationToken ct) =>
     !string.IsNullOrWhiteSpace(domain) && await resolver.IsTlsAllowedAsync(domain, ct)
         ? Results.Ok()
         : Results.NotFound());
+
+// The same question asked for every domain at once, so the edge can issue AHEAD of the first
+// visitor rather than inside their handshake. See DomainResolver.TlsAllowedHostnamesAsync for
+// why that difference decides whether a domain ever gets a certificate at all.
+//
+// Internal only: it is not routed from any public host, so the compose network is the only way
+// to reach it -- the same footing as /internal/tls-allowed, which has always returned the same
+// fact one hostname at a time.
+app.MapGet("/internal/tls-hostnames", async (DomainResolver resolver, CancellationToken ct) =>
+    Results.Ok(await resolver.TlsAllowedHostnamesAsync(ct)));
 
 app.MapApiProxy(contentApi);   // /api, /hub → content-api (must precede the catch-all)
 app.MapSiteHost();             // everything else → static artifacts

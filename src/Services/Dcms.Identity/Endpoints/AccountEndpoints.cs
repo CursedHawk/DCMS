@@ -481,7 +481,7 @@ public static class AccountEndpoints
         return Layout("DCMS — Invalid reset link", body);
     }
 
-    // Builds the absolute reset link from the current request. Behind Caddy the
+    // Builds the absolute reset link from the current request. Behind the edge the
     // ForwardedHeaders middleware makes Scheme/Host the public origin
     // (https://admin.highgeek.eu), so the link is externally clickable. The token
     // contains base64 characters, so both it and the email are URL-encoded.

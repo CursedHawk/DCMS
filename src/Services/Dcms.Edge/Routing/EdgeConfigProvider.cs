@@ -9,9 +9,9 @@ namespace Dcms.Edge.Routing;
 /// <summary>
 /// Supplies YARP's route table, and swaps it at runtime without a restart.
 ///
-/// <para>This is what replaces the bind-mounted Caddyfile. Changing that file needed a
-/// container <i>restart</i> — a plain reload re-read a stale inode, which is a trap this stack
-/// has already been caught by once. Here a change is a call to <see cref="Reload"/>: YARP
+/// <para>The route table is data, not a bind-mounted config file. A file-based edge needed a
+/// container <i>restart</i> to pick one up — a plain reload re-read a stale inode, a trap this
+/// stack has been caught by. Here a change is a call to <see cref="Reload"/>: YARP
 /// re-reads the config through the change token, validates it, and swaps it in atomically. A
 /// config that fails validation is rejected and the previous one keeps serving, so a bad route
 /// cannot take the edge down.</para>

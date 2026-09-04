@@ -595,10 +595,10 @@ edge — `CF-IPCountry` by default, configurable via `Analytics:CountryHeader`. 
 is safe **only** because the header comes from our own edge and content-api is not
 reachable except through it.
 
-**On vps1 today this will produce no country data.** Caddy does not stamp a country
-header, so the resolver returns null and the Countries card shows its "no data"
-message. To get countries you need either (a) an edge that stamps one — Cloudflare
-in front of Caddy is the least work — or (b) a database-backed resolver
+**On vps1 today this will produce no country data.** `Dcms.Edge` does not stamp a
+country header, so the resolver returns null and the Countries card shows its "no data"
+message. To get countries you need either (a) something that stamps one — Cloudflare
+in front of the edge is the least work — or (b) a database-backed resolver
 (MaxMind GeoLite2 / DB-IP) registered in place of `HeaderGeoIpResolver` in
 content-api's `Program.cs`. I did not add (b): it needs a NuGet dependency, a
 licensed `.mmdb` file and a refresh story, which is your call rather than mine.
@@ -1081,9 +1081,9 @@ writes the rows and the SignalR Redis backplane pushes to connections on every
 other. Copying that pattern would insert N duplicate rows per notification.
 
 **Hub** at `/api/hub/notifications`, deliberately under `/api/*` rather than the
-`/hub/*` the option sketch had: `infra/caddy/Caddyfile` is bind-mounted and needs
-a **container restart** (a reload reads a stale inode), and a prod edge restart to
-ship a bell is a bad trade. Cost was two one-liners — `ws: true` on the vite `/api`
+`/hub/*` the option sketch had: at the time the edge was a bind-mounted config file
+needing a **container restart** (a reload read a stale inode), and a prod edge restart
+to ship a bell was a bad trade. Cost was two one-liners — `ws: true` on the vite `/api`
 proxy and `/api/hub` on the rate-limiter exemption. Backplane channel prefix is
 `dcms-notify`; it **must** stay distinct from content-api's `dcms-chat`.
 

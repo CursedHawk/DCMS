@@ -1,6 +1,6 @@
 {
   // vps1 — the dev deployment, reached over public HTTPS. This is the primary
-  // measurement target: real Caddy edge, real MinIO/Postgres/NATS, real container
+  // measurement target: the real edge, real MinIO/Postgres/NATS, real container
   // limits on a 4-core / 7.6 GB host.
   //
   // Every public name comes from the environment rather than being written here, for

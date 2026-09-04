@@ -3,7 +3,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
 # Differences from dev:
-#   * Caddy terminates TLS for tenant custom domains (on-demand TLS, gated by
+#   * Dcms.Edge terminates TLS for every hostname (issued and renewed by it, gated by
 #     site-host's /internal/tls-allowed) and is the only public ingress.
 #   * Vault runs in real server mode (file storage, no dev root token); the app
 #     refuses to start against a dev token (DCMS_REFUSE_DEV_VAULT=true).
@@ -18,7 +18,7 @@
 # reads — the audit chain key, service client secrets, Forgejo tokens, SMTP credentials,
 # the identity certificates — comes from Vault, per service, over that service's own
 # AppRole. What remains in .env is what a container that cannot speak to Vault needs in
-# order to start at all: Postgres, MinIO, NATS, Grafana, Caddy. See docs/vault-secrets.md.
+# order to start at all: Postgres, MinIO, NATS, Grafana. See docs/vault-secrets.md.
 
 x-prod-env: &prod-env
   ASPNETCORE_ENVIRONMENT: "Production"
@@ -370,9 +370,8 @@ services:
       Edge__AuthHost: "${AUTH_HOST:-auth.highgeek.eu}"
       Edge__GrafanaHost: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
       Edge__GitHost: "${GIT_HOST:-git.highgeek.eu}"
-      # THE EDGE TERMINATES TLS. Set EDGE_TLS_ENABLED=false in .env to hand :443 back to Caddy
-      # -- together with the port variables below, that is the whole of the rollback, and it
-      # needs no deploy. Caddy is still defined and still holds its own /data.
+      # THE EDGE TERMINATES TLS, and is the only thing that does. It issues, renews and serves
+      # every certificate itself; there is no second proxy to hand the ports back to.
       Edge__Certificates__TlsEnabled: "${EDGE_TLS_ENABLED:-true}"
       # EVERY DEPLOYMENT SERVING PUBLIC NAMES MUST SET THIS. The default is staging on purpose:
       # a staging certificate is not trusted by any browser, so a host that forgot to set it
@@ -380,10 +379,6 @@ services:
       # on hostnames that are not production's. docker-compose.vps.yml sets it for vps1.
       Edge__Certificates__AcmeDirectory: "${ACME_DIRECTORY:-https://acme-staging-v02.api.letsencrypt.org/directory}"
       Edge__Certificates__ContactEmail: "${ACME_EMAIL}"
-      # Carries the certificates Caddy already holds into edge.certificates rather than
-      # reissuing them. Harmless to leave on: it is idempotent, skips every hostname already
-      # known, and becomes a no-op logged at Information once the mount goes away with Caddy.
-      Edge__Certificates__ImportFromCaddyPath: "${EDGE_IMPORT_FROM_CADDY:-/caddy-data}"
       # Off until the cutover has been green for a while. HSTS is the one edge setting a
       # rollback cannot undo: a browser that has seen the header refuses plain HTTP for the
       # full max-age, so turning it on early turns a bad cutover into a bad week.
@@ -398,11 +393,6 @@ services:
       # Must equal Identity__Edge__Secret. Unset disables edge authentication and both consoles
       # fall back to their own login -- deliberately, rather than taking the ingress down.
       Edge__Auth__ClientSecret: "${EDGE_OIDC_CLIENT_SECRET:-}"
-    volumes:
-      # Read-only. Caddy has been issuing certificates for the live tenant domains; reissuing
-      # them all on cutover day spends the ~50-per-registered-domain-per-week budget on names
-      # we already had. Goes away when Caddy does.
-      - caddy-data:/caddy-data:ro
 
   ai-gateway:
     environment:
@@ -453,7 +443,7 @@ services:
     environment:
       DCMS_OIDC_AUTHORITY: "https://${AUTH_HOST:-auth.highgeek.eu}"
       DCMS_OIDC_CLIENT_ID: "dcms-platform-spa"
-      # The API bases stay same-origin paths: Caddy routes /api/platform/*, /api/identity/* and
+      # The API bases stay same-origin paths: the edge routes /api/platform/*, /api/identity/* and
       # /api/* under the platform host to their three owners.
       DCMS_ADMIN_BASE: "${PUBLIC_BASE_URL}"
       DCMS_GRAFANA_BASE: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
@@ -462,7 +452,7 @@ services:
       # cannot drift from reality without the deploy failing first.
       DCMS_ENVIRONMENT_NAME: "${DCMS_ENV:-development}"
 
-  # Git server. Caddy terminates TLS for the HTTP git+web UI ($GIT_HOST).
+  # Git server. The edge terminates TLS for the HTTP git+web UI ($GIT_HOST).
   #
   # dev and prod run SEPARATE Forgejo instances -- these are the tenants' actual site
   # repositories, and a dev deployment writing into production's git server would be a
@@ -478,61 +468,8 @@ services:
       FORGEJO__service__DISABLE_REGISTRATION: "true"
       FORGEJO__webhook__ALLOWED_HOST_LIST: "private,loopback"
 
-  # Public TLS edge for tenant domains.
-  caddy:
-    # The public ingress, and until now the one part of the stack a deploy could break
-    # silently: a Caddyfile that fails to parse leaves the container up and every health
-    # signal green while nothing is served. :2019 is Caddy's internal metrics listener,
-    # declared in the Caddyfile itself, so a successful probe proves the running config
-    # was loaded -- not merely that the process started.
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:2019/metrics || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    image: caddy:2
-    restart: unless-stopped
-    depends_on:
-      site-host:
-        condition: service_started
-      forgejo:
-        condition: service_started
-    # OFF THE PUBLIC PORTS, but still running: the edge owns :80/:443 now. Kept rather than
-    # deleted for one reason -- rollback. Caddy still holds its own /data and has never stopped
-    # renewing, so handing the ports back is two variables and a `compose up -d`, with no
-    # pipeline round trip while the site is down:
-    #
-    #   EDGE_TLS_ENABLED=false CADDY_HTTP_PUBLISH=80 CADDY_HTTPS_PUBLISH=443
-    #   EDGE_HTTP_PUBLISH=127.0.0.1:8090 EDGE_HTTPS_PUBLISH=127.0.0.1:8453
-    #
-    # Delete this service, infra/caddy/ and the caddy-data/caddy-config volumes once the edge
-    # has been green for a week.
-    ports:
-      - "${CADDY_HTTP_PUBLISH:-127.0.0.1:8081}:80"
-      - "${CADDY_HTTPS_PUBLISH:-127.0.0.1:8444}:443"
-    environment:
-      ACME_EMAIL: "${ACME_EMAIL}"
-      # The three named site blocks in the Caddyfile. Defaults are production's names, so
-      # this is a no-op there; a dev host sets its own in .env. Without these the dev edge
-      # would ask Let's Encrypt for a certificate for production's hostname -- which fails,
-      # and keeps failing against the rate limit.
-      ADMIN_HOST: "${ADMIN_HOST:-admin.highgeek.eu}"
-      PLATFORM_HOST: "${PLATFORM_HOST:-platform.highgeek.eu}"
-      # Needed even though Caddy is off the public ports: without it the rollback documented
-      # above would hand back :443 with no site block for the issuer, and nobody could sign in.
-      AUTH_HOST: "${AUTH_HOST:-auth.highgeek.eu}"
-      GRAFANA_DOMAIN: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
-      GIT_HOST: "${GIT_HOST:-git.highgeek.eu}"
-    volumes:
-      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-
 volumes:
   vault-data:
-  caddy-data:
-  caddy-config:
   # Per-build work area. The site-builder writes each build's files here and the
   # sandbox container bind-mounts them by host path (see DCMS_BUILD_WORK_HOST_ROOT,
   # set in the vps overlay). Anonymous named volume by default; re-pointed to a bind

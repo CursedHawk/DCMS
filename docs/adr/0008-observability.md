@@ -143,9 +143,15 @@ audit design already documents as load-bearing.
 resolves to the audit row (400 days) and the Loki lines (30 days, 90 for
 audit/security), but not to a span tree.
 
-### Grafana is behind Caddy and OIDC, with one deliberate exception
+### Grafana is behind the edge and OIDC, with one deliberate exception
 
-`grafana.highgeek.eu` publishes no host port; it is reachable only through Caddy.
+> **Superseded in part (2026-09-04).** Caddy has been replaced by `Dcms.Edge` and
+> Grafana no longer speaks OIDC: the edge authenticates the operator, refuses anyone
+> who is not a SuperAdmin, and asserts them with `X-WEBAUTH-USER` (Grafana
+> `[auth.proxy]`). The reasoning below still holds — the gate moved earlier, not away.
+> See ADR 0010 and `docs/runbook.md`.
+
+`grafana.highgeek.eu` publishes no host port; it is reachable only through the edge.
 Sign-in is OIDC against the DCMS identity service with
 `role_attribute_path = contains(roles[*], 'SuperAdmin') && 'GrafanaAdmin' || 'None'`
 and **`role_attribute_strict = true`**, so a user whose claims do not match is
@@ -159,10 +165,11 @@ Shamir-sealed with no auto-unseal, so it is sealed after every reboot — the
 moment the dashboards matter most. The five new secrets live in `.env`, which is
 the mechanism that works when nothing else is up.
 
-Caddy's own metrics come from an internal `:2019 { metrics }` listener, **not**
-the admin API. That endpoint can rewrite Caddy's running configuration, and
-exposing it to the compose network for a scrape would trade a dashboard for a
-remote-reconfiguration primitive.
+The edge's own metrics arrive over OTLP with every other .NET service's, rather
+than from a scrape target. Caddy's did come from a scrape, of an internal
+`:2019 { metrics }` listener and deliberately **not** its admin API — that endpoint
+could rewrite the running configuration, and exposing it for a dashboard would have
+traded a panel for a remote-reconfiguration primitive.
 
 ### Alerts route through the existing email queue, not a second SMTP client
 
@@ -175,7 +182,7 @@ container, and `docker-compose.vps.yml` is explicit that they live in exactly on
 HMAC over the body.** This is a real downgrade and it is recorded here rather
 than glossed: Grafana's webhook contact point cannot compute a body signature. A
 bearer token is replayable by anyone who captures one. The compensating controls
-are that Caddy does route `/api/*` publicly, so this is not internal-by-network
+are that the edge does route `/api/*` publicly, so this is not internal-by-network
 alone — hence a Production startup guard that refuses to boot on a secret shorter
 than 16 characters or drawn from a weak set, an endpoint that fails closed when
 no secret is configured at all, and an audit record

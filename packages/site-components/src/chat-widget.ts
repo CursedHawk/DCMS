@@ -56,7 +56,7 @@ export function createChatWidget(options: ChatWidgetOptions): ChatWidgetHandle {
   const connection: HubConnection = new HubConnectionBuilder()
     // skipNegotiation + WebSockets: no server affinity required. See the same change in the
     // admin console -- with negotiation, the handshake's two requests must reach the same
-    // content-api replica, and neither Caddy nor site-host's proxy pins them.
+    // content-api replica, and site-host's proxy does not pin them.
     .withUrl(`${hubBase}/hub/chat?tenant=${encodeURIComponent(options.tenant)}`, {
       skipNegotiation: true,
       transport: HttpTransportType.WebSockets,

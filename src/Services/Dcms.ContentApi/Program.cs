@@ -201,7 +201,7 @@ var app = builder.Build();
 app.UseDcmsProblemDetails();
 
 // Before the rate limiter, which partitions on Connection.RemoteIpAddress, and before the
-// audit middleware, which records it. content-api is reached only through Caddy (for /hub on
+// audit middleware, which records it. content-api is reached only through the edge (for /hub on
 // the admin host) or through site-host's proxy (for tenant domains), so without this every
 // caller on the whole public delivery plane — analytics, form submissions, visitor login,
 // chat — shares one partition keyed on the proxy's address: a single 600/60s bucket for all

@@ -9,15 +9,13 @@ using Yarp.ReverseProxy.SessionAffinity;
 namespace Dcms.Edge.Routing;
 
 /// <summary>
-/// The platform-plane route table, ported one-for-one from the site blocks in
-/// <c>infra/caddy/Caddyfile</c>. These routes exist before Postgres is reachable, which is why
+/// The platform-plane route table. These routes exist before Postgres is reachable, which is why
 /// they are built from <see cref="EdgeOptions"/> rather than read from the database: an edge
 /// that cannot serve the admin host until the database answers cannot be used to diagnose a
 /// database that is not answering.
 ///
-/// <para><b>Order is load-bearing and therefore explicit.</b> The Caddyfile encoded precedence
-/// as the order of <c>handle</c> blocks inside a site block — <c>/api/platform/*</c> before
-/// <c>/api/*</c>, or admin-api answers for the console's own API. YARP would otherwise decide
+/// <para><b>Order is load-bearing and therefore explicit.</b> <c>/api/platform/*</c> must
+/// out-rank <c>/api/*</c>, or admin-api answers for the console's own API. YARP would otherwise decide
 /// by its own precedence rules, so every route here states its <see cref="RouteConfig.Order"/>
 /// (lower wins) instead of relying on them.</para>
 /// </summary>
@@ -81,9 +79,9 @@ public static class PlatformRoutes
         // ---- Authentication, on its own host ----
         //
         // Everything identity serves, and nowhere else: the OIDC protocol endpoints, discovery
-        // and JWKS, the interactive login pages, and the external-login callbacks. The Caddyfile
-        // carved /connect, /account and /.well-known out of the admin and platform hosts
-        // instead, which made the issuer a path prefix on the admin console's name.
+        // and JWKS, the interactive login pages, and the external-login callbacks. The edge
+        // that came before carved /connect, /account and /.well-known out of the admin and
+        // platform hosts instead, which made the issuer a path prefix on the console's name.
         //
         // A whole host rather than a prefix, because the issuer is a claim in every token this
         // platform mints: it is what every resource server validates against, and it should name
@@ -102,7 +100,7 @@ public static class PlatformRoutes
             RateLimiterPolicy = EdgeRateLimiting.AuthPolicy,
         });
 
-        // ---- Platform console APIs (Caddy: the platform.* site block) ----
+        // ---- Platform console APIs (the platform.* host) ----
         //
         // The two specific prefixes MUST out-rank the general /api below, or admin-api answers
         // for all three.
@@ -169,7 +167,7 @@ public static class PlatformRoutes
         // ---- Tenant custom domains: everything else ----
         //
         // No Hosts filter and the highest Order, so it is reached only when no named host above
-        // matched — the Caddyfile's `https://` catch-all block. site-host resolves the Host
+        // matched. site-host resolves the Host
         // header to a tenant's active build and refuses anything unverified, unlinked,
         // unpublished or suspended, so an unknown hostname arriving here is a 404, not a leak.
         routes.Add(new RouteConfig
@@ -206,7 +204,7 @@ public static class PlatformRoutes
     /// <summary>
     /// A prefix match. <c>/{prefix}/{**catch-all}</c> also matches the bare <c>/{prefix}</c> —
     /// an ASP.NET catch-all parameter matches the empty string and the trailing separator is
-    /// optional — which is what the Caddyfile's <c>(/|$)</c> alternation expressed.
+    /// optional — so the bare prefix does not need a route of its own.
     /// </summary>
     private static RouteConfig Prefix(string routeId, string[] hosts, string prefix, string clusterId, int order)
         => new()

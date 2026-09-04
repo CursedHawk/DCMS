@@ -9,10 +9,10 @@ this file is what you follow to deploy it and what you read when it misbehaves.
  8 .NET services ──OTLP:4317──┐
  docker container stdout ─────┤
  host / cAdvisor / postgres ──┤──► Alloy ──┬──► Tempo       7 d   ~4 GB
- redis / minio / caddy ───────┤            ├──► Loki       30 d   ~8 GB
+ redis / minio ───────────────┤            ├──► Loki       30 d   ~8 GB
  vault / nats-exporter ───────┘            └──► Prometheus 30 d    8 GB
                                                    │
- Postgres obs.* views ──────────────────────────► Grafana ◄── Caddy ── grafana.highgeek.eu
+ Postgres obs.* views ──────────────────────────► Grafana ◄── edge ── grafana.highgeek.eu
                                                    │
                                           webhook  └──► admin-api /api/internal/alerts
                                                             └──► EMAIL queue ──► email-worker
@@ -28,7 +28,7 @@ container that overran.
 
 | Service | Image | `mem_limit` | Host port |
 |---|---|---|---|
-| `grafana` | `grafana/grafana:12.3.1` | 256m | none — Caddy only |
+| `grafana` | `grafana/grafana:12.3.1` | 256m | none — the edge only |
 | `prometheus` | `prom/prometheus:v3.7.3` | 512m | none |
 | `loki` | `grafana/loki:3.6.0` | 384m | none |
 | `tempo` | `grafana/tempo:2.10.0` | 384m | none |
@@ -120,7 +120,7 @@ ownership included. Each store's data dir ends up owned by that image's own uid 
 65534, tempo 10001, grafana 472, alloy 473), and that uid is the one that can write it.
 Which is why none of these services carries a `user:` override, unlike `vault` and
 `forgejo`, whose plain bind mounts Docker neither populates nor chowns. It matches
-`postgres` (999), `redis` (999) and `caddy` (0), already image-uid-owned under `~/dcms-data`.
+`postgres` (999) and `redis` (999), already image-uid-owned under `~/dcms-data`.
 
 Pinning them to 1001 is what a first attempt at this deployment did, and it produced
 `permission denied` on `/prometheus/queries.active` and `mkdir /var/tempo/blocks`.
@@ -207,16 +207,13 @@ SELECT count(*) FROM identity."AspNetUsers";       -- must fail: permission deni
 SQL
 ```
 
-### 6. Caddy
+### 6. The edge
 
-`grafana.highgeek.eu` and the internal `:2019 { metrics }` listener are already in
-`infra/caddy/Caddyfile`. After syncing it, **restart the container — do not
-reload**. A plain reload reads a stale inode on a bind mount and silently keeps
-serving the old config.
-
-```sh
-docker restart dcms-caddy-1
-```
+`grafana.highgeek.eu` is in the edge's route table (`Dcms.Edge/Routing/PlatformRoutes.cs`),
+built from `GRAFANA_DOMAIN`, and gated by the `SuperAdmin` policy — an operator who is not
+one is refused before the request reaches Grafana at all. Nothing to sync: the route table
+is code, and the edge is not scraped here because it pushes over OTLP like every other .NET
+service.
 
 ### 7. Build and start, serially
 
@@ -446,9 +443,11 @@ bug.
 **A service is green everywhere but users cannot reach it.** Check the `public-*` blackbox
 probes rather than the per-service ones. The internal probes ask each service whether it is
 up on the compose network; they stayed green for hours while `grafana.highgeek.eu` resolved
-to a different server and Caddy could not obtain a certificate for it. The public probes go
-out through the host's NAT and back in through Caddy, which is the only shape of check that
-sees DNS drift, an edge misconfiguration or an expired certificate.
+to a different server and the edge could not obtain a certificate for it. The public probes go
+out through the host's NAT and back in through the edge, which is the only shape of check that
+sees DNS drift, an edge misconfiguration or an expired certificate. They are also the only
+external witness to issuance: `dcms_edge_certificates` says what the store holds, these say
+what a browser is actually served.
 
 **A `/health` is Unhealthy but the container is `healthy`.** Those are different endpoints.
 The container healthcheck polls `/health/live`, which by design runs no checks at all;
@@ -487,8 +486,8 @@ container-log scrape reads each container's log from the beginning, and containe
 been up for weeks have entries older than Loki's `reject_old_samples_max_age`. The position
 file advances regardless, so it clears itself within a few minutes as the tail catches up.
 
-**A config change had no effect.** Alloy's config, like Caddy's, is a bind-mounted *file*,
-and a plain restart reads the old inode. `up -d --force-recreate <service>` is what actually
+**A config change had no effect.** Alloy's config is a bind-mounted *file*, and a plain
+restart reads the old inode. `up -d --force-recreate <service>` is what actually
 picks up an edited config file. This has bitten this deployment on two different services.
 
 **Every service appears twice in a Loki label picker.** By design. Logs arrive over OTLP —

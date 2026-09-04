@@ -23,7 +23,7 @@ export const runtimeConfig = createRuntimeConfig({
     env: import.meta.env.VITE_ADMIN_API_BASE,
     fallback: '/api',
   },
-  /** Empty string means "same origin", which is how the chat hub is reached behind Caddy. */
+  /** Empty string means "same origin", which is how the chat hub is reached behind the edge. */
   contentApiBase: {
     key: 'contentApiBase',
     env: import.meta.env.VITE_CONTENT_API_BASE,

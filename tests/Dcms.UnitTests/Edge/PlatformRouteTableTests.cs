@@ -10,7 +10,7 @@ namespace Dcms.UnitTests.Edge;
 /// <summary>
 /// The edge's route table is the entire public ingress expressed as data, and the failure mode
 /// of getting it wrong is traffic silently reaching the wrong service — a 404 on every tenant
-/// domain, or admin-api answering for the platform console's own API. The Caddyfile encoded
+/// domain, or admin-api answering for the platform console's own API. A config file encoded
 /// this as block ordering and had no test at all; this is the port's replacement for reading it
 /// carefully.
 ///
@@ -68,12 +68,12 @@ public class PlatformRouteTableTests
     // is the SPA's client-side router now, not the token endpoint.
     [InlineData(Admin, "/connect/authorize", PlatformRoutes.AdminSpa)]
     [InlineData(Platform, "/connect/token", PlatformRoutes.PlatformSpa)]
-    public void Routes_the_hosts_and_paths_the_Caddyfile_did(string host, string path, string expectedCluster)
+    public void Routes_every_host_and_path_the_platform_serves(string host, string path, string expectedCluster)
         => ResolveCluster(host, path).Should().Be(expectedCluster);
 
     /// <summary>
     /// ASP.NET routing is case-insensitive and the cookie-auth challenge redirects to the
-    /// capitalised "/Account/Login" while the endpoints are mapped lowercase. Caddy needed an
+    /// capitalised "/Account/Login" while the endpoints are mapped lowercase. A path-matching edge needs an
     /// explicit <c>(?i)</c> flag for this; route templates need none, and this asserts that
     /// rather than assuming it.
     /// </summary>
@@ -86,7 +86,7 @@ public class PlatformRouteTableTests
 
     /// <summary>
     /// On the admin host there is no /api/platform block, so it falls through to admin-api —
-    /// exactly as it does under Caddy, where those two handles live only in the platform site.
+    /// exactly as it did before, where those two prefixes lived only on the platform host.
     /// Asserted so a later "tidy-up" that hoists them to both hosts is a failing test rather
     /// than a change of behaviour nobody noticed.
     /// </summary>

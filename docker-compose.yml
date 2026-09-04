@@ -241,7 +241,7 @@ services:
     volumes:
       - forgejo-data:/data
     ports:
-      # HTTP/web UI on loopback only — in prod Caddy proxies it over the internal
+      # HTTP/web UI on loopback only — in prod the edge proxies it over the internal
       # network and terminates TLS; in dev the developer reaches it at localhost.
       - "127.0.0.1:3000:3000"
       # Git SSH is published on all interfaces so `git clone ssh://…:2222` works
@@ -271,8 +271,8 @@ services:
       Identity__PlatformSpa__RedirectUris: "http://localhost:5174/auth/callback;http://localhost:5010/auth/callback"
       Identity__PlatformSpa__PostLogoutUris: "http://localhost:5174/;http://localhost:5010/"
       # Dev only: the SPAs reach identity cross-origin here (vite on 5173/5174 -> identity on
-      # 5001). Behind Caddy both are same-origin with /connect/*, which is why prod overrides
-      # this with just PUBLIC_BASE_URL.
+      # 5001). Behind the edge both are same-origin with /connect/*, which is why prod
+      # overrides this with just PUBLIC_BASE_URL.
       Cors__AllowedOrigins__0: "http://localhost:5173"
       Cors__AllowedOrigins__1: "http://localhost:5000"
       Cors__AllowedOrigins__2: "http://localhost:5174"
@@ -372,7 +372,7 @@ services:
       Identity__PlatformSpa__RedirectUris: "http://localhost:5174/auth/callback;http://localhost:5010/auth/callback"
       Identity__PlatformSpa__PostLogoutUris: "http://localhost:5174/;http://localhost:5010/"
       # Dev only: the SPAs reach identity cross-origin here (vite on 5173/5174 -> identity on
-      # 5001). Behind Caddy both are same-origin with /connect/*, which is why prod overrides
+      # 5001). Behind the edge both are same-origin with /connect/*, which is why prod overrides
       # this with just PUBLIC_BASE_URL.
       Cors__AllowedOrigins__0: "http://localhost:5173"
       Cors__AllowedOrigins__1: "http://localhost:5000"
@@ -514,9 +514,9 @@ services:
     environment:
       <<: *service-env
 
-  # The reverse-proxy edge that is replacing Caddy. In this phase it does routing only and
-  # publishes no host port: Caddy still owns :80/:443 and TLS, and forwards a scratch hostname
-  # here so the route table can be proved against the real stack before anything is swapped.
+  # The platform's public ingress: TLS termination, ACME, routing, and the single sign-in
+  # that Grafana and Forgejo read out of a header. It publishes no host port in dev, where
+  # every service is reachable directly; the vps overlay is what puts it on :80/:443.
   #
   # Deliberately does NOT inherit *service-env, which would hand it the `dcms` OWNER connection
   # string and a MinIO account. The public ingress is the last place to hold credentials it has
@@ -539,11 +539,10 @@ services:
         condition: service_started
       vault:
         condition: service_started
-    # /health, not /health/live, and that is the whole point of replacing Caddy's probe.
-    # Caddy's healthcheck hit its metrics listener, which proved the config parsed and nothing
-    # more; a proxy that starts with an empty route table answers every request with a 404 and
-    # every signal stays green. RouteTableHealthCheck is registered under `ready`, so only the
-    # full endpoint runs it.
+    # /health, not /health/live, and the difference is the point. A live process proves
+    # nothing here: a proxy that starts with an empty route table answers every request with a
+    # 404 while every signal stays green. RouteTableHealthCheck is registered under `ready`,
+    # so only the full endpoint runs it.
     #
     # It also folds in the Postgres and Redis checks, which means a store outage marks the
     # ingress unhealthy while it is still serving every route from the static table. That is
@@ -566,9 +565,9 @@ services:
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_edge;Password=dcms-edge-dev"
       VAULT_ADDR: "http://vault:8200"
       VAULT_TOKEN: "dcms-dev-root"
-      # The four hostnames DCMS owns. Same values, same defaults and the same reason as the
-      # Caddy block: dev and production run the same image, so a name baked into the code
-      # would make the dev edge answer for production's.
+      # The hostnames DCMS owns. Defaults rather than literals because dev and production run
+      # the same image, so a name baked into the code would make the dev edge answer for
+      # production's -- and issue certificates for it.
       Edge__AdminHost: "${ADMIN_HOST:-admin.highgeek.eu}"
       Edge__PlatformHost: "${PLATFORM_HOST:-platform.highgeek.eu}"
       # Everything identity serves lives on this host and nowhere else. It is also what every
@@ -577,8 +576,8 @@ services:
       Edge__AuthHost: "${AUTH_HOST:-auth.highgeek.eu}"
       Edge__GrafanaHost: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
       Edge__GitHost: "${GIT_HOST:-git.highgeek.eu}"
-      # TLS off until the cutover: Caddy still owns :80/:443 and two processes cannot bind the
-      # same port. Everything below it is inert while this is false.
+      # Off in dev, where nothing here owns a public name a CA would answer for. Everything
+      # below it -- ACME, the certificate store, the renewal sweep -- is inert while false.
       Edge__Certificates__TlsEnabled: "${EDGE_TLS_ENABLED:-false}"
       # STAGING by default, and that is the safety property rather than a placeholder. Let's
       # Encrypt allows ~50 certificates per registered domain per week and counts failed
@@ -794,7 +793,7 @@ services:
   # ---------- observability ----------
   #
   # Grafana + Prometheus + Loki + Tempo, fed by a single Alloy agent. Nothing here publishes
-  # a host port: Grafana is reached at https://grafana.highgeek.eu through Caddy, and the
+  # a host port: Grafana is reached at https://grafana.highgeek.eu through the edge, and the
   # three stores are reachable only from the compose network. The dev override adds host
   # ports for local work.
   #
@@ -923,7 +922,7 @@ services:
     #
     # This is the opposite of vault and forgejo, which are pinned to 1001 — because those
     # use plain host bind mounts, which Docker neither populates nor chowns. It matches
-    # postgres (999), redis (999) and caddy (0), which are already image-uid-owned under
+    # postgres (999) and redis (999), which are already image-uid-owned under
     # /home/cursedhawk/dcms-data. The cost is that removing one of those directories needs
     # root; the alternative was a stack that does not start.
     command:

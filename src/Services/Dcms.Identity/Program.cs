@@ -225,8 +225,10 @@ builder.Services.AddDcmsEmailQueue();
 // SPA hosts; prod overrides via Cors__AllowedOrigins__0 = PUBLIC_BASE_URL.
 // Dev defaults for a bare `dotnet run` with no compose: the admin SPA's vite server and
 // container, then the platform console's. Deployed environments override this with
-// Cors__AllowedOrigins__n, and behind Caddy both SPAs are same-origin with /connect/* anyway —
-// this list only matters where the SPA and identity are on different ports.
+// Cors__AllowedOrigins__n, and there it is LOAD-BEARING: identity has its own host
+// (AUTH_HOST), so every discovery fetch, JWKS fetch and token POST a console makes is
+// cross-origin. An origin missing here is a sign-in that fails in the browser console
+// and nowhere else.
 // Blank entries are dropped rather than passed through. Production blanks the dev origins the
 // base compose file sets -- compose MERGES environment maps, so omitting them would leave them
 // in place -- and an empty string is not an origin anything should be matched against.
@@ -263,11 +265,11 @@ if (args.Contains("--migrate-only"))
     return;
 }
 
-// Behind the Caddy TLS edge, requests reach identity over plain HTTP on the
+// Behind the TLS edge, requests reach identity over plain HTTP on the
 // internal network. Honour X-Forwarded-Proto/Host so OpenIddict emits https://
 // absolute URLs in the discovery document (authorize/token/jwks) — otherwise the
 // SPA's token POST would be blocked as mixed content. Identity is only reachable
-// through Caddy on the internal network, so all proxies are trusted.
+// through the edge on the internal network, so all proxies are trusted.
 var forwardedHeaders = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor

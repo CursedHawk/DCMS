@@ -14,8 +14,8 @@ public sealed class CertificateOptions
     public const string LetsEncryptStaging = "https://acme-staging-v02.api.letsencrypt.org/directory";
 
     /// <summary>
-    /// Whether Kestrel opens the TLS listener at all. Off until the cutover, so the edge can run
-    /// alongside Caddy without either of them claiming the same port.
+    /// Whether Kestrel opens the TLS listener at all. Off in dev, where nothing owns a public
+    /// name to be issued a certificate for; on everywhere the edge is the ingress.
     /// </summary>
     public bool TlsEnabled { get; set; }
 
@@ -37,8 +37,8 @@ public sealed class CertificateOptions
     ///
     /// <para>Separate from <see cref="HttpsPort"/> because the container listens on an
     /// <b>unprivileged</b> port and Docker publishes 443 to it. It has to: the image runs as
-    /// <c>$APP_UID</c>, and a non-root process cannot bind 443 — Caddy could only do it because
-    /// its image runs as root. Publishing <c>443:8443</c> is what keeps the edge unprivileged.
+    /// <c>$APP_UID</c>, and a non-root process cannot bind 443. Publishing <c>443:8443</c> is
+    /// what keeps the edge unprivileged.
     ///
     /// <para>The consequence is that the listener port is the wrong number to put in a redirect.
     /// Emitting <c>https://host:8443/</c> to a browser sends it somewhere nothing is published,
@@ -90,9 +90,13 @@ public sealed class CertificateOptions
 
     /// <summary>
     /// The authorization gate for issuing at all: site-host answers 200 only for a hostname that
-    /// is a verified domain linked to a site. Reused rather than reimplemented — it is the same
-    /// endpoint Caddy's <c>on_demand_tls ask</c> calls today, and querying tenancy directly would
-    /// hand the most exposed process on the platform a second schema it does not otherwise need.
+    /// is a verified domain linked to a site. Asked over HTTP rather than read from tenancy
+    /// directly, because querying it would hand the most exposed process on the platform a
+    /// second schema it does not otherwise need.
+    ///
+    /// <para>Its sibling <c>/internal/tls-hostnames</c>, which the renewal sweep uses to find
+    /// the hostnames it holds no certificate for, is derived from this address rather than
+    /// configured separately — see <c>TlsAllowList.AllowedHostnamesAsync</c>.</para>
     /// </summary>
     public string TlsAllowedEndpoint { get; set; } = "http://site-host:8080/internal/tls-allowed";
 

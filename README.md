@@ -13,7 +13,8 @@ OpenAPI document.
 .NET 10 multiservice backend (identity + OpenIddict, admin-api, content-api with
 in-process Plugin SDK, media-worker, email-worker, site-builder, site-host,
 ai-gateway) · React/Vite admin SPA · PostgreSQL 18 · NATS JetStream · Redis ·
-MinIO · HashiCorp Vault · Forgejo (site source of truth) · Caddy · OpenTelemetry
+MinIO · HashiCorp Vault · Forgejo (site source of truth) · Dcms.Edge (YARP ingress,
+ACME TLS) · OpenTelemetry
 into Grafana/Prometheus/Loki/Tempo · Docker Compose.
 
 Site source lives in git: Mode A sites are HTML/CSS authored with GrapesJS, Mode

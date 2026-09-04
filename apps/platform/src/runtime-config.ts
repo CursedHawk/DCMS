@@ -5,7 +5,7 @@ import { createRuntimeConfig } from '@dcms/admin-client';
  *
  * Three API bases rather than one because the console talks to three services, each the owner
  * of what it serves: platform-api for observability and ops, identity for the user directory,
- * admin-api for tenancy and audit. All three are same-origin behind Caddy, so these default to
+ * admin-api for tenancy and audit. All three are same-origin behind the edge, so these default to
  * path prefixes and only differ from each other in the prefix.
  *
  * `environmentName` is not cosmetic. dev and production run the same image, and this console

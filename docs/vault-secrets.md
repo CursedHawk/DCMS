@@ -38,7 +38,7 @@ vault policy read dcms-<service>
 
 Not everything can live in Vault, and the reason is structural rather than a matter of effort.
 
-**Postgres, MinIO, NATS, Grafana and Caddy cannot read Vault.** They take plain environment
+**Postgres, MinIO, NATS, Grafana and Forgejo cannot read Vault.** They take plain environment
 variables, so their credentials must exist in the host's `.env` for those containers to start
 at all. Writing the same value into Vault as well does not remove it from `.env` — it creates a
 second copy to rotate, and a rotation that updates one and not the other fails in a way that
@@ -224,7 +224,7 @@ Each is read by a container that cannot talk to Vault.
 | `GRAFANA_ADMIN_PASSWORD` | the grafana container |
 | `EDGE_OIDC_CLIENT_SECRET` | the edge **and** identity, which seeds the client — moving it would create a second copy to rotate, not remove one |
 | `ALERT_WEBHOOK_SECRET` | grafana **and** admin-api, which compares it; same reason. A mismatch rejects every alert, and a rejected alert looks exactly like having nothing to alert about |
-| `ACME_EMAIL` | caddy |
+| `ACME_EMAIL` | the edge's ACME account registration |
 | `VAULT_ROLE_ID_*`, `VAULT_SECRET_ID_*` | the credentials used to reach Vault — necessarily outside it |
 | `VAULT_TRANSIT_SEAL_TOKEN`, `VAULT_TRANSIT_SEAL_KEY_NAME` | the vault container's own seal |
 

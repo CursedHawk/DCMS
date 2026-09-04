@@ -7,8 +7,9 @@
 # connection, whose leak would expose every tenant's data across every schema.
 #
 # Note what it deliberately CANNOT read: tenancy.domains. Whether a hostname may be issued a
-# certificate is asked of site-host over HTTP (/internal/tls-allowed), the same endpoint Caddy's
-# on_demand_tls asked. One internal call is cheaper than widening what a compromise here reaches.
+# certificate is asked of site-host over HTTP (/internal/tls-allowed, and its sibling
+# /internal/tls-hostnames). One internal call is cheaper than widening what a compromise here
+# reaches.
 #
 # Unlike dcms_sitebuilder this needs no BYPASSRLS: nothing in the `edge` schema carries a tenant
 # column, so no policy applies to it.

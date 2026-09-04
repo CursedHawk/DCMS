@@ -101,7 +101,7 @@ services:
       - "5000:80"
 
   # Observability, dev only. In production none of these publish a port — Grafana is
-  # reached through Caddy and the stores are internal. Grafana is on 3001 rather than its
+  # reached through the edge and the stores are internal. Grafana is on 3001 rather than its
   # default 3000 because vps1 already has Forgejo on 3000, and a dev port that collides
   # with a production port is a trap waiting for whoever debugs against a tunnel.
   grafana:

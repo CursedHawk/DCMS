@@ -58,7 +58,7 @@ public class EdgeHttpPlaneTests
     }
 
     [Fact]
-    public async Task Does_nothing_at_all_while_Caddy_still_terminates_TLS()
+    public async Task Does_nothing_at_all_while_TLS_is_off()
     {
         var context = Request("/pricing", port: 8080);
 
@@ -92,7 +92,7 @@ public class EdgeHttpPlaneTests
 
         // Off by default, and that is a decision rather than an oversight: HSTS is a promise the
         // browser keeps for the full max-age on a domain the TENANT owns, and rolling back to
-        // Caddy would not undo it. It is not ours to make on their behalf.
+        // turning it off would not undo it. It is not ours to make on their behalf.
         var byDefault = Request("/", port: 8443);
         byDefault.Request.Scheme = "https";
         await RunHsts(byDefault, new CertificateOptions());

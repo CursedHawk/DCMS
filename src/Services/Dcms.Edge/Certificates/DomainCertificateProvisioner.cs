@@ -9,10 +9,10 @@ namespace Dcms.Edge.Certificates;
 /// <summary>
 /// Issues a certificate the moment a domain is verified, rather than waiting for a visitor.
 ///
-/// <para><b>This, not the handshake, is the main path</b>, and it is where the new edge is
-/// better than the one it replaces. Caddy issued on demand: the first visitor to a newly
-/// verified domain paid for a full ACME round trip inside their TLS handshake, and if anything
-/// went wrong they got a connection error on a site the tenant had just been told was live.
+/// <para><b>This, not the handshake, is the main path.</b> Issuing on demand means the first
+/// visitor to a newly verified domain pays for a full ACME round trip inside their TLS
+/// handshake, and if anything goes wrong they get a connection error on a site the tenant had
+/// just been told was live.
 /// Here the certificate normally exists before anyone asks for it, and a failure surfaces on the
 /// domain row in the admin UI while the tenant is still looking at the page that caused it.</para>
 ///

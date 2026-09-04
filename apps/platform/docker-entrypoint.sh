@@ -19,7 +19,7 @@ TEMPLATE="$ROOT/index.html.template"
 [ -f "$TEMPLATE" ] || cp "$ROOT/index.html" "$TEMPLATE"
 
 # Defaults keep a bare `docker run` working. The three API bases are same-origin paths because
-# Caddy routes all three services under this host by prefix.
+# The edge routes all three services under this host by prefix.
 : "${DCMS_OIDC_AUTHORITY:=}"
 : "${DCMS_OIDC_CLIENT_ID:=dcms-platform-spa}"
 : "${DCMS_PLATFORM_API_BASE:=/api/platform}"
