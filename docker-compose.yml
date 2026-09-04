@@ -484,6 +484,43 @@ services:
     environment:
       <<: *service-env
 
+  # The reverse-proxy edge that is replacing Caddy. In this phase it does routing only and
+  # publishes no host port: Caddy still owns :80/:443 and TLS, and forwards a scratch hostname
+  # here so the route table can be proved against the real stack before anything is swapped.
+  #
+  # Deliberately does NOT inherit *service-env. Routing needs NATS and nothing else -- no
+  # Postgres connection, no MinIO account, no Vault token -- and the public ingress is the last
+  # place to hold credentials it has no use for. It DOES inherit *otel-env: that is the
+  # distinction site-builder and email-worker got wrong, and it cost two services their entire
+  # telemetry signal without a single error.
+  #
+  # Phase 2 adds the certificate store, and with it a scoped Postgres role and a Vault AppRole.
+  edge:
+    build:
+      context: .
+      dockerfile: src/Services/Dcms.Edge/Dockerfile
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      nats:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    environment:
+      <<: *otel-env
+      Nats__Url: "nats://nats:4222"
+      # The four hostnames DCMS owns. Same values, same defaults and the same reason as the
+      # Caddy block: dev and production run the same image, so a name baked into the code
+      # would make the dev edge answer for production's.
+      Edge__AdminHost: "${ADMIN_HOST:-admin.highgeek.eu}"
+      Edge__PlatformHost: "${PLATFORM_HOST:-platform.highgeek.eu}"
+      Edge__GrafanaHost: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
+      Edge__GitHost: "${GIT_HOST:-git.highgeek.eu}"
+
   ai-gateway:
     build:
       context: .

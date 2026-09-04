@@ -359,6 +359,23 @@ services:
       VAULT_ROLE_ID: "${VAULT_ROLE_ID_SITE_HOST:-}"
       VAULT_SECRET_ID: "${VAULT_SECRET_ID_SITE_HOST:-}"
 
+  # The YARP edge, published on loopback ONLY, so its route table can be exercised against the
+  # real stack before it is given the public ports. Caddy is untouched and still the only
+  # ingress -- deliberately, because editing the live Caddyfile to add a test route risks the
+  # one failure the deploy cannot see: a file that fails to parse leaves the container up and
+  # every health signal green while nothing is served.
+  #
+  # Verify from the host with an explicit Host header, which is the whole of what the route
+  # table keys on:
+  #   curl -si -H 'Host: admin.highgeek.eu'    http://127.0.0.1:8090/api/admin/domains
+  #   curl -si -H 'Host: platform.highgeek.eu' http://127.0.0.1:8090/api/platform/observability
+  #   curl -si -H 'Host: some.tenant.example'  http://127.0.0.1:8090/
+  #
+  # Remove this binding at the Phase 3 cutover, when the edge takes 80/443 for real.
+  edge:
+    ports:
+      - "127.0.0.1:8090:8080"
+
 volumes:
   postgres-data:
     driver: local

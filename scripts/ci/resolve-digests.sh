@@ -47,6 +47,7 @@ site-build-sandbox:site-build-sandbox
 site-host:site-host
 ai-gateway:ai-gateway
 platform-api:platform-api
+edge:edge
 admin-spa:admin-spa
 platform-spa:platform-spa
 log-janitor:log-janitor

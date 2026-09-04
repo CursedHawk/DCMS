@@ -44,6 +44,11 @@ public static class DcmsMeters
         "System.Net.Http",
         "System.Runtime",
         "Npgsql",
+        // The edge's own proxy metrics: requests forwarded, failures by reason, and the
+        // per-destination counters that say which upstream is degrading. Without this line
+        // the edge exports Kestrel and ASP.NET counters and nothing about proxying — the
+        // same shape of gap as the audit meter that survived a release.
+        "Yarp.ReverseProxy",
     ];
 
     public static readonly string[] All = [.. Dcms, .. Framework];

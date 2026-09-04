@@ -188,6 +188,9 @@ build-image:
       - SERVICE: ai-gateway
         LANE: c
         DOCKERFILE: src/Services/Dcms.AiGateway/Dockerfile
+      - SERVICE: edge
+        LANE: a
+        DOCKERFILE: src/Services/Dcms.Edge/Dockerfile
       - SERVICE: platform-api
         LANE: a
         DOCKERFILE: src/Services/Dcms.PlatformApi/Dockerfile
@@ -235,7 +238,7 @@ promote-images:
       set -e
       for SERVICE in identity admin-api content-api media-worker email-worker \
                      site-builder site-build-sandbox site-host ai-gateway platform-api \
-                     admin-spa platform-spa log-janitor; do
+                     edge admin-spa platform-spa log-janitor; do
         IMAGE="$CI_REGISTRY_IMAGE/$SERVICE"
         if ! docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_SHORT_SHA" >/dev/null 2>&1; then
           echo "No image at $IMAGE:$CI_COMMIT_SHORT_SHA."

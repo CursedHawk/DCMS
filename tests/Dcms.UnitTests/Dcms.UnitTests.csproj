@@ -4,6 +4,13 @@
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
+  <!-- TemplateMatcher, used by the edge route-table tests to match paths with the real
+       ASP.NET route-template engine rather than a stand-in, and ApplicationBuilder, used to
+       exercise the header-scrubbing middleware as it actually runs. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
@@ -23,6 +30,10 @@
     <!-- The platform console's purge guard is the one piece of that service worth testing in
          isolation: it is the thing standing between an operator and the audit evidence. -->
     <ProjectReference Include="..\..\src\Services\Dcms.PlatformApi\Dcms.PlatformApi.csproj" />
+    <!-- The edge's route table is the whole public ingress expressed as data. Getting one
+         Order or one path pattern wrong routes real traffic to the wrong service, so it is
+         asserted here rather than discovered on the edge. -->
+    <ProjectReference Include="..\..\src\Services\Dcms.Edge\Dcms.Edge.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Messaging\Dcms.Shared.Messaging.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Hosting\Dcms.Shared.Hosting.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Telemetry\Dcms.Shared.Telemetry.csproj" />
