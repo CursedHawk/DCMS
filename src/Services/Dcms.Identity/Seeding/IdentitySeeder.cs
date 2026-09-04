@@ -216,53 +216,52 @@ public sealed class IdentitySeeder(
             logger.LogInformation("Seeded admin-api service client.");
         }
 
-        await SeedGrafanaClientAsync(manager, ct);
+        // The edge, which is now the only thing between an operator and Grafana or Forgejo.
+        await SeedEdgeClientAsync(manager, ct);
+
+        // And the client it replaced. Deleted rather than left alone -- see the method.
+        await RetireGrafanaClientAsync(manager, ct);
     }
 
     /// <summary>
-    /// The Grafana OIDC client. Confidential + PKCE: Grafana keeps the secret server-side, and
-    /// PKCE costs nothing on top of that while removing the authorization-code interception
-    /// class of attack entirely.
+    /// The edge's OIDC client. Confidential + PKCE, exactly like the Grafana client it replaces:
+    /// the edge keeps the secret server-side, and PKCE costs nothing on top of that while
+    /// removing the authorization-code interception class of attack entirely.
     ///
-    /// <para>The <c>roles</c> scope is what makes the whole arrangement safe. Grafana maps
-    /// <c>contains(roles[*], 'SuperAdmin')</c> to Grafana Admin with
-    /// <c>role_attribute_strict</c>, so a user without it is refused rather than being given
-    /// the Viewer role — and a Viewer on these dashboards can read every tenant's usage, every
-    /// audit action and every trace on the platform. Drop the scope and every DCMS user with a
-    /// login becomes a platform-wide observer.</para>
+    /// <para>One client, several redirect URIs — one per host the edge gates. They are separate
+    /// URIs rather than a wildcard because OpenIddict compares them exactly, which is the
+    /// property that makes a stolen authorization code useless anywhere else.</para>
     ///
-    /// <para>Skipped entirely when no secret is configured, rather than seeded with a default.
-    /// A client with a guessable secret and this role mapping is worse than no Grafana login:
-    /// the break-glass local admin still works, so the failure mode of skipping is an
-    /// inconvenience, and the failure mode of a default secret is a platform-wide read.</para>
+    /// <para>Skipped when no secret is configured, and the edge independently disables its own
+    /// authentication in that case. The failure mode of skipping is that Grafana and Forgejo
+    /// show their own login screens; the failure mode of seeding a default secret would be that
+    /// anyone holding it can mint a session the edge asserts to both. Those are not close.</para>
     /// </summary>
-    private async Task SeedGrafanaClientAsync(IOpenIddictApplicationManager manager, CancellationToken ct)
+    private async Task SeedEdgeClientAsync(IOpenIddictApplicationManager manager, CancellationToken ct)
     {
-        if (await manager.FindByClientIdAsync(DcmsOAuth.Clients.Grafana, ct) is not null)
-        {
-            return;
-        }
-
-        var secret = configuration["Identity:Grafana:Secret"];
+        var secret = configuration["Identity:Edge:Secret"];
         if (string.IsNullOrWhiteSpace(secret))
         {
             logger.LogInformation(
-                "Grafana OIDC client not seeded: Identity:Grafana:Secret is unset. " +
-                "Set it (GRAFANA_OIDC_CLIENT_SECRET) to enable Grafana SSO.");
+                "Edge OIDC client not seeded: Identity:Edge:Secret is unset. " +
+                "Grafana and Forgejo will use their own sign-in until it is set.");
             return;
         }
 
-        var redirects = (configuration["Identity:Grafana:RedirectUris"]
-                         ?? "https://grafana.highgeek.eu/login/generic_oauth")
+        var redirects = (configuration["Identity:Edge:RedirectUris"]
+                         ?? "https://grafana.highgeek.eu/.edge/signin-oidc;https://git.highgeek.eu/.edge/signin-oidc")
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var postLogout = (configuration["Identity:Edge:PostLogoutUris"]
+                          ?? "https://grafana.highgeek.eu/.edge/signout-callback-oidc;https://git.highgeek.eu/.edge/signout-callback-oidc")
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         var descriptor = new OpenIddictApplicationDescriptor
         {
-            ClientId = DcmsOAuth.Clients.Grafana,
+            ClientId = DcmsOAuth.Clients.Edge,
             ClientSecret = secret,
             ClientType = ClientTypes.Confidential,
             ConsentType = ConsentTypes.Implicit,
-            DisplayName = "DCMS Grafana",
+            DisplayName = "DCMS Edge",
             Permissions =
             {
                 Permissions.Endpoints.Authorization,
@@ -277,13 +276,56 @@ public sealed class IdentitySeeder(
             },
             Requirements = { Requirements.Features.ProofKeyForCodeExchange },
         };
-        foreach (var uri in redirects)
+        foreach (var uri in redirects) descriptor.RedirectUris.Add(new Uri(uri));
+        foreach (var uri in postLogout) descriptor.PostLogoutRedirectUris.Add(new Uri(uri));
+
+        var existing = await manager.FindByClientIdAsync(DcmsOAuth.Clients.Edge, ct);
+        if (existing is null)
         {
-            descriptor.RedirectUris.Add(new Uri(uri));
+            await manager.CreateAsync(descriptor, ct);
+            logger.LogInformation("Seeded edge OIDC client with {Count} redirect URI(s).", redirects.Length);
+            return;
         }
 
-        await manager.CreateAsync(descriptor, ct);
-        logger.LogInformation("Seeded Grafana OIDC client.");
+        // Converges, for the reason spelled out on EnsurePublicSpaClientAsync: a client first
+        // created on a host whose configuration was wrong stayed wrong for the life of that
+        // database, and the only symptom was OpenIddict refusing the sign-in.
+        var current = new OpenIddictApplicationDescriptor();
+        await manager.PopulateAsync(current, existing, ct);
+        if (current.RedirectUris.SetEquals(descriptor.RedirectUris)
+            && current.PostLogoutRedirectUris.SetEquals(descriptor.PostLogoutRedirectUris))
+        {
+            return;
+        }
+
+        current.RedirectUris.Clear();
+        current.PostLogoutRedirectUris.Clear();
+        foreach (var uri in descriptor.RedirectUris) current.RedirectUris.Add(uri);
+        foreach (var uri in descriptor.PostLogoutRedirectUris) current.PostLogoutRedirectUris.Add(uri);
+        await manager.PopulateAsync(existing, current, ct);
+        await manager.UpdateAsync(existing, ct);
+        logger.LogInformation("Updated edge OIDC client redirect URIs from configuration.");
+    }
+
+    /// <summary>
+    /// Deletes the Grafana OIDC client, which nothing uses now that the edge signs operators in.
+    ///
+    /// <para>Deleted rather than left in place. Its role mapping was the thing standing between
+    /// any DCMS login and a platform-wide read of every tenant's usage, audit trail and traces —
+    /// so a live client id, a live secret and a live redirect URI pointing at Grafana's
+    /// <c>generic_oauth</c> callback is a credential that still works the moment somebody
+    /// re-enables that block. An unused credential is not a dormant one.</para>
+    /// </summary>
+    private async Task RetireGrafanaClientAsync(IOpenIddictApplicationManager manager, CancellationToken ct)
+    {
+        if (await manager.FindByClientIdAsync(DcmsOAuth.Clients.Grafana, ct) is not { } grafana)
+        {
+            return;
+        }
+
+        await manager.DeleteAsync(grafana, ct);
+        logger.LogInformation(
+            "Deleted the retired Grafana OIDC client; Grafana is signed in by the edge now.");
     }
 
     /// <summary>

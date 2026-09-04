@@ -10,8 +10,21 @@ public static class DcmsOAuth
     {
         public const string AdminSpa = "dcms-admin-spa";          // public, code+PKCE
         public const string AdminApiService = "dcms-admin-api";    // confidential, client credentials
-        public const string Grafana = "dcms-grafana";              // confidential, code+PKCE
+        /// <summary>
+        /// RETIRED. Grafana no longer speaks OIDC: the edge authenticates and passes
+        /// <c>X-WEBAUTH-USER</c>. Kept as a constant because the seeder deletes any surviving
+        /// row by this id — a client whose role mapping granted a platform-wide read is not
+        /// something to leave lying in the database because nothing points at it any more.
+        /// </summary>
+        public const string Grafana = "dcms-grafana";
         public const string PlatformSpa = "dcms-platform-spa";     // public, code+PKCE
+
+        /// <summary>
+        /// The edge (Dcms.Edge). Confidential, code+PKCE. It signs an operator in once at the
+        /// boundary and tells Grafana and Forgejo who they are, which is what retired
+        /// <see cref="Grafana"/> above.
+        /// </summary>
+        public const string Edge = "dcms-edge";
     }
 
     /// <summary>

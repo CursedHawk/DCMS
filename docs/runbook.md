@@ -729,10 +729,40 @@ troubleshooting in
 [`infra/observability/README.md`](../infra/observability/README.md). This section
 is the part an operator needs in the middle of an incident.
 
-Grafana is at **https://grafana.highgeek.eu**, OIDC against the DCMS identity
-service, **platform SuperAdmin only**. There is no host port; it is reachable
-only through Caddy. `GF_SECURITY_ADMIN_PASSWORD` is a break-glass local login for
-the case where identity itself is what is down.
+Grafana is at **https://grafana.highgeek.eu**, **platform SuperAdmin only**. There
+is no host port; it is reachable only through the edge.
+
+Grafana no longer speaks OIDC. The edge authenticates against identity, refuses
+anyone who is not a SuperAdmin, and passes the result as `X-WEBAUTH-USER` — so an
+unauthorized request never reaches Grafana at all, and its access log staying empty
+is how you verify the gate. `GF_SECURITY_ADMIN_PASSWORD` is still a break-glass
+local login for the case where identity, or the edge, is what is down: the login
+form is only reachable when no header arrives, which is exactly that case.
+
+The same arrangement signs operators into **Forgejo**'s web UI, gated on being a
+DCMS user rather than a SuperAdmin — Forgejo does its own per-repository
+authorization once it knows who is asking.
+
+**Git over HTTPS is deliberately untouched.** `/{owner}/{repo}/info/refs`,
+`git-upload-pack`, `git-receive-pack`, LFS and `/api/v1/*` are separate edge routes
+with no policy and no header: those requests carry the per-user credential
+`ForgejoUserSync` provisions, and asserting a browser session on top of one does not
+add a check, it replaces one — a push attributed to whoever is signed in in that
+browser. The header injection also refuses outright on any request that already
+carries an `Authorization` header, because getting that path list wrong is the
+expensive direction.
+
+Two failure modes worth knowing:
+
+- **`EDGE_OIDC_CLIENT_SECRET` unset** → the edge disables its own authentication,
+  no route carries a policy, and both consoles fall back to their own sign-in. That
+  is the safe direction: this is the public ingress, and refusing to serve tenant
+  sites over a missing operator credential would be the wrong trade. `docker compose
+  logs edge` says which state it is in at startup.
+- **A user with no Forgejo account** reaches Forgejo's own sign-in rather than being
+  auto-registered. Forgejo usernames are allocated by the sync with a numeric suffix
+  on collision (`rgolias`, `rgolias-2`), so a name the edge invented could claim one
+  the sync is about to hand somebody else.
 
 ## Platform console (platform.highgeek.eu)
 

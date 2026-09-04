@@ -78,7 +78,9 @@ hostname no tenant owns.
 
 ```sh
 GRAFANA_ADMIN_PASSWORD=…      # break-glass local login, for when identity is down
-GRAFANA_OIDC_CLIENT_SECRET=…  # must match Identity__Grafana__Secret (same var, both containers)
+EDGE_OIDC_CLIENT_SECRET=…     # must match Identity__Edge__Secret (same var, both containers).
+                              # The edge signs operators in and passes X-WEBAUTH-USER; Grafana
+                              # itself no longer speaks OIDC. Unset -> break-glass login only.
 GRAFANA_DB_PASSWORD=…         # the dcms_grafana Postgres role, step 5
 ALERT_WEBHOOK_SECRET=…        # bearer token for POST /api/internal/alerts
 NATS_SYS_PASSWORD=…           # the $SYS account user nats-surveyor collects as

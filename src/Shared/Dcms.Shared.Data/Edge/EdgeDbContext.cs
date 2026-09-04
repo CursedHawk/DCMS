@@ -1,10 +1,12 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
 namespace Dcms.Shared.Data.Edge;
 
 /// <summary>
-/// Owns the "edge" schema: TLS certificates, the ACME account, and the route overlay.
+/// Owns the "edge" schema: TLS certificates, the ACME account, the route overlay, and the
+/// edge's own Data Protection key ring.
 ///
 /// <para>None of these tables carries a TenantId, so none of them takes part in RLS — see
 /// <see cref="EdgeCertificate"/> for why that is a design decision rather than an oversight.
@@ -18,13 +20,26 @@ namespace Dcms.Shared.Data.Edge;
 /// the same reasoning as <c>DataProtectionDbContext</c>. Operator-initiated changes (uploading a
 /// custom certificate, forcing a reissue) are audited where they are made, in admin-api.</para>
 /// </summary>
-public class EdgeDbContext(DbContextOptions<EdgeDbContext> options) : DbContext(options)
+public class EdgeDbContext(DbContextOptions<EdgeDbContext> options)
+    : DbContext(options), IDataProtectionKeyContext
 {
     public const string Schema = "edge";
 
     public DbSet<EdgeCertificate> Certificates => Set<EdgeCertificate>();
     public DbSet<AcmeAccount> AcmeAccounts => Set<AcmeAccount>();
     public DbSet<EdgeRoute> Routes => Set<EdgeRoute>();
+
+    /// <summary>
+    /// The edge's OWN key ring, not the shared <c>dataprotection</c> schema every other service
+    /// uses.
+    ///
+    /// <para>That schema's key ring also protects <c>ForgejoSyncOutbox.EncryptedPassword</c> —
+    /// every user's git credential. Handing it to the process that terminates TLS for the whole
+    /// internet, so that its session cookie survives a restart, is a bad trade. A separate ring
+    /// under a separate application name means the edge can read exactly one thing: its own
+    /// cookies.</para>
+    /// </summary>
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -52,6 +67,13 @@ public class EdgeDbContext(DbContextOptions<EdgeDbContext> options) : DbContext(
             e.HasIndex(a => a.DirectoryUrl).IsUnique();
             e.Property(a => a.DirectoryUrl).HasMaxLength(512).IsRequired();
             e.Property(a => a.ContactEmail).HasMaxLength(320).IsRequired();
+        });
+
+        builder.Entity<DataProtectionKey>(e =>
+        {
+            e.ToTable("data_protection_keys");
+            e.HasKey(k => k.Id);
+            e.Property(k => k.FriendlyName).HasMaxLength(256);
         });
 
         builder.Entity<EdgeRoute>(e =>

@@ -222,7 +222,7 @@ Each is read by a container that cannot talk to Vault.
 | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `SITEBUILDER_MINIO_USER`, `SITEBUILDER_MINIO_PASSWORD` | the minio container and its init job |
 | `NATS_APP_PASSWORD`, `NATS_SYS_PASSWORD` | the nats container (`${VAR:?}` — a missing one fails the whole compose invocation) |
 | `GRAFANA_ADMIN_PASSWORD` | the grafana container |
-| `GRAFANA_OIDC_CLIENT_SECRET` | grafana **and** identity, which seeds the client — moving it would create a second copy to rotate, not remove one |
+| `EDGE_OIDC_CLIENT_SECRET` | the edge **and** identity, which seeds the client — moving it would create a second copy to rotate, not remove one |
 | `ALERT_WEBHOOK_SECRET` | grafana **and** admin-api, which compares it; same reason. A mismatch rejects every alert, and a rejected alert looks exactly like having nothing to alert about |
 | `ACME_EMAIL` | caddy |
 | `VAULT_ROLE_ID_*`, `VAULT_SECRET_ID_*` | the credentials used to reach Vault — necessarily outside it |

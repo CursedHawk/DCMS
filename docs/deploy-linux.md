@@ -187,7 +187,7 @@ EMAIL_PASSWORD=<smtp-password>
 
 # Observability
 GRAFANA_ADMIN_PASSWORD=<long-random-password>
-GRAFANA_OIDC_CLIENT_SECRET=<long-random-secret>
+EDGE_OIDC_CLIENT_SECRET=<long-random-secret>
 GRAFANA_DB_PASSWORD=<long-random-password>
 
 # NATS accounts

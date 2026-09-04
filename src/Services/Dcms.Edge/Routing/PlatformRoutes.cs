@@ -1,3 +1,5 @@
+using Dcms.Edge.Auth;
+using Dcms.Edge.Transforms;
 using Yarp.ReverseProxy.Configuration;
 
 namespace Dcms.Edge.Routing;
@@ -50,7 +52,36 @@ public static class PlatformRoutes
     /// </summary>
     private static readonly string[] IdentityPrefixes = ["/connect", "/account", "/.well-known"];
 
-    public static (IReadOnlyList<RouteConfig> Routes, IReadOnlyList<ClusterConfig> Clusters) Build(EdgeOptions options)
+    /// <summary>
+    /// Forgejo's git-over-HTTP and API surface, which must NEVER be given an identity header.
+    ///
+    /// <para>These requests already carry a credential: the per-user Basic password
+    /// <c>ForgejoUserSync</c> provisions, or an API token. Asserting a browser session's identity
+    /// on top of that does not add a check, it REPLACES one — a `git push` would be attributed
+    /// to whoever happens to be signed in in that browser rather than to the credential the
+    /// client presented. In a server holding every tenant's site repositories, that is a commit
+    /// under someone else's name and a permission check against the wrong account.</para>
+    ///
+    /// <para>Ordered ahead of the web-UI catch-all so they win. <c>{repo}</c> captures a
+    /// <c>.git</c> suffix on its own, so both URL shapes are covered by one template.
+    /// <see cref="IdentityHeaders"/> refuses to inject on any request carrying an
+    /// <c>Authorization</c> header as well, because getting this list wrong is the expensive
+    /// direction and one guard is not enough for it.</para>
+    /// </summary>
+    private static readonly string[] ForgejoGitPaths =
+    [
+        "/{owner}/{repo}/info/refs",
+        "/{owner}/{repo}/git-upload-pack",
+        "/{owner}/{repo}/git-receive-pack",
+        "/{owner}/{repo}/git-upload-archive",
+        "/{owner}/{repo}/info/lfs/{**catch-all}",
+        "/{owner}/{repo}/objects/{**catch-all}",
+        "/api/v1/{**catch-all}",
+        "/api/internal/{**catch-all}",
+    ];
+
+    public static (IReadOnlyList<RouteConfig> Routes, IReadOnlyList<ClusterConfig> Clusters) Build(
+        EdgeOptions options, bool authEnabled = false)
     {
         var admin = options.AdminHost;
         var platform = options.PlatformHost;
@@ -86,10 +117,51 @@ public static class PlatformRoutes
         routes.Add(Prefix("admin-hub", [admin], "/hub", ContentApi, order: 31));
 
         // ---- Static SPAs and the two third-party consoles (nginx does SPA fallback) ----
-        routes.Add(CatchAll("admin-spa", [admin], AdminSpa, order: 50));
         routes.Add(CatchAll("platform-spa", [platform], PlatformSpa, order: 50));
-        routes.Add(CatchAll("grafana", [options.GrafanaHost], Grafana, order: 50));
-        routes.Add(CatchAll("forgejo", [options.GitHost], Forgejo, order: 50));
+        routes.Add(CatchAll("admin-spa", [admin], AdminSpa, order: 50));
+
+        // ---- Grafana: gated at the edge, and signed in by header ----
+        //
+        // Before this, an unauthorized request reached Grafana and Grafana decided. Now it is
+        // refused here, so a non-SuperAdmin never appears in Grafana's access log at all --
+        // which is also the thing to check when verifying the gate actually gates.
+        var grafana = CatchAll("grafana", [options.GrafanaHost], Grafana, order: 50);
+        if (authEnabled)
+        {
+            grafana = grafana with
+            {
+                AuthorizationPolicy = EdgePolicies.SuperAdmin,
+                Metadata = new Dictionary<string, string> { [IdentityHeaders.MetadataKey] = IdentityHeaders.Grafana },
+            };
+        }
+        routes.Add(grafana);
+
+        // ---- Forgejo: git first, then the web UI ----
+        //
+        // The git and API paths carry their own credential and are left entirely alone: no
+        // policy, no header. Gating them would break `git clone` over HTTPS for every tenant
+        // site, and heading them would break it worse -- silently, by pushing as the wrong user.
+        routes.AddRange(ForgejoGitPaths.Select((path, i) => new RouteConfig
+        {
+            RouteId = $"forgejo-git-{i}",
+            ClusterId = Forgejo,
+            Order = 45,
+            Match = new RouteMatch { Hosts = [options.GitHost], Path = path },
+        }));
+
+        var forgejo = CatchAll("forgejo", [options.GitHost], Forgejo, order: 50);
+        if (authEnabled)
+        {
+            forgejo = forgejo with
+            {
+                // Signed in as anybody, not SuperAdmin: Forgejo's accounts mirror every DCMS
+                // user, and it does its own per-repository authorization once it knows who is
+                // asking. The edge's job here is to answer that question, not to narrow it.
+                AuthorizationPolicy = EdgePolicies.SignedIn,
+                Metadata = new Dictionary<string, string> { [IdentityHeaders.MetadataKey] = IdentityHeaders.Forgejo },
+            };
+        }
+        routes.Add(forgejo);
 
         // ---- Tenant custom domains: everything else ----
         //

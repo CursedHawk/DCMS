@@ -92,21 +92,67 @@ public class ObservabilityConfigTests
     }
 
     [Fact]
-    public void Grafana_asks_for_a_refresh_token_when_it_intends_to_refresh()
+    public void Grafana_trusts_a_header_only_because_nothing_else_can_reach_it()
     {
         var ini = File.ReadAllText(
             Path.Combine(RepoRoot(), "infra", "observability", "grafana", "grafana.ini"));
 
-        var usesRefresh = Regex.IsMatch(ini, @"^\s*use_refresh_token\s*=\s*true\s*$", RegexOptions.Multiline);
-        if (!usesRefresh) return;
+        var proxyAuth = Regex.Match(ini, @"^\[auth\.proxy\](?<body>[\s\S]*?)(?=^\[|\z)", RegexOptions.Multiline);
+        proxyAuth.Success.Should().BeTrue();
+        if (!Regex.IsMatch(proxyAuth.Groups["body"].Value, @"^\s*enabled\s*=\s*true\s*$", RegexOptions.Multiline))
+        {
+            return;
+        }
 
-        var scopes = Regex.Match(ini, @"^\s*scopes\s*=\s*(?<scopes>.+)$", RegexOptions.Multiline);
-        scopes.Success.Should().BeTrue("the generic_oauth block must declare its scopes");
-        scopes.Groups["scopes"].Value.Should().Contain("offline_access",
-            "Grafana is configured to refresh its OAuth token, and the identity service only "
-            + "issues a refresh token when offline_access is among the granted scopes. Without "
-            + "it, every operator is thrown back to the login screen the moment the 10-minute "
-            + "access token expires — which is what used to happen.");
+        // X-WEBAUTH-USER is a bearer credential in header form: whoever can set it on a request
+        // that reaches Grafana IS that user. The edge strips it from every inbound request, and
+        // Grafana publishes no host port -- those two together are the whole of what makes
+        // header auth safe here, and this asserts the half that lives in compose.
+        //
+        // There is no whitelist to assert instead: it wants an IP, compose assigns them
+        // dynamically, and a value pinned today locks every operator out after the next `up`.
+        foreach (var composeFile in new[] { "docker-compose.yml", "docker-compose.prod.yml", "docker-compose.vps.yml" })
+        {
+            var compose = File.ReadAllText(Path.Combine(RepoRoot(), composeFile));
+            var grafana = Regex.Match(
+                compose, @"^  grafana:\n(?<body>(?:(?:    |\n).*\n)*)", RegexOptions.Multiline);
+            if (!grafana.Success) continue;
+
+            grafana.Groups["body"].Value.Should().NotMatchRegex(@"^\s*ports:",
+                "{0} publishes a host port for Grafana. With auth.proxy enabled that puts "
+                + "X-WEBAUTH-USER within reach of anything on the host, and setting it is the "
+                + "whole of being a platform SuperAdmin.", composeFile);
+        }
+    }
+
+    [Fact]
+    public void Forgejo_never_auto_registers_an_account_the_edge_named()
+    {
+        var compose = File.ReadAllText(Path.Combine(RepoRoot(), "docker-compose.yml"));
+        var forgejo = Regex.Match(
+            compose, @"^  forgejo:\n(?<body>(?:(?:    |\n).*\n)*)", RegexOptions.Multiline);
+        forgejo.Success.Should().BeTrue();
+        var body = forgejo.Groups["body"].Value;
+
+        if (!Regex.IsMatch(body, @"ENABLE_REVERSE_PROXY_AUTHENTICATION:\s*""true"""))
+        {
+            return;
+        }
+
+        // Forgejo usernames are allocated by ForgejoUserSync from the email's local part with a
+        // numeric suffix on collision, so "rgolias" and "rgolias-2" can be two different people.
+        // With auto-registration on, a header naming an account that does not exist yet creates
+        // one -- claiming a name the sync is about to hand somebody else, in a server holding
+        // every tenant's site repositories.
+        body.Should().MatchRegex(@"ENABLE_REVERSE_PROXY_AUTO_REGISTRATION:\s*""false""",
+            "reverse-proxy auth without this creates accounts under names the sync owns");
+
+        // Not 127.0.0.0/8 (Forgejo's default): this container publishes HTTP on the host's
+        // loopback, so trusting loopback would let any process on the host be any git user.
+        var trusted = Regex.Match(body, @"REVERSE_PROXY_TRUSTED_PROXIES:\s*""(?<v>[^""]*)""");
+        trusted.Success.Should().BeTrue("reverse-proxy auth is ignored unless the caller is trusted");
+        trusted.Groups["v"].Value.Should().NotContain("127.0.0.",
+            "Forgejo publishes HTTP on the host loopback, so trusting it defeats the header");
     }
 
     [Theory]

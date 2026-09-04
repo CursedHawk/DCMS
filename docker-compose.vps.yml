@@ -57,13 +57,21 @@ x-vps-identity-seed: &vps-identity-seed
   Identity__Spa__PostLogoutUris: "${PUBLIC_BASE_URL}/"
   Identity__PlatformSpa__RedirectUris: "https://${PLATFORM_HOST:-platform.highgeek.eu}/auth/callback"
   Identity__PlatformSpa__PostLogoutUris: "https://${PLATFORM_HOST:-platform.highgeek.eu}/"
-  # Grafana SSO. The secret must equal the grafana container's GRAFANA_OIDC_CLIENT_SECRET,
-  # and Grafana cannot read Vault -- so this one stays in .env on both sides rather than
-  # becoming a value that lives in Vault for one reader and .env for the other.
-  # Left unset -> the client is not seeded and Grafana falls back to its break-glass
-  # local admin login, which is the safe direction to fail.
-  Identity__Grafana__Secret: "${GRAFANA_OIDC_CLIENT_SECRET:-}"
-  Identity__Grafana__RedirectUris: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}/login/generic_oauth"
+  # The edge's OIDC client, which replaced Grafana's own. The secret must equal the edge
+  # container's Edge__Auth__ClientSecret; it stays in .env rather than Vault because two
+  # different services read it and a value that lived in one service's Vault path would have to
+  # be duplicated into the other's, where the two copies can drift apart in silence.
+  #
+  # Left unset -> the client is not seeded, the edge disables its own authentication, and
+  # Grafana and Forgejo fall back to their own sign-in. That is the safe direction to fail:
+  # this is the public ingress, and refusing to serve tenant sites over a missing operator
+  # credential would be the wrong trade.
+  #
+  # One redirect URI per gated host. Exact matches, not a wildcard -- that is what makes a
+  # stolen authorization code useless on the other host.
+  Identity__Edge__Secret: "${EDGE_OIDC_CLIENT_SECRET:-}"
+  Identity__Edge__RedirectUris: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}/.edge/signin-oidc;https://${GIT_HOST:-git.highgeek.eu}/.edge/signin-oidc"
+  Identity__Edge__PostLogoutUris: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}/.edge/signout-callback-oidc;https://${GIT_HOST:-git.highgeek.eu}/.edge/signout-callback-oidc"
 
 x-vps-resource-auth: &vps-resource-auth
   # Discover the OIDC metadata internally over HTTP (no public DNS / TLS needed

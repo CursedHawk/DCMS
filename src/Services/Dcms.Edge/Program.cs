@@ -1,4 +1,5 @@
 using Dcms.Edge;
+using Dcms.Edge.Auth;
 using Dcms.Edge.Certificates;
 using Dcms.Edge.Routing;
 using Dcms.Edge.Transforms;
@@ -20,6 +21,7 @@ builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.Configure<EdgeOptions>(builder.Configuration.GetSection(EdgeOptions.SectionName));
 builder.Services.Configure<CertificateOptions>(builder.Configuration.GetSection(CertificateOptions.SectionName));
+builder.Services.Configure<EdgeAuthOptions>(builder.Configuration.GetSection(EdgeAuthOptions.SectionName));
 
 // ---- Routing ----
 builder.Services.AddSingleton<DatabaseRouteSource>();
@@ -59,6 +61,11 @@ builder.Services.AddSingleton<IConfigureOptions<KestrelServerOptions>, EdgeTlsCo
 builder.Services.AddHealthChecks()
     .AddCheck<RouteTableHealthCheck>("edge-routes", tags: ["ready"]);
 
+// Cookie + OIDC against identity, and the two policies routes name. A no-op without a client
+// secret, in which case no route carries a policy either -- see EdgeAuthOptions.ClientSecret for
+// why a missing secret opens the loop rather than closing the door.
+builder.AddEdgeAuthentication();
+
 builder.Services.AddReverseProxy().AddTransforms(context =>
 {
     // Caddy's reverse_proxy passes the client's Host through untouched; YARP replaces it with
@@ -72,6 +79,11 @@ builder.Services.AddReverseProxy().AddTransforms(context =>
     // X-Forwarded-For/Proto/Host are YARP defaults and stay on: every service behind the edge
     // reads them through UseForwardedHeaders with all proxies trusted, which is safe only
     // because UseUntrustedHeaderScrubbing below drops whatever the client sent.
+
+    // Per-route, and only where the route asked for it: tells Grafana and Forgejo who signed in
+    // here, so neither has to run its own login. See IdentityHeaders for why that is only safe
+    // alongside the inbound scrubber.
+    context.AddIdentityHeaders();
 });
 
 var app = builder.Build();
@@ -107,6 +119,17 @@ app.UseEdgeHttpsRedirection();
 app.UseEdgeHsts();
 
 app.MapDcmsDefaultEndpoints();
+
+// Before UseAuthorization, so a route carrying a policy has a principal to evaluate. YARP
+// attaches RouteConfig.AuthorizationPolicy as endpoint metadata; without these two lines the
+// metadata is present and nothing enforces it -- which fails open, silently, on the routes
+// that matter most.
+app.UseAuthentication();
+app.UseAuthorization();
+
+// The edge's own handful of endpoints, namespaced under /.edge/ because every host it serves
+// belongs to somebody else.
+app.MapEdgeAuthEndpoints();
 
 // Before the proxy, and matched ahead of every host route. The certificate authority fetches
 // this on the domain it is validating, which is by definition a hostname the proxy would

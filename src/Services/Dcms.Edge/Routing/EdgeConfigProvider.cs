@@ -1,3 +1,4 @@
+using Dcms.Edge.Auth;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Yarp.ReverseProxy.Configuration;
@@ -24,6 +25,7 @@ public sealed class EdgeConfigProvider : IProxyConfigProvider
 {
     private readonly IOptionsMonitor<EdgeOptions> options;
     private readonly DatabaseRouteSource databaseRoutes;
+    private readonly bool authEnabled;
     private readonly ILogger<EdgeConfigProvider> logger;
     private readonly Lock gate = new();
     private volatile EdgeConfig current;
@@ -31,10 +33,16 @@ public sealed class EdgeConfigProvider : IProxyConfigProvider
     public EdgeConfigProvider(
         IOptionsMonitor<EdgeOptions> options,
         DatabaseRouteSource databaseRoutes,
+        IOptions<EdgeAuthOptions> auth,
         ILogger<EdgeConfigProvider> logger)
     {
         this.options = options;
         this.databaseRoutes = databaseRoutes;
+        // Read once, not per rebuild. A route naming a policy the container does not have makes
+        // YARP reject the config as a WHOLE -- every route, not just that one -- and the edge is
+        // left serving 404s. The flag and the policy registration must come from the same
+        // reading of configuration, so neither can move without the other.
+        authEnabled = auth.Value.Enabled;
         this.logger = logger;
         current = BuildConfig(options.CurrentValue);
     }
@@ -64,7 +72,7 @@ public sealed class EdgeConfigProvider : IProxyConfigProvider
 
     private EdgeConfig BuildConfig(EdgeOptions edgeOptions)
     {
-        var (staticRoutes, clusters) = PlatformRoutes.Build(edgeOptions);
+        var (staticRoutes, clusters) = PlatformRoutes.Build(edgeOptions, authEnabled);
 
         // Static first, overlay second. A database row may not replace a platform route: the
         // operator hosts are how the platform is administered, and a route table that can lock

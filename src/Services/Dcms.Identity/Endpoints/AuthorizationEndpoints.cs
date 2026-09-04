@@ -182,6 +182,24 @@ public static class AuthorizationEndpoints
                 .SetDestinations(Destinations.AccessToken, Destinations.IdentityToken));
         }
 
+        // The user's Forgejo account name, when they have one.
+        //
+        // Here rather than derived by whoever needs it, because it CANNOT be derived. Forgejo
+        // usernames come from the email's local part with a numeric suffix on collision
+        // (ForgejoUserSync.CreateWithUniqueNameAsync), so two people whose addresses share a
+        // local part become "rgolias" and "rgolias-2" -- and a service that recomputed the name
+        // would sign one of them in as the other. The edge asserts this to Forgejo's
+        // reverse-proxy auth, in a server holding every tenant's site repositories, so the
+        // difference between "the right name" and "a plausible name" is somebody else's push.
+        //
+        // Absent when the mirror has not run for this user, which the edge treats as "assert
+        // nothing" rather than as a name to invent.
+        if (!string.IsNullOrEmpty(user.ForgejoUsername))
+        {
+            identity.AddClaim(new Claim("forgejo_username", user.ForgejoUsername)
+                .SetDestinations(Destinations.AccessToken, Destinations.IdentityToken));
+        }
+
         var principal = new ClaimsPrincipal(identity);
         principal.SetScopes(scopes);
         await SetResourcesAsync(principal, scopeManager);

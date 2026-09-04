@@ -7,6 +7,7 @@
   <ItemGroup Label="AspNetCore / EF / Identity">
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.Google" Version="10.0.9" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.9" />
     <!-- 10.0.11, not the 10.0.9 the rest of this group uses: DataProtection below
          10.0.10 drags in the vulnerable System.Security.Cryptography.Xml (see the
          note below this group). This one IS resolved as a package by the services,

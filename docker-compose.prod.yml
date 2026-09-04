@@ -376,6 +376,16 @@ services:
       # rollback cannot undo: a browser that has seen the header refuses plain HTTP for the
       # full max-age, so turning it on early turns a bad cutover into a bad week.
       Edge__Certificates__HstsMaxAgeSeconds: "${EDGE_HSTS_MAX_AGE:-0}"
+      # Sign-on at the boundary: the edge authenticates against identity and gates Grafana on
+      # SuperAdmin and the Forgejo web UI on being signed in at all. The authority is the PUBLIC
+      # issuer because that is what identity stamps into every token; back-channel calls are
+      # rewritten onto the internal address by InternalIdentityHandler rather than hairpinning
+      # out through this proxy and back.
+      Edge__Auth__Authority: "${PUBLIC_BASE_URL}"
+      Edge__Auth__InternalAuthority: "http://identity:8080"
+      # Must equal Identity__Edge__Secret. Unset disables edge authentication and both consoles
+      # fall back to their own login -- deliberately, rather than taking the ingress down.
+      Edge__Auth__ClientSecret: "${EDGE_OIDC_CLIENT_SECRET:-}"
     volumes:
       # Read-only. Caddy has been issuing certificates for the live tenant domains; reissuing
       # them all on cutover day spends the ~50-per-registered-domain-per-week budget on names

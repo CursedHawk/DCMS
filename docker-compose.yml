@@ -214,6 +214,27 @@ services:
       # platform-provisioned accounts exist.
       FORGEJO__service__DISABLE_REGISTRATION: "true"
       FORGEJO__security__INSTALL_LOCK: "true"
+      # Reverse-proxy authentication: the edge signs the operator in against DCMS identity and
+      # names them here, so the web UI needs no second login.
+      #
+      # AUTO_REGISTRATION IS OFF, AND THAT IS THE IMPORTANT LINE. Forgejo usernames are
+      # allocated by ForgejoUserSync from the email's local part with a numeric suffix on
+      # collision, so "rgolias" and "rgolias-2" can be two different people. With
+      # auto-registration on, a header naming an account that does not exist yet would CREATE
+      # one -- claiming a name the sync is about to allocate to somebody else. The edge only
+      # asserts a name identity told it (the forgejo_username claim), and a user with no
+      # mirrored account gets Forgejo's own sign-in page instead.
+      FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION: "true"
+      FORGEJO__service__ENABLE_REVERSE_PROXY_AUTO_REGISTRATION: "false"
+      # Not on the API either. /api/v1 carries its own token and the edge routes it around the
+      # header injection entirely; this is the second lock on the same door.
+      FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION_API: "false"
+      FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: "X-WEBAUTH-USER"
+      # The docker bridge range, and deliberately NOT 127.0.0.0/8 (Forgejo's default), because
+      # this container publishes HTTP on the host's loopback. Trusting loopback would let any
+      # process on the host set X-WEBAUTH-USER and be any git user; trusting only the compose
+      # network means the edge is the only thing that can.
+      FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES: "172.16.0.0/12"
       # Webhooks target admin-api on the internal docker network (a private host),
       # which Forgejo's SSRF guard blocks by default — allow the internal range.
       FORGEJO__webhook__ALLOWED_HOST_LIST: "private,loopback"
@@ -257,8 +278,12 @@ services:
       Cors__AllowedOrigins__2: "http://localhost:5174"
       Cors__AllowedOrigins__3: "http://localhost:5010"
       # Grafana SSO against the dev stack, where Grafana is published on 3001.
-      Identity__Grafana__Secret: "${GRAFANA_OIDC_CLIENT_SECRET:-grafana-dev-secret}"
-      Identity__Grafana__RedirectUris: "http://localhost:3001/login/generic_oauth"
+      # The edge's OIDC client. Dev leaves the secret empty by default: the dev edge is not the
+      # ingress (Grafana is reached at localhost:3001 directly), so there is nothing for it to
+      # gate, and an unset secret disables edge authentication on both sides at once.
+      Identity__Edge__Secret: "${EDGE_OIDC_CLIENT_SECRET:-}"
+      Identity__Edge__RedirectUris: "http://localhost:3001/.edge/signin-oidc"
+      Identity__Edge__PostLogoutUris: "http://localhost:3001/.edge/signout-callback-oidc"
 
   # ---------- cluster bootstrap ----------
   #
@@ -353,8 +378,12 @@ services:
       Cors__AllowedOrigins__1: "http://localhost:5000"
       Cors__AllowedOrigins__2: "http://localhost:5174"
       Cors__AllowedOrigins__3: "http://localhost:5010"
-      Identity__Grafana__Secret: "${GRAFANA_OIDC_CLIENT_SECRET:-grafana-dev-secret}"
-      Identity__Grafana__RedirectUris: "http://localhost:3001/login/generic_oauth"
+      # The edge's OIDC client. Dev leaves the secret empty by default: the dev edge is not the
+      # ingress (Grafana is reached at localhost:3001 directly), so there is nothing for it to
+      # gate, and an unset secret disables edge authentication on both sides at once.
+      Identity__Edge__Secret: "${EDGE_OIDC_CLIENT_SECRET:-}"
+      Identity__Edge__RedirectUris: "http://localhost:3001/.edge/signin-oidc"
+      Identity__Edge__PostLogoutUris: "http://localhost:3001/.edge/signout-callback-oidc"
 
   admin-api:
     build:
@@ -554,6 +583,13 @@ services:
       # tenant's issuance failing at once. Production sets this explicitly.
       Edge__Certificates__AcmeDirectory: "${ACME_DIRECTORY:-https://acme-staging-v02.api.letsencrypt.org/directory}"
       Edge__Certificates__ContactEmail: "${ACME_EMAIL:-}"
+      # Cookie + OIDC against identity, which is what gates Grafana and Forgejo. Empty secret
+      # (the dev default) disables it on both sides: no policy on any route, and both consoles
+      # fall back to their own sign-in. See EdgeAuthOptions.ClientSecret for why a missing
+      # secret opens the loop rather than refusing to start.
+      Edge__Auth__Authority: "${PUBLIC_BASE_URL:-http://localhost:8080}"
+      Edge__Auth__InternalAuthority: "http://identity:8080"
+      Edge__Auth__ClientSecret: "${EDGE_OIDC_CLIENT_SECRET:-}"
 
   # A throwaway ACME certificate authority, for proving the edge's issuance path without
   # spending a Let's Encrypt rate limit. OFF unless asked for: `--profile acmetest`.
@@ -941,7 +977,6 @@ services:
     environment:
       GF_PATHS_PROVISIONING: /etc/grafana/provisioning
       GRAFANA_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin-dev}"
-      GRAFANA_OIDC_CLIENT_SECRET: "${GRAFANA_OIDC_CLIENT_SECRET:-grafana-dev-secret}"
       GRAFANA_DB_PASSWORD: "${GRAFANA_DB_PASSWORD:-dcms-grafana-dev}"
       # Read by the provisioned contact point, which posts alerts to admin-api. It must be
       # the same string admin-api is given above, or every alert is silently rejected — and
