@@ -117,10 +117,10 @@ public sealed class CertificateRenewalService(
                 .ToListAsync(ct))
             .ToHashSet(StringComparer.Ordinal);
 
-        var unusable = (await allowList.AllowedHostnamesAsync(ct))
+        var allowed = (await allowList.AllowedHostnamesAsync(ct))
             .Select(CertificateStoreNormalize)
-            .Where(h => !heldSet.Contains(h))
             .ToList();
+        var unusable = allowed.Where(h => !heldSet.Contains(h)).ToList();
 
         // A placeholder row is already in `due` (its NotAfter is -infinity), so ordering it
         // here as well would spend two of the CA's ~50 weekly certificates on one hostname.
@@ -193,11 +193,23 @@ public sealed class CertificateRenewalService(
         // built on, and renewal stopping is invisible until it is catastrophic: nothing about a
         // working platform says it has stopped, until every tenant's site goes to a browser
         // warning on the same afternoon.
-        var total = await db.Certificates.CountAsync(c => c.EncryptedPrivateKey != "", ct);
+        //
+        // RECOUNTED AFTER the work, not reused from before it. The first version reported the
+        // start-of-pass figure alongside end-of-pass issue and renew counts, so a sweep that had
+        // just fixed everything still logged "4 cannot serve TLS, 6 renewed" -- which reads as
+        // four hostnames still broken, and sent me looking for them. The gauge had the same
+        // flaw and would have alerted for a full hour after the platform recovered.
+        var usable = await db.Certificates
+            .Where(c => c.EncryptedPrivateKey != "")
+            .Select(c => c.Hostname)
+            .ToListAsync(ct);
+        var usableSet = usable.ToHashSet(StringComparer.Ordinal);
+        var stillUnusable = allowed.Count(h => !usableSet.Contains(h));
+
         var failing = await db.Certificates.CountAsync(c => c.ConsecutiveFailures > 0, ct);
-        metrics.SetEdgeCertificateState("total", total);
+        metrics.SetEdgeCertificateState("total", usable.Count);
         metrics.SetEdgeCertificateState("due", due.Count);
-        metrics.SetEdgeCertificateState("missing", unusable.Count);
+        metrics.SetEdgeCertificateState("missing", stillUnusable);
         metrics.SetEdgeCertificateState("failing", failing);
 
         // Logged even when everything is zero, for the same reason. A sweep that finds nothing
@@ -205,7 +217,7 @@ public sealed class CertificateRenewalService(
         logger.LogInformation(
             "Certificate sweep: {Missing} cannot serve TLS, {Issued} issued, {Due} due, "
             + "{Renewed} renewed, {Failed} failed, {Total} usable.",
-            unusable.Count, issued, due.Count, renewed, failed, total);
+            stillUnusable, issued, due.Count, renewed, failed, usable.Count);
     }
 
     /// <summary>

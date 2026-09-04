@@ -88,6 +88,26 @@ public sealed class CertificateSweepTests : IAsyncLifetime
     }
 
     [DockerFact]
+    public async Task Reports_the_state_it_leaves_behind_not_the_one_it_found()
+    {
+        // The gauge and the log line are read as "is the platform serving TLS right now". If
+        // they carry the start-of-pass figure they say "4 cannot serve TLS" beside "6 renewed"
+        // in the same breath -- which reads as four hostnames still broken, and the alert built
+        // on it keeps firing for the full hour until the next sweep. Both are recounted after
+        // the work.
+        var issuer = new FakeAcme();
+        var service = BuildSweep(issuer, allowed: ["admin.highgeek.eu", "shop.tenant.example"]);
+
+        await RunOneSweepAsync(service, until: () => issuer.Ordered.Count >= 2);
+
+        var missing = meters.LastValue("dcms.edge.certificates", "missing");
+        var total = meters.LastValue("dcms.edge.certificates", "total");
+
+        missing.Should().Be(0, "both hostnames were issued during this very pass");
+        total.Should().Be(2);
+    }
+
+    [DockerFact]
     public async Task Does_not_reorder_a_hostname_it_already_holds()
     {
         // Let's Encrypt allows ~50 certificates per registered domain per week, and every
@@ -408,6 +428,39 @@ public sealed class CertificateSweepTests : IAsyncLifetime
     private sealed class TestMeterFactory : IMeterFactory
     {
         private readonly List<Meter> created = [];
+        private readonly MeterListener listener = new();
+        private readonly Dictionary<string, long> observed = [];
+
+        public TestMeterFactory()
+        {
+            listener.InstrumentPublished = (instrument, l) => l.EnableMeasurementEvents(instrument);
+            listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+            {
+                var state = "";
+                foreach (var tag in tags)
+                {
+                    if (tag.Key == "state")
+                    {
+                        state = tag.Value?.ToString() ?? "";
+                    }
+                }
+                lock (observed)
+                {
+                    observed[$"{instrument.Name}|{state}"] = value;
+                }
+            });
+            listener.Start();
+        }
+
+        /// <summary>The last value published for one instrument/state pair, or null.</summary>
+        public long? LastValue(string instrument, string state)
+        {
+            listener.RecordObservableInstruments();
+            lock (observed)
+            {
+                return observed.TryGetValue($"{instrument}|{state}", out var value) ? value : null;
+            }
+        }
 
         public Meter Create(MeterOptions options)
         {
@@ -418,6 +471,7 @@ public sealed class CertificateSweepTests : IAsyncLifetime
 
         public void Dispose()
         {
+            listener.Dispose();
             foreach (var meter in created)
             {
                 meter.Dispose();
