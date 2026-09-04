@@ -359,11 +359,11 @@ services:
       VAULT_ROLE_ID: "${VAULT_ROLE_ID_SITE_HOST:-}"
       VAULT_SECRET_ID: "${VAULT_SECRET_ID_SITE_HOST:-}"
 
-  # The YARP edge, published on loopback ONLY, so its route table can be exercised against the
-  # real stack before it is given the public ports. Caddy is untouched and still the only
-  # ingress -- deliberately, because editing the live Caddyfile to add a test route risks the
-  # one failure the deploy cannot see: a file that fails to parse leaves the container up and
-  # every health signal green while nothing is served.
+  # The YARP edge. Until the cutover it is published on loopback ONLY, so its route table can
+  # be exercised against the real stack before it is given the public ports. Caddy is untouched
+  # and still the only ingress -- deliberately, because editing the live Caddyfile to add a
+  # test route risks the one failure the deploy cannot see: a file that fails to parse leaves
+  # the container up and every health signal green while nothing is served.
   #
   # Verify from the host with an explicit Host header, which is the whole of what the route
   # table keys on:
@@ -371,13 +371,31 @@ services:
   #   curl -si -H 'Host: platform.highgeek.eu' http://127.0.0.1:8090/api/platform/observability
   #   curl -si -H 'Host: some.tenant.example'  http://127.0.0.1:8090/
   #
-  # Remove this binding at the Phase 3 cutover, when the edge takes 80/443 for real.
+  # THE CUTOVER, and its rollback, are both .env edits plus one `compose up -d` -- no pipeline
+  # round trip while the site is down. In order, in a single edit, then `up -d caddy edge`:
+  #
+  #   EDGE_IMPORT_FROM_CADDY=/caddy-data      # this deploy only; clear it afterwards
+  #   ACME_DIRECTORY=https://acme-v02.api.letsencrypt.org/directory
+  #   EDGE_TLS_ENABLED=true
+  #   CADDY_HTTP_PUBLISH=127.0.0.1:8081       # Caddy keeps running, off the public ports
+  #   CADDY_HTTPS_PUBLISH=127.0.0.1:8444
+  #   EDGE_HTTP_PUBLISH=80
+  #   EDGE_HTTPS_PUBLISH=443
+  #
+  # To roll back, delete those seven lines and `up -d` again: Caddy still holds its own /data
+  # and resumes serving from the certificates it never stopped owning. Defaults below are the
+  # pre-cutover bindings, so a host that sets none of this is unchanged.
+  #
+  # The container runs as a non-root uid and cannot bind :80/:443 itself; Docker does the
+  # privileged half, which is why the listeners stay on 8080/8443 either way. Edge:Certificates
+  # :PublicHttpsPort (443) is what redirects are built from, not the listener port.
   edge:
     environment:
       VAULT_ROLE_ID: "${VAULT_ROLE_ID_EDGE:-}"
       VAULT_SECRET_ID: "${VAULT_SECRET_ID_EDGE:-}"
     ports:
-      - "127.0.0.1:8090:8080"
+      - "${EDGE_HTTP_PUBLISH:-127.0.0.1:8090}:8080"
+      - "${EDGE_HTTPS_PUBLISH:-127.0.0.1:8453}:8443"
 
 volumes:
   postgres-data:

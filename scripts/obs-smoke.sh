@@ -26,7 +26,11 @@ fail() { printf '[FAIL] %s\n' "$1"; FAILURES=$((FAILURES + 1)); }
 # reach all of these anyway.
 fetch() { $COMPOSE exec -T prometheus wget -qO- --timeout=10 "$1" 2>/dev/null; }
 
-SERVICES="identity admin-api content-api ai-gateway media-worker site-builder site-host email-worker"
+# edge is here for exactly the reason the per-service block below explains: like
+# site-builder and email-worker before it, it opts out of the *service-env compose anchor
+# for least privilege, which is how a service ends up exporting nothing while the global
+# counts stay green. It is the public ingress, so it is the worst one to lose sight of.
+SERVICES="identity admin-api content-api ai-gateway media-worker site-builder site-host email-worker edge"
 
 echo "== containers"
 for s in grafana prometheus loki tempo alloy; do
@@ -88,6 +92,19 @@ for probe in \
         grep -o '"value":\[[^]]*\]' | head -1)
     [ -n "$n" ] && ok "$what" || fail "$metric has no series — $what is not reaching Prometheus"
 done
+
+# The edge's certificate inventory, and only once the edge is the thing terminating TLS.
+# Before the cutover the renewal sweep does not run, so the gauge legitimately has no series
+# and asserting on it would fail a healthy stack. After it, an absent gauge means the sweep
+# has stopped -- the one failure that stays invisible until every tenant's site goes to a
+# browser warning on the same afternoon. Published on every pass including an empty one, so
+# like the probes above it distinguishes "unwired" from "idle".
+if grep -qs '^EDGE_TLS_ENABLED=true' .env; then
+    n=$(fetch "http://localhost:9090/api/v1/query?query=count(dcms_edge_certificates)" |
+        grep -o '"value":\[[^]]*\]' | head -1)
+    [ -n "$n" ] && ok "edge certificate inventory (the renewal sweep is running)" \
+        || fail "dcms_edge_certificates has no series — the certificate renewal sweep is not running"
+fi
 
 echo
 echo "== every service is exporting, not just some of them"

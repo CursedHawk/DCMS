@@ -654,10 +654,13 @@ $C up -d
 
 Differences from dev (`docker-compose.prod.yml`):
 
-- **Caddy** is the only public ingress, terminating TLS for tenant custom domains
-  via on-demand TLS. Caddy asks `site-host` `GET /internal/tls-allowed?domain=…`
-  before minting a cert, so certificates are issued only for verified+linked
-  domains. ACME email via `ACME_EMAIL`.
+- **Caddy** is the public ingress until the edge cutover below, terminating TLS for
+  tenant custom domains via on-demand TLS. Caddy asks `site-host`
+  `GET /internal/tls-allowed?domain=…` before minting a cert, so certificates are
+  issued only for verified+linked domains. ACME email via `ACME_EMAIL`.
+- **`edge`** (`Dcms.Edge`) is the YARP proxy that replaces it. Until the cutover it
+  runs alongside Caddy on loopback `127.0.0.1:8090` with TLS off, serving the same
+  route table so it can be checked against the real stack. See below.
 - **Vault** runs in real server mode (`infra/vault/server/config.hcl`, file storage, no
   dev root token). The operator runs `vault operator init` + unseal on first boot
   and provisions the KV/Transit paths + per-service AppRoles (layout mirrors
@@ -670,6 +673,59 @@ Differences from dev (`docker-compose.prod.yml`):
   `Production` environment with `Auth:RequireHttpsMetadata=true`.
 
 Postgres RLS (ADR 0005) is enabled in every profile as defense-in-depth.
+
+### The Caddy → edge cutover
+
+Both proxies are defined at all times and the switch is entirely in `.env`, so the
+rollback costs nothing and needs no pipeline round trip — which matters, because a bad
+cutover is a total outage of every tenant site at once.
+
+**Before:** confirm the edge already routes correctly, with the Host header it will key
+on in production. This is the whole of what the route table matches:
+
+```sh
+curl -si -H 'Host: admin.highgeek.eu'    http://127.0.0.1:8090/api/admin/domains
+curl -si -H 'Host: platform.highgeek.eu' http://127.0.0.1:8090/api/platform/observability
+curl -si -H 'Host: <a live tenant domain>' http://127.0.0.1:8090/
+```
+
+**The switch.** One edit to `.env`, then `$C up -d caddy edge`:
+
+```sh
+EDGE_IMPORT_FROM_CADDY=/caddy-data      # THIS DEPLOY ONLY; clear it afterwards
+ACME_DIRECTORY=https://acme-v02.api.letsencrypt.org/directory
+EDGE_TLS_ENABLED=true
+CADDY_HTTP_PUBLISH=127.0.0.1:8081       # Caddy keeps running, off the public ports
+CADDY_HTTPS_PUBLISH=127.0.0.1:8444
+EDGE_HTTP_PUBLISH=80
+EDGE_HTTPS_PUBLISH=443
+```
+
+`EDGE_IMPORT_FROM_CADDY` is the line that makes this a port swap rather than a mass
+reissue: it copies the certificates Caddy already holds into `edge.certificates` before
+the TLS listener opens. Without it every live tenant domain is issued on demand inside a
+visitor's handshake, in the same minute, and the burst trips the ~50-per-registered-domain
+weekly Let's Encrypt limit — which then blocks the ones still queued, for a week.
+
+**After:** compare issuer and serial against what was being served before.
+
+```sh
+openssl s_client -servername admin.highgeek.eu -connect 127.0.0.1:443 </dev/null 2>/dev/null \
+  | openssl x509 -noout -issuer -serial -dates
+```
+
+Then `scripts/obs-smoke.sh` — with `EDGE_TLS_ENABLED=true` it additionally asserts
+`dcms_edge_certificates` has series, which is how you find out the renewal sweep is not
+running before the certificates start expiring rather than after.
+
+**Rollback:** delete those seven lines and `$C up -d caddy edge`. Caddy never stopped and
+still owns its own `/data`, so it resumes from the certificates it has been renewing all
+along. The one thing a rollback cannot undo is HSTS — leave `EDGE_HSTS_MAX_AGE` at 0 until
+the cutover has been green for a while, because a browser that has seen the header refuses
+plain HTTP for the full max-age no matter which proxy is answering.
+
+Once the edge has been green for a week: delete `infra/caddy/`, the compose service, and
+the `caddy-data`/`caddy-config` volumes.
 
 ## Observability
 

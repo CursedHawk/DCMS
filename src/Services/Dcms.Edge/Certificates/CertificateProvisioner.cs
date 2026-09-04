@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net.Security;
 using Dcms.Shared.Data.Edge;
+using Dcms.Shared.Telemetry;
 using Microsoft.Extensions.Options;
 
 namespace Dcms.Edge.Certificates;
@@ -17,6 +18,7 @@ public sealed class CertificateProvisioner(
     ICertificateStore store,
     IAcmeIssuer issuer,
     ITlsAllowList allowList,
+    DcmsMetrics metrics,
     IOptions<CertificateOptions> options,
     ILogger<CertificateProvisioner> logger)
 {
@@ -70,12 +72,14 @@ public sealed class CertificateProvisioner(
         {
             var issued = await issuer.IssueAsync(hostname, ct);
             await store.SaveAsync(hostname, issued.PemChain, issued.PemPrivateKey, CertificateSource.DcmsManaged, ct);
+            metrics.EdgeCertificate("issued");
             return await store.GetAsync(hostname, ct);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Certificate issuance failed for {Hostname}.", hostname);
             await store.RecordFailureAsync(hostname, ex.Message, CancellationToken.None);
+            metrics.EdgeCertificate("failed");
             return null;
         }
     }

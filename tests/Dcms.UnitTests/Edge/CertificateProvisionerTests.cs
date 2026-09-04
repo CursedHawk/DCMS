@@ -1,5 +1,7 @@
 using Dcms.Edge.Certificates;
 using Dcms.Shared.Data.Edge;
+using Dcms.Shared.Telemetry;
+using Dcms.UnitTests.Audit;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -126,6 +128,7 @@ public class CertificateProvisionerTests
         allowList.IsAllowedAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(allowed);
         return new CertificateProvisioner(
             store, issuer, allowList,
+            new DcmsMetrics(new TestMeterFactory()),
             Options.Create(new CertificateOptions()),
             NullLogger<CertificateProvisioner>.Instance);
     }

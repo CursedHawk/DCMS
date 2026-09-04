@@ -510,8 +510,19 @@ services:
         condition: service_started
       vault:
         condition: service_started
+    # /health, not /health/live, and that is the whole point of replacing Caddy's probe.
+    # Caddy's healthcheck hit its metrics listener, which proved the config parsed and nothing
+    # more; a proxy that starts with an empty route table answers every request with a 404 and
+    # every signal stays green. RouteTableHealthCheck is registered under `ready`, so only the
+    # full endpoint runs it.
+    #
+    # It also folds in the Postgres and Redis checks, which means a store outage marks the
+    # ingress unhealthy while it is still serving every route from the static table. That is
+    # the truth worth reporting rather than a false alarm: with Postgres down the edge cannot
+    # issue a certificate or pick up a route change. Docker reports it and does not restart it
+    # -- restart: unless-stopped acts on exit, not on health -- so the edge keeps proxying.
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/live || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

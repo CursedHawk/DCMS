@@ -6,6 +6,7 @@ using Dcms.Shared.Caching;
 using Dcms.Shared.Data.Edge;
 using Dcms.Shared.Hosting;
 using Dcms.Shared.Messaging;
+using Dcms.Shared.Telemetry;
 using Dcms.Shared.Vault;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
@@ -43,6 +44,7 @@ builder.Services.AddSingleton<IAcmeIssuer, CertesAcmeIssuer>();
 builder.Services.AddSingleton<CertificateProvisioner>();
 builder.Services.AddHttpClient<TlsAllowList>(client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddSingleton<ITlsAllowList>(sp => sp.GetRequiredService<TlsAllowList>());
+builder.Services.AddSingleton<CaddyCertificateImporter>();
 builder.Services.AddHostedService<CertificateRenewalService>();
 builder.Services.AddHostedService<DomainCertificateProvisioner>();
 
@@ -50,6 +52,12 @@ builder.Services.AddHostedService<DomainCertificateProvisioner>();
 // configurator rather than configured inline, because the SNI callback needs the container and
 // the container does not exist yet when ConfigureKestrel runs.
 builder.Services.AddSingleton<IConfigureOptions<KestrelServerOptions>, EdgeTlsConfigurator>();
+
+// The check the Caddy container's probe was reaching for and could only approximate: a proxy
+// that starts with an empty route table is a broken deploy that answers every request with a
+// 404, and nothing about the process says so.
+builder.Services.AddHealthChecks()
+    .AddCheck<RouteTableHealthCheck>("edge-routes", tags: ["ready"]);
 
 builder.Services.AddReverseProxy().AddTransforms(context =>
 {
@@ -68,6 +76,19 @@ builder.Services.AddReverseProxy().AddTransforms(context =>
 
 var app = builder.Build();
 
+// Before the server starts listening, not from a hosted service: a hosted service's start order
+// relative to Kestrel is a detail of how the host was built, and importing certificates AFTER
+// the TLS listener opens would leave a window in which every tenant domain has none.
+//
+// Only for the deploy that performs the cutover, which is the one that mounts Caddy's data
+// directory read-only. Every deploy after it finds no path and does nothing. See
+// CaddyCertificateImporter for why skipping this makes the cutover an outage.
+if (app.Configuration["Edge:Certificates:ImportFromCaddyPath"] is { Length: > 0 } caddyDataPath)
+{
+    await app.Services.GetRequiredService<CaddyCertificateImporter>()
+        .ImportAsync(caddyDataPath, CancellationToken.None);
+}
+
 // First in the pipeline, so an exception anywhere below it becomes a ProblemDetails carrying
 // the trace id instead of a bare Kestrel 500 with no body and nothing to quote.
 app.UseDcmsProblemDetails();
@@ -75,6 +96,15 @@ app.UseDcmsProblemDetails();
 // Before routing, and before anything can read a request header: the edge is the trust
 // boundary, and everything behind it trusts its caller completely.
 app.UseUntrustedHeaderScrubbing();
+
+// After the scrubber (so the Host it counts is one a client cannot forge into a header) and
+// before the redirect (so a redirected request is still counted as traffic the edge handled).
+app.UseEdgeRequestMetrics();
+
+// Exempts the ACME challenge and the health probes; see UseEdgeHttpsRedirection for why both
+// of those exemptions are load-bearing rather than tidy.
+app.UseEdgeHttpsRedirection();
+app.UseEdgeHsts();
 
 app.MapDcmsDefaultEndpoints();
 

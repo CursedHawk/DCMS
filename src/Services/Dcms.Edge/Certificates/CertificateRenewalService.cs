@@ -1,5 +1,6 @@
 using Dcms.Shared.Data;
 using Dcms.Shared.Data.Edge;
+using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -25,6 +26,7 @@ public sealed class CertificateRenewalService(
     IAcmeIssuer issuer,
     IOptions<CertificateOptions> options,
     IConfiguration configuration,
+    DcmsMetrics metrics,
     TimeProvider clock,
     ILogger<CertificateRenewalService> logger) : BackgroundService
 {
@@ -96,20 +98,32 @@ public sealed class CertificateRenewalService(
             {
                 var issued = await issuer.IssueAsync(hostname, ct);
                 await store.SaveAsync(hostname, issued.PemChain, issued.PemPrivateKey, CertificateSource.DcmsManaged, ct);
+                metrics.EdgeCertificate("renewed");
                 renewed++;
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Renewal failed for {Hostname}.", hostname);
                 await store.RecordFailureAsync(hostname, ex.Message, CancellationToken.None);
+                metrics.EdgeCertificate("failed");
                 failed++;
             }
         }
 
-        // Logged even when everything is zero. A sweep that finds nothing to do and a sweep that
-        // is not running produce identical silence otherwise, and only one of them is fine.
+        // Published on every pass, including an empty one. These are the numbers an alert is
+        // built on, and renewal stopping is invisible until it is catastrophic: nothing about a
+        // working platform says it has stopped, until every tenant's site goes to a browser
+        // warning on the same afternoon.
+        var total = await db.Certificates.CountAsync(ct);
+        var failing = await db.Certificates.CountAsync(c => c.ConsecutiveFailures > 0, ct);
+        metrics.SetEdgeCertificateState("total", total);
+        metrics.SetEdgeCertificateState("due", due.Count);
+        metrics.SetEdgeCertificateState("failing", failing);
+
+        // Logged even when everything is zero, for the same reason. A sweep that finds nothing
+        // to do and a sweep that is not running produce identical silence otherwise.
         logger.LogInformation(
-            "Certificate renewal sweep: {Due} due, {Renewed} renewed, {Failed} failed.",
-            due.Count, renewed, failed);
+            "Certificate renewal sweep: {Due} due, {Renewed} renewed, {Failed} failed, {Total} held.",
+            due.Count, renewed, failed, total);
     }
 }

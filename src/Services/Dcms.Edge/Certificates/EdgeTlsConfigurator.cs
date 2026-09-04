@@ -34,6 +34,11 @@ public sealed class EdgeTlsConfigurator(
             return;
         }
 
+        // Both ports, together. Kestrel ignores ASPNETCORE_URLS the moment any explicit Listen
+        // call is made, so binding only HTTPS here would silently drop the HTTP listener the
+        // ACME challenge and the redirect both need.
+        kestrel.ListenAnyIP(config.HttpPort, listen => listen.Protocols = HttpProtocols.Http1AndHttp2);
+
         kestrel.ListenAnyIP(config.HttpsPort, listen =>
         {
             listen.Protocols = HttpProtocols.Http1AndHttp2;
@@ -46,7 +51,9 @@ public sealed class EdgeTlsConfigurator(
             });
         });
 
-        logger.LogInformation("Edge TLS listener on :{Port}.", config.HttpsPort);
+        logger.LogInformation(
+            "Edge listening on :{HttpPort} (ACME challenge and HTTPS redirect) and :{HttpsPort} (TLS).",
+            config.HttpPort, config.HttpsPort);
     }
 
     private async ValueTask<SslServerAuthenticationOptions> SelectCertificateAsync(TlsHandshakeCallbackContext context)

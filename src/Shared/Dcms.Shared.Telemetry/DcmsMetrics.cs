@@ -62,6 +62,12 @@ public sealed class DcmsMetrics : IDisposable
     private readonly Counter<long> _tenantsCreated;
     private readonly Counter<long> _pluginInstanceChanges;
 
+    // Edge
+    private readonly Counter<long> _edgeRequests;
+    private readonly Counter<long> _edgeCertificates;
+    private readonly ConcurrentDictionary<string, long> _edgeCertificateStates = new();
+    private readonly ObservableGauge<long> _edgeCertificateState;
+
     // Pipelines
     private readonly ConcurrentDictionary<string, long> _outboxDepths = new();
     private readonly ObservableGauge<long> _outboxDepth;
@@ -115,6 +121,26 @@ public sealed class DcmsMetrics : IDisposable
             "dcms.tenant.created", "{tenant}", "Tenants provisioned.");
         _pluginInstanceChanges = _meter.CreateCounter<long>(
             "dcms.plugin.instance", "{change}", "Plugin instances created, enabled or disabled.");
+
+        // The edge's own request counter, tagged by the hostname it was asked for.
+        //
+        // This is the one deliberate exception to the cardinality rule above, and it is
+        // inherited rather than invented: the Caddyfile carried the same label set for the same
+        // reason, and said so. A series per tenant domain is what makes "which site is being
+        // hit" answerable at all, and the domain count is bounded by the tenants who have
+        // verified one. If custom domains ever run to thousands, this is the thing to revisit
+        // first -- the cardinality is in hostnames, not in paths, which are deliberately absent.
+        _edgeRequests = _meter.CreateCounter<long>(
+            "dcms.edge.request", "{request}", "Requests served by the public edge, by host and status class.");
+
+        // Renewal failure is invisible until it is catastrophic: nothing about a working
+        // platform says renewal has stopped, until every tenant's site goes to a browser warning
+        // on the same afternoon. This is what an alert can be built on.
+        _edgeCertificates = _meter.CreateCounter<long>(
+            "dcms.edge.certificate", "{certificate}", "Certificate issuance and renewal attempts, by outcome.");
+        _edgeCertificateState = _meter.CreateObservableGauge(
+            "dcms.edge.certificates", ObserveEdgeCertificateStates, "{certificate}",
+            "Certificates the edge holds, by state: total, due for renewal, or failing.");
 
         // A gauge rather than a counter: depth is a level, and the question asked of it is
         // always "is it going up", which a counter cannot answer. Observed from a dictionary
@@ -200,6 +226,34 @@ public sealed class DcmsMetrics : IDisposable
     /// its last value, which is indistinguishable from a stuck dispatcher.
     /// </summary>
     public void OutboxDepth(string outbox, long depth) => _outboxDepths[outbox] = depth;
+
+    /// <summary>
+    /// One request served by the public edge. <paramref name="host"/> is the hostname asked for,
+    /// <paramref name="statusClass"/> is "2xx".."5xx" rather than the exact code — the exact code
+    /// is in the trace, and putting it here would multiply every host's series by the number of
+    /// status codes a scanner can provoke.
+    /// </summary>
+    public void EdgeRequest(string host, string statusClass) =>
+        _edgeRequests.Add(1, new KeyValuePair<string, object?>("host", host), new("status", statusClass));
+
+    /// <summary>An issuance or renewal attempt finished. <paramref name="outcome"/> is issued, renewed or failed.</summary>
+    public void EdgeCertificate(string outcome) =>
+        _edgeCertificates.Add(1, new KeyValuePair<string, object?>("outcome", outcome));
+
+    /// <summary>
+    /// Publishes the certificate inventory after a renewal sweep. Set from the sweep rather than
+    /// queried by the gauge, for the same reason as the outbox depths above: the value only
+    /// exists after a database query, and the meter must not be the thing that runs one.
+    /// </summary>
+    public void SetEdgeCertificateState(string state, long count) => _edgeCertificateStates[state] = count;
+
+    private IEnumerable<Measurement<long>> ObserveEdgeCertificateStates()
+    {
+        foreach (var (state, count) in _edgeCertificateStates)
+        {
+            yield return new Measurement<long>(count, new KeyValuePair<string, object?>("state", state));
+        }
+    }
 
     private IEnumerable<Measurement<long>> ObserveOutboxDepths()
     {

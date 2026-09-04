@@ -358,11 +358,29 @@ services:
       Edge__PlatformHost: "${PLATFORM_HOST:-platform.highgeek.eu}"
       Edge__GrafanaHost: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
       Edge__GitHost: "${GIT_HOST:-git.highgeek.eu}"
-      # Still false: Caddy owns :80/:443 until the cutover. Flipping this before the port swap
-      # would leave two processes wanting the same port and the deploy failing at `up`.
+      # The cutover switch. False by default, so deploying this commit changes nothing: Caddy
+      # keeps :80/:443 and everything TLS-shaped in the edge stays inert. Flipping it without
+      # also moving the port publishing (below) leaves two processes wanting :443 and the
+      # deploy fails at `up` -- which is the loud failure, and the one worth having.
       Edge__Certificates__TlsEnabled: "${EDGE_TLS_ENABLED:-false}"
+      # PRODUCTION MUST SET THIS EXPLICITLY. The default is staging on purpose: a certificate
+      # from staging is not trusted by any browser, so a host that forgot to set it serves
+      # warnings instead of silently spending the real account's weekly budget.
       Edge__Certificates__AcmeDirectory: "${ACME_DIRECTORY:-https://acme-staging-v02.api.letsencrypt.org/directory}"
       Edge__Certificates__ContactEmail: "${ACME_EMAIL}"
+      # Set to /caddy-data for the ONE deploy that performs the cutover, then cleared.
+      # See the volume below and CaddyCertificateImporter for why skipping it is an outage.
+      Edge__Certificates__ImportFromCaddyPath: "${EDGE_IMPORT_FROM_CADDY:-}"
+      # Off until the cutover has been green for a while. HSTS is the one edge setting a
+      # rollback cannot undo: a browser that has seen the header refuses plain HTTP for the
+      # full max-age, so turning it on early turns a bad cutover into a bad week.
+      Edge__Certificates__HstsMaxAgeSeconds: "${EDGE_HSTS_MAX_AGE:-0}"
+    volumes:
+      # Read-only, and read exactly once. Caddy has been issuing certificates for every live
+      # tenant domain for months; re-issuing them all on cutover day would walk straight into
+      # Let's Encrypt's ~50-per-registered-domain-per-week ceiling and leave the platform
+      # without certificates it already owned. The importer copies them instead.
+      - caddy-data:/caddy-data:ro
 
   ai-gateway:
     environment:
@@ -458,9 +476,14 @@ services:
         condition: service_started
       forgejo:
         condition: service_started
+    # Published through variables so the cutover -- and more importantly the rollback -- is an
+    # .env change and a `compose up -d`, not a code change that has to go round the pipeline
+    # while the site is down. Defaults are exactly today's bindings, so this commit deploys as
+    # a no-op. At the cutover: CADDY_HTTP_PUBLISH=127.0.0.1:8081,
+    # CADDY_HTTPS_PUBLISH=127.0.0.1:8444, and the edge takes 80/443 (docker-compose.vps.yml).
     ports:
-      - "80:80"
-      - "443:443"
+      - "${CADDY_HTTP_PUBLISH:-80}:80"
+      - "${CADDY_HTTPS_PUBLISH:-443}:443"
     environment:
       ACME_EMAIL: "${ACME_EMAIL}"
       # The three named site blocks in the Caddyfile. Defaults are production's names, so

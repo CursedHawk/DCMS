@@ -1,7 +1,7 @@
 {
   "uid": "dcms-storage-edge",
-  "title": "MinIO, Caddy & Vault",
-  "description": "Object storage usage, TLS edge traffic, and Vault seal state.",
+  "title": "MinIO, Edge & Vault",
+  "description": "Object storage usage, public-edge traffic and TLS certificate inventory, and the Vault seal state everything else depends on.",
   "tags": [
     "dcms",
     "infrastructure"
@@ -539,7 +539,7 @@
     {
       "id": 33,
       "type": "row",
-      "title": "Caddy \u2014 the TLS edge",
+      "title": "Edge \u2014 TLS, routing and certificates",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -569,7 +569,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(rate(caddy_http_requests_total[5m]))",
+          "expr": "sum(rate(dcms_edge_request_total[5m])) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "rps"
@@ -607,7 +607,8 @@
           }
         },
         "overrides": []
-      }
+      },
+      "description": "dcms.edge.request, counted in the edge's own middleware rather than taken from the ASP.NET Core HTTP metrics, because those carry no hostname and the hostname is the whole of what this edge routes on. `or vector(0)` so an edge serving nothing reads as zero instead of \"No data\", which is indistinguishable from a broken query."
     },
     {
       "id": 35,
@@ -629,7 +630,7 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum(caddy_http_requests_in_flight)",
+          "expr": "sum(http_server_active_requests{service=\"edge\"})",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "inflight"
@@ -666,7 +667,8 @@
           }
         },
         "overrides": []
-      }
+      },
+      "description": "Requests the edge is holding open right now, from the ASP.NET Core hosting meter. A number that climbs and does not come back down is a stalled upstream: the edge is waiting on a service that accepted the connection and stopped answering."
     },
     {
       "id": 36,
@@ -688,13 +690,13 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "(sum(rate(caddy_http_responses_total{code=~\"5..\"}[5m]))) or vector(0)",
+          "expr": "sum(rate(dcms_edge_request_total{status=\"5xx\"}[5m])) or vector(0)",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "err"
         }
       ],
-      "description": "A 5xx at the edge with no matching 5xx inside a service means the upstream was unreachable, not broken.",
+      "description": "A 5xx at the edge with no matching 5xx inside a service means the upstream was unreachable, not broken -- YARP answers 502 itself when it cannot reach a destination, and that request never reaches a service to be counted there.",
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -752,13 +754,13 @@
             "type": "prometheus",
             "uid": "dcms-prometheus"
           },
-          "expr": "sum by (host) (rate(caddy_http_requests_total[5m]))",
+          "expr": "sum by (host) (rate(dcms_edge_request_total[5m]))",
           "refId": "A",
           "format": "time_series",
           "legendFormat": "{{host}}"
         }
       ],
-      "description": "admin.highgeek.eu, git.highgeek.eu, grafana.highgeek.eu, and every tenant custom domain served by the on-demand-TLS catch-all.",
+      "description": "admin.highgeek.eu, platform.highgeek.eu, grafana.highgeek.eu, git.highgeek.eu, and every tenant custom domain served by the catch-all route. The `host` tag is the SNI/Host name the client asked for, so a domain appearing here that no tenant owns is someone pointing their DNS at us -- which is also what the TLS allow-list refuses to issue for.",
       "options": {
         "legend": {
           "displayMode": "table",
@@ -792,6 +794,197 @@
           },
           "unit": "reqps",
           "min": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 42,
+      "type": "stat",
+      "title": "Certificates",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 18
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "sum(dcms_edge_certificates{state=\"total\"}) or vector(0)",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "total"
+        }
+      ],
+      "description": "Rows in edge.certificates that are currently usable -- the certificates this edge can complete a handshake with. Caddy could only answer this by listing a directory inside a container; here it is a table, which is the point of moving the edge into the product.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 43,
+      "type": "stat",
+      "title": "Due for renewal",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 18
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "sum(dcms_edge_certificates{state=\"due\"}) or vector(0)",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "due"
+        }
+      ],
+      "description": "Within the renewal window (30 days remaining by default). A steady small number is normal. A number that grows and never falls means the renewal sweep is not completing -- check the advisory lock and the ACME directory before the certificates expire.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 44,
+      "type": "stat",
+      "title": "Failing",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 18
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "sum(dcms_edge_certificates{state=\"failing\"}) or vector(0)",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "failing"
+        }
+      ],
+      "description": "Hostnames whose last issuance attempt failed and are inside the backoff. Usually a tenant's DNS record that was removed after verification -- edge.certificates keeps the CA's own sentence in LastError, which is the half Caddy logged once and discarded. Anything non-zero for more than a day is worth chasing: failed authorizations count against the same Let's Encrypt budget as successful ones.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
         },
         "overrides": []
       }
