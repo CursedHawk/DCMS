@@ -38,6 +38,17 @@
 # infra/ directory -- so a literal hostname here would make the dev edge request an ACME
 # certificate for production's name and fail, repeatedly, against Let's Encrypt's rate limit.
 # `{$VAR:default}` is Caddy's own env syntax, already used for ACME_EMAIL above.
+# Authentication. Everything identity serves lives here now -- this block exists so the
+# rollback documented on the caddy service in docker-compose.prod.yml stays viable: handing
+# :80/:443 back to Caddy without it would leave auth.$DOMAIN unserved, and an unserved issuer
+# is not a degraded platform, it is one nobody can sign in to. The @identity matcher below is
+# kept for the same reason -- an older token or a cached SPA config still points at the admin
+# host, and both paths answering is what makes the rollback survivable rather than a second
+# outage.
+{$AUTH_HOST:auth.highgeek.eu} {
+	reverse_proxy identity:8080
+}
+
 {$ADMIN_HOST:admin.highgeek.eu} {
 	# Identity-owned paths: OIDC discovery/JWKS, the connect/* protocol endpoints,
 	# the interactive login UI, and the Google external-login callback

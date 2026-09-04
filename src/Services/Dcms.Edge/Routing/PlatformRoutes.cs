@@ -40,19 +40,6 @@ public static class PlatformRoutes
     public const string PublicPlaneMetadataKey = "dcms.public-plane";
 
     /// <summary>
-    /// Identity-owned path prefixes: OIDC discovery/JWKS, the connect/* protocol endpoints, the
-    /// interactive login UI, and the Google external-login callback (/signin-google, the
-    /// GoogleHandler's default CallbackPath).
-    ///
-    /// <para>The Caddyfile matched these with a case-insensitive regex because ASP.NET routing
-    /// is case-insensitive and the cookie-auth challenge redirects to the capitalised
-    /// "/Account/Login" while the endpoints are mapped lowercase. ASP.NET route templates — what
-    /// YARP matches with — are case-insensitive by default, so the port needs no equivalent of
-    /// the <c>(?i)</c> flag.</para>
-    /// </summary>
-    private static readonly string[] IdentityPrefixes = ["/connect", "/account", "/.well-known"];
-
-    /// <summary>
     /// Forgejo's git-over-HTTP and API surface, which must NEVER be given an identity header.
     ///
     /// <para>These requests already carry a credential: the per-user Basic password
@@ -87,25 +74,31 @@ public static class PlatformRoutes
         var platform = options.PlatformHost;
         var routes = new List<RouteConfig>();
 
-        // ---- Identity, on both operator hosts (Caddy: the @identity matcher) ----
+        // ---- Authentication, on its own host ----
         //
-        // Both hosts on one route set: the SPA and the console are same-origin with identity so
-        // their OIDC redirects and token POSTs need no CORS anywhere, which is the established
-        // pattern on this stack.
-        routes.AddRange(PrefixRoutes("identity", [admin, platform], IdentityPrefixes, Identity, order: 10));
-        routes.Add(new RouteConfig
-        {
-            RouteId = "identity-signin-google",
-            ClusterId = Identity,
-            Order = 10,
-            Match = new RouteMatch { Hosts = [admin, platform], Path = "/signin-google" },
-        });
+        // Everything identity serves, and nowhere else: the OIDC protocol endpoints, discovery
+        // and JWKS, the interactive login pages, and the external-login callbacks. The Caddyfile
+        // carved /connect, /account and /.well-known out of the admin and platform hosts
+        // instead, which made the issuer a path prefix on the admin console's name.
+        //
+        // A whole host rather than a prefix, because the issuer is a claim in every token this
+        // platform mints: it is what every resource server validates against, and it should name
+        // the thing that does authentication rather than the thing that happens to sit at the
+        // same address. It also means the login pages cannot be reached on a host that serves
+        // anything else, which is one fewer way for a session cookie to be scoped too widely.
+        //
+        // The cost is CORS: the two SPAs are no longer same-origin with the token endpoint, so
+        // identity's Cors:AllowedOrigins has to name them. That list already existed for the
+        // dev split-port case; production now genuinely depends on it.
+        routes.Add(CatchAll("auth", [options.AuthHost], Identity, order: 50));
 
         // ---- Platform console APIs (Caddy: the platform.* site block) ----
         //
         // The two specific prefixes MUST out-rank the general /api below, or admin-api answers
         // for all three.
         routes.Add(Prefix("platform-api", [platform], "/api/platform", PlatformApi, order: 20));
+        // Stays on the console's own host: this is the user DIRECTORY, not authentication, and
+        // the console calls it same-origin with a bearer token like any other API.
         routes.Add(Prefix("platform-identity-api", [platform], "/api/identity", Identity, order: 21));
 
         // ---- Admin REST API, on both operator hosts ----
@@ -194,10 +187,6 @@ public static class PlatformRoutes
 
         return (routes, clusters);
     }
-
-    private static IEnumerable<RouteConfig> PrefixRoutes(
-        string idPrefix, string[] hosts, IReadOnlyList<string> paths, string clusterId, int order)
-        => paths.Select((path, i) => Prefix($"{idPrefix}-{i}", hosts, path, clusterId, order));
 
     /// <summary>
     /// A prefix match. <c>/{prefix}/{**catch-all}</c> also matches the bare <c>/{prefix}</c> —

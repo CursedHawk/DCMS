@@ -654,6 +654,26 @@ $C up -d
 
 Differences from dev (`docker-compose.prod.yml`):
 
+- **`auth.highgeek.eu`** is where the identity service lives, and the only place it
+  does. The OIDC endpoints, discovery and JWKS, the login/register/reset pages and
+  the external-login callbacks are all served there; the consoles' own hosts serve
+  no authentication at all any more. It is also the **token issuer** — what every
+  service validates `iss` against — so `AUTH_HOST` is not merely an address:
+  changing it invalidates every token minted before the change, which is one forced
+  re-login and unavoidable when authentication moves.
+
+  Three things follow from it having its own host, and all three bite in a way that
+  is only visible in a browser console:
+
+  1. **CORS is load-bearing now.** The SPAs are no longer same-origin with the token
+     endpoint, so `Cors__AllowedOrigins__n` on identity has to name each console's
+     origin. A missing one is a sign-in that fails silently.
+  2. **Google's authorized redirect URI moved** to `https://$AUTH_HOST/signin-google`
+     and must be updated by hand in the Google Cloud console. Google rejects a
+     callback to a URI it does not know, so Google sign-in stops until it is.
+  3. **It needs its own DNS A record.** The edge will not get a certificate for a
+     name that does not resolve here, and the platform's own hostnames bypass the
+     tenant allow-list precisely so this one can be issued at all.
 - **`edge`** (`Dcms.Edge`, YARP + Kestrel) is the public ingress, owning `:80`/`:443`
   and terminating TLS for the platform hostnames and every tenant custom domain. It
   asks `site-host` `GET /internal/tls-allowed?domain=…` before ordering a certificate,
@@ -704,7 +724,11 @@ curl -si -H 'Host: admin.highgeek.eu'    http://127.0.0.1/api/admin/domains
 curl -si -H 'Host: platform.highgeek.eu' http://127.0.0.1/api/platform/observability
 openssl s_client -servername admin.highgeek.eu -connect 127.0.0.1:443 </dev/null 2>/dev/null \
   | openssl x509 -noout -issuer -serial -dates
+curl -si -H 'Host: auth.highgeek.eu' http://127.0.0.1/.well-known/openid-configuration
 ```
+
+The last one is worth running on every deploy that touches hosts: if the issuer is
+unreachable, the platform is not degraded — nobody can sign in to anything.
 
 `scripts/obs-smoke.sh` additionally asserts `dcms_edge_certificates` has series, which is
 how the renewal sweep having stopped is found before the certificates expire rather than

@@ -571,6 +571,10 @@ services:
       # would make the dev edge answer for production's.
       Edge__AdminHost: "${ADMIN_HOST:-admin.highgeek.eu}"
       Edge__PlatformHost: "${PLATFORM_HOST:-platform.highgeek.eu}"
+      # Everything identity serves lives on this host and nowhere else. It is also what every
+      # token's `iss` claim says, so moving it is not a routing change on its own -- every
+      # resource server validates against it, and dev/prod must agree.
+      Edge__AuthHost: "${AUTH_HOST:-auth.highgeek.eu}"
       Edge__GrafanaHost: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
       Edge__GitHost: "${GIT_HOST:-git.highgeek.eu}"
       # TLS off until the cutover: Caddy still owns :80/:443 and two processes cannot bind the

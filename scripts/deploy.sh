@@ -243,6 +243,13 @@ if [ "$ENVIRONMENT" != "local" ]; then
   platform_host="$(env_value PLATFORM_HOST)"
   [ -z "$platform_host" ] \
     && warn "PLATFORM_HOST unset -- the platform console falls back to the edge's built-in default hostname, and needs a DNS A record pointing here before it can get a certificate"
+
+  # AUTH_HOST is not like the others. The rest are addresses a console is reached at; this one
+  # is the token issuer, so an unset value is not "a page nobody visits" -- it is every service
+  # validating `iss` against a hostname that has no DNS record and nobody being able to sign in.
+  auth_host="$(env_value AUTH_HOST)"
+  [ -z "$auth_host" ] \
+    && warn "AUTH_HOST unset -- authentication falls back to the built-in default, which is also the token issuer every service validates against. It needs a DNS A record pointing here, and Google's authorized redirect URI must be https://<AUTH_HOST>/signin-google"
 fi
 
 echo "  compose: docker compose ${COMPOSE_FILES[*]}"

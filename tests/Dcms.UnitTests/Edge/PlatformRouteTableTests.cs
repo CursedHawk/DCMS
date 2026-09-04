@@ -23,6 +23,7 @@ public class PlatformRouteTableTests
 {
     private const string Admin = "admin.example.test";
     private const string Platform = "platform.example.test";
+    private const string Auth = "auth.example.test";
     private const string Grafana = "grafana.example.test";
     private const string Git = "git.example.test";
 
@@ -30,6 +31,7 @@ public class PlatformRouteTableTests
     {
         AdminHost = Admin,
         PlatformHost = Platform,
+        AuthHost = Auth,
         GrafanaHost = Grafana,
         GitHost = Git,
     };
@@ -38,12 +40,14 @@ public class PlatformRouteTableTests
     private static readonly IReadOnlyList<ClusterConfig> Clusters = PlatformRoutes.Build(Options).Clusters;
 
     [Theory]
-    // ---- Admin host: the four handle blocks of the Caddyfile's admin site, in order ----
-    [InlineData(Admin, "/connect/authorize", PlatformRoutes.Identity)]
-    [InlineData(Admin, "/connect", PlatformRoutes.Identity)]
-    [InlineData(Admin, "/account/login", PlatformRoutes.Identity)]
-    [InlineData(Admin, "/signin-google", PlatformRoutes.Identity)]
-    [InlineData(Admin, "/.well-known/openid-configuration", PlatformRoutes.Identity)]
+    // ---- The auth host: everything identity serves, and nowhere else ----
+    [InlineData(Auth, "/connect/authorize", PlatformRoutes.Identity)]
+    [InlineData(Auth, "/connect/token", PlatformRoutes.Identity)]
+    [InlineData(Auth, "/account/login", PlatformRoutes.Identity)]
+    [InlineData(Auth, "/signin-google", PlatformRoutes.Identity)]
+    [InlineData(Auth, "/.well-known/openid-configuration", PlatformRoutes.Identity)]
+    [InlineData(Auth, "/", PlatformRoutes.Identity)]
+    // ---- Admin host ----
     [InlineData(Admin, "/api/admin/domains", PlatformRoutes.AdminApi)]
     [InlineData(Admin, "/hub/chat", PlatformRoutes.ContentApi)]
     [InlineData(Admin, "/", PlatformRoutes.AdminSpa)]
@@ -52,7 +56,6 @@ public class PlatformRouteTableTests
     [InlineData(Platform, "/api/platform/observability", PlatformRoutes.PlatformApi)]
     [InlineData(Platform, "/api/identity/users", PlatformRoutes.Identity)]
     [InlineData(Platform, "/api/admin/tenants", PlatformRoutes.AdminApi)]
-    [InlineData(Platform, "/connect/token", PlatformRoutes.Identity)]
     [InlineData(Platform, "/", PlatformRoutes.PlatformSpa)]
     // ---- The two third-party consoles ----
     [InlineData(Grafana, "/d/abc/dashboard", PlatformRoutes.Grafana)]
@@ -61,6 +64,10 @@ public class PlatformRouteTableTests
     [InlineData("shop.tenant.example", "/", PlatformRoutes.SiteHost)]
     [InlineData("shop.tenant.example", "/api/content/pages", PlatformRoutes.SiteHost)]
     [InlineData("shop.tenant.example", "/connect/authorize", PlatformRoutes.SiteHost)]
+    // The consoles' own hosts no longer serve authentication at all: /connect on the admin host
+    // is the SPA's client-side router now, not the token endpoint.
+    [InlineData(Admin, "/connect/authorize", PlatformRoutes.AdminSpa)]
+    [InlineData(Platform, "/connect/token", PlatformRoutes.PlatformSpa)]
     public void Routes_the_hosts_and_paths_the_Caddyfile_did(string host, string path, string expectedCluster)
         => ResolveCluster(host, path).Should().Be(expectedCluster);
 
@@ -75,7 +82,7 @@ public class PlatformRouteTableTests
     [InlineData("/ACCOUNT/login")]
     [InlineData("/Connect/Authorize")]
     public void Matches_identity_paths_case_insensitively(string path)
-        => ResolveCluster(Admin, path).Should().Be(PlatformRoutes.Identity);
+        => ResolveCluster(Auth, path).Should().Be(PlatformRoutes.Identity);
 
     /// <summary>
     /// On the admin host there is no /api/platform block, so it falls through to admin-api —

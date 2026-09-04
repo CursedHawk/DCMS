@@ -166,7 +166,10 @@ services:
   identity-migrate:
     environment:
       <<: *prod-env
-      Identity__Issuer: "${PUBLIC_BASE_URL}/"
+      # The issuer is the AUTH host, not the admin console's. Every resource server validates
+      # `iss` against this, so changing it invalidates tokens minted before the change -- one
+      # forced re-login, and unavoidable when authentication moves.
+      Identity__Issuer: "https://${AUTH_HOST:-auth.highgeek.eu}/"
       Identity__AllowInsecureHttp: "false"
       Identity__AllowEphemeralKeys: "${IDENTITY_ALLOW_EPHEMERAL_KEYS:-false}"
 
@@ -178,6 +181,11 @@ services:
       # on content-api by mistake first: the console's sign-in failed at the very first fetch
       # with no Access-Control-Allow-Origin, which is a confusing way to learn that the wrong
       # service was told about it.
+      # LOAD-BEARING NOW. Identity used to be reached at /connect on each console's own host,
+      # so every browser call to it was same-origin and this list only mattered for a
+      # split-port dev run. Authentication has its own host, so the SPAs' discovery fetch,
+      # JWKS fetch and token POST are all cross-origin: an origin missing here is a sign-in
+      # that fails in the browser console and nowhere else.
       Cors__AllowedOrigins__0: "${PUBLIC_BASE_URL}"
       Cors__AllowedOrigins__1: "https://${PLATFORM_HOST:-platform.highgeek.eu}"
       # Blanked, not omitted. The base file lists the two localhost dev origins, and compose
@@ -185,7 +193,10 @@ services:
       # credentialed cross-origin requests from anything served on an operator's own machine.
       Cors__AllowedOrigins__2: ""
       Cors__AllowedOrigins__3: ""
-      Identity__Issuer: "${PUBLIC_BASE_URL}/"
+      # The issuer is the AUTH host, not the admin console's. Every resource server validates
+      # `iss` against this, so changing it invalidates tokens minted before the change -- one
+      # forced re-login, and unavoidable when authentication moves.
+      Identity__Issuer: "https://${AUTH_HOST:-auth.highgeek.eu}/"
       Identity__AllowInsecureHttp: "false"
       # Migration and seeding are the migration job's work. Left on, every replica
       # would run DDL and seed concurrently at startup.
@@ -356,6 +367,7 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       Edge__AdminHost: "${ADMIN_HOST:-admin.highgeek.eu}"
       Edge__PlatformHost: "${PLATFORM_HOST:-platform.highgeek.eu}"
+      Edge__AuthHost: "${AUTH_HOST:-auth.highgeek.eu}"
       Edge__GrafanaHost: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
       Edge__GitHost: "${GIT_HOST:-git.highgeek.eu}"
       # THE EDGE TERMINATES TLS. Set EDGE_TLS_ENABLED=false in .env to hand :443 back to Caddy
@@ -381,7 +393,7 @@ services:
       # issuer because that is what identity stamps into every token; back-channel calls are
       # rewritten onto the internal address by InternalIdentityHandler rather than hairpinning
       # out through this proxy and back.
-      Edge__Auth__Authority: "${PUBLIC_BASE_URL}"
+      Edge__Auth__Authority: "https://${AUTH_HOST:-auth.highgeek.eu}"
       Edge__Auth__InternalAuthority: "http://identity:8080"
       # Must equal Identity__Edge__Secret. Unset disables edge authentication and both consoles
       # fall back to their own login -- deliberately, rather than taking the ingress down.
@@ -439,7 +451,7 @@ services:
 
   platform-spa:
     environment:
-      DCMS_OIDC_AUTHORITY: "${PUBLIC_BASE_URL}"
+      DCMS_OIDC_AUTHORITY: "https://${AUTH_HOST:-auth.highgeek.eu}"
       DCMS_OIDC_CLIENT_ID: "dcms-platform-spa"
       # The API bases stay same-origin paths: Caddy routes /api/platform/*, /api/identity/* and
       # /api/* under the platform host to their three owners.
@@ -507,6 +519,9 @@ services:
       # and keeps failing against the rate limit.
       ADMIN_HOST: "${ADMIN_HOST:-admin.highgeek.eu}"
       PLATFORM_HOST: "${PLATFORM_HOST:-platform.highgeek.eu}"
+      # Needed even though Caddy is off the public ports: without it the rollback documented
+      # above would hand back :443 with no site block for the issuer, and nobody could sign in.
+      AUTH_HOST: "${AUTH_HOST:-auth.highgeek.eu}"
       GRAFANA_DOMAIN: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
       GIT_HOST: "${GIT_HOST:-git.highgeek.eu}"
     volumes:

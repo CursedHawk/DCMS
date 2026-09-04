@@ -37,6 +37,7 @@
 # is a no-op for the existing host:
 #
 #   PUBLIC_BASE_URL   https://admin.dev.highgeek.eu   the OIDC issuer and SPA authority
+#   AUTH_HOST         auth.dev.highgeek.eu
 #   GRAFANA_DOMAIN    grafana.dev.highgeek.eu
 #   GIT_HOST          git.dev.highgeek.eu
 #
@@ -77,9 +78,9 @@ x-vps-resource-auth: &vps-resource-auth
   # Discover the OIDC metadata internally over HTTP (no public DNS / TLS needed
   # inside the compose network), but accept only tokens whose issuer is the
   # public HTTPS value that identity actually stamps onto them.
-  Auth__Authority: "${PUBLIC_BASE_URL}/"
+  Auth__Authority: "https://${AUTH_HOST:-auth.highgeek.eu}/"
   Auth__MetadataAddress: "http://identity:8080/.well-known/openid-configuration"
-  Auth__Issuer: "${PUBLIC_BASE_URL}/"
+  Auth__Issuer: "https://${AUTH_HOST:-auth.highgeek.eu}/"
   Auth__RequireHttpsMetadata: "false"
 
 # SMTP for email-worker, the one service that delivers mail. Everything that wants
@@ -213,10 +214,11 @@ services:
     environment:
       VAULT_ROLE_ID: "${VAULT_ROLE_ID_IDENTITY:-}"
       VAULT_SECRET_ID: "${VAULT_SECRET_ID_IDENTITY:-}"
-      # Public issuer (matches PUBLIC_BASE_URL). TLS is terminated at Caddy, so
-      # identity itself speaks HTTP on the internal network — disable the
-      # transport-security requirement (there is no ForwardedHeaders middleware).
-      Identity__Issuer: "${PUBLIC_BASE_URL}/"
+      # The AUTH host, which is where identity is now reached and what every token's `iss`
+      # claim says. TLS is terminated at the edge, so identity itself speaks HTTP on the
+      # internal network — disable the transport-security requirement (there is no
+      # ForwardedHeaders middleware).
+      Identity__Issuer: "https://${AUTH_HOST:-auth.highgeek.eu}/"
       Identity__AllowInsecureHttp: "true"
       # The confidential client secret admin-api presents for client-credentials, the
       # SuperAdmin first-boot password, the Google SSO pair and the Forgejo admin token
@@ -227,7 +229,9 @@ services:
       #
       # Google SSO stays optional: with no Authentication__Google__* keys in that path
       # the sign-in/up pages simply omit the button. The redirect URI to register in
-      # the Google Cloud console is ${PUBLIC_BASE_URL}/signin-google.
+      # the Google Cloud console is https://${AUTH_HOST}/signin-google -- it MOVED when
+      # authentication got its own host, and Google rejects a callback to a URI it does not
+      # know, so the console entry has to be updated by hand or Google sign-in stops.
       #
       # The SuperAdmin EMAIL is not a secret and stays here — admin-api also reads it as
       # the default alert recipient, and a value in two places is a value that drifts.
@@ -296,7 +300,7 @@ services:
     # not compiled into the image -- the same digest built on master serves dev and production,
     # which is what makes promoting a tested artifact possible.
     environment:
-      DCMS_OIDC_AUTHORITY: "${PUBLIC_BASE_URL}"
+      DCMS_OIDC_AUTHORITY: "https://${AUTH_HOST:-auth.highgeek.eu}"
 
   # Grafana publishes no host port in any profile — Caddy is the only route in
   # (infra/caddy/Caddyfile), the same shape as admin-spa and forgejo.
