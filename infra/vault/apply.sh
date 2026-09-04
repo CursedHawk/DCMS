@@ -307,6 +307,5 @@ echo "Applied. Secret VALUES are not managed here -- write them once with:"
 echo "  vault kv put secret/dcms/shared    <key>=<value> ..."
 echo "  vault kv put secret/dcms/<service> <key>=<value> ..."
 echo
-echo "Then issue each node its credentials:"
-echo "  infra/vault/apply.sh --print-role-ids"
-echo "  vault write -f auth/approle/role/dcms-<service>/secret-id"
+echo "Then issue this host its credentials -- role_id, a fresh secret_id, and both into .env:"
+echo "  infra/vault/provision-host.sh --all"

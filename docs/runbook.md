@@ -730,14 +730,29 @@ platform-api reads its whole database credential from Vault, so a host with no A
 has no credential at all — and it **refuses to start** rather than coming up and failing at the
 first query. The message names the three commands. Run them once per host:
 
+Three commands on the host, with an admin token supplied for the run and stored nowhere:
+
 ```sh
-export VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=<admin token>
-PATH="$(pwd)/infra/vault/bin:$PATH" infra/vault/apply.sh              # policy + AppRole
-PATH="$(pwd)/infra/vault/bin:$PATH" infra/vault/apply.sh --seed       # generate the secrets
-PATH="$(pwd)/infra/vault/bin:$PATH" infra/vault/apply.sh --print-role-ids
-# then put VAULT_ROLE_ID_PLATFORM_API / VAULT_SECRET_ID_PLATFORM_API in .env
-# (and VAULT_ROLE_ID_LOG_JANITOR / VAULT_SECRET_ID_LOG_JANITOR if you enable that profile)
+cd ~/baas-dcms
+export VAULT_ADDR=http://127.0.0.1:8200
+export PATH="$(pwd)/infra/vault/bin:$PATH"
+export VAULT_TOKEN=<admin token>
+
+infra/vault/apply.sh                                    # policies + AppRoles
+infra/vault/apply.sh --seed                             # generate the machine-only secrets
+infra/vault/provision-host.sh platform-api log-janitor  # issue this host its ids into .env
+
+unset VAULT_TOKEN
 ```
+
+`provision-host.sh` reads each role_id, mints a secret_id and writes both into `.env` — the
+part that used to be four manual steps per service ending in a secret through a clipboard. It
+is idempotent (a service with both ids set is left alone; `--rotate` replaces them), it
+validates the token before touching anything, and it never prints or stores a secret value.
+`--all` covers every service, which is what a brand-new host wants.
+
+`PLATFORM_HOST` still belongs in `.env` by hand: it is not a secret, and Caddy needs it to
+build a site address.
 
 Until then the deploy rolls everything else and fails its health gate on platform-api, with the
 instruction in that container's logs. That is deliberate: a green deploy that shipped a service
