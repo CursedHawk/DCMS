@@ -1,5 +1,6 @@
 extern alias AdminApiApp;
 extern alias IdentityApp;
+extern alias PlatformApiApp;
 using Dcms.Shared.Audit.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -113,3 +114,11 @@ public sealed class ContentApiAuditCoverageTests : AuditCoverageTestsBase<Progra
 
 /// <summary>Account lifecycle: the records that belong to a person rather than a tenant.</summary>
 public sealed class IdentityAuditCoverageTests : AuditCoverageTestsBase<IdentityApp::Program>;
+
+/// <summary>
+/// The platform console's API — added because it was the obvious omission the moment it
+/// existed. These are the endpoints that suspend a tenant, hand out platform permissions and
+/// delete from a telemetry store: the smallest surface on the platform and the one where an
+/// unrecorded action matters most.
+/// </summary>
+public sealed class PlatformApiAuditCoverageTests : AuditCoverageTestsBase<PlatformApiApp::Program>;

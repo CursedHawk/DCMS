@@ -1,3 +1,5 @@
+using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Platform;
 using Dcms.Shared.Security;
 using Dcms.Shared.Security.Authorization;
@@ -90,6 +92,7 @@ public static class PlatformAuthzEndpoints
             UpdateRolePermissionsRequest request,
             PlatformDbContext db,
             PlatformPermissionResolver resolver,
+            IAuditRecorder audit,
             ILoggerFactory loggerFactory,
             CancellationToken ct) =>
         {
@@ -105,6 +108,30 @@ public static class PlatformAuthzEndpoints
             }
 
             var desired = request.Permissions.Distinct(StringComparer.Ordinal).ToHashSet(StringComparer.Ordinal);
+
+            // Read the previous set BEFORE destroying it. ExecuteDeleteAsync never touches the
+            // change tracker, so nothing downstream can reconstruct a before-image — a record
+            // saying only "the grants changed" would leave the one question anyone asks about
+            // a permission change ("what did it used to be?") permanently unanswerable.
+            var previous = await db.RolePermissions
+                .AsNoTracking()
+                .Where(rp => rp.RoleName == roleName)
+                .Select(rp => rp.Permission)
+                .ToListAsync(ct);
+
+            var granted = desired.Except(previous, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+            var revoked = previous.Except(desired, StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+
+            // Enriched before the write, and the diff spelled out rather than left implicit:
+            // this is the endpoint that can hand `platform:logs:purge` to another role, so it
+            // is the record somebody reads when asking how an account got that reach.
+            audit.Declared?
+                .Platform()
+                .As(AuditCategory.Security, AuditSeverity.Warning)
+                .For("platform-role", roleName, roleName)
+                .With("granted", granted)
+                .With("revoked", revoked)
+                .With("permissions", desired.Order(StringComparer.Ordinal).ToArray());
 
             // Delete-then-insert in one transaction rather than RemoveRange + re-Add in one
             // SaveChanges: EF matches the re-added rows to the removed ones by key, turns the
@@ -129,7 +156,8 @@ public static class PlatformAuthzEndpoints
             return Results.Ok(new RolePermissionsResponse(roleName, [.. desired.Order(StringComparer.Ordinal)]));
         })
         .RequirePlatformPermission(PlatformConsolePermissions.RolesManage)
-        .WithName("PlatformSetRolePermissions");
+        .WithName("PlatformSetRolePermissions")
+        .WithAudit(AuditActions.PlatformPermissionsChanged, "platform-role");
 
         return app;
     }

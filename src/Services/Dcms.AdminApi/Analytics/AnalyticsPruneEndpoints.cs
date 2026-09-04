@@ -1,5 +1,6 @@
 using Dcms.AdminApi.Tenancy;
 using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Analytics;
 using Microsoft.EntityFrameworkCore;
 
@@ -104,7 +105,13 @@ public static class AnalyticsPruneEndpoints
             });
         })
         .RequireAuthorization()
-        .AllowNonMemberTenant("Platform-scope retention; operates across every tenant and takes no tenant header.");
+        .AllowNonMemberTenant("Platform-scope retention; operates across every tenant and takes no tenant header.")
+        // Exempt from the DECLARED-action mechanism, not from auditing — it records more than
+        // that mechanism can. A declared entry is withdrawn when the response is 4xx or 5xx,
+        // which is right for an action that did not happen and wrong for a deletion that ran
+        // partway and then failed. So this writes its intent with RecordNowAsync before the
+        // first batch, where a failure to record stops the delete instead of following it.
+        .AuditExempt("Records AuditActions.AnalyticsPruned itself, before deleting, so the record survives a partial failure.");
 
         return app;
     }

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Dcms.PlatformApi.Observability;
 using Dcms.Shared.Audit;
+using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Security;
 using Microsoft.Extensions.Options;
 
@@ -93,7 +94,12 @@ public static class PlatformPurgeEndpoints
             });
         })
         .RequirePlatformPermission(PlatformConsolePermissions.LogsPurge)
-        .WithName("PlatformPurgeLoki");
+        .WithName("PlatformPurgeLoki")
+        // Exempt from the DECLARED mechanism, not from auditing. A declared entry is withdrawn
+        // on a 4xx or 5xx — right for an action that did not happen, wrong for a purge that ran
+        // partway — and it cannot record a REFUSAL at all, which is the case most worth keeping
+        // here. Each of these writes AuditActions.PlatformLogsPurged itself, before acting.
+        .AuditExempt("Records PlatformLogsPurged itself before acting, so refusals and partial failures survive.");
 
         group.MapDelete("/loki/{requestId}", async (
             string requestId, LokiClient loki, IAuditRecorder audit,
@@ -112,7 +118,12 @@ public static class PlatformPurgeEndpoints
             return Results.NoContent();
         })
         .RequirePlatformPermission(PlatformConsolePermissions.LogsPurge)
-        .WithName("PlatformCancelLokiPurge");
+        .WithName("PlatformCancelLokiPurge")
+        // Exempt from the DECLARED mechanism, not from auditing. A declared entry is withdrawn
+        // on a 4xx or 5xx — right for an action that did not happen, wrong for a purge that ran
+        // partway — and it cannot record a REFUSAL at all, which is the case most worth keeping
+        // here. Each of these writes AuditActions.PlatformLogsPurged itself, before acting.
+        .AuditExempt("Records PlatformLogsPurged itself before acting, so refusals and partial failures survive.");
 
         // ---- Prometheus ----
 
@@ -155,7 +166,12 @@ public static class PlatformPurgeEndpoints
             return Results.Ok(new { message = "Series deleted and tombstones cleaned." });
         })
         .RequirePlatformPermission(PlatformConsolePermissions.LogsPurge)
-        .WithName("PlatformPurgePrometheus");
+        .WithName("PlatformPurgePrometheus")
+        // Exempt from the DECLARED mechanism, not from auditing. A declared entry is withdrawn
+        // on a 4xx or 5xx — right for an action that did not happen, wrong for a purge that ran
+        // partway — and it cannot record a REFUSAL at all, which is the case most worth keeping
+        // here. Each of these writes AuditActions.PlatformLogsPurged itself, before acting.
+        .AuditExempt("Records PlatformLogsPurged itself before acting, so refusals and partial failures survive.");
 
         // ---- Docker json logs, via the janitor sidecar ----
 
@@ -190,7 +206,12 @@ public static class PlatformPurgeEndpoints
             return Results.Ok(new { freedBytes = freed, message = $"Truncated the log for {body.Container}." });
         })
         .RequirePlatformPermission(PlatformConsolePermissions.LogsPurge)
-        .WithName("PlatformPurgeDockerLogs");
+        .WithName("PlatformPurgeDockerLogs")
+        // Exempt from the DECLARED mechanism, not from auditing. A declared entry is withdrawn
+        // on a 4xx or 5xx — right for an action that did not happen, wrong for a purge that ran
+        // partway — and it cannot record a REFUSAL at all, which is the case most worth keeping
+        // here. Each of these writes AuditActions.PlatformLogsPurged itself, before acting.
+        .AuditExempt("Records PlatformLogsPurged itself before acting, so refusals and partial failures survive.");
 
         return app;
     }

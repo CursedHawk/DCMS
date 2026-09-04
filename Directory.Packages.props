@@ -114,6 +114,11 @@
   <ItemGroup Label="Testing">
     <PackageVersion Include="AwesomeAssertions" Version="9.4.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
+    <!-- Provides the "junit" test logger the CI job asks for, which turns a test run into the
+         report GitLab renders in its Tests tab. Without this package that logger does not
+         exist, the job falls through to its fallback invocation, and the tab has never shown
+         a result. (No double hyphens in this comment: XML forbids them.) -->
+    <PackageVersion Include="JunitXml.TestLogger" Version="6.1.0" />
     <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <PackageVersion Include="Respawn" Version="7.0.0" />
     <PackageVersion Include="Testcontainers.Minio" Version="4.12.0" />
