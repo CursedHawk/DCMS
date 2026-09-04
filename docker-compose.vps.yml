@@ -359,43 +359,33 @@ services:
       VAULT_ROLE_ID: "${VAULT_ROLE_ID_SITE_HOST:-}"
       VAULT_SECRET_ID: "${VAULT_SECRET_ID_SITE_HOST:-}"
 
-  # The YARP edge. Until the cutover it is published on loopback ONLY, so its route table can
-  # be exercised against the real stack before it is given the public ports. Caddy is untouched
-  # and still the only ingress -- deliberately, because editing the live Caddyfile to add a
-  # test route risks the one failure the deploy cannot see: a file that fails to parse leaves
-  # the container up and every health signal green while nothing is served.
+  # The YARP edge: vps1's public ingress on :80 and :443, terminating TLS for the platform
+  # hostnames and every tenant custom domain. Caddy is still defined (docker-compose.prod.yml)
+  # but published only on loopback, so handing the ports back is an .env change and a
+  # `compose up -d` -- the rollback is written out on the caddy service itself.
   #
   # Verify from the host with an explicit Host header, which is the whole of what the route
   # table keys on:
-  #   curl -si -H 'Host: admin.highgeek.eu'    http://127.0.0.1:8090/api/admin/domains
-  #   curl -si -H 'Host: platform.highgeek.eu' http://127.0.0.1:8090/api/platform/observability
-  #   curl -si -H 'Host: some.tenant.example'  http://127.0.0.1:8090/
-  #
-  # THE CUTOVER, and its rollback, are both .env edits plus one `compose up -d` -- no pipeline
-  # round trip while the site is down. In order, in a single edit, then `up -d caddy edge`:
-  #
-  #   EDGE_IMPORT_FROM_CADDY=/caddy-data      # this deploy only; clear it afterwards
-  #   ACME_DIRECTORY=https://acme-v02.api.letsencrypt.org/directory
-  #   EDGE_TLS_ENABLED=true
-  #   CADDY_HTTP_PUBLISH=127.0.0.1:8081       # Caddy keeps running, off the public ports
-  #   CADDY_HTTPS_PUBLISH=127.0.0.1:8444
-  #   EDGE_HTTP_PUBLISH=80
-  #   EDGE_HTTPS_PUBLISH=443
-  #
-  # To roll back, delete those seven lines and `up -d` again: Caddy still holds its own /data
-  # and resumes serving from the certificates it never stopped owning. Defaults below are the
-  # pre-cutover bindings, so a host that sets none of this is unchanged.
+  #   curl -si -H 'Host: admin.highgeek.eu'    http://127.0.0.1/api/admin/domains
+  #   curl -si -H 'Host: platform.highgeek.eu' http://127.0.0.1/api/platform/observability
+  #   openssl s_client -servername admin.highgeek.eu -connect 127.0.0.1:443 </dev/null \
+  #     | openssl x509 -noout -issuer -serial -dates
   #
   # The container runs as a non-root uid and cannot bind :80/:443 itself; Docker does the
-  # privileged half, which is why the listeners stay on 8080/8443 either way. Edge:Certificates
-  # :PublicHttpsPort (443) is what redirects are built from, not the listener port.
+  # privileged half, which is why the listeners stay on 8080/8443.
+  # Edge:Certificates:PublicHttpsPort (443) is what redirects are built from, never the
+  # listener port -- a browser sent to https://host:8443/ lands where nothing is published.
   edge:
     environment:
       VAULT_ROLE_ID: "${VAULT_ROLE_ID_EDGE:-}"
       VAULT_SECRET_ID: "${VAULT_SECRET_ID_EDGE:-}"
+      # vps1 serves the real public hostnames, so it orders from the real CA. Set here rather
+      # than in the shared prod overlay deliberately: staging stays the default everywhere
+      # else, so a second deployment cannot quietly spend this account's weekly budget.
+      Edge__Certificates__AcmeDirectory: "${ACME_DIRECTORY:-https://acme-v02.api.letsencrypt.org/directory}"
     ports:
-      - "${EDGE_HTTP_PUBLISH:-127.0.0.1:8090}:8080"
-      - "${EDGE_HTTPS_PUBLISH:-127.0.0.1:8453}:8443"
+      - "${EDGE_HTTP_PUBLISH:-80}:8080"
+      - "${EDGE_HTTPS_PUBLISH:-443}:8443"
 
 volumes:
   postgres-data:

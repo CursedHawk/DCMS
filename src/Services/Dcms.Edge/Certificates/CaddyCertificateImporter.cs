@@ -47,10 +47,24 @@ public sealed class CaddyCertificateImporter(
 
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
-        var existing = await db.Certificates.AsNoTracking()
-            .Select(c => c.Hostname)
-            .ToListAsync(ct);
-        var known = existing.ToHashSet(StringComparer.Ordinal);
+
+        HashSet<string> known;
+        try
+        {
+            var existing = await db.Certificates.AsNoTracking()
+                .Select(c => c.Hostname)
+                .ToListAsync(ct);
+            known = existing.ToHashSet(StringComparer.Ordinal);
+        }
+        catch (Exception ex)
+        {
+            // Guarded because this runs BEFORE Kestrel starts listening, on the public ingress.
+            // An unreachable database here would stop the edge from starting at all -- and the
+            // edge serves every route from its static table with Postgres down, so refusing to
+            // start over an optional import would turn a database blip into a total outage.
+            logger.LogError(ex, "Could not read the certificates already held; skipping the Caddy import.");
+            return;
+        }
 
         var imported = 0;
         var skipped = 0;

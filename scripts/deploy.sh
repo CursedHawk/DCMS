@@ -214,10 +214,10 @@ if [ "$ENVIRONMENT" != "local" ]; then
     warn "DCMS_ENV/DCMS_HOST not both set in .env -- this host's metrics and alerts will be labelled 'unknown'"
   fi
 
-  # ADMIN_HOST is PUBLIC_BASE_URL without the scheme. Caddy needs the bare hostname for a
-  # site address; identity needs the URL for the issuer it stamps into every token. If they
-  # disagree, the edge serves a certificate for one name while tokens claim another, and the
-  # symptom is a login that loops rather than an error anyone can read.
+  # ADMIN_HOST is PUBLIC_BASE_URL without the scheme. The edge routes on the bare hostname;
+  # identity needs the URL for the issuer it stamps into every token. If they disagree, the
+  # edge serves a certificate for one name while tokens claim another, and the symptom is a
+  # login that loops rather than an error anyone can read.
   base_url="$(env_value PUBLIC_BASE_URL)"
   admin_host="$(env_value ADMIN_HOST)"
   if [ -n "$base_url" ]; then
@@ -228,9 +228,9 @@ if [ "$ENVIRONMENT" != "local" ]; then
     base_host="${base_url#https://}"; base_host="${base_host#http://}"
     if [ -n "$admin_host" ] && [ "$admin_host" != "$base_host" ]; then
       die "ADMIN_HOST is '$admin_host' but PUBLIC_BASE_URL is '$base_url'.
-     Caddy would serve '$admin_host' while identity issues tokens for '$base_host'."
+     The edge would serve '$admin_host' while identity issues tokens for '$base_host'."
     fi
-    [ -z "$admin_host" ] && warn "ADMIN_HOST unset -- Caddy falls back to its built-in default, which may not be '$base_host'"
+    [ -z "$admin_host" ] && warn "ADMIN_HOST unset -- the edge falls back to its built-in default, which may not be '$base_host'"
   fi
 
   # There is deliberately no check here for the platform console's database password. It is
@@ -238,11 +238,11 @@ if [ "$ENVIRONMENT" != "local" ]; then
   # Platform__DbPassword under secret/dcms/admin-api, and `infra/vault/apply.sh --check` is
   # what asserts both are present. A grep of .env would only ever find its absence.
 
-  # Not fatal: an unset PLATFORM_HOST means Caddy uses its built-in default, which simply fails
-  # ACME for a name this host does not own. Every other site block keeps working.
+  # Not fatal: an unset PLATFORM_HOST means the edge uses its built-in default, which simply
+  # fails ACME for a name this host does not own. Every other route keeps working.
   platform_host="$(env_value PLATFORM_HOST)"
   [ -z "$platform_host" ] \
-    && warn "PLATFORM_HOST unset -- the platform console falls back to Caddy's built-in default hostname, and needs a DNS A record pointing here before it can get a certificate"
+    && warn "PLATFORM_HOST unset -- the platform console falls back to the edge's built-in default hostname, and needs a DNS A record pointing here before it can get a certificate"
 fi
 
 echo "  compose: docker compose ${COMPOSE_FILES[*]}"
