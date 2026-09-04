@@ -23,8 +23,13 @@
 # Usage:
 #   VAULT_ADDR=... VAULT_TOKEN=<admin token> infra/vault/apply.sh [--check] [--print-role-ids]
 #
+# In its default mode it ALSO issues this host any AppRole credentials it is missing, straight
+# into .env -- see the end of this file for what leaving that as a printed instruction cost.
+#
 #   --check           Assert required paths and keys exist. Changes nothing. Exit 1 if not.
 #   --seed            Generate the MACHINE-ONLY secrets that are absent. Never overwrites.
+#   --no-provision    Apply policies and roles only; do not touch .env. For running this
+#                     against a Vault from a machine that is not the deployment host.
 #   --print-role-ids  Print each service's role_id (not secret). For provisioning a node.
 #
 # No host needs the vault binary installed. Every policy is piped on stdin rather than passed
@@ -39,10 +44,17 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+REPO_ROOT=$(cd ../.. && pwd)
+
 # One list, shared with provision-host.sh -- see infra/vault/services.sh for what two copies
 # of it cost.
 . "$(pwd)/services.sh"
 SERVICES="$DCMS_VAULT_SERVICES"
+
+# Issuing this host its AppRole credentials is part of applying the configuration, not a
+# follow-up (see the end of this file). --no-provision is for applying policies from a machine
+# that is not the target -- there is no .env there worth writing to.
+PROVISION=1
 
 # Keys that must exist in secret/dcms/shared for any deployment to work. Presence only --
 # this never reads a value.
@@ -93,6 +105,7 @@ for arg in "$@"; do
     --check)          MODE="check" ;;
     --seed)           MODE="seed" ;;
     --print-role-ids) MODE="role-ids" ;;
+    --no-provision)   PROVISION=0 ;;
     *) echo "apply.sh: unknown argument $arg" >&2; exit 2 ;;
   esac
 done
@@ -313,10 +326,31 @@ vault write auth/approle/role/dcms-ops \
   secret_id_ttl=0 >/dev/null
 echo "  role dcms-ops -> policy dcms-ops"
 
+# ---------------------------------------------------------------------------
+# Credentials into this host's .env
+# ---------------------------------------------------------------------------
+#
+# DONE, not printed. This used to end with a line telling the operator to run
+# provision-host.sh, and prose at the end of a successful script is a step that gets read
+# once and skipped forever after. It was: `edge` was added to the service list above, the
+# role and the policy and the transit key were all created for it, and nobody re-ran the
+# command in this message -- so the one service terminating TLS had no credential, could
+# neither store nor read a private key, and refused every handshake on every hostname. The
+# platform was dark and the cause was a sentence nobody re-read.
+#
+# provision-host.sh keeps whatever is already set (--rotate to replace), so running it every
+# time costs nothing and closes the gap permanently: adding a service to services.sh is now
+# the entire change, and it cannot be half-done.
+if [ "$PROVISION" = 1 ] && [ -f "$REPO_ROOT/.env" ]; then
+  echo
+  "$REPO_ROOT/infra/vault/provision-host.sh" --all
+elif [ "$PROVISION" = 1 ]; then
+  echo
+  echo "==> No .env here, so no credentials were issued."
+  echo "    Run this again on the target host, or there: infra/vault/provision-host.sh --all"
+fi
+
 echo
 echo "Applied. Secret VALUES are not managed here -- write them once with:"
 echo "  vault kv put secret/dcms/shared    <key>=<value> ..."
 echo "  vault kv put secret/dcms/<service> <key>=<value> ..."
-echo
-echo "Then issue this host its credentials -- role_id, a fresh secret_id, and both into .env:"
-echo "  infra/vault/provision-host.sh --all"

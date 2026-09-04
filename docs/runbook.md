@@ -755,12 +755,21 @@ Two things have to be in place for the sweep to issue anything, and both fail lo
 
 1. **Vault Transit.** Private keys are encrypted with the `dcms-tls-keys` key, so no
    certificate can be stored without it. That needs `infra/vault/apply.sh` to have been
-   run and `VAULT_ROLE_ID_EDGE` / `VAULT_SECRET_ID_EDGE` in `.env`
-   (`infra/vault/provision-host.sh` issues them). **This is what took the platform down
-   once:** `apply.sh` gained `edge` and `provision-host.sh` kept its own copy of the service
-   list, which did not — so `--all` issued credentials to every service except the one
-   terminating TLS. There is one list now (`infra/vault/services.sh`), and `scripts/deploy.sh`
-   refuses to deploy when a service declares `VAULT_ROLE_ID` with nothing in it.
+   run and `VAULT_ROLE_ID_EDGE` / `VAULT_SECRET_ID_EDGE` in `.env`.
+   `infra/vault/apply.sh` now does both — it creates the policies and roles and then issues
+   this host whatever credentials it is missing, keeping the ones it already has.
+
+   **This is what took the platform down.** Three things had to line up, and they did:
+   `apply.sh` gained `edge` while `provision-host.sh` kept its own copy of the service list
+   and did not; issuing the credentials was a sentence printed at the end of a successful
+   run rather than something the script did; and nothing checked. So the role, the policy and
+   the `dcms-tls-keys` transit key all existed for a service that had no credential, could
+   neither store nor read a private key, and refused every TLS handshake on every hostname.
+
+   All three are closed: one list (`infra/vault/services.sh`), `apply.sh` provisions rather
+   than prints, and `scripts/deploy.sh` warns before the roll when a service declares
+   `VAULT_ROLE_ID` with nothing in it. That last one is a **warning**, deliberately — making
+   it fatal blocked every deploy on the host, including the one carrying the fix.
 2. **DNS.** Let's Encrypt validates over HTTP-01, so each hostname must already resolve
    to this host.
 

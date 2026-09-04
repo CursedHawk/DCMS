@@ -280,12 +280,18 @@ if [ "$ENVIRONMENT" != "local" ]; then
     [ -n "$role" ] && [ -n "$secret" ] || missing_approles="$missing_approles $svc"
   done
 
+  # A WARNING, not a failure, and that distinction was learned the hard way: making this
+  # fatal blocked every deploy on the host -- including the one carrying the fix. A preflight
+  # must never be the reason a repair cannot ship. The service's own startup guard is what
+  # fails the health gate; this exists so the cause is named before the roll rather than found
+  # in a container log afterwards.
   if [ -n "${missing_approles// /}" ]; then
-    die "no Vault AppRole credentials for: ${missing_approles}
-     These services read their configuration -- and the edge its TLS private keys -- through
-     Vault, and an empty role id means every read fails. Issue them:
-       VAULT_TOKEN=<admin token> infra/vault/apply.sh
-       VAULT_TOKEN=<admin token> infra/vault/provision-host.sh --all"
+    warn "no Vault AppRole credentials for:${missing_approles}
+       These services read their configuration -- and the edge its TLS private keys -- through
+       Vault, and an empty role id means every read fails. For the edge that is every TLS
+       handshake refused, on every hostname. Issue them on this host:
+         VAULT_TOKEN=<admin token> infra/vault/apply.sh
+       apply.sh provisions any service that is missing them, so nothing has to be named."
   fi
 fi
 
