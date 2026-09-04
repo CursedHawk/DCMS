@@ -249,6 +249,44 @@ if [ "$ENVIRONMENT" != "local" ]; then
   auth_host="$(env_value AUTH_HOST)"
   [ -z "$auth_host" ] \
     && warn "AUTH_HOST unset -- authentication falls back to the built-in default, which is also the token issuer every service validates against. It needs a DNS A record pointing here, and Google's authorized redirect URI must be https://<AUTH_HOST>/signin-google"
+
+  # Every service that asks for an AppRole must actually have one.
+  #
+  # THIS IS THE CHECK THAT WAS MISSING. `edge` was added to infra/vault/apply.sh but not to
+  # provision-host.sh's own copy of the service list, so `--all` created the policy, the role
+  # and the dcms-tls-keys transit key and then quietly issued credentials to every service
+  # except the one terminating TLS. VAULT_ROLE_ID_EDGE was never written to .env, the edge
+  # could neither store nor read a private key, and every TLS handshake on every hostname was
+  # refused -- ERR_CONNECTION_FAILED across the whole platform, from an empty string.
+  #
+  # Read from the RESOLVED compose config rather than from .env, so it asks the question the
+  # containers will actually be started with. A service that legitimately uses a token instead
+  # (dev) declares VAULT_TOKEN with a value and is not flagged.
+  # Flatten the resolved config to "<service> <VAULT_*> <value>" triples, then judge them in
+  # bash where the logic is readable.
+  vault_env=$(compose config 2>/dev/null | awk '
+    /^  [a-zA-Z0-9_.-]+:$/ { svc=$1; sub(/:$/, "", svc) }
+    /^ +VAULT_(ROLE_ID|SECRET_ID|TOKEN): / {
+      key=$1; sub(/:$/, "", key); gsub(/"/, "", $2); print svc, key, $2
+    }')
+
+  missing_approles=""
+  for svc in $(printf '%s\n' "$vault_env" | awk '$2 == "VAULT_ROLE_ID" { print $1 }' | sort -u); do
+    # A service handed a token instead of an AppRole is configured, just differently (dev).
+    has_token=$(printf '%s\n' "$vault_env" | awk -v s="$svc" '$1 == s && $2 == "VAULT_TOKEN" && NF == 3 { print "y" }')
+    [ -n "$has_token" ] && continue
+    role=$(printf '%s\n' "$vault_env" | awk -v s="$svc" '$1 == s && $2 == "VAULT_ROLE_ID" && NF == 3 { print "y" }')
+    secret=$(printf '%s\n' "$vault_env" | awk -v s="$svc" '$1 == s && $2 == "VAULT_SECRET_ID" && NF == 3 { print "y" }')
+    [ -n "$role" ] && [ -n "$secret" ] || missing_approles="$missing_approles $svc"
+  done
+
+  if [ -n "${missing_approles// /}" ]; then
+    die "no Vault AppRole credentials for: ${missing_approles}
+     These services read their configuration -- and the edge its TLS private keys -- through
+     Vault, and an empty role id means every read fails. Issue them:
+       VAULT_TOKEN=<admin token> infra/vault/apply.sh
+       VAULT_TOKEN=<admin token> infra/vault/provision-host.sh --all"
+  fi
 fi
 
 echo "  compose: docker compose ${COMPOSE_FILES[*]}"

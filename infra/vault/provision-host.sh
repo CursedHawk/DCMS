@@ -37,7 +37,11 @@ ENV_FILE="$REPO_ROOT/.env"
 export VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}"
 export PATH="$REPO_ROOT/infra/vault/bin:$PATH"
 
-ALL_SERVICES="identity admin-api content-api media-worker site-builder site-host ai-gateway email-worker platform-api log-janitor"
+# The same list apply.sh creates roles from. It used to be a second copy here, and it was
+# missing `edge` -- so --all issued credentials for every service except the one terminating
+# TLS, and every handshake on the platform was refused. See infra/vault/services.sh.
+. "$REPO_ROOT/infra/vault/services.sh"
+ALL_SERVICES="$DCMS_VAULT_SERVICES"
 
 ROTATE=0
 SERVICES=""

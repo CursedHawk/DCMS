@@ -39,7 +39,10 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-SERVICES="identity admin-api content-api media-worker site-builder site-host ai-gateway email-worker platform-api edge log-janitor"
+# One list, shared with provision-host.sh -- see infra/vault/services.sh for what two copies
+# of it cost.
+. "$(pwd)/services.sh"
+SERVICES="$DCMS_VAULT_SERVICES"
 
 # Keys that must exist in secret/dcms/shared for any deployment to work. Presence only --
 # this never reads a value.
