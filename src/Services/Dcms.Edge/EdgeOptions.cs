@@ -1,10 +1,10 @@
 namespace Dcms.Edge;
 
 /// <summary>
-/// The platform-plane edge configuration: the four hostnames DCMS owns and the
-/// internal address of every service behind the edge.
+/// The platform-plane edge configuration: the hostnames DCMS owns and the internal address of
+/// every service behind the edge.
 ///
-/// <para>These are the same values the Caddyfile took from the environment
+/// <para>Four of these are the values the Caddyfile took from the environment
 /// (<c>ADMIN_HOST</c>, <c>PLATFORM_HOST</c>, <c>GRAFANA_DOMAIN</c>, <c>GIT_HOST</c>), and they
 /// carry the same defaults for the same reason: dev and production deploy the same image, so a
 /// hostname baked in here would make the dev edge answer for production's name.</para>
@@ -21,6 +21,38 @@ public sealed class EdgeOptions
     public string PlatformHost { get; set; } = "platform.highgeek.eu";
     public string GrafanaHost { get; set; } = "grafana.highgeek.eu";
     public string GitHost { get; set; } = "git.highgeek.eu";
+
+    /// <summary>
+    /// The authentication host. Everything identity serves lives here and nowhere else: the
+    /// OIDC protocol endpoints, discovery, the interactive login pages and the external-login
+    /// callbacks.
+    ///
+    /// <para>One host for authentication rather than a <c>/connect</c> prefix carved out of the
+    /// admin host, so the issuer is a name that means one thing. It is also what a token's
+    /// <c>iss</c> claim says, which is why moving it is not a routing change on its own — every
+    /// resource server validates against it.</para>
+    /// </summary>
+    public string AuthHost { get; set; } = "auth.highgeek.eu";
+
+    /// <summary>
+    /// Every hostname this edge answers for on the platform's own behalf, as opposed to a
+    /// tenant's.
+    ///
+    /// <para>Used by <c>TlsAllowList</c>: these are not rows in <c>tenancy.domains</c> and never
+    /// will be, so the allow-list has to know them from configuration or refuse to renew any of
+    /// them.</para>
+    /// </summary>
+    public IEnumerable<string> PlatformHostnames
+    {
+        get
+        {
+            yield return AdminHost;
+            yield return PlatformHost;
+            yield return AuthHost;
+            yield return GrafanaHost;
+            yield return GitHost;
+        }
+    }
 
     public EdgeUpstreams Upstreams { get; set; } = new();
 }

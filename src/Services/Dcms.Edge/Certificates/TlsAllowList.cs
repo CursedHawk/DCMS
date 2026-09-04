@@ -1,3 +1,4 @@
+using Dcms.Edge;
 using Microsoft.Extensions.Options;
 
 namespace Dcms.Edge.Certificates;
@@ -15,12 +16,30 @@ namespace Dcms.Edge.Certificates;
 ///
 /// <para>Without this gate the edge would mint a certificate for any hostname pointed at its IP
 /// — an open relay for someone else's ACME rate limit, and eventually for ours.</para>
+///
+/// <para><b>The platform's own hostnames never reach that call, and must not.</b> They are not
+/// rows in <c>tenancy.domains</c> — they are what the operator configured this edge to answer
+/// for — so site-host has correctly never heard of them and would refuse every one. Caddy had no
+/// equivalent problem because each was a named site block; here, without this, admin.,
+/// platform., grafana., auth. and git. would be imported at cutover and then never renew, and
+/// every operator hostname would go to a browser warning on the same afternoon about sixty days
+/// later. That is precisely the failure the renewal sweep exists to make visible, arriving
+/// through the one door the sweep cannot see.</para>
 /// </summary>
-public sealed class TlsAllowList(HttpClient http, IOptions<CertificateOptions> options, ILogger<TlsAllowList> logger)
-    : ITlsAllowList
+public sealed class TlsAllowList(
+    HttpClient http,
+    IOptions<CertificateOptions> options,
+    IOptions<EdgeOptions> edge,
+    ILogger<TlsAllowList> logger) : ITlsAllowList
 {
     public async Task<bool> IsAllowedAsync(string hostname, CancellationToken ct)
     {
+        if (edge.Value.PlatformHostnames.Any(
+                h => string.Equals(h, hostname, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
         var endpoint = options.Value.TlsAllowedEndpoint;
         try
         {
