@@ -187,6 +187,30 @@ public sealed class CertificateStore(
             .AnyAsync(c => c.Hostname == normalized && c.ReissueRequestedAt != null, ct);
     }
 
+    public async Task<int> ClearBackoffForNeverIssuedAsync(CancellationToken ct)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
+
+        // Loaded and tracked rather than an ExecuteUpdate, deliberately. A set-based statement
+        // leaves no before-image -- the audit interceptor can say a table changed and not what
+        // it held -- and the edge carries no audit recorder to make up the difference. The set
+        // is bounded by the number of hostnames the platform serves and this runs once per
+        // process start, so there is nothing to buy by going around the change tracker.
+        var rows = await db.Certificates
+            .Where(c => c.EncryptedPrivateKey == "" && c.ConsecutiveFailures > 0)
+            .ToListAsync(ct);
+
+        foreach (var row in rows)
+        {
+            row.ConsecutiveFailures = 0;
+            row.LastError = null;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return rows.Count;
+    }
+
     private async Task<CachedCertificate?> LoadAsync(string hostname, CancellationToken ct)
     {
         var normalized = Normalize(hostname);

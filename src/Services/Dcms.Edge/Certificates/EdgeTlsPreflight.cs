@@ -29,6 +29,7 @@ namespace Dcms.Edge.Certificates;
 public sealed class EdgeTlsPreflight(
     IServiceProvider services,
     CertificateProvisioner provisioner,
+    ICertificateStore store,
     IOptions<CertificateOptions> certificates,
     IOptions<EdgeOptions> edge,
     ILogger<EdgeTlsPreflight> logger) : BackgroundService
@@ -50,6 +51,17 @@ public sealed class EdgeTlsPreflight(
             // Nothing below can succeed, so there is no point attempting it and filling the log
             // with ACME failures that all have one cause.
             return;
+        }
+
+        // The store works. Anything that has never held a certificate gets its backoff cleared,
+        // so a restart after fixing the cause is enough -- see ClearBackoffForNeverIssuedAsync
+        // for why an operator would otherwise watch a repaired platform stay dark for hours.
+        var cleared = await store.ClearBackoffForNeverIssuedAsync(stoppingToken);
+        if (cleared > 0)
+        {
+            logger.LogInformation(
+                "Cleared the failure backoff on {Count} hostnames that hold no certificate; "
+                + "they will be attempted on this pass.", cleared);
         }
 
         foreach (var hostname in edge.Value.PlatformHostnames.Distinct(StringComparer.OrdinalIgnoreCase))

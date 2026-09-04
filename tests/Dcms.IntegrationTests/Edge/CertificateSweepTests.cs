@@ -161,6 +161,49 @@ public sealed class CertificateSweepTests : IAsyncLifetime
     }
 
     [DockerFact]
+    public async Task Clears_the_backoff_on_hostnames_that_have_never_held_a_certificate()
+    {
+        // What makes fixing the cause enough. Six failures put a hostname ~2.7 hours out, and
+        // the backoff cannot tell a CA that keeps refusing from a store of ours that was
+        // broken -- so without this an operator repairs Vault, restarts, and watches a fixed
+        // platform stay dark all afternoon. Bounded on purpose: only hostnames holding no
+        // certificate, and only once per process start.
+        var store = BuildStore();
+        for (var i = 0; i < 6; i++)
+        {
+            await store.RecordFailureAsync(
+                "admin.highgeek.eu", "Vault Transit was requested but Vault is not configured.",
+                TestContext.Current.CancellationToken);
+        }
+
+        var (chainPem, keyPem) = SelfSigned("healthy.tenant.example");
+        await store.SaveAsync(
+            "healthy.tenant.example", chainPem, keyPem, CertificateSource.DcmsManaged,
+            TestContext.Current.CancellationToken);
+        await store.RecordFailureAsync(
+            "healthy.tenant.example", "a real CA refusal", TestContext.Current.CancellationToken);
+
+        var cleared = await store.ClearBackoffForNeverIssuedAsync(TestContext.Current.CancellationToken);
+
+        cleared.Should().Be(1);
+
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
+
+        var never = await db.Certificates.AsNoTracking()
+            .FirstAsync(c => c.Hostname == "admin.highgeek.eu", TestContext.Current.CancellationToken);
+        never.ConsecutiveFailures.Should().Be(0);
+        never.LastError.Should().BeNull();
+
+        // A hostname that HAS a certificate keeps its backoff: that failure was the CA's answer
+        // about a renewal, and clearing it would spend the rate limit re-asking a settled
+        // question.
+        var healthy = await db.Certificates.AsNoTracking()
+            .FirstAsync(c => c.Hostname == "healthy.tenant.example", TestContext.Current.CancellationToken);
+        healthy.ConsecutiveFailures.Should().Be(1);
+    }
+
+    [DockerFact]
     public async Task Orders_nothing_at_all_when_Vault_Transit_is_unusable()
     {
         // Every private key is encrypted through Transit, so an order placed while it is broken

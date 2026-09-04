@@ -29,6 +29,25 @@ public interface ICertificateStore
     /// rather than the reissue.
     /// </summary>
     Task<bool> IsReissueRequestedAsync(string hostname, CancellationToken ct);
+
+    /// <summary>
+    /// Clears the recorded failure on every hostname that has never held a certificate, and
+    /// returns how many. Called once per process start, after the store has been proved
+    /// working.
+    ///
+    /// <para><b>This is what makes fixing the cause enough.</b> The backoff doubles per failure
+    /// and reaches hours, and it cannot tell a hostname the CA keeps refusing from one that
+    /// failed because the platform's own store was broken. When Vault Transit was unreachable
+    /// every platform hostname accumulated six failures, so repairing Vault would have been
+    /// followed by an afternoon of the sweep skipping exactly the hostnames it had just become
+    /// able to issue — with the operator watching a fixed platform stay dark.</para>
+    ///
+    /// <para>Scoped to hostnames with no certificate at all, and to process start rather than
+    /// to every sweep, so it stays bounded: a domain whose DNS really is broken gets one extra
+    /// attempt per restart, not a retry loop. A restart is the operator saying "I changed
+    /// something, try again", and this is the edge taking them at their word.</para>
+    /// </summary>
+    Task<int> ClearBackoffForNeverIssuedAsync(CancellationToken ct);
 }
 
 /// <summary>Whether a hostname may be issued a certificate at all. See <see cref="TlsAllowList"/>.</summary>
