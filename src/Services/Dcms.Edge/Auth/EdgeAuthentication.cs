@@ -54,6 +54,18 @@ public static class EdgeAuthentication
             // policy that does not exist would fail YARP's validation of the config as a WHOLE,
             // leaving the edge with an empty route table and every request a 404.
             builder.Services.AddAuthentication();
+
+            // Said once, loudly, at startup.
+            //
+            // The open loop is deliberate -- see EdgeAuthOptions.ClientSecret -- but a
+            // deliberate degradation that announces itself only by its absence is
+            // indistinguishable from a bug, and this one hid for a whole deployment. Grafana
+            // conceals it particularly well: it falls back to its own login form, so single
+            // sign-on being off looks exactly like single sign-on working and then asking you
+            // to log in. Forgejo is where it surfaces, because a user mirrored from DCMS may
+            // have no Forgejo password at all -- for them the fallback is a page they cannot
+            // get past, and the platform looks broken rather than unconfigured.
+            builder.Services.AddHostedService<EdgeAuthDisabledNotice>();
             return;
         }
 

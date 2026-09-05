@@ -777,6 +777,61 @@ Pace matters on a cold start: Let's Encrypt allows ~50 certificates per register
 domain per week. The sweep orders serially under an advisory lock for exactly that
 reason, and a failed authorization counts against the same budget as a successful one.
 
+### Single sign-on into Grafana and Forgejo
+
+The edge signs an operator in once (cookie + OIDC against identity, client `dcms-edge`) and
+tells each console who they are in the header dialect it reads — Grafana's `[auth.proxy]` and
+Forgejo's reverse-proxy authentication, both `X-WEBAUTH-USER`. Neither runs its own OIDC.
+
+It is **all or nothing on one variable**: `EDGE_OIDC_CLIENT_SECRET`. Identity seeds the
+`dcms-edge` client from it and the edge authenticates with it, so the two must hold the same
+value and roll together. `infra/vault/apply.sh` generates one when it is missing and never
+overwrites an existing one.
+
+**Empty means single sign-on is off**, fail-open: no route carries a policy, no header is
+asserted, and both consoles fall back to their own sign-in. That is the right trade — this is
+the public ingress, and refusing to serve tenant sites over an operator credential would be the
+wrong way to fail — but it is nearly invisible, which is how it survived a deployment
+unnoticed. Two things now make it visible: the edge logs `SINGLE SIGN-ON IS OFF` at startup,
+and the secret is generated rather than waited for.
+
+**Grafana hides the failure; Forgejo exposes it.** Grafana falls back to its own login form, so
+"SSO is off" and "SSO worked and then asked me to sign in" look identical. Forgejo's fallback
+is a password form, and a user mirrored from DCMS by `ForgejoUserSync` may have no Forgejo
+password at all — so for them it is a page that cannot be passed, and the platform reads as
+broken rather than unconfigured. If Forgejo asks for a password, check
+`docker compose logs edge | grep 'SINGLE SIGN-ON'` before anything else.
+
+What has to be true for Forgejo SSO, all of it already in the compose files:
+
+| Setting | Value | Why |
+|---|---|---|
+| `service.ENABLE_REVERSE_PROXY_AUTHENTICATION` | `true` | Turns it on for the web UI. |
+| `service.ENABLE_REVERSE_PROXY_AUTHENTICATION_API` | `false` | The API authenticates with tokens; enabling this would make the reverse proxy responsible for CSRF. |
+| `service.ENABLE_REVERSE_PROXY_AUTO_REGISTRATION` | `false` | The edge must never invent a username — see below. |
+| `security.REVERSE_PROXY_AUTHENTICATION_USER` | `X-WEBAUTH-USER` | The header the edge asserts. |
+| `security.REVERSE_PROXY_TRUSTED_PROXIES` | `172.16.0.0/12` | The compose network. Forgejo publishes no host port, so nothing else can reach it. |
+
+**The username is a claim, not a derivation.** `ForgejoUserSync` allocates names from the
+email's local part with a `-2` suffix on collision, so two people at `rgolias@` different
+domains become `rgolias` and `rgolias-2`. Identity emits the allocated name as a
+`forgejo_username` claim and the edge asserts only that. An edge that recomputed it would, on
+any collision, sign one user in as another in the server holding every tenant's repositories.
+No claim means no header — Forgejo's own sign-in is the correct answer for a user the mirror
+has not reached, and auto-registration is off so a guessed name cannot collide with the one the
+sync will allocate.
+
+**Git over HTTPS is deliberately untouched.** `/{owner}/{repo}/info/refs`, `git-upload-pack`,
+`git-receive-pack`, `git-upload-archive` and LFS are separate routes at a lower `Order`, with no
+policy and no header. Those requests carry the per-user Basic credential the sync provisioned;
+asserting a browser session on top would not add a check, it would replace one — a push
+attributed to whoever is signed in in that browser. `IdentityHeaders.Resolve` refuses a second
+time whenever an `Authorization` header is present, so a missed URL shape still fails safe.
+
+**Signing out of Forgejo does not sign you out.** The edge asserts the header on the next
+request and Forgejo signs you straight back in. Ending the session means the edge's
+`/.edge/signout`, not Forgejo's.
+
 ### Rate limiting, caching and scaling out
 
 **Rate limiting** runs at the edge as well as in each service, and the two are not

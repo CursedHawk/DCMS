@@ -108,6 +108,37 @@ for svc in $SERVICES; do
   echo "  issued  $svc -> $role_key, $secret_key"
 done
 
+# ---------------------------------------------------------------------------
+# Shared machine-only secrets in .env
+# ---------------------------------------------------------------------------
+#
+# Secrets that are a shared value between two of OUR services and that no human chooses.
+# Nobody picks these, nobody needs to know them, and the only thing an operator can do with
+# one is fail to generate it -- so they are generated here.
+#
+# EDGE_OIDC_CLIENT_SECRET is why this section exists. It is read by identity (which seeds the
+# `dcms-edge` OpenIddict client from it) and by the edge (which authenticates with it), and an
+# empty value disables edge authentication ENTIRELY -- silently, and fail-open: no route
+# carries a policy, no identity header is ever asserted, and single sign-on into Grafana and
+# Forgejo simply does not happen. Grafana hides it well, because it falls back to its own
+# login form. Forgejo does not: users mirrored from DCMS may have no Forgejo password at all,
+# so for them the fallback is a login page they cannot pass.
+#
+# Never overwritten. Rotating it needs both identity and the edge rolled together, which is a
+# deliberate act, not a side effect of running this script.
+generate_secret() { openssl rand -base64 36 | tr -d '\n'; }
+
+echo
+echo "==> Shared secrets in .env"
+for key in EDGE_OIDC_CLIENT_SECRET; do
+  if grep -qE "^$key=." "$ENV_FILE" 2>/dev/null; then
+    echo "  keep    $key (already set)"
+  else
+    set_env "$key" "$(generate_secret)"
+    echo "  GENERATED $key -- roll identity and edge together for it to take effect"
+  fi
+done
+
 echo
 echo "Done. The token was used for this run only and was not written anywhere."
 echo "Roll the services that changed:  scripts/deploy.sh --env <env>"
