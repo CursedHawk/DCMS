@@ -121,6 +121,45 @@ public class CertificateProvisionerTests
         await issuer.Received(1).IssueAsync("shop.tenant.example", Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task Does_not_back_off_a_hostname_the_CA_was_never_asked_about()
+    {
+        var issuer = Substitute.For<IAcmeIssuer>();
+        issuer.IssueAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new CertificateIssuanceUnavailableException(
+                "The ACME account key could not be decrypted."));
+        var provisioner = Build(issuer, allowed: true, out var store);
+
+        var result = await provisioner.EnsureAsync("shop.tenant.example", TestContext.Current.CancellationToken);
+
+        result.Should().BeNull();
+        // The backoff doubles per failure and reaches hours. Charging it for our own Vault
+        // outage is what turned a ten-minute repair into an afternoon of the sweep skipping
+        // exactly the hostnames it had just become able to issue.
+        await store.DidNotReceive().RecordFailureAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Does_not_back_off_a_certificate_that_was_issued_and_could_not_be_stored()
+    {
+        var issuer = Substitute.For<IAcmeIssuer>();
+        issuer.IssueAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new IssuedCertificate("chain-pem", "key-pem"));
+        var provisioner = Build(issuer, allowed: true, out var store);
+        store.SaveAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
+                Arg.Any<CertificateSource>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidOperationException("Vault Transit is unreachable."));
+
+        var result = await provisioner.EnsureAsync("shop.tenant.example", TestContext.Current.CancellationToken);
+
+        result.Should().BeNull();
+        // The CA already spent this certificate against the weekly limit. The next attempt
+        // should happen the moment the store works, not hours later.
+        await store.DidNotReceive().RecordFailureAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
     private static CertificateProvisioner Build(IAcmeIssuer issuer, bool allowed, out ICertificateStore store)
     {
         store = Substitute.For<ICertificateStore>();

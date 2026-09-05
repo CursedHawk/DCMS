@@ -48,6 +48,23 @@ public interface ICertificateStore
     /// something, try again", and this is the edge taking them at their word.</para>
     /// </summary>
     Task<int> ClearBackoffForNeverIssuedAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Clears the recorded failure on every hostname that holds a usable certificate and is not
+    /// due for renewal before <paramref name="renewalThreshold"/>, and returns how many. Called
+    /// at the end of every sweep.
+    ///
+    /// <para>The companion to <see cref="ClearBackoffForNeverIssuedAsync"/>, for the rows that
+    /// one deliberately will not touch. A hostname that is serving TLS and is not due is not
+    /// being ordered for at all, so the backoff recorded against it is holding back a request
+    /// nobody is going to make — while still counting towards the <c>failing</c> gauge an alert
+    /// fires on. That is how one afternoon's Vault outage stays on a dashboard indefinitely.
+    /// </para>
+    ///
+    /// <para>Excludes anything inside the renewal window on purpose: there the backoff is live,
+    /// and a certificate that is due and failing to renew is exactly what it is for.</para>
+    /// </summary>
+    Task<int> ClearBackoffForHealthyAsync(DateTimeOffset renewalThreshold, CancellationToken ct);
 }
 
 /// <summary>Whether a hostname may be issued a certificate at all. See <see cref="TlsAllowList"/>.</summary>

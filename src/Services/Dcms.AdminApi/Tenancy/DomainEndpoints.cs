@@ -173,7 +173,8 @@ public static class DomainEndpoints
         // site-host serves it there. Lives beside the other domain routes because
         // it is where primary-domain bookkeeping happens.
         app.MapPost("/api/admin/domains/{id:guid}/site", async (
-            Guid id, LinkSiteRequest body, TenancyDbContext db, SitesDbContext sites, CancellationToken ct) =>
+            Guid id, LinkSiteRequest body, TenancyDbContext db, SitesDbContext sites,
+            IEventPublisher events, CancellationToken ct) =>
         {
             var domain = await db.Domains.FirstOrDefaultAsync(d => d.Id == id, ct);
             if (domain is null)
@@ -207,6 +208,28 @@ public static class DomainEndpoints
             {
                 await PromotePrimaryAsync(db, orphaned, ct);
             }
+
+            // LINKING IS WHEN A HOSTNAME BECOMES ELIGIBLE FOR A CERTIFICATE, so this is where
+            // the edge has to be told. The TLS gate is "verified AND linked to a site"
+            // (SiteHost.DomainResolver.IsTlsAllowedAsync), and for a managed subdomain the two
+            // never coincide: /provisioned creates it already verified and unlinked, so the
+            // event published there reaches an edge that correctly refuses to issue for it, and
+            // nothing said anything afterwards. Every DCMS-provisioned site therefore had no
+            // certificate until the next hourly sweep happened to find it — up to an hour of a
+            // brand-new site answering with a failed TLS handshake, on the page that had just
+            // told the tenant it was live.
+            //
+            // Reusing the "verified" subject rather than adding one: it already means "this
+            // hostname's certificate needs attention" to its only consumer, which also drives it
+            // for an uploaded certificate and an operator's reissue. Issuance is idempotent —
+            // the provisioner returns the certificate it finds — so a duplicate costs a lookup.
+            if (body.SiteId is not null && domain.IsVerified)
+            {
+                await events.PublishAsync(Subjects.TenantDomainVerified,
+                    new TenantDomainVerified(
+                        Guid.NewGuid(), DateTimeOffset.UtcNow, domain.TenantId, domain.Id, domain.Hostname), ct);
+            }
+
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.DomainsManage).WithAudit(AuditActions.DomainLinked, "domain");
 

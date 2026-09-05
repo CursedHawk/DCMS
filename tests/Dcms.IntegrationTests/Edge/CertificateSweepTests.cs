@@ -264,6 +264,41 @@ public sealed class CertificateSweepTests : IAsyncLifetime
         row?.ConsecutiveFailures.Should().Be(0);
     }
 
+    [DockerFact]
+    public async Task Clears_a_stale_failure_from_a_hostname_that_is_serving_a_good_certificate()
+    {
+        // A hostname holding a valid certificate that is nowhere near due is not being ordered
+        // for, so a failure recorded against it holds back a request nobody is going to make --
+        // while still counting towards the `failing` gauge an alert fires on. That is how one
+        // afternoon's Vault outage stays on the dashboard indefinitely: when the edge's Vault
+        // token expired, every provisioned tenant site collected between one and five failures
+        // behind a certificate that was perfectly good, and nothing would ever have removed them.
+        await SeedAsync("shop.tenant.example");
+        var store = BuildStore();
+        for (var i = 0; i < 3; i++)
+        {
+            await store.RecordFailureAsync(
+                "shop.tenant.example", "permission denied / invalid token",
+                TestContext.Current.CancellationToken);
+        }
+
+        var issuer = new FakeAcme();
+        var service = BuildSweep(issuer, allowed: ["shop.tenant.example"]);
+
+        await RunOneSweepAsync(service);
+
+        using var scope = services.CreateScope();
+        var row = await scope.ServiceProvider.GetRequiredService<EdgeDbContext>()
+            .Certificates.AsNoTracking()
+            .FirstAsync(c => c.Hostname == "shop.tenant.example", TestContext.Current.CancellationToken);
+
+        row.ConsecutiveFailures.Should().Be(0);
+        row.LastError.Should().BeNull();
+
+        // And it healed the record without spending a certificate to do it.
+        issuer.Ordered.Should().BeEmpty();
+    }
+
     /// <summary>
     /// Starts the background service, waits for one whole pass, then stops it. The sweep runs
     /// once immediately on start rather than after a full period, precisely so a deployment that

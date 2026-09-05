@@ -199,6 +199,21 @@ public sealed class CertificateRenewalService(
         // just fixed everything still logged "4 cannot serve TLS, 6 renewed" -- which reads as
         // four hostnames still broken, and sent me looking for them. The gauge had the same
         // flaw and would have alerted for a full hour after the platform recovered.
+        // A hostname that is serving TLS and is not due is not being ordered for, so whatever
+        // failure is recorded against it is protecting a rate limit from a request nobody is
+        // going to make. Leaving it there keeps the `failing` gauge -- the one an alert fires on
+        // -- reading the last outage forever: after Vault handed back expired tokens on
+        // 2026-09-05 every provisioned tenant site kept one to five recorded failures behind a
+        // certificate that was perfectly good. Cleared here, so recovery is something the sweep
+        // reports rather than something an operator has to go and confirm by hand.
+        var healed = await store.ClearBackoffForHealthyAsync(threshold, ct);
+        if (healed > 0)
+        {
+            logger.LogInformation(
+                "Cleared a stale failure record on {Count} hostname(s) that hold a working "
+                + "certificate and are not due for renewal.", healed);
+        }
+
         var usable = await db.Certificates
             .Where(c => c.EncryptedPrivateKey != "")
             .Select(c => c.Hostname)
@@ -249,6 +264,17 @@ public sealed class CertificateRenewalService(
         try
         {
             certificate = await issuer.IssueAsync(hostname, ct);
+        }
+        catch (CertificateIssuanceUnavailableException ex)
+        {
+            // We never got as far as the CA -- so nothing was spent, and nothing is backed off.
+            logger.LogError(
+                ex,
+                "{What} for {Hostname} could not be attempted; the CA was never asked, so this is "
+                + "not backed off and the next pass will try again.",
+                isRenewal ? "Renewal" : "Issuance", hostname);
+            metrics.EdgeCertificate("failed");
+            return false;
         }
         catch (Exception ex)
         {

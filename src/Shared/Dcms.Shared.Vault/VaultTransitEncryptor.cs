@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using VaultSharp;
 using VaultSharp.V1.SecretsEngines.Transit;
 
@@ -8,27 +9,48 @@ namespace Dcms.Shared.Vault;
 /// Envelope encryption via Vault Transit (mount "transit", key "dcms-tenant-secrets").
 /// Tenant AI keys are stored as ciphertext and only decrypted in ai-gateway at
 /// call time, so a database leak never exposes a usable key.
+///
+/// <para>Every call goes through <see cref="VaultTokenRefresh"/>, which is what keeps this
+/// working past the first hour of a process's life. See that type for the whole story.</para>
 /// </summary>
-public sealed class VaultTransitEncryptor(IVaultClient vault) : ITransitEncryptor
+public sealed class VaultTransitEncryptor(IVaultClient vault, ILogger<VaultTransitEncryptor> logger)
+    : ITransitEncryptor
 {
     private const string Mount = "transit";
 
-    public async Task<string> EncryptAsync(string keyName, ReadOnlyMemory<byte> plaintext, CancellationToken ct = default)
+    public Task<string> EncryptAsync(string keyName, ReadOnlyMemory<byte> plaintext, CancellationToken ct = default)
     {
-        var response = await vault.V1.Secrets.Transit.EncryptAsync(
-            keyName,
-            new EncryptRequestOptions { Base64EncodedPlainText = Convert.ToBase64String(plaintext.Span) },
-            mountPoint: Mount);
-        return response.Data.CipherText;
+        // Encoded out here because a Span cannot be captured by the lambda below.
+        var base64 = Convert.ToBase64String(plaintext.Span);
+
+        return VaultTokenRefresh.ExecuteAsync(
+            async () =>
+            {
+                var response = await vault.V1.Secrets.Transit.EncryptAsync(
+                    keyName,
+                    new EncryptRequestOptions { Base64EncodedPlainText = base64 },
+                    mountPoint: Mount);
+                return response.Data.CipherText;
+            },
+            vault.V1.Auth.ResetVaultToken,
+            logger,
+            $"encrypt with Transit key '{keyName}'");
     }
 
-    public async Task<byte[]> DecryptAsync(string keyName, string ciphertext, CancellationToken ct = default)
+    public Task<byte[]> DecryptAsync(string keyName, string ciphertext, CancellationToken ct = default)
     {
-        var response = await vault.V1.Secrets.Transit.DecryptAsync(
-            keyName,
-            new DecryptRequestOptions { CipherText = ciphertext },
-            mountPoint: Mount);
-        return Convert.FromBase64String(response.Data.Base64EncodedPlainText);
+        return VaultTokenRefresh.ExecuteAsync(
+            async () =>
+            {
+                var response = await vault.V1.Secrets.Transit.DecryptAsync(
+                    keyName,
+                    new DecryptRequestOptions { CipherText = ciphertext },
+                    mountPoint: Mount);
+                return Convert.FromBase64String(response.Data.Base64EncodedPlainText);
+            },
+            vault.V1.Auth.ResetVaultToken,
+            logger,
+            $"decrypt with Transit key '{keyName}'");
     }
 }
 
@@ -67,6 +89,11 @@ public static class VaultTransitServiceCollectionExtensions
     /// deployment with no Vault starts fine and only throws if something actually asks for an
     /// encrypt or decrypt. That is the right shape — Transit is needed for tenant AI keys and
     /// nothing else on the startup path.</para>
+    ///
+    /// <para>The client is a singleton, and one that holds a token far shorter-lived than the
+    /// process. <see cref="VaultTransitEncryptor"/> re-authenticates on rejection rather than
+    /// this registration handing out a new client per call: a fresh client would log in on every
+    /// single Transit call, which is a login per TLS handshake on the edge.</para>
     /// </summary>
     public static IServiceCollection AddDcmsVaultTransit(this IServiceCollection services)
     {

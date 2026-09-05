@@ -140,8 +140,22 @@ public sealed class CertesAcmeIssuer(
 
             if (row is not null)
             {
-                var pem = Encoding.UTF8.GetString(await Transit.DecryptAsync(
-                    VaultTransitServiceCollectionExtensions.TlsKeysKey, row.EncryptedAccountKey, ct));
+                // Wrapped, because this is the one step in issuance that fails without the CA
+                // ever hearing about it, and the caller's backoff must not be charged for it.
+                // See CertificateIssuanceUnavailableException.
+                string pem;
+                try
+                {
+                    pem = Encoding.UTF8.GetString(await Transit.DecryptAsync(
+                        VaultTransitServiceCollectionExtensions.TlsKeysKey, row.EncryptedAccountKey, ct));
+                }
+                catch (Exception ex)
+                {
+                    throw new CertificateIssuanceUnavailableException(
+                        "The ACME account key could not be decrypted, so no certificate can be "
+                        + "ordered. Check Vault Transit and the edge's AppRole.", ex);
+                }
+
                 return cachedAcme = new AcmeContext(directoryUri, KeyFactory.FromPem(pem), http);
             }
 
@@ -154,16 +168,33 @@ public sealed class CertesAcmeIssuer(
 
             var accountKey = KeyFactory.NewKey(KeyAlgorithm.ES256);
             var acme = new AcmeContext(directoryUri, accountKey, http);
+
+            // Encrypted BEFORE the account is registered. The other order registers an ACME
+            // identity with the CA and then discovers it cannot store the key that owns it --
+            // an account nothing can ever use again, and a second one registered on the next
+            // attempt, splitting the rate limit this platform is counted under across both.
+            string encryptedAccountKey;
+            try
+            {
+                encryptedAccountKey = await Transit.EncryptAsync(
+                    VaultTransitServiceCollectionExtensions.TlsKeysKey,
+                    Encoding.UTF8.GetBytes(accountKey.ToPem()),
+                    ct);
+            }
+            catch (Exception ex)
+            {
+                throw new CertificateIssuanceUnavailableException(
+                    "A new ACME account key could not be encrypted, so registering one would "
+                    + "strand it. Check Vault Transit and the edge's AppRole.", ex);
+            }
+
             var account = await acme.NewAccount(config.ContactEmail, termsOfServiceAgreed: true);
 
             db.AcmeAccounts.Add(new AcmeAccount
             {
                 DirectoryUrl = config.AcmeDirectory,
                 ContactEmail = config.ContactEmail,
-                EncryptedAccountKey = await Transit.EncryptAsync(
-                    VaultTransitServiceCollectionExtensions.TlsKeysKey,
-                    Encoding.UTF8.GetBytes(accountKey.ToPem()),
-                    ct),
+                EncryptedAccountKey = encryptedAccountKey,
                 AccountUrl = account.Location?.ToString(),
             });
             await db.SaveChangesAsync(ct);

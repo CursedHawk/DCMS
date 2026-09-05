@@ -73,19 +73,54 @@ public sealed class CertificateProvisioner(
             return null;
         }
 
+        // The CA's failures and ours are recorded differently, exactly as in
+        // CertificateRenewalService.OrderAsync -- see the long comment there. The backoff
+        // protects the ACME account's rate limit from a hostname the CA keeps refusing, so only
+        // a failure the CA actually produced may extend it. Everything else is ours to fix, and
+        // charging the platform hours of skipped retries for our own outage is how a fixed
+        // platform stays dark all afternoon.
+        IssuedCertificate issued;
         try
         {
-            var issued = await issuer.IssueAsync(hostname, ct);
-            await store.SaveAsync(hostname, issued.PemChain, issued.PemPrivateKey, CertificateSource.DcmsManaged, ct);
-            metrics.EdgeCertificate("issued");
-            return await store.GetAsync(hostname, ct);
+            issued = await issuer.IssueAsync(hostname, ct);
+        }
+        catch (CertificateIssuanceUnavailableException ex)
+        {
+            logger.LogError(
+                ex,
+                "Cannot order a certificate for {Hostname} right now; the CA was never asked, so "
+                + "this is not backed off and the next attempt will try again immediately.",
+                hostname);
+            metrics.EdgeCertificate("failed");
+            return null;
         }
         catch (Exception ex)
         {
+            // The CA said no. This is what the backoff is for.
             logger.LogError(ex, "Certificate issuance failed for {Hostname}.", hostname);
             await store.RecordFailureAsync(hostname, ex.Message, CancellationToken.None);
             metrics.EdgeCertificate("failed");
             return null;
         }
+
+        try
+        {
+            await store.SaveAsync(hostname, issued.PemChain, issued.PemPrivateKey, CertificateSource.DcmsManaged, ct);
+        }
+        catch (Exception ex)
+        {
+            // Ours, not the CA's -- so no backoff, and deliberately loud: the certificate was
+            // issued and then thrown away, spending the account's weekly budget for nothing.
+            logger.LogError(
+                ex,
+                "A certificate was ISSUED for {Hostname} and could not be stored, so it is lost. "
+                + "The CA counted it against the rate limit.",
+                hostname);
+            metrics.EdgeCertificate("failed");
+            return null;
+        }
+
+        metrics.EdgeCertificate("issued");
+        return await store.GetAsync(hostname, ct);
     }
 }

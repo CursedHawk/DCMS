@@ -745,10 +745,26 @@ count, with no key. Counting those as held is how a completely dark platform onc
 
 **A failure that never reached the CA does not extend the backoff.** The doubling backoff
 exists to stop one tenant's deleted DNS record from spending the account's weekly budget. It
-applies only to `IssueAsync` throwing. A certificate that was issued and then could not be
-stored is logged loudly — the CA counted it — and left immediately retryable, because
-otherwise repairing our own outage is followed by hours of the sweep skipping the hostnames it
-just became able to fix. Anything deferred by a backoff is named in the sweep's log line.
+applies only to the CA actually refusing. A failure raised before the CA was ever asked
+(`CertificateIssuanceUnavailableException` — Vault down, the account key undecryptable) and a
+certificate that was issued and then could not be stored are both logged loudly and left
+immediately retryable, because otherwise repairing our own outage is followed by hours of the
+sweep skipping the hostnames it just became able to fix. Anything deferred by a backoff is
+named in the sweep's log line, and the sweep clears the record on any hostname that is serving
+a good certificate and is not due — so the `Failing` panel reads the present, not the last
+incident.
+
+**A hostname that serves and then stops, with no deploy in between, is the Vault token.** The
+edge authenticates with an AppRole and the token it gets lives one hour (`token_ttl=1h`,
+`token_max_ttl=4h` — `infra/vault/apply.sh`). VaultSharp logs in once, lazily, and caches that
+token for the life of the client, which is the life of the process; nothing renewed it, so an
+hour after every deploy every Transit call answered
+`403 permission denied / invalid token`. The certificates already in the edge's memory cache
+kept serving — entries live until the certificate expires — so the platform hostnames looked
+fine while every hostname loaded later, which is every tenant site, aborted its handshake.
+`VaultTokenRefresh` now re-authenticates and retries once on a 403, so this heals itself; the
+warning it logs (`Vault rejected this service's token`) is the trace it left. If you see that
+warning on *every* call rather than once an hour, it is the policy, not the token.
 
 Two things have to be in place for the sweep to issue anything, and both fail loudly in
 `docker compose logs edge` (`EdgeTlsPreflight` checks them 5s after start):

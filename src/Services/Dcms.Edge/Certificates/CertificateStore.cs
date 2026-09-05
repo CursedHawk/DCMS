@@ -211,6 +211,31 @@ public sealed class CertificateStore(
         return rows.Count;
     }
 
+    public async Task<int> ClearBackoffForHealthyAsync(DateTimeOffset renewalThreshold, CancellationToken ct)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
+
+        // Tracked rather than an ExecuteUpdate for the same reason as above: a set-based
+        // statement leaves the audit interceptor with no before-image, and the edge carries no
+        // audit recorder to make up the difference.
+        var rows = await db.Certificates
+            .Where(c => c.ConsecutiveFailures > 0
+                        && c.EncryptedPrivateKey != ""
+                        && c.NotAfter > renewalThreshold
+                        && c.ReissueRequestedAt == null)
+            .ToListAsync(ct);
+
+        foreach (var row in rows)
+        {
+            row.ConsecutiveFailures = 0;
+            row.LastError = null;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return rows.Count;
+    }
+
     private async Task<CachedCertificate?> LoadAsync(string hostname, CancellationToken ct)
     {
         var normalized = Normalize(hostname);
