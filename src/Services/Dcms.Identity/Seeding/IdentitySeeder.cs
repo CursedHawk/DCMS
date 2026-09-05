@@ -292,19 +292,31 @@ public sealed class IdentitySeeder(
         // database, and the only symptom was OpenIddict refusing the sign-in.
         var current = new OpenIddictApplicationDescriptor();
         await manager.PopulateAsync(current, existing, ct);
-        if (current.RedirectUris.SetEquals(descriptor.RedirectUris)
-            && current.PostLogoutRedirectUris.SetEquals(descriptor.PostLogoutRedirectUris))
+
+        var urisChanged = !current.RedirectUris.SetEquals(descriptor.RedirectUris)
+                          || !current.PostLogoutRedirectUris.SetEquals(descriptor.PostLogoutRedirectUris);
+        if (urisChanged)
         {
-            return;
+            current.RedirectUris.Clear();
+            current.PostLogoutRedirectUris.Clear();
+            foreach (var uri in descriptor.RedirectUris) current.RedirectUris.Add(uri);
+            foreach (var uri in descriptor.PostLogoutRedirectUris) current.PostLogoutRedirectUris.Add(uri);
+            await manager.PopulateAsync(existing, current, ct);
         }
 
-        current.RedirectUris.Clear();
-        current.PostLogoutRedirectUris.Clear();
-        foreach (var uri in descriptor.RedirectUris) current.RedirectUris.Add(uri);
-        foreach (var uri in descriptor.PostLogoutRedirectUris) current.PostLogoutRedirectUris.Add(uri);
-        await manager.PopulateAsync(existing, current, ct);
-        await manager.UpdateAsync(existing, ct);
-        logger.LogInformation("Updated edge OIDC client redirect URIs from configuration.");
+        // The SECRET is written on every run, unconditionally, and it cannot be compared first:
+        // OpenIddict stores a hash, so the value read back is never the value configured.
+        //
+        // This used to sit behind the URI check above and return early with it. Rotating
+        // EDGE_OIDC_CLIENT_SECRET therefore updated .env, updated the edge, and left identity
+        // holding the OLD secret -- and the whole symptom is OpenIddict answering
+        // `invalid_client`, on a sign-in that worked yesterday, for a value nobody can read back
+        // to compare. Now the configured value is simply what is stored, every time.
+        await manager.UpdateAsync(existing, secret, ct);
+        logger.LogInformation(
+            urisChanged
+                ? "Updated edge OIDC client redirect URIs and secret from configuration."
+                : "Edge OIDC client secret converged from configuration.");
     }
 
     /// <summary>

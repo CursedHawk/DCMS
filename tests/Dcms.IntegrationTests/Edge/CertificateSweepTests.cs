@@ -73,7 +73,7 @@ public sealed class CertificateSweepTests : IAsyncLifetime
             "grafana.highgeek.eu", "git.highgeek.eu", "shop.tenant.example",
         ]);
 
-        await RunOneSweepAsync(service, until: () => issuer.Ordered.Count >= 6);
+        await RunOneSweepAsync(service);
 
         issuer.Ordered.Should().BeEquivalentTo([
             "admin.highgeek.eu", "platform.highgeek.eu", "auth.highgeek.eu",
@@ -98,7 +98,7 @@ public sealed class CertificateSweepTests : IAsyncLifetime
         var issuer = new FakeAcme();
         var service = BuildSweep(issuer, allowed: ["admin.highgeek.eu", "shop.tenant.example"]);
 
-        await RunOneSweepAsync(service, until: () => issuer.Ordered.Count >= 2);
+        await RunOneSweepAsync(service);
 
         var missing = meters.LastValue("dcms.edge.certificates", "missing");
         var total = meters.LastValue("dcms.edge.certificates", "total");
@@ -119,7 +119,7 @@ public sealed class CertificateSweepTests : IAsyncLifetime
         var issuer = new FakeAcme();
         var service = BuildSweep(issuer, allowed: ["admin.highgeek.eu", "new.tenant.example"]);
 
-        await RunOneSweepAsync(service, until: () => issuer.Ordered.Count >= 1);
+        await RunOneSweepAsync(service);
 
         issuer.Ordered.Should().ContainSingle().Which.Should().Be("new.tenant.example");
     }
@@ -134,7 +134,7 @@ public sealed class CertificateSweepTests : IAsyncLifetime
         var issuer = new FakeAcme(failFor: "broken.tenant.example");
         var service = BuildSweep(issuer, allowed: ["broken.tenant.example", "admin.highgeek.eu"]);
 
-        await RunOneSweepAsync(service, until: () => issuer.Ordered.Count >= 2);
+        await RunOneSweepAsync(service);
 
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
@@ -168,7 +168,7 @@ public sealed class CertificateSweepTests : IAsyncLifetime
         var issuer = new FakeAcme();
         var service = BuildSweep(issuer, allowed: ["admin.highgeek.eu"], backoffSeconds: 0);
 
-        await RunOneSweepAsync(service, until: () => issuer.Ordered.Count >= 1);
+        await RunOneSweepAsync(service);
 
         issuer.Ordered.Should().ContainSingle().Which.Should().Be("admin.highgeek.eu");
 
@@ -253,7 +253,7 @@ public sealed class CertificateSweepTests : IAsyncLifetime
         var issuer = new FakeAcme();
         var service = BuildSweep(issuer, allowed: ["admin.highgeek.eu"], storeBroken: true);
 
-        await RunOneSweepAsync(service, until: () => issuer.Ordered.Count >= 1);
+        await RunOneSweepAsync(service);
 
         using var scope = services.CreateScope();
         var row = await scope.ServiceProvider.GetRequiredService<EdgeDbContext>()
@@ -265,19 +265,42 @@ public sealed class CertificateSweepTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Starts the background service, waits for the first pass to have done its work, then stops
-    /// it. The sweep runs once immediately on start rather than after a full period, precisely
-    /// so a deployment that has been down over a renewal window catches up now and not in an
-    /// hour — which is also what makes it observable here.
+    /// Starts the background service, waits for one whole pass, then stops it. The sweep runs
+    /// once immediately on start rather than after a full period, precisely so a deployment that
+    /// has been down over a renewal window catches up now and not in an hour — which is also
+    /// what makes it observable here.
+    ///
+    /// <para><b>Waits on the end-of-pass report, not on the orders.</b> Every earlier version of
+    /// this waited for <c>FakeAcme.Ordered</c> to reach a count — and <c>Ordered</c> is appended
+    /// at the START of <c>IssueAsync</c>, so the condition went true while the last certificate
+    /// was still being saved. The test then read the database and found one row short. It failed
+    /// perhaps one run in three, on a different test each time, always presenting as whichever
+    /// assertion it happened to land on rather than as a race. The gauges are written after the
+    /// ordering loops and <c>failing</c> is the last of the four, so its presence means the pass
+    /// is genuinely over.</para>
     /// </summary>
-    private static async Task RunOneSweepAsync(IHostedService service, Func<bool> until)
+    private async Task RunOneSweepAsync(IHostedService service)
     {
+        Func<bool> until = () => meters.LastValue("dcms.edge.certificates", "failing") is not null;
+
         await service.StartAsync(TestContext.Current.CancellationToken);
+        var satisfied = false;
         try
         {
-            var deadline = DateTime.UtcNow.AddSeconds(30);
-            while (!until() && DateTime.UtcNow < deadline)
+            // Generous, and it has to be. The sweep takes a Postgres advisory lock and does
+            // several round trips, and these tests run alongside every other Testcontainers
+            // class in the suite -- on a four-core box that is minutes of contention, not
+            // seconds. A 30s budget passed in isolation and failed a different test in this
+            // class on almost every full run, which is the worst kind of flake: it looks like
+            // the assertion it lands on rather than like the clock.
+            var deadline = DateTime.UtcNow.AddMinutes(3);
+            while (DateTime.UtcNow < deadline)
             {
+                if (until())
+                {
+                    satisfied = true;
+                    break;
+                }
                 await Task.Delay(50, TestContext.Current.CancellationToken);
             }
         }
@@ -285,6 +308,9 @@ public sealed class CertificateSweepTests : IAsyncLifetime
         {
             await service.StopAsync(CancellationToken.None);
         }
+
+        // Explicit, so a timeout does not present as whatever the next assertion happens to be.
+        satisfied.Should().BeTrue("the sweep should have finished its work within the deadline");
     }
 
     private EdgeCerts.CertificateRenewalService BuildSweep(
@@ -433,7 +459,18 @@ public sealed class CertificateSweepTests : IAsyncLifetime
 
         public TestMeterFactory()
         {
-            listener.InstrumentPublished = (instrument, l) => l.EnableMeasurementEvents(instrument);
+            // ONLY this factory's instruments. A MeterListener sees every meter in the process,
+            // and `dcms.edge.certificates` is published by every DcmsMetrics any other test
+            // class builds -- so without the scope check this reads their values as well as its
+            // own and fails only when the suite runs in parallel. `scope: this` on Create below
+            // is what makes the check possible.
+            listener.InstrumentPublished = (instrument, l) =>
+            {
+                if (ReferenceEquals(instrument.Meter.Scope, this))
+                {
+                    l.EnableMeasurementEvents(instrument);
+                }
+            };
             listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
             {
                 var state = "";
