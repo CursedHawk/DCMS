@@ -53,14 +53,15 @@ public sealed class EdgeTlsPreflight(
             return;
         }
 
-        // The store works. Anything that has never held a certificate gets its backoff cleared,
-        // so a restart after fixing the cause is enough -- see ClearBackoffForNeverIssuedAsync
-        // for why an operator would otherwise watch a repaired platform stay dark for hours.
-        var cleared = await store.ClearBackoffForNeverIssuedAsync(stoppingToken);
+        // The store works. Anything with issuance still owed to it -- no certificate at all, or
+        // a reissue an operator asked for -- gets its backoff cleared, so a restart after fixing
+        // the cause is enough. See ClearBackoffForOutstandingWorkAsync for why an operator would
+        // otherwise watch a repaired platform stay dark for hours.
+        var cleared = await store.ClearBackoffForOutstandingWorkAsync(stoppingToken);
         if (cleared > 0)
         {
             logger.LogInformation(
-                "Cleared the failure backoff on {Count} hostnames that hold no certificate; "
+                "Cleared the failure backoff on {Count} hostnames with issuance outstanding; "
                 + "they will be attempted on this pass.", cleared);
         }
 

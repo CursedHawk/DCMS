@@ -181,13 +181,13 @@ public sealed class CertificateSweepTests : IAsyncLifetime
     }
 
     [DockerFact]
-    public async Task Clears_the_backoff_on_hostnames_that_have_never_held_a_certificate()
+    public async Task Clears_the_backoff_on_hostnames_with_issuance_still_outstanding()
     {
         // What makes fixing the cause enough. Six failures put a hostname ~2.7 hours out, and
         // the backoff cannot tell a CA that keeps refusing from a store of ours that was
         // broken -- so without this an operator repairs Vault, restarts, and watches a fixed
-        // platform stay dark all afternoon. Bounded on purpose: only hostnames holding no
-        // certificate, and only once per process start.
+        // platform stay dark all afternoon. Bounded on purpose: only hostnames with work owed
+        // to them, and only once per process start.
         var store = BuildStore();
         for (var i = 0; i < 6; i++)
         {
@@ -203,9 +203,20 @@ public sealed class CertificateSweepTests : IAsyncLifetime
         await store.RecordFailureAsync(
             "healthy.tenant.example", "a real CA refusal", TestContext.Current.CancellationToken);
 
-        var cleared = await store.ClearBackoffForNeverIssuedAsync(TestContext.Current.CancellationToken);
+        // A third hostname holds a certificate AND has a reissue an operator asked for. Its
+        // backoff is outstanding work too, and somebody is watching for the result.
+        var (reissueChain, reissueKey) = SelfSigned("reissue.tenant.example");
+        await store.SaveAsync(
+            "reissue.tenant.example", reissueChain, reissueKey, CertificateSource.DcmsManaged,
+            TestContext.Current.CancellationToken);
+        await store.RecordFailureAsync(
+            "reissue.tenant.example", "permission denied / invalid token",
+            TestContext.Current.CancellationToken);
+        await RequestReissueAsync("reissue.tenant.example");
 
-        cleared.Should().Be(1);
+        var cleared = await store.ClearBackoffForOutstandingWorkAsync(TestContext.Current.CancellationToken);
+
+        cleared.Should().Be(2);
 
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
@@ -215,9 +226,13 @@ public sealed class CertificateSweepTests : IAsyncLifetime
         never.ConsecutiveFailures.Should().Be(0);
         never.LastError.Should().BeNull();
 
-        // A hostname that HAS a certificate keeps its backoff: that failure was the CA's answer
-        // about a renewal, and clearing it would spend the rate limit re-asking a settled
-        // question.
+        var reissue = await db.Certificates.AsNoTracking()
+            .FirstAsync(c => c.Hostname == "reissue.tenant.example", TestContext.Current.CancellationToken);
+        reissue.ConsecutiveFailures.Should().Be(0);
+
+        // A hostname that HAS a certificate and has been asked for nothing keeps its backoff:
+        // that failure was the CA's answer about a renewal, and clearing it would spend the rate
+        // limit re-asking a settled question.
         var healthy = await db.Certificates.AsNoTracking()
             .FirstAsync(c => c.Hostname == "healthy.tenant.example", TestContext.Current.CancellationToken);
         healthy.ConsecutiveFailures.Should().Be(1);
@@ -397,6 +412,17 @@ public sealed class CertificateSweepTests : IAsyncLifetime
     private EdgeCerts.CertificateStore BuildStore()
         => new(services, new MemoryCache(new MemoryCacheOptions()),
             TimeProvider.System, NullLogger<EdgeCerts.CertificateStore>.Instance);
+
+    /// <summary>What the admin console's "reissue now" button leaves behind.</summary>
+    private async Task RequestReissueAsync(string hostname)
+    {
+        using var scope = services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
+        var row = await db.Certificates.FirstAsync(
+            c => c.Hostname == hostname, TestContext.Current.CancellationToken);
+        row.ReissueRequestedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
 
     private async Task SeedAsync(string hostname)
     {

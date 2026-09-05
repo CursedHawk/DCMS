@@ -31,9 +31,9 @@ public interface ICertificateStore
     Task<bool> IsReissueRequestedAsync(string hostname, CancellationToken ct);
 
     /// <summary>
-    /// Clears the recorded failure on every hostname that has never held a certificate, and
-    /// returns how many. Called once per process start, after the store has been proved
-    /// working.
+    /// Clears the recorded failure on every hostname with issuance work outstanding — one that
+    /// has never held a certificate, and one an operator has asked to reissue — and returns how
+    /// many. Called once per process start, after the store has been proved working.
     ///
     /// <para><b>This is what makes fixing the cause enough.</b> The backoff doubles per failure
     /// and reaches hours, and it cannot tell a hostname the CA keeps refusing from one that
@@ -42,19 +42,25 @@ public interface ICertificateStore
     /// followed by an afternoon of the sweep skipping exactly the hostnames it had just become
     /// able to issue — with the operator watching a fixed platform stay dark.</para>
     ///
-    /// <para>Scoped to hostnames with no certificate at all, and to process start rather than
-    /// to every sweep, so it stays bounded: a domain whose DNS really is broken gets one extra
+    /// <para>A pending reissue counts for the same reason and with the same evidence: an
+    /// operator pressed the button, so somebody is watching for a certificate that a backoff
+    /// they did not cause is holding back. Without this, one provisioned site sat on four
+    /// failures earned entirely by an expired Vault token, with a reissue requested at 10:00
+    /// that the sweep would not attempt for hours.</para>
+    ///
+    /// <para>Scoped to hostnames with work outstanding, and to process start rather than to
+    /// every sweep, so it stays bounded: a domain whose DNS really is broken gets one extra
     /// attempt per restart, not a retry loop. A restart is the operator saying "I changed
     /// something, try again", and this is the edge taking them at their word.</para>
     /// </summary>
-    Task<int> ClearBackoffForNeverIssuedAsync(CancellationToken ct);
+    Task<int> ClearBackoffForOutstandingWorkAsync(CancellationToken ct);
 
     /// <summary>
     /// Clears the recorded failure on every hostname that holds a usable certificate and is not
     /// due for renewal before <paramref name="renewalThreshold"/>, and returns how many. Called
     /// at the end of every sweep.
     ///
-    /// <para>The companion to <see cref="ClearBackoffForNeverIssuedAsync"/>, for the rows that
+    /// <para>The companion to <see cref="ClearBackoffForOutstandingWorkAsync"/>, for the rows that
     /// one deliberately will not touch. A hostname that is serving TLS and is not due is not
     /// being ordered for at all, so the backoff recorded against it is holding back a request
     /// nobody is going to make — while still counting towards the <c>failing</c> gauge an alert

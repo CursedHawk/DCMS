@@ -187,7 +187,7 @@ public sealed class CertificateStore(
             .AnyAsync(c => c.Hostname == normalized && c.ReissueRequestedAt != null, ct);
     }
 
-    public async Task<int> ClearBackoffForNeverIssuedAsync(CancellationToken ct)
+    public async Task<int> ClearBackoffForOutstandingWorkAsync(CancellationToken ct)
     {
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
@@ -198,7 +198,8 @@ public sealed class CertificateStore(
         // is bounded by the number of hostnames the platform serves and this runs once per
         // process start, so there is nothing to buy by going around the change tracker.
         var rows = await db.Certificates
-            .Where(c => c.EncryptedPrivateKey == "" && c.ConsecutiveFailures > 0)
+            .Where(c => c.ConsecutiveFailures > 0
+                        && (c.EncryptedPrivateKey == "" || c.ReissueRequestedAt != null))
             .ToListAsync(ct);
 
         foreach (var row in rows)
