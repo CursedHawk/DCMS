@@ -47,6 +47,28 @@ public sealed class InternalIdentityHandler : DelegatingHandler
             request.Headers.Host = _public.IsDefaultPort
                 ? _public.Host
                 : $"{_public.Host}:{_public.Port}";
+
+            // THE SCHEME MUST TRAVEL WITH THE HOST, and forgetting it broke sign-in outright.
+            //
+            // Identity builds the discovery document's endpoint URLs from the incoming request:
+            // its scheme and the Host header, promoted through UseForwardedHeaders. Rewriting
+            // only the Host meant the internal call arrived as plain HTTP and came back with
+            //   "jwks_uri": "http://auth.highgeek.eu/.well-known/jwks"
+            // -- the right host on the wrong scheme. Microsoft.IdentityModel's document
+            // retriever then refuses its own metadata with IDX20108 ("not valid as per HTTPS
+            // scheme"), the OIDC challenge throws, and every gated route answers 500. Not a
+            // sign-in page, not a redirect loop: an unhandled exception on the public ingress,
+            // and the address it names in the message is the https one that was asked for,
+            // which is exactly the wrong place to look.
+            //
+            // The public request that this stands in for carries X-Forwarded-Proto: https, set
+            // by this same edge. Asserting it here makes the internal call answered identically
+            // -- which is the whole premise of the rewrite.
+            if (_public.Scheme == Uri.UriSchemeHttps && _internal.Scheme != Uri.UriSchemeHttps)
+            {
+                request.Headers.Remove("X-Forwarded-Proto");
+                request.Headers.TryAddWithoutValidation("X-Forwarded-Proto", Uri.UriSchemeHttps);
+            }
         }
 
         return base.SendAsync(request, cancellationToken);
