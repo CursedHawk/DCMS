@@ -93,7 +93,60 @@ public sealed class CertesAcmeIssuer(
         var chain = await order.Generate(new CsrInfo { CommonName = commonName }, certificateKey);
 
         logger.LogInformation("Certificate issued for {Identifiers}.", string.Join(", ", normalized));
-        return new IssuedCertificate(chain.ToPem(), certificateKey.ToPem());
+        return new IssuedCertificate(BuildPemChain(chain), certificateKey.ToPem());
+    }
+
+    /// <summary>
+    /// The leaf followed by the issuers the CA actually sent, concatenated.
+    ///
+    /// <para><b>Not Certes' <c>chain.ToPem()</c>, and that is a deliberate change.</b> That
+    /// extension rebuilds the chain by walking each certificate's issuer through a root list
+    /// compiled into the library, and throws <c>"Can not find issuer"</c> when it reaches one it
+    /// does not know. Two consequences, both bad: issuance breaks the day a CA rotates to an
+    /// intermediate or root that Certes — last released in 2021 — has never heard of, and the
+    /// failure arrives after the certificate has been issued and counted against the rate limit.
+    /// The CA already told us its chain in the response; deriving a second opinion from a stale
+    /// list can only disagree with it.</para>
+    ///
+    /// <para>It also stops us appending the root. A TLS server should send the leaf and the
+    /// intermediates and stop — the client has the root already, or it does not trust the chain
+    /// at all — so what the CA returns is exactly the right set.</para>
+    /// </summary>
+    private string BuildPemChain(CertificateChain chain)
+    {
+        var pem = new StringBuilder();
+
+        // Each block is terminated explicitly. Certes' ToPem() does NOT end with a newline, so
+        // plain concatenation produces "-----END CERTIFICATE----------BEGIN CERTIFICATE-----"
+        // and every parser reads the bundle as one malformed certificate -- which presents as a
+        // hostname that simply refuses TLS, with the chain sitting correct-looking in the
+        // database.
+        Append(chain.Certificate.ToPem());
+        foreach (var issuer in chain.Issuers ?? [])
+        {
+            Append(issuer.ToPem());
+        }
+
+        void Append(string block)
+        {
+            pem.Append(block);
+            if (!block.EndsWith('\n'))
+            {
+                pem.Append('\n');
+            }
+        }
+
+        if (chain.Issuers is null or { Count: 0 })
+        {
+            // Not fatal -- the leaf alone still serves -- but it is the shape of the bug that
+            // works in every browser the developer tried and fails on some mobile client,
+            // which is a miserable thing to debug from the other end.
+            logger.LogWarning(
+                "The certificate authority returned no intermediate certificates. Clients that "
+                + "do not already hold the issuer will not be able to build a chain.");
+        }
+
+        return pem.ToString();
     }
 
     /// <summary>The original path, unchanged: a token served from Redis over plain HTTP.</summary>

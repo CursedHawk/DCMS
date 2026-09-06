@@ -15,8 +15,10 @@ namespace Dcms.Edge.Certificates.Dns;
 /// values per host rather than replacing them, which is exactly the behaviour a real zone has and
 /// a naive implementation does not.</para>
 ///
-/// <para>Its management API is two endpoints: <c>/add-txt</c> adds one value at a name,
-/// <c>/clear-txt</c> removes every value at that name.</para>
+/// <para>Its management API is two endpoints: <c>/set-txt</c> and <c>/clear-txt</c>.
+/// <b><c>/set-txt</c> appends</b>, despite the name — it pushes onto the list of values held at
+/// that host, which is the behaviour this harness is here for. Verified rather than assumed:
+/// two calls for one host answer with two TXT records.</para>
 /// </summary>
 public sealed class ChallTestSrvDnsChallengeWriter(
     HttpClient http,
@@ -29,8 +31,9 @@ public sealed class ChallTestSrvDnsChallengeWriter(
         // as "_acme-challenge.example.test" is never found for a query for the same name with
         // the root label.
         var fqdn = Fqdn(name);
+        // "set" appends here; see the class remarks.
         using var response = await http.PostAsJsonAsync(
-            $"{Base}/add-txt", new { host = fqdn, value }, ct);
+            $"{Base}/set-txt", new { host = fqdn, value }, ct);
         response.EnsureSuccessStatusCode();
 
         logger.LogInformation("Published DNS-01 challenge record {Name} to the test DNS server.", fqdn);

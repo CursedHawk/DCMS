@@ -610,7 +610,7 @@ services:
   # See infra/acme-test/README.md for how to drive an issuance through it.
   pebble:
     profiles: ["acmetest"]
-    image: ghcr.io/letsencrypt/pebble:v2.6.0
+    image: ghcr.io/letsencrypt/pebble:2.6.0
     restart: "no"
     logging: *default-logging
     # Docker's own resolver by default, which is what the HTTP-01 harness needs: validation is
@@ -641,7 +641,7 @@ services:
   # to contain and the one no unit test can catch.
   challtestsrv:
     profiles: ["acmetest"]
-    image: ghcr.io/letsencrypt/pebble-challtestsrv:v2.6.0
+    image: ghcr.io/letsencrypt/pebble-challtestsrv:2.6.0
     restart: "no"
     logging: *default-logging
     # DNS on :8053, management API on :8055, and every challenge responder off -- this stack

@@ -81,11 +81,18 @@ sixty days.
 ### Why not per-domain DNS credentials
 
 Superadmins can add any domain whose zone lives in the platform's own Cloudflare
-account; the zone is discovered from the domain name and a domain outside the account
-is refused at save time with a readable message. Storing a third party's DNS-edit
-token to renew their certificate is a large standing risk for a case that does not
-exist yet. CNAME delegation (`_acme-challenge.their.com` → a record we control) is the
-better answer if it ever does, and this data model leaves room for it.
+account; the zone is discovered by walking labels upward at issuance time. Storing a
+third party's DNS-edit token to renew their certificate is a large standing risk for a
+case that does not exist yet. CNAME delegation (`_acme-challenge.their.com` → a record
+we control) is the better answer if it ever does, and this data model leaves room for it.
+
+The console validates **syntax only** when a certificate is saved, not whether we hold
+the zone. Answering that needs the Cloudflare token in admin-api, and the edge's Vault
+policy is narrow on purpose — one Transit key and its own secrets, so a compromise there
+stops at TLS. Copying a DNS-edit credential across to improve a validation message would
+undo that. Cloudflare's own sentence ("no zone in this account contains…") is lifted
+verbatim into the attempt row instead, so the answer arrives within a sweep and is
+visible in the console.
 
 ## Consequences
 
@@ -127,6 +134,15 @@ better answer if it ever does, and this data model leaves room for it.
   from it — see [ADR 0005](0005-rls-defense-in-depth.md). If either ever gains a
   tenant column it must be registered there and in `AssertRlsCoverage` in the same
   commit.
+- **The issued chain is now assembled from what the CA returned**, not rebuilt by Certes from
+  a root list compiled into the library. `chain.ToPem()` walks each certificate's issuer
+  through that list and throws `"Can not find issuer"` on one it does not know — so issuance
+  would break the day a CA rotates to an unfamiliar intermediate or root, *after* the
+  certificate had been issued and counted against the rate limit. Certes was last released in
+  2021. The replacement concatenates the leaf and the issuers from the ACME response, which is
+  also the correct set to serve: leaf plus intermediates, no root. This is a change to the live
+  TLS path and is covered end to end against Pebble (`WildcardIssuanceTests`), which the
+  previous behaviour never was.
 - **Certes has no ARI.** Let's Encrypt exempts ARI-driven renewals from every rate
   limit, which would make the ceiling above unnecessary. Revisit if Certes adds it, or
   if the ACME client is swapped behind `IAcmeIssuer`.

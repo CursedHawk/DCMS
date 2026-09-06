@@ -44,13 +44,26 @@ Encrypt one.
 
 ## Wildcards and DNS-01
 
+**This one is automated.** `tests/Dcms.IntegrationTests/Edge/WildcardIssuanceTests.cs` starts
+Pebble and `pebble-challtestsrv` with Testcontainers and drives a real order through
+`CertesAcmeIssuer`, so it runs on every `dotnet test` with a Docker daemon. The compose profile
+below is for driving it by hand against the whole stack. Two things that cost time when it was
+written, both now encoded in the test:
+
+- Both images are built `FROM scratch`, so Testcontainers' `UntilInternalTcpPortIsAvailable`
+  wait strategy — which runs a command *inside* the container — hangs forever. Readiness is
+  polled from the host instead.
+- challtestsrv's management endpoint is `/set-txt`, and **it appends** despite the name. That is
+  the property the apex+wildcard case needs; `/add-txt` does not exist and answers 404.
+
+
 A wildcard identifier can only be validated over DNS-01 — Let's Encrypt refuses every other
 challenge type for one — so the wildcard path shares almost nothing with the flow above and
 needs its own run.
 
 `pebble-challtestsrv` is the mock DNS server that makes it possible. The property that matters
-is that it **appends** TXT values at a name instead of replacing them, exactly as a real zone
-does. That is what lets it reproduce the one mistake this path is most likely to contain:
+is that its `/set-txt` endpoint **appends** TXT values at a name instead of replacing them —
+despite the name — exactly as a real zone does. That is what lets it reproduce the one mistake this path is most likely to contain:
 
 > An order for `example.test` **and** `*.example.test` produces two authorizations. ACME strips
 > the wildcard label, so both publish at `_acme-challenge.example.test` — two different values,
