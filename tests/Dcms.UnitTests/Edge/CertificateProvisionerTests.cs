@@ -42,7 +42,10 @@ public class CertificateProvisionerTests
         await provisioner.EnsureAsync("shop.tenant.example", TestContext.Current.CancellationToken);
 
         await store.Received(1).SaveAsync(
-            "shop.tenant.example", "chain-pem", "key-pem", CertificateSource.DcmsManaged, Arg.Any<CancellationToken>());
+            "shop.tenant.example", "chain-pem", "key-pem", CertificateSource.DcmsManaged,
+            // A tenant hostname is never part of a managed certificate: the platform's wildcards
+            // cover the zones it owns, and this path is what a tenant's own domain goes through.
+            null, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -148,7 +151,7 @@ public class CertificateProvisionerTests
             .Returns(new IssuedCertificate("chain-pem", "key-pem"));
         var provisioner = Build(issuer, allowed: true, out var store);
         store.SaveAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
-                Arg.Any<CertificateSource>(), Arg.Any<CancellationToken>())
+                Arg.Any<CertificateSource>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Vault Transit is unreachable."));
 
         var result = await provisioner.EnsureAsync("shop.tenant.example", TestContext.Current.CancellationToken);

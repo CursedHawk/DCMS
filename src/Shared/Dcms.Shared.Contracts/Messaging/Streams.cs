@@ -42,6 +42,14 @@ public static class Subjects
     public const string PluginInstanceChanged = "plugin.instance.changed";
     public const string MembershipChanged = "membership.changed";
 
+    /// <summary>
+    /// An operator asked for a managed certificate to be reissued. On the TENANCY stream, whose
+    /// subject list carries `edge.>` for it -- that stream is already the platform's control
+    /// plane rather than strictly tenancy (it also carries plugin.instance.> and membership.>),
+    /// and a stream of its own would be more infrastructure than one rare message deserves.
+    /// </summary>
+    public const string ManagedCertificateReissueRequested = "edge.certificate.reissue-requested";
+
     // CMS
     public const string ContentPublished = "content.published";
     public const string ContentUnpublished = "content.unpublished";

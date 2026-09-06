@@ -57,6 +57,22 @@ public static class AuditActions
     /// <summary>An uploaded certificate was dropped, returning the domain to DCMS-managed issuance.</summary>
     public const string DomainCertificateRemoved = "domain.certificate.removed";
 
+    // ---- managed certificates (the platform's OWN domains, not a tenant's) ----
+    //
+    // Audited even though the edge's own certificate tables deliberately are not: these are
+    // operator decisions about which names this platform will hold TLS for, which is exactly the
+    // class of change an audit log exists to answer questions about. The renewals they cause are
+    // not audited, for the reason recorded on EdgeDbContext.
+
+    /// <summary>A superadmin added a certificate for the platform to keep renewed.</summary>
+    public const string ManagedCertificateCreated = "managed.certificate.created";
+    /// <summary>Its identifiers, name or enabled state changed.</summary>
+    public const string ManagedCertificateUpdated = "managed.certificate.updated";
+    /// <summary>It was removed; whatever certificate it produced stops being renewed.</summary>
+    public const string ManagedCertificateRemoved = "managed.certificate.removed";
+    /// <summary>A superadmin asked for one to be reissued before it was due.</summary>
+    public const string ManagedCertificateReissued = "managed.certificate.reissued";
+
     // ---- content ----
     public const string ContentCreated = "content.created";
     public const string ContentUpdated = "content.updated";

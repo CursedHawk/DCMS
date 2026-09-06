@@ -29,6 +29,7 @@ namespace Dcms.Edge.Certificates;
 public sealed class EdgeTlsPreflight(
     IServiceProvider services,
     CertificateProvisioner provisioner,
+    ManagedCertificateProvisioner managed,
     ICertificateStore store,
     IOptions<CertificateOptions> certificates,
     IOptions<EdgeOptions> edge,
@@ -45,6 +46,11 @@ public sealed class EdgeTlsPreflight(
         // without a single certificate, and refusing to start would turn "TLS is not ready yet"
         // into "the ingress is down".
         await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+
+        // Before the Transit probe, because seeding touches no secret and the row should exist
+        // even on a deployment whose Vault is having a bad day -- the console can then show what
+        // the platform intends to hold, which is most of the diagnosis.
+        await managed.SeedAsync(stoppingToken);
 
         if (!await TransitWorksAsync(stoppingToken))
         {
@@ -65,11 +71,25 @@ public sealed class EdgeTlsPreflight(
                 + "they will be attempted on this pass.", cleared);
         }
 
+        // What a managed certificate already serves. The platform's hostnames are exactly what a
+        // wildcard for its own zones is for, so once one is held this loop has nothing to do --
+        // and must not do it anyway: ordering admin., auth., platform., grafana. and git.
+        // individually would spend five of the CA's fifty weekly certificates on names one
+        // certificate already covers.
+        var covered = await managed.CoverageAsync(stoppingToken);
+
         foreach (var hostname in edge.Value.PlatformHostnames.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             if (stoppingToken.IsCancellationRequested)
             {
                 return;
+            }
+
+            if (covered(hostname))
+            {
+                logger.LogInformation(
+                    "{Hostname} is covered by a managed certificate; not ordering one for it.", hostname);
+                continue;
             }
 
             try

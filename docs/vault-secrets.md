@@ -192,6 +192,27 @@ holds decrypt and neither holds both.
 Nothing. Its Postgres and MinIO credentials are Group B, and it deliberately holds no audit
 chain key.
 
+### `secret/dcms/edge`
+
+| Key | What it is |
+|---|---|
+| `Edge__Dns__Cloudflare__ApiToken` | A **scoped** Cloudflare API token — `Zone:DNS:Edit` plus `Zone:Zone:Read`, restricted to the zones DCMS owns. Not a Global API Key, which carries the whole account and cannot be scoped down. |
+
+Only the wildcard certificates need it. Let's Encrypt refuses HTTP-01 for a wildcard identifier,
+so the edge proves control of `highgeek.eu` by writing a `_acme-challenge` TXT record through
+Cloudflare and removing it again. Everything else — a tenant's own domain over HTTP-01, an
+uploaded certificate — is unaffected by its absence, and a missing token produces a clear refusal
+rather than a failed order that spends a rate limit. See `docs/adr/0011-wildcard-tls-dns01.md`.
+
+```
+vault kv put secret/dcms/edge Edge__Dns__Cloudflare__ApiToken="<token>"
+```
+
+The edge's policy already grants read on this path, so adding the key needs no policy change.
+Deliberately **not** in `secret/dcms/shared`: a credential that can rewrite the platform's DNS
+belongs to the one service that needs it, and the edge is already the process holding every TLS
+private key.
+
 ### `secret/dcms/shared`
 
 A `placeholder`, and it should stay that way unless something is genuinely common to every

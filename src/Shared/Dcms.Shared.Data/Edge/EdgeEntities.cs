@@ -26,8 +26,27 @@ public sealed class EdgeCertificate
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    /// <summary>Lowercase, no port. The SNI name the handshake presents.</summary>
+    /// <summary>
+    /// Lowercase, no port. The SNI name the handshake presents, and the row's identity for
+    /// every per-hostname certificate.
+    ///
+    /// <para>For a managed certificate covering several names it is the first identifier, which
+    /// makes it a label rather than the whole truth — <see cref="SubjectAlternativeNames"/> is
+    /// what the handshake matches against in that case. The row is still found by
+    /// <see cref="ManagedCertificateId"/> first, so reordering the identifiers renames this
+    /// column instead of creating a second row.</para>
+    /// </summary>
     public string Hostname { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Every name the leaf actually covers, read off its SAN extension when it is stored.
+    ///
+    /// <para>Derived rather than declared, so it cannot disagree with the certificate being
+    /// served. It exists because a certificate stopped being one hostname: the handshake looks
+    /// up an exact <see cref="Hostname"/> first and falls back to matching this, which is how
+    /// <c>anything.dcms.highgeek.eu</c> finds the row holding <c>*.dcms.highgeek.eu</c>.</para>
+    /// </summary>
+    public string[] SubjectAlternativeNames { get; set; } = [];
 
     /// <summary>Leaf followed by the issuing chain, PEM-encoded.</summary>
     public string PemChain { get; set; } = string.Empty;
@@ -42,6 +61,17 @@ public sealed class EdgeCertificate
     public DateTimeOffset NotAfter { get; set; }
     public string Issuer { get; set; } = string.Empty;
     public CertificateSource Source { get; set; } = CertificateSource.DcmsManaged;
+
+    /// <summary>
+    /// The <see cref="EdgeManagedCertificate"/> this artifact was ordered for, or null for a
+    /// per-hostname certificate — a tenant's own domain issued over HTTP-01, or one they
+    /// uploaded.
+    ///
+    /// <para>Unique where set: one intent produces one certificate. It is also the key the
+    /// renewal path looks the row up by, which is what keeps editing a managed certificate's
+    /// identifiers from stranding the old row and ordering a second one.</para>
+    /// </summary>
+    public Guid? ManagedCertificateId { get; set; }
 
     public DateTimeOffset? RenewedAt { get; set; }
 
@@ -133,4 +163,90 @@ public sealed class EdgeRoute
 
     public bool Enabled { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// A certificate the platform keeps renewed on its own behalf, described by the names it must
+/// cover rather than by a single hostname.
+///
+/// <para><b>Why this is a table and not configuration.</b> The platform's own hostnames were
+/// compiled into <c>EdgeOptions.PlatformHostnames</c>, so keeping a new domain renewed meant a
+/// code change and a deploy. Rows here are editable by a superadmin from the platform console,
+/// which is the difference between "we support that" and "we support that next release".</para>
+///
+/// <para><b>Why identifiers rather than one hostname.</b> A wildcard is the only thing that
+/// removes the ceiling this platform was built into: Let's Encrypt counts 50 certificates per
+/// registered domain per week, and every name DCMS serves is under one registered domain, so
+/// per-hostname issuance caps the platform at ~50 new tenants a week and then fails for
+/// everyone. One certificate for <c>highgeek.eu</c>, <c>*.highgeek.eu</c> and
+/// <c>*.dcms.highgeek.eu</c> covers every hostname vps1 serves. Three identifiers and not two,
+/// because a wildcard matches exactly one label: it covers neither the apex nor a deeper
+/// subdomain.</para>
+///
+/// <para>Any identifier beginning <c>*.</c> forces the whole order onto DNS-01 — Let's Encrypt
+/// refuses HTTP-01 and TLS-ALPN-01 for a wildcard. See
+/// <c>docs/adr/0011-wildcard-tls-dns01.md</c>.</para>
+///
+/// <para><b>There is deliberately no TenantId</b>, for the reason recorded on
+/// <see cref="EdgeCertificate"/>: these are the platform's own domains, and a tenant's
+/// relationship to a hostname lives in <c>tenancy.domains</c>. If that ever changes, this table
+/// must be registered in <c>RlsConfigurator.TenantTables</c> and in <c>AssertRlsCoverage</c> in
+/// the same commit.</para>
+/// </summary>
+public sealed class EdgeManagedCertificate
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>What an operator calls it in the console. Not used for issuance.</summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The ACME identifiers to order, wildcards allowed. The first is used as the artifact
+    /// row's <see cref="EdgeCertificate.Hostname"/> label.
+    /// </summary>
+    public string[] Identifiers { get; set; } = [];
+
+    /// <summary>
+    /// Disabled rows are neither ordered nor renewed, and their existing certificate keeps
+    /// serving until it expires. That is the rollback for this whole feature: one column.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// One attempt to order a managed certificate, successful or not.
+///
+/// <para><b>This is a rate-limit guard first and a history second.</b> Let's Encrypt allows five
+/// certificates per identical set of identifiers per seven days, and counts renewals against it.
+/// A per-hostname model spread that risk across hostnames; one certificate covering the whole
+/// platform concentrates it, so a retry loop can lock every hostname out at once for a week.
+/// </para>
+///
+/// <para>It is kept here rather than in <see cref="EdgeCertificate.ConsecutiveFailures"/>
+/// precisely because that counter is <i>cleared on every restart</i> by the edge's TLS preflight
+/// — correct for a hostname whose DNS an operator has just fixed, and catastrophic for a weekly
+/// budget, since a crash-looping container would spend it in minutes. Nothing clears these rows;
+/// they age out.</para>
+/// </summary>
+public sealed class EdgeManagedCertificateAttempt
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public Guid ManagedCertificateId { get; set; }
+
+    /// <summary>
+    /// The identifier set as ordered, joined by spaces. Recorded per attempt rather than read
+    /// from the parent row, because the CA's limit is counted against the exact set that was
+    /// ordered — editing the identifiers starts a new budget, and this is what says so.
+    /// </summary>
+    public string Identifiers { get; set; } = string.Empty;
+
+    public DateTimeOffset AttemptedAt { get; set; } = DateTimeOffset.UtcNow;
+    public bool Succeeded { get; set; }
+
+    /// <summary>The CA's own sentence when it refused. Usually the only thing that says why.</summary>
+    public string? Error { get; set; }
 }

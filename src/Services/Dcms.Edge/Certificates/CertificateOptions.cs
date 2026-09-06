@@ -71,6 +71,56 @@ public sealed class CertificateOptions
     /// <summary>Renew once this much life is left. 30 days is the usual margin on a 90-day certificate.</summary>
     public int RenewBeforeDays { get; set; } = 30;
 
+    /// <summary>
+    /// The identifiers of the platform's own certificate, seeded into
+    /// <c>edge.managed_certificates</c> on first start and editable from the platform console
+    /// afterwards.
+    ///
+    /// <para>Three and not two, because a wildcard matches exactly one label: <c>*.highgeek.eu</c>
+    /// covers neither the apex nor <c>x.dcms.highgeek.eu</c>. Together these three cover every
+    /// hostname this platform serves — which is the whole point, since Let's Encrypt counts 50
+    /// certificates per registered domain per week and every one of those names is under
+    /// <c>highgeek.eu</c>.</para>
+    ///
+    /// <para>Seeded create-if-absent under a fixed id, so editing the row in the console is not
+    /// undone by the next restart.</para>
+    ///
+    /// <para>A comma-separated string rather than an array because this is set from compose, and
+    /// binding an array from the environment means <c>__0</c>, <c>__1</c>, <c>__2</c> suffixes
+    /// where removing the middle one silently drops the last. Empty disables seeding entirely.
+    /// </para>
+    /// </summary>
+    public string ManagedIdentifiers { get; set; } = "highgeek.eu,*.highgeek.eu,*.dcms.highgeek.eu";
+
+    /// <summary>The identifiers above, split and cleaned.</summary>
+    public string[] ManagedIdentifierList =>
+        [.. ManagedIdentifiers
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+
+    /// <summary>Name given to the seeded managed certificate.</summary>
+    public string ManagedCertificateName { get; set; } = "Platform wildcard";
+
+    /// <summary>
+    /// How many certificates may be issued for one identifier set in a rolling 7 days.
+    ///
+    /// <para>Three, under Let's Encrypt's five, with headroom. A healthy managed certificate
+    /// needs one order every 60 days; the other two are for an operator pressing "renew now".
+    /// See <see cref="ManagedCertificateGuard"/> for why this is not the per-hostname backoff.
+    /// </para>
+    /// </summary>
+    public int ManagedIssuancesPerWeek { get; set; } = 3;
+
+    /// <summary>
+    /// How many CA-refused attempts for one identifier set are tolerated in a rolling hour.
+    ///
+    /// <para>Separate from the weekly ceiling and matched to the limit it protects: Let's Encrypt
+    /// allows five failed authorizations per identifier per hour, and that limit decays hourly
+    /// rather than weekly. Counting refusals against the weekly budget instead would mean three
+    /// transient DNS failures on the day the wildcard is first ordered locked the platform's main
+    /// certificate out for a week.</para>
+    /// </summary>
+    public int ManagedFailuresPerHour { get; set; } = 3;
+
     /// <summary>How often the renewal sweep runs. Cheap: one indexed query over a small table.</summary>
     public int RenewalSweepMinutes { get; set; } = 60;
 

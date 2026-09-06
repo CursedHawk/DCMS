@@ -199,7 +199,7 @@ public sealed class CertificateSweepTests : IAsyncLifetime
         var (chainPem, keyPem) = SelfSigned("healthy.tenant.example");
         await store.SaveAsync(
             "healthy.tenant.example", chainPem, keyPem, CertificateSource.DcmsManaged,
-            TestContext.Current.CancellationToken);
+            null, TestContext.Current.CancellationToken);
         await store.RecordFailureAsync(
             "healthy.tenant.example", "a real CA refusal", TestContext.Current.CancellationToken);
 
@@ -208,7 +208,7 @@ public sealed class CertificateSweepTests : IAsyncLifetime
         var (reissueChain, reissueKey) = SelfSigned("reissue.tenant.example");
         await store.SaveAsync(
             "reissue.tenant.example", reissueChain, reissueKey, CertificateSource.DcmsManaged,
-            TestContext.Current.CancellationToken);
+            null, TestContext.Current.CancellationToken);
         await store.RecordFailureAsync(
             "reissue.tenant.example", "permission denied / invalid token",
             TestContext.Current.CancellationToken);
@@ -381,19 +381,26 @@ public sealed class CertificateSweepTests : IAsyncLifetime
             : storeBroken ? ServicesWith<ProbeOnlyTransit>()
             : services;
 
+        var store = new EdgeCerts.CertificateStore(container, new MemoryCache(new MemoryCacheOptions()),
+            TimeProvider.System, NullLogger<EdgeCerts.CertificateStore>.Instance);
+        var options = Options.Create(new EdgeCerts.CertificateOptions
+        {
+            TlsEnabled = true,
+            FailureBackoffSeconds = backoffSeconds,
+        });
+        var metrics = new DcmsMetrics(meters);
+
         return new EdgeCerts.CertificateRenewalService(
             container,
-            new EdgeCerts.CertificateStore(container, new MemoryCache(new MemoryCacheOptions()),
-                TimeProvider.System, NullLogger<EdgeCerts.CertificateStore>.Instance),
+            store,
             new FakeAllowList(allowed),
             issuer,
-            Options.Create(new EdgeCerts.CertificateOptions
-            {
-                TlsEnabled = true,
-                FailureBackoffSeconds = backoffSeconds,
-            }),
+            new EdgeCerts.ManagedCertificateProvisioner(
+                container, store, issuer, options, metrics, TimeProvider.System,
+                NullLogger<EdgeCerts.ManagedCertificateProvisioner>.Instance),
+            options,
             configuration,
-            new DcmsMetrics(meters),
+            metrics,
             TimeProvider.System,
             NullLogger<EdgeCerts.CertificateRenewalService>.Instance);
     }
@@ -428,7 +435,7 @@ public sealed class CertificateSweepTests : IAsyncLifetime
     {
         var (chainPem, keyPem) = SelfSigned(hostname);
         await BuildStore().SaveAsync(
-            hostname, chainPem, keyPem, CertificateSource.DcmsManaged, TestContext.Current.CancellationToken);
+            hostname, chainPem, keyPem, CertificateSource.DcmsManaged, null, TestContext.Current.CancellationToken);
     }
 
     private static (string ChainPem, string KeyPem) SelfSigned(string hostname)
@@ -477,6 +484,14 @@ public sealed class CertificateSweepTests : IAsyncLifetime
             var (chainPem, keyPem) = SelfSigned(hostname);
             return Task.FromResult(new EdgeCerts.IssuedCertificate(chainPem, keyPem));
         }
+
+        /// <summary>
+        /// The multi-identifier overload. These tests drive the per-hostname sweep, which never
+        /// reaches it; managed certificates are ordered by ManagedCertificateProvisioner.
+        /// </summary>
+        public Task<EdgeCerts.IssuedCertificate> IssueAsync(
+            IReadOnlyList<string> identifiers, CancellationToken ct)
+            => IssueAsync(identifiers[0], ct);
     }
 
     private sealed class PassthroughTransit : ITransitEncryptor

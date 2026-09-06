@@ -34,6 +34,7 @@ public sealed class CertificateRenewalService(
     ICertificateStore store,
     ITlsAllowList allowList,
     IAcmeIssuer issuer,
+    ManagedCertificateProvisioner managed,
     IOptions<CertificateOptions> options,
     IConfiguration configuration,
     DcmsMetrics metrics,
@@ -91,7 +92,12 @@ public sealed class CertificateRenewalService(
             // certificate with a Let's Encrypt one. Expiry is reported instead, in the admin UI.
             // ReissueRequestedAt is the backstop for the operator's "reissue now" button: the
             // event admin-api publishes makes it immediate, and this makes it certain.
+            // ManagedCertificateId == null: the platform's own wildcard is a row here too, and
+            // it is ordered by ManagedCertificateProvisioner against a different challenge type
+            // and a different rate-limit ceiling. Letting it fall into this loop as well would
+            // order it twice per sweep, over HTTP-01, which the CA refuses for a wildcard.
             .Where(c => c.Source == CertificateSource.DcmsManaged
+                        && c.ManagedCertificateId == null
                         && (c.NotAfter <= threshold || c.ReissueRequestedAt != null))
             .Select(c => c.Hostname)
             .ToListAsync(ct);
@@ -150,6 +156,30 @@ public sealed class CertificateRenewalService(
             metrics.SetEdgeCertificateState("missing", unusable.Count);
             metrics.SetEdgeCertificateState("due", due.Count);
             return;
+        }
+
+        // THE PLATFORM'S OWN CERTIFICATES FIRST, and before coverage is measured, so a wildcard
+        // issued on this pass immediately spares every hostname below it an order of its own.
+        var managedResult = await managed.SweepAsync(ct);
+
+        // What the managed certificates now cover. A per-hostname certificate for a name the
+        // wildcard already serves is superseded: it keeps serving until it expires -- the
+        // handshake prefers an exact match, so nothing changes under a visitor -- but ordering
+        // or renewing it would spend the CA's budget twice for one name, which is the entire
+        // thing this design exists to stop.
+        var covered = await managed.CoverageAsync(ct);
+        var supersededDue = due.Count(covered);
+        var supersededMissing = missing.Count(covered);
+        due = [.. due.Where(h => !covered(h))];
+        missing = [.. missing.Where(h => !covered(h))];
+
+        if (supersededDue + supersededMissing > 0)
+        {
+            logger.LogInformation(
+                "{Count} hostname(s) are covered by a managed certificate and were not ordered "
+                + "individually. Any per-host certificate they still hold keeps serving until it "
+                + "expires; the handshake prefers it over the wildcard.",
+                supersededDue + supersededMissing);
         }
 
         // Serially, and inside the advisory lock. The CA rate-limits by account, and a burst of
@@ -219,7 +249,12 @@ public sealed class CertificateRenewalService(
             .Select(c => c.Hostname)
             .ToListAsync(ct);
         var usableSet = usable.ToHashSet(StringComparer.Ordinal);
-        var stillUnusable = allowed.Count(h => !usableSet.Contains(h));
+
+        // Re-read after the work, so a wildcard issued on this pass counts. Without this the
+        // sweep that fixed the platform would still report every hostname as unable to serve
+        // TLS -- the exact "reads as still broken" failure the recount below was added for.
+        var coveredNow = await managed.CoverageAsync(ct);
+        var stillUnusable = allowed.Count(h => !usableSet.Contains(h) && !coveredNow(h));
 
         var failing = await db.Certificates.CountAsync(c => c.ConsecutiveFailures > 0, ct);
         metrics.SetEdgeCertificateState("total", usable.Count);
@@ -231,8 +266,10 @@ public sealed class CertificateRenewalService(
         // to do and a sweep that is not running produce identical silence otherwise.
         logger.LogInformation(
             "Certificate sweep: {Missing} cannot serve TLS, {Issued} issued, {Due} due, "
-            + "{Renewed} renewed, {Failed} failed, {Total} usable.",
-            stillUnusable, issued, due.Count, renewed, failed, usable.Count);
+            + "{Renewed} renewed, {Failed} failed, {Total} usable. Managed: {ManagedIssued} issued, "
+            + "{ManagedRenewed} renewed, {ManagedFailed} failed, {ManagedDeferred} held by a rate-limit ceiling.",
+            stillUnusable, issued, due.Count, renewed, failed, usable.Count,
+            managedResult.Issued, managedResult.Renewed, managedResult.Failed, managedResult.Deferred);
     }
 
     /// <summary>
@@ -288,7 +325,8 @@ public sealed class CertificateRenewalService(
         try
         {
             await store.SaveAsync(
-                hostname, certificate.PemChain, certificate.PemPrivateKey, CertificateSource.DcmsManaged, ct);
+                hostname, certificate.PemChain, certificate.PemPrivateKey, CertificateSource.DcmsManaged,
+                managedCertificateId: null, ct);
         }
         catch (Exception ex)
         {

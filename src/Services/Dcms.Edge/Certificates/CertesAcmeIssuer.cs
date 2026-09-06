@@ -2,6 +2,7 @@ using System.Text;
 using Certes;
 using Certes.Acme;
 using Certes.Acme.Resource;
+using Dcms.Edge.Certificates.Dns;
 using Dcms.Shared.Data.Edge;
 using Dcms.Shared.Vault;
 using Microsoft.EntityFrameworkCore;
@@ -10,17 +11,25 @@ using Microsoft.Extensions.Options;
 namespace Dcms.Edge.Certificates;
 
 /// <summary>
-/// Obtains certificates from an ACME certificate authority over HTTP-01.
+/// Obtains certificates from an ACME certificate authority, over HTTP-01 or DNS-01 depending on
+/// what the order contains.
 ///
-/// <para>HTTP-01 rather than TLS-ALPN-01 or DNS-01: the edge already owns port 80 (it has to,
-/// for the HTTPS redirect), the challenge is a plain file served from
-/// <c>/.well-known/acme-challenge/</c>, and it needs no credentials for anyone's DNS provider.
-/// The one thing it cannot do is wildcards, which is why the managed-zone wildcard is a
-/// separate DNS-01 piece of work rather than something this grows into.</para>
+/// <para><b>HTTP-01 is still the default, and stays the path for a tenant's own domain.</b> The
+/// edge already owns port 80 (it has to, for the HTTPS redirect), the challenge is a plain file
+/// served from <c>/.well-known/acme-challenge/</c>, and it needs no credentials for anybody's
+/// DNS provider — so a tenant pointing a domain at us needs nothing from us but a CNAME.</para>
+///
+/// <para><b>DNS-01 is used when, and only when, the order contains a wildcard.</b> Let's Encrypt
+/// refuses every other challenge type for a wildcard identifier, and a wildcard is the only
+/// thing that removes this platform's per-registered-domain issuance ceiling. It costs a
+/// credential with DNS-edit rights on the zone, which is why it is scoped to the domains DCMS
+/// owns rather than offered for tenant domains. See ADR 0011.</para>
 /// </summary>
 public sealed class CertesAcmeIssuer(
     IServiceProvider services,
     AcmeChallengeStore challenges,
+    IDnsChallengeWriter dns,
+    DnsPropagationWaiter propagation,
     IOptions<CertificateOptions> options,
     TimeProvider clock,
     ILogger<CertesAcmeIssuer> logger) : IAcmeIssuer
@@ -38,21 +47,62 @@ public sealed class CertesAcmeIssuer(
 
     private IAcmeContext? cachedAcme;
 
-    public async Task<IssuedCertificate> IssueAsync(string hostname, CancellationToken ct)
+    public Task<IssuedCertificate> IssueAsync(string hostname, CancellationToken ct)
+        => IssueAsync([hostname], ct);
+
+    public async Task<IssuedCertificate> IssueAsync(IReadOnlyList<string> identifiers, CancellationToken ct)
     {
-        var normalized = CertificateStore.Normalize(hostname);
+        if (identifiers.Count == 0)
+        {
+            throw new ArgumentException("A certificate needs at least one identifier.", nameof(identifiers));
+        }
+
+        var normalized = identifiers.Select(CertificateStore.Normalize).Distinct(StringComparer.Ordinal).ToList();
         var config = options.Value;
         var acme = await GetAcmeContextAsync(config, ct);
 
-        logger.LogInformation("Requesting a certificate for {Hostname} from {Directory}.",
-            normalized, config.AcmeDirectory);
+        // One wildcard puts the WHOLE order on DNS-01. Not a preference: Let's Encrypt refuses
+        // HTTP-01 and TLS-ALPN-01 for a wildcard identifier, and an order is validated as a
+        // unit, so a mixed order still needs every authorization answered the same way.
+        var useDns = normalized.Any(DnsChallenge.IsWildcard);
 
-        var order = await acme.NewOrder([normalized]);
+        logger.LogInformation(
+            "Requesting a certificate for {Identifiers} from {Directory} over {Challenge}.",
+            string.Join(", ", normalized), config.AcmeDirectory, useDns ? "DNS-01" : "HTTP-01");
+
+        var order = await acme.NewOrder(normalized);
         var authorizations = await order.Authorizations();
 
+        if (useDns)
+        {
+            await ValidateOverDnsAsync(acme, authorizations, ct);
+        }
+        else
+        {
+            await ValidateOverHttpAsync(authorizations, ct);
+        }
+
+        // A key per certificate, generated here and never reused. Sharing one across hostnames
+        // would make a single disclosure impersonate every tenant at once.
+        var certificateKey = KeyFactory.NewKey(KeyAlgorithm.ES256);
+
+        // The first identifier becomes the CN. Which one hardly matters to a modern client --
+        // validation is done against the SAN list -- but it must be one of them, and it must be
+        // <=64 characters or the CA rejects the CSR.
+        var commonName = normalized.FirstOrDefault(n => n.Length <= 64) ?? normalized[0];
+        var chain = await order.Generate(new CsrInfo { CommonName = commonName }, certificateKey);
+
+        logger.LogInformation("Certificate issued for {Identifiers}.", string.Join(", ", normalized));
+        return new IssuedCertificate(chain.ToPem(), certificateKey.ToPem());
+    }
+
+    /// <summary>The original path, unchanged: a token served from Redis over plain HTTP.</summary>
+    private async Task ValidateOverHttpAsync(IEnumerable<IAuthorizationContext> authorizations, CancellationToken ct)
+    {
         foreach (var authorization in authorizations)
         {
             var challenge = await authorization.Http();
+            var identifier = (await authorization.Resource()).Identifier.Value;
 
             // Published before Validate, never after: the CA fetches the token as part of
             // handling that call, and a race here reads as a validation failure with no
@@ -61,7 +111,7 @@ public sealed class CertesAcmeIssuer(
             try
             {
                 await challenge.Validate();
-                await WaitForAuthorizationAsync(authorization, normalized, ct);
+                await WaitForAuthorizationAsync(authorization, identifier, ct);
             }
             finally
             {
@@ -70,14 +120,74 @@ public sealed class CertesAcmeIssuer(
                 await challenges.RemoveAsync(challenge.Token, CancellationToken.None);
             }
         }
+    }
 
-        // A key per certificate, generated here and never reused. Sharing one across hostnames
-        // would make a single disclosure impersonate every tenant at once.
-        var certificateKey = KeyFactory.NewKey(KeyAlgorithm.ES256);
-        var chain = await order.Generate(new CsrInfo { CommonName = normalized }, certificateKey);
+    /// <summary>
+    /// Publishes every challenge record for the order, waits for the lot to go live, and only
+    /// then asks the CA to validate.
+    ///
+    /// <para><b>All records first, then all validations.</b> This ordering is the whole reason
+    /// this method is not a loop like the HTTP one. An order for <c>highgeek.eu</c> and
+    /// <c>*.highgeek.eu</c> produces two authorizations whose challenge records share one name —
+    /// ACME strips the wildcard label, so both are <c>_acme-challenge.highgeek.eu</c> — carrying
+    /// two different values that must be resolvable simultaneously. Validating the first
+    /// authorization before publishing the second is fine; publishing the second by
+    /// <i>replacing</i> the first is not, and neither is removing the first record in a
+    /// per-authorization <c>finally</c> while the second is still to be checked. Doing the whole
+    /// order in one pass makes both mistakes unavailable.</para>
+    /// </summary>
+    private async Task ValidateOverDnsAsync(
+        IAcmeContext acme, IEnumerable<IAuthorizationContext> authorizations, CancellationToken ct)
+    {
+        var published = new List<DnsChallengeRecord>();
+        var pending = new List<(IAuthorizationContext Authorization, IChallengeContext Challenge,
+            string Identifier, string RecordName, string Value)>();
 
-        logger.LogInformation("Certificate issued for {Hostname}.", normalized);
-        return new IssuedCertificate(chain.ToPem(), certificateKey.ToPem());
+        try
+        {
+            foreach (var authorization in authorizations)
+            {
+                var resource = await authorization.Resource();
+
+                // The CA reports a wildcard authorization with the base domain in Identifier
+                // and a Wildcard flag, so this value is already the name the record belongs at.
+                var identifier = resource.Identifier.Value;
+                var challenge = await authorization.Dns()
+                                ?? throw new AcmeIssuanceException(
+                                    $"The certificate authority offered no DNS-01 challenge for {identifier}, "
+                                    + "so a wildcard cannot be issued from this directory.");
+
+                var value = acme.AccountKey.DnsTxt(challenge.Token);
+                var recordName = $"{DnsChallenge.Prefix}.{identifier}";
+
+                published.Add(await dns.AddTxtAsync(recordName, value, ct));
+                pending.Add((authorization, challenge, identifier, recordName, value));
+            }
+
+            // Grouped by record name, asserting every value at that name at once -- which is
+            // exactly the apex-plus-wildcard case. Waiting per authorization would let the first
+            // pass as soon as its own value appeared, while the second was still propagating.
+            foreach (var group in pending.GroupBy(p => p.RecordName, StringComparer.Ordinal))
+            {
+                await propagation.WaitAsync(
+                    group.Key, [.. group.Select(p => p.Value)], ct);
+            }
+
+            foreach (var item in pending)
+            {
+                await item.Challenge.Validate();
+                await WaitForAuthorizationAsync(item.Authorization, item.Identifier, ct);
+            }
+        }
+        finally
+        {
+            // Always, and never allowed to throw -- RemoveAsync swallows its own failures. A
+            // certificate that was issued must not be lost because tidying up afterwards failed.
+            foreach (var record in published)
+            {
+                await dns.RemoveAsync(record, CancellationToken.None);
+            }
+        }
     }
 
     /// <summary>

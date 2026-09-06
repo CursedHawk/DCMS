@@ -17,3 +17,4 @@ as their implementation phase lands.
 - [0008](0008-observability.md) — Observability: OpenTelemetry into a single-host LGTM stack
 - [0009](0009-in-app-notifications.md) — In-app notifications: admin-api hub, fan-out on write
 - [0010](0010-yarp-edge.md) — The public edge is a .NET service (`Dcms.Edge`), not Caddy
+- [0011](0011-wildcard-tls-dns01.md) — DCMS-managed wildcard certificates over DNS-01

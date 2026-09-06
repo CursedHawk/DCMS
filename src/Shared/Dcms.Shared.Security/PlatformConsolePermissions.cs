@@ -48,6 +48,17 @@ public static class PlatformConsolePermissions
 
     public const string RolesManage = "platform:roles:manage";
 
+    /// <summary>
+    /// Which domains the platform holds TLS certificates for, and asking for one to be reissued.
+    ///
+    /// <para>Deliberately a single ":manage" key with no ":read" sibling, unlike most areas here. The
+    /// endpoints behind it are SuperAdmin-only — they decide which names this platform serves
+    /// TLS for, which is not a support question — and a ":read" key would be swept into
+    /// <see cref="ReadOnly"/> by the derivation below, showing the support role a page whose
+    /// every request it would then be refused.</para>
+    /// </summary>
+    public const string CertificatesManage = "platform:certificates:manage";
+
     /// <summary>The prefix every key here carries. Used to tell the two permission
     /// spaces apart when both could appear in one list.</summary>
     public const string Prefix = "platform:";
@@ -61,6 +72,7 @@ public static class PlatformConsolePermissions
         OpsRead, OpsAct,
         LogsRead, LogsPurge,
         RolesManage,
+        CertificatesManage,
     ];
 
     /// <summary>

@@ -613,13 +613,56 @@ services:
     image: ghcr.io/letsencrypt/pebble:v2.6.0
     restart: "no"
     logging: *default-logging
-    command: ["-config", "/test/config/pebble-config.json", "-dnsserver", "127.0.0.11:53"]
+    # Docker's own resolver by default, which is what the HTTP-01 harness needs: validation is
+    # an HTTP fetch of a container name Docker already resolves.
+    #
+    # For DNS-01 set PEBBLE_DNS_SERVER=challtestsrv:8053 instead. Docker DNS resolves container
+    # names and nothing else, so it can never answer a TXT query -- and for DNS-01 the TXT
+    # record IS the proof. The two harnesses are separate runs, not one configuration.
+    command:
+      - "-config"
+      - "/test/config/pebble-config.json"
+      - "-dnsserver"
+      - "${PEBBLE_DNS_SERVER:-127.0.0.11:53}"
     environment:
       # Pebble sleeps a random 0-15s before validating, to shake out clients that assume it is
       # instant. Ours polls, so the delay only makes the test slower.
       PEBBLE_VA_NOSLEEP: "1"
     volumes:
       - ./infra/acme-test/pebble-config.json:/test/config/pebble-config.json:ro
+
+  # The mock DNS server Pebble validates DNS-01 against, with an HTTP management API the edge
+  # writes challenge records into.
+  #
+  # It exists here for one property: it APPENDS TXT values at a name rather than replacing them,
+  # exactly as a real zone does. That is what makes it possible to prove the apex-plus-wildcard
+  # case -- an order for highgeek.eu and *.highgeek.eu produces two authorizations whose records
+  # share one name and must both be live at once -- which is the mistake this path is most likely
+  # to contain and the one no unit test can catch.
+  challtestsrv:
+    profiles: ["acmetest"]
+    image: ghcr.io/letsencrypt/pebble-challtestsrv:v2.6.0
+    restart: "no"
+    logging: *default-logging
+    # DNS on :8053, management API on :8055, and every challenge responder off -- this stack
+    # only ever asks it to hold TXT records, and the edge answers HTTP-01 itself.
+    #
+    # -defaultIPv4 empty so it answers only what is explicitly added. Left at its default it
+    # answers every A query with one address, which would quietly make an unrelated
+    # misconfiguration look like it was working.
+    command:
+      - "-dns01"
+      - ":8053"
+      - "-management"
+      - ":8055"
+      - "-defaultIPv4"
+      - ""
+      - "-http01"
+      - ""
+      - "-https01"
+      - ""
+      - "-tlsalpn01"
+      - ""
 
   ai-gateway:
     build:

@@ -105,7 +105,9 @@ public sealed class CertificateProvisioner(
 
         try
         {
-            await store.SaveAsync(hostname, issued.PemChain, issued.PemPrivateKey, CertificateSource.DcmsManaged, ct);
+            await store.SaveAsync(
+                hostname, issued.PemChain, issued.PemPrivateKey, CertificateSource.DcmsManaged,
+                managedCertificateId: null, ct);
         }
         catch (Exception ex)
         {

@@ -14,7 +14,21 @@ public interface ICertificateStore
 {
     Task<SslStreamCertificateContext?> GetAsync(string hostname, CancellationToken ct);
 
-    Task SaveAsync(string hostname, string pemChain, string pemPrivateKey, CertificateSource source, CancellationToken ct);
+    /// <summary>
+    /// Stores an issued or uploaded certificate.
+    /// </summary>
+    /// <param name="managedCertificateId">
+    /// The <c>edge.managed_certificates</c> row this was ordered for, or null for a
+    /// per-hostname certificate. When set it is what the row is found by, so editing a managed
+    /// certificate's identifiers renames the existing row instead of stranding it.
+    /// </param>
+    Task SaveAsync(
+        string hostname,
+        string pemChain,
+        string pemPrivateKey,
+        CertificateSource source,
+        Guid? managedCertificateId,
+        CancellationToken ct);
 
     Task RecordFailureAsync(string hostname, string error, CancellationToken ct);
 
@@ -22,6 +36,12 @@ public interface ICertificateStore
     Task<DateTimeOffset?> RetryNotBeforeAsync(string hostname, CertificateOptions options, CancellationToken ct);
 
     void Invalidate(string hostname);
+
+    /// <summary>
+    /// Drops every cached certificate at once. For a change that cannot be named by a single
+    /// hostname — a wildcard, which is cached under every name it has served.
+    /// </summary>
+    void InvalidateAll();
 
     /// <summary>
     /// Whether an operator has asked for this hostname to be reissued before it is due. Both the

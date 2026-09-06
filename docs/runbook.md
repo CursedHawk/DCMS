@@ -793,6 +793,50 @@ Pace matters on a cold start: Let's Encrypt allows ~50 certificates per register
 domain per week. The sweep orders serially under an advisory lock for exactly that
 reason, and a failed authorization counts against the same budget as a successful one.
 
+#### Wildcards: the platform's own domains
+
+The 50-per-registered-domain limit above is the reason this exists. Every hostname the
+platform serves is under `highgeek.eu`, so per-hostname issuance capped the whole platform
+at ~50 new tenant sites a week and then failed for everyone. One certificate covering
+`highgeek.eu`, `*.highgeek.eu` and `*.dcms.highgeek.eu` serves all of them — three
+identifiers and not two, because a wildcard matches exactly one label and so covers neither
+the apex nor `x.dcms.highgeek.eu`.
+
+These live in `edge.managed_certificates`, seeded from
+`Edge__Certificates__ManagedIdentifiers` on first start and **editable by a superadmin at
+platform.highgeek.eu → Certificates** afterwards, which also shows issuer, expiry, the CA's
+own error and the attempt history. A tenant's own domain is unaffected: it is still issued
+per-hostname over HTTP-01, or uploaded, and nothing here renews or replaces it.
+
+**Wildcards are DNS-01 only** — Let's Encrypt refuses every other challenge type for one.
+So the edge needs `Edge__Dns__Cloudflare__ApiToken` in Vault at `secret/dcms/edge`
+(`Zone:DNS:Edit` + `Zone:Zone:Read`). Without it the wildcard is not issued, the log says
+so plainly, and no rate limit is spent — the CA is never asked.
+
+**The rate limit that matters is no longer the 50.** It is the **duplicate-certificate
+limit: 5 per identical set of identifiers per 7 days**, which renewals are *not* exempt
+from. One certificate covering the platform means five bad issuances take TLS off every
+hostname at once, for a week, with no way to hurry it. So managed certificates carry a
+ceiling of their own in `edge.managed_certificate_attempts` — 3 issuances per 7 days, and
+3 CA refusals per hour — and **a restart does not clear it**, unlike the per-hostname
+backoff, which `EdgeTlsPreflight` deliberately does clear. If the console says "0 of 3
+remaining", something has been re-ordering in a loop; find that before raising the ceiling.
+
+Cutover is deliberately gradual: the handshake prefers an **exact** hostname match and only
+falls back to a wildcard, so per-host certificates keep serving until they expire and the
+wildcard carries the names that have no row. That also means a tenant's uploaded certificate
+always wins over the platform wildcard, which is the behaviour you want if they have gone to
+the trouble of uploading one.
+
+```sh
+# The same certificate should answer for a name under each SAN.
+for h in admin.highgeek.eu highgeek.eu 0902b3e9995644f98e0ac35bc74b39d5.dcms.highgeek.eu; do
+  echo -n "$h "
+  openssl s_client -servername "$h" -connect 127.0.0.1:443 </dev/null 2>/dev/null \
+    | openssl x509 -noout -serial
+done
+```
+
 ### Single sign-on into Grafana and Forgejo
 
 The edge signs an operator in once (cookie + OIDC against identity, client `dcms-edge`) and

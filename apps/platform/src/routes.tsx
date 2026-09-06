@@ -23,6 +23,7 @@ const AuditPage = page(() => import('./features/audit/AuditPage'), 'AuditPage');
 const MonitoringPage = page(() => import('./features/monitoring/MonitoringPage'), 'MonitoringPage');
 const StoragePage = page(() => import('./features/storage/StoragePage'), 'StoragePage');
 const AccessPage = page(() => import('./features/access/AccessPage'), 'AccessPage');
+const CertificatesPage = page(() => import('./features/certificates/CertificatesPage'), 'CertificatesPage');
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -64,5 +65,6 @@ export const routeTree = rootRoute.addChildren([
     child('/monitoring', MonitoringPage),
     child('/storage', StoragePage),
     child('/access', AccessPage),
+    child('/certificates', CertificatesPage),
   ]),
 ]);

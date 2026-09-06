@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <PackageReference Include="Certes" />
+    <PackageReference Include="DnsClient" />
     <!-- Declared rather than inherited. It arrives transitively today through the shared data
          project's OpenIddict dependencies, and a package this service's authentication is built
          on should not be able to disappear because something unrelated changed a reference. -->

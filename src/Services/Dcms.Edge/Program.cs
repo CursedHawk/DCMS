@@ -1,6 +1,7 @@
 using Dcms.Edge;
 using Dcms.Edge.Auth;
 using Dcms.Edge.Certificates;
+using Dcms.Edge.Certificates.Dns;
 using Dcms.Edge.Protection;
 using Dcms.Edge.Routing;
 using Dcms.Edge.Transforms;
@@ -45,10 +46,49 @@ builder.Services.AddSingleton<ICertificateStore>(sp => sp.GetRequiredService<Cer
 builder.Services.AddSingleton<AcmeChallengeStore>();
 builder.Services.AddSingleton<IAcmeIssuer, CertesAcmeIssuer>();
 builder.Services.AddSingleton<CertificateProvisioner>();
+
+// DNS-01, for the platform's own wildcard certificates. Let's Encrypt refuses every other
+// challenge type for a wildcard identifier, so this is not an alternative to the HTTP-01 path
+// above — it is the only way to hold one certificate for *.dcms.highgeek.eu instead of one per
+// tenant. The Cloudflare token comes from Vault (secret/dcms/edge); absent, wildcard issuance
+// refuses cleanly and everything else carries on. See ADR 0011.
+builder.Services.Configure<DnsOptions>(builder.Configuration.GetSection(DnsOptions.SectionName));
+builder.Services.AddHttpClient<CloudflareDnsChallengeWriter>(
+    client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddHttpClient<ChallTestSrvDnsChallengeWriter>(
+    client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddSingleton<IDnsChallengeWriter>(sp =>
+{
+    var dns = sp.GetRequiredService<IOptions<DnsOptions>>().Value;
+    if (string.IsNullOrWhiteSpace(dns.ChallTestSrvUrl))
+    {
+        return sp.GetRequiredService<CloudflareDnsChallengeWriter>();
+    }
+
+    // Two switches, not one. ChallTestSrvUrl redirects where the platform proves it controls a
+    // domain, so a deployment that had it set by accident would obtain certificates whose
+    // validation nobody actually performed. Requiring the insecure-directory switch as well --
+    // which CertesAcmeIssuer already refuses for a Let's Encrypt directory -- makes that
+    // combination impossible to reach against a real CA.
+    if (!sp.GetRequiredService<IOptions<CertificateOptions>>().Value.AcceptInsecureAcmeDirectory)
+    {
+        throw new InvalidOperationException(
+            "Edge:Dns:ChallTestSrvUrl is set, which publishes ACME challenges to a mock DNS "
+            + "server instead of the real zone. It is for the local acmetest profile only and "
+            + "requires Edge:Certificates:AcceptInsecureAcmeDirectory as well. Unset it.");
+    }
+
+    return sp.GetRequiredService<ChallTestSrvDnsChallengeWriter>();
+});
+builder.Services.AddSingleton<DnsPropagationWaiter>();
+builder.Services.AddSingleton<ManagedCertificateProvisioner>();
 builder.Services.AddHttpClient<TlsAllowList>(client => client.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddSingleton<ITlsAllowList>(sp => sp.GetRequiredService<TlsAllowList>());
 builder.Services.AddHostedService<CertificateRenewalService>();
 builder.Services.AddHostedService<DomainCertificateProvisioner>();
+// Acts on an operator's "renew now" for a managed certificate straight away, instead of leaving
+// it to the hourly sweep. The durable flag is still the backstop.
+builder.Services.AddHostedService<ManagedCertificateInvalidator>();
 // Issues the platform's OWN hostnames up front, and reports the one failure that otherwise has
 // no symptom other than every host refusing TLS at once. See EdgeTlsPreflight.
 builder.Services.AddHostedService<EdgeTlsPreflight>();

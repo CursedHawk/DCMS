@@ -146,6 +146,10 @@ public static class DomainCertificateEndpoints
             }
 
             row.PemChain = body.PemChain;
+            // Read off the leaf, so an uploaded certificate says what it covers exactly as an
+            // issued one does. The edge's handshake falls back to this list when no row is filed
+            // under the requested hostname.
+            row.SubjectAlternativeNames = CertificateUpload.DnsNames(leaf);
             // Encrypted before it touches the database, exactly as an issued key is. admin-api
             // holds encrypt on this Transit key and NOT decrypt: only the edge reads one back,
             // at handshake time, so a compromise of the admin plane cannot turn stored

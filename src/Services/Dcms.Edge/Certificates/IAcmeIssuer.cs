@@ -15,7 +15,21 @@ public sealed record IssuedCertificate(string PemChain, string PemPrivateKey);
 /// </summary>
 public interface IAcmeIssuer
 {
+    /// <summary>One certificate for one hostname. The tenant-domain path.</summary>
     Task<IssuedCertificate> IssueAsync(string hostname, CancellationToken ct);
+
+    /// <summary>
+    /// One certificate covering several identifiers, wildcards allowed.
+    ///
+    /// <para>A separate method rather than a widened <see cref="IssueAsync(string,
+    /// CancellationToken)"/> because the two have genuinely different consequences, and the
+    /// signature is where that is hardest to miss. A wildcard forces the whole order onto
+    /// DNS-01 — Let's Encrypt refuses every other challenge type for one — which means DNS
+    /// credentials, a propagation wait, and a failure mode that takes the entire platform's
+    /// certificate with it rather than one site's. Callers that hold a single hostname should
+    /// keep calling the single-hostname overload and stay on HTTP-01.</para>
+    /// </summary>
+    Task<IssuedCertificate> IssueAsync(IReadOnlyList<string> identifiers, CancellationToken ct);
 }
 
 /// <summary>

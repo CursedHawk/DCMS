@@ -82,6 +82,28 @@ public static class CertificateUpload
     }
 
     /// <summary>
+    /// Every DNS name in the leaf's SAN extension, normalised.
+    ///
+    /// <para>Stored on the certificate row so an uploaded certificate describes what it covers
+    /// the same way an issued one does — the edge's handshake lookup falls back to this list,
+    /// and the admin UI shows it. Without it an upload covering several names would be found
+    /// only under the one domain it was attached to.</para>
+    /// </summary>
+    public static string[] DnsNames(X509Certificate2 leaf)
+    {
+        var names = new List<string>();
+        foreach (var extension in leaf.Extensions)
+        {
+            if (extension is X509SubjectAlternativeNameExtension san)
+            {
+                names.AddRange(san.EnumerateDnsNames().Select(n => n.Trim().TrimEnd('.').ToLowerInvariant()));
+            }
+        }
+
+        return [.. names.Distinct(StringComparer.Ordinal)];
+    }
+
+    /// <summary>
     /// Matches the way a client does: the SAN DNS names, including a single leading wildcard
     /// label. Never the common name.
     /// </summary>

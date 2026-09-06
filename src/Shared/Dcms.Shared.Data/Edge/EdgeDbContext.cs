@@ -29,6 +29,16 @@ public class EdgeDbContext(DbContextOptions<EdgeDbContext> options)
     public DbSet<AcmeAccount> AcmeAccounts => Set<AcmeAccount>();
     public DbSet<EdgeRoute> Routes => Set<EdgeRoute>();
 
+    /// <summary>The domains DCMS keeps renewed on its own behalf. See ADR 0011.</summary>
+    public DbSet<EdgeManagedCertificate> ManagedCertificates => Set<EdgeManagedCertificate>();
+
+    /// <summary>
+    /// One row per order attempt, which is what stops a retry loop spending Let's Encrypt's
+    /// five-per-week duplicate-certificate budget for the whole platform.
+    /// </summary>
+    public DbSet<EdgeManagedCertificateAttempt> ManagedCertificateAttempts
+        => Set<EdgeManagedCertificateAttempt>();
+
     /// <summary>
     /// The edge's OWN key ring, not the shared <c>dataprotection</c> schema every other service
     /// uses.
@@ -58,6 +68,46 @@ public class EdgeDbContext(DbContextOptions<EdgeDbContext> options)
             e.Property(c => c.LastError).HasMaxLength(2000);
             // Indexed because the renewal sweep's only query is "what expires soon".
             e.HasIndex(c => c.NotAfter);
+
+            // One artifact per intent. Filtered, because every per-hostname certificate leaves
+            // this null and a plain unique index would allow exactly one of them.
+            e.HasIndex(c => c.ManagedCertificateId)
+                .IsUnique()
+                .HasFilter("\"ManagedCertificateId\" IS NOT NULL");
+
+            // A GIN index, because the handshake's fallback lookup is a containment test
+            // (`@hostname = ANY(...)`) and btree cannot answer one. Small table, but this is on
+            // the TLS path for every hostname the platform does not hold an exact row for --
+            // which, once the wildcard supersedes the per-host certificates, is all of them.
+            e.HasIndex(c => c.SubjectAlternativeNames).HasMethod("gin");
+        });
+
+        builder.Entity<EdgeManagedCertificate>(e =>
+        {
+            e.ToTable("managed_certificates");
+            e.HasKey(m => m.Id);
+            e.Property(m => m.Name).HasMaxLength(128).IsRequired();
+            // 253 is the DNS name limit; a wildcard costs two more characters.
+            e.Property(m => m.Identifiers).IsRequired();
+        });
+
+        builder.Entity<EdgeManagedCertificateAttempt>(e =>
+        {
+            e.ToTable("managed_certificate_attempts");
+            e.HasKey(a => a.Id);
+            e.Property(a => a.Identifiers).HasMaxLength(2000).IsRequired();
+            e.Property(a => a.Error).HasMaxLength(2000);
+
+            // The rate-limit guard's only query: "how many attempts for this identifier set
+            // since a week ago". Composite so it is answered from the index alone.
+            e.HasIndex(a => new { a.ManagedCertificateId, a.AttemptedAt });
+
+            // Cascade, so removing a managed certificate takes its history with it rather than
+            // leaving rows that count towards a budget for an identifier set nobody orders.
+            e.HasOne<EdgeManagedCertificate>()
+                .WithMany()
+                .HasForeignKey(a => a.ManagedCertificateId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<AcmeAccount>(e =>

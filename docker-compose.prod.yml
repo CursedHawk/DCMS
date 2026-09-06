@@ -379,6 +379,19 @@ services:
       # on hostnames that are not production's. docker-compose.vps.yml sets it for vps1.
       Edge__Certificates__AcmeDirectory: "${ACME_DIRECTORY:-https://acme-staging-v02.api.letsencrypt.org/directory}"
       Edge__Certificates__ContactEmail: "${ACME_EMAIL}"
+      # The domains DCMS holds certificates for on its OWN behalf, comma-separated. Seeded into
+      # edge.managed_certificates on first start and editable from the platform console after
+      # that -- so this is the starting point, not a setting the console fights with.
+      #
+      # Three entries and not two: a wildcard matches exactly one label, so *.highgeek.eu covers
+      # neither the apex nor x.dcms.highgeek.eu. Together they cover every hostname this platform
+      # serves, which is the point -- Let's Encrypt counts 50 certificates per registered domain
+      # per week and all of these are under one. See docs/adr/0011-wildcard-tls-dns01.md.
+      #
+      # Wildcards are validated over DNS-01, which needs Edge__Dns__Cloudflare__ApiToken in Vault
+      # at secret/dcms/edge. Without it the wildcard simply is not issued and the per-hostname
+      # HTTP-01 path carries on unchanged.
+      Edge__Certificates__ManagedIdentifiers: "${MANAGED_CERT_DOMAINS:-highgeek.eu,*.highgeek.eu,*.dcms.highgeek.eu}"
       # Off until the cutover has been green for a while. HSTS is the one edge setting a
       # rollback cannot undo: a browser that has seen the header refuses plain HTTP for the
       # full max-age, so turning it on early turns a bad cutover into a bad week.

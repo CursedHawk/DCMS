@@ -39,6 +39,19 @@ public sealed class CertificateStore(
     private static readonly TimeSpan NegativeTtl = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Bumped to drop every cached entry at once, by making every existing key unreachable.
+    ///
+    /// <para><b>Why a counter and not a list of keys.</b> Entries are cached under the hostname
+    /// the handshake <i>asked for</i>, so one wildcard certificate is cached under every name it
+    /// has ever served — a set this process does not know and cannot enumerate from the row it
+    /// just replaced. Removing "the" key for a wildcard would leave every other name still
+    /// serving the certificate it superseded, until each happened to expire. A generation in the
+    /// key makes the whole set unreachable in one write, and lets the old entries fall out on
+    /// their own; <see cref="IMemoryCache"/> has no bulk removal that would do it otherwise.</para>
+    /// </summary>
+    private int generation;
+
+    /// <summary>
     /// The handshake credential for a hostname, or null if there is none to serve.
     ///
     /// <para>An <see cref="SslStreamCertificateContext"/> rather than a bare certificate, because
@@ -77,11 +90,18 @@ public sealed class CertificateStore(
     /// decides so.
     /// </summary>
     public async Task SaveAsync(
-        string hostname, string pemChain, string pemPrivateKey, CertificateSource source, CancellationToken ct)
+        string hostname,
+        string pemChain,
+        string pemPrivateKey,
+        CertificateSource source,
+        Guid? managedCertificateId,
+        CancellationToken ct)
     {
         var normalized = Normalize(hostname);
         var leaf = ParseChain(pemChain).leaf
                    ?? throw new InvalidOperationException($"No certificate found in the PEM chain for {normalized}.");
+
+        var sans = ReadSubjectAlternativeNames(leaf);
 
         var encryptedKey = await Transit.EncryptAsync(
             VaultTransitServiceCollectionExtensions.TlsKeysKey,
@@ -90,13 +110,25 @@ public sealed class CertificateStore(
 
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
-        var row = await db.Certificates.FirstOrDefaultAsync(c => c.Hostname == normalized, ct);
+
+        // Found by the managed id FIRST, when there is one. A managed certificate's identifiers
+        // are editable, so its Hostname label can change between renewals; looking it up by
+        // hostname would leave the old row in place and insert a second one, and the platform
+        // would then hold two certificates and renew both.
+        var row = managedCertificateId is { } managedId
+            ? await db.Certificates.FirstOrDefaultAsync(c => c.ManagedCertificateId == managedId, ct)
+            : null;
+        row ??= await db.Certificates.FirstOrDefaultAsync(c => c.Hostname == normalized, ct);
+
         if (row is null)
         {
             row = new EdgeCertificate { Hostname = normalized };
             db.Certificates.Add(row);
         }
 
+        row.Hostname = normalized;
+        row.ManagedCertificateId = managedCertificateId;
+        row.SubjectAlternativeNames = sans;
         row.PemChain = pemChain;
         row.EncryptedPrivateKey = encryptedKey;
         row.NotBefore = leaf.NotBefore;
@@ -113,10 +145,20 @@ public sealed class CertificateStore(
         row.UpdatedAt = clock.GetUtcNow();
         await db.SaveChangesAsync(ct);
 
-        Invalidate(normalized);
+        // A certificate covering more than the one name it is filed under is cached under every
+        // name it has served, so naming one of them is not enough to replace it.
+        if (sans.Any(s => s.StartsWith("*.", StringComparison.Ordinal)))
+        {
+            InvalidateAll();
+        }
+        else
+        {
+            Invalidate(normalized);
+        }
+
         logger.LogInformation(
-            "Stored {Source} certificate for {Hostname}, valid until {NotAfter:u}.",
-            source, normalized, row.NotAfter);
+            "Stored {Source} certificate for {Hostname} covering {Names}, valid until {NotAfter:u}.",
+            source, normalized, sans.Length == 0 ? normalized : string.Join(", ", sans), row.NotAfter);
     }
 
     /// <summary>
@@ -169,6 +211,16 @@ public sealed class CertificateStore(
     }
 
     public void Invalidate(string hostname) => cache.Remove(CacheKey(Normalize(hostname)));
+
+    /// <summary>
+    /// Drops every cached certificate. Used when what changed cannot be named by one hostname —
+    /// a wildcard, which is cached under every name it has served.
+    /// </summary>
+    public void InvalidateAll()
+    {
+        Interlocked.Increment(ref generation);
+        logger.LogInformation("Dropped the whole certificate cache; a certificate covering several names changed.");
+    }
 
     /// <summary>
     /// Whether an operator has asked for this hostname to be reissued before it is due.
@@ -242,8 +294,34 @@ public sealed class CertificateStore(
         var normalized = Normalize(hostname);
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
+
+        // EXACT MATCH FIRST, and the order is the design.
+        //
+        // A row filed under this exact hostname is the most specific thing anyone has said about
+        // it: a certificate the tenant uploaded for their own domain, or one issued per-hostname
+        // over HTTP-01. A wildcard covering the same name is the platform's general answer. If
+        // the wildcard won, uploading a certificate for a name under one of our zones would
+        // appear to succeed and then never be served -- and the tenant would have no way to tell.
         var row = await db.Certificates.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Hostname == normalized, ct);
+
+        if (row is null || !row.IsUsable(clock.GetUtcNow()))
+        {
+            // Then the wildcard that could cover it, and the name itself as a SAN -- which is
+            // how the apex finds a certificate filed under a different label.
+            var parent = WildcardParent(normalized);
+            var now = clock.GetUtcNow();
+            row = await db.Certificates.AsNoTracking()
+                .Where(c => c.EncryptedPrivateKey != "" && c.NotAfter > now && c.NotBefore <= now)
+                .Where(c => c.SubjectAlternativeNames.Contains(normalized)
+                            || (parent != null && c.SubjectAlternativeNames.Contains(parent)))
+                // Deterministic when two certificates could serve the same name -- during the
+                // cutover, when per-host rows and the wildcard both exist, and after it if
+                // someone adds an overlapping managed certificate. The longest expiry wins, so
+                // the answer does not depend on row order and does not change under a visitor.
+                .OrderByDescending(c => c.NotAfter)
+                .FirstOrDefaultAsync(ct);
+        }
 
         if (row is null || !row.IsUsable(clock.GetUtcNow()))
         {
@@ -304,5 +382,51 @@ public sealed class CertificateStore(
     public static string Normalize(string host)
         => host.Split(':')[0].Trim().TrimEnd('.').ToLowerInvariant();
 
-    private static string CacheKey(string hostname) => $"edgecert:{hostname}";
+    /// <summary>
+    /// The one wildcard that could cover this hostname: <c>a.b.c</c> → <c>*.b.c</c>, or null for
+    /// a name with nothing to its left.
+    ///
+    /// <para>Exactly one, because a wildcard matches exactly one label (RFC 6125). <c>*.b.c</c>
+    /// does not cover <c>x.a.b.c</c>, which is why the platform certificate needs
+    /// <c>*.dcms.highgeek.eu</c> as well as <c>*.highgeek.eu</c> — and why this walks up one
+    /// level rather than looping.</para>
+    /// </summary>
+    public static string? WildcardParent(string hostname)
+    {
+        var dot = hostname.IndexOf('.', StringComparison.Ordinal);
+        return dot <= 0 || dot == hostname.Length - 1
+            ? null
+            : string.Concat("*.", hostname.AsSpan(dot + 1));
+    }
+
+    /// <summary>
+    /// Every DNS name in the leaf's subjectAltName extension.
+    ///
+    /// <para>Read off the certificate rather than copied from what was ordered, so the stored
+    /// list cannot drift from the one being served — if the CA issued something narrower than we
+    /// asked for, the handshake should match what we actually hold.</para>
+    /// </summary>
+    public static string[] ReadSubjectAlternativeNames(X509Certificate2 leaf)
+    {
+        const string SubjectAltNameOid = "2.5.29.17";
+        var extension = leaf.Extensions.FirstOrDefault(e => e.Oid?.Value == SubjectAltNameOid);
+        if (extension is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            var san = new X509SubjectAlternativeNameExtension(extension.RawData, extension.Critical);
+            return [.. san.EnumerateDnsNames().Select(Normalize).Distinct(StringComparer.Ordinal)];
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            // A malformed SAN is the certificate's problem, not a reason to refuse to store it.
+            // The exact-hostname lookup still works; only wildcard matching is lost.
+            return [];
+        }
+    }
+
+    private string CacheKey(string hostname) => $"edgecert:{Volatile.Read(ref generation)}:{hostname}";
 }
