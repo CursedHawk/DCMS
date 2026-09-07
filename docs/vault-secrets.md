@@ -208,6 +208,13 @@ rather than a failed order that spends a rate limit. See `docs/adr/0011-wildcard
 vault kv put secret/dcms/edge Edge__Dns__Cloudflare__ApiToken="<token>"
 ```
 
+**Read `docs/runbook.md` → "Writing a secret value into Vault by hand, and the stdin trap"
+before doing this over SSH.** The `vault` on these hosts is a `docker exec -i` wrapper, so a
+piped value can be swallowed by the AppRole login and stored as an empty string with no error;
+and because Vault is loaded *last* into configuration, an empty value there overrides a correct
+one in the environment. A Cloudflare API token is 53 characters (`cfat_`/`cfut_`) or 40 (the
+classic form) — read the value back and check its length.
+
 The edge's policy already grants read on this path, so adding the key needs no policy change.
 Deliberately **not** in `secret/dcms/shared`: a credential that can rewrite the platform's DNS
 belongs to the one service that needs it, and the edge is already the process holding every TLS
