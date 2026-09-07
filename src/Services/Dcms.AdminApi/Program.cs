@@ -146,6 +146,9 @@ builder.Services.AddHostedService<ChatFanoutConsumer>();
 // is a database write that exactly one replica must do, and the SignalR Redis backplane is
 // what carries the push to browsers connected to the others.
 builder.Services.AddScoped<INotificationPublisher, NotificationPublisher>();
+// Singleton: it holds nothing but an IHubContext, and endpoints, consumers and workers all
+// reach for it — a scoped registration would be a scope per push for no reason.
+builder.Services.AddSingleton<IResourceChangePublisher, ResourceChangePublisher>();
 builder.Services.AddHostedService<SitePublishedNotificationConsumer>();
 builder.Services.AddHostedService<SiteBuildFailedNotificationConsumer>();
 builder.Services.AddHostedService<MediaProcessedNotificationConsumer>();

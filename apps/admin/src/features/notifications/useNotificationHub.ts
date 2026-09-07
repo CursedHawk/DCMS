@@ -1,5 +1,6 @@
 import type { HubConnection } from '@microsoft/signalr';
 import { useQueryClient } from '@tanstack/react-query';
+import { createResourceInvalidator, type ResourceChange } from '@dcms/ui';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
@@ -8,14 +9,23 @@ import { getAccessToken } from '../../auth';
 import { runtimeConfig } from '../../runtime-config';
 import { getCurrentTenantSlug } from '../../tenants';
 import { type Notification, notificationsKey, parseParams } from './api';
+import { LIVE_QUERY_MAP } from './liveMap';
 import { linkTarget } from './linkPath';
 
 /**
- * Opens the notification hub for the signed-in user and keeps the bell live.
+ * Opens the hub for the signed-in user, and keeps both the bell and every open page current.
  *
- * Mounted once, in the app shell. Everything it receives lands in the react-query cache under
- * {@link notificationsKey}, so the bell itself stays a plain consumer of that cache and needs
- * no knowledge of the socket.
+ * <p>Mounted once, in the app shell. Two things arrive on this one connection:</p>
+ *
+ * <p><b>`Notification`</b> — addressed to this user, stored, and possibly worth a toast.
+ * It lands in the react-query cache under {@link notificationsKey}, so the bell stays a plain
+ * consumer of that cache and needs no knowledge of the socket.</p>
+ *
+ * <p><b>`ResourceChanged`</b> — addressed to every console open on the tenant, carrying only
+ * the name of a class of data. It invalidates the matching queries and interrupts nobody.
+ * This is what replaced the polling: the media grid used to refetch every three seconds while
+ * anything was processing, the chat list every fifteen, and the deployments view every two
+ * and a half after a publish, all of them guessing at when the server might have news.</p>
  */
 export function useNotificationHub(enabled: boolean, myUserId: string | undefined) {
   const qc = useQueryClient();
@@ -35,6 +45,11 @@ export function useNotificationHub(enabled: boolean, myUserId: string | undefine
   tRef.current = t;
 
   const slug = getCurrentTenantSlug();
+
+  // Built once per client, and read through a ref inside the socket handler for the same
+  // reason as `t` and `navigate`: rebuilding it must not re-open the WebSocket.
+  const invalidateRef = useRef(createResourceInvalidator(qc, LIVE_QUERY_MAP));
+  const invalidate = (change: ResourceChange) => invalidateRef.current(change);
 
   useEffect(() => {
     if (!enabled || !slug) return;
@@ -67,11 +82,17 @@ export function useNotificationHub(enabled: boolean, myUserId: string | undefine
         maybeToast(n, myUserIdRef.current, tRef.current, navigateRef.current);
       });
 
+      connection.on('ResourceChanged', (change: ResourceChange) => invalidate(change));
+
       connection.onreconnected(() => {
         setConnected(true);
-        // Anything raised while the socket was down never arrived; refetch rather than
-        // leaving a stale badge until the next navigation.
-        void qc.invalidateQueries({ queryKey: notificationsKey() });
+        /*
+         * Everything pushed while the socket was down was missed, and nothing replays it —
+         * the hub is push-only and holds no backlog. So a reconnect invalidates the whole
+         * cache rather than only the bell: any page still open has been looking at data that
+         * could have changed underneath it for the length of the outage.
+         */
+        void qc.invalidateQueries();
       });
       connection.onclose(() => setConnected(false));
 

@@ -27,7 +27,15 @@ export function ChatPage() {
   const conversations = useQuery({
     queryKey: ['chat-conversations'],
     queryFn: () => chatApi.conversations(),
-    refetchInterval: 15_000,
+    /*
+     * Only while the socket is down.
+     *
+     * The hub below already refetches this list on `ConversationStarted` and
+     * `ConversationActivity`, so a fixed 15-second poll was asking the server fifteen times
+     * for news it had already pushed. It is a fallback for a dropped connection, and it says
+     * so by switching itself off when there is one.
+     */
+    refetchInterval: connected ? false : 15_000,
   });
 
   useEffect(() => {

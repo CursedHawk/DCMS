@@ -7,7 +7,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Dcms.AdminApi.Notifications;
 
 /// <summary>
-/// Push-only transport for admin notifications. There are no client-to-server methods:
+/// Push-only transport for admin notifications and for the resource-change hints that keep
+/// open consoles current. There are no client-to-server methods:
 /// marking read and dismissing go over REST, where they are ordinary authorised requests
 /// with the usual audit and tenant middleware around them. A hub method doing the same work
 /// would be a second, differently-guarded write path onto the same rows.
@@ -30,6 +31,15 @@ public sealed class NotificationHub(IServiceProvider services, ILogger<Notificat
     /// same group this hub subscribes connections to.
     /// </summary>
     public static string UserGroup(Guid tenantId, Guid userId) => $"notify:{tenantId}:{userId}";
+
+    /// <summary>
+    /// Every console open on this tenant, whoever is looking at it.
+    ///
+    /// <para>Used only for <c>ResourceChanged</c>, which carries a tag naming a class of data
+    /// and nothing else — see <see cref="ResourceTags"/>. A notification stays per-user,
+    /// because its audience was decided when it was raised and its body is real content.</para>
+    /// </summary>
+    public static string TenantGroup(Guid tenantId) => $"tenant:{tenantId}";
 
     public override async Task OnConnectedAsync()
     {
@@ -72,6 +82,7 @@ public sealed class NotificationHub(IServiceProvider services, ILogger<Notificat
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, UserGroup(tenantId, userId));
+        await Groups.AddToGroupAsync(Context.ConnectionId, TenantGroup(tenantId));
         await base.OnConnectedAsync();
     }
 }

@@ -58,6 +58,7 @@ public sealed class NotificationPublisher(
     NotificationsDbContext db,
     TenancyDbContext tenancy,
     IHubContext<NotificationHub> hub,
+    IResourceChangePublisher resources,
     ILogger<NotificationPublisher> logger) : INotificationPublisher
 {
     public async Task<int> RaiseAsync(NotificationRequest request, CancellationToken ct = default)
@@ -78,6 +79,18 @@ public sealed class NotificationPublisher(
 
     private async Task<int> RaiseCoreAsync(NotificationRequest request, CancellationToken ct)
     {
+        /*
+         * The refetch hint goes out first, and unconditionally.
+         *
+         * Deliberately ahead of both the audience check and the dedupe index, because it
+         * answers a different question. "Did the media library change" does not depend on
+         * whether anyone in this tenant holds `media:write` — a colleague sitting on the media
+         * page with read-only access still needs the new row to appear. And a redelivered
+         * JetStream message re-publishing a hint costs one idempotent refetch, where skipping
+         * it would leave a table stale until the next navigation.
+         */
+        await PublishResourceChangeAsync(request, ct);
+
         var recipients = await ResolveRecipientsAsync(request, ct);
         if (recipients.Count == 0)
         {
@@ -169,6 +182,21 @@ public sealed class NotificationPublisher(
         }
 
         return permitted.Distinct().ToList();
+    }
+
+    /// <summary>
+    /// The refetch hint that goes with a notification.
+    ///
+    /// <para>Deliberately separate from <see cref="PushAsync"/> and separately addressed. A
+    /// notification reaches the people it was raised for; the hint reaches every console open
+    /// on the tenant, because a colleague watching the media library needs the row to appear
+    /// whether or not the notification was addressed to them.</para>
+    /// </summary>
+    private async Task PublishResourceChangeAsync(NotificationRequest request, CancellationToken ct)
+    {
+        var tag = ResourceTags.ForKind(request.Kind);
+        if (tag is null) return;
+        await resources.PublishAsync(request.TenantId, tag, request.ResourceId?.ToString(), ct);
     }
 
     private async Task PushAsync(
