@@ -24,7 +24,8 @@
     "collapse": "Collapse",
     "sections": "Sections",
     "openMenu": "Open navigation",
-    "language": "Language"
+    "language": "Language",
+    "marketplace": "Marketplace"
   },
   "actions": {
     "create": "Create",
@@ -1031,5 +1032,29 @@
         "body": "{{email}} was {{change}} a role in this workspace."
       }
     }
+  },
+  "marketplace": {
+    "description": "Everything this platform can do, and what each one will ask for.",
+    "searchPlaceholder": "Search plugins",
+    "clearCategory": "All categories",
+    "noneTitle": "Nothing matches that",
+    "noneDescription": "Try a different word, or clear the category filter.",
+    "added": "Added ({{count}})",
+    "addedDisabled": "Added, disabled",
+    "version": "v{{version}}",
+    "permissionsTitle": "Permissions it requests",
+    "permissionsHint": "Adding this plugin makes these permission keys available to grant. Nobody holds them until you add them to a role.",
+    "noPermissions": "This plugin requests no permissions of its own.",
+    "contentTypesTitle": "Content it adds",
+    "instances": "Instances",
+    "multipleAllowed": "You can add several",
+    "singleInstance": "One per workspace",
+    "menuEntry": "Menu",
+    "addsMenuEntry": "Adds an entry to your sidebar",
+    "noMenuEntry": "No sidebar entry",
+    "requires": "Requires",
+    "optional": "optional",
+    "add": "Add to workspace",
+    "manage": "Manage"
   }
 }

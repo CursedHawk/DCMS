@@ -14,6 +14,7 @@ import {
   Plug,
   ScrollText,
   ShieldCheck,
+  Store,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -30,12 +31,25 @@ export interface NavItem {
   group: 'main' | 'build' | 'admin';
 }
 
+/**
+ * The built-in menu.
+ *
+ * <p>No longer the source of truth — `GET /api/admin/navigation` is, because only the server
+ * knows which plugin instances a workspace has enabled. This list is what the sidebar draws
+ * until that answers, which is every cold load: a sidebar that is empty for 200ms reads as a
+ * broken app.</p>
+ *
+ * <p>It therefore has to stay in step with the server's platform list, and with
+ * `routeGuards.ts`. `routeGuards.test.ts` enforces the second; the first is checked by
+ * `NavigationEndpointTests` on the server side.</p>
+ */
 export const NAV: NavItem[] = [
   { to: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard, group: 'main' },
 
   { to: '/content', labelKey: 'nav.content', icon: FileText, perm: Perm.ContentRead, group: 'build' },
   { to: '/media', labelKey: 'nav.media', icon: Image, perm: Perm.MediaRead, group: 'build' },
   { to: '/plugins', labelKey: 'nav.plugins', icon: Plug, perm: Perm.PluginsManage, group: 'build' },
+  { to: '/marketplace', labelKey: 'nav.marketplace', icon: Store, perm: Perm.PluginsManage, group: 'build' },
   { to: '/sites', labelKey: 'nav.sites', icon: PanelsTopLeft, perm: Perm.SiteEdit, group: 'build' },
   { to: '/openapi', labelKey: 'nav.openapi', icon: FileJson, group: 'build' },
 

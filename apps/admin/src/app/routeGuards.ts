@@ -26,6 +26,7 @@ export const ROUTE_GUARDS: Readonly<Record<string, RouteGuard>> = {
   '/roles': { perm: Perm.RolesManage },
   '/domains': { perm: Perm.DomainsManage },
   '/plugins': { perm: Perm.PluginsManage },
+  '/marketplace': { perm: Perm.PluginsManage },
   '/content': { perm: Perm.ContentRead },
   '/media': { perm: Perm.MediaRead },
   '/forms': { perm: Perm.ContentRead },

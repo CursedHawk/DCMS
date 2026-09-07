@@ -41,6 +41,10 @@ const InviteAcceptPage = page(
   () => import('./features/invitations/InviteAcceptPage'),
   'InviteAcceptPage',
 );
+const MarketplacePage = page(
+  () => import('./features/marketplace/MarketplacePage'),
+  'MarketplacePage',
+);
 const MediaPage = page(() => import('./features/media/MediaPage'), 'MediaPage');
 const MembersPage = page(() => import('./features/members/MembersPage'), 'MembersPage');
 const NotificationsPage = page(
@@ -124,6 +128,7 @@ const rolesRoute = child('/roles', RolesPage);
 const domainsRoute = child('/domains', DomainsPage);
 const pluginsRoute = child('/plugins', PluginsPage);
 const contentRoute = child('/content', ContentPage);
+const marketplaceRoute = child('/marketplace', MarketplacePage);
 const mediaRoute = child('/media', MediaPage);
 const formsRoute = child('/forms', FormsPage);
 const sitesRoute = child('/sites', SitesPage);
@@ -160,6 +165,7 @@ export const routeTree = rootRoute.addChildren([
     domainsRoute,
     pluginsRoute,
     contentRoute,
+    marketplaceRoute,
     mediaRoute,
     formsRoute,
     sitesRoute,

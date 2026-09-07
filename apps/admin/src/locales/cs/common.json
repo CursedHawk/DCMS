@@ -24,7 +24,8 @@
     "collapse": "Sbalit",
     "sections": "Sekce",
     "openMenu": "Otevřít navigaci",
-    "language": "Jazyk"
+    "language": "Jazyk",
+    "marketplace": "Tržiště"
   },
   "actions": {
     "create": "Vytvořit",
@@ -1044,5 +1045,29 @@
         "body": "Uživateli {{email}} byla změněna role v tomto pracovním prostoru ({{change}})."
       }
     }
+  },
+  "marketplace": {
+    "description": "Vše, co tato platforma umí, a co si každý plugin vyžádá.",
+    "searchPlaceholder": "Hledat pluginy",
+    "clearCategory": "Všechny kategorie",
+    "noneTitle": "Nic neodpovídá",
+    "noneDescription": "Zkuste jiné slovo nebo zrušte filtr kategorie.",
+    "added": "Přidáno ({{count}})",
+    "addedDisabled": "Přidáno, vypnuto",
+    "version": "v{{version}}",
+    "permissionsTitle": "Požadovaná oprávnění",
+    "permissionsHint": "Přidáním pluginu zpřístupníte tyto klíče oprávnění. Nikdo je nemá, dokud je nepřidáte do role.",
+    "noPermissions": "Tento plugin nepožaduje žádná vlastní oprávnění.",
+    "contentTypesTitle": "Přidaný obsah",
+    "instances": "Instance",
+    "multipleAllowed": "Lze přidat více",
+    "singleInstance": "Jedna na workspace",
+    "menuEntry": "Menu",
+    "addsMenuEntry": "Přidá položku do bočního menu",
+    "noMenuEntry": "Bez položky v menu",
+    "requires": "Vyžaduje",
+    "optional": "volitelné",
+    "add": "Přidat do workspace",
+    "manage": "Spravovat"
   }
 }

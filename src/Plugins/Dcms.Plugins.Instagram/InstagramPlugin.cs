@@ -46,7 +46,10 @@ public sealed class InstagramPlugin : IPlugin
             MetaFeedContentTypes.Build(ReelType, "reel"),
             MetaFeedContentTypes.Build(StoryType, "story"),
         ],
-        publicConfigKeys: MetaFeedConfig.PublicKeys(includeStories: true));
+        publicConfigKeys: MetaFeedConfig.PublicKeys(includeStories: true),
+        category: "Integrations",
+        summary: "Mirrors an Instagram feed into your content.",
+        iconName: "Instagram");
 
     public void ConfigureServices(IServiceCollection services) { }
 

@@ -141,7 +141,10 @@ public sealed class BrandingPlugin : IPlugin
         [
             new PermissionDefinition("read", "View branding"),
             new PermissionDefinition("write", "Configure branding"),
-        ]);
+        ],
+        category: "Presentation",
+        summary: "Logo, colours and typography for the published site.",
+        iconName: "Palette");
 
     public void ConfigureServices(IServiceCollection services) { }
 

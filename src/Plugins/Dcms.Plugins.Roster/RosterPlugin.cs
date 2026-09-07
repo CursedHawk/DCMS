@@ -93,7 +93,10 @@ public sealed class RosterPlugin : IPlugin
                 Searchable: true,
                 SlugField: "name",
                 CustomFields: new CustomFieldsDefinition(ValuesField: "custom", ConfigKey: "fields")),
-        ]);
+        ],
+        category: "Content",
+        summary: "People and line-ups that other plugins can reference.",
+        iconName: "Users");
 
     public void ConfigureServices(IServiceCollection services) { }
 

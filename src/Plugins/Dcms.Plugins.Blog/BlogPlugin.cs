@@ -47,7 +47,10 @@ public sealed class BlogPlugin : IPlugin
                 ],
                 Searchable: true,
                 SlugField: "title"),
-        ]);
+        ],
+        category: "Content",
+        summary: "A dated blog with categories and an archive.",
+        iconName: "Rss");
 
     public void ConfigureServices(IServiceCollection services) { }
 

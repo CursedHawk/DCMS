@@ -32,7 +32,10 @@ public sealed class FacebookPlugin : IPlugin
             new PermissionDefinition("sync", "Trigger a Facebook sync"),
         ],
         contentTypes: [MetaFeedContentTypes.Build(PostType, "post")],
-        publicConfigKeys: MetaFeedConfig.PublicKeys(includeStories: false));
+        publicConfigKeys: MetaFeedConfig.PublicKeys(includeStories: false),
+        category: "Integrations",
+        summary: "Mirrors a Facebook page feed into your content.",
+        iconName: "Facebook");
 
     public void ConfigureServices(IServiceCollection services) { }
 

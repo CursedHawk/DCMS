@@ -101,7 +101,10 @@ public sealed class FormsPlugin : IPlugin
         [
             new PermissionDefinition("read", "View form submissions"),
             new PermissionDefinition("write", "Configure forms"),
-        ]);
+        ],
+        category: "Engagement",
+        summary: "Contact and signup forms, with submissions in an inbox.",
+        iconName: "Inbox");
 
     public void ConfigureServices(IServiceCollection services) { }
 

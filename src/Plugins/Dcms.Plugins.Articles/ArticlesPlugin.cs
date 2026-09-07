@@ -48,7 +48,10 @@ public sealed class ArticlesPlugin : IPlugin
                 ],
                 Searchable: true,
                 SlugField: "title"),
-        ]);
+        ],
+        category: "Content",
+        summary: "Long-form articles with authors, tags and scheduled publishing.",
+        iconName: "Newspaper");
 
     public void ConfigureServices(IServiceCollection services) { }
 

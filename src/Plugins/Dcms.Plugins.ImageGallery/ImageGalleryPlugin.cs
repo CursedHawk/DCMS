@@ -45,7 +45,10 @@ public sealed class ImageGalleryPlugin : IPlugin
                 ],
                 Searchable: true,
                 SlugField: "title"),
-        ]);
+        ],
+        category: "Media",
+        summary: "Image galleries served as webp variants, originals preserved.",
+        iconName: "Images");
 
     public void ConfigureServices(IServiceCollection services) { }
 

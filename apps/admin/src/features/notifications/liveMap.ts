@@ -17,7 +17,8 @@ export const LIVE_QUERY_MAP: TagQueryMap = {
   sites: [['sites'], ['site']],
   // A build changing also changes what the sites list says is deployed.
   builds: [['site-builds'], ['sites'], ['git-status'], ['git-history']],
-  plugins: [['plugin-instances'], ['plugin-catalog'], ['permission-catalog']],
+  // Enabling a plugin changes the menu, which is the one moment the nav must be immediate.
+  plugins: [['plugin-instances'], ['plugin-catalog'], ['permission-catalog'], ['marketplace'], ['navigation']],
   domains: [['domains'], ['domain-certificates']],
   // A membership change moves permissions, so the caller's own may have just changed too.
   members: [['members'], ['roles'], ['me-permissions']],

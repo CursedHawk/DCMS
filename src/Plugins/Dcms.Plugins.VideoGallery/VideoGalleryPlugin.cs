@@ -41,7 +41,10 @@ public sealed class VideoGalleryPlugin : IPlugin
                 ],
                 Searchable: true,
                 SlugField: "title"),
-        ]);
+        ],
+        category: "Media",
+        summary: "Video collections with posters and captions.",
+        iconName: "Video");
 
     public void ConfigureServices(IServiceCollection services) { }
 

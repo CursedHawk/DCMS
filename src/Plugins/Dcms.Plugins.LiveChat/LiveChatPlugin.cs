@@ -72,7 +72,10 @@ public sealed class LiveChatPlugin : IPlugin
         [
             new PermissionDefinition("read", "View chat conversations"),
             new PermissionDefinition("write", "Reply as an agent and configure the assistant"),
-        ]);
+        ],
+        category: "Engagement",
+        summary: "Live chat between site visitors and your team.",
+        iconName: "MessagesSquare");
 
     public void ConfigureServices(IServiceCollection services)
     {

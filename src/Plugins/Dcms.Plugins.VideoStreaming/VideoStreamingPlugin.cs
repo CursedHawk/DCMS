@@ -42,7 +42,10 @@ public sealed class VideoStreamingPlugin : IPlugin
                 ],
                 Searchable: true,
                 SlugField: "title"),
-        ]);
+        ],
+        category: "Media",
+        summary: "HLS streaming for long-form video.",
+        iconName: "MonitorPlay");
 
     public void ConfigureServices(IServiceCollection services) { }
 

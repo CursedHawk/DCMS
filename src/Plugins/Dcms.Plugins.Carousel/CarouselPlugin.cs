@@ -46,7 +46,10 @@ public sealed class CarouselPlugin : IPlugin
                 ],
                 Searchable: false,
                 SlugField: "title"),
-        ]);
+        ],
+        category: "Presentation",
+        summary: "Rotating banners for a page hero.",
+        iconName: "GalleryHorizontalEnd");
 
     public void ConfigureServices(IServiceCollection services) { }
 

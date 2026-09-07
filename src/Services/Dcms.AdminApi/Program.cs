@@ -395,6 +395,8 @@ app.MapDomainCertificateEndpoints();
 // because admin-api already owns and migrates the edge schema; see ADR 0011.
 app.MapManagedCertificateEndpoints();
 app.MapPluginEndpoints();
+app.MapNavigationEndpoints();
+app.MapMarketplaceEndpoints();
 app.MapContentEndpoints();
 app.MapMediaEndpoints();
 app.MapSiteEndpoints();

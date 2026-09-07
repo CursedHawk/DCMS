@@ -9,7 +9,10 @@ public sealed class VisitorAuthPlugin : IPlugin
         id: "visitor-auth",
         name: "Visitor Authentication",
         description: "Visitor accounts (register, login, refresh) for the tenant website.",
-        allowMultipleInstances: false);
+        allowMultipleInstances: false,
+        category: "Engagement",
+        summary: "Accounts and gated content for site visitors.",
+        iconName: "KeyRound");
 
     public void ConfigureServices(IServiceCollection services)
     {

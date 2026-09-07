@@ -14,7 +14,10 @@ public sealed class AnalyticsPlugin : IPlugin
         id: "analytics",
         name: "Analytics",
         description: "Website analytics collection, rollups and dashboards.",
-        allowMultipleInstances: false);
+        allowMultipleInstances: false,
+        category: "Insight",
+        summary: "Page views, sessions and campaign attribution.",
+        iconName: "TrendingUp");
 
     public void ConfigureServices(IServiceCollection services)
     {

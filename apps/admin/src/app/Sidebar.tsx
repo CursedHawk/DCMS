@@ -8,8 +8,9 @@ import {
   usePermissions,
   type ShellNavItem,
 } from '@dcms/ui';
-import { can } from '../lib/permissions';
 import { NAV, NAV_GROUPS } from './nav';
+import { iconByName, useNavigation } from './navApi';
+import { can } from '../lib/permissions';
 
 /**
  * The admin rail.
@@ -32,20 +33,55 @@ export function Sidebar({
   const { t } = useTranslation();
   const me = usePermissions();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const nav = useNavigation(!!me);
 
   // In the drawer there is no reason to collapse: the drawer is already the narrow-screen
   // answer, and a collapsed drawer is a column of unlabelled icons over a dimmed page.
   const isCollapsed = inDrawer ? false : collapsed;
 
-  const items: ShellNavItem[] = NAV.filter((item) =>
-    item.superAdmin ? (me?.isSuperAdmin ?? false) : !item.perm || can(me, item.perm),
-  ).map((item) => ({
-    to: item.to,
-    label: t(item.labelKey),
-    icon: item.icon,
-    group: item.group,
-    exact: item.to === '/',
-  }));
+  /*
+   * The server decides what is in the menu; this only draws it.
+   *
+   * Until it answers, the built-in list filtered by permission stands in — same destinations,
+   * minus the plugin entries. That is not a fallback nobody exercises: it is what every reader
+   * sees on the first paint of every cold load, and a sidebar that is empty for 200ms reads as
+   * a broken app.
+   *
+   * `/tenants` is not in the server's list. It is gated on the SuperAdmin *role* rather than a
+   * tenant permission, and the navigation endpoint deliberately only knows about tenant-scoped
+   * permissions — so it stays here, where the role is already known.
+   */
+  const items: ShellNavItem[] = (
+    nav.data
+      ? nav.data.items.map((item) => ({
+          to: item.to,
+          // A tenant-authored instance name has no translation key; the product's own
+          // destinations do. The server says which by sending `label` or not.
+          label: item.label ?? t(item.labelKey),
+          icon: iconByName(item.icon),
+          group: item.group,
+          exact: item.to === '/',
+        }))
+      : NAV.filter((item) => !item.superAdmin && (!item.perm || can(me, item.perm))).map((item) => ({
+          to: item.to,
+          label: t(item.labelKey),
+          icon: item.icon,
+          group: item.group,
+          exact: item.to === '/',
+        }))
+  ).concat(
+    me?.isSuperAdmin
+      ? [
+          {
+            to: '/tenants',
+            label: t('nav.tenants'),
+            icon: iconByName('Boxes'),
+            group: 'admin',
+            exact: false,
+          },
+        ]
+      : [],
+  );
 
   return (
     <SidebarNav

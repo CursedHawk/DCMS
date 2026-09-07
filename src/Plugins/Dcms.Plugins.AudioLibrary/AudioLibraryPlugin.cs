@@ -40,7 +40,10 @@ public sealed class AudioLibraryPlugin : IPlugin
                 ],
                 Searchable: true,
                 SlugField: "title"),
-        ]);
+        ],
+        category: "Media",
+        summary: "Audio tracks with artwork and transcoded variants.",
+        iconName: "Music");
 
     public void ConfigureServices(IServiceCollection services) { }
 

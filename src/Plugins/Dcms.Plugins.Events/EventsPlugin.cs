@@ -80,7 +80,10 @@ public sealed class EventsPlugin : IPlugin
                 ],
                 Searchable: true,
                 SlugField: "title"),
-        ]);
+        ],
+        category: "Content",
+        summary: "Events with dates, venues and line-ups.",
+        iconName: "CalendarDays");
 
     public void ConfigureServices(IServiceCollection services) { }
 

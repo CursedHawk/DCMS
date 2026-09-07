@@ -42,7 +42,10 @@ public sealed class FileDownloadsPlugin : IPlugin
                 ],
                 Searchable: true,
                 SlugField: "title"),
-        ]);
+        ],
+        category: "Media",
+        summary: "Downloadable files with counts and access rules.",
+        iconName: "Download");
 
     public void ConfigureServices(IServiceCollection services) { }
 

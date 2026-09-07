@@ -9,7 +9,10 @@ public sealed class SearchPlugin : IPlugin
         id: "search",
         name: "Sitewide Search",
         description: "Full-text search across all searchable plugin content of the tenant.",
-        allowMultipleInstances: false);
+        allowMultipleInstances: false,
+        category: "Engagement",
+        summary: "Full-text search across published content.",
+        iconName: "Search");
 
     public void ConfigureServices(IServiceCollection services)
     {
