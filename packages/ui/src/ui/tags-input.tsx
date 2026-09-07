@@ -89,6 +89,12 @@ export function TagsInput({
 
   return (
     <div className="relative">
+    {/*
+      * Mouse convenience only: clicking the box's padding focuses the input inside it, which is
+      * already in the tab order and is where every keyboard interaction actually happens. There
+      * is no behaviour here for a keyboard listener to duplicate.
+      */}
+    {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
     <div
       className={cn(
         'flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1 text-sm shadow-sm',

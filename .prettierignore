@@ -1,0 +1,7 @@
+dist
+node_modules
+*.woff2
+pnpm-lock.yaml
+package-lock.json
+graphify-out
+apps/*/dist

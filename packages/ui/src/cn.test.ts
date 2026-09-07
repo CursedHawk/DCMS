@@ -3,7 +3,8 @@ import { cn } from './cn';
 
 describe('cn', () => {
   it('joins classes and drops falsy ones', () => {
-    expect(cn('a', false && 'b', undefined, 'c')).toBe('a c');
+    const off = false as boolean;
+    expect(cn('a', off && 'b', undefined, null, '', 'c')).toBe('a c');
   });
 
   it('lets a later conflicting utility win — this is what makes className overridable', () => {

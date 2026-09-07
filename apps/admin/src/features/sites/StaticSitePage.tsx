@@ -145,7 +145,6 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
       {/* Upload zone */}
       <Card>
         <CardContent className="p-5">
-          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
           <div
             onDragOver={(e) => {
               e.preventDefault();

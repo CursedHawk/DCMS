@@ -253,8 +253,10 @@ export function SourceControlView({
 
         {showCreate && (
           <div className="mt-2 flex items-center gap-1.5">
-            {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
             <input
+              /* The field appears only on an explicit "new branch" click, so focusing it is
+                 continuing the interaction the operator just started, not stealing focus. */
+              // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus
               value={creatingBranch}
               onChange={(e) => setCreatingBranch(e.target.value)}

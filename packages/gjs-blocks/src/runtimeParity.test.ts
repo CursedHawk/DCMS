@@ -310,7 +310,7 @@ describe('page-aware navigation', () => {
     // The runtime strips the same three things; if it stops, a link to
     // `/blog/` no longer marks `/blog` as the current page.
     expect(normalize('/blog/')).toBe('/blog');
-    expect(runtime).toContain("replace(/index\.html$/, '')");
+    expect(runtime).toContain("replace(/index.html$/, '')");
     expect(runtime).toContain("function normalizePath");
   });
 
