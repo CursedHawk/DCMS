@@ -99,6 +99,14 @@ public class NotificationsDbContext(DbContextOptions<NotificationsDbContext> opt
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<NotificationRecipient> Recipients => Set<NotificationRecipient>();
 
+    /// <summary>
+    /// The platform's own notifications, which have no tenant. Same schema and same writer;
+    /// separate tables, because everything about the tenant pair is keyed on a tenant id. See
+    /// <see cref="PlatformNotification"/>.
+    /// </summary>
+    public DbSet<PlatformNotification> PlatformNotifications => Set<PlatformNotification>();
+    public DbSet<PlatformNotificationRead> PlatformNotificationReads => Set<PlatformNotificationRead>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -143,6 +151,43 @@ public class NotificationsDbContext(DbContextOptions<NotificationsDbContext> opt
             e.HasIndex(r => new { r.TenantId, r.UserId, r.ReadAt, r.CreatedAt });
 
             e.HasQueryFilter(r => r.TenantId == CurrentTenantId);
+        });
+
+        // No query filter on either of the two below, and that is the point of them being
+        // separate tables rather than tenant rows with a sentinel: there is no tenant to filter
+        // by, so there is no filter to get wrong.
+        builder.Entity<PlatformNotification>(e =>
+        {
+            e.ToTable("platform_notifications");
+            e.HasKey(n => n.Id);
+            e.Property(n => n.Kind).HasMaxLength(128).IsRequired();
+            e.Property(n => n.Severity).HasConversion<int>();
+            e.Property(n => n.ParamsJson).HasColumnType("jsonb").IsRequired();
+            e.Property(n => n.LinkPath).HasMaxLength(512);
+            e.Property(n => n.ResourceType).HasMaxLength(64);
+            e.Property(n => n.DedupeKey).HasMaxLength(256).IsRequired();
+
+            // Load-bearing, not an optimisation: raisers insert optimistically and treat 23505
+            // as "already said". Unique across the table, since there is no tenant to scope it.
+            e.HasIndex(n => n.DedupeKey).IsUnique();
+            e.HasIndex(n => n.CreatedAt);
+        });
+
+        builder.Entity<PlatformNotificationRead>(e =>
+        {
+            e.ToTable("platform_notification_reads");
+            e.HasKey(r => r.Id);
+
+            e.HasOne(r => r.Notification)
+                .WithMany()
+                .HasForeignKey(r => r.NotificationId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // One state row per operator per notification. Unique because the endpoints
+            // upsert into it from several paths -- opening one, marking all read -- and two
+            // rows for one pair would make the unread count depend on which one was found.
+            e.HasIndex(r => new { r.NotificationId, r.UserId }).IsUnique();
+            e.HasIndex(r => new { r.UserId, r.ReadAt });
         });
     }
 

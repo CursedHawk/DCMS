@@ -47,6 +47,13 @@ public static class PostgresAdvisoryLock
     public const long EdgeCertificateRenewalLockKey = 0x44434D5300000008;
 
     /// <summary>
+    /// Elects the replica that turns platform facts into operator notifications. Correctness
+    /// does not depend on it — the dedupe key does — but without it every replica does the same
+    /// work in order to find out that another one already did it.
+    /// </summary>
+    public const long PlatformNotificationSweepLockKey = 0x44434D5300000009;
+
+    /// <summary>
     /// Blocks until the lock is held. Deliberately blocking rather than
     /// <c>pg_try_advisory_lock</c>: a second instance arriving mid-migration should wait and then
     /// find there is nothing left to do. Giving up and carrying on would let it serve traffic

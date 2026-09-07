@@ -159,6 +159,12 @@ builder.Services.AddHostedService<NotificationIngestConsumer>();
 // that nothing has ever swept. See InvitationExpiryWorker.
 builder.Services.AddHostedService<InvitationExpiryWorker>();
 builder.Services.AddHostedService<NotificationRetentionWorker>();
+// The platform console's own bell. Separate publisher and separate tables, because these
+// notifications have no tenant and their audience is a global role admin-api cannot enumerate
+// -- see PlatformNotification. The worker reads the edge's attempt ledger rather than
+// consuming an event: that ledger is the rate-limit guard, so it cannot be skipped.
+builder.Services.AddScoped<IPlatformNotificationPublisher, PlatformNotificationPublisher>();
+builder.Services.AddHostedService<CertificateNotificationWorker>();
 builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditChainWriter>();
 // Brings in the records from the two services that cannot reach the audit schema, so
 // everything still reaches the chain by one path.
@@ -391,6 +397,7 @@ app.MapMediaEndpoints();
 app.MapSiteEndpoints();
 app.MapSiteDeletion();
 app.MapNotificationEndpoints();
+app.MapPlatformNotificationEndpoints();
 // Mounted under /api so it rides the existing edge route to admin-api -- no route change,
 // and no matcher ordering against content-api's /hub/* for the chat hub.
 app.MapHub<NotificationHub>("/api/hub/notifications")

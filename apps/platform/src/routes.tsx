@@ -24,6 +24,7 @@ const MonitoringPage = page(() => import('./features/monitoring/MonitoringPage')
 const StoragePage = page(() => import('./features/storage/StoragePage'), 'StoragePage');
 const AccessPage = page(() => import('./features/access/AccessPage'), 'AccessPage');
 const CertificatesPage = page(() => import('./features/certificates/CertificatesPage'), 'CertificatesPage');
+const NotificationsPage = page(() => import('./features/notifications/NotificationsPage'), 'NotificationsPage');
 
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
 
@@ -66,5 +67,8 @@ export const routeTree = rootRoute.addChildren([
     child('/storage', StoragePage),
     child('/access', AccessPage),
     child('/certificates', CertificatesPage),
+    // Reached from the bell rather than the sidebar: it is per-operator, not an area of the
+    // platform, and every nav item here names a permission this one would have to invent.
+    child('/notifications', NotificationsPage),
   ]),
 ]);

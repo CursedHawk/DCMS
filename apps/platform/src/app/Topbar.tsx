@@ -1,5 +1,6 @@
 import { LogOut, Moon, Sun } from 'lucide-react';
 import { Button, useTheme } from '@dcms/admin-ui';
+import { NotificationBell } from '../features/notifications/NotificationBell';
 import { logout } from '../auth';
 import { runtimeConfig } from '../runtime-config';
 import type { PlatformMe } from '../lib/permissions';
@@ -17,6 +18,10 @@ export function Topbar({ me }: { me: PlatformMe | undefined }) {
       </a>
 
       <div className="flex items-center gap-1">
+        {/* Superadmin only, matching the endpoints: the notifications are platform-wide facts
+            and there is no tenant-scoped permission that should reach them. */}
+        <NotificationBell enabled={me?.isSuperAdmin ?? false} />
+
         <Button
           variant="ghost"
           size="sm"

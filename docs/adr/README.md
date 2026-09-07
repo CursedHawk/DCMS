@@ -18,3 +18,4 @@ as their implementation phase lands.
 - [0009](0009-in-app-notifications.md) — In-app notifications: admin-api hub, fan-out on write
 - [0010](0010-yarp-edge.md) — The public edge is a .NET service (`Dcms.Edge`), not Caddy
 - [0011](0011-wildcard-tls-dns01.md) — DCMS-managed wildcard certificates over DNS-01
+- [0012](0012-platform-notifications.md) — Platform notifications: addressed to a role, polled, no fan-out

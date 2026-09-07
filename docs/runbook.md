@@ -817,6 +817,14 @@ sent to the certificate authority"**, with the reason under it. That is a differ
 from a red "Last attempt failed", which is the CA refusing and is usually a DNS record.
 Amber means look at this platform's configuration; red means look at the zone.
 
+**The platform console has a bell**, top right, visible to superadmins. Every certificate
+outcome lands there within two minutes — issued, refused, not attempted, expiring, expired —
+and the badge does **not** clear when you open it: only opening an item, dismissing it, or
+"Mark all read" clears it, and each operator has their own read state. So an unread count
+sitting there means nobody has looked at the thing yet, not that nobody has glanced at the
+bell. `/notifications` in the console shows the full list. See
+`docs/adr/0012-platform-notifications.md`.
+
 **"Renew now" records the request on the certificate, not on the issued artifact.** The row
 shows *Reissue pending* until the CA answers — issued or refused — and then clears. A request
 made while the Cloudflare token is missing deliberately **stays** pending: nothing was spent,
