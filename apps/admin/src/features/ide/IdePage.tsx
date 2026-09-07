@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, ArrowLeft, Eye, EyeOff, RefreshCw, Rocket, RotateCcw } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Eye, EyeOff, RefreshCw, Rocket, RotateCcw, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -89,6 +89,8 @@ export function IdePage({ siteId }: { siteId: string }) {
   // so the hook can tell your own publish (which already toasted) from a colleague's.
   const { user } = useAuth();
   const [branchMoved, setBranchMoved] = useState(false);
+  const [draftMovedPaths, setDraftMovedPaths] = useState<string[] | null>(null);
+  const draftVersion = useVfs((s) => s.version);
   useSiteLiveUpdates({
     siteId,
     branch,
@@ -96,10 +98,18 @@ export function IdePage({ siteId }: { siteId: string }) {
     // Somebody else committed to the branch in this editor. The banner the conflict path
     // already renders is the right place to say so, and it comes with the reload button.
     onCommit: () => setBranchMoved(true),
+    // Your own draft, written from somewhere else — a second tab, or the AI agent. Learning
+    // this now, rather than when the next save is refused, is the difference between merging
+    // two versions and being offered "reload and lose what you typed".
+    draftVersion: draftVersion,
+    onDraftChanged: (d) => setDraftMovedPaths(d.paths),
   });
 
-  // A branch switch or a reload settles it; clearing on `branch` covers both.
-  useEffect(() => setBranchMoved(false), [branch]);
+  // A branch switch or a reload settles both banners; clearing on `branch` covers both.
+  useEffect(() => {
+    setBranchMoved(false);
+    setDraftMovedPaths(null);
+  }, [branch]);
 
   // The shared working-draft session: load a branch, autosave granular deltas,
   // detect conflicts. `seed` returns null on purpose — a brand-new Mode B site
@@ -291,6 +301,41 @@ export function IdePage({ siteId }: { siteId: string }) {
           setSidebarView('deploy');
         }}
       />
+
+      {/*
+        Your own draft moved somewhere else — a second tab, or the AI agent.
+        Deliberately NOT the destructive-red conflict banner: nothing is broken and nothing is
+        blocked, the editor simply knows something you do not yet. It names the files, because
+        "the draft changed" is a banner nobody can act on while "src/App.tsx changed" tells you
+        at once whether it collides with what you are doing.
+      */}
+      {draftMovedPaths && !conflict ? (
+        <div className="flex shrink-0 items-center gap-2 border-b bg-[hsl(var(--warning)/0.12)] px-3 py-2 text-sm">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-[hsl(var(--warning))]" aria-hidden />
+          <span className="min-w-0 flex-1">
+            {t('ide.draftMovedWarning', { files: draftMovedPaths.slice(0, 3).join(', ') })}
+            {draftMovedPaths.length > 3
+              ? t('ide.andMore', { count: draftMovedPaths.length - 3 })
+              : null}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => session.openBranch(branch)}
+            disabled={session.switching}
+          >
+            <RefreshCw className="h-4 w-4" /> {t('ide.reloadLatest')}
+          </Button>
+          <button
+            type="button"
+            onClick={() => setDraftMovedPaths(null)}
+            aria-label={t('actions.dismiss')}
+            className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+      ) : null}
 
       {/* Conflict banner: someone else changed a file we also edited, or -- via the site hub --
           committed to the branch this editor has open at all. Both have the same remedy. */}

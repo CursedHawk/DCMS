@@ -28,8 +28,17 @@ public sealed record CommitUpdate(
     Guid? ActorUserId,
     DateTimeOffset OccurredAt);
 
+/// <summary>A working draft that somebody else just wrote to, and which paths they touched.</summary>
+public sealed record DraftUpdate(
+    Guid SiteId,
+    string Branch,
+    int Version,
+    IReadOnlyCollection<string> Paths,
+    Guid? ActorUserId,
+    DateTimeOffset OccurredAt);
+
 /// <summary>
-/// Tells everyone with a site open that its deployments or its branches moved.
+/// Tells everyone with a site open that its deployments, its branches or its working draft moved.
 ///
 /// <para>This exists because the IDE could not see its own publish. The Deployments panel polls
 /// only while it can already see an in-flight build, so after a merge — where the build row is
@@ -51,6 +60,21 @@ public interface ISiteLiveUpdates
     Task BuildChangedAsync(Guid tenantId, BuildUpdate build, CancellationToken ct = default);
     Task CommitPushedAsync(Guid tenantId, CommitUpdate commit, CancellationToken ct = default);
 
+    /// <summary>
+    /// Announces a write to the shared working draft.
+    ///
+    /// <para>The editor learned about these only by trying to save and being refused — the
+    /// granular save compares hashes and 409s, which is correct but is the <i>last</i> possible
+    /// moment to find out. By then the author has typed for ten minutes on top of a file
+    /// somebody else replaced, and their only offer was to reload and lose it.</para>
+    ///
+    /// <para>Carrying the paths matters: "the draft changed" is a banner nobody can act on,
+    /// whereas "src/App.tsx changed" tells an author immediately whether it collides with what
+    /// they are doing. The author of the write is named so the editor can ignore its own
+    /// echo — every save this session would otherwise announce itself back.</para>
+    /// </summary>
+    Task DraftChangedAsync(Guid tenantId, DraftUpdate draft, CancellationToken ct = default);
+
     /// <summary>Announces a build row exactly as it was just created (always <c>Queued</c>).</summary>
     Task BuildQueuedAsync(Guid tenantId, SiteBuild build, Guid? actorUserId, CancellationToken ct = default);
 }
@@ -64,6 +88,9 @@ public sealed class SiteLiveUpdates(
 
     public Task CommitPushedAsync(Guid tenantId, CommitUpdate commit, CancellationToken ct = default) =>
         SendAsync(tenantId, commit.SiteId, "CommitPushed", commit, ct);
+
+    public Task DraftChangedAsync(Guid tenantId, DraftUpdate draft, CancellationToken ct = default) =>
+        SendAsync(tenantId, draft.SiteId, "DraftChanged", draft, ct);
 
     public Task BuildQueuedAsync(Guid tenantId, SiteBuild build, Guid? actorUserId, CancellationToken ct = default) =>
         BuildChangedAsync(tenantId, new BuildUpdate(

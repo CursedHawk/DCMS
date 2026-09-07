@@ -1,20 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import type { Editor } from 'grapesjs';
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Code2,
-  Columns2,
-  LayoutTemplate,
-  MousePointer2,
-  Puzzle,
-  RefreshCw,
-  Redo2,
-  Rocket,
-  Sparkles,
-  Undo2,
-} from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Code2, Columns2, LayoutTemplate, MousePointer2, Puzzle, Redo2, RefreshCw, Rocket, Sparkles, Undo2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -124,11 +111,18 @@ export function BuilderPage({ siteId }: { siteId: string }) {
   // same release branch and render the same Deployments panel.
   const { user } = useAuth();
   const [branchMoved, setBranchMoved] = useState(false);
+  const [draftMovedPaths, setDraftMovedPaths] = useState<string[] | null>(null);
+  const draftVersion = useVfs((s) => s.version);
   useSiteLiveUpdates({
     siteId,
     branch,
     myUserId: user?.profile.sub,
     onCommit: () => setBranchMoved(true),
+    // Your own draft, written from somewhere else — a second tab, or the AI agent. Learning
+    // this now, rather than when the next save is refused, is the difference between merging
+    // two versions and being offered "reload and lose what you typed".
+    draftVersion: draftVersion,
+    onDraftChanged: (d) => setDraftMovedPaths(d.paths),
   });
   useEffect(() => setBranchMoved(false), [branch]);
 
@@ -370,6 +364,41 @@ export function BuilderPage({ siteId }: { siteId: string }) {
           setSidebarView('deploy');
         }}
       />
+
+      {/*
+        Your own draft moved somewhere else — a second tab, or the AI agent.
+        Deliberately NOT the destructive-red conflict banner: nothing is broken and nothing is
+        blocked, the editor simply knows something you do not yet. It names the files, because
+        "the draft changed" is a banner nobody can act on while "src/App.tsx changed" tells you
+        at once whether it collides with what you are doing.
+      */}
+      {draftMovedPaths && !conflict ? (
+        <div className="flex shrink-0 items-center gap-2 border-b bg-[hsl(var(--warning)/0.12)] px-3 py-2 text-sm">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-[hsl(var(--warning))]" aria-hidden />
+          <span className="min-w-0 flex-1">
+            {t('ide.draftMovedWarning', { files: draftMovedPaths.slice(0, 3).join(', ') })}
+            {draftMovedPaths.length > 3
+              ? t('ide.andMore', { count: draftMovedPaths.length - 3 })
+              : null}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => session.openBranch(branch)}
+            disabled={session.switching}
+          >
+            <RefreshCw className="h-4 w-4" /> {t('ide.reloadLatest')}
+          </Button>
+          <button
+            type="button"
+            onClick={() => setDraftMovedPaths(null)}
+            aria-label={t('actions.dismiss')}
+            className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+      ) : null}
 
       {/* Someone else changed a file we also edited (autosave is paused until reload), or --
           via the site hub -- committed to this branch at all. Both are fixed by reloading. */}

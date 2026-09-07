@@ -368,7 +368,6 @@ export function FileTree() {
       </div>
       {adding && (
         <div className="border-b px-2 py-1.5">
-          {/* eslint-disable-next-line jsx-a11y/no-autofocus */}
           <input
             autoFocus
             value={newName}

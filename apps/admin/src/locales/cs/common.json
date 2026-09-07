@@ -53,7 +53,8 @@
     "open": "Otevřít",
     "download": "Stáhnout",
     "undo": "Zpět",
-    "redo": "Znovu"
+    "redo": "Znovu",
+    "dismiss": "Zavřít"
   },
   "common": {
     "loading": "Načítání…",
@@ -677,7 +678,10 @@
       "rebuildQueued": "Opětovné nasazení zařazeno",
       "liveBranchMoved": "{{author}} odeslal commit do větve {{branch}} — do větve, kterou upravujete",
       "liveCommitted": "{{author}} odeslal commit do větve {{branch}}",
-      "someone": "Někdo"
+      "someone": "Někdo",
+      "resolvedCount": "Vyřešeno {{done}} z {{total}}",
+      "mergeByHand": "Sloučit ručně",
+      "markersRemain": "V souboru zůstaly značky konfliktu. Odstraňte je pro dokončení sloučení."
     },
     "deploy": {
       "title": "Nasazení",
@@ -736,7 +740,9 @@
     "refreshGeneratedHint": "Znovu vygeneruje soubory spravované DCMS — openapi.json, typovaného klienta v src/api/ a vrstvu analytiky a souhlasu s cookies v src/dcms/ — podle aktuálních pluginů tohoto prostoru. Vašich souborů se to nedotkne.",
     "generatedRefreshed": "Obnoveno {{count}} vygenerovaných souborů",
     "generatedUpToDate": "Vygenerované soubory jsou aktuální",
-    "branchMovedWarning": "Někdo jiný odeslal commit do větve {{branch}}, zatímco jste upravovali. Načtěte znovu, abyste navázali na jeho práci (neuložené změny budou ztraceny)."
+    "branchMovedWarning": "Někdo jiný odeslal commit do větve {{branch}}, zatímco jste upravovali. Načtěte znovu, abyste navázali na jeho práci (neuložené změny budou ztraceny).",
+    "draftMovedWarning": "Váš koncept se změnil jinde: {{files}}",
+    "andMore": " a {{count}} dalších"
   },
   "openapi": {
     "title": "API dokumentace",

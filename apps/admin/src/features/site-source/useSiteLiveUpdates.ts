@@ -13,6 +13,15 @@ export interface BuildUpdate extends GitBuild {
   actorUserId: string | null;
 }
 
+export interface DraftUpdate {
+  siteId: string;
+  branch: string;
+  version: number;
+  paths: string[];
+  actorUserId: string | null;
+  occurredAt: string;
+}
+
 export interface CommitUpdate {
   siteId: string;
   branch: string;
@@ -52,6 +61,8 @@ export function useSiteLiveUpdates({
   branch,
   myUserId,
   onCommit,
+  onDraftChanged,
+  draftVersion,
 }: {
   siteId: string;
   /** The branch this user is editing, so a commit onto it can be called out specifically. */
@@ -59,6 +70,13 @@ export function useSiteLiveUpdates({
   myUserId?: string;
   /** Called for a commit somebody ELSE made to the branch this user is editing. */
   onCommit?: (commit: CommitUpdate) => void;
+  /**
+   * Called when this account's working draft was written from somewhere else — a second tab,
+   * or the AI agent. See the `DraftChanged` handler for why this is not "somebody else".
+   */
+  onDraftChanged?: (draft: DraftUpdate) => void;
+  /** The draft version this editor currently holds, for suppressing the echo of its own saves. */
+  draftVersion?: number;
 }) {
   const qc = useQueryClient();
   const { t } = useTranslation();
@@ -74,6 +92,10 @@ export function useSiteLiveUpdates({
   myUserIdRef.current = myUserId;
   const onCommitRef = useRef(onCommit);
   onCommitRef.current = onCommit;
+  const onDraftChangedRef = useRef(onDraftChanged);
+  onDraftChangedRef.current = onDraftChanged;
+  const draftVersionRef = useRef(draftVersion);
+  draftVersionRef.current = draftVersion;
   const tRef = useRef(t);
   tRef.current = t;
 
@@ -127,6 +149,27 @@ export function useSiteLiveUpdates({
         if (update.status === 'Queued') toast.info(tRef.current('ide.deploy.liveStarted'));
         else if (update.status === 'Succeeded') toast.success(tRef.current('ide.deploy.liveSucceeded'));
         else if (update.status === 'Failed') toast.error(tRef.current('ide.deploy.liveFailed'));
+      });
+
+      /*
+       * Somebody wrote to a working draft.
+       *
+       * A draft is per account and per branch, so unlike a commit this is only ever about
+       * YOUR OWN draft — the interesting cases are a second tab and the AI agent, both of
+       * which save through the same endpoint. Anyone else's draft is none of this editor's
+       * business, so a message naming a different actor is dropped.
+       *
+       * The version check is the echo suppressor. This editor's own saves come back over the
+       * hub like anyone's, and a banner reading "your draft changed elsewhere" every time you
+       * stop typing would be worse than the problem it was added to solve. Anything at or
+       * below the version already held is this editor's own work arriving back.
+       */
+      connection.on('DraftChanged', (draft: DraftUpdate) => {
+        if (draft.siteId !== siteId) return;
+        if (branchRef.current && draft.branch !== branchRef.current) return;
+        if (!draft.actorUserId || draft.actorUserId !== myUserIdRef.current) return;
+        if (draftVersionRef.current !== undefined && draft.version <= draftVersionRef.current) return;
+        onDraftChangedRef.current?.(draft);
       });
 
       connection.on('CommitPushed', (commit: CommitUpdate) => {

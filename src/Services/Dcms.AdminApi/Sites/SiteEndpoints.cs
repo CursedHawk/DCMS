@@ -351,7 +351,8 @@ public static class SiteEndpoints
         // to different files just merge. No git write happens here — that's on commit.
         app.MapPatch("/api/admin/sites/{id:guid}/ide/files", async (
             Guid id, string? branch, SaveFilesRequest body,
-            SitesDbContext db, ITenantContext tenant, CurrentUser user, CancellationToken ct) =>
+            SitesDbContext db, ITenantContext tenant, CurrentUser user,
+            ISiteLiveUpdates live, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
@@ -402,6 +403,28 @@ public static class SiteEndpoints
             draft.Version++;
             draft.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
+
+            /*
+             * Announce the write, so a second tab (or the AI agent, which writes through this
+             * same endpoint) learns the draft moved while the author is still typing rather
+             * than when their next save is refused.
+             *
+             * A draft is per user and per branch, so this is only ever interesting to the same
+             * account. It goes to the site group anyway — the payload names the actor and the
+             * new version, and the client ignores anything that is not its own draft or is an
+             * echo of a version it already holds. Filtering here would need a per-user group
+             * for a message that carries no content, only paths.
+             */
+            if (tenant.TenantId is { } draftTenantId)
+            {
+                await live.DraftChangedAsync(draftTenantId, new DraftUpdate(
+                    SiteId: id,
+                    Branch: b,
+                    Version: draft.Version,
+                    Paths: [.. put.Keys, .. del.Select(d => d.Path)],
+                    ActorUserId: user.UserId,
+                    OccurredAt: DateTimeOffset.UtcNow), ct);
+            }
 
             return Results.Ok(new
             {
