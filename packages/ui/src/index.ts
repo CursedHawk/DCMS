@@ -15,4 +15,5 @@ export * from './Page';
 export * from './ConfirmDeleteDialog';
 export * from './CopyButton';
 export * from './Toaster';
+export * from './permissions';
 export * from './shell';

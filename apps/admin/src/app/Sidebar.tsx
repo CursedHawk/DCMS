@@ -1,8 +1,14 @@
 import { Link, useRouterState } from '@tanstack/react-router';
 import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { NavLinkBody, SidebarNav, cn, type ShellNavItem } from '@dcms/ui';
-import { type MyPermissions, can } from '../lib/permissions';
+import {
+  NavLinkBody,
+  SidebarNav,
+  cn,
+  usePermissions,
+  type ShellNavItem,
+} from '@dcms/ui';
+import { can } from '../lib/permissions';
 import { NAV, NAV_GROUPS } from './nav';
 
 /**
@@ -13,19 +19,18 @@ import { NAV, NAV_GROUPS } from './nav';
  * router's `<Link>`.
  */
 export function Sidebar({
-  me,
   collapsed,
   onToggle,
   inDrawer = false,
   onNavigate,
 }: {
-  me: MyPermissions | undefined;
   collapsed: boolean;
   onToggle: () => void;
   inDrawer?: boolean;
   onNavigate?: () => void;
 }) {
   const { t } = useTranslation();
+  const me = usePermissions();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   // In the drawer there is no reason to collapse: the drawer is already the narrow-screen

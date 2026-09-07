@@ -3,7 +3,13 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 import { Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AppFrame, Button, CenteredSpinner, useSidebarCollapse } from '@dcms/ui';
+import {
+  AppFrame,
+  Button,
+  CenteredSpinner,
+  PermissionProvider,
+  useSidebarCollapse,
+} from '@dcms/ui';
 import { useNotificationHub } from '../features/notifications/useNotificationHub';
 import { useMyPermissions } from '../lib/permissions';
 import { login, register } from '../auth';
@@ -35,7 +41,7 @@ export function AppShell() {
   }
 
   return (
-    <>
+    <PermissionProvider value={me.data}>
       <AppFrame
         navLabel={t('nav.sections')}
         menuLabel={t('nav.openMenu')}
@@ -43,7 +49,6 @@ export function AppShell() {
         onDrawerOpenChange={setDrawerOpen}
         sidebar={({ inDrawer }) => (
           <Sidebar
-            me={me.data}
             collapsed={collapsed}
             onToggle={toggleCollapse}
             inDrawer={inDrawer}
@@ -68,9 +73,9 @@ export function AppShell() {
         </Suspense>
       </AppFrame>
 
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} me={me.data} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <StorageNotice />
-    </>
+    </PermissionProvider>
   );
 }
 

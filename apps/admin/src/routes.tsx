@@ -7,7 +7,9 @@ import {
 } from '@tanstack/react-router';
 import { lazy, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { RequirePermission } from '@dcms/ui';
 import { AppShell } from './app/AppShell';
+import { ROUTE_GUARDS, type RouteGuard } from './app/routeGuards';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { completeSignin } from './auth';
 
@@ -35,7 +37,10 @@ const ChatPage = page(() => import('./features/chat/ChatPage'), 'ChatPage');
 const ContentPage = page(() => import('./features/content/ContentPage'), 'ContentPage');
 const DomainsPage = page(() => import('./features/domains/DomainsPage'), 'DomainsPage');
 const FormsPage = page(() => import('./features/forms/FormsPage'), 'FormsPage');
-const InviteAcceptPage = page(() => import('./features/invitations/InviteAcceptPage'), 'InviteAcceptPage');
+const InviteAcceptPage = page(
+  () => import('./features/invitations/InviteAcceptPage'),
+  'InviteAcceptPage',
+);
 const MediaPage = page(() => import('./features/media/MediaPage'), 'MediaPage');
 const MembersPage = page(() => import('./features/members/MembersPage'), 'MembersPage');
 const NotificationsPage = page(
@@ -79,11 +84,37 @@ const appLayoutRoute = createRoute({
   component: AppShell,
 });
 
-// FunctionComponent rather than a plain function type: every page here is a
-// React.lazy wrapper, which is an exotic component object, not a function, and
-// the router's RouteComponent rejects class components.
+/*
+ * A page, and the permission it needs.
+ *
+ * Filtering the sidebar is not access control: every route here is reachable by typing its
+ * URL, and before this a hidden page still rendered — then fired queries the API refused and
+ * left a screen of failed requests and empty tables. The guard renders the refusal instead,
+ * and names the permission so the reader knows what to ask for.
+ *
+ * The permission on each route is the one that gates the endpoints that page actually calls,
+ * so this list and `app/nav.tsx` have to agree; `routes.test.ts` checks that they do.
+ *
+ * FunctionComponent rather than a plain function type: every page is a `React.lazy` wrapper,
+ * which is an exotic component object rather than a function, and the router's RouteComponent
+ * rejects class components.
+ */
 function child(path: string, component: React.FunctionComponent) {
-  return createRoute({ getParentRoute: () => appLayoutRoute, path, component });
+  const guard: RouteGuard | undefined = ROUTE_GUARDS[path];
+  const Component = component;
+  return createRoute({
+    getParentRoute: () => appLayoutRoute,
+    path,
+    component: guard
+      ? function Guarded() {
+          return (
+            <RequirePermission perm={guard.perm} superAdmin={guard.superAdmin}>
+              <Component />
+            </RequirePermission>
+          );
+        }
+      : component,
+  });
 }
 
 const indexRoute = child('/', DashboardPage);
@@ -111,7 +142,11 @@ const editorRoute = createRoute({
   path: '/sites/$siteId',
   component: function Editor() {
     const { siteId } = useParams({ strict: false });
-    return <SiteWorkspace siteId={siteId as string} />;
+    return (
+      <RequirePermission perm={ROUTE_GUARDS['/sites/$siteId'].perm}>
+        <SiteWorkspace siteId={siteId as string} />
+      </RequirePermission>
+    );
   },
 });
 

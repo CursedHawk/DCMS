@@ -2,20 +2,19 @@ import { useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Dialog, DialogContent } from '@dcms/ui';
-import { type MyPermissions, can } from '../lib/permissions';
+import { Dialog, DialogContent, usePermissions } from '@dcms/ui';
+import { can } from '../lib/permissions';
 import { NAV } from './nav';
 
 export function CommandPalette({
   open,
   onOpenChange,
-  me,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  me: MyPermissions | undefined;
 }) {
   const { t } = useTranslation();
+  const me = usePermissions();
   const navigate = useNavigate();
 
   // Global ⌘K / Ctrl+K shortcut.

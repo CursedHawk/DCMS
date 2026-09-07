@@ -1,6 +1,6 @@
 import { Outlet } from '@tanstack/react-router';
 import { Suspense, useState } from 'react';
-import { AppFrame, Button, CenteredSpinner } from '@dcms/ui';
+import { AppFrame, Button, CenteredSpinner, PermissionProvider } from '@dcms/ui';
 import { login, logout } from '../auth';
 import { useAuth } from '../useAuth';
 import { useMe } from '../lib/permissions';
@@ -25,24 +25,26 @@ export function AppShell() {
   }
 
   return (
-    <AppFrame
-      navLabel="Platform sections"
-      drawerOpen={drawerOpen}
-      onDrawerOpenChange={setDrawerOpen}
-      banner={<EnvironmentBand />}
-      sidebar={({ inDrawer }) => (
-        <Sidebar
-          me={me.data}
-          inDrawer={inDrawer}
-          onNavigate={inDrawer ? () => setDrawerOpen(false) : undefined}
-        />
-      )}
-      topbar={({ menuButton }) => <Topbar me={me.data} menuButton={menuButton} />}
-    >
-      <Suspense fallback={<CenteredSpinner />}>
-        <Outlet />
-      </Suspense>
-    </AppFrame>
+    <PermissionProvider value={me.data}>
+      <AppFrame
+        navLabel="Platform sections"
+        drawerOpen={drawerOpen}
+        onDrawerOpenChange={setDrawerOpen}
+        banner={<EnvironmentBand />}
+        sidebar={({ inDrawer }) => (
+          <Sidebar
+            me={me.data}
+            inDrawer={inDrawer}
+            onNavigate={inDrawer ? () => setDrawerOpen(false) : undefined}
+          />
+        )}
+        topbar={({ menuButton }) => <Topbar me={me.data} menuButton={menuButton} />}
+      >
+        <Suspense fallback={<CenteredSpinner />}>
+          <Outlet />
+        </Suspense>
+      </AppFrame>
+    </PermissionProvider>
   );
 }
 
@@ -53,7 +55,9 @@ function SignIn() {
       <p className="text-sm text-muted-foreground">
         The operations console for this platform. Sign in with a platform operator account.
       </p>
-      <Button onClick={() => void login()} className="mt-2">Sign in</Button>
+      <Button onClick={() => void login()} className="mt-2">
+        Sign in
+      </Button>
     </Centered>
   );
 }
@@ -63,8 +67,8 @@ function NoAccess() {
     <Centered>
       <h1 className="text-lg font-semibold">This console is for platform operators</h1>
       <p className="text-sm text-muted-foreground">
-        Your account is signed in but holds no platform permissions. If you manage a workspace,
-        the tenant admin is where you want to be.
+        Your account is signed in but holds no platform permissions. If you manage a workspace, the
+        tenant admin is where you want to be.
       </p>
       <Button variant="outline" className="mt-2" onClick={() => void logout()}>
         Sign in as someone else
