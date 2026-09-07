@@ -133,6 +133,10 @@ public sealed class IdentitySeeder(
             manager, DcmsOAuth.Scopes.Social, "DCMS Social (service)", DcmsOAuth.Resources.AdminApi, ct);
         await EnsureScopeAsync(
             manager, DcmsOAuth.Scopes.Platform, "DCMS Platform Console", DcmsOAuth.Resources.PlatformApi, ct);
+        // Same resource as dcms.admin -- admin-api answers -- and its own scope, so the token
+        // platform-api carries is only good for the endpoints that named it.
+        await EnsureScopeAsync(
+            manager, DcmsOAuth.Scopes.Console, "DCMS Console (service)", DcmsOAuth.Resources.AdminApi, ct);
     }
 
     private static async Task EnsureScopeAsync(
@@ -196,25 +200,24 @@ public sealed class IdentitySeeder(
             platformPostLogout,
             ct);
 
-        if (await manager.FindByClientIdAsync(DcmsOAuth.Clients.AdminApiService, ct) is null)
-        {
-            var secret = configuration["Identity:AdminApiService:Secret"] ?? "dcms-admin-api-dev-secret";
-            await manager.CreateAsync(new OpenIddictApplicationDescriptor
-            {
-                ClientId = DcmsOAuth.Clients.AdminApiService,
-                ClientSecret = secret,
-                ClientType = ClientTypes.Confidential,
-                DisplayName = "DCMS Admin API (service)",
-                Permissions =
-                {
-                    Permissions.Endpoints.Token,
-                    Permissions.GrantTypes.ClientCredentials,
-                    Permissions.Prefixes.Scope + DcmsOAuth.Scopes.Ai,
-                    Permissions.Prefixes.Scope + DcmsOAuth.Scopes.Social,
-                },
-            }, ct);
-            logger.LogInformation("Seeded admin-api service client.");
-        }
+        await EnsureServiceClientAsync(
+            manager,
+            DcmsOAuth.Clients.AdminApiService,
+            "DCMS Admin API (service)",
+            configuration["Identity:AdminApiService:Secret"] ?? "dcms-admin-api-dev-secret",
+            [DcmsOAuth.Scopes.Ai, DcmsOAuth.Scopes.Social],
+            ct);
+
+        // platform-api → admin-api, for the console's certificates, notifications, tenant
+        // lifecycle and analytics prune. Its own client, not a reuse of admin-api's: whoever
+        // holds that secret also holds dcms.ai and dcms.social.
+        await EnsureServiceClientAsync(
+            manager,
+            DcmsOAuth.Clients.PlatformApiService,
+            "DCMS Platform API (service)",
+            configuration["Identity:PlatformApiService:Secret"] ?? "dcms-platform-api-dev-secret",
+            [DcmsOAuth.Scopes.Console],
+            ct);
 
         // The edge, which is now the only thing between an operator and Grafana or Forgejo.
         await SeedEdgeClientAsync(manager, ct);
@@ -341,6 +344,72 @@ public sealed class IdentitySeeder(
     }
 
     /// <summary>
+    /// A confidential client-credentials client, created or brought back in line.
+    ///
+    /// <para>Converges its scopes for the same reason the public SPA clients do: a service that
+    /// gains or loses a scope must actually gain or lose it on a database that already exists,
+    /// not only on a fresh one. The secret is set on create and then left alone — rotating it
+    /// is an operator action with its own coordination, and quietly overwriting theirs from a
+    /// config default would break every service holding the old one.</para>
+    /// </summary>
+    private async Task EnsureServiceClientAsync(
+        IOpenIddictApplicationManager manager,
+        string clientId,
+        string displayName,
+        string secret,
+        IReadOnlyList<string> scopes,
+        CancellationToken ct)
+    {
+        var descriptor = new OpenIddictApplicationDescriptor
+        {
+            ClientId = clientId,
+            ClientSecret = secret,
+            ClientType = ClientTypes.Confidential,
+            DisplayName = displayName,
+            Permissions =
+            {
+                Permissions.Endpoints.Token,
+                Permissions.GrantTypes.ClientCredentials,
+            },
+        };
+        foreach (var scope in scopes)
+        {
+            descriptor.Permissions.Add(Permissions.Prefixes.Scope + scope);
+        }
+
+        var existing = await manager.FindByClientIdAsync(clientId, ct);
+        if (existing is null)
+        {
+            await manager.CreateAsync(descriptor, ct);
+            logger.LogInformation("Seeded {Client} with scopes {Scopes}.", clientId, string.Join(", ", scopes));
+            return;
+        }
+
+        var current = new OpenIddictApplicationDescriptor();
+        await manager.PopulateAsync(current, existing, ct);
+
+        var wanted = descriptor.Permissions
+            .Where(p => p.StartsWith(Permissions.Prefixes.Scope, StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        var held = current.Permissions
+            .Where(p => p.StartsWith(Permissions.Prefixes.Scope, StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        if (held.SetEquals(wanted))
+        {
+            return;
+        }
+
+        foreach (var scope in held) current.Permissions.Remove(scope);
+        foreach (var scope in wanted) current.Permissions.Add(scope);
+        await manager.PopulateAsync(existing, current, ct);
+        await manager.UpdateAsync(existing, ct);
+
+        logger.LogInformation(
+            "Converged {Client} scopes. Was: {Before}. Now: {After}.",
+            clientId, string.Join(", ", held), string.Join(", ", wanted));
+    }
+
+    /// <summary>
     /// Creates a public code+PKCE client, or brings an existing one's URIs back in line with
     /// configuration.
     ///
@@ -411,27 +480,52 @@ public sealed class IdentitySeeder(
         var current = new OpenIddictApplicationDescriptor();
         await manager.PopulateAsync(current, existing, ct);
 
-        if (current.RedirectUris.SetEquals(descriptor.RedirectUris)
-            && current.PostLogoutRedirectUris.SetEquals(descriptor.PostLogoutRedirectUris))
+        /*
+         * Scope permissions converge too, and that is a fix rather than an addition.
+         *
+         * This method used to return here whenever the URIs matched, on the reasoning that
+         * configuration owns the URIs and an operator owns everything else. The consequence was
+         * that the SCOPES a client may request could never be changed by a deploy: editing this
+         * file changed what a fresh database got and nothing at all on a database that already
+         * existed. Removing a scope from a shipped client was a silent no-op, which is the
+         * worst possible outcome for a change whose entire purpose is to take a permission away.
+         *
+         * Only the scope prefix is converged. Endpoint, grant-type and response-type
+         * permissions are left exactly as an operator left them.
+         */
+        var wantedScopes = descriptor.Permissions
+            .Where(p => p.StartsWith(Permissions.Prefixes.Scope, StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        var currentScopes = current.Permissions
+            .Where(p => p.StartsWith(Permissions.Prefixes.Scope, StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var urisMatch = current.RedirectUris.SetEquals(descriptor.RedirectUris)
+            && current.PostLogoutRedirectUris.SetEquals(descriptor.PostLogoutRedirectUris);
+        var scopesMatch = currentScopes.SetEquals(wantedScopes);
+        if (urisMatch && scopesMatch)
         {
             return;
         }
 
-        // Only the URIs. Anything else an operator changed on the client stays as they left it.
         var before = string.Join(", ", current.RedirectUris.Select(u => u.ToString()));
         current.RedirectUris.Clear();
         current.PostLogoutRedirectUris.Clear();
         foreach (var uri in descriptor.RedirectUris) current.RedirectUris.Add(uri);
         foreach (var uri in descriptor.PostLogoutRedirectUris) current.PostLogoutRedirectUris.Add(uri);
 
+        foreach (var scope in currentScopes) current.Permissions.Remove(scope);
+        foreach (var scope in wantedScopes) current.Permissions.Add(scope);
+
         await manager.PopulateAsync(existing, current, ct);
         await manager.UpdateAsync(existing, ct);
 
         logger.LogInformation(
-            "Updated {Client} redirect URIs from configuration. Was: {Before}. Now: {After}.",
+            "Converged {Client}. URIs was: {Before}. Now: {After}. Scopes now: {Scopes}.",
             clientId,
             string.IsNullOrEmpty(before) ? "(none)" : before,
-            string.Join(", ", descriptor.RedirectUris.Select(u => u.ToString())));
+            string.Join(", ", descriptor.RedirectUris.Select(u => u.ToString())),
+            string.Join(", ", wantedScopes));
     }
 
 }

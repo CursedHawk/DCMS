@@ -104,7 +104,7 @@ builder.Services
         options.RegisterScopes(
             Scopes.Email, Scopes.Profile, Scopes.Roles,
             DcmsOAuth.Scopes.Admin, DcmsOAuth.Scopes.Ai, DcmsOAuth.Scopes.Social,
-            DcmsOAuth.Scopes.Platform);
+            DcmsOAuth.Scopes.Platform, DcmsOAuth.Scopes.Console);
 
         // A fixed issuer keeps tokens valid regardless of which host reaches the
         // server (SPA via localhost, services via the compose hostname). When set,

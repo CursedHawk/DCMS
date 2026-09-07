@@ -25,6 +25,17 @@ public static class DcmsOAuth
         /// <see cref="Grafana"/> above.
         /// </summary>
         public const string Edge = "dcms-edge";
+
+        /// <summary>
+        /// platform-api → admin-api, for the console's own reads and writes.
+        ///
+        /// <para>A separate confidential client rather than a reuse of
+        /// <see cref="AdminApiService"/>, which content-api already holds the secret for.
+        /// Sharing it would hand platform-api <c>dcms.ai</c> and <c>dcms.social</c> as well —
+        /// and <c>infra/vault/policies/dcms-platform-api.hcl</c> argues the opposite direction
+        /// for exactly this service.</para>
+        /// </summary>
+        public const string PlatformApiService = "dcms-platform-api-service";
     }
 
     /// <summary>
@@ -53,6 +64,18 @@ public static class DcmsOAuth
         /// may purge a telemetry store" and "this token may edit content" the same claim.
         /// </summary>
         public const string Platform = "dcms.platform";
+
+        /// <summary>
+        /// platform-api → admin-api, on behalf of an operator.
+        ///
+        /// <para>The admin-api resource, like <see cref="Admin"/> and <see cref="Social"/>, and
+        /// its own scope for the same reason as Social: the endpoints it opens are a narrow,
+        /// named set — the console's certificates, its notifications, tenant lifecycle and the
+        /// analytics prune — and <c>ServicePrincipalGuard</c> confines the token to exactly the
+        /// endpoints that named this scope. Reusing <c>dcms.admin</c> would have given
+        /// platform-api a token indistinguishable from the admin SPA's.</para>
+        /// </summary>
+        public const string Console = "dcms.console";
     }
 
     public static class Resources
