@@ -26,6 +26,7 @@ import {
   PageHeader,
   Select,
   SelectContent,
+  StatCard,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -38,6 +39,7 @@ import {
   TR,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
+import { mergeSeries, trend, useChartTheme } from './chartTheme';
 import { type MyPermissions, Perm, can, useMyPermissions } from '../../lib/permissions';
 
 interface Analytics {
@@ -101,6 +103,34 @@ export function AnalyticsPage() {
   const a = useQuery({
     queryKey: ['analytics', query.toString()],
     queryFn: () => api.get<Analytics>(`/admin/analytics?${query}`),
+  });
+
+  /*
+   * The same window, one window earlier.
+   *
+   * A number on its own says almost nothing — "1,204 visitors" is only information next to what
+   * it was last month. The endpoint takes an explicit from/to, so the comparison is the same
+   * query shifted back by its own length, with every filter carried across: comparing a
+   * filtered period against an unfiltered one would produce a trend arrow that is simply wrong.
+   *
+   * It is a separate request rather than a wider one because the summary counts distinct
+   * visitors, and distinct counts do not decompose — a two-period fetch could not be split back
+   * into two visitor numbers without over-counting anyone who appeared in both.
+   */
+  const span = Number(days);
+  const previousQuery = new URLSearchParams(query);
+  previousQuery.delete('days');
+  {
+    const to = new Date();
+    to.setDate(to.getDate() - span);
+    const from = new Date(to);
+    from.setDate(from.getDate() - span);
+    previousQuery.set('from', from.toISOString());
+    previousQuery.set('to', to.toISOString());
+  }
+  const previous = useQuery({
+    queryKey: ['analytics', 'previous', previousQuery.toString()],
+    queryFn: () => api.get<Analytics>(`/admin/analytics?${previousQuery}`),
   });
   const dimensions = useQuery({
     queryKey: ['analytics-dimensions', days],
@@ -210,62 +240,45 @@ export function AnalyticsPage() {
       ) : (
         <div className="space-y-6">
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <StatCard label={t('analytics.visitors')} value={a.data.summary.visitors} />
-            <StatCard label={t('analytics.sessions')} value={a.data.summary.sessions} />
-            <StatCard label={t('analytics.pageviews')} value={a.data.summary.pageviews} />
-            <StatCard label={t('analytics.events')} value={a.data.summary.events} />
+            {(
+              [
+                ['visitors', t('analytics.visitors'), t('analytics.visitorsHint')],
+                ['sessions', t('analytics.sessions'), t('analytics.sessionsHint')],
+                ['pageviews', t('analytics.pageviews'), t('analytics.pageviewsHint')],
+                ['events', t('analytics.events'), t('analytics.eventsHint')],
+              ] as const
+            ).map(([key, label, hint]) => (
+              <StatCard
+                key={key}
+                label={label}
+                hint={hint}
+                value={a.data!.summary[key].toLocaleString()}
+                delta={trend(a.data!.summary[key], previous.data?.summary[key])}
+                deltaLabel={t('analytics.vsPrevious', { days })}
+                isLoading={previous.isLoading && a.isLoading}
+              />
+            ))}
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('analytics.overTime')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={a.data.series} margin={{ left: -20, right: 8, top: 8 }}>
-                    <defs>
-                      <linearGradient id="ev" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#6366f1" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="vi" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#10b981" stopOpacity={0.3} />
-                        <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="day" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-                    <YAxis tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
-                    <RTooltip
-                      contentStyle={{
-                        background: 'hsl(var(--popover))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="events"
-                      name={t('analytics.events')}
-                      stroke="#6366f1"
-                      strokeWidth={2}
-                      fill="url(#ev)"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="visitors"
-                      name={t('analytics.visitors')}
-                      stroke="#10b981"
-                      strokeWidth={2}
-                      fill="url(#vi)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
+          {/*
+            Two charts, not two series on one.
+            Events outnumber visitors by an order of magnitude, so a shared y-axis flattened
+            visitors into the baseline — the line was there and told you nothing. Separate
+            scales make both readable, and a single series per chart means identity comes from
+            the title rather than from a colour anybody has to decode.
+          */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <TrendChart
+              title={t('analytics.pageviewsOverTime')}
+              data={mergeSeries(a.data.series, previous.data?.series, 'events')}
+              comparisonLabel={t('analytics.previousPeriod')}
+            />
+            <TrendChart
+              title={t('analytics.visitorsOverTime')}
+              data={mergeSeries(a.data.series, previous.data?.series, 'visitors')}
+              comparisonLabel={t('analytics.previousPeriod')}
+            />
+          </div>
 
           <div className="grid gap-6 lg:grid-cols-2">
             <BreakdownCard
@@ -278,7 +291,11 @@ export function AnalyticsPage() {
             />
             <BreakdownCard
               title={t('analytics.topSources')}
-              rows={a.data.topSources.map((r) => ({ key: r.source, label: r.source, count: r.count }))}
+              rows={a.data.topSources.map((r) => ({
+                key: r.source,
+                label: r.source,
+                count: r.count,
+              }))}
               empty={t('analytics.directOnly')}
             />
             <BreakdownCard
@@ -302,7 +319,11 @@ export function AnalyticsPage() {
             />
             <BreakdownCard
               title={t('analytics.byBrowser')}
-              rows={a.data.byBrowser.map((r) => ({ key: r.browser, label: r.browser, count: r.count }))}
+              rows={a.data.byBrowser.map((r) => ({
+                key: r.browser,
+                label: r.browser,
+                count: r.count,
+              }))}
             />
             <BreakdownCard
               title={t('analytics.byType')}
@@ -455,12 +476,107 @@ function BreakdownCard({
   );
 }
 
-function StatCard({ label, value }: { label: string; value: number }) {
+/**
+ * One measure over time, with the same measure a period earlier behind it.
+ *
+ * <p>The comparison is the same hue, muted and dashed, because it is not a second thing — it is
+ * the same thing, earlier. The dash carries that without asking anyone to distinguish two
+ * colours, which is also what keeps it legible to a reader who cannot.</p>
+ */
+function TrendChart({
+  title,
+  data,
+  comparisonLabel,
+}: {
+  title: string;
+  data: { day: string; value: number; comparison: number | null }[];
+  comparisonLabel: string;
+}) {
+  const theme = useChartTheme();
+  const gradientId = `fill-${title.replace(/\W+/g, '')}`;
+  const hasComparison = data.some((d) => d.comparison !== null);
+
   return (
     <Card>
-      <CardContent className="p-5">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-        <p className="mt-1 text-2xl font-bold">{value.toLocaleString()}</p>
+      <CardHeader className="flex-row items-center justify-between gap-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        {hasComparison ? (
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <svg width="18" height="8" aria-hidden focusable="false">
+              <line
+                x1="0"
+                y1="4"
+                x2="18"
+                y2="4"
+                stroke={theme.comparison}
+                strokeOpacity={theme.comparisonOpacity}
+                strokeWidth={2}
+                strokeDasharray={theme.comparisonDash}
+              />
+            </svg>
+            {comparisonLabel}
+          </span>
+        ) : null}
+      </CardHeader>
+      <CardContent>
+        <div className="h-56 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ left: -18, right: 8, top: 8 }}>
+              <defs>
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={theme.series} stopOpacity={0.28} />
+                  <stop offset="100%" stopColor={theme.series} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              {/* Horizontal rules only: the x-axis is time, and vertical rules add ink that
+                  helps nobody read a value off it. */}
+              <CartesianGrid vertical={false} stroke={theme.grid} />
+              <XAxis
+                dataKey="day"
+                tick={{ fontSize: 11 }}
+                stroke={theme.axis}
+                tickLine={false}
+                axisLine={false}
+                minTickGap={24}
+              />
+              <YAxis
+                tick={{ fontSize: 11 }}
+                stroke={theme.axis}
+                tickLine={false}
+                axisLine={false}
+                allowDecimals={false}
+                width={44}
+              />
+              <RTooltip contentStyle={theme.tooltip} />
+              {hasComparison ? (
+                <Area
+                  type="monotone"
+                  dataKey="comparison"
+                  name={comparisonLabel}
+                  stroke={theme.comparison}
+                  strokeOpacity={theme.comparisonOpacity}
+                  strokeDasharray={theme.comparisonDash}
+                  strokeWidth={2}
+                  fill="none"
+                  // A gap in the comparison is a day the earlier window did not have; drawing
+                  // through it would invent data.
+                  connectNulls={false}
+                  dot={false}
+                />
+              ) : null}
+              <Area
+                type="monotone"
+                dataKey="value"
+                name={title}
+                stroke={theme.series}
+                strokeWidth={2}
+                fill={`url(#${gradientId})`}
+                dot={false}
+                activeDot={{ r: 4 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
       </CardContent>
     </Card>
   );

@@ -846,7 +846,15 @@
     "clearConsequenceRollups": "All daily totals are deleted; charts start from empty.",
     "clearConsequenceIrreversible": "There is no backup of analytics data.",
     "clearConfirmWord": "CLEAR",
-    "cleared": "Cleared {{count}} events"
+    "cleared": "Cleared {{count}} events",
+    "pageviewsOverTime": "Page views over time",
+    "visitorsOverTime": "Visitors over time",
+    "previousPeriod": "Previous period",
+    "vsPrevious": "vs previous {{days}} days",
+    "visitorsHint": "Distinct visitors, counted by a rotating hash. The same person on two devices counts twice; the same device across the period counts once.",
+    "sessionsHint": "A run of activity from one visitor. A new session starts after a gap of inactivity.",
+    "pageviewsHint": "Page views only — the subset of events with type \"pageview\".",
+    "eventsHint": "Everything recorded, including page views, outbound clicks, downloads and page-leave signals."
   },
   "chat": {
     "title": "Chat",

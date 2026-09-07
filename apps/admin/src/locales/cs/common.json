@@ -859,7 +859,15 @@
     "clearConsequenceRollups": "Smažou se všechny denní souhrny; grafy začnou od nuly.",
     "clearConsequenceIrreversible": "Analytická data se nikam nezálohují.",
     "clearConfirmWord": "VYMAZAT",
-    "cleared": "Vymazáno {{count}} událostí"
+    "cleared": "Vymazáno {{count}} událostí",
+    "pageviewsOverTime": "Zobrazení stránek v čase",
+    "visitorsOverTime": "Návštěvníci v čase",
+    "previousPeriod": "Předchozí období",
+    "vsPrevious": "oproti předchozím {{days}} dnům",
+    "visitorsHint": "Unikátní návštěvníci podle rotujícího otisku. Stejný člověk na dvou zařízeních se počítá dvakrát.",
+    "sessionsHint": "Souvislá aktivita jednoho návštěvníka. Po delší nečinnosti začíná nová relace.",
+    "pageviewsHint": "Pouze zobrazení stránek — události typu „pageview“.",
+    "eventsHint": "Vše zaznamenané, včetně zobrazení, odchozích kliknutí, stažení a opuštění stránky."
   },
   "chat": {
     "title": "Chat",
