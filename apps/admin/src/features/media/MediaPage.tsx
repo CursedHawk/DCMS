@@ -17,10 +17,12 @@ import {
   Input,
   Page,
   PageHeader,
+  toastApiError,
 } from '@dcms/ui';
 import { FolderRail } from './FolderRail';
 import { MediaDetailDialog } from './MediaDetailDialog';
 import { MediaThumb } from './MediaThumb';
+import { assetDragProps, folderDropProps } from './dnd';
 import { MediaUploader } from './MediaUploader';
 import { StorageMeter, categoryMeta } from './StorageMeter';
 import {
@@ -89,6 +91,30 @@ export function MediaPage() {
     });
   const clearSelection = () => setSelected(new Set());
 
+  /*
+   * Which folder a drag is currently over.
+   *
+   * Kept here rather than inside each tile so that only one can be lit at a time — `dragleave`
+   * on one tile and `dragenter` on the next arrive in that order, and per-tile state briefly
+   * lights both.
+   */
+  const [dropFolder, setDropFolder] = useState<string | null>(null);
+
+  /** Move whatever was dragged, which is not necessarily what is selected. */
+  const dropOnto = (folderId: string | null, ids: string[]) => {
+    if (ids.length === 0) return;
+    move.mutate(
+      { ids, folderId },
+      {
+        onSuccess: () => {
+          toast.success(t('media.movedCount', { count: ids.length }));
+          clearSelection();
+        },
+        onError: (e) => toastApiError(e, t),
+      },
+    );
+  };
+
   const bulkMove = (folderId: string | null) => {
     if (activeSelection.length === 0) return;
     move.mutate(
@@ -137,6 +163,7 @@ export function MediaPage() {
             <CenteredSpinner />
           ) : (
             <FolderRail
+            onMove={dropOnto}
               folders={folderList}
               value={folder}
               onSelect={(v) => {
@@ -213,7 +240,15 @@ export function MediaPage() {
                     setFolder(f.id);
                     clearSelection();
                   }}
-                  className="flex flex-col items-start gap-3 rounded-lg border bg-card p-4 text-left transition-shadow hover:border-primary/50 hover:shadow-md"
+                  {...folderDropProps({
+                    onDropAssets: (ids) => dropOnto(f.id, ids),
+                    onOver: () => setDropFolder(f.id),
+                    onLeave: () => setDropFolder((current) => (current === f.id ? null : current)),
+                  })}
+                  className={cn(
+                    'flex flex-col items-start gap-3 rounded-lg border bg-card p-4 text-left transition-shadow hover:border-primary/50 hover:shadow-md',
+                    dropFolder === f.id && 'border-primary ring-2 ring-primary/40',
+                  )}
                 >
                   <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent text-accent-foreground">
                     <Folder className="h-6 w-6" />
@@ -238,6 +273,7 @@ export function MediaPage() {
                 return (
                   <div
                     key={a.id}
+                    {...assetDragProps(a.id, selected)}
                     className={cn(
                       'group relative overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md',
                       isSelected && 'ring-2 ring-primary',

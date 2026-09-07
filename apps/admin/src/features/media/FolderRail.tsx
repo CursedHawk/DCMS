@@ -12,6 +12,7 @@ import {
   Input,
 } from '@dcms/ui';
 import { ROOT_FOLDER, type MediaFolder, useCreateFolder, useDeleteFolder, useRenameFolder } from './api';
+import { folderDropProps } from './dnd';
 
 /**
  * Left rail listing the tenant's folders plus the "All media" / "Unfiled"
@@ -24,13 +25,24 @@ export function FolderRail({
   value,
   onSelect,
   totalCount,
+  onMove,
 }: {
   folders: MediaFolder[];
   value: string | undefined;
   onSelect: (value: string | undefined) => void;
   totalCount: number;
+  /** Move assets into a folder (`null` = unfiled). Omitted disables drop targets. */
+  onMove?: (folderId: string | null, ids: string[]) => void;
 }) {
   const { t } = useTranslation();
+  /*
+   * Which target a drag is currently over.
+   *
+   * One piece of state for the whole rail rather than one per row: `dragleave` on one row and
+   * `dragenter` on the next arrive in that order, so per-row state briefly lights both.
+   * `undefined` is "nothing", and `null` is a real target — the Unfiled row.
+   */
+  const [dropTarget, setDropTarget] = useState<string | null | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -89,19 +101,31 @@ export function FolderRail({
     icon: Icon,
     label,
     count,
+    dropFolderId,
   }: {
     active: boolean;
     onClick: () => void;
     icon: typeof Images;
     label: string;
     count: number;
+    /** The folder assets dropped here move into. `null` unfiles them. Omit to refuse drops. */
+    dropFolderId?: string | null;
   }) => (
     <button
       type="button"
       onClick={onClick}
+      {...(dropFolderId !== undefined && onMove
+        ? folderDropProps({
+            onDropAssets: (ids) => onMove(dropFolderId, ids),
+            onOver: () => setDropTarget(dropFolderId),
+            onLeave: () =>
+              setDropTarget((current) => (current === dropFolderId ? undefined : current)),
+          })
+        : {})}
       className={cn(
         'flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
         active ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50',
+        dropFolderId !== undefined && dropTarget === dropFolderId && 'ring-2 ring-primary',
       )}
     >
       <Icon className="h-4 w-4 shrink-0" />
@@ -119,12 +143,16 @@ export function FolderRail({
         label={t('media.folders.all')}
         count={totalCount}
       />
+      {/* Dropping onto Unfiled is how an asset comes back OUT of a folder — the only way
+          there was before this involved a dropdown listing every folder except the one you
+          wanted to leave. */}
       <RailButton
         active={value === ROOT_FOLDER}
         onClick={() => onSelect(ROOT_FOLDER)}
         icon={Inbox}
         label={t('media.folders.unfiled')}
         count={unfiledCount}
+        dropFolderId={null}
       />
 
       <div className="!my-2 flex items-center justify-between px-2.5 pt-1">
@@ -184,9 +212,17 @@ export function FolderRail({
         ) : (
           <div
             key={f.id}
+            {...(onMove
+              ? folderDropProps({
+                  onDropAssets: (ids) => onMove(f.id, ids),
+                  onOver: () => setDropTarget(f.id),
+                  onLeave: () => setDropTarget((current) => (current === f.id ? undefined : current)),
+                })
+              : {})}
             className={cn(
               'group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
               value === f.id ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50',
+              dropTarget === f.id && 'ring-2 ring-primary',
             )}
           >
             <button

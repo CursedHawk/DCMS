@@ -275,7 +275,7 @@
   "media": {
     "title": "Knihovna médií",
     "upload": "Nahrát soubory",
-    "dropHere": "Přetáhněte soubory sem nebo klikněte pro nahrání",
+    "dropHere": "Přetažením přesunete sem",
     "processing": "Zpracovává se",
     "ready": "Připraveno",
     "failed": "Selhalo",
@@ -354,7 +354,10 @@
       "noVariants": "Pro tento typ souboru nejsou optimalizované verze.",
       "versionsHint": "Návštěvníkům se automaticky poskytuje nejmenší vhodná verze."
     },
-    "uploadingCount": "Nahrávání… hotovo {{done}} z {{total}}"
+    "uploadingCount": "Nahrávání… hotovo {{done}} z {{total}}",
+    "movedCount_one": "Přesunut 1 soubor",
+    "movedCount_few": "Přesunuty {{count}} soubory",
+    "movedCount_other": "Přesunuto {{count}} souborů"
   },
   "forms": {
     "title": "Odeslané formuláře",

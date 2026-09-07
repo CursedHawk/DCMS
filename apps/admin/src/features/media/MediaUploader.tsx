@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { cn, Progress, toastApiError } from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
 import { formatSize } from './api';
+import { isInternalDrag } from './dnd';
 
 /** One queued file and how far its upload has got. */
 interface UploadItem {
@@ -99,12 +100,17 @@ export function MediaUploader({
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
+        // An asset being dragged between folders is a drop on this same page. Without this the
+        // upload zone lights up and then tries to upload a file it does not have — the whole
+        // reason the internal drag carries its own MIME type.
         onDragOver={(e) => {
+          if (isInternalDrag(e)) return;
           e.preventDefault();
           setDragging(true);
         }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => {
+          if (isInternalDrag(e)) return;
           e.preventDefault();
           setDragging(false);
           if (e.dataTransfer.files.length) void upload(e.dataTransfer.files);

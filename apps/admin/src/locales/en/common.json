@@ -272,7 +272,7 @@
   "media": {
     "title": "Media library",
     "upload": "Upload files",
-    "dropHere": "Drop files here or click to upload",
+    "dropHere": "Drop to move here",
     "processing": "Processing",
     "ready": "Ready",
     "failed": "Failed",
@@ -346,7 +346,9 @@
       "noVariants": "No optimized versions for this file type.",
       "versionsHint": "Visitors are automatically served the smallest suitable version."
     },
-    "uploadingCount": "Uploading… {{done}} of {{total}} done"
+    "uploadingCount": "Uploading… {{done}} of {{total}} done",
+    "movedCount_one": "Moved 1 file",
+    "movedCount_other": "Moved {{count}} files"
   },
   "forms": {
     "title": "Form submissions",
