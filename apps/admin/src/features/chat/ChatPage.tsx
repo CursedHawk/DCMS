@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Bot, MessagesSquare, Send } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Badge, Button, cn, EmptyState, Input } from '@dcms/admin-ui';
+import { Badge, Button, cn, EmptyState, Input } from '@dcms/ui';
 import { getAccessToken } from '../../auth';
 import { getCurrentTenantSlug } from '../../tenants';
 import { type ChatMessage, chatApi, contentApiBase } from '../../chat/api';

@@ -19,7 +19,7 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import {
   type Notification,
   type NotificationSeverity,

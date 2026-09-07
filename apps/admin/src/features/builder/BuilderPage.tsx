@@ -18,7 +18,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button, CenteredSpinner, cn } from '@dcms/admin-ui';
+import { Button, CenteredSpinner, cn } from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
 import { useAuth } from '../../useAuth';
 import {

@@ -10,7 +10,7 @@ import {
 import { Check, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '@dcms/admin-ui';
+import { cn } from '@dcms/ui';
 import { useBuilder } from '../store';
 
 /**

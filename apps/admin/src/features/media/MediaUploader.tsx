@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle2, UploadCloud } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { cn, Progress, toastApiError } from '@dcms/admin-ui';
+import { cn, Progress, toastApiError } from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
 import { formatSize } from './api';
 

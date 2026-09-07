@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { CheckCircle2, MailCheck, XCircle } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, CardContent, CenteredSpinner, Page } from '@dcms/admin-ui';
+import { Button, Card, CardContent, CenteredSpinner, Page } from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
 import { setCurrentTenantSlug } from '../../tenants';
 

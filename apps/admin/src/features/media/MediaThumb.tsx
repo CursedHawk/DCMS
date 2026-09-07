@@ -1,7 +1,7 @@
 import { FileAudio, FileVideo, File as FileIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { AuthedImage } from '../../components/AuthedImage';
-import { cn } from '@dcms/admin-ui';
+import { cn } from '@dcms/ui';
 import type { MediaCategory, MediaStatus } from './api';
 
 /**

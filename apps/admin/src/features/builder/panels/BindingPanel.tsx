@@ -17,7 +17,7 @@ import {
 import type { Editor } from 'grapesjs';
 import { Repeat } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { cn, Input } from '@dcms/admin-ui';
+import { cn, Input } from '@dcms/ui';
 import { useContentFields } from '../plugins/fields';
 import { useBuilder } from '../store';
 import { useEditorEvent, useSelected } from './useEditorEvent';

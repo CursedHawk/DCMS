@@ -1,16 +1,16 @@
 @import 'tailwindcss';
-@import '@dcms/admin-ui/theme.css';
+@import '@dcms/ui/theme.css';
 
 /*
  * Tailwind detects content by walking up from THIS file, so the shared components in
- * packages/admin-ui are outside the scan. Name that directory explicitly.
+ * packages/ui are outside the scan. Name that directory explicitly.
  */
-@source '../../../packages/admin-ui/src';
+@source '../../../packages/ui/src';
 
 /*
  * The platform console's palette.
  *
- * Same token NAMES as the admin SPA — that is the contract @dcms/admin-ui's components are
+ * Same token NAMES as the admin SPA — that is the contract @dcms/ui's components are
  * written against, so every Button and Table works here unchanged — with different VALUES.
  * Declared after the import so these win at equal specificity.
  *

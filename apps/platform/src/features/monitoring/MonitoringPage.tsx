@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ExternalLink } from 'lucide-react';
-import { Button, EmptyState, useTheme } from '@dcms/admin-ui';
+import { Button, EmptyState, useTheme } from '@dcms/ui';
 import { runtimeConfig } from '../../runtime-config';
 
 /**

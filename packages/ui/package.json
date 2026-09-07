@@ -1,5 +1,5 @@
 {
-  "name": "@dcms/admin-ui",
+  "name": "@dcms/ui",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -19,7 +19,7 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@dcms/admin-client": "workspace:*",
+    "@dcms/core": "workspace:*",
     "@radix-ui/react-checkbox": "^1",
     "@radix-ui/react-dialog": "^1",
     "@radix-ui/react-dropdown-menu": "^2",

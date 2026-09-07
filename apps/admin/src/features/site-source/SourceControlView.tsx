@@ -35,7 +35,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { ApiError } from '../../lib/api';
 import { can, Perm, repoRead, repoWrite, useMyPermissions } from '../../lib/permissions';
 import { useNavigate } from '@tanstack/react-router';

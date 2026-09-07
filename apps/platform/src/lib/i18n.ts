@@ -6,7 +6,7 @@ import cs from '../locales/cs/common.json';
 /**
  * The console's own i18n instance.
  *
- * <p>Only the keys the SHARED components reach for — @dcms/admin-ui's error toast and copy
+ * <p>Only the keys the SHARED components reach for — @dcms/ui's error toast and copy
  * button call useTranslation() against whatever instance the host app initialised, so an app
  * that skipped this would render raw key names inside a borrowed component. The console's own
  * copy is written inline in English: it has one audience, the operators of this platform, and

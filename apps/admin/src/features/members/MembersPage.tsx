@@ -30,7 +30,7 @@ import {
   THead,
   toastApiError,
   TR,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { api } from '../../lib/api';
 import { useInvitations, useMembers, useRoles } from '../rbac/api';
 

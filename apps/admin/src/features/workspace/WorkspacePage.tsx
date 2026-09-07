@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
   toastApiError,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { api } from '../../lib/api';
 import { setCurrentTenantSlug } from '../../tenants';
 

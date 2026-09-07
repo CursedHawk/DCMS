@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Page, PageHeader } from '@dcms/admin-ui';
+import { Page, PageHeader } from '@dcms/ui';
 import { AuditLogViewer } from './AuditLogViewer';
 
 /**

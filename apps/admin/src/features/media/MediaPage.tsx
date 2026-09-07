@@ -17,7 +17,7 @@ import {
   Input,
   Page,
   PageHeader,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { FolderRail } from './FolderRail';
 import { MediaDetailDialog } from './MediaDetailDialog';
 import { MediaThumb } from './MediaThumb';

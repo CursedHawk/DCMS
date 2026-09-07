@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Button, CenteredSpinner, toastApiError } from '@dcms/admin-ui';
+import { Button, CenteredSpinner, toastApiError } from '@dcms/ui';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { platformApi } from '../../lib/api';

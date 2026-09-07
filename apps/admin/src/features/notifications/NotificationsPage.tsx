@@ -2,7 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Bell, CheckCheck, CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Badge, Button, CenteredSpinner, cn, EmptyState, Page, PageHeader } from '@dcms/admin-ui';
+import { Badge, Button, CenteredSpinner, cn, EmptyState, Page, PageHeader } from '@dcms/ui';
 import {
   type Notification,
   type NotificationSeverity,

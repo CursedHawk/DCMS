@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   Input,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { ROOT_FOLDER, type MediaFolder, useCreateFolder, useDeleteFolder, useRenameFolder } from './api';
 
 /**

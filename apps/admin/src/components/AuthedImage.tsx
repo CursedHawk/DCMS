@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchObjectUrl, mediaContentPath } from '../lib/api';
-import { cn } from '@dcms/admin-ui';
+import { cn } from '@dcms/ui';
 
 /**
  * Renders a media asset that lives behind the bearer-protected content endpoint.

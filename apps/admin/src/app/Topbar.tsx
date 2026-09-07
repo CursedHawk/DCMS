@@ -13,7 +13,7 @@ import {
   TooltipContent,
   TooltipTrigger,
   useTheme,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { NotificationBell } from '../features/notifications/NotificationBell';
 import { LANGUAGES, setLanguage } from '../lib/i18n';
 import { logout } from '../auth';

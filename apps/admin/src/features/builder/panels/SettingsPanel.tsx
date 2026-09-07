@@ -1,6 +1,6 @@
 import { defaultLayout, type CookieConsentSettings, type ThemeTokens } from '@dcms/gjs-schema';
 import { useTranslation } from 'react-i18next';
-import { Input, Textarea } from '@dcms/admin-ui';
+import { Input, Textarea } from '@dcms/ui';
 import { useBuilder } from '../store';
 import { DesignKitPicker } from './DesignKitPicker';
 

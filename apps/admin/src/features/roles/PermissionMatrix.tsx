@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { ExternalLink, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Badge, Checkbox, Input } from '@dcms/admin-ui';
+import { Badge, Checkbox, Input } from '@dcms/ui';
 import { type PermissionDef, groupPermissions } from '../rbac/api';
 
 /**

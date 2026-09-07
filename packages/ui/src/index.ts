@@ -1,5 +1,5 @@
 /**
- * `@dcms/admin-ui` — the design system shared by every DCMS operator SPA.
+ * `@dcms/ui` — the design system shared by every DCMS operator SPA.
  *
  * Extracted from apps/admin when the platform SPA was added: two hand-maintained
  * copies of the button, the theme provider and the error toast is how the second

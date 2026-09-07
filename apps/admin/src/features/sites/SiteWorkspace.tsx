@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Suspense, lazy } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CenteredSpinner } from '@dcms/admin-ui';
+import { CenteredSpinner } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { StaticSitePage } from './StaticSitePage';
 

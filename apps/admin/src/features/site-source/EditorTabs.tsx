@@ -1,5 +1,5 @@
 import { GitCompare, X } from 'lucide-react';
-import { cn } from '@dcms/admin-ui';
+import { cn } from '@dcms/ui';
 import { useVfs } from './vfs';
 
 // Open-editor tab strip: file tabs plus diff tabs (branch HEAD vs draft). The

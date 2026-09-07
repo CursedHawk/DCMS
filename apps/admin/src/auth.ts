@@ -1,4 +1,4 @@
-import { createAuth } from '@dcms/admin-client';
+import { createAuth } from '@dcms/core';
 import { runtimeConfig } from './runtime-config';
 
 /*
@@ -8,7 +8,7 @@ import { runtimeConfig } from './runtime-config';
  * authorization code + PKCE.
  *
  * The flow itself — the StrictMode replay guard, renew-on-read — lives in
- * `@dcms/admin-client` because the platform SPA needs exactly the same behaviour.
+ * `@dcms/core` because the platform SPA needs exactly the same behaviour.
  */
 const auth = createAuth({
   authority: runtimeConfig.oidcAuthority,

@@ -1,8 +1,8 @@
-import { createApiClient } from '@dcms/admin-client';
+import { createApiClient } from '@dcms/core';
 import { getAccessToken, renewSilently } from '../auth';
 import { runtimeConfig } from '../runtime-config';
 
-export { ApiError } from '@dcms/admin-client';
+export { ApiError } from '@dcms/core';
 
 /**
  * Bearer only. There is deliberately no X-Dcms-Tenant header anywhere in this console: nothing

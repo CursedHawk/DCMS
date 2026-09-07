@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle, ShieldCheck } from 'lucide-react';
-import { Button, CenteredSpinner, ConfirmDeleteDialog, EmptyState, Input, toastApiError } from '@dcms/admin-ui';
+import { Button, CenteredSpinner, ConfirmDeleteDialog, EmptyState, Input, toastApiError } from '@dcms/ui';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Rail } from '../../components/Rail';

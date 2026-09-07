@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
   toastApiError,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { api } from '../../lib/api';
 interface AiSettings {
   provider: string;

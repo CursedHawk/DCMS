@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { BellOff } from 'lucide-react';
-import { Button, CenteredSpinner, EmptyState } from '@dcms/admin-ui';
+import { Button, CenteredSpinner, EmptyState } from '@dcms/ui';
 import { useDismiss, useMarkAllRead, useMarkRead, usePlatformNotifications } from './api';
 import { NotificationRow } from './NotificationBell';
 import { useMe } from '../../lib/permissions';

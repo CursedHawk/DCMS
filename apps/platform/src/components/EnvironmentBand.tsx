@@ -1,4 +1,4 @@
-import { cn } from '@dcms/admin-ui';
+import { cn } from '@dcms/ui';
 import { runtimeConfig } from '../runtime-config';
 
 /**

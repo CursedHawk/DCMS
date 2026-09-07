@@ -1,6 +1,6 @@
 import { Outlet } from '@tanstack/react-router';
 import { Suspense } from 'react';
-import { Button, CenteredSpinner } from '@dcms/admin-ui';
+import { Button, CenteredSpinner } from '@dcms/ui';
 import { login, logout } from '../auth';
 import { useAuth } from '../useAuth';
 import { useMe } from '../lib/permissions';

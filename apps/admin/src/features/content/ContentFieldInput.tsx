@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Input, Label, Switch, TagsInput, Textarea, toTagList } from '@dcms/admin-ui';
+import { Input, Label, Switch, TagsInput, Textarea, toTagList } from '@dcms/ui';
 import type { MediaCategory } from '../media/api';
 import { MediaMultiPicker } from '../media/MediaMultiPicker';
 import { MediaPicker } from '../media/MediaPicker';

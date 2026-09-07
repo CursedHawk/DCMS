@@ -1,7 +1,7 @@
 import type { Editor } from 'grapesjs';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@dcms/admin-ui';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@dcms/ui';
 import { MediaPicker } from '../../media/MediaPicker';
 import { assetIdFrom, mediaUrlFor } from './TraitsPanel';
 import { useCustomPayload } from './useEditorEvent';

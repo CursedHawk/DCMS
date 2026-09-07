@@ -16,7 +16,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
 import { Perm, can, useMyPermissions } from '../../lib/permissions';
 import { AuditRecordDialog } from './AuditRecordDialog';

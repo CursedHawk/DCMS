@@ -3,7 +3,7 @@ import { ExternalLink, Search } from 'lucide-react';
 import {
   Button, CenteredSpinner, ConfirmDeleteDialog, EmptyState, Input,
   Table, TBody, TD, TH, THead, TR, toastApiError,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { bytes, count, date } from '../../lib/format';

@@ -16,7 +16,7 @@ import {
   Input,
   Label,
   toastApiError,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { api } from '../../lib/api';
 import {
   type ContentFieldDef,

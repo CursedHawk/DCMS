@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { type MyPermissions } from '@dcms/admin-client';
+import { type MyPermissions } from '@dcms/core';
 import { api } from './api';
 import { getCurrentTenantSlug } from '../tenants';
 
 // `can` and the MyPermissions shape are shared with the platform SPA; the keys below are
 // tenant-scoped and belong to this app.
-export { can, type MyPermissions } from '@dcms/admin-client';
+export { can, type MyPermissions } from '@dcms/core';
 
 /** Tenant permission keys (mirrors PlatformPermissions on the server). */
 export const Perm = {

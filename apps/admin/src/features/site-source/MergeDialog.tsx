@@ -12,7 +12,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { RELEASE_BRANCH } from './constants';
 import type { MergeConflictFile } from './git';
 import { gitApi } from './git';

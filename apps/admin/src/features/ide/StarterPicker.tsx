@@ -7,7 +7,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 export type StarterFlavor = 'empty' | 'openapi' | 'client' | 'starter';
 
 // Shown once when a brand-new (empty) ReactApp site is opened: pick what to seed

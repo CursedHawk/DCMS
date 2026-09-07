@@ -21,7 +21,7 @@ import {
   cn,
   Progress,
   toastApiError,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { ResourceHistory } from '../audit/ResourceHistory';
 import { api } from '../../lib/api';
 interface StaticBundle {

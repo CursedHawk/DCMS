@@ -2,7 +2,7 @@ import { Check, ChevronsUpDown, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
-import { Button, cn, Popover, PopoverContent, PopoverTrigger } from '@dcms/admin-ui';
+import { Button, cn, Popover, PopoverContent, PopoverTrigger } from '@dcms/ui';
 import {
   getCurrentTenantSlug,
   setCurrentTenantSlug,

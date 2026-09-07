@@ -4,7 +4,7 @@ import {
   Badge, Button, CenteredSpinner, cn, Dialog, DialogBody, DialogContent, DialogDescription,
   DialogFooter, DialogHeader, DialogTitle, EmptyState, Input, Label, Switch, TagsInput,
   toastApiError,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { date } from '../../lib/format';

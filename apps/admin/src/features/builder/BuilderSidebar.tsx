@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { Editor } from 'grapesjs';
 import { Blocks, FileText, GitBranch, Layers, LayoutTemplate, Puzzle, Rocket } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '@dcms/admin-ui';
+import { cn } from '@dcms/ui';
 import { DeploymentsView, SourceControlView, gitApi, useVfs } from '../site-source';
 import { BlocksPanel } from './panels/BlocksPanel';
 import { LayersPanel } from './panels/LayersPanel';

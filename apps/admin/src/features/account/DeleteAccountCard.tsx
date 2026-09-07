@@ -3,7 +3,7 @@ import { LogOut, ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Badge, Button, Card, CardContent, ConfirmDeleteDialog } from '@dcms/admin-ui';
+import { Badge, Button, Card, CardContent, ConfirmDeleteDialog } from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
 import { logout, userManager } from '../../auth';
 import { setCurrentTenantSlug } from '../../tenants';

@@ -30,7 +30,7 @@ import {
   TabsTrigger,
   Textarea,
   toastApiError,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { SchemaForm } from '../../components/SchemaForm';
 import { MediaPicker } from '../media/MediaPicker';
 import { MetaConnectionWidget } from './MetaConnectionWidget';

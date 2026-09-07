@@ -3,7 +3,7 @@ import { AlertTriangle, Check, Instagram, Facebook, Link2, RefreshCw, Unlink } f
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import type { WidgetProps } from '@rjsf/utils';
-import { Badge, Button, cn, toastApiError } from '@dcms/admin-ui';
+import { Badge, Button, cn, toastApiError } from '@dcms/ui';
 import { api } from '../../lib/api';
 export type MetaProvider = 'Facebook' | 'InstagramLogin';
 

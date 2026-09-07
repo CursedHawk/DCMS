@@ -19,7 +19,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { fetchObjectUrl, mediaContentPath } from '../../lib/api';
 import { MediaThumb } from './MediaThumb';
 import {

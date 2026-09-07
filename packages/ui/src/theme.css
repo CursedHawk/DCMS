@@ -4,7 +4,7 @@
  *
  * Deliberately no token VALUES. Each app declares its own palette against these names in its
  * own index.css — admin's indigo, the platform console's teal — because the palette is the
- * app's identity and the names are the contract @dcms/admin-ui's components are written
+ * app's identity and the names are the contract @dcms/ui's components are written
  * against.
  *
  * That split is also load-bearing rather than tidy. Tailwind drops a bare `:root` block that

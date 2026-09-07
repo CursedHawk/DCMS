@@ -1,4 +1,4 @@
-import { cn } from '@dcms/admin-ui';
+import { cn } from '@dcms/ui';
 import { ofLimit, railState } from '../lib/format';
 
 /**

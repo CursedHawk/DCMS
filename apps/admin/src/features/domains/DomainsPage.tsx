@@ -42,7 +42,7 @@ import {
   TabsTrigger,
   Textarea,
   toastApiError,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { api } from '../../lib/api';
 interface Domain {
   id: string;

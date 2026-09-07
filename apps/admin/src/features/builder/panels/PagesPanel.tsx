@@ -3,7 +3,7 @@ import { FileText, Home, Layers, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button, cn, Input } from '@dcms/admin-ui';
+import { Button, cn, Input } from '@dcms/ui';
 import { useVfs } from '../../site-source';
 import { pageFiles } from '../project';
 import { useBuilder } from '../store';

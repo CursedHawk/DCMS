@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Files, GitBranch, Rocket, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '@dcms/admin-ui';
+import { cn } from '@dcms/ui';
 import { DeploymentsView, FileTree, SourceControlView, gitApi } from '../site-source';
 import { AgentPanel } from './agent/AgentPanel';
 

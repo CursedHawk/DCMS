@@ -27,7 +27,7 @@ import {
   THead,
   toastApiError,
   TR,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { api } from '../../lib/api';
 import { Perm, can, useMyPermissions } from '../../lib/permissions';
 import { setCurrentTenantSlug } from '../../tenants';

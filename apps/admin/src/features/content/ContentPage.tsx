@@ -22,7 +22,7 @@ import {
   TH,
   THead,
   TR,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import {
   type ContentTypeDef,
   type PluginInstance,

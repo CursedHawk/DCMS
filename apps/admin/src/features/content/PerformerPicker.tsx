@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
   Switch,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { usePluginInstances } from '../plugins/api';
 import { useContentItemsOfType } from './api';
 

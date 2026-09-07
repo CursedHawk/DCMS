@@ -1,4 +1,4 @@
-import { createRuntimeConfig } from '@dcms/admin-client';
+import { createRuntimeConfig } from '@dcms/core';
 
 /**
  * The platform console's runtime keys.

@@ -15,7 +15,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { MediaThumb } from './MediaThumb';
 import { MediaUploader } from './MediaUploader';
 import { ROOT_FOLDER, type MediaCategory, useMedia, useMediaFolders } from './api';

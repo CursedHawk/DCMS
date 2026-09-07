@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import { Bell, CheckCheck, CircleAlert, CircleCheck, Info, TriangleAlert, X } from 'lucide-react';
 import { useState } from 'react';
-import { Button, cn, Popover, PopoverContent, PopoverTrigger } from '@dcms/admin-ui';
+import { Button, cn, Popover, PopoverContent, PopoverTrigger } from '@dcms/ui';
 import {
   type PlatformNotification,
   type PlatformNotificationSeverity,

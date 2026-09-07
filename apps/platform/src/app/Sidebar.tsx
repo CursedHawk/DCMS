@@ -1,5 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router';
-import { cn } from '@dcms/admin-ui';
+import { cn } from '@dcms/ui';
 import { can, type PlatformMe } from '../lib/permissions';
 import { NAV, NAV_GROUPS } from './nav';
 

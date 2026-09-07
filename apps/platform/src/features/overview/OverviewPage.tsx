@@ -1,6 +1,6 @@
 import { AlertTriangle, ExternalLink } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
-import { Button, CenteredSpinner } from '@dcms/admin-ui';
+import { Button, CenteredSpinner } from '@dcms/ui';
 import { Rail } from '../../components/Rail';
 import { count, plural, since } from '../../lib/format';
 import { useTenants } from '../tenants/api';

@@ -17,7 +17,7 @@ import {
   TabsList,
   TabsTrigger,
   Textarea,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { useBuilder } from '../store';
 import { UnusableGenerationError, aiApi, type GeneratedSite } from './api';
 import {

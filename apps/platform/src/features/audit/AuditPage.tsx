@@ -1,5 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Button, CenteredSpinner, EmptyState, Table, TBody, TD, TH, THead, TR } from '@dcms/admin-ui';
+import { Button, CenteredSpinner, EmptyState, Table, TBody, TD, TH, THead, TR } from '@dcms/ui';
 import { adminApi } from '../../lib/api';
 import { date } from '../../lib/format';
 

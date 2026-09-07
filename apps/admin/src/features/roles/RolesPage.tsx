@@ -24,7 +24,7 @@ import {
   THead,
   toastApiError,
   TR,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { api } from '../../lib/api';
 import { type Role, usePermissionCatalog, useRoles } from '../rbac/api';
 import { PermissionMatrix } from './PermissionMatrix';

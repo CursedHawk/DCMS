@@ -2,7 +2,7 @@ import type { Component, Editor } from 'grapesjs';
 import { ChevronDown, ChevronRight, Eye, EyeOff, Lock, LockOpen, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '@dcms/admin-ui';
+import { cn } from '@dcms/ui';
 import { useEditorEvent } from './useEditorEvent';
 
 /**

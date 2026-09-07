@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 import { toast } from 'sonner';
-import { ApiError } from '@dcms/admin-client';
+import { ApiError } from '@dcms/core';
 
 /**
  * The single place a failed request becomes something the user sees.

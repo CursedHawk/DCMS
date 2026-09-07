@@ -12,7 +12,7 @@ import {
   Label,
   Page,
   PageHeader,
-} from '@dcms/admin-ui';
+} from '@dcms/ui';
 import { accountApi } from './accountApi';
 import { DeleteAccountCard } from './DeleteAccountCard';
 

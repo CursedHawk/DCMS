@@ -1,4 +1,4 @@
-import { createAuth } from '@dcms/admin-client';
+import { createAuth } from '@dcms/core';
 import { runtimeConfig } from './runtime-config';
 
 /*

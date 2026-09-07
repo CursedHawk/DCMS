@@ -1,5 +1,5 @@
 import { LogOut, Moon, Sun } from 'lucide-react';
-import { Button, useTheme } from '@dcms/admin-ui';
+import { Button, useTheme } from '@dcms/ui';
 import { NotificationBell } from '../features/notifications/NotificationBell';
 import { logout } from '../auth';
 import { runtimeConfig } from '../runtime-config';

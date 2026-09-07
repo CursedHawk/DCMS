@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { platformApi } from './api';
 
-export { can } from '@dcms/admin-client';
+export { can } from '@dcms/core';
 
 /** Mirrors PlatformConsolePermissions on the server. */
 export const Perm = {

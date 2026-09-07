@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 import { Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, CenteredSpinner } from '@dcms/admin-ui';
+import { Button, CenteredSpinner } from '@dcms/ui';
 import { useNotificationHub } from '../features/notifications/useNotificationHub';
 import { useMyPermissions } from '../lib/permissions';
 import { login, register } from '../auth';
