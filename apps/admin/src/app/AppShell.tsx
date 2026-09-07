@@ -1,9 +1,9 @@
-import { Outlet, useRouterState } from '@tanstack/react-router';
-import { AnimatePresence, motion } from 'framer-motion';
+import { Outlet } from '@tanstack/react-router';
+import { motion, useReducedMotion } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 import { Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, CenteredSpinner } from '@dcms/ui';
+import { AppFrame, Button, CenteredSpinner, useSidebarCollapse } from '@dcms/ui';
 import { useNotificationHub } from '../features/notifications/useNotificationHub';
 import { useMyPermissions } from '../lib/permissions';
 import { login, register } from '../auth';
@@ -13,14 +13,13 @@ import { StorageNotice } from './StorageNotice';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 
-const COLLAPSE_KEY = 'dcms.sidebar.collapsed';
-
 export function AppShell() {
+  const { t } = useTranslation();
   const { user, loading } = useAuth();
   const me = useMyPermissions(!!user);
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === '1');
+  const [collapsed, toggleCollapse] = useSidebarCollapse();
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // One connection for the whole app, opened here rather than in the bell so that unmounting
   // the popover does not drop the socket. `sub` is the platform user id, which the toast
@@ -35,50 +34,59 @@ export function AppShell() {
     return <SignIn />;
   }
 
-  const toggleCollapse = () => {
-    setCollapsed((c) => {
-      localStorage.setItem(COLLAPSE_KEY, c ? '0' : '1');
-      return !c;
-    });
-  };
-
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar me={me.data} collapsed={collapsed} onToggle={toggleCollapse} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar onOpenSearch={() => setPaletteOpen(true)} />
-        <AnimatePresence mode="wait">
-          <motion.main
-            key={pathname}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="flex-1 overflow-y-auto"
-          >
-            <Suspense fallback={<CenteredSpinner />}>
-              <Outlet />
-            </Suspense>
-          </motion.main>
-        </AnimatePresence>
-      </div>
+    <>
+      <AppFrame
+        navLabel={t('nav.sections')}
+        menuLabel={t('nav.openMenu')}
+        drawerOpen={drawerOpen}
+        onDrawerOpenChange={setDrawerOpen}
+        sidebar={({ inDrawer }) => (
+          <Sidebar
+            me={me.data}
+            collapsed={collapsed}
+            onToggle={toggleCollapse}
+            inDrawer={inDrawer}
+            onNavigate={inDrawer ? () => setDrawerOpen(false) : undefined}
+          />
+        )}
+        topbar={({ menuButton }) => (
+          <Topbar onOpenSearch={() => setPaletteOpen(true)} menuButton={menuButton} />
+        )}
+      >
+        {/*
+         * No page transition.
+         *
+         * There used to be an AnimatePresence fade-and-slide keyed on the pathname, which put
+         * ~180ms of movement between every click and the page arriving — on every navigation,
+         * carrying no information about what had changed. Motion in this app now answers an
+         * action or reports a server-side change; moving the whole page because you clicked a
+         * link does neither.
+         */}
+        <Suspense fallback={<CenteredSpinner />}>
+          <Outlet />
+        </Suspense>
+      </AppFrame>
+
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} me={me.data} />
       <StorageNotice />
-    </div>
+    </>
   );
 }
 
 function SignIn() {
   const { t } = useTranslation();
+  const reduced = useReducedMotion();
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-background to-accent/30 p-6">
+    <div className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-background via-background to-accent/30 p-6">
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
+        initial={reduced ? false : { opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-sm rounded-xl border bg-card p-8 text-center shadow-xl"
       >
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-          <Sparkles className="h-6 w-6" />
+          <Sparkles className="h-6 w-6" aria-hidden />
         </div>
         <h1 className="text-xl font-bold">{t('auth.welcome')}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{t('auth.signInPrompt')}</p>

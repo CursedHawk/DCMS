@@ -258,6 +258,42 @@
   animation: dcms-fade-out calc(0.12s * var(--motion)) ease-in forwards;
 }
 
+/*
+ * Sheets slide from the edge they are anchored to. A separate keyframe per side rather than a
+ * transform variable, because the exit has to run `forwards` and a variable set on the element
+ * would be read once at animation start.
+ */
+@keyframes dcms-sheet-in-left {
+  from { transform: translateX(-100%); }
+  to { transform: none; }
+}
+@keyframes dcms-sheet-out-left {
+  from { transform: none; }
+  to { transform: translateX(-100%); }
+}
+@keyframes dcms-sheet-in-right {
+  from { transform: translateX(100%); }
+  to { transform: none; }
+}
+@keyframes dcms-sheet-out-right {
+  from { transform: none; }
+  to { transform: translateX(100%); }
+}
+@keyframes dcms-sheet-in-bottom {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@keyframes dcms-sheet-out-bottom {
+  from { transform: none; }
+  to { transform: translateY(100%); }
+}
+.dcms-sheet-left[data-state='open'] { animation: dcms-sheet-in-left calc(0.22s * var(--motion)) cubic-bezier(0.32, 0.72, 0, 1); }
+.dcms-sheet-left[data-state='closed'] { animation: dcms-sheet-out-left calc(0.18s * var(--motion)) ease-in forwards; }
+.dcms-sheet-right[data-state='open'] { animation: dcms-sheet-in-right calc(0.22s * var(--motion)) cubic-bezier(0.32, 0.72, 0, 1); }
+.dcms-sheet-right[data-state='closed'] { animation: dcms-sheet-out-right calc(0.18s * var(--motion)) ease-in forwards; }
+.dcms-sheet-bottom[data-state='open'] { animation: dcms-sheet-in-bottom calc(0.22s * var(--motion)) cubic-bezier(0.32, 0.72, 0, 1); }
+.dcms-sheet-bottom[data-state='closed'] { animation: dcms-sheet-out-bottom calc(0.18s * var(--motion)) ease-in forwards; }
+
 /* Dialog content is centered via translate(-50%,-50%); keep that during animation. */
 .dcms-pop[role='dialog'][data-state='open'] {
   animation: dcms-dialog-enter calc(0.18s * var(--motion)) ease-out;

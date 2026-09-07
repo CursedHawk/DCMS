@@ -1,4 +1,4 @@
-import { Languages, LogOut, Monitor, Moon, Search, Settings, Sun } from 'lucide-react';
+import { Languages, Search, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -6,13 +6,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  useTheme,
+  ThemeControl,
+  Topbar as ShellTopbar,
+  UserMenu,
 } from '@dcms/ui';
 import { NotificationBell } from '../features/notifications/NotificationBell';
 import { LANGUAGES, setLanguage } from '../lib/i18n';
@@ -20,104 +17,97 @@ import { logout } from '../auth';
 import { useAuth } from '../useAuth';
 import { TenantSwitcher } from './TenantSwitcher';
 
-export function Topbar({ onOpenSearch }: { onOpenSearch: () => void }) {
+export function Topbar({
+  onOpenSearch,
+  menuButton,
+}: {
+  onOpenSearch: () => void;
+  menuButton: React.ReactNode;
+}) {
   const { t, i18n } = useTranslation();
   const { user } = useAuth();
-  const { theme, setTheme, resolved } = useTheme();
   const navigate = useNavigate();
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur">
-      <TenantSwitcher />
+    <ShellTopbar
+      start={
+        <>
+          {menuButton}
+          <TenantSwitcher />
 
-      <button
-        type="button"
-        onClick={onOpenSearch}
-        className="hidden items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted sm:flex"
-      >
-        <Search className="h-4 w-4" />
-        {t('actions.search')}
-        <kbd className="ml-6 rounded border bg-background px-1.5 text-[10px]">⌘K</kbd>
-      </button>
-
-      <div className="flex-1" />
-
-      {/* Notifications. Enabled once there is a signed-in user: the bell's query and hub
-          connection both need a token and a tenant. */}
-      <NotificationBell enabled={!!user} />
-
-      {/* Language */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" aria-label="Language">
-            <Languages className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {LANGUAGES.map((l) => (
-            <DropdownMenuItem
-              key={l.code}
-              onClick={() => setLanguage(l.code)}
-              className={i18n.language === l.code ? 'font-semibold text-primary' : ''}
-            >
-              {l.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      {/* Theme. The tooltip and dropdown share one trigger: both are `asChild`
-          Radix Slots nested onto the Button, so pointer handlers from both compose.
-          (Wrapping the Button in a plain <Hint> here would swallow the dropdown's
-          handlers and the menu would never open.) */}
-      <DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label={t('theme.toggle')}>
-                {resolved === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-              </Button>
-            </DropdownMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent>{t('theme.toggle')}</TooltipContent>
-        </Tooltip>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setTheme('light')} className={theme === 'light' ? 'text-primary' : ''}>
-            <Sun className="h-4 w-4" /> {t('theme.light')}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setTheme('dark')} className={theme === 'dark' ? 'text-primary' : ''}>
-            <Moon className="h-4 w-4" /> {t('theme.dark')}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setTheme('system')} className={theme === 'system' ? 'text-primary' : ''}>
-            <Monitor className="h-4 w-4" /> {t('theme.system')}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      {/* User */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground"
+            onClick={onOpenSearch}
+            className="hidden items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted md:flex"
           >
-            {(user?.profile.name ?? user?.profile.email ?? '?').slice(0, 1).toUpperCase()}
+            <Search className="h-4 w-4" aria-hidden />
+            {t('actions.search')}
+            <kbd className="ml-6 rounded border bg-background px-1.5 text-[10px]">⌘K</kbd>
           </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="min-w-56">
-          <DropdownMenuLabel className="px-2 py-1.5">
-            <p className="text-sm font-medium">{user?.profile.name ?? '—'}</p>
-            <p className="text-xs text-muted-foreground">{user?.profile.email}</p>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => void navigate({ to: '/account' as string })}>
-            <Settings className="h-4 w-4" /> {t('account.menuItem')}
-          </DropdownMenuItem>
-          <DropdownMenuItem destructive onClick={() => void logout()}>
-            <LogOut className="h-4 w-4" /> {t('actions.signOut')}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </header>
+
+          {/* Below md the labelled search box does not fit; the shortcut is also unavailable
+              on a touch keyboard, so search needs a real button of its own. */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden"
+            aria-label={t('actions.search')}
+            onClick={onOpenSearch}
+          >
+            <Search className="h-4 w-4" aria-hidden />
+          </Button>
+        </>
+      }
+      end={
+        <>
+          {/* Enabled once there is a signed-in user: the bell's query and its hub connection
+              both need a token and a tenant. */}
+          <NotificationBell enabled={!!user} />
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label={t('nav.language')}>
+                <Languages className="h-4 w-4" aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {LANGUAGES.map((l) => (
+                <DropdownMenuItem
+                  key={l.code}
+                  onClick={() => setLanguage(l.code)}
+                  className={i18n.language === l.code ? 'font-semibold text-primary' : ''}
+                >
+                  {l.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <ThemeControl
+            labels={{
+              toggle: t('theme.toggle'),
+              light: t('theme.light'),
+              dark: t('theme.dark'),
+              system: t('theme.system'),
+            }}
+          />
+
+          <UserMenu
+            name={user?.profile.name}
+            email={user?.profile.email}
+            menuLabel={t('account.menuItem')}
+            signOutLabel={t('actions.signOut')}
+            onSignOut={() => void logout()}
+            entries={[
+              {
+                label: t('account.menuItem'),
+                icon: Settings,
+                onSelect: () => void navigate({ to: '/account' as string }),
+              },
+            ]}
+          />
+        </>
+      }
+    />
   );
 }

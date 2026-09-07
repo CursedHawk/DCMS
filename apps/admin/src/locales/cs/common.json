@@ -20,7 +20,11 @@
     "chat": "Chat",
     "settings": "Nastavení",
     "workspace": "Pracovní prostor",
-    "audit": "Auditní log"
+    "audit": "Auditní log",
+    "collapse": "Sbalit",
+    "sections": "Sekce",
+    "openMenu": "Otevřít navigaci",
+    "language": "Jazyk"
   },
   "actions": {
     "create": "Vytvořit",

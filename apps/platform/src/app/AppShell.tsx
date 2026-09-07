@@ -1,6 +1,6 @@
 import { Outlet } from '@tanstack/react-router';
-import { Suspense } from 'react';
-import { Button, CenteredSpinner } from '@dcms/ui';
+import { Suspense, useState } from 'react';
+import { AppFrame, Button, CenteredSpinner } from '@dcms/ui';
 import { login, logout } from '../auth';
 import { useAuth } from '../useAuth';
 import { useMe } from '../lib/permissions';
@@ -11,6 +11,7 @@ import { Topbar } from './Topbar';
 export function AppShell() {
   const { user, loading } = useAuth();
   const me = useMe(!!user);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   if (loading) return <CenteredSpinner />;
   if (!user) return <SignIn />;
@@ -24,18 +25,24 @@ export function AppShell() {
   }
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-background text-foreground md:flex-row">
-      <Sidebar me={me.data} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <EnvironmentBand />
-        <Topbar me={me.data} />
-        <main className="flex-1 overflow-y-auto">
-          <Suspense fallback={<CenteredSpinner />}>
-            <Outlet />
-          </Suspense>
-        </main>
-      </div>
-    </div>
+    <AppFrame
+      navLabel="Platform sections"
+      drawerOpen={drawerOpen}
+      onDrawerOpenChange={setDrawerOpen}
+      banner={<EnvironmentBand />}
+      sidebar={({ inDrawer }) => (
+        <Sidebar
+          me={me.data}
+          inDrawer={inDrawer}
+          onNavigate={inDrawer ? () => setDrawerOpen(false) : undefined}
+        />
+      )}
+      topbar={({ menuButton }) => <Topbar me={me.data} menuButton={menuButton} />}
+    >
+      <Suspense fallback={<CenteredSpinner />}>
+        <Outlet />
+      </Suspense>
+    </AppFrame>
   );
 }
 

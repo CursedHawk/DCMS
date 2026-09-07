@@ -20,7 +20,11 @@
     "analytics": "Analytics",
     "chat": "Chat",
     "settings": "Settings",
-    "workspace": "Workspace"
+    "workspace": "Workspace",
+    "collapse": "Collapse",
+    "sections": "Sections",
+    "openMenu": "Open navigation",
+    "language": "Language"
   },
   "actions": {
     "create": "Create",
