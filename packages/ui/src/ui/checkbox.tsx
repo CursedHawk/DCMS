@@ -1,5 +1,5 @@
 import * as CheckboxPrimitive from '@radix-ui/react-checkbox';
-import { Check } from 'lucide-react';
+import { Check, Minus } from 'lucide-react';
 import { forwardRef } from 'react';
 import { cn } from '../cn';
 
@@ -18,7 +18,17 @@ export const Checkbox = forwardRef<
     {...props}
   >
     <CheckboxPrimitive.Indicator className="flex items-center justify-center">
-      <Check className="h-3 w-3" strokeWidth={3} />
+      {/*
+        Radix models three states, not two: `checked` may be `true`, `false` or
+        `'indeterminate'`. A select-all that shows a tick when only some rows are selected is
+        actively misleading — it says "everything", and the next click deselects rather than
+        completing the selection, which is the opposite of what the reader expects.
+      */}
+      {props.checked === 'indeterminate' ? (
+        <Minus className="h-3 w-3" strokeWidth={3} />
+      ) : (
+        <Check className="h-3 w-3" strokeWidth={3} />
+      )}
     </CheckboxPrimitive.Indicator>
   </CheckboxPrimitive.Root>
 ));

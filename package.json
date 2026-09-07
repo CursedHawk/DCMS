@@ -1,6 +1,7 @@
 {
   "name": "baas-dcms",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@11.6.0",
   "scripts": {
     "dev:admin": "pnpm --filter @dcms/admin dev",

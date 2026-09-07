@@ -1,8 +1,7 @@
-import { useState } from 'react';
-import { ExternalLink, Search } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ExternalLink } from 'lucide-react';
 import {
-  Button, CenteredSpinner, ConfirmDeleteDialog, EmptyState, Input,
-  Table, TBody, TD, TH, THead, TR, toastApiError,
+  Button, ConfirmDeleteDialog, DataTable, EmptyState, FilterBar, toastApiError, type Column,
 } from '@dcms/ui';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -21,8 +20,115 @@ export function TenantsPage() {
 
   const mayChange = can(me.data, Perm.TenantsLifecycle);
 
+  const columns: Column<TenantRow>[] = useMemo(
+    () => [
+      {
+        id: 'tenant',
+        header: 'Tenant',
+        primary: true,
+        sortValue: (r) => r.slug,
+        cell: (r) => (
+          <div className="flex flex-col">
+            <span className="font-mono">{r.slug}</span>
+            {r.name && <span className="text-xs text-muted-foreground">{r.name}</span>}
+          </div>
+        ),
+      },
+      { id: 'status', header: 'Status', sortValue: (r) => r.status, cell: (r) => <StatusPill status={r.status} /> },
+      {
+        id: 'sites',
+        header: 'Sites',
+        align: 'right',
+        sortValue: (r) => r.sites,
+        cell: (r) => <span className="font-mono">{count(r.sites)}</span>,
+      },
+      {
+        id: 'content',
+        header: 'Content',
+        srHeader: 'Published of total content items',
+        align: 'right',
+        sortValue: (r) => r.contentItems,
+        cell: (r) => (
+          <span className="font-mono">
+            {count(r.publishedItems)} / {count(r.contentItems)}
+          </span>
+        ),
+      },
+      {
+        id: 'storage',
+        header: 'Storage',
+        align: 'right',
+        sortValue: (r) => r.storageBytes,
+        cell: (r) => <span className="font-mono">{bytes(r.storageBytes)}</span>,
+      },
+      {
+        id: 'members',
+        header: 'Members',
+        align: 'right',
+        sortValue: (r) => r.members,
+        cell: (r) => <span className="font-mono">{count(r.members)}</span>,
+      },
+      {
+        id: 'created',
+        header: 'Created',
+        sortValue: (r) => r.createdAt,
+        cell: (r) => <span className="text-muted-foreground">{date(r.createdAt)}</span>,
+      },
+      {
+        id: 'actions',
+        header: '',
+        srHeader: 'Actions',
+        align: 'right',
+        cell: (r) => (
+          <div className="flex items-center justify-end gap-1">
+            {/*
+              Media and content are managed in the tenant admin, not here. Rather than rebuild
+              those screens against a cross-tenant API, the console hands the operator a link
+              that opens the admin SPA already pointed at this tenant.
+            */}
+            <a
+              href={`${runtimeConfig.adminBase}/media?tenant=${encodeURIComponent(r.slug)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            >
+              Open in admin
+              <ExternalLink className="h-3 w-3" aria-hidden />
+            </a>
+
+            {mayChange &&
+              (r.status === 'Suspended' ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={setStatus.isPending}
+                  onClick={() =>
+                    setStatus.mutate(
+                      { tenantId: r.tenantId, suspend: false },
+                      {
+                        onSuccess: () => toast.success(`Resumed ${r.slug}`),
+                        onError: (e) => toastApiError(e, t),
+                      },
+                    )
+                  }
+                >
+                  Resume
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" onClick={() => setConfirming(r)}>
+                  Suspend
+                </Button>
+              ))}
+          </div>
+        ),
+      },
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mayChange, setStatus.isPending],
+  );
+
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 py-8">
+    <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Tenants</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -31,107 +137,30 @@ export function TenantsPage() {
         </p>
       </header>
 
-      <div className="relative mb-4 max-w-sm">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by slug or name"
-          aria-label="Search tenants"
-          className="pl-8"
-        />
-      </div>
+      <FilterBar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search by slug or name"
+      />
 
-      {tenants.isLoading ? (
-        <CenteredSpinner />
-      ) : tenants.data && tenants.data.length === 0 ? (
-        <EmptyState
-          title={search ? 'No tenant matches that' : 'No tenants yet'}
-          description={
-            search
-              ? 'Try part of the slug instead.'
-              : 'Tenants are created from the tenant admin, or by an operator with tenant:write.'
-          }
-        />
-      ) : (
-        <Table>
-          <THead>
-            <TR>
-              <TH>Tenant</TH>
-              <TH>Status</TH>
-              <TH className="text-right">Sites</TH>
-              <TH className="text-right">Content</TH>
-              <TH className="text-right">Storage</TH>
-              <TH className="text-right">Members</TH>
-              <TH>Created</TH>
-              <TH />
-            </TR>
-          </THead>
-          <TBody>
-            {tenants.data?.map((row) => (
-              <TR key={row.tenantId}>
-                <TD>
-                  <div className="flex flex-col">
-                    <span className="font-mono text-sm">{row.slug}</span>
-                    {row.name && <span className="text-xs text-muted-foreground">{row.name}</span>}
-                  </div>
-                </TD>
-                <TD><StatusPill status={row.status} /></TD>
-                <TD className="text-right font-mono text-sm">{count(row.sites)}</TD>
-                <TD className="text-right font-mono text-sm">
-                  {count(row.publishedItems)} / {count(row.contentItems)}
-                </TD>
-                <TD className="text-right font-mono text-sm">{bytes(row.storageBytes)}</TD>
-                <TD className="text-right font-mono text-sm">{count(row.members)}</TD>
-                <TD className="text-sm text-muted-foreground">{date(row.createdAt)}</TD>
-                <TD>
-                  <div className="flex items-center justify-end gap-1">
-                    {/*
-                      Media and content are managed in the tenant admin, not here. Rather than
-                      rebuild those screens against a cross-tenant API, the console hands the
-                      operator a link that opens the admin SPA already pointed at this tenant.
-                    */}
-                    <a
-                      href={`${runtimeConfig.adminBase}/media?tenant=${encodeURIComponent(row.slug)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                    >
-                      Open in admin
-                      <ExternalLink className="h-3 w-3" aria-hidden />
-                    </a>
-
-                    {mayChange && (
-                      row.status === 'Suspended' ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={setStatus.isPending}
-                          onClick={() =>
-                            setStatus.mutate(
-                              { tenantId: row.tenantId, suspend: false },
-                              {
-                                onSuccess: () => toast.success(`Resumed ${row.slug}`),
-                                onError: (e) => toastApiError(e, t),
-                              },
-                            )
-                          }
-                        >
-                          Resume
-                        </Button>
-                      ) : (
-                        <Button variant="outline" size="sm" onClick={() => setConfirming(row)}>
-                          Suspend
-                        </Button>
-                      )
-                    )}
-                  </div>
-                </TD>
-              </TR>
-            ))}
-          </TBody>
-        </Table>
-      )}
+      <DataTable
+        rows={tenants.data}
+        columns={columns}
+        rowKey={(r) => r.tenantId}
+        isLoading={tenants.isLoading}
+        caption="Workspaces on this platform"
+        defaultSort={{ columnId: 'tenant' }}
+        empty={
+          <EmptyState
+            title={search ? 'No tenant matches that' : 'No tenants yet'}
+            description={
+              search
+                ? 'Try part of the slug instead.'
+                : 'Tenants are created from the tenant admin, or by an operator with tenant:write.'
+            }
+          />
+        }
+      />
 
       {/*
         Type-to-confirm, reusing the admin SPA's dialog. Suspension is reversible, so this is

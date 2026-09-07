@@ -16,5 +16,6 @@ export * from './ConfirmDeleteDialog';
 export * from './CopyButton';
 export * from './Toaster';
 export * from './live';
+export * from './patterns';
 export * from './permissions';
 export * from './shell';
