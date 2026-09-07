@@ -1099,5 +1099,25 @@
     "start": "Provést mě touto stránkou",
     "dialog": "Průvodce stránkou",
     "progress": "{{current}} z {{total}}"
+  },
+  "assistant": {
+    "title": "Asistent",
+    "open": "Otevřít asistenta",
+    "send": "Odeslat",
+    "stop": "Zastavit",
+    "clear": "Vymazat",
+    "placeholder": "Zeptejte se na tento workspace",
+    "hereGeneric": "Zeptejte se na obsah, média, weby, pluginy nebo návštěvnost.",
+    "hereContext": "Jste na: {{page}}. Zeptejte se na to, nebo na cokoli jiného.",
+    "toolCount_one": "Umí číst 1 oblast workspace, s vašimi oprávněními.",
+    "toolCount_few": "Umí číst {{count}} oblasti workspace, s vašimi oprávněními.",
+    "toolCount_other": "Umí číst {{count}} oblastí workspace, s vašimi oprávněními.",
+    "noTools": "Vaše oprávnění nedosáhnou na nic, co může asistent číst.",
+    "noKeyTitle": "Není připojen účet Anthropic",
+    "noKeyBody": "Asistent běží na vašem vlastním API klíči, takže se účtuje vám, ne workspace.",
+    "connectAccount": "Připojit účet",
+    "suggestTraffic": "Jak se za posledních 30 dní změnila návštěvnost?",
+    "suggestContent": "Jaký obsah ještě není publikovaný?",
+    "suggestPlugins": "Které pluginy jsou tady zapnuté?"
   }
 }

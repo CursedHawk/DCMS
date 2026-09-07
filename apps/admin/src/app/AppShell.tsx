@@ -12,6 +12,8 @@ import {
   TourProvider,
   useSidebarCollapse,
 } from '@dcms/ui';
+import { AiDock } from '../features/assistant/AiDock';
+import { AiProvider } from '../features/assistant/context';
 import { useNotificationHub } from '../features/notifications/useNotificationHub';
 import { useMyPermissions } from '../lib/permissions';
 import { login, register } from '../auth';
@@ -44,51 +46,54 @@ export function AppShell() {
 
   return (
     <PermissionProvider value={me.data}>
-      <TourProvider
-        labels={{
-          next: t('tour.next'),
-          back: t('tour.back'),
-          done: t('tour.done'),
-          skip: t('tour.skip'),
-          start: t('tour.start'),
-          dialog: t('tour.dialog'),
-          progress: (current, total) => t('tour.progress', { current, total }),
-        }}
-      >
-        <AppFrame
-          navLabel={t('nav.sections')}
-          menuLabel={t('nav.openMenu')}
-          drawerOpen={drawerOpen}
-          onDrawerOpenChange={setDrawerOpen}
-          sidebar={({ inDrawer }) => (
-            <Sidebar
-              collapsed={collapsed}
-              onToggle={toggleCollapse}
-              inDrawer={inDrawer}
-              onNavigate={inDrawer ? () => setDrawerOpen(false) : undefined}
-            />
-          )}
-          topbar={({ menuButton }) => (
-            <Topbar onOpenSearch={() => setPaletteOpen(true)} menuButton={menuButton} />
-          )}
+      <AiProvider>
+        <TourProvider
+          labels={{
+            next: t('tour.next'),
+            back: t('tour.back'),
+            done: t('tour.done'),
+            skip: t('tour.skip'),
+            start: t('tour.start'),
+            dialog: t('tour.dialog'),
+            progress: (current, total) => t('tour.progress', { current, total }),
+          }}
         >
-          {/*
-           * No page transition.
-           *
-           * There used to be an AnimatePresence fade-and-slide keyed on the pathname, which put
-           * ~180ms of movement between every click and the page arriving — on every navigation,
-           * carrying no information about what had changed. Motion in this app now answers an
-           * action or reports a server-side change; moving the whole page because you clicked a
-           * link does neither.
-           */}
-          <Suspense fallback={<CenteredSpinner />}>
-            <Outlet />
-          </Suspense>
-        </AppFrame>
+          <AppFrame
+            navLabel={t('nav.sections')}
+            menuLabel={t('nav.openMenu')}
+            drawerOpen={drawerOpen}
+            onDrawerOpenChange={setDrawerOpen}
+            sidebar={({ inDrawer }) => (
+              <Sidebar
+                collapsed={collapsed}
+                onToggle={toggleCollapse}
+                inDrawer={inDrawer}
+                onNavigate={inDrawer ? () => setDrawerOpen(false) : undefined}
+              />
+            )}
+            topbar={({ menuButton }) => (
+              <Topbar onOpenSearch={() => setPaletteOpen(true)} menuButton={menuButton} />
+            )}
+          >
+            {/*
+             * No page transition.
+             *
+             * There used to be an AnimatePresence fade-and-slide keyed on the pathname, which put
+             * ~180ms of movement between every click and the page arriving — on every navigation,
+             * carrying no information about what had changed. Motion in this app now answers an
+             * action or reports a server-side change; moving the whole page because you clicked a
+             * link does neither.
+             */}
+            <Suspense fallback={<CenteredSpinner />}>
+              <Outlet />
+            </Suspense>
+          </AppFrame>
 
-        <TourOverlay />
-        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
-      </TourProvider>
+          <TourOverlay />
+          <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+          <AiDock />
+        </TourProvider>
+      </AiProvider>
       <StorageNotice />
     </PermissionProvider>
   );

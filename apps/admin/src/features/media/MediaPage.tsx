@@ -32,6 +32,7 @@ import {
 import { FolderRail } from './FolderRail';
 import { MediaDetailDialog } from './MediaDetailDialog';
 import { MediaThumb } from './MediaThumb';
+import { useAiPageContext } from '../assistant/context';
 import { assetDragProps, folderDropProps } from './dnd';
 import { MediaUploader } from './MediaUploader';
 import { StorageMeter, categoryMeta } from './StorageMeter';
@@ -180,6 +181,21 @@ export function MediaPage() {
       : folder === ROOT_FOLDER
         ? t('media.folders.unfiled')
         : (folderList.find((f) => f.id === folder)?.name ?? t('media.folders.all'));
+
+  /* What the assistant is told the reader is looking at. Memoised, or it re-registers on
+     every keystroke in the search box. */
+  useAiPageContext(
+    useMemo(
+      () => ({
+        area: 'media',
+        summary: currentFolderName
+          ? `the media library, in the "${currentFolderName}" folder`
+          : 'the media library',
+        selection: activeSelection,
+      }),
+      [currentFolderName, activeSelection],
+    ),
+  );
 
   const hasSelection = activeSelection.length > 0;
 

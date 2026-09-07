@@ -1085,5 +1085,24 @@
     "start": "Show me around this page",
     "dialog": "Page tour",
     "progress": "{{current}} of {{total}}"
+  },
+  "assistant": {
+    "title": "Assistant",
+    "open": "Open the assistant",
+    "send": "Send",
+    "stop": "Stop",
+    "clear": "Clear",
+    "placeholder": "Ask about this workspace",
+    "hereGeneric": "Ask about the content, media, sites, plugins or traffic in this workspace.",
+    "hereContext": "You are on {{page}}. Ask about it, or about anything else in this workspace.",
+    "toolCount_one": "Can read 1 area of this workspace, using your permissions.",
+    "toolCount_other": "Can read {{count}} areas of this workspace, using your permissions.",
+    "noTools": "Your permissions do not reach anything the assistant can read.",
+    "noKeyTitle": "No Anthropic account connected",
+    "noKeyBody": "The assistant runs on your own API key, so its usage is billed to you rather than the workspace.",
+    "connectAccount": "Connect an account",
+    "suggestTraffic": "How did traffic change over the last 30 days?",
+    "suggestContent": "What content is still unpublished?",
+    "suggestPlugins": "Which plugins are enabled here?"
   }
 }
