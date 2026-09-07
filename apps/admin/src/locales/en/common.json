@@ -348,7 +348,17 @@
     },
     "uploadingCount": "Uploading… {{done}} of {{total}} done",
     "movedCount_one": "Moved 1 file",
-    "movedCount_other": "Moved {{count}} files"
+    "movedCount_other": "Moved {{count}} files",
+    "tour": {
+      "railTitle": "Folders",
+      "railBody": "Filter the library, or drag files onto a folder to move them there. Unfiled takes them back out.",
+      "uploadTitle": "Adding files",
+      "uploadBody": "Drop files here or click to browse. They upload one at a time so each progress bar means something.",
+      "gridTitle": "Your files",
+      "gridBody": "Drag one onto a folder to move it. Select several first and the whole selection moves together.",
+      "usageTitle": "Storage",
+      "usageBody": "What the library holds, split between originals and the optimised versions generated for the web."
+    }
   },
   "forms": {
     "title": "Form submissions",
@@ -1058,5 +1068,14 @@
     "optional": "optional",
     "add": "Add to workspace",
     "manage": "Manage"
+  },
+  "tour": {
+    "next": "Next",
+    "back": "Back",
+    "done": "Done",
+    "skip": "Skip tour",
+    "start": "Show me around this page",
+    "dialog": "Page tour",
+    "progress": "{{current}} of {{total}}"
   }
 }

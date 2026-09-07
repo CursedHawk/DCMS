@@ -357,7 +357,17 @@
     "uploadingCount": "Nahrávání… hotovo {{done}} z {{total}}",
     "movedCount_one": "Přesunut 1 soubor",
     "movedCount_few": "Přesunuty {{count}} soubory",
-    "movedCount_other": "Přesunuto {{count}} souborů"
+    "movedCount_other": "Přesunuto {{count}} souborů",
+    "tour": {
+      "railTitle": "Složky",
+      "railBody": "Filtrujte knihovnu, nebo přetáhněte soubory na složku. Nezařazené je vrátí zpět.",
+      "uploadTitle": "Přidávání souborů",
+      "uploadBody": "Přetáhněte soubory sem nebo klikněte pro výběr. Nahrávají se po jednom, aby ukazatel průběhu něco znamenal.",
+      "gridTitle": "Vaše soubory",
+      "gridBody": "Přetažením na složku soubor přesunete. Vyberte jich víc a přesunou se všechny najednou.",
+      "usageTitle": "Úložiště",
+      "usageBody": "Co knihovna obsahuje, rozdělené na originály a optimalizované verze pro web."
+    }
   },
   "forms": {
     "title": "Odeslané formuláře",
@@ -1072,5 +1082,14 @@
     "optional": "volitelné",
     "add": "Přidat do workspace",
     "manage": "Spravovat"
+  },
+  "tour": {
+    "next": "Další",
+    "back": "Zpět",
+    "done": "Hotovo",
+    "skip": "Přeskočit",
+    "start": "Provést mě touto stránkou",
+    "dialog": "Průvodce stránkou",
+    "progress": "{{current}} z {{total}}"
   }
 }

@@ -1,4 +1,12 @@
-import { Folder, FolderInput, Image as ImageIcon, Search, Trash2, UploadCloud, X } from 'lucide-react';
+import {
+  Folder,
+  FolderInput,
+  Image as ImageIcon,
+  Search,
+  Trash2,
+  UploadCloud,
+  X,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -17,7 +25,9 @@ import {
   Input,
   Page,
   PageHeader,
+  TourTarget,
   toastApiError,
+  usePageTour,
 } from '@dcms/ui';
 import { FolderRail } from './FolderRail';
 import { MediaDetailDialog } from './MediaDetailDialog';
@@ -115,6 +125,38 @@ export function MediaPage() {
     );
   };
 
+  /*
+   * This page's tour.
+   *
+   * Memoised on the translation function: passing a fresh array every render would reset the
+   * tour whenever anything on the page changed, including typing in the search box.
+   */
+  usePageTour(
+    useMemo(
+      () => [
+        {
+          target: 'media.rail',
+          title: t('media.tour.railTitle'),
+          body: t('media.tour.railBody'),
+          placement: 'right' as const,
+        },
+        {
+          target: 'media.upload',
+          title: t('media.tour.uploadTitle'),
+          body: t('media.tour.uploadBody'),
+        },
+        { target: 'media.grid', title: t('media.tour.gridTitle'), body: t('media.tour.gridBody') },
+        {
+          target: 'media.usage',
+          title: t('media.tour.usageTitle'),
+          body: t('media.tour.usageBody'),
+          placement: 'right' as const,
+        },
+      ],
+      [t],
+    ),
+  );
+
   const bulkMove = (folderId: string | null) => {
     if (activeSelection.length === 0) return;
     move.mutate(
@@ -147,14 +189,19 @@ export function MediaPage() {
         title={t('media.title')}
         description={t('media.subtitle')}
         actions={
-          <Button variant={showUpload ? 'secondary' : 'default'} onClick={() => setShowUpload((s) => !s)}>
+          <Button
+            variant={showUpload ? 'secondary' : 'default'}
+            onClick={() => setShowUpload((s) => !s)}
+          >
             <UploadCloud className="h-4 w-4" /> {t('media.upload')}
           </Button>
         }
       />
 
       <div className="mb-5">
-        <StorageMeter usage={usage.data} isLoading={usage.isLoading} />
+        <TourTarget id="media.usage">
+          <StorageMeter usage={usage.data} isLoading={usage.isLoading} />
+        </TourTarget>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
@@ -162,21 +209,27 @@ export function MediaPage() {
           {folders.isLoading ? (
             <CenteredSpinner />
           ) : (
-            <FolderRail
-            onMove={dropOnto}
-              folders={folderList}
-              value={folder}
-              onSelect={(v) => {
-                setFolder(v);
-                clearSelection();
-              }}
-              totalCount={usage.data?.assetCount ?? 0}
-            />
+            <TourTarget id="media.rail">
+              <FolderRail
+                onMove={dropOnto}
+                folders={folderList}
+                value={folder}
+                onSelect={(v) => {
+                  setFolder(v);
+                  clearSelection();
+                }}
+                totalCount={usage.data?.assetCount ?? 0}
+              />
+            </TourTarget>
           )}
         </aside>
 
         <section className="min-w-0 space-y-4">
-          {showUpload ? <MediaUploader folderId={folder && folder !== ROOT_FOLDER ? folder : null} /> : null}
+          {showUpload ? (
+            <TourTarget id="media.upload">
+              <MediaUploader folderId={folder && folder !== ROOT_FOLDER ? folder : null} />
+            </TourTarget>
+          ) : null}
 
           {/* Toolbar: title of current view + search, or the bulk-action bar. */}
           {hasSelection ? (
@@ -193,7 +246,9 @@ export function MediaPage() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuLabel>{t('media.moveTo')}</DropdownMenuLabel>
-                    <DropdownMenuItem onSelect={() => bulkMove(null)}>{t('media.folders.unfiled')}</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => bulkMove(null)}>
+                      {t('media.folders.unfiled')}
+                    </DropdownMenuItem>
                     {folderList.length > 0 ? <DropdownMenuSeparator /> : null}
                     {folderList.map((f) => (
                       <DropdownMenuItem key={f.id} onSelect={() => bulkMove(f.id)}>
@@ -202,7 +257,12 @@ export function MediaPage() {
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button size="sm" variant="destructive" onClick={bulkDelete} disabled={del.isPending}>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={bulkDelete}
+                  disabled={del.isPending}
+                >
                   <Trash2 className="h-4 w-4" /> {t('common.delete')}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={clearSelection}>
@@ -231,104 +291,110 @@ export function MediaPage() {
           {media.isLoading ? (
             <CenteredSpinner />
           ) : items.length > 0 || folderTiles.length > 0 ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-              {folderTiles.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => {
-                    setFolder(f.id);
-                    clearSelection();
-                  }}
-                  {...folderDropProps({
-                    onDropAssets: (ids) => dropOnto(f.id, ids),
-                    onOver: () => setDropFolder(f.id),
-                    onLeave: () => setDropFolder((current) => (current === f.id ? null : current)),
-                  })}
-                  className={cn(
-                    'flex flex-col items-start gap-3 rounded-lg border bg-card p-4 text-left transition-shadow hover:border-primary/50 hover:shadow-md',
-                    dropFolder === f.id && 'border-primary ring-2 ring-primary/40',
-                  )}
-                >
-                  <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent text-accent-foreground">
-                    <Folder className="h-6 w-6" />
-                  </span>
-                  <span className="min-w-0 w-full">
-                    <span className="block truncate text-sm font-medium" title={f.name}>
-                      {f.name}
-                    </span>
-                    <span className="block text-[11px] text-muted-foreground">
-                      {t('media.folders.itemCount', { count: f.assetCount })}
-                    </span>
-                  </span>
-                </button>
-              ))}
-              {items.map((a) => {
-                const isSelected = selected.has(a.id);
-                const CatIcon = categoryMeta[a.category].icon;
-                const saved =
-                  a.variantBytes > 0 && a.variantBytes < a.sizeBytes
-                    ? Math.round((1 - a.variantBytes / a.sizeBytes) * 100)
-                    : 0;
-                return (
-                  <div
-                    key={a.id}
-                    {...assetDragProps(a.id, selected)}
+            <TourTarget id="media.grid">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                {folderTiles.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => {
+                      setFolder(f.id);
+                      clearSelection();
+                    }}
+                    {...folderDropProps({
+                      onDropAssets: (ids) => dropOnto(f.id, ids),
+                      onOver: () => setDropFolder(f.id),
+                      onLeave: () =>
+                        setDropFolder((current) => (current === f.id ? null : current)),
+                    })}
                     className={cn(
-                      'group relative overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md',
-                      isSelected && 'ring-2 ring-primary',
+                      'flex flex-col items-start gap-3 rounded-lg border bg-card p-4 text-left transition-shadow hover:border-primary/50 hover:shadow-md',
+                      dropFolder === f.id && 'border-primary ring-2 ring-primary/40',
                     )}
                   >
-                    {/* Selection checkbox — always visible once anything is selected. */}
-                    <button
-                      type="button"
-                      onClick={() => toggle(a.id)}
-                      aria-label={t('media.select')}
+                    <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent text-accent-foreground">
+                      <Folder className="h-6 w-6" />
+                    </span>
+                    <span className="min-w-0 w-full">
+                      <span className="block truncate text-sm font-medium" title={f.name}>
+                        {f.name}
+                      </span>
+                      <span className="block text-[11px] text-muted-foreground">
+                        {t('media.folders.itemCount', { count: f.assetCount })}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+                {items.map((a) => {
+                  const isSelected = selected.has(a.id);
+                  const CatIcon = categoryMeta[a.category].icon;
+                  const saved =
+                    a.variantBytes > 0 && a.variantBytes < a.sizeBytes
+                      ? Math.round((1 - a.variantBytes / a.sizeBytes) * 100)
+                      : 0;
+                  return (
+                    <div
+                      key={a.id}
+                      {...assetDragProps(a.id, selected)}
                       className={cn(
-                        'absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border bg-background/90 transition-opacity',
-                        isSelected
-                          ? 'border-primary bg-primary text-primary-foreground opacity-100'
-                          : 'opacity-0 group-hover:opacity-100',
+                        'group relative overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md',
+                        isSelected && 'ring-2 ring-primary',
                       )}
                     >
-                      {isSelected ? <span className="text-[11px] font-bold">✓</span> : null}
-                    </button>
+                      {/* Selection checkbox — always visible once anything is selected. */}
+                      <button
+                        type="button"
+                        onClick={() => toggle(a.id)}
+                        aria-label={t('media.select')}
+                        className={cn(
+                          'absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border bg-background/90 transition-opacity',
+                          isSelected
+                            ? 'border-primary bg-primary text-primary-foreground opacity-100'
+                            : 'opacity-0 group-hover:opacity-100',
+                        )}
+                      >
+                        {isSelected ? <span className="text-[11px] font-bold">✓</span> : null}
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setDetailId(a.id)}
-                      className="block aspect-square w-full overflow-hidden"
-                    >
-                      <MediaThumb id={a.id} category={a.category} status={a.status} />
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setDetailId(a.id)}
+                        className="block aspect-square w-full overflow-hidden"
+                      >
+                        <MediaThumb id={a.id} category={a.category} status={a.status} />
+                      </button>
 
-                    <div className="space-y-1 p-2.5">
-                      <p className="flex items-center gap-1 truncate text-xs font-medium" title={a.fileName}>
-                        <CatIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{a.fileName}</span>
-                      </p>
-                      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                        <span>{formatDate(a.createdAt)}</span>
-                        <span className="tabular-nums">{formatSize(a.sizeBytes)}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <Badge tone={statusTone[a.status]} className="text-[10px]">
-                          {t(`media.${a.status.toLowerCase()}`, a.status)}
-                        </Badge>
-                        {saved > 0 ? (
-                          <span
-                            className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
-                            title={t('media.optimizedHint')}
-                          >
-                            −{saved}%
-                          </span>
-                        ) : null}
+                      <div className="space-y-1 p-2.5">
+                        <p
+                          className="flex items-center gap-1 truncate text-xs font-medium"
+                          title={a.fileName}
+                        >
+                          <CatIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          <span className="truncate">{a.fileName}</span>
+                        </p>
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                          <span>{formatDate(a.createdAt)}</span>
+                          <span className="tabular-nums">{formatSize(a.sizeBytes)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Badge tone={statusTone[a.status]} className="text-[10px]">
+                            {t(`media.${a.status.toLowerCase()}`, a.status)}
+                          </Badge>
+                          {saved > 0 ? (
+                            <span
+                              className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+                              title={t('media.optimizedHint')}
+                            >
+                              −{saved}%
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            </TourTarget>
           ) : (
             <EmptyState
               icon={ImageIcon}

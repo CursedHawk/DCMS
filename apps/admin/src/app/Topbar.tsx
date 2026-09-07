@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
   ThemeControl,
   Topbar as ShellTopbar,
+  TourButton,
   UserMenu,
 } from '@dcms/ui';
 import { NotificationBell } from '../features/notifications/NotificationBell';
@@ -62,6 +63,9 @@ export function Topbar({
         <>
           {/* Enabled once there is a signed-in user: the bell's query and its hub connection
               both need a token and a tenant. */}
+          {/* Only appears on a page that has declared a tour. */}
+          <TourButton />
+
           <NotificationBell enabled={!!user} />
 
           <DropdownMenu>

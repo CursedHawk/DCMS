@@ -19,3 +19,4 @@ export * from './live';
 export * from './patterns';
 export * from './permissions';
 export * from './shell';
+export * from './tour';
