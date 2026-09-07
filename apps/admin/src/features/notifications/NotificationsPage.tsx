@@ -12,7 +12,7 @@ import {
   useNotifications,
 } from './api';
 import { linkTarget } from './linkPath';
-import { formatRelative } from './NotificationBell';
+import { relativeTime } from '@dcms/core';
 
 const severityIcon: Record<NotificationSeverity, typeof Info> = {
   Info,
@@ -93,7 +93,7 @@ function ListRow({
   active: boolean;
   onSelect: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const markRead = useMarkRead();
   const params = parseParams(notification.paramsJson);
   const Icon = severityIcon[notification.severity] ?? Info;
@@ -119,7 +119,7 @@ function ListRow({
         </span>
       </span>
       <span className="shrink-0 text-[11px] text-muted-foreground">
-        {formatRelative(notification.createdAt, t)}
+        {relativeTime(notification.createdAt, i18n.language)}
       </span>
     </button>
   );

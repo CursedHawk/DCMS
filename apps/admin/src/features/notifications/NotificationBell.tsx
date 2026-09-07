@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { useState } from 'react';
+import { relativeTime } from '@dcms/core';
 import { useTranslation } from 'react-i18next';
 import {
   Button,
@@ -155,7 +156,7 @@ function NotificationRow({
   onOpen: () => void;
   onDismiss: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const params = parseParams(notification.paramsJson);
   const Icon = severityIcon[notification.severity] ?? Info;
 
@@ -177,7 +178,7 @@ function NotificationRow({
           {t(notification.bodyKey, params)}
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground/70">
-          {formatRelative(notification.createdAt, t)}
+          {relativeTime(notification.createdAt, i18n.language)}
         </p>
       </button>
 
@@ -193,18 +194,3 @@ function NotificationRow({
   );
 }
 
-/**
- * Coarse relative time. Deliberately not a live-ticking clock: the bell can hold twenty rows
- * and a per-row interval would re-render the popover every second for no real gain.
- */
-export function formatRelative(iso: string, t: (key: string, o?: Record<string, unknown>) => string): string {
-  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (seconds < 60) return t('notifications.time.now');
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return t('notifications.time.minutes', { count: minutes });
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t('notifications.time.hours', { count: hours });
-  const days = Math.floor(hours / 24);
-  if (days < 30) return t('notifications.time.days', { count: days });
-  return new Date(iso).toLocaleDateString();
-}

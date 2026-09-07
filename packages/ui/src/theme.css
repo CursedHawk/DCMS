@@ -53,9 +53,46 @@
   --color-sidebar-muted: hsl(var(--sidebar-muted));
   --color-sidebar-accent: hsl(var(--sidebar-accent));
 
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-code);
+
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+}
+
+/*
+ * Type and density.
+ *
+ * Both consoles share every component; what separates them is how tightly those components
+ * are packed and how large the base text is. The admin SPA is a workshop — you read and edit
+ * content in it, so it gets air. The platform console is an instrument panel — you scan
+ * numbers in it, so it gets density. Each app overrides these three values in its own
+ * index.css and everything else follows, rather than every component carrying two sets of
+ * paddings.
+ *
+ * Defaults here are the admin's, because a component rendered outside either app (a test, a
+ * future third surface) should read as the roomier of the two.
+ */
+:root {
+  --font-ui: 'Instrument Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-code: 'IBM Plex Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+
+  /*
+   * `--dcms-` prefixed, not `--text-base`/`--row-h`. Tailwind v4 already defines `--text-base`
+   * as the font size of its own `text-base` utility, and a bare redeclaration here lands later
+   * in the cascade and silently retunes every `text-base` in both apps — 13px in the platform
+   * console, which is not what anyone writing `text-base` asked for.
+   */
+  --dcms-text-base: 0.875rem;   /* 14px */
+  --dcms-row-h: 2.75rem;        /* 44px */
+  --dcms-pad-x: 1rem;
+
+  /*
+   * Motion scale. Every duration in this file is multiplied by it, so the reduced-motion
+   * block below can switch the whole system off in one place instead of per keyframe.
+   */
+  --motion: 1;
 }
 
 @layer base {
@@ -70,8 +107,34 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
-    font-feature-settings: 'cv11', 'ss01';
+    font-family: var(--font-ui);
+    font-size: var(--dcms-text-base);
     -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+   * Numbers that sit in a column line up.
+   *
+   * These screens are counts, byte sizes, dates, durations and short hashes stacked on top of
+   * each other, and proportional digits make a column of them ragged enough that comparing two
+   * rows means reading both. Applied to the elements that hold tabular data rather than
+   * globally, because prose reads better with proportional figures.
+   */
+  td,
+  th,
+  time,
+  output,
+  code,
+  kbd,
+  samp {
+    font-variant-numeric: tabular-nums;
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-code);
   }
   /* Smooth color transition when toggling themes. */
   :root {
@@ -120,6 +183,31 @@
   background-color: hsl(var(--muted-foreground) / 0.8);
 }
 
+/*
+ * Respect a stated preference for less motion.
+ *
+ * This is an accessibility floor, not a nicety: vestibular disorders make the scale-and-slide
+ * that Radix surfaces open with genuinely unpleasant, and the OS-level switch is how someone
+ * says so. Animations are reduced to an imperceptible duration rather than removed, because
+ * Radix's exit animations are load-bearing — `dcms-exit` has `forwards` and the element is
+ * unmounted on `animationend`, so removing the animation outright would leave closed popovers
+ * on screen.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion: 0.01;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Radix open/close animations (self-contained — no plugin dependency). */
 @keyframes dcms-enter {
   from {
@@ -158,24 +246,24 @@
   }
 }
 .dcms-pop[data-state='open'] {
-  animation: dcms-enter 0.16s ease-out;
+  animation: dcms-enter calc(0.16s * var(--motion)) ease-out;
 }
 .dcms-pop[data-state='closed'] {
-  animation: dcms-exit 0.12s ease-in forwards;
+  animation: dcms-exit calc(0.12s * var(--motion)) ease-in forwards;
 }
 .dcms-overlay[data-state='open'] {
-  animation: dcms-fade-in 0.16s ease-out;
+  animation: dcms-fade-in calc(0.16s * var(--motion)) ease-out;
 }
 .dcms-overlay[data-state='closed'] {
-  animation: dcms-fade-out 0.12s ease-in forwards;
+  animation: dcms-fade-out calc(0.12s * var(--motion)) ease-in forwards;
 }
 
 /* Dialog content is centered via translate(-50%,-50%); keep that during animation. */
 .dcms-pop[role='dialog'][data-state='open'] {
-  animation: dcms-dialog-enter 0.18s ease-out;
+  animation: dcms-dialog-enter calc(0.18s * var(--motion)) ease-out;
 }
 .dcms-pop[role='dialog'][data-state='closed'] {
-  animation: dcms-dialog-exit 0.14s ease-in forwards;
+  animation: dcms-dialog-exit calc(0.14s * var(--motion)) ease-in forwards;
 }
 @keyframes dcms-dialog-enter {
   from {

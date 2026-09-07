@@ -1,28 +1,11 @@
 import { useTranslation } from 'react-i18next';
+import { relativeTime } from '@dcms/core';
 
-// A locale-aware "2 hours ago" formatter, no dependency. Falls back to empty for
-// missing timestamps. Shared by the Source Control history and the Deployments list.
+/**
+ * "2 hours ago" in the reader's own language. Shared by Source Control history and Deployments.
+ * The formatting itself is `@dcms/core`; what this hook adds is the active language.
+ */
 export function useRelativeTime() {
   const { i18n } = useTranslation();
-  return (iso?: string | null): string => {
-    if (!iso) return '';
-    const then = new Date(iso).getTime();
-    if (Number.isNaN(then)) return '';
-    const diff = then - Date.now();
-    const abs = Math.abs(diff);
-    const rtf = new Intl.RelativeTimeFormat(i18n.language, { numeric: 'auto' });
-    const units: [Intl.RelativeTimeFormatUnit, number][] = [
-      ['year', 31_536_000_000],
-      ['month', 2_592_000_000],
-      ['week', 604_800_000],
-      ['day', 86_400_000],
-      ['hour', 3_600_000],
-      ['minute', 60_000],
-      ['second', 1000],
-    ];
-    for (const [unit, ms] of units) {
-      if (abs >= ms || unit === 'second') return rtf.format(Math.round(diff / ms), unit);
-    }
-    return '';
-  };
+  return (iso?: string | null): string => relativeTime(iso, i18n.language);
 }

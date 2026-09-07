@@ -963,12 +963,6 @@
     "selectPrompt": "Select a notification to read it in full.",
     "unreadCount": "{{count}} unread notifications",
     "unreadCount_one": "{{count}} unread notification",
-    "time": {
-      "now": "just now",
-      "minutes": "{{count}} min ago",
-      "hours": "{{count}} h ago",
-      "days": "{{count}} d ago"
-    },
     "kinds": {
       "site_published": {
         "title": "Site deployed",

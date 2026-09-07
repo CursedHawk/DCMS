@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import '@dcms/ui/fonts.css';
 @import '@dcms/ui/theme.css';
 
 /*
@@ -106,23 +107,24 @@
 }
 
 /*
- * IBM Plex, drawn for technical and industrial products. The mono is not texture: trace ids,
- * byte counts, durations and tenant slugs are the actual content of this console, and they
- * need to align in a column and be transcribable over a phone call.
+ * The console's density.
  *
- * Both have full system fallbacks. This console is opened when the platform is down, so it
- * has to be legible if the font request never completes.
+ * The type family is now the shared one (`@dcms/ui/fonts.css`) — one voice across both
+ * consoles was the point of having a design system. What still separates them is how tightly
+ * it is packed: this is an instrument panel, read by scanning, so it runs a step smaller and
+ * a row shorter than the admin's workshop. Overriding these three tokens is the whole of it;
+ * the components read them.
  */
-@theme inline {
-  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+:root {
+  --dcms-text-base: 0.8125rem;  /* 13px */
+  --dcms-row-h: 2.25rem;        /* 36px */
+  --dcms-pad-x: 0.75rem;
 }
 
 @layer base {
   body {
-    font-family: var(--font-sans);
-    /* Plex's default figures are proportional; tabular is what makes a column of byte counts
-       and durations line up under each other. */
+    /* Console-wide rather than only in tables: nearly everything on these pages is a
+       quantity, and a paragraph naming three byte counts should align them too. */
     font-variant-numeric: tabular-nums;
   }
 }

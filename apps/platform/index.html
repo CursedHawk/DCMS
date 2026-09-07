@@ -12,21 +12,6 @@
     <title>DCMS Platform</title>
 
     <!--
-      IBM Plex, from Google's CDN with a full system fallback in index.css.
-
-      Worth naming the tradeoff: this console is opened when the platform is broken, so it must
-      not depend on the platform to render. It does not — fonts.googleapis.com is independent
-      of DCMS, and `display=swap` plus the fallback stack means a failed font request costs
-      appearance and nothing else.
-    -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
-      rel="stylesheet"
-    />
-
-    <!--
       Runtime configuration, substituted by docker-entrypoint.sh at container start. The
       placeholders are deliberately not Vite's %VITE_*% syntax, so Vite leaves them alone and
       the entrypoint owns them; under `vite dev` they arrive literal and runtime-config.ts

@@ -9,3 +9,4 @@ export * from './runtime-config';
 export * from './auth';
 export * from './http';
 export * from './permissions';
+export * from './format';

@@ -976,12 +976,6 @@
     "unreadCount": "{{count}} nepřečtených oznámení",
     "unreadCount_few": "{{count}} nepřečtená oznámení",
     "unreadCount_one": "{{count}} nepřečtené oznámení",
-    "time": {
-      "now": "právě teď",
-      "minutes": "před {{count}} min",
-      "hours": "před {{count}} h",
-      "days": "před {{count}} d"
-    },
     "kinds": {
       "site_published": {
         "title": "Web nasazen",
