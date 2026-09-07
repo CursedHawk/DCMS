@@ -38,8 +38,10 @@ public sealed record ManagedCertificateBudget(
 /// successes are counted weekly and failures hourly, each against the limit it actually
 /// protects.</para>
 ///
-/// <para>An attempt the CA never heard about — no Cloudflare token, Vault unreachable — is
-/// recorded by neither, for the same reason it is not backed off: nothing was spent. See
+/// <para>An attempt the CA never heard about — no Cloudflare token, Vault unreachable — counts
+/// against neither ceiling, for the same reason it is not backed off: nothing was spent. It is
+/// still <i>written down</i>, with <c>ReachedCa = false</c>, because "spent nothing" and "say
+/// nothing" are different decisions and only the first was intended. See
 /// <see cref="CertificateIssuanceUnavailableException"/>.</para>
 /// </summary>
 public static class ManagedCertificateGuard
@@ -74,7 +76,7 @@ public static class ManagedCertificateGuard
             .Where(a => a.ManagedCertificateId == managed.Id
                         && a.Identifiers == key
                         && a.AttemptedAt >= weekAgo)
-            .Select(a => new { a.AttemptedAt, a.Succeeded })
+            .Select(a => new { a.AttemptedAt, a.Succeeded, a.ReachedCa })
             .ToListAsync(ct);
 
         var issuances = recent.Where(a => a.Succeeded).ToList();
@@ -93,7 +95,12 @@ public static class ManagedCertificateGuard
                 remaining);
         }
 
-        var failures = recent.Where(a => !a.Succeeded && a.AttemptedAt >= hourAgo).ToList();
+        // ReachedCa: an attempt that never became an order spent none of the CA's
+        // failed-authorization budget, so it must not consume this ceiling either. It is recorded
+        // anyway, because the operator still needs to see why nothing happened.
+        var failures = recent
+            .Where(a => !a.Succeeded && a.ReachedCa && a.AttemptedAt >= hourAgo)
+            .ToList();
         if (failures.Count >= options.ManagedFailuresPerHour)
         {
             var retryAfter = failures.Min(a => a.AttemptedAt).AddHours(1);
@@ -110,8 +117,12 @@ public static class ManagedCertificateGuard
     }
 
     /// <summary>
-    /// Records that the CA was asked and what it said. Called only when the order actually
-    /// reached the CA — see the class remarks.
+    /// Records an attempt.
+    ///
+    /// <para><paramref name="reachedCa"/> is the whole subtlety: false means the order was never
+    /// placed, so the row is history and not budget. Recording it at all is deliberate — the
+    /// version of this that recorded nothing produced a console with no expiry, no error and no
+    /// attempts, which reads identically to a platform where nobody has pressed anything.</para>
     /// </summary>
     public static async Task RecordAttemptAsync(
         EdgeDbContext db,
@@ -119,7 +130,8 @@ public static class ManagedCertificateGuard
         bool succeeded,
         string? error,
         DateTimeOffset now,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool reachedCa = true)
     {
         db.ManagedCertificateAttempts.Add(new EdgeManagedCertificateAttempt
         {
@@ -127,6 +139,7 @@ public static class ManagedCertificateGuard
             Identifiers = IdentifierKey(managed.Identifiers),
             AttemptedAt = now,
             Succeeded = succeeded,
+            ReachedCa = reachedCa,
             Error = error is null ? null : error.Length > 2000 ? error[..2000] : error,
         });
         await db.SaveChangesAsync(ct);

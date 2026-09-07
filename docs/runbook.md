@@ -810,8 +810,19 @@ per-hostname over HTTP-01, or uploaded, and nothing here renews or replaces it.
 
 **Wildcards are DNS-01 only** — Let's Encrypt refuses every other challenge type for one.
 So the edge needs `Edge__Dns__Cloudflare__ApiToken` in Vault at `secret/dcms/edge`
-(`Zone:DNS:Edit` + `Zone:Zone:Read`). Without it the wildcard is not issued, the log says
-so plainly, and no rate limit is spent — the CA is never asked.
+(`Zone:DNS:Edit` + `Zone:Zone:Read`). Without it the wildcard is not issued and no rate
+limit is spent — the zone is checked before an order is placed, so the CA is never asked.
+The console says so on the row, in amber rather than red: **"Not attempted — nothing was
+sent to the certificate authority"**, with the reason under it. That is a different fault
+from a red "Last attempt failed", which is the CA refusing and is usually a DNS record.
+Amber means look at this platform's configuration; red means look at the zone.
+
+**"Renew now" records the request on the certificate, not on the issued artifact.** The row
+shows *Reissue pending* until the CA answers — issued or refused — and then clears. A request
+made while the Cloudflare token is missing deliberately **stays** pending: nothing was spent,
+so there is nothing to protect, and the press is honoured on the first sweep after the token
+is written rather than being silently dropped. A badge that will not clear therefore means
+"still cannot order", and the reason is on the row.
 
 **The rate limit that matters is no longer the 50.** It is the **duplicate-certificate
 limit: 5 per identical set of identifiers per 7 days**, which renewals are *not* exempt

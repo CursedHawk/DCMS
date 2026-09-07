@@ -214,6 +214,55 @@ public sealed class ManagedCertificateGuardTests : IAsyncLifetime
         budget.Allowed.Should().BeFalse("a restart must not hand back a spent weekly budget");
     }
 
+    /// <summary>
+    /// The failure that is recorded and charged to nothing: no Cloudflare token, so no order was
+    /// ever placed and the CA spent none of its failed-authorization budget on us.
+    ///
+    /// <para>These attempts used not to be written down at all, which was right about the budget
+    /// and wrong about everything else — the console showed no expiry, no error and no history,
+    /// so "renew now" reported success and visibly did nothing.</para>
+    /// </summary>
+    [DockerFact]
+    public async Task Does_not_charge_the_hourly_ceiling_for_orders_that_never_reached_the_ca()
+    {
+        var (db, managed) = await SeedAsync();
+        await RecordUnavailableAsync(db, managed, Now.AddMinutes(-30));
+        await RecordUnavailableAsync(db, managed, Now.AddMinutes(-20));
+        await RecordUnavailableAsync(db, managed, Now.AddMinutes(-10));
+        await RecordUnavailableAsync(db, managed, Now.AddMinutes(-5));
+
+        var budget = await EdgeCerts.ManagedCertificateGuard.EvaluateAsync(
+            db, managed, Options(), Now, TestContext.Current.CancellationToken);
+
+        budget.Allowed.Should().BeTrue(
+            "nothing was sent to the CA, so there is nothing for a ceiling to protect");
+        budget.IssuancesRemaining.Should().Be(3);
+    }
+
+    /// <summary>
+    /// The other half of the same property: a real refusal still counts, and a mixture of the two
+    /// counts only the refusals. Without this, the column added to stop over-counting would be
+    /// free to under-count instead.
+    /// </summary>
+    [DockerFact]
+    public async Task Still_charges_refusals_that_did_reach_the_ca()
+    {
+        var (db, managed) = await SeedAsync();
+        await RecordUnavailableAsync(db, managed, Now.AddMinutes(-40));
+        await RecordAsync(db, managed, succeeded: false, Now.AddMinutes(-30));
+        await RecordUnavailableAsync(db, managed, Now.AddMinutes(-25));
+        await RecordAsync(db, managed, succeeded: false, Now.AddMinutes(-20));
+        await RecordAsync(db, managed, succeeded: false, Now.AddMinutes(-10));
+
+        var budget = await EdgeCerts.ManagedCertificateGuard.EvaluateAsync(
+            db, managed, Options(), Now, TestContext.Current.CancellationToken);
+
+        budget.Allowed.Should().BeFalse();
+        // The oldest CHARGED failure, not the oldest row: an uncounted attempt must not be able
+        // to drag the retry time earlier either.
+        budget.RetryAfter.Should().Be(Now.AddMinutes(-30).AddHours(1));
+    }
+
     private static EdgeCerts.CertificateOptions Options() => new()
     {
         ManagedIssuancesPerWeek = 3,
@@ -241,4 +290,11 @@ public sealed class ManagedCertificateGuardTests : IAsyncLifetime
         => EdgeCerts.ManagedCertificateGuard.RecordAttemptAsync(
             db, managed, succeeded, succeeded ? null : "DNS problem: NXDOMAIN", at,
             TestContext.Current.CancellationToken);
+
+    private static Task RecordUnavailableAsync(
+        EdgeDbContext db, EdgeManagedCertificate managed, DateTimeOffset at)
+        => EdgeCerts.ManagedCertificateGuard.RecordAttemptAsync(
+            db, managed, succeeded: false,
+            "Edge:Dns:Cloudflare:ApiToken is not set, so no DNS-01 challenge can be published.",
+            at, TestContext.Current.CancellationToken, reachedCa: false);
 }

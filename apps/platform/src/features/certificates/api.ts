@@ -20,6 +20,8 @@ export interface ManagedCertificate {
   covers: string[];
   reissueRequested: boolean;
   lastError: string | null;
+  /** False when the last failure never became an order — a missing token, not the CA refusing. */
+  lastErrorReachedCa: boolean;
   lastAttemptAt: string | null;
   expired: boolean;
   daysRemaining: number | null;
@@ -30,6 +32,8 @@ export interface ManagedCertificate {
 export interface CertificateAttempt {
   attemptedAt: string;
   succeeded: boolean;
+  /** Whether the CA was actually asked. False attempts cost no rate limit. */
+  reachedCa: boolean;
   error: string | null;
   identifiers: string;
 }

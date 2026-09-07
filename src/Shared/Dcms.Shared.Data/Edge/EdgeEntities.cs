@@ -212,6 +212,23 @@ public sealed class EdgeManagedCertificate
     /// </summary>
     public bool Enabled { get; set; } = true;
 
+    /// <summary>
+    /// Set when an operator presses "renew now", cleared once the CA has answered.
+    ///
+    /// <para><b>Here and not on <see cref="EdgeCertificate.ReissueRequestedAt"/></b>, which is
+    /// where it started. That flag lives on the issued artifact, so a managed certificate that
+    /// has never been issued — the state every one of them is in until the first order succeeds,
+    /// and the state the platform wildcard was in on the day this was written — had nowhere to
+    /// record the request. The endpoint set nothing, the console showed nothing, and the button
+    /// reported success while leaving no trace: the exact "nothing happens" it was built to
+    /// avoid. The request belongs to the intent, which always exists.</para>
+    ///
+    /// <para>Cleared only when the CA has actually answered, so a request survives a missing
+    /// Cloudflare token and is honoured the moment one is written. See
+    /// <c>ManagedCertificateProvisioner.SweepAsync</c>.</para>
+    /// </summary>
+    public DateTimeOffset? ReissueRequestedAt { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
@@ -246,6 +263,20 @@ public sealed class EdgeManagedCertificateAttempt
 
     public DateTimeOffset AttemptedAt { get; set; } = DateTimeOffset.UtcNow;
     public bool Succeeded { get; set; }
+
+    /// <summary>
+    /// Whether the CA was actually asked. False for an attempt that failed before any order was
+    /// placed — no Cloudflare token, Vault unreachable, no zone for the name.
+    ///
+    /// <para><b>It is what lets a failure be visible without being charged.</b> These attempts
+    /// were originally not recorded at all, on the correct reasoning that nothing was spent — and
+    /// the result was a console that showed a certificate with no expiry, no error and no
+    /// history, and a "renew now" button that reported success and changed nothing. The
+    /// rate-limit ledger and the operator's answer are two different jobs; this column separates
+    /// them, so the row appears in the history and is skipped by
+    /// <c>ManagedCertificateGuard</c>.</para>
+    /// </summary>
+    public bool ReachedCa { get; set; } = true;
 
     /// <summary>The CA's own sentence when it refused. Usually the only thing that says why.</summary>
     public string? Error { get; set; }

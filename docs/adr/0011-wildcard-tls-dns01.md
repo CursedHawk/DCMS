@@ -119,7 +119,29 @@ visible in the console.
 - **A missing or rejected Cloudflare token is not backed off.** It raises
   `CertificateIssuanceUnavailableException`, which the callers already treat as "the CA
   was never asked, so nothing was spent" — the same distinction introduced when an
-  expired Vault token was being charged to the CA's budget.
+  expired Vault token was being charged to the CA's budget. The zone is now checked
+  *before* the order is placed, so this costs not even a pending order at the CA.
+- **"Spent nothing" and "said nothing" were the same decision, and should not have been.**
+  Attempts that never reached the CA were originally not recorded at all, which was right
+  about the budget and wrong about everything else: with no certificate, no attempt row and
+  no error, the console could not distinguish "nobody has pressed anything" from "the edge
+  has refused to order for a week". They are now written with `ReachedCa = false` —
+  in the history, in the console, charged to neither ceiling.
+- **The reissue request belongs to the intent, not the artifact.** It began on
+  `EdgeCertificate.ReissueRequestedAt`, so a managed certificate that had never been issued
+  had nowhere to record one: the endpoint set no flag, the console showed no badge, and the
+  button reported success while doing nothing observable. It now lives on
+  `EdgeManagedCertificate`, which always exists. It is cleared when the CA answers — issued
+  *or* refused, because a standing request against a refusing CA re-orders hourly and spends
+  the week's three issuances in three hours — and deliberately **not** cleared when no order
+  was placed, so the request survives until the missing token is written.
+- **A managed failure does not touch `CertificateStore.RecordFailureAsync`.** That method
+  files an error against a *hostname*, creating a placeholder row when none exists — no key,
+  `NotAfter` at its default, `Source = DcmsManaged`. For a managed certificate that row is
+  indistinguishable from a per-hostname certificate that has never been issued, so the
+  per-hostname sweep reads it as due and orders `highgeek.eu` over HTTP-01 as well: a second
+  certificate for a name the wildcard already covers. The attempt ledger is where managed
+  failures go, and where the console reads them from.
 - **Rollout has no flag day.** The wildcard ships alongside the existing per-host
   certificates; because matching is exact-first, those keep serving until they expire
   and the wildcard is only reached for names with no exact row. Rollback is disabling

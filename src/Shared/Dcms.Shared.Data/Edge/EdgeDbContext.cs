@@ -98,6 +98,12 @@ public class EdgeDbContext(DbContextOptions<EdgeDbContext> options)
             e.Property(a => a.Identifiers).HasMaxLength(2000).IsRequired();
             e.Property(a => a.Error).HasMaxLength(2000);
 
+            // Defaults to TRUE, and the default is the migration's problem as much as the
+            // model's: every row written before this column existed was an order the CA answered,
+            // because those were the only attempts recorded at all. Backfilling them as false
+            // would take real refusals out of the hourly ceiling.
+            e.Property(a => a.ReachedCa).HasDefaultValue(true);
+
             // The rate-limit guard's only query: "how many attempts for this identifier set
             // since a week ago". Composite so it is answered from the index alone.
             e.HasIndex(a => new { a.ManagedCertificateId, a.AttemptedAt });

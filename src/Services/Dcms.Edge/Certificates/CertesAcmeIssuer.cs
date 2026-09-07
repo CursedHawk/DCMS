@@ -59,12 +59,22 @@ public sealed class CertesAcmeIssuer(
 
         var normalized = identifiers.Select(CertificateStore.Normalize).Distinct(StringComparer.Ordinal).ToList();
         var config = options.Value;
-        var acme = await GetAcmeContextAsync(config, ct);
 
         // One wildcard puts the WHOLE order on DNS-01. Not a preference: Let's Encrypt refuses
         // HTTP-01 and TLS-ALPN-01 for a wildcard identifier, and an order is validated as a
         // unit, so a mixed order still needs every authorization answered the same way.
         var useDns = normalized.Any(DnsChallenge.IsWildcard);
+
+        // BEFORE the account is loaded and before the order is placed. Asking "can we write this
+        // zone" costs one cheap API call; discovering the answer on the first AddTxt costs a real
+        // order at the CA, which then sits pending until it expires and counts against
+        // new-orders-per-account. This check existed and was never called from anywhere.
+        if (useDns)
+        {
+            await EnsureDnsIsWritableAsync(normalized, ct);
+        }
+
+        var acme = await GetAcmeContextAsync(config, ct);
 
         logger.LogInformation(
             "Requesting a certificate for {Identifiers} from {Directory} over {Challenge}.",
@@ -94,6 +104,28 @@ public sealed class CertesAcmeIssuer(
 
         logger.LogInformation("Certificate issued for {Identifiers}.", string.Join(", ", normalized));
         return new IssuedCertificate(BuildPemChain(chain), certificateKey.ToPem());
+    }
+
+    /// <summary>
+    /// Refuses a DNS-01 order we could not possibly answer, before it becomes an order.
+    ///
+    /// <para>Every failure here is <see cref="CertificateIssuanceUnavailableException"/>, which
+    /// the callers already read as "the CA was never asked": no ceiling is charged and no backoff
+    /// is served, because the fix is a token or a zone rather than the passage of time.</para>
+    /// </summary>
+    private async Task EnsureDnsIsWritableAsync(IReadOnlyList<string> identifiers, CancellationToken ct)
+    {
+        foreach (var identifier in identifiers)
+        {
+            if (!await dns.CanPublishForAsync(identifier, ct))
+            {
+                throw new CertificateIssuanceUnavailableException(
+                    $"The DNS-01 challenge for '{identifier}' cannot be published, so the order "
+                    + "was not placed. Either Edge:Dns:Cloudflare:ApiToken is not set — write it "
+                    + "to Vault at secret/dcms/edge as Edge__Dns__Cloudflare__ApiToken — or no "
+                    + "zone in that Cloudflare account covers this name.");
+            }
+        }
     }
 
     /// <summary>

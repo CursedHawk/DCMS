@@ -66,14 +66,22 @@ public static class ManagedCertificateEndpoints
                 .Select(a => new { a.ManagedCertificateId, a.AttemptedAt, a.Succeeded })
                 .ToListAsync(ct);
 
+            // The newest attempts, whatever their age, because the reason a certificate does not
+            // exist is often older than a week and is the only thing worth reading on the row.
+            // Read from the ledger and not from the artifact's LastError: a certificate that has
+            // never been issued HAS no artifact, which is exactly when there is something to say.
+            var latest = await edge.ManagedCertificateAttempts.AsNoTracking()
+                .Where(a => ids.Contains(a.ManagedCertificateId))
+                .OrderByDescending(a => a.AttemptedAt)
+                .Take(200)
+                .Select(a => new { a.ManagedCertificateId, a.AttemptedAt, a.Succeeded, a.ReachedCa, a.Error })
+                .ToListAsync(ct);
+
             return Results.Ok(managed.Select(m =>
             {
                 var artifact = artifacts.FirstOrDefault(c => c.ManagedCertificateId == m.Id);
                 var issuedThisWeek = recent.Count(a => a.ManagedCertificateId == m.Id && a.Succeeded);
-                var lastAttempt = recent
-                    .Where(a => a.ManagedCertificateId == m.Id)
-                    .OrderByDescending(a => a.AttemptedAt)
-                    .FirstOrDefault();
+                var lastAttempt = latest.FirstOrDefault(a => a.ManagedCertificateId == m.Id);
 
                 return new
                 {
@@ -89,8 +97,12 @@ public static class ManagedCertificateEndpoints
                     notAfter = artifact?.NotAfter,
                     renewedAt = artifact?.RenewedAt,
                     covers = artifact?.SubjectAlternativeNames ?? [],
-                    reissueRequested = artifact?.ReissueRequestedAt != null,
-                    lastError = artifact?.LastError,
+                    reissueRequested = m.ReissueRequestedAt != null,
+                    lastError = lastAttempt is { Succeeded: false } ? lastAttempt.Error : artifact?.LastError,
+                    // False when the last failure never became an order — a missing Cloudflare
+                    // token rather than the CA refusing. Different sentence, different fix, and
+                    // the operator should not go looking at DNS records for the first one.
+                    lastErrorReachedCa = lastAttempt is not { Succeeded: false } || lastAttempt.ReachedCa,
                     lastAttemptAt = lastAttempt?.AttemptedAt ?? artifact?.LastAttemptAt,
                     expired = artifact is not null && artifact.NotAfter <= now,
                     daysRemaining = artifact is null
@@ -115,7 +127,7 @@ public static class ManagedCertificateEndpoints
                 .Where(a => a.ManagedCertificateId == id)
                 .OrderByDescending(a => a.AttemptedAt)
                 .Take(50)
-                .Select(a => new { a.AttemptedAt, a.Succeeded, a.Error, a.Identifiers })
+                .Select(a => new { a.AttemptedAt, a.Succeeded, a.ReachedCa, a.Error, a.Identifiers })
                 .ToListAsync(ct);
 
             return Results.Ok(attempts);
@@ -236,13 +248,14 @@ public static class ManagedCertificateEndpoints
                 });
             }
 
-            var artifact = await edge.Certificates.FirstOrDefaultAsync(c => c.ManagedCertificateId == id, ct);
-            if (artifact is not null)
-            {
-                artifact.ReissueRequestedAt = DateTimeOffset.UtcNow;
-                artifact.UpdatedAt = DateTimeOffset.UtcNow;
-                await edge.SaveChangesAsync(ct);
-            }
+            // On the managed row, which always exists. The flag started out on the issued
+            // certificate, so a certificate that had never been issued -- the state of every one
+            // of them before their first order, and the state somebody is most likely to press
+            // this button in -- recorded the request nowhere: no flag, no badge, no history, and
+            // a toast saying it had worked.
+            row.ReissueRequestedAt = DateTimeOffset.UtcNow;
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+            await edge.SaveChangesAsync(ct);
 
             // Not cleared here, unlike the tenant-domain reissue: that button clears
             // ConsecutiveFailures because the operator asking IS new information about a DNS

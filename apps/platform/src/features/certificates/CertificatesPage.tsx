@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, Globe, Plus, RefreshCw, ShieldCheck } from 'lucide-react';
 import {
-  Badge, Button, CenteredSpinner, Dialog, DialogBody, DialogContent, DialogDescription,
+  Badge, Button, CenteredSpinner, cn, Dialog, DialogBody, DialogContent, DialogDescription,
   DialogFooter, DialogHeader, DialogTitle, EmptyState, Input, Label, Switch, TagsInput,
   toastApiError,
 } from '@dcms/admin-ui';
@@ -136,7 +136,15 @@ export function CertificatesPage() {
                       disabled={!row.enabled || reissue.isPending}
                       onClick={() =>
                         reissue.mutate(row.id, {
-                          onSuccess: () => toast.success('Reissue requested.'),
+                          // Not "reissued": the order takes a DNS propagation wait and a CA
+                          // validation, so what has actually happened at this point is that the
+                          // request is recorded. The row shows "Reissue pending" until the CA
+                          // answers, and the reason appears there if it never does.
+                          onSuccess: () =>
+                            toast.success('Reissue requested \u2014 the edge is ordering now.', {
+                              description:
+                                'This takes a minute or two. Watch this row for the result.',
+                            }),
                           onError,
                         })
                       }
@@ -193,11 +201,37 @@ export function CertificatesPage() {
                 </p>
               )}
 
+              {/* Two failures that must not read the same. "The CA refused" is about a DNS
+                  record and has cost an attempt; "not attempted" is about this platform's own
+                  configuration and has cost nothing. Sending an operator to look at DNS records
+                  when the real answer is a missing Vault key is how an afternoon disappears. */}
               {row.lastError && (
-                <div className="mt-3 flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden />
+                <div
+                  className={cn(
+                    'mt-3 flex items-start gap-2 rounded-md border p-3',
+                    row.lastErrorReachedCa
+                      ? 'border-destructive/30 bg-destructive/5'
+                      : 'border-[hsl(var(--warning)/0.3)] bg-[hsl(var(--warning)/0.08)]',
+                  )}
+                >
+                  <AlertTriangle
+                    className={cn(
+                      'mt-0.5 h-4 w-4 shrink-0',
+                      row.lastErrorReachedCa ? 'text-destructive' : 'text-[hsl(var(--warning))]',
+                    )}
+                    aria-hidden
+                  />
                   <div className="min-w-0 text-sm">
-                    <p className="font-medium text-destructive">Last attempt failed</p>
+                    <p
+                      className={cn(
+                        'font-medium',
+                        row.lastErrorReachedCa ? 'text-destructive' : 'text-[hsl(var(--warning))]',
+                      )}
+                    >
+                      {row.lastErrorReachedCa
+                        ? 'Last attempt failed'
+                        : 'Not attempted \u2014 nothing was sent to the certificate authority'}
+                    </p>
                     {/* The CA's own sentence, kept verbatim. It is usually the only thing that
                         says which DNS record is wrong. */}
                     <p className="mt-0.5 break-words text-muted-foreground">{row.lastError}</p>
@@ -225,8 +259,8 @@ export function CertificatesPage() {
                   {attempts.data?.map((a, i) => (
                     <div key={i} className="flex flex-wrap items-baseline gap-2">
                       <span className="text-muted-foreground">{date(a.attemptedAt)}</span>
-                      <Badge tone={a.succeeded ? 'success' : 'destructive'}>
-                        {a.succeeded ? 'issued' : 'failed'}
+                      <Badge tone={a.succeeded ? 'success' : a.reachedCa ? 'destructive' : 'warning'}>
+                        {a.succeeded ? 'issued' : a.reachedCa ? 'failed' : 'not attempted'}
                       </Badge>
                       {a.error && <span className="break-words text-muted-foreground">{a.error}</span>}
                     </div>

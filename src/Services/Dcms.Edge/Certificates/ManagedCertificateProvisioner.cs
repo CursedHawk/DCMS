@@ -120,10 +120,14 @@ public sealed class ManagedCertificateProvisioner(
                 .FirstOrDefaultAsync(c => c.ManagedCertificateId == certificate.Id, ct);
 
             var isRenewal = artifact is not null && artifact.IsUsable(now);
+
+            // The operator's request is read from the INTENT row, not the artifact. A managed
+            // certificate that has never been issued has no artifact to carry a flag, which is
+            // precisely when somebody is most likely to press the button.
             var due = artifact is null
                       || !artifact.IsUsable(now)
                       || artifact.NotAfter <= threshold
-                      || artifact.ReissueRequestedAt is not null;
+                      || certificate.ReissueRequestedAt is not null;
 
             if (!due)
             {
@@ -159,6 +163,14 @@ public sealed class ManagedCertificateProvisioner(
     /// is recorded nowhere, an order the CA refused is charged to the hourly failure ceiling, and
     /// a certificate that was issued and could not be stored is charged to the weekly issuance
     /// ceiling — because the CA has already counted it, whatever happened here afterwards.</para>
+    ///
+    /// <para><b>A failure here does not touch <c>CertificateStore.RecordFailureAsync</c>.</b> That
+    /// method files an error against a <i>hostname</i>, creating a placeholder row if none exists
+    /// — with no key, <c>NotAfter</c> at its default and <c>Source = DcmsManaged</c>. For a
+    /// managed certificate that is a row the per-hostname sweep then reads as due and orders over
+    /// HTTP-01: the CA refuses that for a wildcard, and for the apex it spends a second
+    /// certificate on a name the wildcard already covers. The attempt ledger records managed
+    /// failures, and the console reads them from there.</para>
     /// </summary>
     private async Task<bool> OrderAsync(
         EdgeDbContext db, EdgeManagedCertificate certificate, bool isRenewal, CancellationToken ct)
@@ -173,13 +185,19 @@ public sealed class ManagedCertificateProvisioner(
         }
         catch (CertificateIssuanceUnavailableException ex)
         {
-            // The CA was never asked, so nothing was spent and nothing is recorded. The next
-            // sweep tries again the moment whatever is broken is fixed.
+            // The CA was never asked, so nothing was spent and no ceiling is charged -- but it IS
+            // recorded, and the reissue request is deliberately LEFT STANDING. Both follow from
+            // the same fact: this is a configuration fault, not the CA's answer. So the operator
+            // sees the reason in the console, and their request is honoured on the first sweep
+            // after somebody writes the missing token rather than being quietly dropped.
             logger.LogError(
                 ex,
                 "{What} of managed certificate '{Name}' could not be attempted; the CA was never "
                 + "asked, so no rate limit was spent and this is not held back.",
                 what, certificate.Name);
+            await ManagedCertificateGuard.RecordAttemptAsync(
+                db, certificate, succeeded: false, ex.Message, clock.GetUtcNow(), CancellationToken.None,
+                reachedCa: false);
             metrics.EdgeCertificate("failed");
             return false;
         }
@@ -188,7 +206,7 @@ public sealed class ManagedCertificateProvisioner(
             logger.LogError(ex, "{What} of managed certificate '{Name}' failed.", what, certificate.Name);
             await ManagedCertificateGuard.RecordAttemptAsync(
                 db, certificate, succeeded: false, ex.Message, clock.GetUtcNow(), CancellationToken.None);
-            await store.RecordFailureAsync(label, ex.Message, CancellationToken.None);
+            await ClearReissueRequestAsync(db, certificate, CancellationToken.None);
             metrics.EdgeCertificate("failed");
             return false;
         }
@@ -215,15 +233,44 @@ public sealed class ManagedCertificateProvisioner(
                 + "for these identifiers this week.",
                 certificate.Name,
                 Math.Max(0, options.Value.ManagedIssuancesPerWeek - 1));
+
+            // Cleared, even though nothing is serving: the CA answered and counted a certificate,
+            // so this is the "CA has spoken" case and not the "never asked" one. Leaving the
+            // request standing would re-order on every sweep for as long as Transit stayed
+            // broken, and each of those is a real certificate off the weekly limit.
+            await ClearReissueRequestAsync(db, certificate, CancellationToken.None);
             metrics.EdgeCertificate("failed");
             return false;
         }
 
+        await ClearReissueRequestAsync(db, certificate, CancellationToken.None);
         metrics.EdgeCertificate(isRenewal ? "renewed" : "issued");
         logger.LogInformation(
             "{What} of managed certificate '{Name}' succeeded: {Identifiers}.",
             what, certificate.Name, string.Join(", ", certificate.Identifiers));
         return true;
+    }
+
+    /// <summary>
+    /// Marks an operator's reissue request as dealt with.
+    ///
+    /// <para>Called when the CA has answered — issued or refused — and <b>not</b> when the order
+    /// was never placed. A standing request that survives a missing token is the useful
+    /// behaviour; a standing request that survives the CA saying no is a loop that would spend
+    /// the week's three issuances in three hours and take TLS off every hostname the wildcard
+    /// covers.</para>
+    /// </summary>
+    private static async Task ClearReissueRequestAsync(
+        EdgeDbContext db, EdgeManagedCertificate certificate, CancellationToken ct)
+    {
+        if (certificate.ReissueRequestedAt is null)
+        {
+            return;
+        }
+
+        certificate.ReissueRequestedAt = null;
+        certificate.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>
