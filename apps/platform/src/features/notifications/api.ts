@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { adminApi } from '../../lib/api';
+import { platformApi } from '../../lib/api';
 
 /**
- * admin-api, not platform-api: it owns the `notifications` schema and the `edge` schema these
- * are raised from. The platform console already calls it for certificates and the audit log.
+ * Served by platform-api, performed by admin-api, which owns the `notifications` schema these
+ * rows live in and the `edge` schema they are raised from. platform-api checks the operator
+ * against platform:notifications:read and forwards; read and dismiss state is keyed on the
+ * operator's own user id, which travels in the propagated actor headers.
  */
 export type PlatformNotificationSeverity = 'Info' | 'Success' | 'Warning' | 'Error';
 
@@ -40,7 +42,7 @@ export function usePlatformNotifications(enabled: boolean, limit = 20) {
     queryKey: [...KEY, limit],
     enabled,
     queryFn: () =>
-      adminApi.get<PlatformNotificationPage>(`/admin/platform/notifications?limit=${limit}`),
+      platformApi.get<PlatformNotificationPage>(`/notifications?limit=${limit}`),
     refetchInterval: 60_000,
   });
 }
@@ -48,7 +50,7 @@ export function usePlatformNotifications(enabled: boolean, limit = 20) {
 export function useMarkRead() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => adminApi.post<void>(`/admin/platform/notifications/${id}/read`, {}),
+    mutationFn: (id: string) => platformApi.post<void>(`/notifications/${id}/read`, {}),
     onSuccess: () => void qc.invalidateQueries({ queryKey: KEY }),
   });
 }
@@ -57,7 +59,7 @@ export function useMarkAllRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      adminApi.post<{ updated: number }>('/admin/platform/notifications/read-all', {}),
+      platformApi.post<{ updated: number }>('/notifications/read-all', {}),
     onSuccess: () => void qc.invalidateQueries({ queryKey: KEY }),
   });
 }
@@ -66,7 +68,7 @@ export function useDismiss() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      adminApi.post<void>(`/admin/platform/notifications/${id}/dismiss`, {}),
+      platformApi.post<void>(`/notifications/${id}/dismiss`, {}),
     onSuccess: () => void qc.invalidateQueries({ queryKey: KEY }),
   });
 }

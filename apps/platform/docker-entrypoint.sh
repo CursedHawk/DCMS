@@ -18,13 +18,12 @@ TEMPLATE="$ROOT/index.html.template"
 
 [ -f "$TEMPLATE" ] || cp "$ROOT/index.html" "$TEMPLATE"
 
-# Defaults keep a bare `docker run` working. The three API bases are same-origin paths because
-# The edge routes all three services under this host by prefix.
+# Defaults keep a bare `docker run` working. Both API bases are same-origin paths because the
+# edge routes each service under this host by prefix.
 : "${DCMS_OIDC_AUTHORITY:=}"
 : "${DCMS_OIDC_CLIENT_ID:=dcms-platform-spa}"
 : "${DCMS_PLATFORM_API_BASE:=/api/platform}"
 : "${DCMS_IDENTITY_API_BASE:=/api/identity}"
-: "${DCMS_ADMIN_API_BASE:=/api}"
 : "${DCMS_ADMIN_BASE:=}"
 : "${DCMS_GRAFANA_BASE:=}"
 : "${DCMS_ENVIRONMENT_NAME:=development}"
@@ -34,7 +33,6 @@ sed \
   -e "s|__DCMS_OIDC_CLIENT_ID__|${DCMS_OIDC_CLIENT_ID}|g" \
   -e "s|__DCMS_PLATFORM_API_BASE__|${DCMS_PLATFORM_API_BASE}|g" \
   -e "s|__DCMS_IDENTITY_API_BASE__|${DCMS_IDENTITY_API_BASE}|g" \
-  -e "s|__DCMS_ADMIN_API_BASE__|${DCMS_ADMIN_API_BASE}|g" \
   -e "s|__DCMS_ADMIN_BASE__|${DCMS_ADMIN_BASE}|g" \
   -e "s|__DCMS_GRAFANA_BASE__|${DCMS_GRAFANA_BASE}|g" \
   -e "s|__DCMS_ENVIRONMENT_NAME__|${DCMS_ENVIRONMENT_NAME}|g" \

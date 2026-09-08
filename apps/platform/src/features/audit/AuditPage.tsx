@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Button, CenteredSpinner, EmptyState, Table, TBody, TD, TH, THead, TR } from '@dcms/ui';
-import { adminApi } from '../../lib/api';
+import { platformApi } from '../../lib/api';
 import { date } from '../../lib/format';
 
 interface AuditItem {
@@ -9,11 +9,18 @@ interface AuditItem {
   action: string;
   category: string;
   outcome: string;
-  severity: string;
+  severity: number;
+  actorKind: string;
   actorDisplay: string | null;
+  /** direct | propagated | inferred — see AuditAttribution. */
+  actorAttribution: string;
   resourceType: string | null;
   resourceLabel: string | null;
+  service: string | null;
+  statusCode: number | null;
   traceId: string | null;
+  correlationId: string | null;
+  seq: number;
 }
 
 interface AuditPageResponse {
@@ -27,20 +34,26 @@ interface AuditPageResponse {
  *
  * <p>These have existed since the audit design shipped and until now had no reader: the tenant
  * audit view surfaces a platform record only when it names one of that tenant's own members, so
- * a tenant suspension or a role grant, which name no workspace, were visible to nobody. This
- * page is `?scope=platform`, which admin-api serves to SuperAdmins only.</p>
+ * a tenant suspension or a role grant, which name no workspace, were visible to nobody.</p>
+ *
+ * <p>Read from `obs.v_audit_recent` through platform-api rather than from admin-api. That view
+ * is the console's read model and already carried what this page renders — which is how the
+ * page shipped asking admin-api for `actorDisplay` and `traceId` while admin-api projected
+ * `actor.display` and `correlationId`, leaving Who and Trace empty on every row. Writing here
+ * remains impossible by construction: the console's database role has no grant on the audit
+ * schema at all.</p>
  */
 export function AuditPage() {
   const q = useInfiniteQuery({
     queryKey: ['platform-audit'],
     initialPageParam: null as { occurredAt: string; seq: number } | null,
     queryFn: ({ pageParam }) => {
-      const params = new URLSearchParams({ scope: 'platform', limit: '50' });
+      const params = new URLSearchParams({ limit: '50' });
       if (pageParam) {
         params.set('beforeOccurredAt', pageParam.occurredAt);
         params.set('beforeSeq', String(pageParam.seq));
       }
-      return adminApi.get<AuditPageResponse>(`/admin/audit?${params.toString()}`);
+      return platformApi.get<AuditPageResponse>(`/audit?${params.toString()}`);
     },
     getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
   });
@@ -88,7 +101,17 @@ export function AuditPage() {
                       </span>
                     )}
                   </TD>
-                  <TD className="text-sm">{e.actorDisplay ?? '—'}</TD>
+                  <TD className="text-sm">
+                    {e.actorDisplay ?? '—'}
+                    {e.actorAttribution === 'propagated' && (
+                      <span
+                        className="ml-2 text-xs text-muted-foreground"
+                        title="Recorded from what a peer service said, on this person's behalf — not from a session it authenticated."
+                      >
+                        via service
+                      </span>
+                    )}
+                  </TD>
                   <TD className="text-sm text-muted-foreground">
                     {e.resourceLabel ?? e.resourceType ?? '—'}
                   </TD>

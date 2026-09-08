@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { adminApi, platformApi } from '../../lib/api';
+import { platformApi } from '../../lib/api';
 
 export interface TenantRow {
   tenantId: string;
@@ -31,15 +31,16 @@ export function useTenants(search: string) {
 }
 
 /**
- * Suspend and resume go to admin-api, which owns the tenancy schema (ADR 0003) and the two
- * enforcement points that make the status mean anything. The console does not write tenancy
- * itself; it asks the owner, carrying the operator's own token.
+ * Suspend and resume are performed by admin-api, which owns the tenancy schema (ADR 0003) and
+ * the two enforcement points that make the status mean anything. platform-api checks the
+ * operator against platform:tenants:lifecycle and forwards, naming them in the propagated
+ * actor headers so the audit record says who asked rather than which service relayed it.
  */
 export function useSetTenantStatus() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ tenantId, suspend }: { tenantId: string; suspend: boolean }) =>
-      adminApi.post<void>(`/admin/tenants/${tenantId}/${suspend ? 'suspend' : 'resume'}`),
+      platformApi.post<void>(`/tenants/${tenantId}/${suspend ? 'suspend' : 'resume'}`),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['platform-tenants'] });
       void qc.invalidateQueries({ queryKey: ['platform-overview'] });

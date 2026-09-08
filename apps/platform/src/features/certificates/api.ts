@@ -1,9 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { adminApi } from '../../lib/api';
+import { platformApi } from '../../lib/api';
 
 /**
- * admin-api rather than platform-api, and not by accident: admin-api owns and migrates the
- * `edge` schema these rows live in. See ADR 0011.
+ * Served by platform-api, performed by admin-api.
+ *
+ * These rows live in the `edge` schema, which admin-api owns and migrates and which the
+ * console's least-privilege database role holds no grant on (ADR 0011). So platform-api checks
+ * the operator against platform:certificates:manage and forwards; the shapes below are
+ * admin-api's, relayed verbatim.
  */
 export interface ManagedCertificate {
   id: string;
@@ -49,7 +53,7 @@ const KEY = ['platform-managed-certificates'];
 export function useManagedCertificates() {
   return useQuery({
     queryKey: KEY,
-    queryFn: () => adminApi.get<ManagedCertificate[]>('/admin/platform/certificates'),
+    queryFn: () => platformApi.get<ManagedCertificate[]>('/certificates'),
     // An order takes a DNS propagation wait plus a CA validation, so the interesting state
     // changes on the order of a minute, not a second.
     refetchInterval: 30_000,
@@ -60,7 +64,7 @@ export function useCertificateAttempts(id: string | null) {
   return useQuery({
     queryKey: [...KEY, 'attempts', id],
     enabled: id !== null,
-    queryFn: () => adminApi.get<CertificateAttempt[]>(`/admin/platform/certificates/${id}/attempts`),
+    queryFn: () => platformApi.get<CertificateAttempt[]>(`/certificates/${id}/attempts`),
   });
 }
 
@@ -68,7 +72,7 @@ export function useCreateCertificate() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CertificateInput) =>
-      adminApi.post<ManagedCertificate>('/admin/platform/certificates', body),
+      platformApi.post<ManagedCertificate>('/certificates', body),
     onSuccess: () => void qc.invalidateQueries({ queryKey: KEY }),
   });
 }
@@ -77,7 +81,7 @@ export function useUpdateCertificate() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...body }: CertificateInput & { id: string }) =>
-      adminApi.put<ManagedCertificate>(`/admin/platform/certificates/${id}`, body),
+      platformApi.put<ManagedCertificate>(`/certificates/${id}`, body),
     onSuccess: () => void qc.invalidateQueries({ queryKey: KEY }),
   });
 }
@@ -85,7 +89,7 @@ export function useUpdateCertificate() {
 export function useDeleteCertificate() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => adminApi.del<void>(`/admin/platform/certificates/${id}`),
+    mutationFn: (id: string) => platformApi.del<void>(`/certificates/${id}`),
     onSuccess: () => void qc.invalidateQueries({ queryKey: KEY }),
   });
 }
@@ -94,7 +98,7 @@ export function useReissueCertificate() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      adminApi.post<void>(`/admin/platform/certificates/${id}/reissue`, {}),
+      platformApi.post<void>(`/certificates/${id}/reissue`, {}),
     onSuccess: () => void qc.invalidateQueries({ queryKey: KEY }),
   });
 }

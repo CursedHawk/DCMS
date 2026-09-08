@@ -31,9 +31,18 @@ export const identityApi = createApiClient({
   renew: renewSilently,
 });
 
-/** admin-api: tenancy and the audit log, which it already owns (ADR 0003). */
-export const adminApi = createApiClient({
-  base: runtimeConfig.adminApiBase,
-  headers,
-  renew: renewSilently,
-});
+/*
+ * There is deliberately no admin-api client here any more.
+ *
+ * The console used to call three origins. It now calls two: platform-api for everything the
+ * console does, and identity for the user directory. Certificates, the platform bell, tenant
+ * lifecycle and the analytics prune are still PERFORMED by admin-api — it owns those schemas —
+ * but the console asks platform-api, which checks the operator's platform permission and
+ * forwards on a service token. That is what makes those permission keys mean anything: on
+ * admin-api the only check available was the SuperAdmin role.
+ *
+ * identity stays a direct call on purpose rather than becoming a third proxied area. Its user
+ * endpoints mint SuperAdmins and are gated on the global ROLE, not on this permission table —
+ * and platform:roles:manage edits this table, so proxying them would let its holder grant
+ * themselves platform:users:roles and then mint one. Two clients, not one.
+ */

@@ -3,10 +3,11 @@ import { createRuntimeConfig } from '@dcms/core';
 /**
  * The platform console's runtime keys.
  *
- * Three API bases rather than one because the console talks to three services, each the owner
- * of what it serves: platform-api for observability and ops, identity for the user directory,
- * admin-api for tenancy and audit. All three are same-origin behind the edge, so these default to
- * path prefixes and only differ from each other in the prefix.
+ * Two API bases, because the console talks to two services. platform-api serves everything the
+ * console does -- including the four areas admin-api actually performs, which it reaches on the
+ * console's behalf -- and identity serves the user directory, which it owns and gates on the
+ * global role rather than on this console's permission table. Both are same-origin behind the
+ * edge, so they default to path prefixes and differ only in the prefix.
  *
  * `environmentName` is not cosmetic. dev and production run the same image, and this console
  * can suspend a tenant — so which environment it points at has to be visible at all times.
@@ -32,11 +33,6 @@ export const runtimeConfig = createRuntimeConfig({
     key: 'identityApiBase',
     env: import.meta.env.VITE_IDENTITY_API_BASE,
     fallback: '/api/identity',
-  },
-  adminApiBase: {
-    key: 'adminApiBase',
-    env: import.meta.env.VITE_ADMIN_API_BASE,
-    fallback: '/api',
   },
   /** Origin of the tenant admin SPA, for deep links into one tenant's media and content. */
   adminBase: {

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { adminApi, platformApi } from '../../lib/api';
+import { platformApi } from '../../lib/api';
 
 export interface StoreRow {
   store: string;
@@ -75,6 +75,6 @@ export function useTruncateContainerLog() {
 export function usePruneAnalytics() {
   return useMutation({
     mutationFn: (olderThanDays: number) =>
-      adminApi.post<{ deleted: number; note: string }>('/admin/analytics/prune', { olderThanDays }),
+      platformApi.post<{ deleted: number; note: string }>('/ops/analytics/prune', { olderThanDays }),
   });
 }
