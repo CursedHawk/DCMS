@@ -165,6 +165,7 @@ app.MapPlatformOverviewEndpoints();
 app.MapPlatformStoreEndpoints();
 app.MapPlatformPurgeEndpoints();
 app.MapPlatformAuditEndpoints();
+app.MapPlatformHealthEndpoints();
 app.MapDelegatedConsoleEndpoints();
 // Same /api/platform prefix the edge already routes here, so the WebSocket upgrade needs no
 // route of its own. Push-only: see PlatformHub for why there is nothing to audit.

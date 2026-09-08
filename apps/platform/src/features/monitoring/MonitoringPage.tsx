@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { Button, EmptyState, useTheme } from '@dcms/ui';
 import { runtimeConfig } from '../../runtime-config';
+import { SignalsPanel } from './SignalsPanel';
 
 /**
  * Grafana's dashboards, embedded.
@@ -36,12 +37,17 @@ export function MonitoringPage() {
   const base = runtimeConfig.grafanaBase.replace(/\/+$/, '');
 
   if (!base) {
+    // Still shows the signals. Grafana being unconfigured is a reason to have less on this
+    // page, not a reason for it to be empty — the numbers below come from platform-api.
     return (
-      <div className="mx-auto w-full max-w-3xl px-6 py-16">
-        <EmptyState
-          title="No Grafana address configured"
-          description="Set DCMS_GRAFANA_BASE on the platform-spa container to embed the dashboards here. Everything else in this console works without it."
-        />
+      <div className="flex h-full flex-col">
+        <SignalsPanel />
+        <div className="mx-auto w-full max-w-3xl px-6 py-16">
+          <EmptyState
+            title="No Grafana address configured"
+            description="Set DCMS_GRAFANA_BASE on the platform-spa container to embed the dashboards here. Everything else in this console works without it."
+          />
+        </div>
       </div>
     );
   }
@@ -52,6 +58,12 @@ export function MonitoringPage() {
 
   return (
     <div className="flex h-full flex-col">
+      {/* Above the frame on purpose. "Which service is erroring" is the first question, and
+          framing a dashboard to answer it costs an OIDC round trip that cannot happen in an
+          iframe — so on the first visit of a session this is the only thing on the page that
+          is already answering. */}
+      <SignalsPanel />
+
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
         <label className="sr-only" htmlFor="dashboard">Dashboard</label>
         <select
