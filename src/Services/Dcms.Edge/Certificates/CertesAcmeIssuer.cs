@@ -35,6 +35,13 @@ public sealed class CertesAcmeIssuer(
     ILogger<CertesAcmeIssuer> logger) : IAcmeIssuer
 {
     /// <summary>
+    /// How many times to re-read an order that is still <c>processing</c> after finalize, at
+    /// roughly a second apiece. A minute is generous against Let's Encrypt and enormous against
+    /// Pebble; the cost of being wrong in the other direction is an unexplained null reference.
+    /// </summary>
+    private const int FinalizePolls = 60;
+
+    /// <summary>
     /// Serialises account creation. Two concurrent first-issuances would otherwise each find no
     /// account, each register one, and each write a row — leaving the platform with two ACME
     /// identities and its issuance history split across both, which is precisely what the CA's
@@ -100,10 +107,44 @@ public sealed class CertesAcmeIssuer(
         // validation is done against the SAN list -- but it must be one of them, and it must be
         // <=64 characters or the CA rejects the CSR.
         var commonName = normalized.FirstOrDefault(n => n.Length <= 64) ?? normalized[0];
-        var chain = await order.Generate(new CsrInfo { CommonName = commonName }, certificateKey);
+        var chain = await FinalizeAsync(order, commonName, certificateKey, normalized);
 
         logger.LogInformation("Certificate issued for {Identifiers}.", string.Join(", ", normalized));
         return new IssuedCertificate(BuildPemChain(chain), certificateKey.ToPem());
+    }
+
+    /// <summary>
+    /// Finalizes the order and waits for the CA to actually sign it.
+    ///
+    /// <para><b>The wait is the point.</b> Finalizing moves an order to <c>processing</c>, and it
+    /// only becomes <c>valid</c> once the certificate exists at the CA. Certes' <c>Generate</c>
+    /// polls that transition, but its default is <b>one</b> retry — and when the order is still
+    /// processing after it, the method downloads anyway, from a certificate URL that is still
+    /// null. What surfaces is a <see cref="NullReferenceException"/> thrown inside Certes'
+    /// <c>CertificateChain</c> constructor: not a timeout, not an ACME error, a null reference
+    /// from a library frame, with nothing in it naming the domain or the cause.</para>
+    ///
+    /// <para>Let's Encrypt routinely leaves an order processing for several seconds, and a loaded
+    /// CI runner made Pebble — which signs instantly on an idle machine — take longer than the
+    /// single retry allowed. So poll for a minute, and if it never arrives say so in a sentence
+    /// an operator can act on.</para>
+    /// </summary>
+    private static async Task<CertificateChain> FinalizeAsync(
+        IOrderContext order, string commonName, IKey certificateKey, IReadOnlyList<string> identifiers)
+    {
+        try
+        {
+            return await order.Generate(
+                new CsrInfo { CommonName = commonName }, certificateKey, retryCount: FinalizePolls);
+        }
+        catch (NullReferenceException e)
+        {
+            throw new AcmeIssuanceException(
+                $"The certificate authority accepted the order for {string.Join(", ", identifiers)} "
+                + "but had not finished signing it within a minute of finalizing. Nothing is wrong "
+                + "with the order; the CA is slow or stuck. Retrying issues a new one.",
+                e);
+        }
     }
 
     /// <summary>
@@ -433,4 +474,5 @@ public sealed class CertesAcmeIssuer(
 /// Issuance failed for a reason worth showing an operator, as opposed to a bug. The message is
 /// written to <c>edge.certificates.last_error</c> and surfaced next to the domain.
 /// </summary>
-public sealed class AcmeIssuanceException(string message) : Exception(message);
+public sealed class AcmeIssuanceException(string message, Exception? inner = null)
+    : Exception(message, inner);

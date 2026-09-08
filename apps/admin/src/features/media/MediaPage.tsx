@@ -89,9 +89,19 @@ export function MediaPage() {
     return q ? list.filter((a) => a.fileName.toLowerCase().includes(q)) : list;
   }, [media.data, search]);
 
-  // Clear selections that are no longer visible (folder switch / filter change).
-  const visibleIds = new Set(items.map((a) => a.id));
-  const activeSelection = [...selected].filter((id) => visibleIds.has(id));
+  /*
+   * The selection, minus anything no longer on screen after a folder switch or a filter change.
+   *
+   * <b>Memoised, and it has to be.</b> This array is handed to `useAiPageContext` below, whose
+   * effect calls `setPage` on the provider that renders this page. A fresh array on every render
+   * makes the memo below fresh, which makes the effect re-run, which sets state above, which
+   * re-renders this — an unbounded loop that React ends with "Maximum update depth exceeded"
+   * (minified: error #185). The page then renders nothing but the error boundary.
+   */
+  const activeSelection = useMemo(() => {
+    const visibleIds = new Set(items.map((a) => a.id));
+    return [...selected].filter((id) => visibleIds.has(id));
+  }, [items, selected]);
 
   const toggle = (id: string) =>
     setSelected((prev) => {

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * What the reader is currently looking at.
@@ -62,13 +62,31 @@ export function useAi(): AiContextValue {
 /**
  * Declares what this page is showing.
  *
- * Memoise the object, or the effect re-registers on every render — including every keystroke
- * in a search box on the page.
+ * <p><b>Compared by value, not by identity.</b> The effect writes to state on the provider that
+ * renders the calling page, so a context object with a new identity on every render is not
+ * merely wasteful — it re-runs the effect, which re-renders the page, which builds another new
+ * object. React ends that with "Maximum update depth exceeded" and the page is replaced by an
+ * error boundary. It cost the media library exactly that, because one of its `useMemo`
+ * dependencies was a filtered array rebuilt every render.</p>
+ *
+ * <p>Callers should still memoise — this hook cannot make a page cheap to render — but getting
+ * it wrong now costs a wasted comparison rather than the screen.</p>
  */
 export function useAiPageContext(context: AiPageContext | null): void {
   const { setPage } = useAi();
+
+  // Read through a ref so the effect can publish the current object while depending only on
+  // its value. Two contexts that describe the same thing are the same context.
+  const latest = useRef(context);
+  latest.current = context;
+
+  const identity =
+    context === null
+      ? ''
+      : [context.area, context.summary, ...(context.selection ?? [])].join('\u0000');
+
   useEffect(() => {
-    setPage(context);
+    setPage(latest.current);
     return () => setPage(null);
-  }, [context, setPage]);
+  }, [identity, setPage]);
 }

@@ -63,6 +63,22 @@ export default tseslint.config(
   },
   {
     /*
+     * End-to-end tests. Node, not a browser, and not React.
+     *
+     * The react-hooks rules have to come off here specifically: Playwright names a fixture's
+     * "hand the value to the test" callback `use`, and the rules-of-hooks check sees any call
+     * to something named `use` as React's `use` hook being called outside a component. Every
+     * fixture in the suite is then an error, for code that has nothing to do with React.
+     */
+    files: ['e2e/**/*.ts'],
+    languageOptions: { globals: { ...globals.node } },
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+      'react-hooks/exhaustive-deps': 'off',
+    },
+  },
+  {
+    /*
      * Accessibility. Installed because two files already carried
      * `eslint-disable-next-line jsx-a11y/...` comments for a plugin that had never been added —
      * somebody meant this to be enforced and it silently was not.
