@@ -55,7 +55,10 @@ public class PlatformRouteTableTests
     // ---- Platform host: the two specific /api prefixes must out-rank the general one ----
     [InlineData(Platform, "/api/platform/observability", PlatformRoutes.PlatformApi)]
     [InlineData(Platform, "/api/identity/users", PlatformRoutes.Identity)]
-    [InlineData(Platform, "/api/admin/tenants", PlatformRoutes.AdminApi)]
+    // Nothing on the console host reaches admin-api. A stale bundle asking for one lands on the
+    // SPA catch-all and gets 200 text/html, which is precisely why this route was removed last:
+    // the http client hands that string to the query, and the page is blank with no error.
+    [InlineData(Platform, "/api/admin/tenants", PlatformRoutes.PlatformSpa)]
     [InlineData(Platform, "/", PlatformRoutes.PlatformSpa)]
     // ---- The two third-party consoles ----
     [InlineData(Grafana, "/d/abc/dashboard", PlatformRoutes.Grafana)]

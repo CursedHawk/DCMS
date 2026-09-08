@@ -14,10 +14,12 @@ namespace Dcms.Edge.Routing;
 /// that cannot serve the admin host until the database answers cannot be used to diagnose a
 /// database that is not answering.
 ///
-/// <para><b>Order is load-bearing and therefore explicit.</b> <c>/api/platform/*</c> must
-/// out-rank <c>/api/*</c>, or admin-api answers for the console's own API. YARP would otherwise decide
-/// by its own precedence rules, so every route here states its <see cref="RouteConfig.Order"/>
-/// (lower wins) instead of relying on them.</para>
+/// <para><b>Order is load-bearing and therefore explicit.</b> Every prefix here must out-rank
+/// the host's SPA catch-all, or the console answers its own API calls with index.html — a
+/// <c>200 text/html</c> the http client hands to the query as a string, which renders as a blank
+/// page with nothing in any log. YARP would otherwise decide by its own precedence rules, so
+/// every route states its <see cref="RouteConfig.Order"/> (lower wins) instead of relying on
+/// them.</para>
 /// </summary>
 public static class PlatformRoutes
 {
@@ -102,16 +104,23 @@ public static class PlatformRoutes
 
         // ---- Platform console APIs (the platform.* host) ----
         //
-        // The two specific prefixes MUST out-rank the general /api below, or admin-api answers
-        // for all three.
+        // Two prefixes, and NO general /api. The console reaches admin-api through neither: it
+        // asks platform-api, which checks the operator's platform permission and forwards on a
+        // service token. So the console host serves platform-api and identity, and anything else
+        // under /api falls through to the SPA catch-all below.
+        //
+        // That fall-through is why removing this route was the LAST step of the split rather
+        // than the first: a browser holding a bundle that still calls /api/admin/... gets
+        // `200 text/html` from the SPA, and an http client hands that to the query as a string.
+        // A blank page, no error, nothing in a log. Every earlier step had to land, and the
+        // scope had to be taken away (6/7), before this was safe.
         routes.Add(Prefix("platform-api", [platform], "/api/platform", PlatformApi, order: 20));
         // Stays on the console's own host: this is the user DIRECTORY, not authentication, and
         // the console calls it same-origin with a bearer token like any other API.
         routes.Add(Prefix("platform-identity-api", [platform], "/api/identity", Identity, order: 21));
 
-        // ---- Admin REST API, on both operator hosts ----
-        // Tenancy and the audit log, which admin-api owns, are what the console reaches here.
-        routes.Add(Prefix("admin-api", [admin, platform], "/api", AdminApi, order: 30));
+        // ---- Admin REST API, on the admin host ----
+        routes.Add(Prefix("admin-api", [admin], "/api", AdminApi, order: 30));
 
         // ---- SignalR hubs hosted by content-api, on the admin host ----
         // Same-origin so the SPA's negotiate + WebSocket avoid CORS. YARP proxies the upgrade.
