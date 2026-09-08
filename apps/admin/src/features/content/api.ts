@@ -1,4 +1,4 @@
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 
 export interface ContentItem {
@@ -39,11 +39,17 @@ export interface TagSuggestion {
   occurrences?: { instanceSlug: string; contentType: string; field: string; count: number }[];
 }
 
-export function useContentItems(instanceId: string | undefined) {
+/**
+ * How many items of each content type an instance holds, for the collection rail.
+ *
+ * <p>A count, not a list. The rail used to fetch every item of every instance in it — for all
+ * of them at once, whether or not the collection was open — and count in the browser.</p>
+ */
+export function useContentCounts(instanceId: string | undefined) {
   return useQuery({
-    queryKey: ['content', instanceId],
+    queryKey: ['content', instanceId, 'counts'],
     enabled: !!instanceId,
-    queryFn: () => api.get<ContentItem[]>(`/admin/content?instanceId=${instanceId}`),
+    queryFn: () => api.get<Record<string, number>>(`/admin/content/counts?instanceId=${instanceId}`),
   });
 }
 
@@ -58,6 +64,90 @@ export function useContentItemsOfType(instanceId: string | undefined, contentTyp
     queryFn: () =>
       api.get<ContentItem[]>(
         `/admin/content?instanceId=${instanceId}&contentType=${encodeURIComponent(contentType!)}&includeDraft=true`,
+      ),
+  });
+}
+
+/** One row of a collection list. No draft: the server projects the title instead. */
+export interface ContentRow {
+  id: string;
+  contentType: string;
+  slug: string;
+  /** The item's first textual field, tags stripped, falling back to the slug. */
+  title: string;
+  status: string;
+  updatedAt: string;
+  publishedAt?: string | null;
+  scheduledPublishAt?: string | null;
+}
+
+export interface ContentPage {
+  items: ContentRow[];
+  /** Opaque; hand it back to continue. Null when this was the last page. */
+  nextCursor: string | null;
+  /** How many items match the filters, not how many are left below the scroll. */
+  total: number;
+}
+
+export interface ContentListFilters {
+  search: string;
+  /** A ContentStatus, or the synthetic `Scheduled`, or `all`. */
+  status: string;
+  /** A tag, or `all`. */
+  tag: string;
+}
+
+/**
+ * One collection, a page at a time, filtered by the server.
+ *
+ * <p>This replaced fetching every item in the collection <i>with its full draft</i> — the only
+ * way the browser could show a real title — and filtering client-side. That payload grows with
+ * what authors have written rather than with the row count, so it degraded quietly and in
+ * proportion to how much the tenant had used the product.</p>
+ *
+ * <p>The filters are in the query key, so changing one is a new query rather than a refetch:
+ * react-query keeps the old page rendered while the new one loads instead of blanking the
+ * table on every keystroke.</p>
+ */
+export function useContentPage(
+  instanceId: string | undefined,
+  contentType: string | undefined,
+  filters: ContentListFilters,
+) {
+  return useInfiniteQuery({
+    queryKey: ['content', instanceId, contentType, 'page', filters],
+    enabled: !!instanceId && !!contentType,
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({
+        instanceId: instanceId!,
+        contentType: contentType!,
+      });
+      if (filters.search.trim()) params.set('search', filters.search.trim());
+      if (filters.status !== 'all') params.set('status', filters.status);
+      if (filters.tag !== 'all') params.set('tag', filters.tag);
+      if (pageParam) params.set('cursor', pageParam);
+      return api.get<ContentPage>(`/admin/content/page?${params.toString()}`);
+    },
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+/**
+ * The tags one collection actually uses, most-used first.
+ *
+ * <p>From the server rather than from the loaded rows, which is what the filter used to do.
+ * Reading them off a page would offer only the tags on that page — so a tag would appear in
+ * the filter, be selected, and then narrow the list to nothing that had scrolled past.</p>
+ */
+export function useCollectionTags(instanceId: string | undefined, contentType: string | undefined) {
+  return useQuery({
+    queryKey: ['content-tags', instanceId, contentType, 'collection'],
+    enabled: !!instanceId && !!contentType,
+    staleTime: 60_000,
+    queryFn: () =>
+      api.get<TagSuggestion[]>(
+        `/admin/content/tags?instanceId=${instanceId}&contentType=${encodeURIComponent(contentType!)}`,
       ),
   });
 }

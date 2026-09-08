@@ -79,7 +79,11 @@
     "reset": "Vymazat",
     "send": "Odeslat",
     "stop": "Zastavit",
-    "confirmType": "Pro potvrzení napište {{value}}"
+    "confirmType": "Pro potvrzení napište {{value}}",
+    "loadFailed": "Seznam se nepodařilo načíst.",
+    "retry": "Zkusit znovu",
+    "clearFilters": "Zrušit filtry",
+    "sortBy": "Seřadit podle: {{column}}"
   },
   "theme": {
     "light": "Světlý",
@@ -287,7 +291,8 @@
       "markdownNote": "Ukládá se jako Markdown.",
       "markdownHintLabel": "Co se v tomto poli ukládá",
       "markdownHint": "Toto pole ukládá zdrojový Markdown, ne HTML — právě ten totiž čte vše další v řadě. Vložený Markdown se rozpozná a to, co zde napíšete, se při uložení převede zpět na Markdown."
-    }
+    },
+    "loadMore": "Načíst další"
   },
   "media": {
     "title": "Knihovna médií",

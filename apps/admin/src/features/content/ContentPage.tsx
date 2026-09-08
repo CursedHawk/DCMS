@@ -1,5 +1,5 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { FileText, LayoutGrid, Plus, Search } from 'lucide-react';
+import { AlertTriangle, FileText, LayoutGrid, Plus, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -7,8 +7,10 @@ import {
   Button,
   CenteredSpinner,
   cn,
+  type Column,
+  DataTable,
   EmptyState,
-  Input,
+  FilterBar,
   Page,
   PageHeader,
   Select,
@@ -16,13 +18,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Table,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
+  useDebounced,
 } from '@dcms/ui';
+import { dateTime } from '@dcms/core';
 import {
   type ContentTypeDef,
   type PluginInstance,
@@ -30,7 +28,12 @@ import {
   usePluginInstances,
 } from '../plugins/api';
 import { ContentEditor } from './ContentEditor';
-import { type ContentItem, useContentItems, useContentItemsOfType } from './api';
+import {
+  type ContentRow,
+  useCollectionTags,
+  useContentCounts,
+  useContentPage,
+} from './api';
 
 /** Turn a machine name ("blogPost", "gig_line-up") into a readable label. */
 function humanize(name: string): string {
@@ -39,59 +42,6 @@ function humanize(name: string): string {
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .trim();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
-
-/** Field whose value best represents an item in a list (first textual field). */
-function titleFieldOf(ct: ContentTypeDef): string | undefined {
-  const textual = ct.fields.find((f) => f.type === 'Text' || f.type === 'RichText' || f.type === 'Markdown');
-  return textual?.name ?? ct.slugField;
-}
-
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * What an array of strings has to look like to be a vocabulary.
- *
- * Nothing in the data says "this field holds tags" — a media reference list is
- * an array of strings exactly like a tag list is, so without this a gallery's
- * every photo shows up in the tag filter as an asset id and buries the real
- * tags. Kept in lockstep with `LooksLikeATag` in the backend's TagQueries.
- */
-function looksLikeATag(value: string): boolean {
-  const text = value.trim();
-  return text.length > 0 && text.length <= 64 && !GUID.test(text) && !/^(\/|https?:\/\/)/.test(text);
-}
-
-/**
- * Every tag on an item, from any tag-ish field.
- *
- * Read off the loaded rows rather than fetched, so filtering by tag costs no
- * request and the offered tags are exactly the ones this collection actually
- * has. One level of nesting because a plugin's tenant-defined fields live under
- * a single key, which is where a site's most specific tags usually are.
- */
-function tagsOfItem(item: ContentItem): string[] {
-  const data = (item.draft ?? {}) as Record<string, unknown>;
-  const out: string[] = [];
-  const collect = (value: unknown) => {
-    if (!Array.isArray(value)) return;
-    for (const entry of value) {
-      if (typeof entry === 'string' && looksLikeATag(entry)) out.push(entry.trim());
-    }
-  };
-  for (const value of Object.values(data)) {
-    collect(value);
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      for (const nested of Object.values(value as Record<string, unknown>)) collect(nested);
-    }
-  }
-  return out;
-}
-
-function itemTitle(item: ContentItem, titleField: string | undefined): string {
-  const raw = titleField ? item.draft?.[titleField] : undefined;
-  const text = typeof raw === 'string' ? raw.trim() : '';
-  return text || item.slug;
 }
 
 /*
@@ -243,8 +193,8 @@ function InstanceNav({
   selectedType: string | null;
   onSelect: (type: string) => void;
 }) {
-  const items = useContentItems(instance.id);
-  const countOf = (type: string) => (items.data ?? []).filter((i) => i.contentType === type).length;
+  const counts = useContentCounts(instance.id);
+  const countOf = (type: string) => counts.data?.[type] ?? 0;
 
   return (
     <div>
@@ -266,7 +216,7 @@ function InstanceNav({
             >
               <FileText className={cn('h-4 w-4 shrink-0', active ? '' : 'text-muted-foreground')} />
               <span className="flex-1 truncate">{humanize(ct.name)}</span>
-              {items.isSuccess ? (
+              {counts.isSuccess ? (
                 <span
                   className={cn(
                     'shrink-0 text-xs tabular-nums',
@@ -298,12 +248,17 @@ function CollectionView({
   onDeepLinkConsumed?: () => void;
 }) {
   const { t } = useTranslation();
-  // includeDraft so the list can show a real title, not just the slug.
-  const items = useContentItemsOfType(instance.id, contentType.name);
   const [editorItem, setEditorItem] = useState<string | null | undefined>(undefined);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const [tag, setTag] = useState('all');
+
+  // Typing is a pause, not a keystroke: without this every character is a request, the
+  // answers race, and the list flickers through the results of prefixes nobody asked about.
+  const search = useDebounced(query);
+
+  const page = useContentPage(instance.id, contentType.name, { search, status, tag });
+  const tags = useCollectionTags(instance.id, contentType.name);
 
   // Open the linked item, then strip the link out of the URL. Stripping it matters: without
   // it, closing the modal would immediately reopen it (the effect would still see the item in
@@ -317,39 +272,47 @@ function CollectionView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openItemId]);
 
-  const titleField = titleFieldOf(contentType);
+  const rows = page.data?.pages.flatMap((p) => p.items) ?? [];
+  const total = page.data?.pages[0]?.total ?? 0;
+  const filtered = status !== 'all' || tag !== 'all' || search.trim().length > 0;
 
-  const all = items.data ?? [];
-  // The tags this collection actually uses, most-used first — the filter offers
-  // exactly what is here rather than the tenant's whole vocabulary, most of which
-  // would match nothing in this list.
-  const tagOptions = useMemo(() => {
-    const counts = new Map<string, { label: string; count: number }>();
-    for (const item of all) {
-      for (const t of new Set(tagsOfItem(item).map((v) => v))) {
-        const key = t.toLowerCase();
-        const seen = counts.get(key);
-        if (seen) seen.count += 1;
-        else counts.set(key, { label: t, count: 1 });
-      }
-    }
-    return [...counts.entries()]
-      .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
-      .map(([key, v]) => ({ key, label: v.label, count: v.count }));
-  }, [all]);
-
-  const filtered = all.filter((item) => {
-    if (status !== 'all' && effectiveStatus(item) !== status) return false;
-    if (tag !== 'all' && !tagsOfItem(item).some((v) => v.toLowerCase() === tag)) return false;
-    if (query.trim()) {
-      const q = query.trim().toLowerCase();
-      return (
-        item.slug.toLowerCase().includes(q) ||
-        itemTitle(item, titleField).toLowerCase().includes(q)
-      );
-    }
-    return true;
-  });
+  const columns: Column<ContentRow>[] = [
+    {
+      id: 'title',
+      header: t('content.itemTitle'),
+      primary: true,
+      cell: (row) => <span className="font-medium">{row.title}</span>,
+      sortValue: (row) => row.title.toLowerCase(),
+    },
+    {
+      id: 'slug',
+      header: t('common.slug'),
+      cell: (row) => <span className="font-mono text-xs text-muted-foreground">{row.slug}</span>,
+      sortValue: (row) => row.slug,
+    },
+    {
+      id: 'status',
+      header: t('common.status'),
+      cell: (row) => (
+        <Badge
+          tone={statusTone(effectiveStatus(row))}
+          title={row.scheduledPublishAt ? new Date(row.scheduledPublishAt).toLocaleString() : undefined}
+        >
+          {effectiveStatus(row)}
+        </Badge>
+      ),
+      sortValue: (row) => effectiveStatus(row),
+    },
+    {
+      id: 'updated',
+      header: t('common.updated'),
+      align: 'right',
+      cell: (row) => (
+        <span className="text-muted-foreground tabular-nums">{dateTime(row.updatedAt)}</span>
+      ),
+      sortValue: (row) => row.updatedAt,
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -357,7 +320,7 @@ function CollectionView({
         <div className="min-w-0">
           <h2 className="truncate text-lg font-semibold tracking-tight">{humanize(contentType.name)}</h2>
           <p className="truncate text-xs text-muted-foreground">
-            {instance.name} · {t('content.itemCount', { count: all.length })}
+            {instance.name} · {t('content.itemCount', { count: total })}
           </p>
         </div>
         <Button size="sm" onClick={() => setEditorItem(null)}>
@@ -365,16 +328,17 @@ function CollectionView({
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t('content.searchPlaceholder')}
-            className="pl-8"
-          />
-        </div>
+      <FilterBar
+        search={query}
+        onSearchChange={setQuery}
+        searchPlaceholder={t('content.searchPlaceholder')}
+        activeCount={(status === 'all' ? 0 : 1) + (tag === 'all' ? 0 : 1)}
+        onClear={() => {
+          setStatus('all');
+          setTag('all');
+        }}
+        clearLabel={t('common.clearFilters')}
+      >
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger className="w-40">
             <SelectValue />
@@ -386,70 +350,79 @@ function CollectionView({
             <SelectItem value="Scheduled">{t('content.scheduled')}</SelectItem>
           </SelectContent>
         </Select>
-        {tagOptions.length > 0 && (
+        {(tags.data?.length ?? 0) > 0 && (
           <Select value={tag} onValueChange={setTag}>
             <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{t('content.tags.allTags')}</SelectItem>
-              {tagOptions.map((o) => (
-                <SelectItem key={o.key} value={o.key}>
-                  {o.label} ({o.count})
+              {tags.data!.map((o) => (
+                <SelectItem key={o.tag} value={o.tag}>
+                  {o.tag} ({o.count})
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         )}
-      </div>
+      </FilterBar>
 
-      {items.isLoading ? (
-        <CenteredSpinner />
-      ) : filtered.length > 0 ? (
-        <Table>
-          <THead>
-            <TR>
-              <TH>{t('content.itemTitle')}</TH>
-              <TH>{t('common.slug')}</TH>
-              <TH>{t('common.status')}</TH>
-              <TH>{t('common.updated')}</TH>
-            </TR>
-          </THead>
-          <TBody>
-            {filtered.map((item) => (
-              <TR key={item.id} className="cursor-pointer" onClick={() => setEditorItem(item.id)}>
-                <TD className="font-medium">{itemTitle(item, titleField)}</TD>
-                <TD className="text-muted-foreground">{item.slug}</TD>
-                <TD>
-                  <Badge
-                    tone={statusTone(effectiveStatus(item))}
-                    title={
-                      item.scheduledPublishAt
-                        ? new Date(item.scheduledPublishAt).toLocaleString()
-                        : undefined
-                    }
-                  >
-                    {effectiveStatus(item)}
-                  </Badge>
-                </TD>
-                <TD className="text-muted-foreground">{new Date(item.updatedAt).toLocaleString()}</TD>
-              </TR>
-            ))}
-          </TBody>
-        </Table>
-      ) : all.length > 0 ? (
-        <EmptyState icon={Search} title={t('common.noResults')} />
-      ) : (
-        <EmptyState
-          icon={FileText}
-          title={t('content.emptyCollection', { type: humanize(contentType.name) })}
-          description={t('content.emptyCollectionHint')}
-          action={
-            <Button size="sm" onClick={() => setEditorItem(null)}>
-              <Plus className="h-4 w-4" /> {t('content.newItem')}
-            </Button>
-          }
-        />
+      <DataTable
+        rows={rows}
+        columns={columns}
+        rowKey={(row) => row.id}
+        isLoading={page.isLoading}
+        error={
+          page.isError ? (
+            // Distinct from the empty state on purpose: a list that failed to load and a list
+            // with nothing in it look identical unless one of them says so, and "there is
+            // nothing here" is the more damaging of the two to get wrong.
+            <EmptyState
+              icon={AlertTriangle}
+              title={t('common.loadFailed')}
+              action={
+                <Button variant="outline" size="sm" onClick={() => void page.refetch()}>
+                  {t('common.retry')}
+                </Button>
+              }
+            />
+          ) : undefined
+        }
+        onRowClick={(row) => setEditorItem(row.id)}
+        caption={t('content.itemCount', { count: total })}
+        labels={{
+          loading: t('common.loading'),
+          sortBy: (column) => t('common.sortBy', { column }),
+        }}
+        empty={
+          filtered ? (
+            <EmptyState icon={Search} title={t('common.noResults')} />
+          ) : (
+            <EmptyState
+              icon={FileText}
+              title={t('content.emptyCollection', { type: humanize(contentType.name) })}
+              description={t('content.emptyCollectionHint')}
+              action={
+                <Button size="sm" onClick={() => setEditorItem(null)}>
+                  <Plus className="h-4 w-4" /> {t('content.newItem')}
+                </Button>
+              }
+            />
+          )
+        }
+      />
+
+      {page.hasNextPage && (
+        <div className="flex justify-center">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page.isFetchingNextPage}
+            onClick={() => void page.fetchNextPage()}
+          >
+            {page.isFetchingNextPage ? t('common.loading') : t('content.loadMore')}
+          </Button>
+        </div>
       )}
 
       {editorItem !== undefined ? (

@@ -404,6 +404,7 @@ app.MapPluginEndpoints();
 app.MapNavigationEndpoints();
 app.MapMarketplaceEndpoints();
 app.MapContentEndpoints();
+app.MapContentListEndpoints();
 app.MapMediaEndpoints();
 app.MapSiteEndpoints();
 app.MapSiteDeletion();
