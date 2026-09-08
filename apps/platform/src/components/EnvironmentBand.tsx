@@ -21,9 +21,18 @@ export function EnvironmentBand() {
     <div
       className={cn(
         'flex items-center gap-2 border-b px-4 py-1.5 text-xs',
+        /*
+         * The non-production band is `text-foreground`, not `text-muted-foreground`.
+         *
+         * Muted on the secondary ground measures 4.32:1 — under the 4.5:1 minimum, which axe
+         * caught on every page of this console. A band whose whole purpose is to be readable at
+         * a glance, and which is not quite readable, is worse than no band: it is a safeguard
+         * that looks present. Quiet is carried by the size and the ground, not by dimming the
+         * only words on it.
+         */
         isProduction
           ? 'border-transparent bg-[hsl(340_53%_36%)] text-white'
-          : 'border-border bg-secondary text-muted-foreground',
+          : 'border-border bg-secondary text-foreground',
       )}
     >
       <span

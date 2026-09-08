@@ -95,3 +95,40 @@ export async function signIn(
 export async function signedOut(page: Page): Promise<void> {
   await page.addInitScript(() => window.localStorage.clear());
 }
+
+/**
+ * The identity server's discovery document, and a stand-in for its authorize page.
+ *
+ * <p>`signinRedirect()` does not build a URL from configuration — it fetches
+ * `/.well-known/openid-configuration` first and reads `authorization_endpoint` out of it. With
+ * nothing answering, the redirect never happens and a test asserting on the authorize URL waits
+ * for a request that is never made. That failure looks exactly like "the sign-in button is
+ * broken", which is the wrong thing for a test to say when the truth is "no identity server is
+ * running", so the document is stubbed rather than the button being trusted.</p>
+ *
+ * <p>The authorize endpoint itself answers with a page, so the browser lands somewhere instead
+ * of on a connection error. What it returns does not matter; the assertion is on the request.</p>
+ */
+export async function stubOidcDiscovery(page: Page, authority = AUTHORITY): Promise<void> {
+  await page.route('**/.well-known/openid-configuration', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        issuer: authority,
+        authorization_endpoint: `${authority}/connect/authorize`,
+        token_endpoint: `${authority}/connect/token`,
+        userinfo_endpoint: `${authority}/connect/userinfo`,
+        end_session_endpoint: `${authority}/connect/logout`,
+        jwks_uri: `${authority}/.well-known/jwks`,
+        response_types_supported: ['code'],
+        code_challenge_methods_supported: ['S256'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+      }),
+    }),
+  );
+
+  await page.route('**/connect/authorize*', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '<title>identity</title>' }),
+  );
+}

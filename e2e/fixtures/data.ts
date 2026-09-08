@@ -133,6 +133,38 @@ export const CONTENT_ROWS = [
   },
 ];
 
+/** `GET /admin/tenant` — the workspace, as its own settings page reads it. */
+export const WORKSPACE = {
+  tenantId: TENANT.tenantId,
+  slug: TENANT.slug,
+  name: TENANT.name,
+  status: 'Active',
+  createdAt: '2026-01-04T09:00:00Z',
+  owners: [{ userId: '11111111-1111-1111-1111-111111111111', email: 'ada@example.test' }],
+  isOwner: true,
+  members: [
+    { membershipId: '88888888-0000-0000-0000-000000000001', userId: '11111111-1111-1111-1111-111111111111', email: 'ada@example.test' },
+  ],
+  counts: { members: 1, sites: 0, domains: 0, mediaAssets: 2, contentItems: 2 },
+};
+
+export const SCHEDULED = [
+  {
+    scheduleId: '77777777-0000-0000-0000-000000000001',
+    itemId: CONTENT_ROWS[1].id,
+    instanceId: INSTANCE_BLOG,
+    instanceName: 'Press room',
+    pluginId: 'dcms.blog',
+    contentType: 'post',
+    slug: 'launch-notes',
+    // Deliberately not the row's own title: the queue shows the version that is QUEUED, and an
+    // author who has kept writing since scheduling should see the headline that is going out.
+    title: 'Launch notes, as approved',
+    status: 'Draft',
+    publishAt: '2026-09-20T08:00:00Z',
+  },
+];
+
 export const NOTIFICATIONS = {
   items: [
     {
@@ -156,9 +188,46 @@ export const PLATFORM_PERMISSIONS = [
   'platform:notifications:read', 'platform:ops:act',
 ];
 
+/** The console's tenant row carries a count per thing a tenant has; nothing is optional. */
+const tenantRow = (t: typeof TENANT, status: string, createdAt: string) => ({
+  tenantId: t.tenantId,
+  slug: t.slug,
+  name: t.name,
+  status,
+  createdAt,
+  members: 3,
+  domains: 1,
+  verifiedDomains: 1,
+  sites: 2,
+  contentItems: 12,
+  publishedItems: 9,
+  mediaAssets: 2,
+  enabledPlugins: 1,
+  visitorAccounts: 0,
+  formSubmissions: 4,
+  storageBytes: 83_968,
+});
+
 export const PLATFORM_TENANTS = [
-  { tenantId: TENANT.tenantId, slug: TENANT.slug, name: TENANT.name, status: 'Active', createdAt: '2026-01-04T09:00:00Z' },
-  { tenantId: OTHER_TENANT.tenantId, slug: OTHER_TENANT.slug, name: OTHER_TENANT.name, status: 'Suspended', createdAt: '2026-02-11T09:00:00Z' },
+  tenantRow(TENANT, 'Active', '2026-01-04T09:00:00Z'),
+  tenantRow(OTHER_TENANT, 'Suspended', '2026-02-11T09:00:00Z'),
+];
+
+export const PLATFORM_OVERVIEW = {
+  tenants: 2,
+  activeTenants: 1,
+  suspendedTenants: 1,
+  sites: 3,
+  contentItems: 24,
+  publishedItems: 18,
+  mediaAssets: 2,
+  storageBytes: 83_968,
+  members: 7,
+};
+
+export const PLATFORM_GROWTH = [
+  { day: '2026-09-06', newTenants: 0, newUsers: 1, newSites: 0, newContent: 3 },
+  { day: '2026-09-07', newTenants: 1, newUsers: 2, newSites: 1, newContent: 5 },
 ];
 
 export const PLATFORM_AUDIT = {

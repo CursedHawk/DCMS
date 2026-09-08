@@ -1,5 +1,6 @@
 import type { Page, Route, Request } from '@playwright/test';
 import * as data from './data';
+import { OPERATOR_SUB } from './oidc';
 
 export interface RecordedRequest {
   method: string;
@@ -255,12 +256,29 @@ export function adminApi(
     .on('GET', '/api/admin/content/tags', [{ tag: 'launch', count: 1 }])
     .on('GET', '/api/admin/content', [])
 
-    .on('GET', '/api/admin/tenant', { slug: data.TENANT.slug, name: data.TENANT.name })
+    .on('GET', '/api/admin/tenant', data.WORKSPACE)
+    // The SuperAdmin-only cross-tenant list, which is a different route from `/me/tenants`.
+    .on('GET', '/api/admin/tenants', data.PLATFORM_TENANTS)
+    .on('GET', '/api/admin/content/scheduled', { items: data.SCHEDULED })
+    .on('GET', '/api/admin/audit', { items: [], nextCursor: null })
+    .on('GET', '/api/admin/ai/settings', { provider: 'anthropic', model: null, hasKey: false })
+    .on('GET', '/api/admin/ai/user-credentials', [])
+    .on('GET', '/api/admin/openapi.json', { openapi: '3.1.0', info: { title: 'DCMS', version: '1' }, paths: {} })
+    .on('POST', '/api/admin/content/:id/publish', { status: 'published' })
+    .on('POST', '/api/admin/content/:id/unpublish', { status: 'draft' })
+    .on('DELETE', '/api/admin/content/:id/schedule', { cancelled: 1 })
+    .on('DELETE', '/api/admin/content/:id', {})
     .on('GET', '/api/admin/members', [])
     .on('GET', '/api/admin/invitations', [])
     .on('GET', '/api/admin/roles', [])
     .on('GET', '/api/admin/permissions/catalog', [])
     .on('GET', '/api/admin/sites', [])
+    .on('GET', '/api/admin/sites/:id', {
+      id: '11111111-1111-1111-1111-111111111111',
+      name: 'Acme site',
+      mode: 'ReactApp',
+      slug: 'acme-site',
+    })
     .on('GET', '/api/admin/domains', [])
     .on('GET', '/api/admin/domains/certificates', [])
     .on('GET', '/api/admin/domains/provisioned', []);
@@ -271,7 +289,14 @@ export function adminApi(
 /** The platform console's default world: an operator holding every platform permission. */
 export function platformApi(options: { permissions?: string[]; isSuperAdmin?: boolean } = {}): MockApi {
   const api = new MockApi();
+  // The whole shape `PlatformMe` declares, not just the two fields the permission checks read:
+  // the topbar renders the operator's roles and email, and a fixture missing them crashes the
+  // shell in a way that looks like a bug in the app.
   const me = {
+    userId: OPERATOR_SUB,
+    name: 'Ada Lovelace',
+    email: 'ada@example.test',
+    roles: options.isSuperAdmin ? ['SuperAdmin'] : ['PlatformOperator'],
     isSuperAdmin: options.isSuperAdmin ?? false,
     permissions: options.permissions ?? data.PLATFORM_PERMISSIONS,
   };
@@ -282,8 +307,14 @@ export function platformApi(options: { permissions?: string[]; isSuperAdmin?: bo
     .on('GET', '/api/platform/audit', data.PLATFORM_AUDIT)
     .on('GET', '/api/platform/notifications', { items: [], unreadCount: 0, nextCursor: null })
     .on('GET', '/api/platform/certificates', [])
-    .on('GET', '/api/platform/overview', {
-      tenantCount: 2, userCount: 7, siteCount: 3, storageBytes: 83_968,
+    .on('GET', '/api/platform/overview', data.PLATFORM_OVERVIEW)
+    .on('GET', '/api/platform/growth', data.PLATFORM_GROWTH)
+    .on('GET', '/api/platform/stores', { stores: [] })
+    .on('GET', '/api/platform/purge/loki', [])
+    .on('GET', '/api/platform/roles', [])
+    .on('GET', '/api/platform/permissions/catalog', { permissions: [] })
+    .on('GET', '/api/platform/health/signals', {
+      reachable: false, requestsPerSecond: null, errorRatio: null, latencyP95: null, targetsDown: null,
     })
     .on('POST', '/api/platform/tenants/:id/suspend', {})
     .on('POST', '/api/platform/tenants/:id/resume', {});

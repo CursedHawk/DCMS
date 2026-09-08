@@ -1,7 +1,7 @@
 import { test as base, expect } from '@playwright/test';
 import { adminApi, platformApi, type MockApi } from './api';
 import { adminHub, platformHub, type HubMock } from './hub';
-import { ADMIN_CLIENT_ID, PLATFORM_CLIENT_ID, signIn } from './oidc';
+import { ADMIN_CLIENT_ID, PLATFORM_CLIENT_ID, signIn, stubOidcDiscovery } from './oidc';
 import * as data from './data';
 
 export { expect, data };
@@ -97,6 +97,7 @@ export const anonymousTest = base.extend<{ api: MockApi }>({
     async ({ page }, use) => {
       const api = adminApi();
       await api.install(page);
+      await stubOidcDiscovery(page);
       await use(api);
     },
     { auto: true },

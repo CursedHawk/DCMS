@@ -78,7 +78,17 @@ function SectionLink({ section, pathname }: { section: SettingsSection; pathname
         )}
       >
         <span className="block">{t(section.labelKey)}</span>
-        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+        {/*
+          The description follows the row it is in. `text-muted-foreground` over the tinted
+          active background measures 4.17:1 — under the 4.5:1 minimum, and axe caught it on the
+          one row somebody is currently reading.
+        */}
+        <span
+          className={cn(
+            'mt-0.5 block text-xs font-normal',
+            active ? 'text-accent-foreground/80' : 'text-muted-foreground',
+          )}
+        >
           {t(section.descriptionKey)}
         </span>
       </Link>
