@@ -83,7 +83,10 @@
     "loadFailed": "This list could not be loaded.",
     "retry": "Try again",
     "clearFilters": "Clear filters",
-    "sortBy": "Sort by {{column}}"
+    "sortBy": "Sort by {{column}}",
+    "selectRow": "Select row",
+    "selectAll": "Select all",
+    "clearSelection": "Clear selection"
   },
   "theme": {
     "light": "Light",
@@ -307,6 +310,42 @@
       "collections": "Collections",
       "fields": "Fields",
       "extensible": "Extendable"
+    },
+    "scheduledView": {
+      "tab": "Scheduled",
+      "title": "Publishing queue",
+      "subtitle": "Everything waiting to go live, across every collection in this workspace.",
+      "when": "Publishes",
+      "collection": "Collection",
+      "revision": "Update to a live item",
+      "cancel": "Cancel",
+      "cancelled": "“{{title}}” is no longer scheduled.",
+      "emptyTitle": "Nothing is scheduled",
+      "emptyHint": "Schedule an item from its editor and it appears here until it goes live."
+    },
+    "bulk": {
+      "selected_one": "{{count}} selected",
+      "selected_other": "{{count}} selected",
+      "publish": "Publish",
+      "unpublish": "Unpublish",
+      "cancelSchedule": "Cancel schedule",
+      "deleteConfirm_one": "Delete {{count}} item? This can’t be undone.",
+      "deleteConfirm_other": "Delete {{count}} items? This can’t be undone.",
+      "needsPublish": "Needs the content:publish permission.",
+      "needsWrite": "Needs the content:write permission.",
+      "partial": "{{done}} done, {{failed}} refused.",
+      "allFailed_one": "{{count}} item could not be changed.",
+      "allFailed_other": "{{count}} items could not be changed.",
+      "done": {
+        "publish_one": "{{count}} item published.",
+        "publish_other": "{{count}} items published.",
+        "unpublish_one": "{{count}} item unpublished.",
+        "unpublish_other": "{{count}} items unpublished.",
+        "cancelSchedule_one": "{{count}} schedule cancelled.",
+        "cancelSchedule_other": "{{count}} schedules cancelled.",
+        "delete_one": "{{count}} item deleted.",
+        "delete_other": "{{count}} items deleted."
+      }
     }
   },
   "media": {

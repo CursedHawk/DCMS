@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 
 export interface ContentItem {
@@ -217,4 +217,105 @@ export function useTagVocabularies(
     out[field] = [...own, ...rest];
   });
   return out;
+}
+
+/** One row of the workspace-wide publishing queue. */
+export interface ScheduledItem {
+  scheduleId: string;
+  itemId: string;
+  instanceId: string;
+  /** The tenant's own name for the collection — "Press room", not "blog". */
+  instanceName: string;
+  pluginId: string;
+  contentType: string;
+  slug: string;
+  /** The title of the version that is queued, not of the draft being written now. */
+  title: string;
+  status: string;
+  publishAt: string;
+}
+
+/**
+ * Everything queued to publish, across every collection.
+ *
+ * <p>The scheduler has worked since it shipped and its queue was never visible: an author could
+ * see "Scheduled" beside the one item they had open, and had no way to answer "what goes out
+ * this week". Every other content query is scoped to one plugin instance because that is how
+ * the console browses; this one deliberately is not.</p>
+ */
+export function useScheduledContent(enabled = true) {
+  return useQuery({
+    queryKey: ['content-scheduled'],
+    enabled,
+    queryFn: () => api.get<{ items: ScheduledItem[] }>('/admin/content/scheduled'),
+  });
+}
+
+/** What a bulk action does to each selected item. */
+export type BulkVerb = 'publish' | 'unpublish' | 'delete' | 'cancelSchedule';
+
+export interface BulkResult {
+  done: string[];
+  failed: { id: string; message: string }[];
+}
+
+const bulkRequest = (verb: BulkVerb, id: string): Promise<unknown> => {
+  switch (verb) {
+    case 'publish':
+      // No body: publish what is already the current draft. The editor sends its unsaved edits
+      // instead, which is exactly the difference between publishing from a form and from a list.
+      return api.post(`/admin/content/${id}/publish`, undefined);
+    case 'unpublish':
+      return api.post(`/admin/content/${id}/unpublish`, undefined);
+    case 'cancelSchedule':
+      return api.del(`/admin/content/${id}/schedule`);
+    case 'delete':
+      return api.del(`/admin/content/${id}`);
+  }
+};
+
+/**
+ * One action applied to a selection.
+ *
+ * <p><b>There is no bulk endpoint, and this does not pretend there is one.</b> Each item is its
+ * own request, because each is its own audit record, its own outbox row and its own permission
+ * check — a server-side batch would have to reproduce all three and would make a partial
+ * failure invisible. So the failures are collected rather than thrown: publishing eight items
+ * and having one refuse should report "seven published, one refused" and name it, not roll back
+ * the seven and not claim eight.</p>
+ *
+ * <p>Requests go out a few at a time. All fifty at once is a burst that the API's own rate
+ * limiting would answer with 429s, which would look to the reader like the items failed.</p>
+ */
+export function useBulkContentAction() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ verb, ids }: { verb: BulkVerb; ids: string[] }): Promise<BulkResult> => {
+      const done: string[] = [];
+      const failed: { id: string; message: string }[] = [];
+      const queue = [...ids];
+
+      const worker = async () => {
+        for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+          try {
+            await bulkRequest(verb, id);
+            done.push(id);
+          } catch (e) {
+            failed.push({ id, message: e instanceof Error ? e.message : String(e) });
+          }
+        }
+      };
+
+      await Promise.all(Array.from({ length: Math.min(4, ids.length) }, worker));
+      return { done, failed };
+    },
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: ['content'] }),
+        qc.invalidateQueries({ queryKey: ['content-item'] }),
+        qc.invalidateQueries({ queryKey: ['content-scheduled'] }),
+        qc.invalidateQueries({ queryKey: ['content-tags'] }),
+      ]),
+  });
 }

@@ -83,7 +83,10 @@
     "loadFailed": "Seznam se nepodařilo načíst.",
     "retry": "Zkusit znovu",
     "clearFilters": "Zrušit filtry",
-    "sortBy": "Seřadit podle: {{column}}"
+    "sortBy": "Seřadit podle: {{column}}",
+    "selectRow": "Vybrat řádek",
+    "selectAll": "Vybrat vše",
+    "clearSelection": "Zrušit výběr"
   },
   "theme": {
     "light": "Světlý",
@@ -310,6 +313,49 @@
       "collections": "Kolekce",
       "fields": "Pole",
       "extensible": "Rozšiřitelný"
+    },
+    "scheduledView": {
+      "tab": "Naplánované",
+      "title": "Fronta publikování",
+      "subtitle": "Vše, co čeká na zveřejnění, napříč všemi kolekcemi tohoto pracovního prostoru.",
+      "when": "Zveřejní se",
+      "collection": "Kolekce",
+      "revision": "Aktualizace zveřejněné položky",
+      "cancel": "Zrušit",
+      "cancelled": "„{{title}}“ už není naplánováno.",
+      "emptyTitle": "Nic není naplánováno",
+      "emptyHint": "Naplánujte položku v jejím editoru a objeví se tady, dokud nevyjde."
+    },
+    "bulk": {
+      "selected_one": "{{count}} vybraná",
+      "selected_few": "{{count}} vybrané",
+      "selected_other": "{{count}} vybraných",
+      "publish": "Zveřejnit",
+      "unpublish": "Zrušit zveřejnění",
+      "cancelSchedule": "Zrušit plán",
+      "deleteConfirm_one": "Smazat {{count}} položku? Tohle nejde vrátit.",
+      "deleteConfirm_few": "Smazat {{count}} položky? Tohle nejde vrátit.",
+      "deleteConfirm_other": "Smazat {{count}} položek? Tohle nejde vrátit.",
+      "needsPublish": "Vyžaduje oprávnění content:publish.",
+      "needsWrite": "Vyžaduje oprávnění content:write.",
+      "partial": "Hotovo {{done}}, odmítnuto {{failed}}.",
+      "allFailed_one": "{{count}} položku se nepodařilo změnit.",
+      "allFailed_few": "{{count}} položky se nepodařilo změnit.",
+      "allFailed_other": "{{count}} položek se nepodařilo změnit.",
+      "done": {
+        "publish_one": "Zveřejněna {{count}} položka.",
+        "publish_few": "Zveřejněny {{count}} položky.",
+        "publish_other": "Zveřejněno {{count}} položek.",
+        "unpublish_one": "Stažena {{count}} položka.",
+        "unpublish_few": "Staženy {{count}} položky.",
+        "unpublish_other": "Staženo {{count}} položek.",
+        "cancelSchedule_one": "Zrušen {{count}} plán.",
+        "cancelSchedule_few": "Zrušeny {{count}} plány.",
+        "cancelSchedule_other": "Zrušeno {{count}} plánů.",
+        "delete_one": "Smazána {{count}} položka.",
+        "delete_few": "Smazány {{count}} položky.",
+        "delete_other": "Smazáno {{count}} položek."
+      }
     }
   },
   "media": {

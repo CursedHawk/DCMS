@@ -31,10 +31,14 @@ import {
   usePluginCatalog,
   usePluginInstances,
 } from '../plugins/api';
+import { BulkActions } from './BulkActions';
 import { ContentEditor } from './ContentEditor';
 
 const TypesView = lazy(() => import('./TypesView').then((m) => ({ default: m.TypesView })));
 const TagsView = lazy(() => import('./TagsView').then((m) => ({ default: m.TagsView })));
+const ScheduledView = lazy(() =>
+  import('./ScheduledView').then((m) => ({ default: m.ScheduledView })),
+);
 import {
   type ContentRow,
   useCollectionTags,
@@ -117,6 +121,10 @@ export function ContentPage() {
       if (type && (selected?.instanceId !== linked.instance.id || selected.type !== type.name)) {
         setSelected({ instanceId: linked.instance.id, type: type.name });
       }
+      // A deep link names an item to open, so it has to bring the collection tab with it.
+      // Without this a row clicked in the publishing queue selects a collection nobody can see
+      // and the click looks like it did nothing.
+      setTab('items');
       return;
     }
 
@@ -144,12 +152,19 @@ export function ContentPage() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="mb-6">
           <TabsTrigger value="items">{t('content.title')}</TabsTrigger>
+          <TabsTrigger value="scheduled">{t('content.scheduledView.tab')}</TabsTrigger>
           <TabsTrigger value="types">{t('content.types.title')}</TabsTrigger>
           <TabsTrigger value="tags">{t('content.tags.title')}</TabsTrigger>
         </TabsList>
 
-        {/* Types and tags are lazy: both are answers to "what is in this workspace", asked
-            occasionally, and neither should cost the collection list anything on first paint. */}
+        {/* The three side tabs are lazy: each answers "what is in this workspace" rather than
+            "what am I editing", they are asked occasionally, and none of them should cost the
+            collection list anything on first paint. */}
+        <TabsContent value="scheduled">
+          <Suspense fallback={<CenteredSpinner />}>
+            <ScheduledView />
+          </Suspense>
+        </TabsContent>
         <TabsContent value="types">
           <Suspense fallback={<CenteredSpinner />}>
             <TypesView />
@@ -283,6 +298,7 @@ function CollectionView({
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
   const [tag, setTag] = useState('all');
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
 
   // Typing is a pause, not a keystroke: without this every character is a request, the
   // answers race, and the list flickers through the results of prefixes nobody asked about.
@@ -303,9 +319,25 @@ function CollectionView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openItemId]);
 
-  const rows = page.data?.pages.flatMap((p) => p.items) ?? [];
+  // Memoised, because `visible` below depends on it and is itself a prop. A fresh array on
+  // every render would make the selection a fresh prop on every keystroke in the search box —
+  // the same shape that took the media library down through `useAiPageContext`.
+  const rows = useMemo(() => page.data?.pages.flatMap((p) => p.items) ?? [], [page.data]);
   const total = page.data?.pages[0]?.total ?? 0;
   const filtered = status !== 'all' || tag !== 'all' || search.trim().length > 0;
+
+  /*
+   * Only what is still on screen counts as selected.
+   *
+   * Changing a filter does not clear the selection — narrowing to Drafts, ticking three, then
+   * widening again should still have three ticked — but a bulk action must never reach an item
+   * the reader can no longer see. Memoised because it is handed to `BulkActions`, and an array
+   * rebuilt every render there would be a fresh prop on every keystroke in the search box.
+   */
+  const visible = useMemo(() => {
+    const onScreen = new Set(rows.map((r) => r.id));
+    return [...selected].filter((id) => onScreen.has(id));
+  }, [rows, selected]);
 
   const columns: Column<ContentRow>[] = [
     {
@@ -398,11 +430,26 @@ function CollectionView({
         )}
       </FilterBar>
 
+      {visible.length > 0 ? (
+        <BulkActions
+          ids={visible}
+          onDone={() => setSelected(new Set())}
+          onClear={() => setSelected(new Set())}
+        />
+      ) : null}
+
       <DataTable
         rows={rows}
         columns={columns}
         rowKey={(row) => row.id}
         isLoading={page.isLoading}
+        selection={{ selected, onChange: setSelected }}
+        labels={{
+          loading: t('common.loading'),
+          sortBy: (column) => t('common.sortBy', { column }),
+          selectRow: t('common.selectRow'),
+          selectAll: t('common.selectAll'),
+        }}
         error={
           page.isError ? (
             // Distinct from the empty state on purpose: a list that failed to load and a list
@@ -421,10 +468,6 @@ function CollectionView({
         }
         onRowClick={(row) => setEditorItem(row.id)}
         caption={t('content.itemCount', { count: total })}
-        labels={{
-          loading: t('common.loading'),
-          sortBy: (column) => t('common.sortBy', { column }),
-        }}
         empty={
           filtered ? (
             <EmptyState icon={Search} title={t('common.noResults')} />

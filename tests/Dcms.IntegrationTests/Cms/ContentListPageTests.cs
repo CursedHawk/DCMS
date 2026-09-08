@@ -199,6 +199,92 @@ public class ContentListPageTests(ContentFlowFixture fixture)
         counts.GetProperty("post").GetInt32().Should().Be(2);
     }
 
+    /// <summary>
+    /// The publishing queue, which the console could not show at all.
+    ///
+    /// <para>Every other content read is scoped to one plugin instance, because that is how the
+    /// console browses. "What goes out this week" is not answerable that way — it spans every
+    /// collection in the workspace — and so the one cross-instance read in the CMS exists for
+    /// exactly this.</para>
+    /// </summary>
+    [DockerFact]
+    public async Task The_queue_lists_every_collection_soonest_first()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t = await CollectionAsync(ct);
+        var second = await SecondInstanceAsync(t, ct);
+
+        var later = await CreateAsync(t, "later", new { title = "Out on Friday", body = "<p>x</p>" }, ct);
+        var sooner = await CreateAsync(t, "sooner", new { title = "Out tomorrow", body = "<p>x</p>" }, ct, second);
+
+        await ScheduleAsync(t, later, DateTimeOffset.UtcNow.AddDays(5), ct);
+        await ScheduleAsync(t, sooner, DateTimeOffset.UtcNow.AddDays(1), ct);
+
+        var items = (await ScheduledAsync(t, ct)).ToList();
+
+        items.Select(i => i.GetProperty("slug").GetString())
+            .Should().Equal("sooner", "later");
+        // The row says which collection it belongs to — the whole point of a list that spans them.
+        // (Two arguments, not three with a reason: `Equal` here takes params, so a reason string
+        // would be read as a third expected value.)
+        items.Select(i => i.GetProperty("instanceName").GetString())
+            .Should().Equal("Press", "News");
+    }
+
+    /// <summary>
+    /// A schedule pins the version it was made against, so the queue must show the headline
+    /// that is actually going out — not whatever the author has typed since.
+    /// </summary>
+    [DockerFact]
+    public async Task A_queued_row_shows_the_title_of_the_version_that_is_queued()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t = await CollectionAsync(ct);
+        var id = await CreateAsync(t, "headline", new { title = "As approved", body = "<p>x</p>" }, ct);
+
+        await ScheduleAsync(t, id, DateTimeOffset.UtcNow.AddDays(2), ct);
+        await UpdateAsync(t, id, new { title = "Still editing", body = "<p>x</p>" }, ct);
+
+        var row = (await ScheduledAsync(t, ct)).Single();
+        row.GetProperty("title").GetString().Should().Be("As approved");
+    }
+
+    [DockerFact]
+    public async Task Cancelling_a_schedule_empties_the_queue()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t = await CollectionAsync(ct);
+        var id = await CreateAsync(t, "cancel-me", new { title = "Maybe not", body = "<p>x</p>" }, ct);
+        await ScheduleAsync(t, id, DateTimeOffset.UtcNow.AddDays(2), ct);
+
+        (await ScheduledAsync(t, ct)).Should().HaveCount(1);
+
+        var res = await fixture.Admin.CreateClient().SendAsync(
+            Req(HttpMethod.Delete, $"/api/admin/content/{id}/schedule", t.Owner, t.Slug), ct);
+        res.IsSuccessStatusCode.Should().BeTrue(await res.Content.ReadAsStringAsync(ct));
+
+        (await ScheduledAsync(t, ct)).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Crossing instances is the point of this read; crossing tenants would be the bug it makes
+    /// possible. The filter is explicit because the query is raw SQL and does not go through the
+    /// ambient tenant filter.
+    /// </summary>
+    [DockerFact]
+    public async Task The_queue_never_shows_another_workspace()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var mine = await CollectionAsync(ct);
+        var theirs = await CollectionAsync(ct);
+
+        var hidden = await CreateAsync(theirs, "not-yours", new { title = "Theirs", body = "<p>x</p>" }, ct);
+        await ScheduleAsync(theirs, hidden, DateTimeOffset.UtcNow.AddDays(1), ct);
+
+        (await ScheduledAsync(mine, ct)).Should().BeEmpty();
+        (await ScheduledAsync(theirs, ct)).Should().HaveCount(1);
+    }
+
     // ---------- helpers ----------
 
     private sealed record Collection(string Slug, Guid Owner, Guid InstanceId);
@@ -222,11 +308,19 @@ public class ContentListPageTests(ContentFlowFixture fixture)
         return new Collection(slug, owner, id);
     }
 
-    private async Task<Guid> CreateAsync(Collection t, string itemSlug, object data, CancellationToken ct)
+    /// <param name="instanceId">Defaults to the collection's own instance.</param>
+    private async Task<Guid> CreateAsync(
+        Collection t, string itemSlug, object data, CancellationToken ct, Guid? instanceId = null)
     {
         var res = await fixture.Admin.CreateClient().SendAsync(
             Req(HttpMethod.Post, "/api/admin/content", t.Owner, t.Slug,
-                body: new { pluginInstanceId = t.InstanceId, contentType = "post", slug = itemSlug, data }), ct);
+                body: new
+                {
+                    pluginInstanceId = instanceId ?? t.InstanceId,
+                    contentType = "post",
+                    slug = itemSlug,
+                    data,
+                }), ct);
         res.StatusCode.Should().Be(HttpStatusCode.Created);
         return (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetGuid();
     }
@@ -244,6 +338,33 @@ public class ContentListPageTests(ContentFlowFixture fixture)
             Req(HttpMethod.Post, $"/api/admin/content/{itemId}/schedule", t.Owner, t.Slug,
                 body: new { publishAt = at }), ct);
         res.IsSuccessStatusCode.Should().BeTrue(await res.Content.ReadAsStringAsync(ct));
+    }
+
+    /// <summary>A second collection in the same workspace, so "across instances" means something.</summary>
+    private async Task<Guid> SecondInstanceAsync(Collection t, CancellationToken ct)
+    {
+        var res = await fixture.Admin.CreateClient().SendAsync(
+            Req(HttpMethod.Post, "/api/admin/plugins/instances", t.Owner, t.Slug,
+                body: new { pluginId = "blog", slug = "press", name = "Press", config = "{}" }), ct);
+        res.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetGuid();
+    }
+
+    private async Task UpdateAsync(Collection t, Guid itemId, object data, CancellationToken ct)
+    {
+        var res = await fixture.Admin.CreateClient().SendAsync(
+            Req(HttpMethod.Put, $"/api/admin/content/{itemId}", t.Owner, t.Slug, body: new { data }), ct);
+        res.IsSuccessStatusCode.Should().BeTrue(await res.Content.ReadAsStringAsync(ct));
+    }
+
+    private async Task<IReadOnlyList<JsonElement>> ScheduledAsync(Collection t, CancellationToken ct)
+    {
+        var res = await fixture.Admin.CreateClient().SendAsync(
+            Req(HttpMethod.Get, "/api/admin/content/scheduled", t.Owner, t.Slug), ct);
+        res.IsSuccessStatusCode.Should().BeTrue(await res.Content.ReadAsStringAsync(ct));
+
+        var body = await res.Content.ReadFromJsonAsync<JsonElement>(ct);
+        return body.GetProperty("items").EnumerateArray().ToList();
     }
 
     private async Task<JsonElement> PageAsync(Collection t, string query, CancellationToken ct)

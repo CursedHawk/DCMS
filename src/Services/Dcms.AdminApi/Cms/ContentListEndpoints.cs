@@ -106,7 +106,73 @@ public static class ContentListEndpoints
             return Results.Ok(counts.ToDictionary(c => c.ContentType, c => c.Count));
         }).RequirePermission(PlatformPermissions.ContentRead);
 
+        /*
+         * Everything queued to publish, across every collection in the workspace.
+         *
+         * The scheduler has worked since it shipped and its queue has never been visible: the
+         * console could tell you that one item you were looking at was scheduled, and could not
+         * answer "what goes out this week". That is the question a publishing calendar exists
+         * for, and it is the only content read that deliberately crosses plugin instances.
+         */
+        app.MapGet("/api/admin/content/scheduled", async (
+            int? limit,
+            CmsDbContext db,
+            IPluginCatalog catalog,
+            ITenantContext tenant,
+            CancellationToken ct) =>
+        {
+            if (tenant.TenantId is not { } tenantId)
+            {
+                return Results.BadRequest(new { error = "Select a tenant first." });
+            }
+
+            var rows = await ContentListQueries.ScheduledAsync(
+                db, tenantId, TitleFields(catalog), limit ?? ContentListQueries.DefaultPageSize, ct);
+
+            return Results.Ok(new
+            {
+                items = rows.Select(r => new
+                {
+                    scheduleId = r.ScheduleId,
+                    itemId = r.ItemId,
+                    instanceId = r.InstanceId,
+                    instanceName = r.InstanceName,
+                    pluginId = r.PluginId,
+                    contentType = r.ContentType,
+                    slug = r.Slug,
+                    title = r.Title,
+                    status = r.Status,
+                    publishAt = r.PublishAt,
+                }),
+            });
+        }).RequirePermission(PlatformPermissions.ContentRead);
+
         return app;
+    }
+
+    /// <summary>
+    /// Every content type this platform can author, mapped to the field its title lives in,
+    /// keyed <c>pluginId:contentType</c>.
+    ///
+    /// <para>Built from the catalogue rather than from the instances present, because it is
+    /// small — a few dozen entries — and building it per request from the manifests is cheaper
+    /// than a second query to find out which plugins this workspace happens to use.</para>
+    /// </summary>
+    private static Dictionary<string, string> TitleFields(IPluginCatalog catalog)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var manifest in catalog.Manifests)
+        {
+            foreach (var type in manifest.ContentTypes)
+            {
+                if (TitleFieldOf(catalog, manifest.Id, type.Name) is { } field)
+                {
+                    map[$"{manifest.Id}:{type.Name}"] = field;
+                }
+            }
+        }
+
+        return map;
     }
 
     /// <summary>

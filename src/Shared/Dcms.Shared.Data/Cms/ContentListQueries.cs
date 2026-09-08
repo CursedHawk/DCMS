@@ -209,6 +209,95 @@ public static class ContentListQueries
             total);
     }
 
+    /// <param name="Instance">The plugin instance the item belongs to, for a workspace-wide list.</param>
+    /// <param name="PublishAt">When the worker will publish it.</param>
+    public sealed record ScheduledRow(
+        Guid ScheduleId,
+        Guid ItemId,
+        Guid InstanceId,
+        string InstanceName,
+        string PluginId,
+        string ContentType,
+        string Slug,
+        string Title,
+        string Status,
+        DateTimeOffset PublishAt);
+
+    /// <summary>
+    /// Everything queued to publish across the whole workspace, soonest first.
+    ///
+    /// <para>The scheduler has always worked and nothing has ever shown its queue. An author who
+    /// scheduled a post could see "Scheduled" beside that one item, in that one collection, if
+    /// they went looking — and had no way at all to answer "what is going out this week", which
+    /// is the question the feature exists to serve. This is the only read in the CMS that
+    /// deliberately crosses plugin instances.</para>
+    ///
+    /// <para>The title is read from the <b>scheduled version</b> rather than the current draft:
+    /// this list says what is going to be published, and an author who has since kept writing
+    /// should see the headline that is actually queued, not the one they are working on.</para>
+    ///
+    /// <para>Which field holds the title differs per content type, and a workspace-wide list
+    /// spans several. The caller passes the mapping it read from the plugin catalogue as two
+    /// parallel arrays, joined here — one query rather than one per content type, and no
+    /// interpolation of a field name into SQL.</para>
+    /// </summary>
+    /// <param name="titleFields">
+    /// <c>pluginId:contentType</c> → the field holding that type's title. A type not in the map
+    /// falls back to its slug, which is also what a type with no textual field gets.
+    /// </param>
+    public static async Task<IReadOnlyList<ScheduledRow>> ScheduledAsync(
+        DbContext db,
+        Guid tenantId,
+        IReadOnlyDictionary<string, string> titleFields,
+        int limit,
+        CancellationToken ct = default)
+    {
+        var take = Math.Clamp(limit, 1, MaxPageSize);
+
+        const string Sql = """
+            SELECT sp."Id", i."Id", pi."Id", pi."Name", pi."PluginId",
+                   i."ContentType", i."Slug",
+                   COALESCE(
+                       NULLIF(btrim(regexp_replace(v."DataJson" ->> tf.field, '<[^>]*>', '', 'g')), ''),
+                       i."Slug") AS title,
+                   i."Status", sp."PublishAt"
+            FROM cms.scheduled_publishes sp
+            JOIN cms.content_items i ON i."Id" = sp."ItemId"
+            JOIN plugins.plugin_instances pi ON pi."Id" = i."PluginInstanceId"
+            LEFT JOIN cms.content_versions v ON v."Id" = sp."VersionId"
+            LEFT JOIN LATERAL (
+                SELECT m.field
+                FROM unnest(@types, @fields) AS m(type, field)
+                WHERE m.type = pi."PluginId" || ':' || i."ContentType"
+                LIMIT 1
+            ) tf ON TRUE
+            WHERE sp."TenantId" = @tenantId
+              AND sp."Status" = 'Pending'
+            ORDER BY sp."PublishAt" ASC, sp."Id" ASC
+            LIMIT @take
+            """;
+
+        var parameters = new List<(string, object?)>
+        {
+            ("@tenantId", tenantId),
+            ("@types", titleFields.Keys.ToArray()),
+            ("@fields", titleFields.Values.ToArray()),
+            ("@take", take),
+        };
+
+        return await QueryAsync(db, Sql, parameters, r => new ScheduledRow(
+            r.GetGuid(0),
+            r.GetGuid(1),
+            r.GetGuid(2),
+            r.GetString(3),
+            r.GetString(4),
+            r.GetString(5),
+            r.GetString(6),
+            r.GetString(7),
+            r.GetString(8),
+            r.GetFieldValue<DateTimeOffset>(9)), ct);
+    }
+
     /// <summary>
     /// The items of one collection carrying <paramref name="tag"/>, from the DRAFT version.
     ///
