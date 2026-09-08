@@ -136,6 +136,11 @@ builder.Services.AddReverseProxy().AddTransforms(context =>
     // here, so neither has to run its own login. See IdentityHeaders for why that is only safe
     // alongside the inbound scrubber.
     context.AddIdentityHeaders();
+
+    // Grafana's own session cookies, deleted on the route where the edge IS the session. See
+    // GrafanaSessionCookies: a stale one puts the dashboard in a permanent reload loop that no
+    // amount of signing in can clear.
+    context.AddGrafanaSessionCookieCleanup();
 });
 
 var app = builder.Build();

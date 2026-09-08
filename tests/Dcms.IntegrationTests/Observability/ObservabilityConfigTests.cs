@@ -104,6 +104,16 @@ public class ObservabilityConfigTests
             return;
         }
 
+        // Grafana must issue no session of its own while the edge is the session. Its frontend
+        // schedules a token rotation from the script-readable `grafana_session_expiry` cookie,
+        // and a 401 from that rotation makes the page reload -- which, under auth.proxy, signs
+        // the operator straight back in and rotates again, about once a second, forever. There
+        // is no exit: the frontend's recovery from a dead session is the one request that always
+        // succeeds here. See Dcms.Edge GrafanaSessionCookies, which clears the ones already out
+        // in browsers; this keeps new ones from being minted.
+        Regex.IsMatch(proxyAuth.Groups["body"].Value, @"^\s*enable_login_token\s*=\s*true\s*$", RegexOptions.Multiline)
+            .Should().BeFalse("auth.proxy must not issue a Grafana session; it reload-loops the dashboard");
+
         // X-WEBAUTH-USER is a bearer credential in header form: whoever can set it on a request
         // that reaches Grafana IS that user. The edge strips it from every inbound request, and
         // Grafana publishes no host port -- those two together are the whole of what makes
