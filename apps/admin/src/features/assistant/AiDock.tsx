@@ -81,7 +81,7 @@ export function AiDock() {
                 className="mt-2"
                 onClick={() => {
                   setOpen(false);
-                  void navigate({ to: '/ai' as string });
+                  void navigate({ to: '/settings/ai' as string });
                 }}
               >
                 {t('assistant.connectAccount')}

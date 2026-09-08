@@ -7,7 +7,7 @@ import { useAgentSession } from './useAgentSession';
 
 // The router's typed route union is intentionally loose here (see routes.tsx); a
 // string-typed path matches the existing pattern (e.g. sitesPath in IdePage).
-const aiSettingsPath: string = '/ai';
+const aiSettingsPath: string = '/settings/ai';
 
 // The IDE agent chat panel. Claude runs its tool loop here in the browser, editing
 // the live VFS; the user watches files change in their tabs and the preview refresh.

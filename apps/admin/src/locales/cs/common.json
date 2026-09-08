@@ -1254,5 +1254,16 @@
     "suggestTraffic": "Jak se za posledních 30 dní změnila návštěvnost?",
     "suggestContent": "Jaký obsah ještě není publikovaný?",
     "suggestPlugins": "Které pluginy jsou tady zapnuté?"
+  },
+  "settings": {
+    "subtitle": "Jak tento pracovní prostor funguje, kdo ho může používat a co zpřístupňuje.",
+    "general": "Obecné",
+    "generalHint": "Název, slug a vlastnictví",
+    "membersHint": "Kdo je v tomto prostoru",
+    "rolesHint": "Co může která role dělat",
+    "domainsHint": "Vlastní domény a certifikáty",
+    "aiHint": "Model a API klíče",
+    "auditHint": "Co se tu dělo",
+    "apiHint": "Endpointy, které tento prostor nabízí"
   }
 }

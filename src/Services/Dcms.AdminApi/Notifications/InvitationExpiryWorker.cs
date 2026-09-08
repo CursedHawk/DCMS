@@ -100,7 +100,7 @@ public sealed class InvitationExpiryWorker(
                 // lapse notify while still collapsing a redelivery of the first.
                 DedupeKey: $"invitation.expired:{invitation.Id:N}:{invitation.ExpiresAt.UtcTicks}",
                 Params: new { email = invitation.Email },
-                LinkPath: "/members",
+                LinkPath: "/settings/members",
                 ResourceType: "invitation",
                 ResourceId: invitation.Id), ct);
         }

@@ -25,6 +25,9 @@ test('draws the menu the server sent, including a plugin instance entry', async 
   // These come from the fixture's /admin/navigation, not from any list in the bundle.
   await expect(nav.getByRole('link', { name: 'Media' })).toBeVisible();
   await expect(nav.getByRole('link', { name: 'Marketplace' })).toBeVisible();
+  // Six admin destinations collapsed into one; the sections live behind it.
+  await expect(nav.getByRole('link', { name: 'Settings' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Members' })).toHaveCount(0);
 
   // The point of a server-driven menu: an entry whose label is a name a tenant typed, which
   // has no translation key and could not have come from the hard-coded array this replaced.

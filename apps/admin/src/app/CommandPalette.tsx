@@ -2,9 +2,11 @@ import { useNavigate } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Settings } from 'lucide-react';
 import { Dialog, DialogContent, usePermissions } from '@dcms/ui';
 import { can } from '../lib/permissions';
 import { NAV } from './nav';
+import { SETTINGS_SECTIONS } from './routeGuards';
 
 export function CommandPalette({
   open,
@@ -29,9 +31,24 @@ export function CommandPalette({
     return () => document.removeEventListener('keydown', onKey);
   }, [open, onOpenChange]);
 
-  const items = NAV.filter((i) =>
-    i.superAdmin ? me?.isSuperAdmin : !i.perm || can(me, i.perm),
-  );
+  /*
+   * The nav, plus every Settings section.
+   *
+   * Collapsing Members, Roles, Domains and the rest into one Settings entry made the sidebar
+   * shorter and made them one keystroke further away — and this palette is precisely how people
+   * reach a page whose name they know. Listing only "Settings" would mean typing "domains" found
+   * nothing, which is a worse trade than the long sidebar was.
+   */
+  const items = [
+    ...NAV.filter((i) => (i.superAdmin ? me?.isSuperAdmin : !i.perm || can(me, i.perm))).map(
+      (i) => ({ to: i.to, labelKey: i.labelKey, icon: i.icon }),
+    ),
+    ...SETTINGS_SECTIONS.filter((s) => !s.perm || can(me, s.perm)).map((s) => ({
+      to: s.to,
+      labelKey: s.labelKey,
+      icon: Settings,
+    })),
+  ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -51,7 +68,7 @@ export function CommandPalette({
                 value={t(item.labelKey)}
                 onSelect={() => {
                   onOpenChange(false);
-                  void navigate({ to: item.to });
+                  void navigate({ to: item.to as string });
                 }}
                 className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-accent aria-selected:text-accent-foreground"
               >

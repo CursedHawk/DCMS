@@ -34,7 +34,7 @@ public sealed class DomainVerifiedNotificationConsumer(
             BodyKey: NotificationKinds.BodyKey(NotificationKinds.DomainVerified),
             DedupeKey: $"domain.verified:{evt.DomainId:N}",
             Params: new { hostname = evt.Hostname },
-            LinkPath: "/domains",
+            LinkPath: "/settings/domains",
             ResourceType: "domain",
             ResourceId: evt.DomainId));
 }

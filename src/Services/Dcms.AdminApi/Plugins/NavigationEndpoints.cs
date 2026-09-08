@@ -39,16 +39,24 @@ public static class NavigationEndpoints
         new("/media", "nav.media", "Image", PlatformPermissions.MediaRead, "build"),
         new("/sites", "nav.sites", "PanelsTopLeft", PlatformPermissions.SiteEdit, "build"),
         new("/marketplace", "nav.marketplace", "Store", PlatformPermissions.PluginsManage, "build"),
-        new("/openapi", "nav.openapi", "FileJson", null, "build"),
         new("/forms", "nav.forms", "Inbox", PlatformPermissions.ContentRead, "main"),
         new("/analytics", "nav.analytics", "TrendingUp", PlatformPermissions.AnalyticsRead, "main"),
         new("/chat", "nav.chat", "MessagesSquare", PlatformPermissions.ChatRead, "main"),
-        new("/members", "nav.members", "Users", PlatformPermissions.MembersManage, "admin"),
-        new("/roles", "nav.roles", "ShieldCheck", PlatformPermissions.RolesManage, "admin"),
-        new("/audit", "nav.audit", "ScrollText", PlatformPermissions.AuditRead, "admin"),
-        new("/domains", "nav.domains", "Globe", PlatformPermissions.DomainsManage, "admin"),
-        new("/ai", "nav.ai", "Bot", PlatformPermissions.AiSettings, "admin"),
-        new("/workspace", "nav.workspace", "Building2", PlatformPermissions.TenantSettings, "admin"),
+
+        /*
+         * One Settings entry, not seven.
+         *
+         * Members, Roles, Audit log, Domains, AI, Workspace and API Docs each had a line of their
+         * own, which grew the menu by one every time the product gained a setting and put "what
+         * this workspace is called" beside the work people come here to do. They are sections
+         * inside /settings now, and the SPA draws that sub-navigation from its own list — one it
+         * can filter without a round trip, because every one of those permissions is already in
+         * the caller's set.
+         *
+         * No permission on the entry: the landing page forwards to the first section the caller
+         * may open, and the API reference names none, so it is never a link to nothing.
+         */
+        new("/settings", "nav.settings", "Settings", null, "admin"),
     ];
 
     public sealed record NavEntry(

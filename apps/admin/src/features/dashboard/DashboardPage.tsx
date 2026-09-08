@@ -10,7 +10,7 @@ const QUICK: { to: string; icon: LucideIcon; key: string; tone: string }[] = [
   { to: '/media', icon: Image, key: 'nav.media', tone: 'from-violet-500/15 text-violet-500' },
   { to: '/sites', icon: PanelsTopLeft, key: 'nav.sites', tone: 'from-emerald-500/15 text-emerald-500' },
   { to: '/plugins', icon: Plug, key: 'nav.plugins', tone: 'from-amber-500/15 text-amber-500' },
-  { to: '/domains', icon: Globe, key: 'nav.domains', tone: 'from-rose-500/15 text-rose-500' },
+  { to: '/settings/domains', icon: Globe, key: 'nav.domains', tone: 'from-rose-500/15 text-rose-500' },
 ];
 
 export function DashboardPage() {

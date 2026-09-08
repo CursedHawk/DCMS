@@ -468,14 +468,14 @@ public static class TenancyEndpoints
     /// <summary>Admin route a platform permission gates, for "what does this affect?".</summary>
     private static string? PlatformPermissionRoute(string key) => key switch
     {
-        PlatformPermissions.TenantSettings => "/workspace",
-        PlatformPermissions.MembersManage => "/members",
-        PlatformPermissions.RolesManage => "/roles",
-        PlatformPermissions.DomainsManage => "/domains",
+        PlatformPermissions.TenantSettings => "/settings/general",
+        PlatformPermissions.MembersManage => "/settings/members",
+        PlatformPermissions.RolesManage => "/settings/roles",
+        PlatformPermissions.DomainsManage => "/settings/domains",
         PlatformPermissions.PluginsManage => "/plugins",
         PlatformPermissions.MediaRead or PlatformPermissions.MediaWrite => "/media",
         PlatformPermissions.SiteEdit or PlatformPermissions.SitePublish => "/sites",
-        PlatformPermissions.AiSettings => "/ai",
+        PlatformPermissions.AiSettings => "/settings/ai",
         PlatformPermissions.AnalyticsRead => "/analytics",
         PlatformPermissions.ContentRead or PlatformPermissions.ContentWrite
             or PlatformPermissions.ContentPublish => "/content",
@@ -522,7 +522,7 @@ public static class TenancyEndpoints
             // same role repeatedly, and each of those is a distinct thing worth reporting.
             DedupeKey: $"member.role.changed:{membership.Id:N}:{roleId:N}:{(granted ? "grant" : "revoke")}:{DateTimeOffset.UtcNow:yyyyMMddHHmmss}",
             Params: new { email = membership.Email, change = granted ? "granted" : "revoked" },
-            LinkPath: "/members",
+            LinkPath: "/settings/members",
             ResourceType: "membership",
             ResourceId: membership.Id,
             ActorUserId: actor,

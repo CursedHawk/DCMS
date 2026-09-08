@@ -2,6 +2,7 @@ import {
   Outlet,
   createRootRoute,
   createRoute,
+  redirect,
   useNavigate,
   useParams,
 } from '@tanstack/react-router';
@@ -9,7 +10,7 @@ import { lazy, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RequirePermission } from '@dcms/ui';
 import { AppShell } from './app/AppShell';
-import { ROUTE_GUARDS, type RouteGuard } from './app/routeGuards';
+import { LEGACY_SETTINGS_PATHS, ROUTE_GUARDS, type RouteGuard } from './app/routeGuards';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { completeSignin } from './auth';
 
@@ -56,6 +57,8 @@ const PluginsPage = page(() => import('./features/plugins/PluginsPage'), 'Plugin
 const RolesPage = page(() => import('./features/roles/RolesPage'), 'RolesPage');
 const SitesPage = page(() => import('./features/sites/SitesPage'), 'SitesPage');
 const TenantsPage = page(() => import('./features/tenants/TenantsPage'), 'TenantsPage');
+const SettingsIndex = page(() => import('./features/settings/SettingsIndex'), 'SettingsIndex');
+const SettingsLayout = page(() => import('./features/settings/SettingsLayout'), 'SettingsLayout');
 const WorkspacePage = page(() => import('./features/workspace/WorkspacePage'), 'WorkspacePage');
 
 // Takes a prop, so it cannot use the helper above.
@@ -123,24 +126,78 @@ function child(path: string, component: React.FunctionComponent) {
 
 const indexRoute = child('/', DashboardPage);
 const tenantsRoute = child('/tenants', TenantsPage);
-const membersRoute = child('/members', MembersPage);
-const rolesRoute = child('/roles', RolesPage);
-const domainsRoute = child('/domains', DomainsPage);
 const pluginsRoute = child('/plugins', PluginsPage);
 const contentRoute = child('/content', ContentPage);
 const marketplaceRoute = child('/marketplace', MarketplacePage);
 const mediaRoute = child('/media', MediaPage);
 const formsRoute = child('/forms', FormsPage);
 const sitesRoute = child('/sites', SitesPage);
-const openapiRoute = child('/openapi', OpenApiPage);
-const aiRoute = child('/ai', AiSettingsPage);
 const accountRoute = child('/account', AccountPage);
-const workspaceRoute = child('/workspace', WorkspacePage);
 const analyticsRoute = child('/analytics', AnalyticsPage);
-const auditRoute = child('/audit', AuditPage);
 const chatRoute = child('/chat', ChatPage);
 const notificationsRoute = child('/notifications', NotificationsPage);
 const inviteRoute = child('/invite/accept', InviteAcceptPage);
+
+/*
+ * Settings: one destination with its own sub-navigation, rather than six sitting beside Content
+ * and Media. The layout draws the sub-nav; each section is guarded individually through the same
+ * `child()` helper, from the same list the sub-nav is built from (see routeGuards.ts).
+ */
+const settingsRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/settings',
+  component: SettingsLayout,
+});
+
+/** A section of Settings. Paths are relative to `/settings`; guards are looked up absolute. */
+function settingsChild(path: string, component: React.FunctionComponent) {
+  const guard: RouteGuard | undefined = ROUTE_GUARDS[`/settings/${path}`];
+  const Component = component;
+  return createRoute({
+    getParentRoute: () => settingsRoute,
+    path,
+    component: guard
+      ? function Guarded() {
+          return (
+            <RequirePermission perm={guard.perm} superAdmin={guard.superAdmin}>
+              <Component />
+            </RequirePermission>
+          );
+        }
+      : component,
+  });
+}
+
+const settingsIndexRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '/',
+  component: SettingsIndex,
+});
+const settingsGeneralRoute = settingsChild('general', WorkspacePage);
+const settingsMembersRoute = settingsChild('members', MembersPage);
+const settingsRolesRoute = settingsChild('roles', RolesPage);
+const settingsDomainsRoute = settingsChild('domains', DomainsPage);
+const settingsAiRoute = settingsChild('ai', AiSettingsPage);
+const settingsAuditRoute = settingsChild('audit', AuditPage);
+const settingsApiRoute = settingsChild('api', OpenApiPage);
+
+/*
+ * The old top-level URLs, kept alive as redirects.
+ *
+ * Not politeness. Notification rows carry `linkPath` values like `/members` and live in the
+ * database for the length of the retention window; the platform console deep-links in here; and
+ * people bookmark. Removing the routes would turn all of that into a Not Found that reads as
+ * "the feature was deleted" rather than "it moved".
+ */
+const legacyRoutes = Object.entries(LEGACY_SETTINGS_PATHS).map(([from, to]) =>
+  createRoute({
+    getParentRoute: () => appLayoutRoute,
+    path: from,
+    beforeLoad: () => {
+      throw redirect({ to: to as string, replace: true });
+    },
+  }),
+);
 
 const editorRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
@@ -160,9 +217,6 @@ export const routeTree = rootRoute.addChildren([
   appLayoutRoute.addChildren([
     indexRoute,
     tenantsRoute,
-    membersRoute,
-    rolesRoute,
-    domainsRoute,
     pluginsRoute,
     contentRoute,
     marketplaceRoute,
@@ -170,14 +224,21 @@ export const routeTree = rootRoute.addChildren([
     formsRoute,
     sitesRoute,
     editorRoute,
-    openapiRoute,
-    aiRoute,
     accountRoute,
-    workspaceRoute,
     analyticsRoute,
-    auditRoute,
     chatRoute,
     notificationsRoute,
     inviteRoute,
+    settingsRoute.addChildren([
+      settingsIndexRoute,
+      settingsGeneralRoute,
+      settingsMembersRoute,
+      settingsRolesRoute,
+      settingsDomainsRoute,
+      settingsAiRoute,
+      settingsAuditRoute,
+      settingsApiRoute,
+    ]),
+    ...legacyRoutes,
   ]),
 ]);

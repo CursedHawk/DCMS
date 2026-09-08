@@ -51,6 +51,10 @@ public class NotificationLinkPathTests
         // nothing, every assertion above would pass vacuously — the worst possible outcome for
         // a test whose whole job is to catch a link nobody checked.
         SpaRoutes().Should().Contain(["/content", "/media", "/sites/$siteId"]);
+        // The nested and generated halves, each of which would otherwise pass vacuously: a
+        // Settings section declared through `settingsChild`, and an old URL that exists only as
+        // an entry in the redirect map.
+        SpaRoutes().Should().Contain(["/settings/members", "/members"]);
         LinkPaths().Should().HaveCountGreaterThan(5);
     }
 
@@ -75,16 +79,33 @@ public class NotificationLinkPathTests
 
     /// <summary>
     /// The paths declared in <c>apps/admin/src/routes.tsx</c>: the <c>child('/x', …)</c> helper
-    /// calls plus any route declaring <c>path:</c> directly (the parameterised site workspace).
+    /// calls, the <c>settingsChild('x', …)</c> ones (relative to <c>/settings</c>), and any route
+    /// declaring <c>path:</c> directly (the parameterised site workspace).
+    ///
+    /// <para>Plus the old top-level URLs, which are declared as data in
+    /// <c>app/routeGuards.ts</c> and turned into redirect routes in a loop, so no literal appears
+    /// in <c>routes.tsx</c> at all. They are real destinations — a notification written before
+    /// Settings was consolidated still links to <c>/members</c> and still has to work.</para>
     /// </summary>
     private static IReadOnlyList<string> SpaRoutes()
     {
-        var source = File.ReadAllText(Path.Combine(RepoRoot(), "apps", "admin", "src", "routes.tsx"));
-        return Regex.Matches(source, @"child\(\s*'(?<path>[^']+)'")
+        var admin = Path.Combine(RepoRoot(), "apps", "admin", "src");
+        var source = File.ReadAllText(Path.Combine(admin, "routes.tsx"));
+        var guards = File.ReadAllText(Path.Combine(admin, "app", "routeGuards.ts"));
+
+        var routes = Regex.Matches(source, @"child\(\s*'(?<path>[^']+)'")
             .Concat(Regex.Matches(source, @"path:\s*'(?<path>[^']+)'"))
             .Select(m => m.Groups["path"].Value)
-            .Distinct(StringComparer.Ordinal)
             .ToList();
+
+        routes.AddRange(Regex.Matches(source, @"settingsChild\(\s*'(?<path>[^']+)'")
+            .Select(m => "/settings/" + m.Groups["path"].Value));
+
+        // LEGACY_SETTINGS_PATHS: '/old': '/settings/new'
+        routes.AddRange(Regex.Matches(guards, @"'(?<from>/[a-z]+)':\s*'/settings/")
+            .Select(m => m.Groups["from"].Value));
+
+        return routes.Distinct(StringComparer.Ordinal).ToList();
     }
 
     /// <summary>

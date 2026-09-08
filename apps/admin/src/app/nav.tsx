@@ -1,10 +1,6 @@
 import {
-  Bot,
   Boxes,
-  Building2,
-  FileJson,
   FileText,
-  Globe,
   Image,
   Inbox,
   LayoutDashboard,
@@ -12,11 +8,9 @@ import {
   MessagesSquare,
   PanelsTopLeft,
   Plug,
-  ScrollText,
-  ShieldCheck,
+  Settings,
   Store,
   TrendingUp,
-  Users,
 } from 'lucide-react';
 import { Perm } from '../lib/permissions';
 
@@ -51,18 +45,24 @@ export const NAV: NavItem[] = [
   { to: '/plugins', labelKey: 'nav.plugins', icon: Plug, perm: Perm.PluginsManage, group: 'build' },
   { to: '/marketplace', labelKey: 'nav.marketplace', icon: Store, perm: Perm.PluginsManage, group: 'build' },
   { to: '/sites', labelKey: 'nav.sites', icon: PanelsTopLeft, perm: Perm.SiteEdit, group: 'build' },
-  { to: '/openapi', labelKey: 'nav.openapi', icon: FileJson, group: 'build' },
 
   { to: '/forms', labelKey: 'nav.forms', icon: Inbox, perm: Perm.ContentRead, group: 'main' },
   { to: '/analytics', labelKey: 'nav.analytics', icon: TrendingUp, perm: Perm.AnalyticsRead, group: 'main' },
   { to: '/chat', labelKey: 'nav.chat', icon: MessagesSquare, perm: Perm.ChatRead, group: 'main' },
 
-  { to: '/members', labelKey: 'nav.members', icon: Users, perm: Perm.MembersManage, group: 'admin' },
-  { to: '/roles', labelKey: 'nav.roles', icon: ShieldCheck, perm: Perm.RolesManage, group: 'admin' },
-  { to: '/audit', labelKey: 'nav.audit', icon: ScrollText, perm: Perm.AuditRead, group: 'admin' },
-  { to: '/domains', labelKey: 'nav.domains', icon: Globe, perm: Perm.DomainsManage, group: 'admin' },
-  { to: '/ai', labelKey: 'nav.ai', icon: Bot, perm: Perm.AiSettings, group: 'admin' },
-  { to: '/workspace', labelKey: 'nav.workspace', icon: Building2, perm: Perm.TenantSettings, group: 'admin' },
+  /*
+   * One Settings entry, not six.
+   *
+   * Members, Roles, Audit log, Domains, AI, Workspace and API Docs used to each have a line here,
+   * which grew the sidebar by one every time the product gained a setting and put "what this
+   * workspace is called" at the same level as the work people come here to do. They are now
+   * sections inside `/settings` (see routeGuards.ts), which draws its own sub-navigation.
+   *
+   * No permission on the entry itself: the landing page forwards to the first section the caller
+   * may open, and one of them — the API reference — is open to every member, so it is never a
+   * link to nothing.
+   */
+  { to: '/settings', labelKey: 'nav.settings', icon: Settings, group: 'admin' },
   { to: '/tenants', labelKey: 'nav.tenants', icon: Boxes, superAdmin: true, group: 'admin' },
 ];
 

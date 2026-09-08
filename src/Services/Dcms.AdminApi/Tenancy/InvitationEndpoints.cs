@@ -239,7 +239,7 @@ public static class InvitationEndpoints
                 BodyKey: NotificationKinds.BodyKey(NotificationKinds.InvitationAccepted),
                 DedupeKey: $"invitation.accepted:{invitation.Id:N}",
                 Params: new { email = invitation.Email },
-                LinkPath: "/members",
+                LinkPath: "/settings/members",
                 ResourceType: "invitation",
                 ResourceId: invitation.Id,
                 // The accepter is the actor: they know they just joined, so they get the bell

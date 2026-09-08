@@ -26,8 +26,8 @@ export const NAVIGATION = {
     { to: '/media', labelKey: 'nav.media', icon: 'Image', group: 'build', label: null },
     { to: '/sites', labelKey: 'nav.sites', icon: 'PanelsTopLeft', group: 'build', label: null },
     { to: '/marketplace', labelKey: 'nav.marketplace', icon: 'Store', group: 'build', label: null },
-    { to: '/members', labelKey: 'nav.members', icon: 'Users', group: 'admin', label: null },
-    { to: '/roles', labelKey: 'nav.roles', icon: 'ShieldCheck', group: 'admin', label: null },
+    // One Settings entry over seven sections; the SPA draws that sub-navigation itself.
+    { to: '/settings', labelKey: 'nav.settings', icon: 'Settings', group: 'admin', label: null },
     // One plugin instance's own entry. `label` is the tenant's name for it and is deliberately
     // not an i18n key — this is the case the hard-coded nav array could not express, so it is
     // the case the shell spec asserts on.
