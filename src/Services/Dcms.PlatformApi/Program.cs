@@ -1,4 +1,5 @@
 using Dcms.PlatformApi.Authz;
+using Dcms.PlatformApi.Delegation;
 using Dcms.PlatformApi.Observability;
 using Dcms.PlatformApi.Purge;
 using Dcms.PlatformApi.Reporting;
@@ -50,6 +51,23 @@ builder.Services.AddHostedService<PlatformRoleSeeder>();
 
 // Read-only access to the obs.* reporting views — the console's cross-tenant read model.
 builder.Services.AddScoped<ObservabilityQuery>();
+
+// The hop to admin-api for the four areas dcms_platform holds no grant on. The token is
+// client-credentials on dcms.console; WHO the operator is rides in the propagation headers,
+// because a service token alone would have admin-api record every suspension against this
+// service instead of the person who asked for it.
+builder.Services.Configure<ServiceClientOptions>(
+    builder.Configuration.GetSection(ServiceClientOptions.SectionName));
+builder.Services.AddHttpClient<IServiceTokenProvider, ServiceTokenClient>();
+builder.Services.AddHttpClient<AdminApiProxy>(client =>
+{
+    client.BaseAddress = new Uri(
+        builder.Configuration["Services:AdminApi"] ?? "http://localhost:5002");
+    // A console page, not a background job: a stalled admin-api should read as unreachable
+    // rather than hold the request open.
+    client.Timeout = TimeSpan.FromSeconds(20);
+})
+.AddAuditPropagation();
 
 // The telemetry stores. All internal names on the compose network; none publishes a host port
 // in production, so reaching them at all requires already being inside.
@@ -131,6 +149,8 @@ app.MapPlatformAuthzEndpoints();
 app.MapPlatformOverviewEndpoints();
 app.MapPlatformStoreEndpoints();
 app.MapPlatformPurgeEndpoints();
+app.MapPlatformAuditEndpoints();
+app.MapDelegatedConsoleEndpoints();
 app.MapGet("/", () => Results.Ok(new { service = "platform-api" }));
 
 app.Run();

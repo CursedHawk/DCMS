@@ -37,7 +37,7 @@ internal static class ObservabilityViews
     /// Bumped when a view's shape changes. Recorded in <c>obs.view_version</c> so a dashboard
     /// showing nothing can be told apart from a cluster that has not run the configurator.
     /// </summary>
-    public const int Version = 1;
+    public const int Version = 2;
 
     public static readonly string[] Statements =
     [
@@ -85,7 +85,19 @@ internal static class ObservabilityViews
             e."StatusCode"                        AS status_code,
             e."TraceId"                           AS trace_id,
             e."CorrelationId"                     AS correlation_id,
-            e."IsSandbox"                         AS is_sandbox
+            e."IsSandbox"                         AS is_sandbox,
+            -- APPENDED, not inserted, and that is not a style choice: CREATE OR REPLACE VIEW
+            -- cannot reorder, rename or drop an existing column (42P16), so a new column added
+            -- anywhere but the end turns every deploy into a DROP-and-recreate -- which also
+            -- drops the grant that lets dcms_platform read this at all.
+            --
+            -- Both exist for the platform console's audit page, which reads this view directly
+            -- rather than asking admin-api: the id is what a row links to, and the pair
+            -- (occurred_at, seq) is the keyset cursor. Ordering on occurred_at alone would skip
+            -- or repeat rows whenever two records share a timestamp, which they routinely do --
+            -- a request and the record of its own denial are written in the same tick.
+            e."Id"                                AS id,
+            e."Seq"                               AS seq
         FROM audit.audit_events e
         LEFT JOIN tenancy.tenants t ON t."Id" = e."TenantId"::text
         """,
