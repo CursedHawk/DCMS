@@ -1,4 +1,5 @@
 using Dcms.Edge.Transforms;
+using Microsoft.AspNetCore.Http;
 
 namespace Dcms.UnitTests.Edge;
 
@@ -16,8 +17,9 @@ public class GrafanaSessionCookieTests
     [Fact]
     public void Notices_the_cookie_that_starts_the_loop()
     {
-        GrafanaSessionCookies.Present("grafana_session_expiry=1757370000").Should().BeTrue();
-        GrafanaSessionCookies.Present("grafana_session=abc123").Should().BeTrue();
+        Present("grafana_session_expiry=1757370000").Should().BeTrue();
+        Present("grafana_session=abc123").Should().BeTrue();
+        Present("dcms.edge=xyz; grafana_session_expiry=1757370000").Should().BeTrue();
     }
 
     [Fact]
@@ -25,9 +27,8 @@ public class GrafanaSessionCookieTests
     {
         // The response transform is keyed on this: a healthy browser must not collect two
         // pointless Set-Cookie headers on every dashboard request.
-        GrafanaSessionCookies.Present("dcms.edge=xyz; theme=dark").Should().BeFalse();
-        GrafanaSessionCookies.Present("").Should().BeFalse();
-        GrafanaSessionCookies.Present(null).Should().BeFalse();
+        Present("dcms.edge=xyz; theme=dark").Should().BeFalse();
+        Present("").Should().BeFalse();
     }
 
     [Fact]
@@ -68,5 +69,17 @@ public class GrafanaSessionCookieTests
         deletions.Should().OnlyContain(value => value.Contains("Max-Age=0"));
         deletions.Should().Contain(value => value.StartsWith("grafana_session="));
         deletions.Should().Contain(value => value.StartsWith("grafana_session_expiry="));
+    }
+
+    /// <summary>
+    /// Asks the question the transform asks: presence is read off the PARSED cookies, not the
+    /// raw header, because a cookie value may legally contain the characters a hand-rolled split
+    /// would break on.
+    /// </summary>
+    private static bool Present(string header)
+    {
+        var request = new DefaultHttpContext().Request;
+        request.Headers.Cookie = header;
+        return GrafanaSessionCookies.Present(request.Cookies);
     }
 }

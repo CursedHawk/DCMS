@@ -39,9 +39,16 @@ public static class GrafanaSessionCookies
 
     private static readonly string[] Names = [SessionCookie, ExpiryCookie];
 
-    /// <summary>True when the caller is still carrying either cookie — i.e. there is something to delete.</summary>
-    public static bool Present(string? cookieHeader)
-        => Split(cookieHeader).Any(IsGrafanaSession);
+    /// <summary>
+    /// True when the caller is still carrying either cookie — i.e. there is something to delete.
+    ///
+    /// <para>Reads the parsed collection rather than the raw header, because a cookie value may
+    /// legally contain the characters a hand-rolled split would break on. If this and
+    /// <see cref="Without"/> ever disagree the cookie is forwarded and still deleted, which is
+    /// the harmless direction.</para>
+    /// </summary>
+    public static bool Present(IRequestCookieCollection cookies)
+        => cookies.ContainsKey(SessionCookie) || cookies.ContainsKey(ExpiryCookie);
 
     /// <summary>
     /// The <c>Cookie</c> header with Grafana's session pair removed. Null when nothing is left,
@@ -87,9 +94,9 @@ public static class GrafanaSessionCookies
 
         context.AddRequestTransform(transform =>
         {
-            var cookies = transform.HttpContext.Request.Headers.Cookie.ToString();
-            if (Present(cookies))
+            if (Present(transform.HttpContext.Request.Cookies))
             {
+                var cookies = transform.HttpContext.Request.Headers.Cookie.ToString();
                 transform.ProxyRequest.Headers.Remove("Cookie");
                 if (Without(cookies) is { } remaining)
                 {
@@ -103,7 +110,7 @@ public static class GrafanaSessionCookies
         {
             // Only for a caller that actually has one, so a healthy browser is not sent two
             // pointless headers on every dashboard request.
-            if (Present(transform.HttpContext.Request.Headers.Cookie.ToString()))
+            if (Present(transform.HttpContext.Request.Cookies))
             {
                 foreach (var deletion in Deletions())
                 {
