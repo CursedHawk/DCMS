@@ -852,9 +852,17 @@ services:
   # three stores are reachable only from the compose network. The dev override adds host
   # ports for local work.
   #
-  # Every one of these carries a hard mem_limit. vps1 has no swap, so an overrun is an OOM
-  # kill rather than a slowdown — and the process the kernel picks is not necessarily the
-  # one that overran. An unbounded metrics store can take Postgres with it.
+  # Every one of these carries a hard mem_limit, and an overrun is an OOM kill rather than a
+  # slowdown — the swap on this host is small enough that a runaway crosses it in seconds, and
+  # the process the kernel picks is not necessarily the one that overran. An unbounded metrics
+  # store can take Postgres with it.
+  #
+  # IF ONE OF THESE STARTS GETTING OOM-KILLED, DO NOT BEGIN BY RAISING ITS LIMIT. On
+  # 2026-09-08 Alloy was killed at 22 seconds old, 44 times in a row, and the cause was not the
+  # 512m: it was a remote-write WAL that had grown to 14 547 segments, which Alloy replays in
+  # full at start-up. It wanted 1.4 GB to do that. Clearing the WAL put it back to 355 MiB at
+  # the same 512m limit, and the bound now in config.alloy stops it recurring. Raising the
+  # limit would have hidden a spiral that was still growing.
 
   alloy:
     image: grafana/alloy:v1.19.1

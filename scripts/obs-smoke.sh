@@ -33,9 +33,33 @@ fetch() { $COMPOSE exec -T prometheus wget -qO- --timeout=10 "$1" 2>/dev/null; }
 SERVICES="identity admin-api content-api ai-gateway media-worker site-builder site-host email-worker edge"
 
 echo "== containers"
+#
+# "running" is not enough, and this is the check that failed to catch the worst outage this
+# stack has had. On 2026-09-08 Alloy was OOM-killed at 22 seconds old, 44 times in a row —
+# and at any instant you looked, it was running. Nothing reached Prometheus for the length
+# of the loop, every dashboard went blank, and this script said [ OK ].
+#
+# So each collector is also asked how long it has been up and how many times it has come
+# back. A container that has restarted at all AND is only seconds old is looping. A freshly
+# deployed one cannot trip it: compose recreates the container, which resets RestartCount
+# to zero, so a new container is young with no restarts.
 for s in grafana prometheus loki tempo alloy; do
     state=$($COMPOSE ps --format '{{.State}}' "$s" 2>/dev/null | head -1)
-    [ "$state" = "running" ] && ok "$s running" || fail "$s is '${state:-absent}'"
+    if [ "$state" != "running" ]; then
+        fail "$s is '${state:-absent}'"
+        continue
+    fi
+
+    id=$($COMPOSE ps -q "$s" 2>/dev/null | head -1)
+    restarts=$(docker inspect -f '{{.RestartCount}}' "$id" 2>/dev/null || echo 0)
+    started=$(docker inspect -f '{{.State.StartedAt}}' "$id" 2>/dev/null)
+    age=$(( $(date +%s) - $(date -d "${started:-now}" +%s 2>/dev/null || date +%s) ))
+
+    if [ "${restarts:-0}" -gt 0 ] && [ "$age" -lt 180 ]; then
+        fail "$s is restarting in a loop ($restarts restarts, up ${age}s) — it is 'running' and carrying nothing"
+    else
+        ok "$s running (up ${age}s, $restarts restarts)"
+    fi
 done
 
 echo

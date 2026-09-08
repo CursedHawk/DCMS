@@ -476,4 +476,26 @@ prometheus.remote_write "default" {
   endpoint {
     url = "http://prometheus:9090/api/v1/write"
   }
+
+  // The backlog is bounded, and it has to be.
+  //
+  // Alloy buffers every sample in a write-ahead log until Prometheus confirms it, and replays
+  // that whole log at start-up. With the defaults (truncate every 2h, keep up to 8h) the log
+  // only shrinks on a timer — so the first time replaying it costs more memory than the
+  // container's limit, the process is OOM-killed BEFORE the first truncation can ever run. The
+  // restart replays a log that is now slightly larger, and the collector never comes up again.
+  //
+  // That is not a hypothetical: on 2026-09-08 this WAL reached 14 661 segments and Alloy was
+  // killed at 22 seconds old, 44 times in a row. Nothing reached Prometheus for the length of
+  // the loop, so every dashboard and the platform console's own signals went blank — and the
+  // one thing that could have recovered it was the truncation that could no longer happen.
+  //
+  // An hour is the right ceiling because a metrics backlog older than that is worth nothing:
+  // Prometheus rejects samples far outside its ingestion window anyway, so those bytes were
+  // never going to be delivered. Losing them is not the cost — keeping them was.
+  wal {
+    truncate_frequency = "15m"
+    min_keepalive_time = "5m"
+    max_keepalive_time = "1h"
+  }
 }

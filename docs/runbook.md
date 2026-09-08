@@ -1003,6 +1003,57 @@ Two failure modes worth knowing:
   on collision (`rgolias`, `rgolias-2`), so a name the edge invented could claim one
   the sync is about to hand somebody else.
 
+### Every dashboard is blank, and so is the platform console's Signals panel
+
+Almost always one cause: **Alloy is not running, whatever `docker ps` says.** Every
+`dcms_*` metric, every exporter and every container metric reaches Prometheus through
+Alloy's remote write. Prometheus scrapes only four targets directly (itself, Grafana,
+Loki, Tempo), so when Alloy is down the TSDB keeps filling with *its own* metrics and
+looks alive while carrying nothing anyone charted.
+
+Check for a crash loop rather than for "running":
+
+```sh
+docker inspect -f '{{.RestartCount}} {{.State.StartedAt}}' dcms-alloy-1
+docker events --filter container=dcms-alloy-1 --format '{{.Action}} {{.Actor.Attributes.exitCode}}'
+```
+
+A container that has restarted many times and is only seconds old is looping, and it
+is `running` every time you look. `oom` events with `exitCode 137` mean the cgroup
+limit, not the host. `./scripts/obs-smoke.sh` now fails on exactly this shape.
+
+**If it is being OOM-killed, do not start by raising `mem_limit`.** On 2026-09-08
+Alloy was killed at 22 seconds old, 44 times in a row, at its 512m limit — and it
+wanted 1.4 GB, because its remote-write WAL had grown to 14 547 segments and Alloy
+replays the whole thing at start-up. The spiral is self-sealing: the WAL is truncated
+on a timer, and the process never lived long enough to reach it. Clearing the WAL put
+Alloy back to 355 MiB at the same 512m limit.
+
+Recovery, when the WAL is the problem:
+
+```sh
+docker stop dcms-alloy-1
+docker run --rm -v dcms_alloy-data:/data busybox:1.36 \
+    sh -c 'rm -rf /data/prometheus.remote_write.default'
+docker start dcms-alloy-1
+```
+
+That discards the unsent backlog, which is the point: those samples were hours or days
+old and Prometheus rejects anything far outside its ingestion window, so they were
+never going to be delivered. `config.alloy` now bounds the WAL to an hour
+(`max_keepalive_time`) and truncates every 15 minutes, so it cannot grow to that size
+again — but the recovery above is still what to do if you find a large one.
+
+Verify it took, from inside the Prometheus container:
+
+```sh
+docker exec dcms-prometheus-1 wget -qO- \
+    'http://localhost:9090/api/v1/query?query=count({__name__=~"dcms_.*"})'
+docker exec dcms-prometheus-1 wget -qO- 'http://localhost:9090/api/v1/query?query=count(up)'
+```
+
+Healthy is a non-zero `dcms_*` count and roughly two dozen targets, not four.
+
 ## Platform console (platform.highgeek.eu)
 
 The operations console for platform superadmins. Backed by **platform-api**, which owns
