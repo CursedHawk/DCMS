@@ -57,6 +57,8 @@ export function useAssistantSession(page: AiPageContext | null) {
   const [entries, setEntries] = useState<AssistantEntry[]>([]);
   const [running, setRunning] = useState(false);
   const [needsKey, setNeedsKey] = useState(false);
+  // Which provider the server resolved when it refused, so the panel can name it.
+  const [keyProvider, setKeyProvider] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
   const history = useRef<Message[]>([]);
 
@@ -145,7 +147,10 @@ export function useAssistantSession(page: AiPageContext | null) {
           }
         } catch (error) {
           if (controller.signal.aborted) return;
-          if (error instanceof NoApiKeyError) setNeedsKey(true);
+          if (error instanceof NoApiKeyError) {
+            setNeedsKey(true);
+            setKeyProvider(error.provider);
+          }
           else
             push({
               type: 'error',
@@ -160,5 +165,5 @@ export function useAssistantSession(page: AiPageContext | null) {
     [me, page, running],
   );
 
-  return { entries, running, needsKey, send, stop, reset, toolCount: toolsFor(me).length };
+  return { entries, running, needsKey, keyProvider, send, stop, reset, toolCount: toolsFor(me).length };
 }

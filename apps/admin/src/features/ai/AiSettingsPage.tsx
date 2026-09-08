@@ -28,12 +28,32 @@ interface AiSettings {
   hasApiKey: boolean;
 }
 
+interface UserCredentials {
+  provider: string;
+  model?: string | null;
+  baseUrl?: string | null;
+  hasApiKey: boolean;
+}
+
+/** Providers that run on the operator's own machine and are never sent a credential. */
+const LOCAL_PROVIDERS = ['Ollama', 'LmStudio'];
+
+/*
+ * Four entries cover every provider anyone actually uses.
+ *
+ * "OpenAI-compatible" is the one that does the work: OpenRouter, Groq, Together, Fireworks,
+ * DeepSeek, Mistral, Azure OpenAI and any self-hosted vLLM or LiteLLM all speak the same Chat
+ * Completions API and differ only in the base URL — so they are that entry with a URL, not four
+ * more rows in this list and four more branches on the server. Ollama and LM Studio are named
+ * separately because they are the two that run on the operator's own machine, which is what
+ * decides whether a plaintext, private base URL is allowed.
+ */
 const PROVIDERS = [
   { value: 'Inherit', label: 'Platform default' },
   { value: 'Anthropic', label: 'Anthropic' },
-  { value: 'OpenAi', label: 'OpenAI' },
-  { value: 'Ollama', label: 'Ollama' },
-  { value: 'LmStudio', label: 'LM Studio' },
+  { value: 'OpenAi', label: 'OpenAI-compatible' },
+  { value: 'Ollama', label: 'Ollama (local)' },
+  { value: 'LmStudio', label: 'LM Studio (local)' },
 ];
 
 export function AiSettingsPage() {
@@ -78,15 +98,43 @@ export function AiSettingsPage() {
     },
   });
 
-  // Per-user credential ("connect your own Anthropic account") — powers the web-IDE
-  // assistant, billed to the individual user. Separate from the tenant settings above.
+  /*
+   * The per-user credential — "use my own key" — which powers the assistant and is billed to
+   * the individual rather than to the workspace.
+   *
+   * It used to be an Anthropic key and nothing else: the form sent `provider: 'Anthropic'`
+   * whatever the workspace was configured for, which pinned Anthropic on the user's row and made
+   * every assistant turn ask for an Anthropic key even when the workspace was pointed at its own
+   * Ollama. Leaving the provider unset now means "follow the workspace", which is what connecting
+   * a key should have meant.
+   */
   const userCred = useQuery({
     queryKey: ['ai-user-credentials'],
-    queryFn: () => api.get<{ hasApiKey: boolean }>('/admin/ai/user-credentials'),
+    queryFn: () => api.get<UserCredentials>('/admin/ai/user-credentials'),
   });
+  const [userProvider, setUserProvider] = useState('Inherit');
+  const [userModel, setUserModel] = useState('');
+  const [userBaseUrl, setUserBaseUrl] = useState('');
   const [userKey, setUserKey] = useState('');
+
+  useEffect(() => {
+    if (!userCred.data) return;
+    setUserProvider(userCred.data.provider || 'Inherit');
+    setUserModel(userCred.data.model ?? '');
+    setUserBaseUrl(userCred.data.baseUrl ?? '');
+  }, [userCred.data]);
+
+  // A local model authenticates nothing, so the form must not insist on a key for one.
+  const userNeedsKey = !LOCAL_PROVIDERS.includes(userProvider);
+
   const connectUser = useMutation({
-    mutationFn: () => api.put('/admin/ai/user-credentials', { provider: 'Anthropic', apiKey: userKey }),
+    mutationFn: () =>
+      api.put('/admin/ai/user-credentials', {
+        provider: userProvider === 'Inherit' ? null : userProvider,
+        model: userModel || null,
+        baseUrl: userBaseUrl || null,
+        apiKey: userKey || null,
+      }),
     onSuccess: async () => {
       toast.success(t('common.saved'));
       setUserKey('');
@@ -143,9 +191,15 @@ export function AiSettingsPage() {
             </div>
             <div className="space-y-1.5">
               <Label>{t('ai.baseUrl')}</Label>
-              <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="http://localhost:11434" />
+              <Input
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://openrouter.ai/api/v1"
+              />
             </div>
           </div>
+
+          <p className="text-xs text-muted-foreground">{t('ai.compatibleHint')}</p>
 
           <div className="space-y-1.5">
             <Label className="flex items-center gap-2">
@@ -182,38 +236,79 @@ export function AiSettingsPage() {
         <CardContent className="space-y-4 p-6">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Sparkles className="h-4 w-4 text-primary" />
-            {t('ai.userKeyTitle', 'Your Anthropic account')}
+            {t('ai.userKeyTitle')}
           </div>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              'ai.userKeyBody',
-              'Connect your personal Anthropic API key to power the web-IDE assistant. This is an API key from console.anthropic.com (pay-as-you-go) — not a Claude Pro/Max subscription login. It is stored encrypted (Vault Transit) and used only for your own IDE sessions.',
-            )}
-          </p>
+          <p className="text-xs text-muted-foreground">{t('ai.userKeyBody')}</p>
 
           <div className="space-y-1.5">
-            <Label className="flex items-center gap-2">
-              <KeyRound className="h-4 w-4" /> {t('ai.apiKey')}
-              {userCred.data?.hasApiKey ? <Badge tone="success">{t('ai.connected', 'Connected')}</Badge> : null}
-            </Label>
-            <Input
-              type="password"
-              value={userKey}
-              onChange={(e) => setUserKey(e.target.value)}
-              placeholder="sk-ant-..."
-            />
+            <Label>{t('ai.provider')}</Label>
+            <Select value={userProvider} onValueChange={setUserProvider}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Inherit">{t('ai.useWorkspaceProvider')}</SelectItem>
+                {PROVIDERS.filter((p) => p.value !== 'Inherit').map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>{t('ai.model')}</Label>
+              <Input
+                value={userModel}
+                onChange={(e) => setUserModel(e.target.value)}
+                placeholder={t('ai.inheritPlaceholder')}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('ai.baseUrl')}</Label>
+              <Input
+                value={userBaseUrl}
+                onChange={(e) => setUserBaseUrl(e.target.value)}
+                placeholder={t('ai.inheritPlaceholder')}
+              />
+            </div>
+          </div>
+
+          {userNeedsKey ? (
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-2">
+                <KeyRound className="h-4 w-4" /> {t('ai.apiKey')}
+                {userCred.data?.hasApiKey ? <Badge tone="success">{t('ai.connected')}</Badge> : null}
+              </Label>
+              <Input
+                type="password"
+                value={userKey}
+                onChange={(e) => setUserKey(e.target.value)}
+                placeholder="••••••••••••"
+              />
+              <p className="text-xs text-muted-foreground">{t('ai.keyStorage')}</p>
+            </div>
+          ) : (
+            // Said rather than left blank: a missing key field looks like a bug unless the page
+            // explains that this provider does not have one.
+            <p className="text-xs text-muted-foreground">{t('ai.localNeedsNoKey')}</p>
+          )}
+
           <div className="flex justify-between pt-2">
-            {userCred.data?.hasApiKey ? (
+            {userCred.data?.hasApiKey || userCred.data?.provider !== 'Inherit' ? (
               <Button variant="outline" onClick={() => disconnectUser.mutate()}>
-                {t('ai.disconnect', 'Disconnect')}
+                {t('ai.disconnect')}
               </Button>
             ) : (
               <span />
             )}
-            <Button disabled={connectUser.isPending || !userKey.trim()} onClick={() => connectUser.mutate()}>
-              {t('ai.connect', 'Connect')}
+            <Button
+              disabled={connectUser.isPending || (userNeedsKey && !userKey.trim() && !userCred.data?.hasApiKey)}
+              onClick={() => connectUser.mutate()}
+            >
+              {t('actions.save')}
             </Button>
           </div>
         </CardContent>

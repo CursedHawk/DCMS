@@ -74,7 +74,13 @@ export function AiDock() {
                 <KeyRound className="h-4 w-4" aria-hidden />
                 {t('assistant.noKeyTitle')}
               </p>
-              <p className="mt-1 text-muted-foreground">{t('assistant.noKeyBody')}</p>
+              {/* Names the provider the server resolved, so nobody is sent to create an
+                  account for a service their workspace does not use. */}
+              <p className="mt-1 text-muted-foreground">
+                {session.keyProvider
+                  ? t('assistant.noKeyFor', { provider: session.keyProvider })
+                  : t('assistant.noKeyBody')}
+              </p>
               <Button
                 variant="outline"
                 size="sm"

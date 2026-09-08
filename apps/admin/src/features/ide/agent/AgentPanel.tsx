@@ -9,6 +9,17 @@ import { useAgentSession } from './useAgentSession';
 // string-typed path matches the existing pattern (e.g. sitesPath in IdePage).
 const aiSettingsPath: string = '/settings/ai';
 
+/** The provider's own name, from the enum value the server sends. */
+function providerLabel(provider: string): string {
+  const names: Record<string, string> = {
+    Anthropic: 'Anthropic',
+    OpenAi: 'OpenAI',
+    Ollama: 'Ollama',
+    LmStudio: 'LM Studio',
+  };
+  return names[provider] ?? provider;
+}
+
 // The IDE agent chat panel. Claude runs its tool loop here in the browser, editing
 // the live VFS; the user watches files change in their tabs and the preview refresh.
 export function AgentPanel({ siteName }: { siteId: string; siteName?: string }) {
@@ -126,9 +137,14 @@ export function AgentPanel({ siteName }: { siteId: string; siteName?: string }) 
       {/* Needs-key banner */}
       {session.needsKey && (
         <div className="mx-3 mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
-          <p className="mb-1 font-medium">{t('ide.agent.needsKeyTitle', 'Connect your Anthropic account')}</p>
+          <p className="mb-1 font-medium">{t('ide.agent.needsKeyTitle')}</p>
+          {/* Names the provider the server actually resolved. Telling somebody whose workspace
+              runs on OpenAI to connect an Anthropic account sends them to make an account they
+              do not need. */}
           <p className="text-muted-foreground">
-            {t('ide.agent.needsKeyBody', 'Add your Anthropic API key to use the assistant.')}
+            {session.keyProvider
+              ? t('ide.agent.needsKeyFor', { provider: providerLabel(session.keyProvider) })
+              : t('ide.agent.needsKeyBody')}
           </p>
           <Link to={aiSettingsPath} className="mt-1 inline-block font-medium text-primary hover:underline">
             {t('ide.agent.needsKeyLink', 'Open AI settings →')}

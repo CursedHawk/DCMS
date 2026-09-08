@@ -827,12 +827,13 @@
       "modeHint": "Automaticky provádí úpravy sám; Ručně se nejdřív zeptá",
       "auto": "Automaticky",
       "manual": "Ručně",
-      "empty": "Požádejte Clauda, ať web postaví nebo upraví. Píše přímo do vašich souborů.",
+      "empty": "Řekněte asistentovi, co má na webu postavit nebo změnit. Upravuje soubory živě.",
       "approveTitle": "Provést tyto změny?",
-      "needsKeyTitle": "Připojte svůj účet Anthropic",
-      "needsKeyBody": "Pro použití asistenta přidejte svůj API klíč Anthropic.",
+      "needsKeyTitle": "Asistent nemá API klíč",
+      "needsKeyBody": "Pro použití asistenta přidejte API klíč.",
       "needsKeyLink": "Otevřít nastavení AI →",
-      "placeholder": "Popište změnu…"
+      "placeholder": "Popište změnu…",
+      "needsKeyFor": "Tento prostor je nastavený na {{provider}} a žádný klíč pro {{provider}} není nastavený."
     },
     "starter": {
       "title": "Založit React aplikaci",
@@ -909,11 +910,16 @@
     "apiKey": "API klíč",
     "apiKeySet": "Klíč je nastaven",
     "clearKey": "Vymazat klíč",
-    "userKeyTitle": "Váš účet Anthropic",
-    "userKeyBody": "Asistent v editoru kódu používá váš vlastní API klíč Anthropic. Ukládá se šifrovaně a použije se jen pro vaše požadavky.",
+    "userKeyTitle": "Váš vlastní API klíč",
+    "userKeyBody": "Asistent může běžet na vašem klíči místo klíče pracovního prostoru, takže se spotřeba účtuje vám. Poskytovatele nechte na nastavení prostoru, pokud nechcete použít jiného — funguje jakákoli služba kompatibilní s OpenAI, včetně modelu běžícího na vašem počítači.",
     "connect": "Připojit",
     "connected": "Připojeno",
-    "disconnect": "Odpojit"
+    "disconnect": "Odpojit",
+    "useWorkspaceProvider": "Použít nastavení prostoru",
+    "inheritPlaceholder": "Stejné jako prostor",
+    "localNeedsNoKey": "Model běžící na vašem počítači se neověřuje, takže klíč není potřeba.",
+    "keyStorage": "Uloženo šifrovaně (Vault Transit); API ho nikdy nevrací.",
+    "compatibleHint": "Funguje jakákoli služba kompatibilní s OpenAI: zvolte „OpenAI-compatible“ a nasměrujte na ni základní URL (OpenRouter, Groq, Together, Azure OpenAI, vlastní vLLM…). Hostované služby musí používat https; dvě lokální volby mohou použít běžnou adresu ve vaší síti."
   },
   "account": {
     "menuItem": "Nastavení účtu",
@@ -1248,12 +1254,13 @@
     "toolCount_few": "Umí číst {{count}} oblasti workspace, s vašimi oprávněními.",
     "toolCount_other": "Umí číst {{count}} oblastí workspace, s vašimi oprávněními.",
     "noTools": "Vaše oprávnění nedosáhnou na nic, co může asistent číst.",
-    "noKeyTitle": "Není připojen účet Anthropic",
-    "noKeyBody": "Asistent běží na vašem vlastním API klíči, takže se účtuje vám, ne workspace.",
+    "noKeyTitle": "Asistent nemá API klíč",
+    "noKeyBody": "Asistent běží na vašem vlastním API klíči, takže se spotřeba účtuje vám, ne prostoru.",
     "connectAccount": "Připojit účet",
     "suggestTraffic": "Jak se za posledních 30 dní změnila návštěvnost?",
     "suggestContent": "Jaký obsah ještě není publikovaný?",
-    "suggestPlugins": "Které pluginy jsou tady zapnuté?"
+    "suggestPlugins": "Které pluginy jsou tady zapnuté?",
+    "noKeyFor": "Tento prostor je nastavený na {{provider}} a žádný klíč pro {{provider}} není nastavený ani pro vás, ani pro prostor."
   },
   "settings": {
     "subtitle": "Jak tento pracovní prostor funguje, kdo ho může používat a co zpřístupňuje.",

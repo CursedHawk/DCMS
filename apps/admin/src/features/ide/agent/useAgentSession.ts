@@ -33,6 +33,11 @@ export interface AgentSession {
   setMode: (m: AgentMode) => void;
   /** Set when the last run failed because no Anthropic key is linked. */
   needsKey: boolean;
+  /**
+   * Which provider the server resolved when it refused. Null when it did not say — an older
+   * gateway, or a refusal that was not about a key.
+   */
+  keyProvider: string | null;
   /** Non-null in manual mode while awaiting approval of proposed edits. */
   pending: PendingApproval | null;
   approve: (ok: boolean) => void;
@@ -49,6 +54,7 @@ export function useAgentSession(opts: {
   const [running, setRunning] = useState(false);
   const [mode, setMode] = useState<AgentMode>('auto');
   const [needsKey, setNeedsKey] = useState(false);
+  const [keyProvider, setKeyProvider] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingApproval | null>(null);
 
   const messagesRef = useRef<Message[]>([]);
@@ -178,6 +184,7 @@ export function useAgentSession(opts: {
             push({ id: uid(), type: 'error', text: 'Stopped.', isError: true });
           } else if (e instanceof NoApiKeyError) {
             setNeedsKey(true);
+            setKeyProvider(e.provider);
             push({ id: uid(), type: 'error', text: e.message, isError: true });
           } else {
             push({ id: uid(), type: 'error', text: (e as Error)?.message ?? 'Agent failed.', isError: true });
@@ -191,7 +198,7 @@ export function useAgentSession(opts: {
     [opts, push, patch, requestApproval, running],
   );
 
-  return { entries, running, mode, setMode, needsKey, pending, approve, send, stop, reset };
+  return { entries, running, mode, setMode, needsKey, keyProvider, pending, approve, send, stop, reset };
 }
 
 function describeTool(tu: ToolUseBlock): string {

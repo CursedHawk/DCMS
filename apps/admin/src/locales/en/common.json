@@ -807,12 +807,13 @@
       "modeHint": "Auto applies edits automatically; Manual asks first",
       "auto": "Auto",
       "manual": "Manual",
-      "empty": "Ask Claude to build or change your site. It edits your files live.",
+      "empty": "Ask the assistant to build or change your site. It edits your files live.",
       "approveTitle": "Apply these changes?",
-      "needsKeyTitle": "Connect your Anthropic account",
-      "needsKeyBody": "Add your Anthropic API key to use the assistant.",
+      "needsKeyTitle": "The assistant has no API key",
+      "needsKeyBody": "Add an API key to use the assistant.",
       "needsKeyLink": "Open AI settings →",
-      "placeholder": "Describe a change…"
+      "placeholder": "Describe a change…",
+      "needsKeyFor": "This workspace is set up for {{provider}}, and no {{provider}} key is configured."
     },
     "starter": {
       "title": "Start your React app",
@@ -889,11 +890,16 @@
     "apiKey": "API key",
     "apiKeySet": "A key is configured",
     "clearKey": "Clear key",
-    "userKeyTitle": "Your Anthropic account",
-    "userKeyBody": "The assistant in the code editor uses your own Anthropic API key, stored encrypted and used only for your requests.",
+    "userKeyTitle": "Your own API key",
+    "userKeyBody": "The assistant can run on your own key rather than the workspace’s, so its usage is billed to you. Leave the provider on the workspace setting unless you want to use a different one — any OpenAI-compatible service works, including a model running on your own machine.",
     "connect": "Connect",
     "connected": "Connected",
-    "disconnect": "Disconnect"
+    "disconnect": "Disconnect",
+    "useWorkspaceProvider": "Use the workspace setting",
+    "inheritPlaceholder": "Same as the workspace",
+    "localNeedsNoKey": "A model running on your own machine authenticates nothing, so no key is needed.",
+    "keyStorage": "Stored encrypted (Vault Transit); never returned by the API.",
+    "compatibleHint": "Any OpenAI-compatible service works: choose “OpenAI-compatible” and point the base URL at it (OpenRouter, Groq, Together, Azure OpenAI, a self-hosted vLLM…). Hosted services must use https; the two local options may use a plain address on your own network."
   },
   "account": {
     "menuItem": "Account settings",
@@ -1226,12 +1232,13 @@
     "toolCount_one": "Can read 1 area of this workspace, using your permissions.",
     "toolCount_other": "Can read {{count}} areas of this workspace, using your permissions.",
     "noTools": "Your permissions do not reach anything the assistant can read.",
-    "noKeyTitle": "No Anthropic account connected",
+    "noKeyTitle": "The assistant has no API key",
     "noKeyBody": "The assistant runs on your own API key, so its usage is billed to you rather than the workspace.",
     "connectAccount": "Connect an account",
     "suggestTraffic": "How did traffic change over the last 30 days?",
     "suggestContent": "What content is still unpublished?",
-    "suggestPlugins": "Which plugins are enabled here?"
+    "suggestPlugins": "Which plugins are enabled here?",
+    "noKeyFor": "This workspace is set up for {{provider}}, and no {{provider}} key is configured for you or for the workspace."
   },
   "settings": {
     "subtitle": "How this workspace works, who can use it, and what it exposes.",

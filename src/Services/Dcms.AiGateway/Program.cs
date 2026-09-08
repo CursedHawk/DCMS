@@ -32,7 +32,9 @@ builder.Services.AddDcmsAuditData(builder.Configuration);
 builder.Services.AddDcmsDataProtection(builder.Configuration);
 builder.Services.AddDcmsVaultTransit();
 builder.Services.AddScoped<AiProviderResolver>();
-builder.Services.AddHttpClient("anthropic");
+// One outbound client for every provider: the upstream differs by base URL and dialect, not
+// by anything the handler pipeline cares about.
+builder.Services.AddHttpClient("ai-upstream");
 
 var app = builder.Build();
 // First in the pipeline, so an exception anywhere below it becomes a ProblemDetails

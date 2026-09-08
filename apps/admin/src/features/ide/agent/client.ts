@@ -2,13 +2,20 @@ import { renewSilently } from '../../../auth';
 import { adminHeaders } from '../../../tenants';
 import { runtimeConfig } from '../../../runtime-config';
 
-// Streaming client for one Claude turn. The agent LOOP and its file tools run in
-// the browser (see useAgentSession); each model turn is POSTed to the admin-api
-// proxy, which injects the user's Vault-stored Anthropic key and streams the
-// Anthropic SSE response straight back. The key never reaches the browser.
+/*
+ * Streaming client for one assistant turn.
+ *
+ * The agent LOOP and its tools run in the browser (see useAgentSession); each model turn is
+ * POSTed to the admin-api proxy, which injects the user's Vault-stored key server-side and
+ * streams the answer back. The key never reaches the browser.
+ *
+ * The wire format here is Anthropic's, and stays that way whichever provider actually serves
+ * the turn: ai-gateway translates to and from OpenAI Chat Completions for everything else, so
+ * this loop has one protocol to parse rather than two. See `AnthropicOpenAiBridge`.
+ */
 
 const base = runtimeConfig.adminApiBase;
-const MESSAGES_PATH = '/admin/ai/anthropic/messages';
+const MESSAGES_PATH = '/admin/ai/messages';
 
 export interface TextBlock {
   type: 'text';
@@ -48,11 +55,20 @@ export interface AssistantTurn {
   stopReason: string | null;
 }
 
-/** Thrown when the proxy reports no usable Anthropic key for the user/tenant. */
+/**
+ * Thrown when the proxy reports no usable API key for the user or tenant.
+ *
+ * Carries the provider the server actually resolved, so the panel can name it. Telling somebody
+ * with a workspace on OpenAI to "connect your Anthropic account" is worse than saying nothing:
+ * they go and create an account they do not need.
+ */
 export class NoApiKeyError extends Error {
-  constructor() {
-    super('No Anthropic API key is linked. Connect your Anthropic account first.');
+  readonly provider: string | null;
+
+  constructor(provider?: string | null, message?: string) {
+    super(message ?? 'No API key is configured for the assistant.');
     this.name = 'NoApiKeyError';
+    this.provider = provider ?? null;
   }
 }
 
@@ -91,7 +107,8 @@ export async function streamAssistantTurn(
       /* non-JSON */
     }
     if ((payload as { error?: string })?.error === 'no_api_key' || res.status === 402) {
-      throw new NoApiKeyError();
+      const detail = payload as { provider?: string; message?: string };
+      throw new NoApiKeyError(detail?.provider, detail?.message);
     }
     const message =
       (payload as { message?: string; error?: string })?.message ??

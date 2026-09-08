@@ -44,13 +44,25 @@ test('dragging one of several selected assets moves the whole selection', async 
 
   // What every file manager does. Getting it backwards — moving only the dragged item while five
   // others sit selected — is the kind of surprise that costs somebody a re-sort of their library.
-  for (const checkbox of await page.getByRole('button', { name: 'Select' }).all()) {
-    await checkbox.click({ force: true });
+  const checkboxes = page.getByRole('button', { name: 'Select' });
+  await expect(checkboxes).toHaveCount(data.MEDIA_ASSETS.length);
+  for (let i = 0; i < data.MEDIA_ASSETS.length; i++) {
+    // `force` because the checkbox is only opaque on hover; it is in the layout either way.
+    await checkboxes.nth(i).click({ force: true });
   }
 
-  const asset = page.locator('div.group').filter({ hasText: 'logo.png' }).first();
-  await dragOnto(asset, tile(page, 'Press kit'));
+  /*
+   * Wait for the selection bar before dragging, not merely for the clicks to return.
+   * Selecting swaps the toolbar for the bulk-action bar, which reflows the grid — dragging into
+   * that reflow resolved a stale element and the drop landed nowhere, about one run in three.
+   */
+  await expect(page.getByText(`${data.MEDIA_ASSETS.length} selected`)).toBeVisible();
 
+  await dragOnto(page.locator('div.group').filter({ hasText: 'logo.png' }).first(), tile(page, 'Press kit'));
+
+  await expect
+    .poll(() => api.requestsTo('POST', '/api/admin/media/move').length)
+    .toBeGreaterThan(0);
   const move = api.requestsTo('POST', '/api/admin/media/move').at(-1);
   expect((move?.body as { ids: string[] }).ids).toHaveLength(data.MEDIA_ASSETS.length);
 });

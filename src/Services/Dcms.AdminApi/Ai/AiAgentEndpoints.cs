@@ -14,12 +14,15 @@ using Microsoft.EntityFrameworkCore;
 namespace Dcms.AdminApi.Ai;
 
 /// <summary>
-/// Web-IDE agent surface: (1) per-user Anthropic credential linking — each user
-/// connects their own API key (stored as Vault Transit ciphertext, never returned),
-/// and (2) a streaming proxy that forwards a raw Anthropic Messages request to
-/// ai-gateway with the caller's <b>authenticated</b> user id, so the key is resolved
-/// and injected server-side and never reaches the browser. The agent loop and its
-/// file tools run in the browser against the live VFS; only model turns pass here.
+/// Browser agent surface: (1) per-user credential linking — each user connects their own API key
+/// (stored as Vault Transit ciphertext, never returned), and (2) a streaming proxy that forwards
+/// the turn to ai-gateway with the caller's <b>authenticated</b> user id, so the key is resolved
+/// and injected server-side and never reaches the browser. The agent loop and its tools run in
+/// the browser against the live VFS; only model turns pass here.
+///
+/// <para>The request body is in the Anthropic Messages format because that is what the browser
+/// loop speaks; which provider actually serves it is ai-gateway's decision, and it translates
+/// where it has to. Nothing here is Anthropic-specific any more.</para>
 /// </summary>
 public static class AiAgentEndpoints
 {
@@ -49,8 +52,16 @@ public static class AiAgentEndpoints
             UpdateUserCredentialsRequest body, AiDbContext db, ITenantContext tenant, CurrentUser me,
             ITransitEncryptor encryptor, CancellationToken ct) =>
         {
-            // Provider defaults to Anthropic — the agent is Claude-specific.
-            var provider = AiProvider.Anthropic;
+            /*
+             * Unset means INHERIT, not Anthropic.
+             *
+             * It used to default to Anthropic, which quietly pinned it on the user's row the
+             * first time they saved anything — so a workspace configured for Ollama or OpenAI
+             * still asked every one of its users for an Anthropic key, and nothing on the
+             * settings page said why. A user who names no provider follows the workspace, which
+             * is what "connect your own key" should have meant all along.
+             */
+            var provider = AiProvider.Inherit;
             if (!string.IsNullOrWhiteSpace(body.Provider)
                 && !Enum.TryParse(body.Provider, ignoreCase: true, out provider))
             {
@@ -110,7 +121,24 @@ public static class AiAgentEndpoints
 
         // --- Streaming message proxy (browser agent loop -> ai-gateway) -------
 
-        app.MapPost("/api/admin/ai/anthropic/messages", async (
+        /*
+         * `/messages` is the name; `/anthropic/messages` is what it was called when the only
+         * provider was Anthropic. The old path stays because a browser holding the previous
+         * bundle is still running an agent loop against it, and a 404 mid-turn is indisposable
+         * — it presents as the assistant going silent.
+         */
+        app.MapPost("/api/admin/ai/messages", MessagesProxy)
+            .RequirePermission(PlatformPermissions.SiteEdit)
+            .WithAudit(AuditActions.AiRequestProxied, null, AuditCategory.Access);
+
+        app.MapPost("/api/admin/ai/anthropic/messages", MessagesProxy)
+            .RequirePermission(PlatformPermissions.SiteEdit)
+            .WithAudit(AuditActions.AiRequestProxied, null, AuditCategory.Access);
+
+        return app;
+    }
+
+    private static readonly Delegate MessagesProxy = async (
             JsonObject request, HttpContext ctx, ITenantContext tenant, CurrentUser me,
             IServiceTokenProvider tokens, IHttpClientFactory httpClientFactory, CancellationToken ct) =>
         {
@@ -144,10 +172,7 @@ public static class AiAgentEndpoints
             await upstreamStream.CopyToAsync(ctx.Response.Body, ct);
             upstream.Dispose();
             return Results.Empty;
-        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.AiRequestProxied, null, AuditCategory.Access);
-
-        return app;
-    }
+    };
 
     private sealed record UpdateUserCredentialsRequest(
         string? Provider, string? Model, string? BaseUrl, string? ApiKey, bool ClearApiKey = false);

@@ -34,6 +34,11 @@
          Order or one path pattern wrong routes real traffic to the wrong service, so it is
          asserted here rather than discovered on the edge. -->
     <ProjectReference Include="..\..\src\Services\Dcms.Edge\Dcms.Edge.csproj" />
+    <!-- The Anthropic ⇄ OpenAI translation. It is the reason the assistant works against any
+         provider, it is pure input-to-output, and every mistake it can make is a shape the
+         browser's agent loop then fails to parse — which is invisible until somebody's turn
+         hangs. -->
+    <ProjectReference Include="..\..\src\Services\Dcms.AiGateway\Dcms.AiGateway.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Messaging\Dcms.Shared.Messaging.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Hosting\Dcms.Shared.Hosting.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Telemetry\Dcms.Shared.Telemetry.csproj" />
