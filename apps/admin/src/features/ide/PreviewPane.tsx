@@ -1,21 +1,16 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { usePreview } from './preview/usePreview';
+import type { PreviewControls } from './preview/usePreview';
 
 // Live client-side preview: the esbuild-wasm worker bundles the project and we
 // render the result in a sandboxed iframe. Build errors surface as an overlay.
+//
+// The build itself is driven by IdePage, not here. Two callers of usePreview would be two
+// workers building the same project, and the Problems view needs the same build's messages.
 
-export function PreviewPane({
-  enabled,
-  siteId,
-  refreshKey,
-}: {
-  enabled: boolean;
-  siteId: string;
-  refreshKey: number;
-}) {
+export function PreviewPane({ preview }: { preview: PreviewControls }) {
   const { t } = useTranslation();
-  const { srcdoc, error, building, refresh } = usePreview(enabled, siteId, refreshKey);
+  const { srcdoc, error, building, refresh } = preview;
 
   return (
     <div className="relative flex h-full flex-col bg-white">

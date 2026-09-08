@@ -29,6 +29,7 @@ import {
 } from '../site-source';
 import { IdeSidebar, type SidebarView } from './IdeSidebar';
 import { PreviewPane } from './PreviewPane';
+import { usePreview } from './preview/usePreview';
 import { StarterPicker, type StarterFlavor } from './StarterPicker';
 import { STARTER_FILES } from './starter';
 import { ensurePaletteTypes } from './types/palette';
@@ -60,6 +61,9 @@ export function IdePage({ siteId }: { siteId: string }) {
   // Shown for a brand-new (empty) site so the user picks what to scaffold.
   const [pickStarter, setPickStarter] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
+  // Driven here rather than inside PreviewPane: the Problems view lists the messages from this
+  // same build, and a second usePreview would be a second worker bundling the same project.
+  const preview = usePreview(showPreview, siteId, previewNonce);
   // Marks the site whose persisted tabs have been restored — gates tab autosave so
   // we never write the previous site's tabs under a newly-selected site's key.
   const restoredFor = useRef<string | null>(null);
@@ -371,6 +375,10 @@ export function IdePage({ siteId }: { siteId: string }) {
           onReload={() => session.openBranch(branch)}
           onRestored={(files, version, hashes) => useVfs.getState().load(files, version, hashes)}
           viewWidth={sidebarWidth}
+          problems={preview.problems}
+          building={preview.building}
+          previewEnabled={showPreview}
+          onEnablePreview={() => setShowPreview(true)}
         />
         <Resizer
           ariaLabel={t('ide.resizeSidebar')}
@@ -405,7 +413,7 @@ export function IdePage({ siteId }: { siteId: string }) {
               onReset={resetPreviewWidth}
             />
             <div className="shrink-0 border-l" style={{ width: `${previewWidth}px` }}>
-              <PreviewPane enabled={showPreview} siteId={siteId} refreshKey={previewNonce} />
+              <PreviewPane preview={preview} />
             </div>
           </>
         )}

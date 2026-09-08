@@ -786,6 +786,12 @@
       "tooMany": "First {{count}}",
       "summary": "{{matches}} in {{files}}",
       "noMatches": "No matches in this project."
+    },
+    "problems": {
+      "title": "Problems",
+      "none": "No problems in the last build.",
+      "previewOff": "Nothing has been checked",
+      "previewOffHint": "The project is built for the preview, so problems are only found while it is on."
     }
   },
   "openapi": {

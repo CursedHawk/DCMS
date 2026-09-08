@@ -24,8 +24,18 @@ interface BuildResponse {
   css?: string;
   /** True when the collected CSS drives Tailwind (compiled in-browser at preview time). */
   usesTailwind?: boolean;
+  /** The joined error text, kept as it was for the preview pane's overlay. */
   error?: string;
+  /**
+   * Every message esbuild reported, with its location intact — errors on a failed build, and
+   * warnings on a successful one, which used to be discarded entirely. See `problems.ts`.
+   */
+  messages?: EsbuildMessage[];
+  warnings?: EsbuildMessage[];
 }
+
+/** Structurally what esbuild's `Message` is, narrowed to what survives postMessage. */
+type EsbuildMessage = import('./problems').EsbuildMessage;
 
 const CDN = 'https://esm.sh';
 let ready: Promise<void> | null = null;
@@ -308,14 +318,50 @@ self.onmessage = async (e: MessageEvent<BuildRequest>) => {
       if (!out.path.endsWith('.css')) js += out.text;
     }
     const { css, usesTailwind } = collectCss(files);
-    respond({ id, ok: true, js, css, usesTailwind });
+    // A build can succeed and still have something to say. These were thrown away before, so
+    // an unused import or a suspicious `==` was reported to nobody.
+    respond({ id, ok: true, js, css, usesTailwind, warnings: asMessages(result.warnings) });
   } catch (err) {
-    const msg =
+    const errors =
       err && typeof err === 'object' && 'errors' in err
-        ? (err as { errors: { text: string }[] }).errors.map((x) => x.text).join('\n')
-        : String((err as Error)?.message ?? err);
-    respond({ id, ok: false, error: msg });
+        ? asMessages((err as { errors: unknown[] }).errors)
+        : [{ text: String((err as Error)?.message ?? err) }];
+
+    respond({
+      id,
+      ok: false,
+      // Kept exactly as it was: the preview pane's overlay reads this, and a build failure
+      // must keep saying what went wrong even where nothing consumes the structured form.
+      error: errors.map((e) => e.text).join('\n'),
+      messages: errors,
+      warnings: [],
+    });
   }
 };
+
+/**
+ * esbuild's messages, stripped to what can cross a worker boundary.
+ *
+ * <p>`postMessage` uses structured clone, which throws on anything holding a function — and
+ * esbuild's `Message` carries `notes` with nested objects that have varied between versions.
+ * Copying the four fields that are read is both smaller and immune to that.</p>
+ */
+function asMessages(raw: readonly unknown[] | undefined): EsbuildMessage[] {
+  return (raw ?? []).map((entry) => {
+    const m = entry as { text?: unknown; location?: Record<string, unknown> | null };
+    const location = m.location;
+    return {
+      text: typeof m.text === 'string' ? m.text : String(m.text ?? 'Build failed'),
+      location: location
+        ? {
+            file: typeof location.file === 'string' ? location.file : undefined,
+            line: typeof location.line === 'number' ? location.line : undefined,
+            column: typeof location.column === 'number' ? location.column : undefined,
+            lineText: typeof location.lineText === 'string' ? location.lineText : undefined,
+          }
+        : null,
+    };
+  });
+}
 
 export type { BuildRequest, BuildResponse };

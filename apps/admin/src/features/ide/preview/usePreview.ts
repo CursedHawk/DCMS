@@ -3,6 +3,7 @@ import { versions as paletteVersions } from 'virtual:dcms-palette-types';
 import { useVfs } from '../../site-source';
 import { previewEntry } from '../paths';
 import type { BuildRequest, BuildResponse } from './bundler.worker';
+import { toProblems, type BuildProblem } from './problems';
 import BundlerWorker from './bundler.worker?worker';
 
 // Drives the esbuild-wasm worker: it rebuilds the preview once the user has
@@ -14,6 +15,12 @@ export interface PreviewState {
   srcdoc: string | null;
   error: string | null;
   building: boolean;
+  /**
+   * Every message the last build reported, with its location — what the Problems view lists.
+   * Errors and warnings both: a build that succeeds can still have something to say, and those
+   * warnings used to be discarded in the worker.
+   */
+  problems: BuildProblem[];
 }
 
 // How long the file map must sit unchanged before we auto-rebuild. Kept
@@ -55,7 +62,12 @@ export interface PreviewControls extends PreviewState {
 export function usePreview(enabled: boolean, siteId: string, refreshKey = 0): PreviewControls {
   const rev = useVfs((s) => s.rev);
   const loaded = useVfs((s) => s.loaded);
-  const [state, setState] = useState<PreviewState>({ srcdoc: null, error: null, building: false });
+  const [state, setState] = useState<PreviewState>({
+    srcdoc: null,
+    error: null,
+    building: false,
+    problems: [],
+  });
   const workerRef = useRef<Worker | null>(null);
   const reqId = useRef(0);
   const didInitialBuild = useRef(false);
@@ -67,14 +79,25 @@ export function usePreview(enabled: boolean, siteId: string, refreshKey = 0): Pr
     const worker = workerRef.current;
     const onMessage = (e: MessageEvent<BuildResponse>) => {
       if (e.data.id !== reqId.current) return; // ignore stale builds
+      // A path is a project file exactly when the VFS has it. That is also what keeps a
+      // problem in a CDN dependency from offering to open a tab on a file that does not exist.
+      const files = useVfs.getState().files;
+      const problems = toProblems(e.data.messages, e.data.warnings, (path) => files[path] != null);
+
       if (e.data.ok) {
         setState({
           srcdoc: shell(e.data.js ?? '', e.data.css ?? '', e.data.usesTailwind ?? false),
           error: null,
           building: false,
+          problems,
         });
       } else {
-        setState((s) => ({ ...s, error: e.data.error ?? 'Build failed', building: false }));
+        setState((s) => ({
+          ...s,
+          error: e.data.error ?? 'Build failed',
+          building: false,
+          problems,
+        }));
       }
     };
     worker.addEventListener('message', onMessage);
@@ -94,7 +117,12 @@ export function usePreview(enabled: boolean, siteId: string, refreshKey = 0): Pr
     const files = useVfs.getState().snapshot();
     const entry = previewEntry(files);
     if (!entry) {
-      setState({ srcdoc: null, error: 'No preview entry (expected src/main.tsx).', building: false });
+      setState({
+        srcdoc: null,
+        error: 'No preview entry (expected src/main.tsx).',
+        building: false,
+        problems: [{ severity: 'error', text: 'No preview entry (expected src/main.tsx).' }],
+      });
       return;
     }
     const id = ++reqId.current;

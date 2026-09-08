@@ -799,6 +799,12 @@
       "tooMany": "Prvních {{count}}",
       "summary": "{{matches}} ve {{files}}",
       "noMatches": "V projektu nic nenalezeno."
+    },
+    "problems": {
+      "title": "Problémy",
+      "none": "Poslední sestavení proběhlo bez problémů.",
+      "previewOff": "Zatím nic nezkontrolováno",
+      "previewOffHint": "Projekt se sestavuje kvůli náhledu, takže problémy se hledají jen když je zapnutý."
     }
   },
   "openapi": {
