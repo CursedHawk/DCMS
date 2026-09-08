@@ -1238,7 +1238,15 @@
     "suggestTraffic": "How did traffic change over the last 30 days?",
     "suggestContent": "What content is still unpublished?",
     "suggestPlugins": "Which plugins are enabled here?",
-    "noKeyFor": "This workspace is set up for {{provider}}, and no {{provider}} key is configured for you or for the workspace."
+    "noKeyFor": "This workspace is set up for {{provider}}, and no {{provider}} key is configured for you or for the workspace.",
+    "writeAccess": "Write access",
+    "writeAccessOn": "The assistant can draft and edit content in this workspace. Every change asks you first.",
+    "writeAccessOff": "The assistant can only read this workspace. Turn this on to have it write content for you.",
+    "approveTitle": "Allow this change?",
+    "approve": "Allow",
+    "decline": "Decline",
+    "toolCountWrite_one": "Can read and change 1 area of this workspace, using your permissions.",
+    "toolCountWrite_other": "Can read and change {{count}} areas of this workspace, using your permissions."
   },
   "settings": {
     "subtitle": "How this workspace works, who can use it, and what it exposes.",

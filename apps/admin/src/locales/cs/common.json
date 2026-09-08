@@ -1260,7 +1260,16 @@
     "suggestTraffic": "Jak se za posledních 30 dní změnila návštěvnost?",
     "suggestContent": "Jaký obsah ještě není publikovaný?",
     "suggestPlugins": "Které pluginy jsou tady zapnuté?",
-    "noKeyFor": "Tento prostor je nastavený na {{provider}} a žádný klíč pro {{provider}} není nastavený ani pro vás, ani pro prostor."
+    "noKeyFor": "Tento prostor je nastavený na {{provider}} a žádný klíč pro {{provider}} není nastavený ani pro vás, ani pro prostor.",
+    "writeAccess": "Přístup pro zápis",
+    "writeAccessOn": "Asistent může psát a upravovat obsah v tomto prostoru. Každou změnu vám dá nejdřív schválit.",
+    "writeAccessOff": "Asistent umí tento prostor jen číst. Zapněte, ať pro vás obsah i napíše.",
+    "approveTitle": "Povolit tuto změnu?",
+    "approve": "Povolit",
+    "decline": "Odmítnout",
+    "toolCountWrite_one": "Umí číst a měnit 1 oblast prostoru, s vašimi oprávněními.",
+    "toolCountWrite_few": "Umí číst a měnit {{count}} oblasti prostoru, s vašimi oprávněními.",
+    "toolCountWrite_other": "Umí číst a měnit {{count}} oblastí prostoru, s vašimi oprávněními."
   },
   "settings": {
     "subtitle": "Jak tento pracovní prostor funguje, kdo ho může používat a co zpřístupňuje.",

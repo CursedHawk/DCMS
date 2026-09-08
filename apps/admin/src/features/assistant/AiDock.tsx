@@ -1,4 +1,4 @@
-import { Bot, KeyRound, Send, Square, Wrench } from 'lucide-react';
+import { Bot, KeyRound, Send, ShieldAlert, Square, Wrench } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
@@ -6,12 +6,14 @@ import {
   Badge,
   Button,
   Input,
+  Label,
   Sheet,
   SheetBody,
   SheetContent,
   SheetFooter,
   SheetHeader,
   SheetTitle,
+  Switch,
   cn,
 } from '@dcms/ui';
 import { useAi } from './context';
@@ -37,7 +39,7 @@ export function AiDock() {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end' });
-  }, [session.entries]);
+  }, [session.entries, session.pending]);
 
   const submit = () => {
     session.send(draft);
@@ -67,6 +69,30 @@ export function AiDock() {
           ) : (
             session.entries.map((entry) => <Entry key={entry.id} entry={entry} />)
           )}
+
+          {/* The approval gate. Write access decides what the model is offered; this decides
+              what actually happens, and it shows the arguments rather than a paraphrase of
+              them — approving "update the article" is not approving what it will contain. */}
+          {session.pending ? (
+            <div className="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3 text-sm">
+              <p className="flex items-center gap-1.5 font-medium">
+                <ShieldAlert className="h-4 w-4 shrink-0" aria-hidden />
+                {t('assistant.approveTitle')}
+              </p>
+              <p>{session.pending.summary}</p>
+              <pre className="max-h-48 overflow-auto rounded bg-muted p-2 text-xs">
+                {session.pending.payload}
+              </pre>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={() => session.approve(true)}>
+                  {t('assistant.approve')}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => session.approve(false)}>
+                  {t('assistant.decline')}
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           {session.needsKey ? (
             <div className="rounded-md border border-[hsl(var(--warning)/0.4)] bg-[hsl(var(--warning)/0.1)] p-3 text-sm">
@@ -99,6 +125,29 @@ export function AiDock() {
         </SheetBody>
 
         <SheetFooter className="flex-col items-stretch gap-2">
+          {/* Shown only to a role that could actually write. For everyone else the control
+              could never be turned on, and an always-off switch teaches nothing. */}
+          {session.writable ? (
+            <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+              <div className="min-w-0">
+                <Label htmlFor="ai-write-access" className="cursor-pointer">
+                  {t('assistant.writeAccess')}
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {session.mode === 'write'
+                    ? t('assistant.writeAccessOn')
+                    : t('assistant.writeAccessOff')}
+                </p>
+              </div>
+              <Switch
+                id="ai-write-access"
+                checked={session.mode === 'write'}
+                onCheckedChange={(on) => session.setMode(on ? 'write' : 'read')}
+                aria-label={t('assistant.writeAccess')}
+              />
+            </div>
+          ) : null}
+
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -137,7 +186,9 @@ export function AiDock() {
           {/* Says what it can reach, in the operator's terms. An assistant whose limits are
               invisible gets asked for things it will never manage, once each. */}
           <p className="text-xs text-muted-foreground">
-            {t('assistant.toolCount', { count: session.toolCount })}
+            {session.mode === 'write'
+              ? t('assistant.toolCountWrite', { count: session.toolCount })
+              : t('assistant.toolCount', { count: session.toolCount })}
           </p>
         </SheetFooter>
       </SheetContent>
