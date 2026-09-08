@@ -52,6 +52,39 @@ public sealed class IdentityClientSeedConvergenceTests : IAsyncLifetime
             .Should().BeEquivalentTo(["https://platform.example.test/"]);
     }
 
+    [DockerFact]
+    public async Task Reseeding_takes_away_a_scope_the_client_no_longer_needs()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        const string redirect = "https://platform.example.test/auth/callback";
+        const string postLogout = "https://platform.example.test/";
+
+        // First boot, then hand the client back the scope an older deploy gave it. This is the
+        // state every existing database is in: dcms-platform-spa could ask for dcms.admin,
+        // because the console used to call admin-api directly.
+        await using (var before = Boot(redirect, postLogout))
+        {
+            using var scope = before.Services.CreateScope();
+            var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+            var application = await manager.FindByClientIdAsync("dcms-platform-spa", ct);
+            var descriptor = new OpenIddictApplicationDescriptor();
+            await manager.PopulateAsync(descriptor, application!, ct);
+            descriptor.Permissions.Add(OpenIddictConstants.Permissions.Prefixes.Scope + "dcms.admin");
+            await manager.PopulateAsync(application!, descriptor, ct);
+            await manager.UpdateAsync(application!, ct);
+        }
+
+        // The next deploy. Removing a scope from a shipped client was a silent no-op until the
+        // seeder learned to converge them, which is the whole reason this step could ship at
+        // all -- and the failure mode of getting it wrong is a console that still holds a token
+        // for an API it is no longer allowed to call.
+        await using var after = Boot(redirect, postLogout);
+        var permissions = (await DescribeAsync(after, ct)).Permissions;
+
+        permissions.Should().Contain(OpenIddictConstants.Permissions.Prefixes.Scope + "dcms.platform");
+        permissions.Should().NotContain(OpenIddictConstants.Permissions.Prefixes.Scope + "dcms.admin");
+    }
+
     private WebApplicationFactory<IdentityApp::Program> Boot(string redirect, string postLogout)
     {
         var factory = new WebApplicationFactory<IdentityApp::Program>().WithWebHostBuilder(builder =>

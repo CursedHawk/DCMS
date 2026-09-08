@@ -7,15 +7,18 @@ import { runtimeConfig } from './runtime-config';
  * Its own client id, not the admin SPA's: the two are served from different hosts, and sharing
  * one would let a token minted for the admin host be replayed into this one's callback.
  *
- * It asks for dcms.admin alongside dcms.platform because the console calls three APIs directly
- * — there is no service-to-service hop in this design, so every action is attributable to the
- * person who took it rather than to a service principal. The scopes grant nothing on their own;
- * every endpoint behind them is gated on SuperAdmin or a platform permission server-side.
+ * dcms.platform and nothing else. This console holds no admin-api scope: certificates, the
+ * platform bell, tenant lifecycle and the analytics prune are asked of platform-api, which
+ * checks the operator's platform permission and forwards on a service token, propagating the
+ * operator so the audit record still names the person rather than the service.
+ *
+ * The scope grants nothing on its own; every endpoint behind it is gated on SuperAdmin or a
+ * platform permission server-side.
  */
 const auth = createAuth({
   authority: runtimeConfig.oidcAuthority,
   clientId: runtimeConfig.oidcClientId,
-  scope: 'openid profile email roles dcms.platform dcms.admin offline_access',
+  scope: 'openid profile email roles dcms.platform offline_access',
 });
 
 export const login = auth.login;

@@ -179,11 +179,14 @@ public sealed class IdentitySeeder(
         // the admin SPA: the two are served from different hosts, and a shared client would let
         // a token minted for admin.highgeek.eu be replayed into platform.highgeek.eu's callback.
         //
-        // It asks for dcms.admin as well as dcms.platform because the console calls three APIs
-        // same-origin through the edge — platform-api for observability and ops, identity for the
-        // user directory, and admin-api for tenancy and audit, which already own those. Nothing
-        // here grants anything: every one of those endpoints is gated on SuperAdmin or a
-        // platform permission on the server side.
+        // dcms.platform and nothing else. The console used to hold dcms.admin as well, back when
+        // it called admin-api directly for certificates, the platform bell, tenant lifecycle and
+        // the analytics prune. It now asks platform-api for all four, which checks the operator's
+        // platform permission and forwards on its own service token — so a token minted for a
+        // browser on the console host can no longer be replayed against admin-api at all.
+        //
+        // Taking a scope away only works because EnsurePublicSpaClientAsync converges scope
+        // permissions; before that it was a silent no-op on any database that already existed.
         var platformRedirects = (configuration["Identity:PlatformSpa:RedirectUris"]
                                  ?? "http://localhost:5174/auth/callback;http://localhost:5010/auth/callback")
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -195,7 +198,7 @@ public sealed class IdentitySeeder(
             manager,
             DcmsOAuth.Clients.PlatformSpa,
             "DCMS Platform Console",
-            [DcmsOAuth.Scopes.Platform, DcmsOAuth.Scopes.Admin],
+            [DcmsOAuth.Scopes.Platform],
             platformRedirects,
             platformPostLogout,
             ct);
