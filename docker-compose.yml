@@ -871,8 +871,13 @@ services:
     # 512m, not the 384m the other agents get. Alloy is not one process's worth of work: it
     # is the OTLP receiver, the tail sampler holding up to 20 000 traces in memory, the
     # container-log shipper and five embedded exporters — and cAdvisor alone is the largest
-    # of those. Measured at 349 MiB steady on this host, which is 91 % of 384m, and on a
-    # swapless box the margin above steady state is the whole safety budget.
+    # of those.
+    #
+    # Measured 416 MiB steady on this host (2026-09-08, with the WAL bounded) — 81 % of this
+    # limit and 108 % of the 384m the others get, which is why it is not that. The margin above
+    # steady state is the whole safety budget, so treat a sustained climb above ~90 % as
+    # something to investigate rather than something to raise the ceiling for: the last time
+    # this number moved it was a WAL that had stopped truncating, not a workload that had grown.
     mem_limit: 512m
     command:
       - run
