@@ -84,6 +84,22 @@ public sealed class WildcardIssuanceTests : IAsyncLifetime
             // Pebble sleeps a random 0-15s before validating, to shake out clients that assume
             // it is instant. Ours polls, so the delay only makes the test slower.
             .WithEnvironment("PEBBLE_VA_NOSLEEP", "1")
+            /*
+             * And it rejects 5 % of perfectly good anti-replay nonces, to shake out clients that
+             * do not retry on badNonce.
+             *
+             * Turned off, because that fault injection tests Certes rather than us. Certes retries
+             * a rejected nonce once, which leaves ~0.25 % per request — and an issuance makes
+             * fifteen or so, so this test failed outright about one run in twenty-five with
+             * "JWS has an invalid anti-replay nonce". Nonce handling is entirely inside the
+             * library; there is no version of our code that makes that flake go away, and a
+             * suite that fails 4 % of the time for a reason nobody can act on trains people to
+             * re-run it, which is how a real failure gets waved through.
+             *
+             * What this test is for is the DNS-01 wildcard handling — two TXT values at one
+             * record name, validated by a real CA. That is unaffected.
+             */
+            .WithEnvironment("PEBBLE_WFE_NONCEREJECT", "0")
             .WithResourceMapping(
                 Encoding.UTF8.GetBytes(PebbleConfig), "/test/config/pebble-config.json")
             .WithCommand(

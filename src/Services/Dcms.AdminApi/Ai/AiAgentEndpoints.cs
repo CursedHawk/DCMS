@@ -122,16 +122,22 @@ public static class AiAgentEndpoints
         // --- Streaming message proxy (browser agent loop -> ai-gateway) -------
 
         /*
-         * `/messages` is the name; `/anthropic/messages` is what it was called when the only
-         * provider was Anthropic. The old path stays because a browser holding the previous
-         * bundle is still running an agent loop against it, and a 404 mid-turn is indisposable
-         * — it presents as the assistant going silent.
+         * `/messages`, renamed from `/anthropic/messages` when the agent stopped being
+         * Anthropic-only.
+         *
+         * <b>There is deliberately no alias on the old path.</b> One was added and taken out
+         * again: two routes carrying the same audit action is exactly what
+         * `Declared_actions_are_not_accidentally_shared` refuses, and it is right to — reading
+         * `ai.request` in the log and not knowing which endpoint served it is the ambiguity that
+         * guard exists to prevent. Exempting the alias instead would be worse: this record is
+         * how "who used the tenant's API key, and when" gets answered.
+         *
+         * What the alias bought was small. A browser holding the previous bundle across a deploy
+         * gets one failed turn with a visible error in the transcript — not silence, and not lost
+         * work — and it is already in that state anyway, because the agent panel is a lazily
+         * loaded chunk whose hashed filename changed in the same deploy. One reload fixes it.
          */
         app.MapPost("/api/admin/ai/messages", MessagesProxy)
-            .RequirePermission(PlatformPermissions.SiteEdit)
-            .WithAudit(AuditActions.AiRequestProxied, null, AuditCategory.Access);
-
-        app.MapPost("/api/admin/ai/anthropic/messages", MessagesProxy)
             .RequirePermission(PlatformPermissions.SiteEdit)
             .WithAudit(AuditActions.AiRequestProxied, null, AuditCategory.Access);
 
