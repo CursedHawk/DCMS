@@ -9,12 +9,15 @@ namespace Dcms.AdminApi.Notifications;
 /// <summary>
 /// The platform console's bell.
 ///
-/// <para><b>SuperAdmin, checked imperatively</b>, exactly as the platform certificate endpoints
-/// next door: these are platform-wide facts, and no tenant-scoped permission should reach them.
-/// This differs from the tenant bell, which carries no permission check at all — there the
-/// audience was decided when each notification was raised and every query filters on the
-/// caller's own id. Here there are no recipient rows to filter by, so the role check <i>is</i>
-/// the audience.</para>
+/// <para><b>Platform-wide facts, gated by <see cref="ConsoleCaller"/></b> exactly as the platform
+/// certificate endpoints next door: no tenant-scoped permission should reach them. This differs
+/// from the tenant bell, which carries no permission check at all — there the audience was
+/// decided when each notification was raised and every query filters on the caller's own id.
+/// Here there are no recipient rows to filter by, so the check <i>is</i> the audience.</para>
+///
+/// <para>Every query is still keyed on one operator's id. When the console's API calls on an
+/// operator's behalf that id arrives in the propagated actor headers rather than in the token —
+/// see <see cref="ConsoleCaller.RequireOperatorId"/> for why that is bounded.</para>
 ///
 /// <para>Read state is created on first touch. A notification an operator has never acted on has
 /// no row, which is what "unread" means — so the unread count is an anti-join, and the list is a
@@ -43,15 +46,15 @@ public static class PlatformNotificationEndpoints
     public static IEndpointRouteBuilder MapPlatformNotificationEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/admin/platform/notifications", async (
-            NotificationsDbContext db, CurrentUser me,
+            NotificationsDbContext db, ConsoleCaller console,
             string? cursor, bool? unreadOnly, int? limit, CancellationToken ct) =>
         {
-            if (!me.IsSuperAdmin)
+            if (!console.Allowed)
             {
                 return Results.Forbid();
             }
 
-            var userId = me.RequireUserId();
+            var userId = console.RequireOperatorId();
             var take = Math.Clamp(limit ?? DefaultLimit, 1, MaxLimit);
 
             // Left join onto this operator's own read state. GroupJoin + SelectMany with
@@ -99,43 +102,52 @@ public static class PlatformNotificationEndpoints
                     x.Read?.ReadAt))],
                 await UnreadCountAsync(db, userId, ct),
                 hasMore ? page[^1].Notification.CreatedAt.ToString("O") : null));
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .AllowConsoleService(
+              "the platform console owns this bell; its API holds dcms.console and has already "
+              + "checked the operator holds platform:notifications:read.");
 
         // Split out so the badge can refresh without paying for a page of rows.
         app.MapGet("/api/admin/platform/notifications/unread-count", async (
-            NotificationsDbContext db, CurrentUser me, CancellationToken ct) =>
+            NotificationsDbContext db, ConsoleCaller console, CancellationToken ct) =>
         {
-            if (!me.IsSuperAdmin)
+            if (!console.Allowed)
             {
                 return Results.Forbid();
             }
 
-            return Results.Ok(new { unread = await UnreadCountAsync(db, me.RequireUserId(), ct) });
-        }).RequireAuthorization();
+            return Results.Ok(new { unread = await UnreadCountAsync(db, console.RequireOperatorId(), ct) });
+        }).RequireAuthorization()
+          .AllowConsoleService(
+              "the platform console owns this bell; its API holds dcms.console and has already "
+              + "checked the operator holds platform:notifications:read.");
 
         app.MapPost("/api/admin/platform/notifications/{id:guid}/read", async (
-            Guid id, NotificationsDbContext db, CurrentUser me, CancellationToken ct) =>
+            Guid id, NotificationsDbContext db, ConsoleCaller console, CancellationToken ct) =>
         {
-            if (!me.IsSuperAdmin)
+            if (!console.Allowed)
             {
                 return Results.Forbid();
             }
 
-            await TouchAsync(db, id, me.RequireUserId(), read: true, dismiss: false, ct);
+            await TouchAsync(db, id, console.RequireOperatorId(), read: true, dismiss: false, ct);
             return Results.NoContent();
         }).RequireAuthorization()
           .AuditExempt("Marking one's own notification read is per-user UI state, not a change "
-                     + "to platform state; what the notification describes is audited where it happened.");
+                     + "to platform state; what the notification describes is audited where it happened.")
+          .AllowConsoleService(
+              "the platform console owns this bell; its API holds dcms.console and has already "
+              + "checked the operator holds platform:notifications:read.");
 
         app.MapPost("/api/admin/platform/notifications/read-all", async (
-            NotificationsDbContext db, CurrentUser me, AuditScope audit, CancellationToken ct) =>
+            NotificationsDbContext db, ConsoleCaller console, AuditScope audit, CancellationToken ct) =>
         {
-            if (!me.IsSuperAdmin)
+            if (!console.Allowed)
             {
                 return Results.Forbid();
             }
 
-            var userId = me.RequireUserId();
+            var userId = console.RequireOperatorId();
             var now = DateTimeOffset.UtcNow;
 
             // ExecuteUpdate leaves no before-image, so the command interceptor would otherwise
@@ -169,22 +181,28 @@ public static class PlatformNotificationEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { updated = updated + untouched.Count });
         }).RequireAuthorization()
-          .AuditExempt("Per-user UI state; see the single-notification read endpoint.");
+          .AuditExempt("Per-user UI state; see the single-notification read endpoint.")
+          .AllowConsoleService(
+              "the platform console owns this bell; its API holds dcms.console and has already "
+              + "checked the operator holds platform:notifications:read.");
 
         app.MapPost("/api/admin/platform/notifications/{id:guid}/dismiss", async (
-            Guid id, NotificationsDbContext db, CurrentUser me, CancellationToken ct) =>
+            Guid id, NotificationsDbContext db, ConsoleCaller console, CancellationToken ct) =>
         {
-            if (!me.IsSuperAdmin)
+            if (!console.Allowed)
             {
                 return Results.Forbid();
             }
 
             // Read as well as dismissed: a dismissal is an acknowledgement, and leaving it
             // unread would keep it in the badge while hiding it from the list that could clear it.
-            await TouchAsync(db, id, me.RequireUserId(), read: true, dismiss: true, ct);
+            await TouchAsync(db, id, console.RequireOperatorId(), read: true, dismiss: true, ct);
             return Results.NoContent();
         }).RequireAuthorization()
-          .AuditExempt("Per-user UI state; dismissing hides one operator's copy and deletes nothing.");
+          .AuditExempt("Per-user UI state; dismissing hides one operator's copy and deletes nothing.")
+          .AllowConsoleService(
+              "the platform console owns this bell; its API holds dcms.console and has already "
+              + "checked the operator holds platform:notifications:read.");
 
         return app;
     }

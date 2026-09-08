@@ -124,22 +124,30 @@ public static class TenancyEndpoints
         // operator suspending a tenant is not working inside it, and requiring the header would
         // mean the console had to switch context to a tenant it is about to shut off.
         app.MapPost("/api/admin/tenants/{tenantId:guid}/suspend", async (
-            Guid tenantId, CurrentUser me, TenancyDbContext db, IAuditRecorder audit,
+            Guid tenantId, ConsoleCaller console, TenancyDbContext db, IAuditRecorder audit,
             IEventPublisher events, ILoggerFactory loggerFactory, CancellationToken ct) =>
                 await SetTenantStatusAsync(
-                    tenantId, TenantStatus.Suspended, me, db, audit, events,
+                    tenantId, TenantStatus.Suspended, console, db, audit, events,
                     loggerFactory.CreateLogger("TenantLifecycle"), ct))
             .RequireAuthorization()
-            .WithAudit(AuditActions.PlatformTenantSuspended, "tenant");
+            .WithAudit(AuditActions.PlatformTenantSuspended, "tenant")
+            .AllowConsoleService(
+                "the platform console owns tenant lifecycle; its API holds dcms.console and has "
+                + "already checked the operator holds platform:tenants:lifecycle. ADR 0003 keeps "
+                + "the write here, so the console asks rather than reaching into tenancy itself.");
 
         app.MapPost("/api/admin/tenants/{tenantId:guid}/resume", async (
-            Guid tenantId, CurrentUser me, TenancyDbContext db, IAuditRecorder audit,
+            Guid tenantId, ConsoleCaller console, TenancyDbContext db, IAuditRecorder audit,
             IEventPublisher events, ILoggerFactory loggerFactory, CancellationToken ct) =>
                 await SetTenantStatusAsync(
-                    tenantId, TenantStatus.Active, me, db, audit, events,
+                    tenantId, TenantStatus.Active, console, db, audit, events,
                     loggerFactory.CreateLogger("TenantLifecycle"), ct))
             .RequireAuthorization()
-            .WithAudit(AuditActions.PlatformTenantResumed, "tenant");
+            .WithAudit(AuditActions.PlatformTenantResumed, "tenant")
+            .AllowConsoleService(
+                "the platform console owns tenant lifecycle; its API holds dcms.console and has "
+                + "already checked the operator holds platform:tenants:lifecycle. ADR 0003 keeps "
+                + "the write here, so the console asks rather than reaching into tenancy itself.");
 
         // ---- Tenant-scoped: roles (requires X-Dcms-Tenant) ----
         app.MapGet("/api/admin/roles", async (TenancyDbContext db, ITenantContext tenant, CancellationToken ct) =>
@@ -532,14 +540,14 @@ public static class TenancyEndpoints
     private static async Task<IResult> SetTenantStatusAsync(
         Guid tenantId,
         TenantStatus status,
-        CurrentUser me,
+        ConsoleCaller console,
         TenancyDbContext db,
         IAuditRecorder audit,
         IEventPublisher events,
         ILogger logger,
         CancellationToken ct)
     {
-        if (!me.IsSuperAdmin)
+        if (!console.Allowed)
         {
             return Results.Forbid();
         }

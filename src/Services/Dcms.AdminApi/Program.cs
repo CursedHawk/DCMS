@@ -119,6 +119,8 @@ builder.Services.AddDcmsVaultTransit();
 builder.Services.AddScoped<AiPromptBuilder>();
 builder.Services.AddDcmsTenantResolutionByHeader();
 builder.Services.AddScoped<CurrentUser>();
+// Who may act on platform-wide state: a SuperAdmin here, or the console's API acting for one.
+builder.Services.AddScoped<ConsoleCaller>();
 builder.Services.AddScoped<TenantProvisioning>();
 builder.Services.AddHostedService<TenancyMigrator>();
 
@@ -379,6 +381,10 @@ app.UseTenantMembership();
 // behind it, so the membership check waves it through and a bare RequireAuthorization() then
 // accepts it. This confines a service token to the endpoints that named its scope.
 app.UseServicePrincipalGuard();
+// Immediately after the guard, so it only ever sees a service the endpoint invited: restores
+// the operator a peer acted on behalf of, so the audit log names a person rather than the last
+// hop. Authorization is untouched -- see PropagatedActorMiddleware.
+app.UsePropagatedActor();
 app.UseAuthorization();
 
 // Only endpoints that opt in with RequireRateLimiting are affected; there is no global limiter.

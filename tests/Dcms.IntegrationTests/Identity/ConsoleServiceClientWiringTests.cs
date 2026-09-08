@@ -1,6 +1,9 @@
 extern alias IdentityApp;
+extern alias AdminApiApp;
 
 using IdentityApp::Dcms.Identity;
+
+using ConsoleCaller = AdminApiApp::Dcms.AdminApi.Tenancy.ConsoleCaller;
 
 namespace Dcms.IntegrationTests.Identity;
 
@@ -120,6 +123,17 @@ public sealed class ConsoleServiceClientWiringTests
         between = between[..between.IndexOf(platformLine, StringComparison.Ordinal)];
         between.Should().NotContain("generate_secret",
             "a second generate_secret between the two writes would seed halves that differ");
+    }
+
+    /// <summary>
+    /// admin-api cannot reference the identity project, so it spells the scope out as a literal.
+    /// A divergence would be a service token that identity mints happily and admin-api refuses,
+    /// with nothing in either log naming the mismatch.
+    /// </summary>
+    [Fact]
+    public void The_scope_admin_api_checks_is_the_scope_identity_issues()
+    {
+        ConsoleCaller.Scope.Should().Be(DcmsOAuth.Scopes.Console);
     }
 
     [Fact]

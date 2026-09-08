@@ -39,12 +39,12 @@ public static class AnalyticsPruneEndpoints
     {
         app.MapPost("/api/admin/analytics/prune", async (
             PruneRequest body,
-            CurrentUser me,
+            ConsoleCaller console,
             AnalyticsDbContext db,
             IAuditRecorder audit,
             CancellationToken ct) =>
         {
-            if (!me.IsSuperAdmin)
+            if (!console.Allowed)
             {
                 return Results.Forbid();
             }
@@ -111,7 +111,12 @@ public static class AnalyticsPruneEndpoints
         // which is right for an action that did not happen and wrong for a deletion that ran
         // partway and then failed. So this writes its intent with RecordNowAsync before the
         // first batch, where a failure to record stops the delete instead of following it.
-        .AuditExempt("Records AuditActions.AnalyticsPruned itself, before deleting, so the record survives a partial failure.");
+        .AuditExempt("Records AuditActions.AnalyticsPruned itself, before deleting, so the record survives a partial failure.")
+        .AllowConsoleService(
+            "the platform console owns this button; its API holds dcms.console and has already "
+            + "checked the operator holds platform:ops:act. The delete stays here because a "
+            + "DELETE grant on analytics.events is exactly what 04-platform-role.sh refuses "
+            + "dcms_platform.");
 
         return app;
     }

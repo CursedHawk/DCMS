@@ -22,9 +22,11 @@ namespace Dcms.AdminApi.Tenancy;
 /// calls admin-api for tenancy and the audit log, so this adds a page to an existing client
 /// rather than a schema to a service that had no business with it.</para>
 ///
-/// <para><b>SuperAdmin, checked imperatively</b>, following <c>AuditEndpoints</c>: the tenant
-/// permission model does not reach platform-wide state, and a tenant admin holding
-/// <c>domains:manage</c> must not thereby decide which names the platform itself serves.</para>
+/// <para><b>Platform-wide state, checked imperatively</b> through <see cref="ConsoleCaller"/>:
+/// the tenant permission model does not reach platform-wide state, and a tenant admin holding
+/// <c>domains:manage</c> must not thereby decide which names the platform itself serves. A
+/// SuperAdmin signed in here passes; so does the platform console's API acting for an operator
+/// it has checked against <c>platform:certificates:manage</c>, which is the finer answer.</para>
 /// </summary>
 public static class ManagedCertificateEndpoints
 {
@@ -39,9 +41,9 @@ public static class ManagedCertificateEndpoints
     public static IEndpointRouteBuilder MapManagedCertificateEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/admin/platform/certificates", async (
-            EdgeDbContext edge, CurrentUser me, CancellationToken ct) =>
+            EdgeDbContext edge, ConsoleCaller console, CancellationToken ct) =>
         {
-            if (!me.IsSuperAdmin)
+            if (!console.Allowed)
             {
                 return Results.Forbid();
             }
@@ -111,14 +113,17 @@ public static class ManagedCertificateEndpoints
                     issuedThisWeek,
                 };
             }));
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .AllowConsoleService(
+              "the platform console reads this page; its API holds dcms.console and has already "
+              + "checked the operator holds platform:certificates:manage.");
 
         // The attempt history, which is also the rate-limit ledger. Worth surfacing on its own:
         // when the edge refuses to order, this is the evidence for why.
         app.MapGet("/api/admin/platform/certificates/{id:guid}/attempts", async (
-            Guid id, EdgeDbContext edge, CurrentUser me, CancellationToken ct) =>
+            Guid id, EdgeDbContext edge, ConsoleCaller console, CancellationToken ct) =>
         {
-            if (!me.IsSuperAdmin)
+            if (!console.Allowed)
             {
                 return Results.Forbid();
             }
@@ -131,12 +136,15 @@ public static class ManagedCertificateEndpoints
                 .ToListAsync(ct);
 
             return Results.Ok(attempts);
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .AllowConsoleService(
+              "the platform console reads this page; its API holds dcms.console and has already "
+              + "checked the operator holds platform:certificates:manage.");
 
         app.MapPost("/api/admin/platform/certificates", async (
-            Request body, EdgeDbContext edge, CurrentUser me, CancellationToken ct) =>
+            Request body, EdgeDbContext edge, ConsoleCaller console, CancellationToken ct) =>
         {
-            if (!me.IsSuperAdmin)
+            if (!console.Allowed)
             {
                 return Results.Forbid();
             }
@@ -157,12 +165,15 @@ public static class ManagedCertificateEndpoints
 
             return Results.Ok(new { id = row.Id, name = row.Name, identifiers = row.Identifiers });
         }).RequireAuthorization()
-          .WithAudit(AuditActions.ManagedCertificateCreated, "managed-certificate");
+          .WithAudit(AuditActions.ManagedCertificateCreated, "managed-certificate")
+          .AllowConsoleService(
+              "the platform console owns this button; its API holds dcms.console and has already "
+              + "checked the operator holds platform:certificates:manage.");
 
         app.MapPut("/api/admin/platform/certificates/{id:guid}", async (
-            Guid id, Request body, EdgeDbContext edge, CurrentUser me, CancellationToken ct) =>
+            Guid id, Request body, EdgeDbContext edge, ConsoleCaller console, CancellationToken ct) =>
         {
-            if (!me.IsSuperAdmin)
+            if (!console.Allowed)
             {
                 return Results.Forbid();
             }
@@ -189,12 +200,15 @@ public static class ManagedCertificateEndpoints
             // platform keeps serving TLS rather than going dark between a save and an order.
             return Results.Ok(new { id = row.Id, name = row.Name, identifiers = row.Identifiers });
         }).RequireAuthorization()
-          .WithAudit(AuditActions.ManagedCertificateUpdated, "managed-certificate");
+          .WithAudit(AuditActions.ManagedCertificateUpdated, "managed-certificate")
+          .AllowConsoleService(
+              "the platform console owns this button; its API holds dcms.console and has already "
+              + "checked the operator holds platform:certificates:manage.");
 
         app.MapDelete("/api/admin/platform/certificates/{id:guid}", async (
-            Guid id, EdgeDbContext edge, CurrentUser me, CancellationToken ct) =>
+            Guid id, EdgeDbContext edge, ConsoleCaller console, CancellationToken ct) =>
         {
-            if (!me.IsSuperAdmin)
+            if (!console.Allowed)
             {
                 return Results.Forbid();
             }
@@ -222,15 +236,18 @@ public static class ManagedCertificateEndpoints
 
             return Results.NoContent();
         }).RequireAuthorization()
-          .WithAudit(AuditActions.ManagedCertificateRemoved, "managed-certificate");
+          .WithAudit(AuditActions.ManagedCertificateRemoved, "managed-certificate")
+          .AllowConsoleService(
+              "the platform console owns this button; its API holds dcms.console and has already "
+              + "checked the operator holds platform:certificates:manage.");
 
         // Reissue before it is due. Flag plus event, exactly as the tenant-domain button works:
         // the flag makes it certain because the hourly sweep honours it, the event makes it
         // immediate. A dropped message costs an hour, not the reissue.
         app.MapPost("/api/admin/platform/certificates/{id:guid}/reissue", async (
-            Guid id, EdgeDbContext edge, IEventPublisher events, CurrentUser me, CancellationToken ct) =>
+            Guid id, EdgeDbContext edge, IEventPublisher events, ConsoleCaller console, CancellationToken ct) =>
         {
-            if (!me.IsSuperAdmin)
+            if (!console.Allowed)
             {
                 return Results.Forbid();
             }
@@ -270,7 +287,10 @@ public static class ManagedCertificateEndpoints
 
             return Results.Accepted();
         }).RequireAuthorization()
-          .WithAudit(AuditActions.ManagedCertificateReissued, "managed-certificate");
+          .WithAudit(AuditActions.ManagedCertificateReissued, "managed-certificate")
+          .AllowConsoleService(
+              "the platform console owns this button; its API holds dcms.console and has already "
+              + "checked the operator holds platform:certificates:manage.");
 
         return app;
     }
