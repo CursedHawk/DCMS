@@ -1,5 +1,8 @@
 using System.Text.Json;
+using Dcms.Shared.Contracts.Events;
+using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Notifications;
+using Dcms.Shared.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
@@ -43,13 +46,14 @@ public interface IPlatformNotificationPublisher
 /// </summary>
 public sealed class PlatformNotificationPublisher(
     NotificationsDbContext db,
+    IEventPublisher events,
     ILogger<PlatformNotificationPublisher> logger) : IPlatformNotificationPublisher
 {
     public async Task<bool> RaiseAsync(PlatformNotificationRequest request, CancellationToken ct = default)
     {
         try
         {
-            db.PlatformNotifications.Add(new PlatformNotification
+            var row = new PlatformNotification
             {
                 Kind = request.Kind,
                 Severity = request.Severity,
@@ -58,11 +62,14 @@ public sealed class PlatformNotificationPublisher(
                 ResourceType = request.ResourceType,
                 ResourceId = request.ResourceId,
                 DedupeKey = request.DedupeKey,
-            });
+            };
+            db.PlatformNotifications.Add(row);
 
             await db.SaveChangesAsync(ct);
             logger.LogInformation(
                 "Raised platform notification {Kind} ({DedupeKey}).", request.Kind, request.DedupeKey);
+
+            await AnnounceAsync(row, ct);
             return true;
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: "23505" })
@@ -76,6 +83,37 @@ public sealed class PlatformNotificationPublisher(
             logger.LogWarning(ex, "Raising platform notification {Kind} failed.", request.Kind);
             db.ChangeTracker.Clear();
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Tells the platform console there is news, so its bell stops waiting for the next poll.
+    ///
+    /// <para><b>After the commit and outside its transaction</b>, and allowed to fail. The row
+    /// is the record; this is a hint about it. A console that misses the hint is a console
+    /// showing the notification up to a minute late — the fallback poll is still there — while a
+    /// publish that could fail the write would let a broken NATS suppress the very warnings an
+    /// operator most needs. That is also why it is not the outbox: the outbox exists so a
+    /// message cannot be lost when the write commits, and here losing it is the cheap
+    /// outcome.</para>
+    ///
+    /// <para>Deliberately only on a NEW row. The dedupe path above returns false on every pass
+    /// after the first, and announcing there would push a change hint every two minutes for as
+    /// long as a certificate stayed broken.</para>
+    /// </summary>
+    private async Task AnnounceAsync(PlatformNotification row, CancellationToken ct)
+    {
+        try
+        {
+            await events.PublishAsync(
+                Subjects.PlatformNotificationRaised,
+                new PlatformNotificationRaised(
+                    Guid.NewGuid(), DateTimeOffset.UtcNow, row.Id, row.Kind, row.Severity.ToString()),
+                ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogDebug(ex, "Announcing platform notification {Kind} failed.", row.Kind);
         }
     }
 }

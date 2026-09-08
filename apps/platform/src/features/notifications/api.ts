@@ -30,12 +30,13 @@ export interface PlatformNotificationPage {
 const KEY = ['platform-notifications'];
 
 /**
- * Polled rather than pushed.
+ * Pushed, with a poll behind it.
  *
- * The tenant bell holds a SignalR connection because a tenant admin waiting on a build wants
- * the toast the second it lands. What arrives here is a certificate changing state — a handful
- * of events a week, none of which is worth watching a socket for. A poll also costs no
- * connection through the edge and no group management for an audience defined by a global role.
+ * The socket (see `useConsoleHub`) invalidates this query the moment a notification is raised,
+ * which is what makes the badge immediate. The interval stays as a fallback and is deliberately
+ * slow: nothing replays what was pushed while a connection was down, and the one screen an
+ * operator opens when the platform is misbehaving is the worst place for a silently stale bell.
+ * See ADR 0013 for why this stopped being a poll.
  */
 export function usePlatformNotifications(enabled: boolean, limit = 20) {
   return useQuery({
@@ -43,7 +44,7 @@ export function usePlatformNotifications(enabled: boolean, limit = 20) {
     enabled,
     queryFn: () =>
       platformApi.get<PlatformNotificationPage>(`/notifications?limit=${limit}`),
-    refetchInterval: 60_000,
+    refetchInterval: 5 * 60_000,
   });
 }
 

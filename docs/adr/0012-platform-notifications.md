@@ -1,6 +1,7 @@
 # ADR 0012: Platform notifications, addressed to a role rather than to people
 
 **Status:** accepted (2026-09-07) · **Extends** [ADR 0009](0009-in-app-notifications.md) ·
+**Transport superseded by** [ADR 0013](0013-platform-console-live-updates.md) ·
 **Related:** [ADR 0011](0011-wildcard-tls-dns01.md)
 
 ## Context
@@ -71,6 +72,11 @@ acts on it; "unread" means *this operator has no read-state row*. Consequences:
   would refuse to clear in exactly the case the button exists for.
 
 ### Why polled, not pushed
+
+> **Superseded by [ADR 0013](0013-platform-console-live-updates.md).** The reasoning below held
+> while certificates were the only producer and the bell the only reader; the console has since
+> grown pages that go stale and an API of its own to host a hub. The poll survives as a
+> fallback, at five minutes rather than sixty seconds. Everything else in this ADR stands.
 
 The tenant bell holds a SignalR connection because an admin waiting on a build wants the
 toast as it lands. What arrives here is a certificate changing state: a handful of events

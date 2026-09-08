@@ -21,6 +21,7 @@ export const Perm = {
   LogsPurge: 'platform:logs:purge',
   RolesManage: 'platform:roles:manage',
   CertificatesManage: 'platform:certificates:manage',
+  NotificationsRead: 'platform:notifications:read',
 } as const;
 
 export interface PlatformMe {

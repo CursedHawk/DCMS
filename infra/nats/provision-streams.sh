@@ -159,7 +159,7 @@ ensure_audit_stream() {
 
 # `edge.>` carries the platform's own certificate control messages. converge_subjects adds it to
 # an existing TENANCY stream, so this is a normal deploy rather than a stream recreate.
-ensure_stream TENANCY      "tenant.>,plugin.instance.>,membership.>,edge.>" limits
+ensure_stream TENANCY      "tenant.>,plugin.instance.>,membership.>,edge.>,platform.>" limits
 ensure_stream CMS          "content.>"                               limits
 ensure_stream MEDIA        "media.process.>"                         work
 ensure_stream MEDIA_EVENTS "media.processed,media.failed"            limits

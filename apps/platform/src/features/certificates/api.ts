@@ -54,9 +54,12 @@ export function useManagedCertificates() {
   return useQuery({
     queryKey: KEY,
     queryFn: () => platformApi.get<ManagedCertificate[]>('/certificates'),
-    // An order takes a DNS propagation wait plus a CA validation, so the interesting state
-    // changes on the order of a minute, not a second.
-    refetchInterval: 30_000,
+    // A fallback now rather than the mechanism: every outcome that changes this table also
+    // raises a platform notification, and that push invalidates this query (see
+    // `useConsoleHub`). The interval is what covers a dropped socket, and it is set to the
+    // period of the worker that notices an outcome in the first place — polling faster than
+    // the thing being polled can learn anything is asking a question with no new answer.
+    refetchInterval: 2 * 60_000,
   });
 }
 

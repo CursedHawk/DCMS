@@ -1,8 +1,10 @@
 extern alias AdminApiApp;
 extern alias PlatformApiApp;
 
+using System.Reflection;
 using System.Text.RegularExpressions;
 using Dcms.Shared.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,12 +57,21 @@ public sealed class DelegatedConsoleRouteTests : IDisposable
     /// </summary>
     private const string PermissionDiscoveryRoute = "/api/platform/me";
 
+    /// <summary>
+    /// The SignalR transport, which cannot carry endpoint permission metadata usefully: a hub
+    /// serves many messages over one connection, and the decision it actually makes — whether
+    /// this caller joins the broadcast group — needs the permission resolver and so lives in
+    /// <c>PlatformHub.OnConnectedAsync</c>. It is still authenticated; see the test below.
+    /// </summary>
+    private const string HubRoutePrefix = "/api/platform/hub/";
+
     [Fact]
     public void Every_console_route_names_a_platform_permission()
     {
         var unguarded = Endpoints(_platform)
             .Where(e => e.RoutePattern.RawText?.StartsWith("/api/platform/", StringComparison.Ordinal) == true)
             .Where(e => e.RoutePattern.RawText != PermissionDiscoveryRoute)
+            .Where(e => e.RoutePattern.RawText?.StartsWith(HubRoutePrefix, StringComparison.Ordinal) != true)
             .Where(e => e.Metadata.GetMetadata<PlatformPermissionMetadata>() is null)
             .Select(e => e.RoutePattern.RawText!)
             .Distinct(StringComparer.Ordinal)
@@ -71,6 +82,29 @@ public sealed class DelegatedConsoleRouteTests : IDisposable
             "the platform console has no tenant scoping to fall back on: a route with no "
             + "permission is open to every signed-in user. Unguarded:\n{0}",
             string.Join("\n", unguarded));
+    }
+
+    /// <summary>
+    /// The hub is exempt from the permission check above because it makes its own on connect —
+    /// but it must never be exempt from authentication. An anonymous WebSocket into the console's
+    /// broadcast group would be the one place a resource tag reached somebody with no account.
+    /// </summary>
+    [Fact]
+    public void The_console_hub_refuses_an_anonymous_caller()
+    {
+        var hub = Endpoints(_platform)
+            .Where(e => e.RoutePattern.RawText?.StartsWith(HubRoutePrefix, StringComparison.Ordinal) == true)
+            .ToList();
+
+        hub.Should().NotBeEmpty("the console hub is mapped under this prefix");
+
+        foreach (var endpoint in hub)
+        {
+            endpoint.Metadata.GetMetadata<IAllowAnonymous>().Should().BeNull(
+                "{0} would accept a caller with no account", endpoint.RoutePattern.RawText);
+            endpoint.Metadata.GetMetadata<IAuthorizeData>().Should().NotBeNull(
+                "{0} carries the console's live updates", endpoint.RoutePattern.RawText);
+        }
     }
 
     /// <summary>
@@ -118,7 +152,43 @@ public sealed class DelegatedConsoleRouteTests : IDisposable
             string.Join("\n", missing));
     }
 
+    /// <summary>
+    /// Every tag the console maps to query keys is a tag the server can actually push.
+    ///
+    /// <para>The two lists are duplicated across the boundary deliberately — a tag either side
+    /// does not recognise degrades to "nothing refetches", which is what lets the console and
+    /// its API be deployed independently. That same tolerance is what makes a typo invisible:
+    /// the console would simply never refresh that page and nothing anywhere would complain.
+    /// This is the check that a mapped tag is a real one.</para>
+    /// </summary>
+    [Fact]
+    public void Every_tag_the_console_maps_is_one_the_server_can_push()
+    {
+        var served = typeof(PlatformApiApp::Dcms.PlatformApi.Realtime.PlatformResourceTags)
+            .GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.IsLiteral && f.FieldType == typeof(string))
+            .Select(f => (string)f.GetRawConstantValue()!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        var mapped = MappedTags();
+        mapped.Should().NotBeEmpty("the map is declared in liveMap.ts, so an empty list means "
+                                   + "the parse stopped matching it");
+
+        mapped.Where(t => !served.Contains(t)).Should().BeEmpty(
+            "a tag the server never sends silently means that page never refreshes");
+    }
+
     // ---------- helpers ----------
+
+    /// <summary>The keys of `LIVE_QUERY_MAP` in the console's live module.</summary>
+    private static List<string> MappedTags()
+    {
+        var source = ReadRepoFile("apps/platform/src/features/live/liveMap.ts");
+        var body = source[source.IndexOf("LIVE_QUERY_MAP", StringComparison.Ordinal)..];
+
+        return [.. Regex.Matches(body, @"^\s{2}([A-Za-z][A-Za-z0-9]*):", RegexOptions.Multiline)
+            .Select(m => m.Groups[1].Value)];
+    }
 
     private static IEnumerable<RouteEndpoint> Endpoints<T>(WebApplicationFactory<T> factory) where T : class =>
         factory.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>();
@@ -127,7 +197,7 @@ public sealed class DelegatedConsoleRouteTests : IDisposable
     /// The <c>"/api/admin/..."</c> literals in the delegation source, with their <c>{0}</c>
     /// format slot reduced to the same placeholder a route parameter becomes.
     /// </summary>
-    private static List<string> UpstreamPaths()
+    private static string ReadRepoFile(string relativePath)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Dcms.sln")))
@@ -135,10 +205,12 @@ public sealed class DelegatedConsoleRouteTests : IDisposable
             directory = directory.Parent;
         }
         Assert.SkipWhen(directory is null, "Repository root not found; the source tree is not available here.");
+        return File.ReadAllText(Path.Combine(directory!.FullName, relativePath));
+    }
 
-        var source = File.ReadAllText(Path.Combine(
-            directory!.FullName,
-            "src/Services/Dcms.PlatformApi/Delegation/DelegatedConsoleEndpoints.cs"));
+    private static List<string> UpstreamPaths()
+    {
+        var source = ReadRepoFile("src/Services/Dcms.PlatformApi/Delegation/DelegatedConsoleEndpoints.cs");
 
         return [.. Regex.Matches(source, @"""(/api/admin/[^""]*)""")
             .Select(m => m.Groups[1].Value.Replace("{0}", "{}", StringComparison.Ordinal))

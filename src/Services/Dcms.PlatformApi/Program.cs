@@ -2,6 +2,7 @@ using Dcms.PlatformApi.Authz;
 using Dcms.PlatformApi.Delegation;
 using Dcms.PlatformApi.Observability;
 using Dcms.PlatformApi.Purge;
+using Dcms.PlatformApi.Realtime;
 using Dcms.PlatformApi.Reporting;
 using Dcms.PlatformApi.Stores;
 using Dcms.Shared.Audit.Http;
@@ -48,6 +49,20 @@ builder.Services.AddScoped<PlatformPermissionResolver>();
 builder.Services.AddScoped<IPlatformPermissionResolver>(sp =>
     sp.GetRequiredService<PlatformPermissionResolver>());
 builder.Services.AddHostedService<PlatformRoleSeeder>();
+
+// Live updates for the console. The channel prefix MUST differ from admin-api's "dcms-notify"
+// and content-api's "dcms-chat": all three share one Redis, and a shared prefix cross-delivers
+// between hubs that know nothing about each other.
+var consoleSignalR = builder.Services.AddSignalR();
+var signalRRedis = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(signalRRedis))
+{
+    consoleSignalR.AddStackExchangeRedis(signalRRedis + ",abortConnect=false",
+        options => options.Configuration.ChannelPrefix =
+            StackExchange.Redis.RedisChannel.Literal("dcms-console"));
+}
+builder.Services.AddSingleton<IPlatformChangePublisher, PlatformChangePublisher>();
+builder.Services.AddHostedService<PlatformLiveUpdates>();
 
 // Read-only access to the obs.* reporting views — the console's cross-tenant read model.
 builder.Services.AddScoped<ObservabilityQuery>();
@@ -151,6 +166,11 @@ app.MapPlatformStoreEndpoints();
 app.MapPlatformPurgeEndpoints();
 app.MapPlatformAuditEndpoints();
 app.MapDelegatedConsoleEndpoints();
+// Same /api/platform prefix the edge already routes here, so the WebSocket upgrade needs no
+// route of its own. Push-only: see PlatformHub for why there is nothing to audit.
+app.MapHub<PlatformHub>("/api/platform/hub/console")
+    .AuditExempt("SignalR transport endpoint, not an action. It carries only resource-change "
+               + "tags, and every refetch they cause is an ordinary audited request.");
 app.MapGet("/", () => Results.Ok(new { service = "platform-api" }));
 
 app.Run();

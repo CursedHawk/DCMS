@@ -3,7 +3,7 @@ import { ThemeControl, Topbar as ShellTopbar, UserMenu } from '@dcms/ui';
 import { NotificationBell } from '../features/notifications/NotificationBell';
 import { logout } from '../auth';
 import { runtimeConfig } from '../runtime-config';
-import type { PlatformMe } from '../lib/permissions';
+import { can, Perm, type PlatformMe } from '../lib/permissions';
 
 export function Topbar({ me, menuButton }: { me: PlatformMe | undefined; menuButton: React.ReactNode }) {
   return (
@@ -22,9 +22,11 @@ export function Topbar({ me, menuButton }: { me: PlatformMe | undefined; menuBut
       }
       end={
         <>
-          {/* SuperAdmin only, matching the endpoints: these notifications are platform-wide
-              facts and there is no tenant-scoped permission that should reach them. */}
-          <NotificationBell enabled={me?.isSuperAdmin ?? false} />
+          {/* The permission, not the role. These are platform-wide facts and no tenant-scoped
+              permission reaches them — but a support operator who can see that a certificate
+              failed is the point of having a bell, and platform:notifications:read is what
+              says so. A SuperAdmin holds it by the usual short-circuit. */}
+          <NotificationBell enabled={can(me, Perm.NotificationsRead)} />
 
           {/* A toggle rather than the admin's three-way menu. This console is opened, read and
               closed; the OS-following option is a preference you set once, in the app you

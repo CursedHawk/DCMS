@@ -50,6 +50,13 @@ public static class Subjects
     /// </summary>
     public const string ManagedCertificateReissueRequested = "edge.certificate.reissue-requested";
 
+    /// <summary>
+    /// A platform notification was recorded. Consumed by platform-api, which turns it into a
+    /// push to every open console so the bell and the page behind it stop waiting for a poll.
+    /// On the TENANCY stream for the same reason as the subject above.
+    /// </summary>
+    public const string PlatformNotificationRaised = "platform.notification.raised";
+
     // CMS
     public const string ContentPublished = "content.published";
     public const string ContentUnpublished = "content.unpublished";

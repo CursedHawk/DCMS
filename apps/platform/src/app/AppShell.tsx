@@ -3,8 +3,10 @@ import { Suspense, useState } from 'react';
 import { AppFrame, Button, CenteredSpinner, PermissionProvider } from '@dcms/ui';
 import { login, logout } from '../auth';
 import { useAuth } from '../useAuth';
-import { useMe } from '../lib/permissions';
+import { can, Perm, useMe } from '../lib/permissions';
 import { EnvironmentBand } from '../components/EnvironmentBand';
+import { useConsoleHub } from '../features/live/useConsoleHub';
+import { useNotificationAlerts } from '../features/notifications/useNotificationAlerts';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 
@@ -12,6 +14,13 @@ export function AppShell() {
   const { user, loading } = useAuth();
   const me = useMe(!!user);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Both are hooks and so cannot be moved below the early returns; both take an `enabled` flag
+  // for exactly that reason. Nothing connects and nothing is fetched until there is an operator
+  // with something to watch.
+  const isOperator = (me.data?.permissions.length ?? 0) > 0;
+  useConsoleHub(isOperator);
+  useNotificationAlerts(isOperator && can(me.data, Perm.NotificationsRead));
 
   if (loading) return <CenteredSpinner />;
   if (!user) return <SignIn />;
