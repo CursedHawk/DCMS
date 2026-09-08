@@ -71,7 +71,27 @@ if [ -z "$targets" ]; then
 else
     down=$(printf '%s' "$targets" | grep -o '"health":"[a-z]*"' | grep -cv '"health":"up"')
     total=$(printf '%s' "$targets" | grep -c -o '"health":"[a-z]*"')
-    [ "$down" -eq 0 ] && ok "all $total targets up" || fail "$down of $total targets not up"
+    [ "$down" -eq 0 ] && ok "all $total targets up (prometheus scrapes these itself)" \
+        || fail "$down of $total targets not up"
+fi
+
+# And the ones Prometheus does NOT scrape, which is nearly all of them.
+#
+# The check above reads /api/v1/targets, which lists only Prometheus's own scrape config —
+# on this host, one entry. The node, cAdvisor, Postgres, Redis, NATS and blackbox scrapes all
+# live in Alloy and arrive by remote write, so they never appear there at all. During the
+# 2026-09-08 outage that check said "all 1 targets up" while twenty-three scrapes were
+# carrying nothing, which is the same false green as "the container is running".
+#
+# `up` counts what actually landed, wherever it was scraped. Two dozen is normal here; the
+# floor is set well below that so a single exporter being down is a different signal (the
+# per-exporter checks below), while a collapsed pipeline is this one.
+up_series=$(fetch 'http://localhost:9090/api/v1/query?query=count(up)' |
+    grep -o '"value":\[[^]]*\]' | head -1 | grep -o '"[0-9.]*"' | tr -d '"')
+if [ -z "$up_series" ] || [ "${up_series%%.*}" -lt 15 ] 2>/dev/null; then
+    fail "only ${up_series:-0} 'up' series — Alloy's scrapes are not reaching Prometheus"
+else
+    ok "$up_series scrape targets reporting (most of them through alloy)"
 fi
 
 echo
