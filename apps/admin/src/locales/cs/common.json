@@ -451,7 +451,12 @@
     "deleteConsequenceRepo": "Smaže se git repozitář webu včetně celé historie.",
     "deleteConsequenceDomains": "Domény mířící sem se odpojí a přestanou web zobrazovat.",
     "deleted": "Web smazán",
-    "deletedPartial": "Web byl smazán, ale některé uložené soubory se nepodařilo odstranit. Zkontrolujte logy."
+    "deletedPartial": "Web byl smazán, ale některé uložené soubory se nepodařilo odstranit. Zkontrolujte logy.",
+    "desktopOnly": {
+      "title": "Tento editor potřebuje širší obrazovku",
+      "description": "Kódový editor i vizuální builder staví vedle sebe strom souborů, editační okno a živý náhled. Na telefonu to nelze rozumně uspořádat, takže jsou to nástroje pro počítač.",
+      "continueAnyway": "Přesto zobrazit"
+    }
   },
   "editor": {
     "publishQueued": "Publikace zařazena"
@@ -717,7 +722,12 @@
       "someone": "Někdo",
       "resolvedCount": "Vyřešeno {{done}} z {{total}}",
       "mergeByHand": "Sloučit ručně",
-      "markersRemain": "V souboru zůstaly značky konfliktu. Odstraňte je pro dokončení sloučení."
+      "markersRemain": "V souboru zůstaly značky konfliktu. Odstraňte je pro dokončení sloučení.",
+      "discard": "Zahodit změny",
+      "discardOf": "Zahodit změny v {{path}}",
+      "discardConfirm": "Zahodit vaše změny v {{path}}? Nelze vrátit zpět — úpravy nejsou v gitu.",
+      "discarded": "Změny v {{path}} zahozeny.",
+      "discardUnavailable": "Soubor {{path}} je příliš velký na to, aby se poslala jeho verze z gitu, takže ho odsud nelze obnovit. Použijte historii commitů."
     },
     "deploy": {
       "title": "Nasazení",
@@ -778,7 +788,18 @@
     "generatedUpToDate": "Vygenerované soubory jsou aktuální",
     "branchMovedWarning": "Někdo jiný odeslal commit do větve {{branch}}, zatímco jste upravovali. Načtěte znovu, abyste navázali na jeho práci (neuložené změny budou ztraceny).",
     "draftMovedWarning": "Váš koncept se změnil jinde: {{files}}",
-    "andMore": " a {{count}} dalších"
+    "andMore": " a {{count}} dalších",
+    "search": {
+      "title": "Hledání",
+      "placeholder": "Hledat v projektu",
+      "caseSensitive": "Rozlišovat velikost písmen",
+      "wholeWord": "Celá slova",
+      "regex": "Použít regulární výraz",
+      "badPattern": "Nedokončený výraz",
+      "tooMany": "Prvních {{count}}",
+      "summary": "{{matches}} ve {{files}}",
+      "noMatches": "V projektu nic nenalezeno."
+    }
   },
   "openapi": {
     "title": "API dokumentace",

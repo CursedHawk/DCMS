@@ -59,6 +59,13 @@ interface VfsState {
   /** Paths the server reported as conflicting; autosave pauses until reload. */
   conflict: string[] | null;
 
+  /**
+   * A pending "put the caret here". `token` increments on every request so clicking the same
+   * result twice reveals twice — without it the second click is a no-op, which reads as the
+   * list having gone dead.
+   */
+  reveal: { path: string; line: number; column: number; token: number } | null;
+
   /** Hydrate from the server (pristine — no pending changes). */
   load: (files: Record<string, string>, version: number, hashes: Record<string, string>) => void;
   /** Seed a brand-new site from a starter template (all files pending creation). */
@@ -68,6 +75,16 @@ interface VfsState {
 
   open: (path: string) => void;
   setActive: (path: string) => void;
+  /**
+   * Open a file and put the caret on a line — how a search result becomes a place in the
+   * editor rather than a description of one.
+   *
+   * <p>State rather than a call into the editor, because the editor may not be showing the
+   * file yet: the request has to survive the model swap that opening it causes. The editor
+   * consumes it and calls {@link VfsState.clearReveal}.</p>
+   */
+  revealAt: (path: string, line: number, column?: number) => void;
+  clearReveal: () => void;
   closeTab: (path: string) => void;
   /** Restore a previously persisted set of open tabs (dropping any that no longer exist). */
   restoreSession: (openTabs: string[], activePath: string | null) => void;
@@ -148,6 +165,7 @@ export const useVfs = create<VfsState>((set, get) => ({
   dirtyPaths: new Set(),
   deletedPaths: new Set(),
   conflict: null,
+  reveal: null,
 
   load: (files, version, hashes) => {
     const first = firstFile(files);
@@ -198,6 +216,16 @@ export const useVfs = create<VfsState>((set, get) => ({
     })),
 
   setActive: (path) => set({ activePath: path, activeDiff: null }),
+
+  revealAt: (path, line, column = 1) =>
+    set((s) => ({
+      activePath: path,
+      activeDiff: null,
+      openTabs: s.openTabs.includes(path) ? s.openTabs : [...s.openTabs, path],
+      reveal: { path, line, column, token: (s.reveal?.token ?? 0) + 1 },
+    })),
+
+  clearReveal: () => set({ reveal: null }),
 
   restoreSession: (openTabs, activePath) =>
     set((s) => {

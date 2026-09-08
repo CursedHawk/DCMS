@@ -33,6 +33,7 @@ export function MonacoEditor() {
   const { resolved } = useTheme();
 
   const activePath = useVfs((s) => s.activePath);
+  const reveal = useVfs((s) => s.reveal);
   const fileKeys = useVfs((s) => Object.keys(s.files).sort().join('\n'));
   const generation = useVfs((s) => s.generation);
   const rev = useVfs((s) => s.rev);
@@ -206,6 +207,25 @@ export function MonacoEditor() {
       editor.updateOptions({ readOnly: isToolchainFile(activePath) || isGeneratedFile(activePath) });
     }
   }, [activePath, fileKeys]);
+
+  // Put the caret where something asked for it — a search result, a build error.
+  //
+  // Runs after the active-model effect above, which is what makes a reveal into a file that
+  // was not open work: `revealAt` sets both the active path and this request, React applies
+  // both in one render, and effects run in declaration order.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !reveal) return;
+    // The model for a file that has just been opened is created by the reconcile effect, which
+    // may not have run yet on the very first render of a freshly loaded project.
+    if (editor.getModel()?.uri.toString() !== uriOf(reveal.path)) return;
+
+    const position = { lineNumber: reveal.line, column: reveal.column };
+    editor.setPosition(position);
+    editor.revealLineInCenter(reveal.line, monaco.editor.ScrollType.Smooth);
+    editor.focus();
+    useVfs.getState().clearReveal();
+  }, [reveal, activePath, fileKeys]);
 
   // Follow the admin light/dark theme.
   useEffect(() => {

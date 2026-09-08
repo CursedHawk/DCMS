@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { Files, GitBranch, Rocket, Sparkles } from 'lucide-react';
+import { Files, GitBranch, Rocket, Search, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
-import { DeploymentsView, FileTree, SourceControlView, gitApi } from '../site-source';
+import { DeploymentsView, FileTree, SearchView, SourceControlView, gitApi } from '../site-source';
 import { AgentPanel } from './agent/AgentPanel';
 
-export type SidebarView = 'files' | 'scm' | 'agent' | 'deploy';
+export type SidebarView = 'files' | 'search' | 'scm' | 'agent' | 'deploy';
 
 // VS Code-style left sidebar: a slim activity rail (Explorer / Source Control)
 // plus the active view. The Source Control icon carries a badge with the number
@@ -51,6 +51,13 @@ export function IdeSidebar({
           <Files className="h-5 w-5" />
         </RailButton>
         <RailButton
+          active={view === 'search'}
+          label={t('ide.search.title')}
+          onClick={() => onViewChange('search')}
+        >
+          <Search className="h-5 w-5" />
+        </RailButton>
+        <RailButton
           active={view === 'scm'}
           label={t('ide.git.title')}
           onClick={() => onViewChange('scm')}
@@ -80,6 +87,7 @@ export function IdeSidebar({
         style={{ width: viewWidth != null ? `${viewWidth}px` : '15rem' }}
       >
         {view === 'files' && <FileTree />}
+        {view === 'search' && <SearchView />}
         {view === 'scm' && (
           <SourceControlView
             siteId={siteId}

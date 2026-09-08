@@ -14,6 +14,7 @@ import {
   GitMerge,
   Plus,
   RotateCcw,
+  Undo2,
   X,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -44,6 +45,7 @@ import type { GitChange, GitCommit } from './git';
 import { expectBuild, gitApi } from './git';
 import { MergeDialog } from './MergeDialog';
 import { RELEASE_BRANCH } from './constants';
+import { discardPlan } from './discard';
 import { useDiffStats } from './useDiffStats';
 import { useRelativeTime } from './useRelativeTime';
 import { useVfs } from './vfs';
@@ -201,6 +203,36 @@ export function SourceControlView({
     if (window.confirm(t('ide.git.restoreConfirm', { sha: c.shortSha }))) restore.mutate(c.sha);
   };
 
+  /**
+   * Throw away one file's uncommitted changes.
+   *
+   * <p>Entirely client-side, and it can be: the changes list already carries each file's
+   * committed content — that is what the diff tabs render — so there is nothing to fetch. The
+   * write goes through the ordinary editing path, so autosave carries it to the server exactly
+   * like a keystroke would.</p>
+   *
+   * <p>`window.confirm` to match the restore button two sections down. Discarding is not
+   * undoable: the draft content lives nowhere but this browser and the draft row it autosaves
+   * to, neither of which is history.</p>
+   */
+  const askDiscard = (c: GitChange) => {
+    const plan = discardPlan(c);
+    if (plan.kind === 'unavailable') {
+      toast.error(t('ide.git.discardUnavailable', { path: c.path }));
+      return;
+    }
+    if (!window.confirm(t('ide.git.discardConfirm', { path: c.path }))) return;
+
+    const vfs = useVfs.getState();
+    if (plan.kind === 'delete') vfs.deleteFile(plan.path);
+    else vfs.writeFile(plan.path, plan.content);
+
+    // The list is derived from the draft on the server, which has not been told yet — the
+    // autosave debounce is still running. Invalidating now would refetch the unchanged answer
+    // and put the row straight back; the save's own invalidation is what removes it.
+    toast.success(t('ide.git.discarded', { path: c.path }));
+  };
+
   if (status.isLoading) return <CenteredSpinner label={t('common.loading')} />;
   const s = status.data;
   if (s && !s.enabled) return <p className="p-3 text-sm text-muted-foreground">{t('ide.git.disabled')}</p>;
@@ -341,16 +373,30 @@ export function SourceControlView({
         <ul className="py-1">
           {changeList.map((c) => (
             <li key={c.path}>
-              <button
-                type="button"
-                onClick={() => openChangeDiff(c)}
-                className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs hover:bg-accent/50"
-                title={c.path}
-              >
-                <ChangeIcon status={c.status} />
-                <span className="min-w-0 flex-1 truncate">{c.path}</span>
+              <div className="group flex items-center gap-1.5 px-2 py-1 text-xs hover:bg-accent/50">
+                <button
+                  type="button"
+                  onClick={() => openChangeDiff(c)}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                  title={c.path}
+                >
+                  <ChangeIcon status={c.status} />
+                  <span className="min-w-0 flex-1 truncate">{c.path}</span>
+                </button>
                 <DiffCount stat={diffStats[c.path]} />
-              </button>
+                {/* Revealed on hover and on focus, like the history row's actions: a discard
+                    button that is always visible beside every changed file is one mis-click
+                    away from losing work, on the panel people scan fastest. */}
+                <button
+                  type="button"
+                  onClick={() => askDiscard(c)}
+                  title={t('ide.git.discard')}
+                  aria-label={t('ide.git.discardOf', { path: c.path })}
+                  className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                >
+                  <Undo2 className="h-3.5 w-3.5" aria-hidden />
+                </button>
+              </div>
             </li>
           ))}
         </ul>

@@ -442,7 +442,12 @@
     "deleteConsequenceRepo": "The site's git repository and its full history are deleted.",
     "deleteConsequenceDomains": "Domains pointing here are unlinked and stop serving the site.",
     "deleted": "Site deleted",
-    "deletedPartial": "Site deleted, but some stored files could not be removed. Check the logs."
+    "deletedPartial": "Site deleted, but some stored files could not be removed. Check the logs.",
+    "desktopOnly": {
+      "title": "This editor needs a wider screen",
+      "description": "The code editor and the visual builder put a file tree, a buffer and a live preview side by side. There is no arrangement of those that works on a phone, so they are desktop tools.",
+      "continueAnyway": "Show it anyway"
+    }
   },
   "editor": {
     "publishQueued": "Publish queued"
@@ -707,7 +712,12 @@
       "someone": "Someone",
       "resolvedCount": "{{done}} of {{total}} resolved",
       "mergeByHand": "Merge by hand",
-      "markersRemain": "Conflict markers are still in this file. Remove them to finish the merge."
+      "markersRemain": "Conflict markers are still in this file. Remove them to finish the merge.",
+      "discard": "Discard changes",
+      "discardOf": "Discard changes to {{path}}",
+      "discardConfirm": "Discard your changes to {{path}}? This cannot be undone — the edits are not in git.",
+      "discarded": "Discarded changes to {{path}}.",
+      "discardUnavailable": "{{path}} is too large for its committed version to have been sent, so it cannot be restored from here. Use the git history instead."
     },
     "deploy": {
       "title": "Deployments",
@@ -765,7 +775,18 @@
     "generatedUpToDate": "Generated files are already up to date",
     "branchMovedWarning": "Someone else committed to {{branch}} while you were editing. Reload to build on their work (your unsaved changes will be lost).",
     "draftMovedWarning": "Your draft changed elsewhere: {{files}}",
-    "andMore": " and {{count}} more"
+    "andMore": " and {{count}} more",
+    "search": {
+      "title": "Search",
+      "placeholder": "Search this project",
+      "caseSensitive": "Match case",
+      "wholeWord": "Match whole word",
+      "regex": "Use a regular expression",
+      "badPattern": "Incomplete expression",
+      "tooMany": "First {{count}}",
+      "summary": "{{matches}} in {{files}}",
+      "noMatches": "No matches in this project."
+    }
   },
   "openapi": {
     "title": "API documentation",

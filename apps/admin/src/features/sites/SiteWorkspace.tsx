@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Suspense, lazy } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CenteredSpinner } from '@dcms/ui';
+import { CenteredSpinner, DesktopRequired } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { StaticSitePage } from './StaticSitePage';
 
@@ -23,15 +23,27 @@ export function SiteWorkspace({ siteId }: { siteId: string }) {
   });
 
   if (site.isLoading) return <CenteredSpinner label={t('common.loading')} />;
+  // Mode C is a file drop and a publish button, which works anywhere. The other two are
+  // editors and are gated below the desktop breakpoint — see DesktopRequired.
   if (site.data?.renderMode === 'StaticFiles') return <StaticSitePage siteId={siteId} />;
 
   return (
-    <Suspense fallback={<CenteredSpinner />}>
-      {site.data?.renderMode === 'ReactApp' ? (
-        <IdePage siteId={siteId} />
-      ) : (
-        <BuilderPage siteId={siteId} />
-      )}
-    </Suspense>
+    <DesktopRequired
+      labels={{
+        title: t('sites.desktopOnly.title'),
+        description: t('sites.desktopOnly.description'),
+        continueAnyway: t('sites.desktopOnly.continueAnyway'),
+      }}
+    >
+      {/* Inside the gate, so a phone does not download Monaco or GrapesJS to be told it
+          cannot use them. */}
+      <Suspense fallback={<CenteredSpinner />}>
+        {site.data?.renderMode === 'ReactApp' ? (
+          <IdePage siteId={siteId} />
+        ) : (
+          <BuilderPage siteId={siteId} />
+        )}
+      </Suspense>
+    </DesktopRequired>
   );
 }
