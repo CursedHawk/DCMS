@@ -8,6 +8,8 @@ import {
   Button,
   CenteredSpinner,
   cn,
+  type Column,
+  DataTable,
   Dialog,
   DialogBody,
   DialogContent,
@@ -23,12 +25,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Table,
-  TBody,
-  TD,
-  TH,
-  THead,
-  TR,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { Perm, can, useMyPermissions } from '../../lib/permissions';
@@ -130,7 +126,90 @@ export function FormsPage() {
       Object.values(s.data).some((v) => formatValue(v, yes, no).toLowerCase().includes(q)),
   );
 
-  const columns = (form?.fields ?? []).slice(0, INLINE_COLUMNS);
+  const inlineFields = (form?.fields ?? []).slice(0, INLINE_COLUMNS);
+  /*
+   * Two fixed columns around however many the form declares. Built per render because the
+   * inline fields come from the selected form and change with it.
+   *
+   * `hideOnCard` on the timestamp: below the table breakpoint each row becomes a card headed
+   * by its first answer, and leading every card with the same-looking date buries the thing
+   * that tells them apart.
+   */
+  const submissionColumns: Column<Submission>[] = [
+    {
+      id: 'submittedAt',
+      header: t('forms.submittedAt'),
+      width: 'w-44',
+      hideOnCard: true,
+      cell: (s) => (
+        <span className="whitespace-nowrap text-muted-foreground tabular-nums">
+          {new Date(s.submittedAt).toLocaleString()}
+        </span>
+      ),
+      sortValue: (s) => s.submittedAt,
+    },
+    ...inlineFields.map((c, i): Column<Submission> => ({
+      id: `field:${c.name}`,
+      header: c.label,
+      // The first answer heads the card, because it is what an author recognises the
+      // submission by — a name, an email, a subject line.
+      primary: i === 0,
+      cell: (s) => (
+        <span className="block max-w-[16rem] truncate">{formatValue(s.data[c.name], yes, no)}</span>
+      ),
+      sortValue: (s) => formatValue(s.data[c.name], yes, no).toLowerCase(),
+    })),
+    {
+      id: 'status',
+      header: t('common.status'),
+      width: 'w-28',
+      cell: (s) => (
+        <Badge tone={s.handledAt ? 'success' : 'warning'}>
+          {s.handledAt ? t('forms.handled') : t('forms.new')}
+        </Badge>
+      ),
+      sortValue: (s) => (s.handledAt ? 1 : 0),
+    },
+    {
+      id: 'actions',
+      header: '',
+      srHeader: t('common.actions'),
+      width: 'w-24',
+      align: 'right',
+      cell: (s) =>
+        canWrite ? (
+          // stopPropagation on each button rather than on a wrapper: a div with a click
+          // handler is a control the keyboard cannot reach, and these already are buttons.
+          <div className="flex justify-end gap-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              title={s.handledAt ? t('forms.markUnhandled') : t('forms.markHandled')}
+              aria-label={s.handledAt ? t('forms.markUnhandled') : t('forms.markHandled')}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleHandled.mutate(s.id);
+              }}
+            >
+              {s.handledAt ? <Undo2 className="h-4 w-4" aria-hidden /> : <Check className="h-4 w-4" aria-hidden />}
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              title={t('actions.delete')}
+              aria-label={t('actions.delete')}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm(t('forms.deleteConfirm'))) remove.mutate(s.id);
+              }}
+            >
+              <Trash2 className="h-4 w-4 text-destructive" aria-hidden />
+            </Button>
+          </div>
+        ) : null,
+    },
+  ];
+
   const total = submissions.data?.totalCount ?? 0;
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasAnyForm = (instances.data ?? []).some((i) => i.forms.length > 0);
@@ -250,70 +329,14 @@ export function FormsPage() {
             />
           ) : (
             <>
-              <Table>
-                <THead>
-                  <TR>
-                    <TH className="w-44">{t('forms.submittedAt')}</TH>
-                    {columns.map((c) => (
-                      <TH key={c.name}>{c.label}</TH>
-                    ))}
-                    <TH className="w-28">{t('common.status')}</TH>
-                    <TH className="w-24 text-right">{t('common.actions')}</TH>
-                  </TR>
-                </THead>
-                <TBody>
-                  {rows.map((s) => (
-                    <TR
-                      key={s.id}
-                      className="cursor-pointer"
-                      onClick={() => setDetailId(s.id)}
-                      title={t('forms.viewDetail')}
-                    >
-                      <TD className="whitespace-nowrap text-muted-foreground">
-                        {new Date(s.submittedAt).toLocaleString()}
-                      </TD>
-                      {columns.map((c) => (
-                        <TD key={c.name} className="max-w-[16rem] truncate">
-                          {formatValue(s.data[c.name], yes, no)}
-                        </TD>
-                      ))}
-                      <TD>
-                        <Badge tone={s.handledAt ? 'success' : 'warning'}>
-                          {s.handledAt ? t('forms.handled') : t('forms.new')}
-                        </Badge>
-                      </TD>
-                      <TD className="text-right" onClick={(e) => e.stopPropagation()}>
-                        {canWrite ? (
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              title={s.handledAt ? t('forms.markUnhandled') : t('forms.markHandled')}
-                              onClick={() => toggleHandled.mutate(s.id)}
-                            >
-                              {s.handledAt ? (
-                                <Undo2 className="h-4 w-4" />
-                              ) : (
-                                <Check className="h-4 w-4" />
-                              )}
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              title={t('actions.delete')}
-                              onClick={() => {
-                                if (window.confirm(t('forms.deleteConfirm'))) remove.mutate(s.id);
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                        ) : null}
-                      </TD>
-                    </TR>
-                  ))}
-                </TBody>
-              </Table>
+              <DataTable
+                rows={rows}
+                columns={submissionColumns}
+                rowKey={(s) => s.id}
+                onRowClick={(s) => setDetailId(s.id)}
+                caption={t('forms.title')}
+                labels={{ loading: t('common.loading'), sortBy: (column) => t('common.sortBy', { column }) }}
+              />
 
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>{t('forms.pageCount', { page, lastPage, total })}</span>

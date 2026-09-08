@@ -1,5 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Button, CenteredSpinner, EmptyState, Table, TBody, TD, TH, THead, TR } from '@dcms/ui';
+import { Button, type Column, DataTable, EmptyState } from '@dcms/ui';
 import { platformApi } from '../../lib/api';
 import { date } from '../../lib/format';
 
@@ -43,6 +43,77 @@ interface AuditPageResponse {
  * remains impossible by construction: the console's database role has no grant on the audit
  * schema at all.</p>
  */
+/**
+ * The columns, at module scope: this console ships one language and nothing here closes over
+ * component state, so rebuilding them per render would be work for nothing.
+ */
+const columns: Column<AuditItem>[] = [
+  {
+    id: 'when',
+    header: 'When',
+    cell: (e) => <span className="whitespace-nowrap text-muted-foreground tabular-nums">{date(e.occurredAt)}</span>,
+    sortValue: (e) => e.occurredAt,
+    hideOnCard: true,
+  },
+  {
+    id: 'action',
+    header: 'Action',
+    primary: true,
+    cell: (e) => (
+      <>
+        <span className="font-mono text-xs">{e.action}</span>
+        {e.outcome !== 'success' && (
+          <span className="ml-2 rounded-full bg-[hsl(var(--warning)/0.15)] px-1.5 py-0.5 text-[0.6875rem]">
+            {e.outcome}
+          </span>
+        )}
+      </>
+    ),
+    sortValue: (e) => e.action,
+  },
+  {
+    id: 'who',
+    header: 'Who',
+    cell: (e) => (
+      <>
+        {e.actorDisplay ?? '—'}
+        {e.actorAttribution === 'propagated' && (
+          <span
+            className="ml-2 text-xs text-muted-foreground"
+            title="Recorded from what a peer service said, on this person's behalf — not from a session it authenticated."
+          >
+            via service
+          </span>
+        )}
+      </>
+    ),
+    sortValue: (e) => e.actorDisplay?.toLowerCase() ?? null,
+  },
+  {
+    id: 'subject',
+    header: 'Subject',
+    cell: (e) => (
+      <span className="text-muted-foreground">{e.resourceLabel ?? e.resourceType ?? '—'}</span>
+    ),
+    sortValue: (e) => e.resourceLabel ?? e.resourceType ?? null,
+  },
+  {
+    id: 'trace',
+    header: 'Trace',
+    cell: (e) =>
+      e.traceId ? (
+        // Twelve characters is enough to quote and to match against a trace store, and the
+        // full id is on the row for a copy.
+        <span className="font-mono text-xs text-muted-foreground" title={e.traceId}>
+          {e.traceId.slice(0, 12)}
+        </span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+    hideOnCard: true,
+  },
+];
+
 export function AuditPage() {
   const q = useInfiniteQuery({
     queryKey: ['platform-audit'],
@@ -70,74 +141,31 @@ export function AuditPage() {
         </p>
       </header>
 
-      {q.isLoading ? (
-        <CenteredSpinner />
-      ) : items.length === 0 ? (
-        <EmptyState
-          title="Nothing recorded yet"
-          description="Platform-scope records appear here as soon as an operator acts."
-        />
-      ) : (
-        <>
-          <Table>
-            <THead>
-              <TR>
-                <TH>When</TH>
-                <TH>Action</TH>
-                <TH>Who</TH>
-                <TH>Subject</TH>
-                <TH>Trace</TH>
-              </TR>
-            </THead>
-            <TBody>
-              {items.map((e) => (
-                <TR key={e.id}>
-                  <TD className="whitespace-nowrap text-sm text-muted-foreground">{date(e.occurredAt)}</TD>
-                  <TD>
-                    <span className="font-mono text-xs">{e.action}</span>
-                    {e.outcome !== 'success' && (
-                      <span className="ml-2 rounded-full bg-[hsl(var(--warning)/0.15)] px-1.5 py-0.5 text-[0.6875rem]">
-                        {e.outcome}
-                      </span>
-                    )}
-                  </TD>
-                  <TD className="text-sm">
-                    {e.actorDisplay ?? '—'}
-                    {e.actorAttribution === 'propagated' && (
-                      <span
-                        className="ml-2 text-xs text-muted-foreground"
-                        title="Recorded from what a peer service said, on this person's behalf — not from a session it authenticated."
-                      >
-                        via service
-                      </span>
-                    )}
-                  </TD>
-                  <TD className="text-sm text-muted-foreground">
-                    {e.resourceLabel ?? e.resourceType ?? '—'}
-                  </TD>
-                  <TD>
-                    {e.traceId
-                      ? <span className="font-mono text-xs text-muted-foreground">{e.traceId.slice(0, 12)}</span>
-                      : <span className="text-muted-foreground">—</span>}
-                  </TD>
-                </TR>
-              ))}
-            </TBody>
-          </Table>
+      <DataTable
+        rows={items}
+        columns={columns}
+        rowKey={(e) => e.id}
+        isLoading={q.isLoading}
+        caption="Platform audit log"
+        empty={
+          <EmptyState
+            title="Nothing recorded yet"
+            description="Platform-scope records appear here as soon as an operator acts."
+          />
+        }
+      />
 
-          {q.hasNextPage && (
-            <div className="mt-4">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={q.isFetchingNextPage}
-                onClick={() => void q.fetchNextPage()}
-              >
-                {q.isFetchingNextPage ? 'Loading' : 'Load older records'}
-              </Button>
-            </div>
-          )}
-        </>
+      {q.hasNextPage && (
+        <div className="mt-4">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={q.isFetchingNextPage}
+            onClick={() => void q.fetchNextPage()}
+          >
+            {q.isFetchingNextPage ? 'Loading' : 'Load older records'}
+          </Button>
+        </div>
       )}
     </div>
   );

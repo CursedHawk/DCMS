@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { TooltipProvider } from '../ui/tooltip';
 import { user } from '../test/user';
@@ -25,6 +25,23 @@ const items: BellNotification[] = [
   { id: '1', severity: 'Error', createdAt: '2026-09-07T10:00:00Z', readAt: null },
   { id: '2', severity: 'Success', createdAt: '2026-09-06T10:00:00Z', readAt: '2026-09-06T11:00:00Z' },
 ];
+
+/*
+ * The clock is pinned, because the fixtures above are fixed dates and the assertions are about
+ * how a time is FORMATTED rather than about what today is.
+ *
+ * Without this the relative-time test passed for one day and then began failing on its own:
+ * `Intl.RelativeTimeFormat` with `numeric: 'auto'` says "1 hour ago" at an hour's distance and
+ * "yesterday" at a day's, so the assertion that a row renders something like "ago" quietly
+ * became false at midnight — a test that fails for a reason that has nothing to do with the
+ * code it covers, on a day nobody touched it.
+ */
+beforeAll(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date('2026-09-07T12:00:00Z'));
+});
+
+afterAll(() => vi.useRealTimers());
 
 function Bell(props: Partial<React.ComponentProps<typeof NotificationBell>> = {}) {
   return (

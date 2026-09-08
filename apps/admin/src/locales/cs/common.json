@@ -131,7 +131,9 @@
     "revokeConfirm": "Zrušit pozvánku pro {{email}}? Odeslaný odkaz přestane fungovat.",
     "inviteAccepted": "Pozvánka přijata",
     "inviteAcceptedTo": "Připojili jste se k {{tenant}}",
-    "inviteNoToken": "V tomto odkazu chybí token pozvánky. Použijte prosím odkaz z e-mailu s pozvánkou."
+    "inviteNoToken": "V tomto odkazu chybí token pozvánky. Použijte prosím odkaz z e-mailu s pozvánkou.",
+    "addRole": "Přidat roli",
+    "removeRole": "Odebrat roli {{role}} uživateli {{email}}"
   },
   "roles": {
     "title": "Role",

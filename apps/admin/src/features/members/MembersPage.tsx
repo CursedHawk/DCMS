@@ -6,7 +6,6 @@ import { toast } from 'sonner';
 import {
   Badge,
   Button,
-  CenteredSpinner,
   Checkbox,
   CopyButton,
   Dialog,
@@ -14,6 +13,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  type Column,
+  DataTable,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -23,16 +24,10 @@ import {
   Label,
   Page,
   PageHeader,
-  Table,
-  TBody,
-  TD,
-  TH,
-  THead,
   toastApiError,
-  TR,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
-import { useInvitations, useMembers, useRoles } from '../rbac/api';
+import { type Invitation, type Member, useInvitations, useMembers, useRoles } from '../rbac/api';
 
 /** Short absolute date, e.g. "19 Aug 2026" in the active locale. */
 function formatDate(iso: string, locale: string): string {
@@ -122,6 +117,159 @@ export function MembersPage() {
 
   const pending = invitations.data ?? [];
 
+  /*
+   * Columns are declared here rather than at module scope because every cell needs something
+   * from this render: the role name lookup, the mutations, the translation function. Building
+   * them per render is fine — DataTable does no memo-sensitive work with them.
+   */
+  const memberColumns: Column<Member>[] = [
+    {
+      id: 'email',
+      header: t('members.email'),
+      primary: true,
+      cell: (m) => <span className="font-medium">{m.email}</span>,
+      sortValue: (m) => m.email.toLowerCase(),
+    },
+    {
+      id: 'roles',
+      header: t('members.roles'),
+      cell: (m) => (
+        <div className="flex flex-wrap items-center gap-1">
+          {m.roleIds.length === 0 ? (
+            <span className="text-xs text-muted-foreground">{t('members.noRoles')}</span>
+          ) : (
+            m.roleIds.map((rid) => (
+              <Badge key={rid} tone="secondary" className="gap-1 pr-1">
+                {roleName(rid)}
+                <button
+                  type="button"
+                  aria-label={t('members.removeRole', { role: roleName(rid), email: m.email })}
+                  className="rounded-full p-0.5 hover:bg-foreground/10"
+                  onClick={() => removeRole.mutate({ membershipId: m.membershipId, roleId: rid })}
+                >
+                  <X className="h-3 w-3" aria-hidden />
+                </button>
+              </Badge>
+            ))
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'add-role',
+      header: '',
+      srHeader: t('members.addRole'),
+      width: 'w-10',
+      align: 'right',
+      cell: (m) => {
+        const unassigned = (roles.data ?? []).filter((r) => !m.roleIds.includes(r.id));
+        if (unassigned.length === 0) return null;
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="icon" variant="ghost" aria-label={t('members.addRole')}>
+                <Plus className="h-4 w-4" aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {unassigned.map((r) => (
+                <DropdownMenuItem
+                  key={r.id}
+                  onClick={() => addRole.mutate({ membershipId: m.membershipId, roleId: r.id })}
+                >
+                  {r.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
+    },
+  ];
+
+  const invitationColumns: Column<Invitation>[] = [
+    {
+      id: 'email',
+      header: t('members.email'),
+      primary: true,
+      cell: (inv) => <span className="font-medium">{inv.email}</span>,
+      sortValue: (inv) => inv.email.toLowerCase(),
+    },
+    {
+      id: 'roles',
+      header: t('members.roles'),
+      cell: (inv) => (
+        <div className="flex flex-wrap items-center gap-1">
+          {inv.roleIds.length === 0 ? (
+            <span className="text-xs text-muted-foreground">{t('members.noRoles')}</span>
+          ) : (
+            inv.roleIds.map((rid) => (
+              <Badge key={rid} tone="secondary">
+                {roleName(rid)}
+              </Badge>
+            ))
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 'invited',
+      header: t('members.invited'),
+      cell: (inv) => (
+        <span className="text-sm text-muted-foreground">{formatDate(inv.createdAt, i18n.language)}</span>
+      ),
+      sortValue: (inv) => inv.createdAt,
+    },
+    {
+      id: 'expires',
+      header: t('members.expires'),
+      cell: (inv) =>
+        inv.expired ? (
+          <Badge tone="destructive">{t('members.expired')}</Badge>
+        ) : (
+          <span className="text-sm text-muted-foreground">
+            {formatDate(inv.expiresAt, i18n.language)}
+          </span>
+        ),
+      sortValue: (inv) => inv.expiresAt,
+    },
+    {
+      id: 'actions',
+      header: '',
+      srHeader: t('common.actions'),
+      align: 'right',
+      width: 'w-20',
+      cell: (inv) => (
+        <div className="flex items-center justify-end gap-1">
+          <Button
+            size="icon"
+            variant="ghost"
+            title={t('members.resend')}
+            aria-label={t('members.resend')}
+            disabled={resend.isPending}
+            onClick={() => resend.mutate(inv.id)}
+          >
+            <MailPlus className="h-4 w-4" aria-hidden />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            title={t('members.revoke')}
+            aria-label={t('members.revoke')}
+            disabled={revoke.isPending}
+            onClick={() => {
+              if (window.confirm(t('members.revokeConfirm', { email: inv.email }))) {
+                revoke.mutate(inv.id);
+              }
+            }}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden />
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <Page>
       <PageHeader
@@ -138,76 +286,15 @@ export function MembersPage() {
         }
       />
 
-      {members.isLoading ? (
-        <CenteredSpinner />
-      ) : members.data && members.data.length > 0 ? (
-        <Table>
-          <THead>
-            <TR>
-              <TH>{t('members.email')}</TH>
-              <TH>{t('members.roles')}</TH>
-              <TH className="w-10" />
-            </TR>
-          </THead>
-          <TBody>
-            {members.data.map((m) => {
-              const unassigned = (roles.data ?? []).filter((r) => !m.roleIds.includes(r.id));
-              return (
-                <TR key={m.membershipId}>
-                  <TD className="font-medium">{m.email}</TD>
-                  <TD>
-                    <div className="flex flex-wrap items-center gap-1">
-                      {m.roleIds.length === 0 ? (
-                        <span className="text-xs text-muted-foreground">{t('members.noRoles')}</span>
-                      ) : (
-                        m.roleIds.map((rid) => (
-                          <Badge key={rid} tone="secondary" className="gap-1 pr-1">
-                            {roleName(rid)}
-                            <button
-                              type="button"
-                              className="rounded-full p-0.5 hover:bg-foreground/10"
-                              onClick={() =>
-                                removeRole.mutate({ membershipId: m.membershipId, roleId: rid })
-                              }
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </Badge>
-                        ))
-                      )}
-                    </div>
-                  </TD>
-                  <TD>
-                    {unassigned.length > 0 ? (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="icon" variant="ghost">
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {unassigned.map((r) => (
-                            <DropdownMenuItem
-                              key={r.id}
-                              onClick={() =>
-                                addRole.mutate({ membershipId: m.membershipId, roleId: r.id })
-                              }
-                            >
-                              {r.name}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    ) : null}
-                  </TD>
-                </TR>
-              );
-            })}
-          </TBody>
-        </Table>
-      ) : (
-        <EmptyState icon={Users} title={t('members.title')} />
-      )}
+      <DataTable
+        rows={members.data}
+        columns={memberColumns}
+        rowKey={(m) => m.membershipId}
+        isLoading={members.isLoading}
+        caption={t('members.title')}
+        labels={{ loading: t('common.loading'), sortBy: (column) => t('common.sortBy', { column }) }}
+        empty={<EmptyState icon={Users} title={t('members.title')} />}
+      />
 
       {/*
         Invitations sit under the member list rather than mixed into it: they are
@@ -216,85 +303,19 @@ export function MembersPage() {
       */}
       <section className="mt-8 space-y-3">
         <h2 className="text-sm font-medium text-muted-foreground">{t('members.pending')}</h2>
-        {invitations.isLoading ? (
-          <CenteredSpinner />
-        ) : pending.length === 0 ? (
-          <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
-            {t('members.pendingNone')}
-          </p>
-        ) : (
-          <Table>
-            <THead>
-              <TR>
-                <TH>{t('members.email')}</TH>
-                <TH>{t('members.roles')}</TH>
-                <TH>{t('members.invited')}</TH>
-                <TH>{t('members.expires')}</TH>
-                <TH className="w-20" />
-              </TR>
-            </THead>
-            <TBody>
-              {pending.map((inv) => (
-                <TR key={inv.id}>
-                  <TD className="font-medium">{inv.email}</TD>
-                  <TD>
-                    <div className="flex flex-wrap items-center gap-1">
-                      {inv.roleIds.length === 0 ? (
-                        <span className="text-xs text-muted-foreground">{t('members.noRoles')}</span>
-                      ) : (
-                        inv.roleIds.map((rid) => (
-                          <Badge key={rid} tone="secondary">
-                            {roleName(rid)}
-                          </Badge>
-                        ))
-                      )}
-                    </div>
-                  </TD>
-                  <TD className="text-sm text-muted-foreground">
-                    {formatDate(inv.createdAt, i18n.language)}
-                  </TD>
-                  <TD className="text-sm">
-                    {inv.expired ? (
-                      <Badge tone="destructive">{t('members.expired')}</Badge>
-                    ) : (
-                      <span className="text-muted-foreground">
-                        {formatDate(inv.expiresAt, i18n.language)}
-                      </span>
-                    )}
-                  </TD>
-                  <TD>
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        title={t('members.resend')}
-                        aria-label={t('members.resend')}
-                        disabled={resend.isPending}
-                        onClick={() => resend.mutate(inv.id)}
-                      >
-                        <MailPlus className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        title={t('members.revoke')}
-                        aria-label={t('members.revoke')}
-                        disabled={revoke.isPending}
-                        onClick={() => {
-                          if (window.confirm(t('members.revokeConfirm', { email: inv.email }))) {
-                            revoke.mutate(inv.id);
-                          }
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TD>
-                </TR>
-              ))}
-            </TBody>
-          </Table>
-        )}
+        <DataTable
+          rows={pending}
+          columns={invitationColumns}
+          rowKey={(inv) => inv.id}
+          isLoading={invitations.isLoading}
+          caption={t('members.pending')}
+          labels={{ loading: t('common.loading'), sortBy: (column) => t('common.sortBy', { column }) }}
+          empty={
+            <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+              {t('members.pendingNone')}
+            </p>
+          }
+        />
       </section>
 
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>

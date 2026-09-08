@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2, TrendingUp, X } from 'lucide-react';
 import { useState } from 'react';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import {
   Area,
@@ -19,6 +20,8 @@ import {
   CardHeader,
   CardTitle,
   CenteredSpinner,
+  type Column,
+  DataTable,
   ConfirmDeleteDialog,
   EmptyState,
   Input,
@@ -30,13 +33,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Table,
-  TBody,
-  TD,
-  TH,
-  THead,
   toastApiError,
-  TR,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { mergeSeries, trend, useChartTheme } from './chartTheme';
@@ -60,6 +57,44 @@ interface Dimensions {
   countries: string[];
   devices: string[];
 }
+
+type Campaign = Analytics['byCampaign'][number];
+
+/**
+ * The campaign breakdown's columns.
+ *
+ * <p>Module scope, unlike the other tables in this app: nothing here closes over state, so
+ * building it per render would be work for nothing. Sorted by events descending by default —
+ * a campaign table is read top-down and the question is which campaign brought people.</p>
+ */
+const campaignColumns = (t: TFunction): Column<Campaign>[] => [
+  {
+    id: 'source',
+    header: t('analytics.utmSource'),
+    primary: true,
+    cell: (c) => <span className="font-medium">{c.source}</span>,
+    sortValue: (c) => c.source.toLowerCase(),
+  },
+  {
+    id: 'medium',
+    header: t('analytics.utmMedium'),
+    cell: (c) => <span className="text-muted-foreground">{c.medium ?? '—'}</span>,
+    sortValue: (c) => c.medium?.toLowerCase() ?? null,
+  },
+  {
+    id: 'campaign',
+    header: t('analytics.utmCampaign'),
+    cell: (c) => <span className="text-muted-foreground">{c.campaign ?? '—'}</span>,
+    sortValue: (c) => c.campaign?.toLowerCase() ?? null,
+  },
+  {
+    id: 'events',
+    header: t('analytics.events'),
+    align: 'right',
+    cell: (c) => <span className="tabular-nums">{c.count.toLocaleString()}</span>,
+    sortValue: (c) => c.count,
+  },
+];
 
 /** Radix Select reserves the empty string for "nothing selected". */
 const ANY = '__any';
@@ -338,26 +373,14 @@ export function AnalyticsPage() {
                 <CardTitle>{t('analytics.byCampaign')}</CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <THead>
-                    <TR>
-                      <TH>{t('analytics.utmSource')}</TH>
-                      <TH>{t('analytics.utmMedium')}</TH>
-                      <TH>{t('analytics.utmCampaign')}</TH>
-                      <TH className="text-right">{t('analytics.events')}</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {a.data.byCampaign.map((c) => (
-                      <TR key={`${c.source}|${c.medium}|${c.campaign}`}>
-                        <TD className="font-medium">{c.source}</TD>
-                        <TD className="text-muted-foreground">{c.medium ?? '—'}</TD>
-                        <TD className="text-muted-foreground">{c.campaign ?? '—'}</TD>
-                        <TD className="text-right tabular-nums">{c.count.toLocaleString()}</TD>
-                      </TR>
-                    ))}
-                  </TBody>
-                </Table>
+                <DataTable
+                  rows={a.data.byCampaign}
+                  columns={campaignColumns(t)}
+                  rowKey={(c) => `${c.source}|${c.medium}|${c.campaign}`}
+                  caption={t('analytics.byCampaign')}
+                  defaultSort={{ columnId: 'events', direction: 'desc' }}
+                  labels={{ loading: t('common.loading'), sortBy: (column) => t('common.sortBy', { column }) }}
+                />
               </CardContent>
             </Card>
           ) : null}

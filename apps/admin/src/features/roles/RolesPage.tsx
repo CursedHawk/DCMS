@@ -6,7 +6,8 @@ import { toast } from 'sonner';
 import {
   Badge,
   Button,
-  CenteredSpinner,
+  type Column,
+  DataTable,
   Dialog,
   DialogContent,
   DialogFooter,
@@ -17,13 +18,7 @@ import {
   Label,
   Page,
   PageHeader,
-  Table,
-  TBody,
-  TD,
-  TH,
-  THead,
   toastApiError,
-  TR,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { type Role, usePermissionCatalog, useRoles } from '../rbac/api';
@@ -78,6 +73,90 @@ export function RolesPage() {
 
   const nameById = new Map((catalog.data ?? []).map((p) => [p.key, p.displayName]));
 
+  const columns: Column<Role>[] = [
+    {
+      id: 'name',
+      header: t('common.name'),
+      primary: true,
+      cell: (r) => (
+        <span className="font-medium">
+          {r.name}
+          {r.isSystem ? (
+            <Badge tone="secondary" className="ml-2">
+              {t('roles.system')}
+            </Badge>
+          ) : null}
+        </span>
+      ),
+      sortValue: (r) => r.name.toLowerCase(),
+    },
+    {
+      id: 'members',
+      header: t('nav.members'),
+      width: 'w-24',
+      align: 'right',
+      cell: (r) => <span className="text-sm tabular-nums text-muted-foreground">{r.memberCount}</span>,
+      sortValue: (r) => r.memberCount,
+    },
+    {
+      id: 'permissions',
+      header: t('roles.permissions'),
+      cell: (r) => (
+        <div className="flex flex-wrap gap-1">
+          {/* Four, then a count. A role with thirty permissions is a row that has stopped
+              being a row, and the full list is one click away in the editor. */}
+          {r.permissions.slice(0, 4).map((p) => (
+            <Badge key={p} tone="outline">
+              {nameById.get(p) ?? p}
+            </Badge>
+          ))}
+          {r.permissions.length > 4 ? <Badge tone="outline">+{r.permissions.length - 4}</Badge> : null}
+          {r.permissions.length === 0 ? <span className="text-xs text-muted-foreground">—</span> : null}
+        </div>
+      ),
+      sortValue: (r) => r.permissions.length,
+    },
+    {
+      id: 'actions',
+      header: '',
+      srHeader: t('common.actions'),
+      align: 'right',
+      cell: (r) => (
+        <div className="flex justify-end gap-1">
+          <Button
+            size="icon"
+            variant="ghost"
+            title={t('actions.edit')}
+            aria-label={t('actions.edit')}
+            onClick={() => openEdit(r)}
+          >
+            <Pencil className="h-4 w-4" aria-hidden />
+          </Button>
+          {!r.isSystem ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="text-destructive"
+              title={t('actions.delete')}
+              aria-label={t('actions.delete')}
+              onClick={() => {
+                // Deleting a role silently strips whatever it granted from everyone holding
+                // it, so say how many people that is.
+                const message =
+                  r.memberCount > 0
+                    ? t('roles.deleteConfirmInUse', { name: r.name, count: r.memberCount })
+                    : t('roles.deleteConfirm', { name: r.name });
+                if (window.confirm(message)) remove.mutate(r.id);
+              }}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+            </Button>
+          ) : null}
+        </div>
+      ),
+    },
+  ];
+
   return (
     <Page>
       <PageHeader
@@ -89,87 +168,26 @@ export function RolesPage() {
         }
       />
 
-      {roles.isLoading ? (
-        <CenteredSpinner />
-      ) : roles.data && roles.data.length > 0 ? (
-        <Table>
-          <THead>
-            <TR>
-              <TH>{t('common.name')}</TH>
-              <TH className="w-24">{t('nav.members')}</TH>
-              <TH>{t('roles.permissions')}</TH>
-              <TH className="text-right">{t('common.actions')}</TH>
-            </TR>
-          </THead>
-          <TBody>
-            {roles.data.map((r) => (
-              <TR key={r.id}>
-                <TD className="font-medium">
-                  {r.name}
-                  {r.isSystem ? (
-                    <Badge tone="secondary" className="ml-2">
-                      {t('roles.system')}
-                    </Badge>
-                  ) : null}
-                </TD>
-                <TD className="text-sm text-muted-foreground tabular-nums">{r.memberCount}</TD>
-                <TD>
-                  <div className="flex flex-wrap gap-1">
-                    {r.permissions.slice(0, 4).map((p) => (
-                      <Badge key={p} tone="outline">
-                        {nameById.get(p) ?? p}
-                      </Badge>
-                    ))}
-                    {r.permissions.length > 4 ? (
-                      <Badge tone="outline">+{r.permissions.length - 4}</Badge>
-                    ) : null}
-                    {r.permissions.length === 0 ? (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    ) : null}
-                  </div>
-                </TD>
-                <TD className="text-right">
-                  <div className="flex justify-end gap-1">
-                    <Button size="icon" variant="ghost" onClick={() => openEdit(r)}>
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    {!r.isSystem ? (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="text-destructive"
-                        title={t('actions.delete')}
-                        aria-label={t('actions.delete')}
-                        onClick={() => {
-                          // Deleting a role silently strips whatever it granted from
-                          // everyone holding it, so say how many people that is.
-                          const message =
-                            r.memberCount > 0
-                              ? t('roles.deleteConfirmInUse', { name: r.name, count: r.memberCount })
-                              : t('roles.deleteConfirm', { name: r.name });
-                          if (window.confirm(message)) remove.mutate(r.id);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    ) : null}
-                  </div>
-                </TD>
-              </TR>
-            ))}
-          </TBody>
-        </Table>
-      ) : (
-        <EmptyState
-          icon={ShieldCheck}
-          title={t('roles.title')}
-          action={
-            <Button onClick={openCreate}>
-              <Plus className="h-4 w-4" /> {t('roles.createRole')}
-            </Button>
-          }
-        />
-      )}
+      <DataTable
+        rows={roles.data}
+        columns={columns}
+        rowKey={(r) => r.id}
+        isLoading={roles.isLoading}
+        caption={t('roles.title')}
+        defaultSort={{ columnId: 'name' }}
+        labels={{ loading: t('common.loading'), sortBy: (column) => t('common.sortBy', { column }) }}
+        empty={
+          <EmptyState
+            icon={ShieldCheck}
+            title={t('roles.title')}
+            action={
+              <Button onClick={openCreate}>
+                <Plus className="h-4 w-4" aria-hidden /> {t('roles.createRole')}
+              </Button>
+            }
+          />
+        }
+      />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent wide>

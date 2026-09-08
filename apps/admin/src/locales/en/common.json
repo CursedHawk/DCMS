@@ -131,7 +131,9 @@
     "revokeConfirm": "Revoke the invitation for {{email}}? The link they were sent will stop working.",
     "inviteAccepted": "Invitation accepted",
     "inviteAcceptedTo": "You have joined {{tenant}}",
-    "inviteNoToken": "This link is missing an invitation token. Please use the link from your invitation email."
+    "inviteNoToken": "This link is missing an invitation token. Please use the link from your invitation email.",
+    "addRole": "Add a role",
+    "removeRole": "Remove {{role}} from {{email}}"
   },
   "roles": {
     "title": "Roles",

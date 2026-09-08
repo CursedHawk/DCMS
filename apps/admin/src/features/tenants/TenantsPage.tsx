@@ -6,7 +6,8 @@ import { toast } from 'sonner';
 import {
   Badge,
   Button,
-  CenteredSpinner,
+  type Column,
+  DataTable,
   Dialog,
   DialogBody,
   DialogContent,
@@ -20,13 +21,7 @@ import {
   Label,
   Page,
   PageHeader,
-  Table,
-  TBody,
-  TD,
-  TH,
-  THead,
   toastApiError,
-  TR,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { Perm, can, useMyPermissions } from '../../lib/permissions';
@@ -70,6 +65,56 @@ export function TenantsPage() {
     onError: (e) => toastApiError(e, t),
   });
 
+  const columns: Column<TenantRow>[] = [
+    {
+      id: 'name',
+      header: t('common.name'),
+      primary: true,
+      cell: (tn) => <span className="font-medium">{tn.name}</span>,
+      sortValue: (tn) => tn.name.toLowerCase(),
+    },
+    {
+      id: 'slug',
+      header: t('common.slug'),
+      cell: (tn) => <span className="font-mono text-xs text-muted-foreground">{tn.slug}</span>,
+      sortValue: (tn) => tn.slug,
+    },
+    {
+      id: 'status',
+      header: t('common.status'),
+      cell: (tn) => <Badge tone="secondary">{tn.status ?? '—'}</Badge>,
+      sortValue: (tn) => tn.status ?? '',
+    },
+    {
+      id: 'actions',
+      header: '',
+      srHeader: t('common.actions'),
+      align: 'right',
+      cell: (tn) => (
+        <div className="flex justify-end gap-2">
+          {canAudit ? (
+            // Opens that tenant's log in place. Deliberately not "switch tenant, then go to
+            // /audit": the switch reloads the whole app and drops whoever was mid-investigation
+            // back to the start.
+            <Button size="sm" variant="outline" onClick={() => setAuditing(tn)}>
+              <ScrollText className="h-4 w-4" aria-hidden /> {t('nav.audit')}
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setCurrentTenantSlug(tn.slug);
+              window.location.reload();
+            }}
+          >
+            {t('tenant.use')}
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <Page>
       <PageHeader
@@ -109,57 +154,20 @@ export function TenantsPage() {
         }
       />
 
-      {tenants.isLoading ? (
-        <CenteredSpinner />
-      ) : tenants.isError ? (
-        <EmptyState icon={Boxes} title={t('tenant.superAdminOnly')} />
-      ) : tenants.data && tenants.data.length > 0 ? (
-        <Table>
-          <THead>
-            <TR>
-              <TH>{t('common.name')}</TH>
-              <TH>{t('common.slug')}</TH>
-              <TH>{t('common.status')}</TH>
-              <TH className="text-right">{t('common.actions')}</TH>
-            </TR>
-          </THead>
-          <TBody>
-            {tenants.data.map((tn) => (
-              <TR key={tn.tenantId}>
-                <TD className="font-medium">{tn.name}</TD>
-                <TD className="text-muted-foreground">{tn.slug}</TD>
-                <TD>
-                  <Badge tone="secondary">{tn.status ?? '—'}</Badge>
-                </TD>
-                <TD className="text-right">
-                  <div className="flex justify-end gap-2">
-                    {canAudit ? (
-                      // Opens that tenant's log in place. Deliberately not "switch tenant, then
-                      // go to /audit": the switch reloads the whole app and drops whoever was
-                      // mid-investigation back to the start.
-                      <Button size="sm" variant="outline" onClick={() => setAuditing(tn)}>
-                        <ScrollText className="h-4 w-4" /> {t('nav.audit')}
-                      </Button>
-                    ) : null}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setCurrentTenantSlug(tn.slug);
-                        window.location.reload();
-                      }}
-                    >
-                      {t('tenant.use')}
-                    </Button>
-                  </div>
-                </TD>
-              </TR>
-            ))}
-          </TBody>
-        </Table>
-      ) : (
-        <EmptyState icon={Boxes} title={t('common.noResults')} />
-      )}
+      <DataTable
+        rows={tenants.data}
+        columns={columns}
+        rowKey={(tn) => tn.tenantId}
+        isLoading={tenants.isLoading}
+        // A tenant list that failed to load and a platform with no tenants look identical
+        // unless one of them says so, and here the failure is nearly always "you are not a
+        // SuperAdmin" — which is a sentence, not an empty table.
+        error={tenants.isError ? <EmptyState icon={Boxes} title={t('tenant.superAdminOnly')} /> : undefined}
+        empty={<EmptyState icon={Boxes} title={t('common.noResults')} />}
+        caption={t('nav.tenants')}
+        defaultSort={{ columnId: 'name' }}
+        labels={{ loading: t('common.loading'), sortBy: (column) => t('common.sortBy', { column }) }}
+      />
 
       <TenantAuditDialog tenant={auditing} onClose={() => setAuditing(null)} />
     </Page>
