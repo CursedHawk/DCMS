@@ -10,12 +10,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@dcms/core": "workspace:*",
-    "@dcms/ui": "workspace:*",
     "@dcms/api-client": "workspace:*",
+    "@dcms/core": "workspace:*",
     "@dcms/gjs-blocks": "workspace:*",
     "@dcms/gjs-parse": "workspace:*",
     "@dcms/gjs-schema": "workspace:*",
+    "@dcms/ui": "workspace:*",
     "@microsoft/signalr": "^8",
     "@radix-ui/react-checkbox": "^1",
     "@radix-ui/react-dialog": "^1",
@@ -34,6 +34,10 @@
     "@scalar/api-reference-react": "^0.7",
     "@tanstack/react-query": "^5",
     "@tanstack/react-router": "^1",
+    "@tiptap/core": "^3.31.3",
+    "@tiptap/pm": "^3.31.3",
+    "@tiptap/react": "^3.31.3",
+    "@tiptap/starter-kit": "^3.31.3",
     "clsx": "^2",
     "cmdk": "^1",
     "css-tree": "^3.2.1",
@@ -52,6 +56,7 @@
     "recharts": "^2",
     "sonner": "^2",
     "tailwind-merge": "^3",
+    "tiptap-markdown": "^0.9.0",
     "zod": "^4.4.3",
     "zustand": "^5"
   },

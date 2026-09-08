@@ -56,6 +56,18 @@ export default defineConfig({
             return 'editor-libs';
           }
           if (id.includes('esbuild-wasm')) return 'esbuild';
+          // TipTap and the ProseMirror stack under it, reached only through the lazily
+          // imported RichTextEditor on the content route. `prosemirror-` catches the dozen
+          // transitive packages @tiptap/pm re-exports, which would otherwise land in `vendor`
+          // and be downloaded on first paint by every page including the dashboard.
+          if (
+            id.includes('@tiptap') ||
+            id.includes('prosemirror') ||
+            id.includes('tiptap-markdown') ||
+            id.includes('/markdown-it')
+          ) {
+            return 'tiptap';
+          }
           if (id.includes('recharts') || id.includes('/d3') || id.includes('victory')) return 'charts';
           if (id.includes('@rjsf') || id.includes('/ajv')) return 'rjsf';
           if (id.includes('@microsoft/signalr')) return 'signalr';

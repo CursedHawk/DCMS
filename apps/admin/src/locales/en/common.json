@@ -267,7 +267,24 @@
     "cancelSchedule": "Cancel",
     "scheduleCancelled": "Scheduled publish cancelled",
     "rescheduleAt": "Reschedule to",
-    "scheduleHint": "Scheduling publishes what is currently in the editor. One schedule per item — setting a new time replaces the old one."
+    "scheduleHint": "Scheduling publishes what is currently in the editor. One schedule per item — setting a new time replaces the old one.",
+    "richText": {
+      "toolbar": "Formatting",
+      "bold": "Bold",
+      "italic": "Italic",
+      "strike": "Strikethrough",
+      "code": "Inline code",
+      "heading2": "Heading",
+      "heading3": "Subheading",
+      "bulletList": "Bulleted list",
+      "orderedList": "Numbered list",
+      "quote": "Quote",
+      "undo": "Undo",
+      "redo": "Redo",
+      "markdownNote": "Saved as Markdown.",
+      "markdownHintLabel": "What this field stores",
+      "markdownHint": "This field stores Markdown source, not HTML, because that is what reads it further down the line. Pasted Markdown is understood, and what you type here is converted back to Markdown when it is saved."
+    }
   },
   "media": {
     "title": "Media library",

@@ -270,7 +270,24 @@
     "cancelSchedule": "Zrušit",
     "scheduleCancelled": "Naplánované publikování zrušeno",
     "rescheduleAt": "Přeplánovat na",
-    "scheduleHint": "Naplánuje se to, co je právě v editoru. Na položku připadá jeden plán — nový čas nahradí ten původní."
+    "scheduleHint": "Naplánuje se to, co je právě v editoru. Na položku připadá jeden plán — nový čas nahradí ten původní.",
+    "richText": {
+      "toolbar": "Formátování",
+      "bold": "Tučně",
+      "italic": "Kurzíva",
+      "strike": "Přeškrtnuté",
+      "code": "Kód v textu",
+      "heading2": "Nadpis",
+      "heading3": "Podnadpis",
+      "bulletList": "Odrážkový seznam",
+      "orderedList": "Číslovaný seznam",
+      "quote": "Citace",
+      "undo": "Zpět",
+      "redo": "Znovu",
+      "markdownNote": "Ukládá se jako Markdown.",
+      "markdownHintLabel": "Co se v tomto poli ukládá",
+      "markdownHint": "Toto pole ukládá zdrojový Markdown, ne HTML — právě ten totiž čte vše další v řadě. Vložený Markdown se rozpozná a to, co zde napíšete, se při uložení převede zpět na Markdown."
+    }
   },
   "media": {
     "title": "Knihovna médií",

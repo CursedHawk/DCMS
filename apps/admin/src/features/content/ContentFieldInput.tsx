@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Input, Label, Switch, TagsInput, Textarea, toTagList } from '@dcms/ui';
 import type { MediaCategory } from '../media/api';
@@ -6,6 +6,16 @@ import { MediaMultiPicker } from '../media/MediaMultiPicker';
 import { MediaPicker } from '../media/MediaPicker';
 import type { ContentFieldDef } from '../plugins/api';
 import { PerformerPicker } from './PerformerPicker';
+import { formatOf } from './richText';
+
+/**
+ * ProseMirror and its extensions are a few hundred kilobytes, and only a content type with a
+ * rich field ever needs them. Lazy here rather than at the route, so opening a gig — which has
+ * no rich field — costs nothing.
+ */
+const RichTextEditor = lazy(() =>
+  import('./RichTextEditor').then((m) => ({ default: m.RichTextEditor })),
+);
 
 /** Coerce a stored value (array, JSON string, or empty) into a list of ids. */
 function toIdList(value: unknown): string[] {
@@ -95,11 +105,20 @@ export function ContentFieldInput({
       case 'RichText':
       case 'Markdown':
         return (
-          <Textarea
-            rows={6}
-            value={(value as string) ?? ''}
-            onChange={(e) => onChange(e.target.value)}
-          />
+          // A textarea while the editor loads, rather than a spinner: it is the right height,
+          // it shows the value that is already there, and on a slow connection it is a control
+          // that works instead of a box that is not there yet.
+          <Suspense
+            fallback={
+              <Textarea rows={6} readOnly value={(value as string) ?? ''} aria-busy="true" />
+            }
+          >
+            <RichTextEditor
+              value={(value as string) ?? ''}
+              onChange={(v) => onChange(v)}
+              format={formatOf(field.type)}
+            />
+          </Suspense>
         );
       case 'Json':
         // A JSON field that references media (e.g. a gallery's images) is edited
