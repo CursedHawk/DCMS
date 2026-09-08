@@ -262,7 +262,15 @@
     },
     "tags": {
       "placeholder": "Type a tag and press Enter",
-      "allTags": "All tags"
+      "allTags": "All tags",
+      "title": "Tags",
+      "tag": "Tag",
+      "uses": "Uses",
+      "where": "Where it is used",
+      "searchPlaceholder": "Search tags and collections",
+      "occurrence": "{{count}} on {{instance}} · {{type}} · {{field}}",
+      "none": "No tags used yet",
+      "noneHint": "Tags appear here as soon as anyone types one into a tag field."
     },
     "customFields": {
       "title": "Custom fields",
@@ -291,7 +299,15 @@
       "markdownHintLabel": "What this field stores",
       "markdownHint": "This field stores Markdown source, not HTML, because that is what reads it further down the line. Pasted Markdown is understood, and what you type here is converted back to Markdown when it is saved."
     },
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "types": {
+      "title": "Types",
+      "type": "Content type",
+      "plugin": "From plugin",
+      "collections": "Collections",
+      "fields": "Fields",
+      "extensible": "Extendable"
+    }
   },
   "media": {
     "title": "Media library",

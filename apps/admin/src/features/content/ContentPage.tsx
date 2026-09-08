@@ -1,6 +1,6 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { AlertTriangle, FileText, LayoutGrid, Plus, Search } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Badge,
@@ -18,6 +18,10 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   useDebounced,
 } from '@dcms/ui';
 import { dateTime } from '@dcms/core';
@@ -28,6 +32,9 @@ import {
   usePluginInstances,
 } from '../plugins/api';
 import { ContentEditor } from './ContentEditor';
+
+const TypesView = lazy(() => import('./TypesView').then((m) => ({ default: m.TypesView })));
+const TagsView = lazy(() => import('./TagsView').then((m) => ({ default: m.TagsView })));
 import {
   type ContentRow,
   useCollectionTags,
@@ -69,6 +76,7 @@ export function ContentPage() {
   const instances = usePluginInstances();
   const catalog = usePluginCatalog();
   const [selected, setSelected] = useState<{ instanceId: string; type: string } | null>(null);
+  const [tab, setTab] = useState('items');
 
   // Deep link from a notification: ?instance=<pluginInstanceId>&type=<contentType>&item=<id>.
   // `strict: false` because no route here declares a search schema — these params are optional
@@ -133,6 +141,27 @@ export function ContentPage() {
     <Page className="max-w-7xl">
       <PageHeader title={t('content.title')} description={t('content.subtitle')} />
 
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList className="mb-6">
+          <TabsTrigger value="items">{t('content.title')}</TabsTrigger>
+          <TabsTrigger value="types">{t('content.types.title')}</TabsTrigger>
+          <TabsTrigger value="tags">{t('content.tags.title')}</TabsTrigger>
+        </TabsList>
+
+        {/* Types and tags are lazy: both are answers to "what is in this workspace", asked
+            occasionally, and neither should cost the collection list anything on first paint. */}
+        <TabsContent value="types">
+          <Suspense fallback={<CenteredSpinner />}>
+            <TypesView />
+          </Suspense>
+        </TabsContent>
+        <TabsContent value="tags">
+          <Suspense fallback={<CenteredSpinner />}>
+            <TagsView />
+          </Suspense>
+        </TabsContent>
+
+        <TabsContent value="items">
       {authorable.length === 0 ? (
         <EmptyState
           icon={LayoutGrid}
@@ -177,6 +206,8 @@ export function ContentPage() {
           </section>
         </div>
       )}
+        </TabsContent>
+      </Tabs>
     </Page>
   );
 }

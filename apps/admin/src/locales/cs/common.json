@@ -265,7 +265,15 @@
     },
     "tags": {
       "placeholder": "Napište štítek a stiskněte Enter",
-      "allTags": "Všechny štítky"
+      "allTags": "Všechny štítky",
+      "title": "Štítky",
+      "tag": "Štítek",
+      "uses": "Použití",
+      "where": "Kde se používá",
+      "searchPlaceholder": "Hledat štítky a kolekce",
+      "occurrence": "{{count}}× na {{instance}} · {{type}} · {{field}}",
+      "none": "Zatím žádné štítky",
+      "noneHint": "Štítky se tu objeví, jakmile někdo nějaký napíše do pole se štítky."
     },
     "customFields": {
       "title": "Vlastní pole",
@@ -294,7 +302,15 @@
       "markdownHintLabel": "Co se v tomto poli ukládá",
       "markdownHint": "Toto pole ukládá zdrojový Markdown, ne HTML — právě ten totiž čte vše další v řadě. Vložený Markdown se rozpozná a to, co zde napíšete, se při uložení převede zpět na Markdown."
     },
-    "loadMore": "Načíst další"
+    "loadMore": "Načíst další",
+    "types": {
+      "title": "Typy",
+      "type": "Typ obsahu",
+      "plugin": "Z pluginu",
+      "collections": "Kolekce",
+      "fields": "Pole",
+      "extensible": "Rozšiřitelný"
+    }
   },
   "media": {
     "title": "Knihovna médií",
