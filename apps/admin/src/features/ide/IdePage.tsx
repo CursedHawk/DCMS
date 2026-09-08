@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { AlertTriangle, ArrowLeft, Eye, EyeOff, RefreshCw, Rocket, RotateCcw, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import {
+  AlertTriangle, ArrowLeft, Eye, EyeOff, RefreshCw, Rocket, RotateCcw, Terminal, X,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button, CenteredSpinner } from '@dcms/ui';
@@ -27,8 +29,12 @@ import {
   useStoredWidth,
   useVfs,
 } from '../site-source';
+import { type IdeCommand, modifierLabel } from './commands';
+import { IdeCommandPalette, type PaletteMode } from './IdeCommandPalette';
 import { IdeSidebar, type SidebarView } from './IdeSidebar';
 import { PreviewPane } from './PreviewPane';
+import { ShortcutSheet } from './ShortcutSheet';
+import { useIdeShortcuts } from './useIdeShortcuts';
 import { usePreview } from './preview/usePreview';
 import { StarterPicker, type StarterFlavor } from './StarterPicker';
 import { STARTER_FILES } from './starter';
@@ -61,6 +67,11 @@ export function IdePage({ siteId }: { siteId: string }) {
   // Shown for a brand-new (empty) site so the user picks what to scaffold.
   const [pickStarter, setPickStarter] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
+  const [palette, setPalette] = useState<{ open: boolean; mode: PaletteMode }>({
+    open: false,
+    mode: 'files',
+  });
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // Driven here rather than inside PreviewPane: the Problems view lists the messages from this
   // same build, and a second usePreview would be a second worker bundling the same project.
   const preview = usePreview(showPreview, siteId, previewNonce);
@@ -68,6 +79,7 @@ export function IdePage({ siteId }: { siteId: string }) {
   // we never write the previous site's tabs under a newly-selected site's key.
   const restoredFor = useRef<string | null>(null);
   const activeDiffTab = activeDiff ? openDiffs.find((d) => d.path === activeDiff) : undefined;
+  const files = useVfs((s) => s.files);
 
   // Resizable layout: the sidebar view and preview panels remember their width
   // (px) in localStorage; double-clicking a divider restores the default.
@@ -244,11 +256,147 @@ export function IdePage({ siteId }: { siteId: string }) {
     },
   });
 
+  /*
+   * The palette's command list, and the keyboard.
+   *
+   * Both are declared here rather than inside the palette because every one of these actions is
+   * this component's state or one of its mutations — a palette that owned them would need every
+   * handler passed in anyway, and the list would then live in two places.
+   */
+  const mod = modifierLabel();
+  const openPalette = useCallback(
+    (mode: PaletteMode) => setPalette({ open: true, mode }),
+    [],
+  );
+
+  const paletteCommands: IdeCommand[] = useMemo(() => {
+    const view = (id: SidebarView, label: string, shortcut?: string, keywords?: string) => ({
+      id: `view.${id}`,
+      label,
+      shortcut,
+      keywords,
+      run: () => setSidebarView(id),
+    });
+
+    return [
+      view('files', t('ide.explorer'), undefined, 'explorer tree'),
+      view('search', t('ide.search.title'), `${mod} ⇧ F`, 'find grep'),
+      view('scm', t('ide.git.title'), `${mod} ⇧ G`, 'git commit branch diff'),
+      view('problems', t('ide.problems.title'), `${mod} ⇧ M`, 'errors warnings build'),
+      view('deploy', t('ide.deploy.title'), undefined, 'builds releases'),
+      view('agent', t('ide.agent.title', 'Assistant'), undefined, 'ai chat'),
+      {
+        id: 'preview.toggle',
+        label: showPreview ? t('ide.hidePreview') : t('ide.showPreview'),
+        shortcut: `${mod} \\`,
+        run: () => setShowPreview((v) => !v),
+      },
+      {
+        id: 'preview.refresh',
+        label: t('ide.refresh'),
+        keywords: 'rebuild bundle',
+        // Disabled rather than hidden while the preview is off: the command is not gone, it is
+        // waiting on something the reader can turn on from the line above.
+        disabled: !showPreview,
+        run: () => preview.refresh(),
+      },
+      {
+        id: 'draft.save',
+        label: t('ide.shortcuts.saveNow'),
+        shortcut: `${mod} S`,
+        run: () => void session.flush().catch(() => toast.error(t('ide.git.resolveInScm'))),
+      },
+      {
+        id: 'tab.close',
+        label: t('ide.shortcuts.closeTab'),
+        disabled: !activePath,
+        run: () => activePath && useVfs.getState().closeTab(activePath),
+      },
+      {
+        id: 'generated.refresh',
+        label: t('ide.refreshGenerated'),
+        keywords: 'api client openapi types',
+        disabled: refreshGenerated.isPending,
+        run: () => refreshGenerated.mutate(),
+      },
+      {
+        id: 'publish',
+        label: t('ide.git.publishToRelease'),
+        keywords: 'deploy ship release',
+        disabled: publish.isPending || !!conflict || session.switching,
+        run: () => publish.mutate(),
+      },
+      {
+        id: 'sandbox.reset',
+        label: t('ide.resetSandbox'),
+        keywords: 'clear test data',
+        disabled: resetSandbox.isPending,
+        run: () => resetSandbox.mutate(),
+      },
+      {
+        id: 'shortcuts',
+        label: t('ide.shortcuts.title'),
+        shortcut: `${mod} ?`,
+        keywords: 'keyboard keys help',
+        run: () => setShortcutsOpen(true),
+      },
+    ];
+  }, [
+    t, mod, showPreview, activePath, conflict, session, preview,
+    refreshGenerated, publish, resetSandbox,
+  ]);
+
+  useIdeShortcuts(
+    useMemo(
+      () => [
+        { key: 'p', run: () => openPalette('files') },
+        { key: 'p', shift: true, run: () => openPalette('commands') },
+        { key: 'f', shift: true, run: () => setSidebarView('search') },
+        { key: 'g', shift: true, run: () => setSidebarView('scm') },
+        { key: 'm', shift: true, run: () => setSidebarView('problems') },
+        { key: '\\', run: () => setShowPreview((v) => !v) },
+        /*
+         * The shortcut sheet is on ⌘? and NOT on ⌘/ — Monaco binds ⌘/ to toggle-comment, which
+         * is one of the handful of editor shortcuts people use without thinking. Taking it would
+         * be a regression dressed as a feature.
+         *
+         * Two entries because `?` is Shift+/ on some layouts and its own key on others, so which
+         * of the two `event.key` reports is not ours to decide.
+         */
+        { key: '?', shift: true, run: () => setShortcutsOpen(true) },
+        { key: '/', shift: true, run: () => setShortcutsOpen(true) },
+        {
+          key: 's',
+          // The draft autosaves; this only makes the wait explicit. Bound anyway because ⌘S is
+          // reflex, and the alternative is the browser's Save Page As dialog over the editor.
+          run: () => void session.flush().catch(() => toast.error(t('ide.git.resolveInScm'))),
+        },
+        /*
+         * ⌘W is deliberately NOT bound. Chrome refuses `preventDefault` on it, so binding it
+         * would close the editor's tab AND the browser's — losing unsaved work to a shortcut
+         * that appeared to be ours. Closing a tab stays a palette command and a click on the ×.
+         */
+      ],
+      [openPalette, session, t],
+    ),
+  );
+
   if (site.isLoading || !session.ready) return <CenteredSpinner label={t('common.loading')} />;
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
       <StarterPicker open={pickStarter} pending={scaffold.isPending} onPick={(f) => scaffold.mutate(f)} />
+
+      <IdeCommandPalette
+        open={palette.open}
+        mode={palette.mode}
+        onOpenChange={(open) => setPalette((p) => ({ ...p, open }))}
+        files={Object.keys(files)}
+        commands={paletteCommands}
+        onOpenFile={(path) => useVfs.getState().open(path)}
+      />
+      <ShortcutSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+
       {/* Toolbar */}
       <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
         <Link to={sitesPath}>
@@ -278,6 +426,13 @@ export function IdePage({ siteId }: { siteId: string }) {
           title={t('ide.resetSandboxHint')}
         >
           <RotateCcw className="h-4 w-4" /> {t('ide.resetSandbox')}
+        </Button>
+        <Button
+          variant="ghost"
+          onClick={() => openPalette('commands')}
+          title={t('ide.palette.runCommandHint', { keys: `${mod} ⇧ P` })}
+        >
+          <Terminal className="h-4 w-4" /> {t('ide.palette.runCommand')}
         </Button>
         <Button variant="outline" onClick={() => setShowPreview((v) => !v)}>
           {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

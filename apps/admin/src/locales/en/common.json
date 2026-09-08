@@ -849,6 +849,28 @@
       "none": "No problems in the last build.",
       "previewOff": "Nothing has been checked",
       "previewOffHint": "The project is built for the preview, so problems are only found while it is on."
+    },
+    "palette": {
+      "filesTitle": "Go to file",
+      "commandsTitle": "Run a command",
+      "goToFile": "Go to file",
+      "runCommand": "Commands",
+      "runCommandHint": "Run a command ({{keys}})",
+      "placeholder": "Type a file name, or > for commands…",
+      "noFiles": "No file matches that.",
+      "noCommands": "No command matches that.",
+      "hint": "Start with > to run a command instead of opening a file."
+    },
+    "shortcuts": {
+      "title": "Keyboard shortcuts",
+      "subtitle": "Every one of these accepts either Ctrl or ⌘, whichever your keyboard has.",
+      "navigate": "Getting around",
+      "edit": "Editing",
+      "help": "Help",
+      "saveNow": "Save now",
+      "closeTab": "Close the current tab",
+      "togglePreview": "Show or hide the preview",
+      "dismiss": "Close what is open"
     }
   },
   "openapi": {

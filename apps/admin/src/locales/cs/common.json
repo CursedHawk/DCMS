@@ -869,6 +869,28 @@
       "none": "Poslední sestavení proběhlo bez problémů.",
       "previewOff": "Zatím nic nezkontrolováno",
       "previewOffHint": "Projekt se sestavuje kvůli náhledu, takže problémy se hledají jen když je zapnutý."
+    },
+    "palette": {
+      "filesTitle": "Přejít na soubor",
+      "commandsTitle": "Spustit příkaz",
+      "goToFile": "Přejít na soubor",
+      "runCommand": "Příkazy",
+      "runCommandHint": "Spustit příkaz ({{keys}})",
+      "placeholder": "Napište název souboru, nebo > pro příkazy…",
+      "noFiles": "Žádný soubor neodpovídá.",
+      "noCommands": "Žádný příkaz neodpovídá.",
+      "hint": "Začněte znakem > a místo otevření souboru spustíte příkaz."
+    },
+    "shortcuts": {
+      "title": "Klávesové zkratky",
+      "subtitle": "Všechny fungují s Ctrl i ⌘ — podle toho, co má vaše klávesnice.",
+      "navigate": "Pohyb",
+      "edit": "Úpravy",
+      "help": "Nápověda",
+      "saveNow": "Uložit hned",
+      "closeTab": "Zavřít aktuální záložku",
+      "togglePreview": "Zobrazit nebo skrýt náhled",
+      "dismiss": "Zavřít otevřené okno"
     }
   },
   "openapi": {
