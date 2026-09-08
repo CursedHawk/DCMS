@@ -28,6 +28,8 @@
 #
 #   --check           Assert required paths and keys exist. Changes nothing. Exit 1 if not.
 #   --seed            Generate the MACHINE-ONLY secrets that are absent. Never overwrites.
+#                     scripts/deploy.sh runs this on every deploy, before the roll -- it is
+#                     convergent, so a key added to the seed block below lands on its own.
 #   --no-provision    Apply policies and roles only; do not touch .env. For running this
 #                     against a Vault from a machine that is not the deployment host.
 #   --print-role-ids  Print each service's role_id (not secret). For provisioning a node.
@@ -73,8 +75,8 @@ REQUIRED_SHARED=""
 #   Email__User/__Password      a relay on a private network may need no auth
 #   Alerting__WebhookSecret     shared with the Grafana container, so it stays in .env
 #
-# Two pairs here must AGREE, and `--seed` generates each pair together so they cannot disagree
-# at creation time:
+# Three pairs here must AGREE, and `--seed` generates each pair together so they cannot
+# disagree at creation time:
 #
 #   admin-api/Platform__DbPassword  ==  the password inside
 #   platform-api/ConnectionStrings__Postgres
@@ -84,16 +86,23 @@ REQUIRED_SHARED=""
 #
 #   platform-api/Observability__LogJanitorSecret  ==  log-janitor/LOG_JANITOR_SECRET
 #     One is the caller, the other the callee. A mismatch is a 401 on truncate and nothing else.
+#
+#   identity/Identity__PlatformApiService__Secret  ==  platform-api/ServiceClient__ClientSecret
+#     The client-credentials secret for dcms-platform-api-service, the confidential client the
+#     console's API uses to reach admin-api's internal console endpoints. Deliberately NOT the
+#     dcms-admin-api secret: content-api holds that one, and sharing it would hand content-api
+#     the dcms.console scope as well. A mismatch is every proxied console call failing to get
+#     a token, which surfaces as 500s on the console's audit, certificate and tenant pages.
 required_keys_for() {
   case "$1" in
-    identity)     echo "Audit__ChainKey Identity__AdminApiService__Secret Identity__SuperAdmin__Password Identity__SigningCertificate Identity__EncryptionCertificate" ;;
+    identity)     echo "Audit__ChainKey Identity__AdminApiService__Secret Identity__PlatformApiService__Secret Identity__SuperAdmin__Password Identity__SigningCertificate Identity__EncryptionCertificate" ;;
     admin-api)    echo "Audit__ChainKey ServiceClient__ClientSecret Forgejo__Token Forgejo__AdminToken Forgejo__WebhookSecret Platform__DbPassword" ;;
     content-api)  echo "Audit__ChainKey ServiceClient__ClientSecret Visitor__SigningKey" ;;
     media-worker) echo "Audit__ChainKey" ;;
     site-host)    echo "Audit__ChainKey" ;;
     ai-gateway)   echo "Audit__ChainKey Ai__Defaults__Provider Ai__Defaults__Model" ;;
     email-worker) echo "Email__Host Email__Port Email__FromAddress" ;;
-    platform-api) echo "ConnectionStrings__Postgres Observability__LogJanitorSecret" ;;
+    platform-api) echo "ConnectionStrings__Postgres Observability__LogJanitorSecret ServiceClient__ClientSecret" ;;
     log-janitor)  echo "LOG_JANITOR_SECRET" ;;
     *)            echo "" ;;
   esac
@@ -202,6 +211,18 @@ if [ "$MODE" = "seed" ]; then
     janitor_secret="$(generate_secret)"
     seed_key secret/dcms/platform-api Observability__LogJanitorSecret "$janitor_secret"
     seed_key secret/dcms/log-janitor LOG_JANITOR_SECRET "$janitor_secret"
+  fi
+
+  # The console API's client-credentials secret, in the two paths that must agree. Identity
+  # seeds the client with it; platform-api presents it. Machine-only in the strictest sense --
+  # no human ever types this one, and nothing outside this compose network can use it.
+  if vault kv get -field=Identity__PlatformApiService__Secret secret/dcms/identity >/dev/null 2>&1 \
+     && vault kv get -field=ServiceClient__ClientSecret secret/dcms/platform-api >/dev/null 2>&1; then
+    echo "  keep    the console service-client secret (both halves already set)"
+  else
+    console_secret="$(generate_secret)"
+    seed_key secret/dcms/identity Identity__PlatformApiService__Secret "$console_secret"
+    seed_key secret/dcms/platform-api ServiceClient__ClientSecret "$console_secret"
   fi
 
   echo

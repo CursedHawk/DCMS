@@ -418,8 +418,8 @@ services:
   # least-privilege dcms_platform role and must not be handed the owner connection string or
   # the audit chain key. VAULT_ADDR is set explicitly for the reason spelled out on
   # site-builder above -- it lives in that same anchor, and skipping the anchor is how a
-  # service ends up calling AddDcmsVault and silently reading nothing from Vault. It holds no
-  # Vault secrets today; this is here so that the day it does, it works.
+  # service ends up calling AddDcmsVault and silently reading nothing from Vault. It reads its
+  # entire database credential and its service-client secret from there.
   platform-api:
     environment:
       ASPNETCORE_ENVIRONMENT: "Production"
@@ -447,6 +447,16 @@ services:
       Observability__TempoUrl: "http://tempo:3200"
       Observability__NatsMonitoringUrl: "http://nats:8222"
       Observability__VaultUrl: "http://vault:8200"
+      # The console's own service client -- see the base compose for why it is a separate
+      # client from dcms-admin-api rather than a reuse of it.
+      ServiceClient__TokenEndpoint: "http://identity:8080/connect/token"
+      ServiceClient__ClientId: "dcms-platform-api-service"
+      # Blanked, not omitted, for the same reason as VAULT_TOKEN above: the base compose sets
+      # a dev secret published in this repository, and without this line that value would
+      # survive into a production container. The real one comes from
+      # secret/dcms/platform-api, which loads after the environment and therefore wins.
+      ServiceClient__ClientSecret: ""
+      Services__AdminApi: "http://admin-api:8080"
       # vps1 is 4 cores / 7.6 GB and swapless, with ~2.2 GB already committed to the
       # observability stack's limits. A ninth .NET service goes in with a ceiling rather than
       # on trust; watch infrastructure/11-containers.json for OOM kills after the first deploy.

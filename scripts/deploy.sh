@@ -396,6 +396,19 @@ if [ "$ENVIRONMENT" != "local" ] && [ -x infra/vault/apply.sh ] \
    && compose ps --services 2>/dev/null | grep -qx vault; then
   log "Applying Vault configuration"
   if [ -n "${VAULT_TOKEN:-}" ] || [ -f "${DCMS_VAULT_OPS_ENV:-$HOME/.dcms/vault-ops.env}" ]; then
+    # Two passes, and the order is deliberate. --seed generates the machine-only secrets
+    # that are absent -- database passwords, service-client secrets -- and NEVER overwrites
+    # one that exists, so running it on every deploy is convergent rather than destructive.
+    # It has to run before the roll for the same reason the policies do: a service that
+    # starts before its secret exists reads an empty string and fails its own startup guard.
+    #
+    # Seeding used to be an operator's job, run by hand once per environment. That is exactly
+    # the kind of step that gets skipped -- a new key added here would otherwise sit unseeded
+    # until something failed in a way that looked unrelated.
+    VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}" \
+    PATH="$REPO_ROOT/infra/vault/bin:$PATH" \
+      infra/vault/apply.sh --seed || warn "Vault seeding did not complete -- see above.
+       A service whose machine-only secret is still absent will fail its own startup guard."
     VAULT_ADDR="${VAULT_ADDR:-http://127.0.0.1:8200}" \
     PATH="$REPO_ROOT/infra/vault/bin:$PATH" \
       infra/vault/apply.sh || warn "Vault configuration did not apply cleanly -- see above.
