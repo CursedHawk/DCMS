@@ -33,6 +33,7 @@ const page = <T extends string>(load: () => Promise<Record<T, React.FunctionComp
 const AccountPage = page(() => import('./features/account/AccountPage'), 'AccountPage');
 const AiSettingsPage = page(() => import('./features/ai/AiSettingsPage'), 'AiSettingsPage');
 const AnalyticsPage = page(() => import('./features/analytics/AnalyticsPage'), 'AnalyticsPage');
+const AssistantPage = page(() => import('./features/assistant/AssistantPage'), 'AssistantPage');
 const AuditPage = page(() => import('./features/audit/AuditPage'), 'AuditPage');
 const ChatPage = page(() => import('./features/chat/ChatPage'), 'ChatPage');
 const ContentPage = page(() => import('./features/content/ContentPage'), 'ContentPage');
@@ -134,6 +135,24 @@ const formsRoute = child('/forms', FormsPage);
 const sitesRoute = child('/sites', SitesPage);
 const accountRoute = child('/account', AccountPage);
 const analyticsRoute = child('/analytics', AnalyticsPage);
+const assistantRoute = child('/assistant', AssistantPage);
+
+/*
+ * A conversation has its own URL so it can be linked to — which is the whole point of sharing
+ * one. Same component: the route parameter is the only difference, and the page treats "no id"
+ * as "a conversation that has not been started yet".
+ */
+const assistantChatRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/assistant/$conversationId',
+  component: function AssistantChat() {
+    return (
+      <RequirePermission perm={ROUTE_GUARDS['/assistant'].perm}>
+        <AssistantPage />
+      </RequirePermission>
+    );
+  },
+});
 const chatRoute = child('/chat', ChatPage);
 const notificationsRoute = child('/notifications', NotificationsPage);
 const inviteRoute = child('/invite/accept', InviteAcceptPage);
@@ -226,6 +245,8 @@ export const routeTree = rootRoute.addChildren([
     editorRoute,
     accountRoute,
     analyticsRoute,
+    assistantRoute,
+    assistantChatRoute,
     chatRoute,
     notificationsRoute,
     inviteRoute,

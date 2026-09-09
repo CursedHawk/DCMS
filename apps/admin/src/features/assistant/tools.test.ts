@@ -1,16 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MyPermissions } from '@dcms/core';
-import {
-  ASSISTANT_TOOLS,
-  canUseWriteAccess,
-  toolDefinitions,
-  toolsFor,
-} from './tools';
+import { ASSISTANT_TOOLS, canWrite, toolDefinitions, toolsFor } from './tools';
 import { api } from '../../lib/api';
 
 vi.mock('../../lib/api', () => ({
-  api: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), del: vi.fn(), upload: vi.fn() },
 }));
+
+/** Tools take a context now; nothing below needs a real one except the upload tests. */
+const noContext = { attachments: [], onUploaded: () => {} };
 
 const tool = (name: string) => ASSISTANT_TOOLS.find((t) => t.name === name)!;
 
@@ -34,12 +32,12 @@ describe('toolsFor', () => {
 
   it('offers a SuperAdmin everything that reads, and no more, in read mode', () => {
     const offered = toolsFor({ isSuperAdmin: true, permissions: [] });
-    expect(offered).toHaveLength(ASSISTANT_TOOLS.filter((t) => !t.mutates).length);
-    expect(offered.every((t) => !t.mutates)).toBe(true);
+    expect(offered).toHaveLength(ASSISTANT_TOOLS.filter((t) => !t.risk).length);
+    expect(offered.every((t) => !t.risk)).toBe(true);
   });
 
-  it('offers a SuperAdmin everything in write mode', () => {
-    expect(toolsFor({ isSuperAdmin: true, permissions: [] }, 'write')).toHaveLength(
+  it('offers a SuperAdmin everything in agent mode', () => {
+    expect(toolsFor({ isSuperAdmin: true, permissions: [] }, 'agent')).toHaveLength(
       ASSISTANT_TOOLS.length,
     );
   });
@@ -57,13 +55,33 @@ describe('the tool catalogue', () => {
     }
   });
 
-  it('makes every mutating tool explain itself and refresh what it changed', () => {
-    // The summary is what the operator actually approves against, and a write that leaves the
-    // list behind the dock showing the old world reads as a write that did not happen.
-    for (const t of ASSISTANT_TOOLS.filter((t) => t.mutates)) {
+  it('makes every writing tool explain itself and refresh what it changed', () => {
+    // The summary is what the operator actually approves against, the description is what the
+    // transcript card says afterwards, and a write that leaves the list behind the dock showing
+    // the old world reads as a write that did not happen.
+    for (const t of ASSISTANT_TOOLS.filter((t) => t.risk)) {
       expect(t.summarize, `${t.name} has no summary`).toBeTruthy();
+      expect(t.describe, `${t.name} has no card label`).toBeTruthy();
       expect(t.invalidates?.length, `${t.name} invalidates nothing`).toBeGreaterThan(0);
     }
+  });
+
+  it('classifies every writing tool as safe or dangerous, and nothing else', () => {
+    // An unclassified write would fall through `decide` as a read and run in every mode,
+    // including Read only.
+    for (const t of ASSISTANT_TOOLS) {
+      expect(['safe', 'dangerous', undefined], `${t.name}`).toContain(t.risk);
+    }
+  });
+
+  it('treats publishing, scheduling and deleting as the dangerous ones', () => {
+    const dangerous = ASSISTANT_TOOLS.filter((t) => t.risk === 'dangerous').map((t) => t.name);
+    expect(dangerous.sort()).toEqual([
+      'delete_media',
+      'publish_content',
+      'schedule_content',
+      'unpublish_content',
+    ]);
   });
 
   it('gives every tool a description the model can act on', () => {
@@ -93,37 +111,40 @@ describe('toolDefinitions', () => {
   });
 });
 
-
-describe('access mode', () => {
-  it('offers no mutating tool in read mode, whatever the caller may do', () => {
+describe('mode', () => {
+  it('offers no writing tool in read mode, whatever the caller may do', () => {
     const offered = toolsFor(holder('content:read', 'content:write', 'content:publish'));
-    expect(offered.every((t) => !t.mutates)).toBe(true);
+    expect(offered.every((t) => !t.risk)).toBe(true);
   });
 
-  it('offers the writing tools in write mode', () => {
-    const names = toolsFor(holder('content:write'), 'write').map((t) => t.name);
+  it('offers the writing tools in agent mode', () => {
+    const names = toolsFor(holder('content:write'), 'agent').map((t) => t.name);
     expect(names).toContain('create_content');
     expect(names).toContain('update_content');
   });
 
   it('still withholds publishing from someone who may write but not publish', () => {
     // The mode is not a bypass: it decides which *permitted* tools are offered.
-    const names = toolsFor(holder('content:write'), 'write').map((t) => t.name);
+    const names = toolsFor(holder('content:write'), 'auto').map((t) => t.name);
     expect(names).not.toContain('publish_content');
   });
 });
 
-describe('canUseWriteAccess', () => {
-  it('is false for a reader — the switch is not shown at all', () => {
-    expect(canUseWriteAccess(holder('content:read', 'media:read'))).toBe(false);
+describe('canWrite', () => {
+  it('is false for a reader — the mode switch collapses to Read only', () => {
+    expect(canWrite(holder('content:read', 'media:read'))).toBe(false);
   });
 
   it('is true for an author', () => {
-    expect(canUseWriteAccess(holder('content:write'))).toBe(true);
+    expect(canWrite(holder('content:write'))).toBe(true);
+  });
+
+  it('is true for someone who can only upload', () => {
+    expect(canWrite(holder('media:write'))).toBe(true);
   });
 
   it('is false before permissions have loaded', () => {
-    expect(canUseWriteAccess(undefined)).toBe(false);
+    expect(canWrite(undefined)).toBe(false);
   });
 });
 
@@ -132,12 +153,15 @@ describe('the writing tools', () => {
 
   it('creates a draft under the collection the model named', async () => {
     vi.mocked(api.post).mockResolvedValue({ id: 'new' });
-    await tool('create_content').run({
-      instanceId: 'inst-1',
-      contentType: 'article',
-      slug: 'hello-world',
-      data: { title: 'Hello' },
-    });
+    await tool('create_content').run(
+      {
+        instanceId: 'inst-1',
+        contentType: 'article',
+        slug: 'hello-world',
+        data: { title: 'Hello' },
+      },
+      noContext,
+    );
     expect(api.post).toHaveBeenCalledWith('/admin/content', {
       pluginInstanceId: 'inst-1',
       contentType: 'article',
@@ -151,25 +175,81 @@ describe('the writing tools', () => {
     // posting that alone would empty every other field of the item.
     vi.mocked(api.get).mockResolvedValue({ draft: { title: 'Old', body: 'Kept' } });
     vi.mocked(api.put).mockResolvedValue({ versionNo: 2 });
-    await tool('update_content').run({ id: 'item-1', data: { title: 'New' } });
+    await tool('update_content').run({ id: 'item-1', data: { title: 'New' } }, noContext);
     expect(api.put).toHaveBeenCalledWith('/admin/content/item-1', {
       data: { title: 'New', body: 'Kept' },
+    });
+  });
+
+  it('reports the before and after of the fields it changed', async () => {
+    // The transcript's field diff is this, not a later comparison: by the time anyone opens
+    // the card, the draft *is* the new one and the old values are gone.
+    vi.mocked(api.get).mockResolvedValue({ draft: { title: 'Old', body: 'Kept' } });
+    vi.mocked(api.put).mockResolvedValue({ versionNo: 2 });
+    const result = await tool('update_content').run(
+      { id: 'item-1', data: { title: 'New' } },
+      noContext,
+    );
+    expect(JSON.parse(result).changed).toEqual({
+      before: { title: 'Old' },
+      after: { title: 'New' },
     });
   });
 
   it('survives an item that has no draft yet', async () => {
     vi.mocked(api.get).mockResolvedValue({ draft: null });
     vi.mocked(api.put).mockResolvedValue({});
-    await tool('update_content').run({ id: 'item-1', data: { title: 'First' } });
+    await tool('update_content').run({ id: 'item-1', data: { title: 'First' } }, noContext);
     expect(api.put).toHaveBeenCalledWith('/admin/content/item-1', { data: { title: 'First' } });
   });
 
   it('refuses a call with no id rather than requesting /content/undefined', async () => {
-    await expect(tool('publish_content').run({})).rejects.toThrow(/required/);
+    await expect(tool('publish_content').run({}, noContext)).rejects.toThrow(/required/);
     expect(api.post).not.toHaveBeenCalled();
   });
 
-  it('says what publishing will do, in the operator\'s terms', () => {
+  it('uploads a file the operator attached, by name', async () => {
+    const file = new File(['x'], 'photo.jpg', { type: 'image/jpeg' });
+    vi.mocked(api.upload).mockResolvedValue({ id: 'asset-1' });
+    const uploaded = vi.fn();
+    const result = await tool('upload_media').run(
+      { fileName: 'photo.jpg', folderId: 'folder-1' },
+      {
+        attachments: [{ name: 'photo.jpg', size: 1, type: 'image/jpeg', file }],
+        onUploaded: uploaded,
+      },
+    );
+    expect(api.upload).toHaveBeenCalledWith('/admin/media', expect.any(FormData));
+    expect(uploaded).toHaveBeenCalledWith('photo.jpg', 'asset-1');
+    expect(JSON.parse(result).id).toBe('asset-1');
+  });
+
+  it('will not upload bytes it does not have, and says which files it does', async () => {
+    // The model cannot produce a file. Naming what is attached is what lets it recover;
+    // "not found" makes it guess the same wrong name again.
+    await expect(
+      tool('upload_media').run(
+        { fileName: 'ghost.png' },
+        { attachments: [], onUploaded: () => {} },
+      ),
+    ).rejects.toThrow(/nothing/);
+    expect(api.upload).not.toHaveBeenCalled();
+  });
+
+  it('does not upload the same attachment twice', async () => {
+    const file = new File(['x'], 'photo.jpg', { type: 'image/jpeg' });
+    const result = await tool('upload_media').run(
+      { fileName: 'photo.jpg' },
+      {
+        attachments: [{ name: 'photo.jpg', size: 1, type: 'image/jpeg', file, assetId: 'already' }],
+        onUploaded: () => {},
+      },
+    );
+    expect(api.upload).not.toHaveBeenCalled();
+    expect(JSON.parse(result)).toEqual({ id: 'already', alreadyUploaded: true });
+  });
+
+  it("says what publishing will do, in the operator's terms", () => {
     expect(tool('publish_content').summarize!({ id: 'item-1' })).toMatch(/public/);
   });
 });

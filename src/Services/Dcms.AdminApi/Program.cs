@@ -430,6 +430,7 @@ app.MapMetaOAuthEndpoints();
 app.MapMetaStoriesEndpoints();
 app.MapAiGenerationEndpoints();
 app.MapAiAgentEndpoints();
+app.MapAiConversationEndpoints();
 app.MapAnalyticsDashboard();
 app.MapChatConsole();
 app.MapOpenApiPreview();

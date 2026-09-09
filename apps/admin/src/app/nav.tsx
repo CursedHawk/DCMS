@@ -7,6 +7,7 @@ import {
   type LucideIcon,
   MessagesSquare,
   PanelsTopLeft,
+  Sparkles,
   Plug,
   Settings,
   Store,
@@ -49,6 +50,11 @@ export const NAV: NavItem[] = [
   { to: '/forms', labelKey: 'nav.forms', icon: Inbox, perm: Perm.ContentRead, group: 'main' },
   { to: '/analytics', labelKey: 'nav.analytics', icon: TrendingUp, perm: Perm.AnalyticsRead, group: 'main' },
   { to: '/chat', labelKey: 'nav.chat', icon: MessagesSquare, perm: Perm.ChatRead, group: 'main' },
+  /*
+   * In the sidebar as well as behind ⌘J. The dock answers a question about the page you are on;
+   * this is where the history lives, and history nobody can find is history nobody keeps.
+   */
+  { to: '/assistant', labelKey: 'nav.assistant', icon: Sparkles, perm: Perm.SiteEdit, group: 'main' },
 
   /*
    * One Settings entry, not six.

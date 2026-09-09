@@ -17,6 +17,15 @@ public static class PlatformPermissions
     public const string SiteEdit = "site:edit";
     public const string SitePublish = "site:publish";
     public const string AiSettings = "ai:settings";
+
+    /// <summary>
+    /// Read every member's assistant conversation, not only your own and the shared ones.
+    ///
+    /// <para>A scope escalation rather than a feature: the assistant writes to tenant content,
+    /// so its transcripts are the record of who asked for what. Held by the roles that already
+    /// answer for the workspace.</para>
+    /// </summary>
+    public const string AiChatsReadAll = "ai:chats:read-all";
     public const string AnalyticsRead = "analytics:read";
     public const string ContentRead = "content:read";
     public const string ContentWrite = "content:write";
@@ -30,7 +39,7 @@ public static class PlatformPermissions
     public static readonly IReadOnlyList<string> All =
     [
         TenantSettings, MembersManage, RolesManage, DomainsManage, PluginsManage,
-        MediaRead, MediaWrite, SiteEdit, SitePublish, AiSettings, AnalyticsRead,
+        MediaRead, MediaWrite, SiteEdit, SitePublish, AiSettings, AiChatsReadAll, AnalyticsRead,
         ContentRead, ContentWrite, ContentPublish, ChatRead, ChatManage, AuditRead, AuditExport,
     ];
 

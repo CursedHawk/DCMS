@@ -153,6 +153,15 @@ public static class AuditActions
     /// <summary>A call proxied to the model on the tenant's credentials — who spent the budget.</summary>
     public const string AiRequestProxied = "ai.request";
 
+    /// <summary>
+    /// A conversation renamed, shared with the workspace, or archived. Sharing is the part worth
+    /// the record: it makes one member's transcript — and every tool result in it — readable by
+    /// everyone else.
+    /// </summary>
+    public const string AiConversationUpdated = "ai.conversation.updated";
+
+    public const string AiConversationDeleted = "ai.conversation.deleted";
+
     // ---- visitors (site end-users, a separate identity plane from platform users) ----
     public const string VisitorRegistered = "visitor.registered";
     public const string VisitorLoggedIn = "visitor.login.succeeded";

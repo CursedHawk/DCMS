@@ -114,6 +114,12 @@ export const ROUTE_GUARDS: Readonly<Record<string, RouteGuard>> = {
   '/sites': { perm: Perm.SiteEdit },
   '/sites/$siteId': { perm: Perm.SiteEdit },
   '/analytics': { perm: Perm.AnalyticsRead },
+  /*
+   * The same permission the model proxy already requires. A member who cannot reach
+   * `/api/admin/ai/messages` cannot hold a conversation, so a page listing their history would
+   * be a list of chats they can read and never continue.
+   */
+  '/assistant': { perm: Perm.SiteEdit },
   '/chat': { perm: Perm.ChatRead },
 
   // Derived, so a section cannot be listed in the sub-nav and left unguarded in the router.

@@ -43,6 +43,10 @@ public static class NavigationEndpoints
         new("/analytics", "nav.analytics", "TrendingUp", PlatformPermissions.AnalyticsRead, "main"),
         new("/chat", "nav.chat", "MessagesSquare", PlatformPermissions.ChatRead, "main"),
 
+        // Gated on the same permission as the model proxy, so the menu never offers a history
+        // page to a member who cannot hold a conversation in the first place.
+        new("/assistant", "nav.assistant", "Sparkles", PlatformPermissions.SiteEdit, "main"),
+
         /*
          * One Settings entry, not seven.
          *

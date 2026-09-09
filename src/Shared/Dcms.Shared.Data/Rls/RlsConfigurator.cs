@@ -43,6 +43,11 @@ public static class RlsConfigurator
         // every *future* table in these schemas by default while the policies are opt-in per
         // table — so the omission was a grant with nothing enforcing the tenant predicate.
         ("ai", "user_ai_settings"),
+        // Assistant transcripts. `messages` carries a denormalised TenantId for exactly this
+        // reason: a policy on the parent does nothing for the child, and these rows hold whole
+        // tool results — draft content, analytics figures — lifted out of the tenant's data.
+        ("ai", "conversations"),
+        ("ai", "messages"),
         ("search", "search_documents"),
         ("analytics", "events"),
         ("analytics", "daily_rollups"),

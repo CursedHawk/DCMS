@@ -1,19 +1,18 @@
 import { can, type MyPermissions } from '@dcms/core';
 import { Perm } from '../../lib/permissions';
 import { api } from '../../lib/api';
+import type { Attachment } from './attachments';
+import { type AiMode, decide, type ToolRisk } from './modes';
 
-/**
- * How far into the workspace the assistant may reach.
- *
- * <p><b>read</b> is the default and the safe one: the model is handed only tools that fetch.
- * <b>write</b> additionally offers the tools that create, edit and publish content — and each
- * of those still stops for the operator's explicit approval, with the exact payload shown,
- * before it runs. The switch decides what the model is <i>told about</i>; the approval decides
- * what actually happens. Both, because either alone is wrong: a model that is never offered a
- * write tool cannot draft anything, and one that is offered them with no gate can publish on a
- * misread instruction.</p>
- */
-export type AiAccessMode = 'read' | 'write';
+export type { ToolRisk } from './modes';
+
+/** Everything a tool is given beyond its own arguments. */
+export interface ToolContext {
+  /** Files the operator attached to this conversation, for `upload_media`. */
+  attachments: readonly Attachment[];
+  /** Records an upload so the same bytes are not sent twice. */
+  onUploaded: (name: string, assetId: string) => void;
+}
 
 export interface AssistantTool {
   name: string;
@@ -29,8 +28,14 @@ export interface AssistantTool {
    * it does for the UI; this stops the conversation going somewhere it cannot end.</p>
    */
   permission?: string;
-  /** True for anything that writes. Offered only in write mode, and only after approval. */
-  mutates?: boolean;
+  /**
+   * How much this tool can do, for the mode table in `modes.ts`.
+   *
+   * <p>Omitted means it only reads. `safe` writes — drafting, editing, uploading, filing — run
+   * unattended in Agent mode; `dangerous` ones — publishing, scheduling, deleting — stop for a
+   * person unless the operator has explicitly gone to Full auto.</p>
+   */
+  risk?: ToolRisk;
   /**
    * Query-key roots to invalidate once this tool has run.
    *
@@ -41,7 +46,15 @@ export interface AssistantTool {
   invalidates?: string[];
   /** A one-line, human-readable account of what this call will do, for the approval card. */
   summarize?: (input: Record<string, unknown>) => string;
-  run: (input: Record<string, unknown>) => Promise<string>;
+  /**
+   * What the transcript's work card says once it has run: "Created draft autumn-26".
+   *
+   * <p>Past tense and specific. `update_content` reading as "update_content" is what made the
+   * old transcript unreadable — a list of function names tells you the agent did twelve things
+   * and nothing about what they were.</p>
+   */
+  describe?: (input: Record<string, unknown>) => string;
+  run: (input: Record<string, unknown>, context: ToolContext) => Promise<string>;
 }
 
 const str = (input: Record<string, unknown>, key: string): string | undefined => {
@@ -54,6 +67,11 @@ const obj = (input: Record<string, unknown>, key: string): Record<string, unknow
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+};
+
+const ids = (input: Record<string, unknown>, key: string): string[] => {
+  const value = input[key];
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 };
 
 /** Required-argument accessor: a missing id must fail loudly rather than hit `/content/undefined`. */
@@ -131,7 +149,13 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
           fields: { name: string; type: string; required: boolean; description?: string }[];
         }[];
       };
-      type Instance = { id: string; pluginId: string; slug: string; name: string; enabled: boolean };
+      type Instance = {
+        id: string;
+        pluginId: string;
+        slug: string;
+        name: string;
+        enabled: boolean;
+      };
       const [catalog, instances] = await Promise.all([
         api.get<Manifest[]>('/admin/plugins/catalog'),
         api.get<Instance[]>('/admin/plugins/instances'),
@@ -218,7 +242,7 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
     description:
       'Create a new content item as a DRAFT. It is not published and nothing is publicly visible until publish_content is called. Field names in `data` must match the content type — call describe_content_types first.',
     permission: Perm.ContentWrite,
-    mutates: true,
+    risk: 'safe',
     invalidates: ['content'],
     input_schema: {
       type: 'object',
@@ -240,6 +264,7 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
     },
     summarize: (input) =>
       `Create a draft "${str(input, 'slug') ?? '?'}" of type ${str(input, 'contentType') ?? '?'}`,
+    describe: (input) => `Created draft ${str(input, 'slug') ?? 'content'}`,
     run: async (input) =>
       JSON.stringify(
         await api.post('/admin/content', {
@@ -255,7 +280,7 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
     description:
       'Change field values on an existing item, as a new draft version. Only the fields given in `data` are changed; the rest are left as they are. Nothing published changes until publish_content is called.',
     permission: Perm.ContentWrite,
-    mutates: true,
+    risk: 'safe',
     invalidates: ['content'],
     input_schema: {
       type: 'object',
@@ -272,6 +297,10 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
     },
     summarize: (input) =>
       `Update content ${str(input, 'id') ?? '?'} (${Object.keys(obj(input, 'data')).join(', ') || 'no fields'})`,
+    describe: (input) => {
+      const fields = Object.keys(obj(input, 'data'));
+      return fields.length ? `Edited ${fields.join(', ')}` : 'Edited content';
+    },
     run: async (input) => {
       const id = required(input, 'id');
       /*
@@ -282,10 +311,22 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
       const current = await api.get<{ draft: Record<string, unknown> | null }>(
         `/admin/content/${encodeURIComponent(id)}`,
       );
-      const merged = { ...(current.draft ?? {}), ...obj(input, 'data') };
-      return JSON.stringify(
-        await api.put(`/admin/content/${encodeURIComponent(id)}`, { data: merged }),
-      );
+      const changes = obj(input, 'data');
+      const draft = current.draft ?? {};
+      const merged = { ...draft, ...changes };
+      const item = await api.put(`/admin/content/${encodeURIComponent(id)}`, { data: merged });
+
+      /*
+       * The before/after of the fields that actually changed, returned rather than recomputed.
+       *
+       * The transcript's work card shows it, and it is free here — the merge above has already
+       * read the old draft. Recomputing it later is impossible: by the time anyone opens the
+       * card the draft is the new one. It also means a conversation resumed next week still
+       * shows what the edit did, because it is in the stored tool result.
+       */
+      const before: Record<string, unknown> = {};
+      for (const key of Object.keys(changes)) before[key] = draft[key] ?? null;
+      return JSON.stringify({ item, changed: { before, after: changes } });
     },
   },
   {
@@ -293,7 +334,7 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
     description:
       'Publish an existing content item, making its current draft publicly visible. Only when the operator has asked for it.',
     permission: Perm.ContentPublish,
-    mutates: true,
+    risk: 'dangerous',
     invalidates: ['content'],
     input_schema: {
       type: 'object',
@@ -302,34 +343,221 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
       additionalProperties: false,
     },
     summarize: (input) => `Publish content ${str(input, 'id') ?? '?'} — this makes it public`,
+    describe: () => 'Published',
     run: async (input) =>
       JSON.stringify(
         await api.post(`/admin/content/${encodeURIComponent(required(input, 'id'))}/publish`, {}),
       ),
   },
+  {
+    name: 'unpublish_content',
+    description:
+      'Take a published item back off the public site. Its draft is kept, so the work is not lost — only its visibility changes.',
+    permission: Perm.ContentPublish,
+    risk: 'dangerous',
+    invalidates: ['content'],
+    input_schema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'The content item id.' } },
+      required: ['id'],
+      additionalProperties: false,
+    },
+    summarize: (input) => `Unpublish content ${str(input, 'id') ?? '?'} — it stops being public`,
+    describe: () => 'Unpublished',
+    run: async (input) =>
+      JSON.stringify(
+        await api.post(`/admin/content/${encodeURIComponent(required(input, 'id'))}/unpublish`, {}),
+      ),
+  },
+  {
+    /*
+     * Dangerous despite writing nothing today: it is a publish with a timer on it, and the
+     * operator who would have been asked before the publish is not going to be there when it
+     * fires.
+     */
+    name: 'schedule_content',
+    description:
+      'Schedule an item to publish at a future time. Replaces any schedule it already has. Use ISO 8601 with an offset, e.g. 2026-10-01T09:00:00Z.',
+    permission: Perm.ContentPublish,
+    risk: 'dangerous',
+    invalidates: ['content'],
+    input_schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'The content item id.' },
+        publishAt: { type: 'string', description: 'When to publish, ISO 8601 with offset.' },
+      },
+      required: ['id', 'publishAt'],
+      additionalProperties: false,
+    },
+    summarize: (input) =>
+      `Publish content ${str(input, 'id') ?? '?'} automatically at ${str(input, 'publishAt') ?? '?'}`,
+    describe: (input) => `Scheduled for ${str(input, 'publishAt') ?? 'later'}`,
+    run: async (input) =>
+      JSON.stringify(
+        await api.post(`/admin/content/${encodeURIComponent(required(input, 'id'))}/schedule`, {
+          publishAt: required(input, 'publishAt'),
+        }),
+      ),
+  },
+  {
+    /*
+     * The model has no bytes and cannot invent any. This uploads a file the operator attached
+     * to the conversation — the paperclip in the composer — which is why it takes a file name
+     * rather than a URL: a URL would be this app fetching an arbitrary address on the
+     * operator's authority, which is a different feature with a different threat model.
+     */
+    name: 'upload_media',
+    description:
+      'Upload a file the operator attached to this conversation into the media library. Use the exact file name from the attachment list. Returns the new asset id, which can be used in content fields.',
+    permission: Perm.MediaWrite,
+    risk: 'safe',
+    invalidates: ['media'],
+    input_schema: {
+      type: 'object',
+      properties: {
+        fileName: { type: 'string', description: 'The attached file name, exactly as listed.' },
+        folderId: { type: 'string', description: 'Media folder id to file it under, if any.' },
+      },
+      required: ['fileName'],
+      additionalProperties: false,
+    },
+    summarize: (input) => `Upload ${str(input, 'fileName') ?? '?'} to the media library`,
+    describe: (input) => `Uploaded ${str(input, 'fileName') ?? 'a file'}`,
+    run: async (input, { attachments, onUploaded }) => {
+      const name = required(input, 'fileName');
+      const attachment = attachments.find((a) => a.name === name);
+      if (!attachment) {
+        // Named, not counted: "no such attachment" with the list is a message the model can
+        // act on, where "not found" makes it guess again with the same wrong name.
+        const known = attachments.map((a) => a.name).join(', ') || 'nothing';
+        throw new Error(`No file named "${name}" is attached. Attached: ${known}.`);
+      }
+      if (attachment.assetId) {
+        return JSON.stringify({ id: attachment.assetId, alreadyUploaded: true });
+      }
+
+      const form = new FormData();
+      form.append('file', attachment.file, attachment.name);
+      const folder = str(input, 'folderId');
+      if (folder) form.append('folderId', folder);
+
+      const result = await api.upload<{ id: string; category: string; status: string }>(
+        '/admin/media',
+        form,
+      );
+      onUploaded(attachment.name, result.id);
+      return JSON.stringify(result);
+    },
+  },
+  {
+    name: 'create_media_folder',
+    description: 'Create a folder in the media library, optionally inside another folder.',
+    permission: Perm.MediaWrite,
+    risk: 'safe',
+    invalidates: ['media'],
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Folder name.' },
+        parentId: { type: 'string', description: 'Parent folder id, for a nested folder.' },
+      },
+      required: ['name'],
+      additionalProperties: false,
+    },
+    summarize: (input) => `Create the media folder "${str(input, 'name') ?? '?'}"`,
+    describe: (input) => `Created folder ${str(input, 'name') ?? ''}`.trim(),
+    run: async (input) =>
+      JSON.stringify(
+        await api.post('/admin/media/folders', {
+          name: required(input, 'name'),
+          parentId: str(input, 'parentId') ?? null,
+        }),
+      ),
+  },
+  {
+    name: 'move_media',
+    description:
+      'Move media assets into a folder, or to the top level by omitting folderId. Filing, not deleting — the assets are unchanged.',
+    permission: Perm.MediaWrite,
+    risk: 'safe',
+    invalidates: ['media'],
+    input_schema: {
+      type: 'object',
+      properties: {
+        ids: { type: 'array', items: { type: 'string' }, description: 'Asset ids to move.' },
+        folderId: { type: 'string', description: 'Destination folder id. Omit for the top level.' },
+      },
+      required: ['ids'],
+      additionalProperties: false,
+    },
+    summarize: (input) => `Move ${ids(input, 'ids').length} file(s)`,
+    describe: (input) => `Moved ${ids(input, 'ids').length} file(s)`,
+    run: async (input) =>
+      JSON.stringify(
+        await api.post('/admin/media/move', {
+          ids: ids(input, 'ids'),
+          folderId: str(input, 'folderId') ?? null,
+        }),
+      ),
+  },
+  {
+    name: 'delete_media',
+    description:
+      'Permanently delete media assets. The files and every rendition of them are gone; anything using them will break.',
+    permission: Perm.MediaWrite,
+    risk: 'dangerous',
+    invalidates: ['media'],
+    input_schema: {
+      type: 'object',
+      properties: {
+        ids: { type: 'array', items: { type: 'string' }, description: 'Asset ids to delete.' },
+      },
+      required: ['ids'],
+      additionalProperties: false,
+    },
+    summarize: (input) =>
+      `Permanently delete ${ids(input, 'ids').length} file(s) from the media library`,
+    describe: (input) => `Deleted ${ids(input, 'ids').length} file(s)`,
+    run: async (input) =>
+      JSON.stringify(await api.post('/admin/media/delete', { ids: ids(input, 'ids') })),
+  },
 ];
 
 /**
- * The tools this caller may actually use, in this access mode.
+ * The tools this caller may actually use, in this mode.
  *
- * <p>See the note on `permission` for why an unusable tool is absent rather than refused, and
- * the note on {@link AiAccessMode} for why read is the default.</p>
+ * <p>Two filters, and they answer different questions. The permission filter is about the
+ * person: a tool their role cannot reach is absent rather than refused — see the note on
+ * `permission`. The mode filter is about the posture they have chosen: in Read only the writing
+ * tools are not offered either, so the model cannot propose a change it has been told it may
+ * not make. Everything that survives both is offered; whether a call then stops for approval is
+ * `decide`'s business, not this list's.</p>
  */
-export function toolsFor(me: MyPermissions | undefined, mode: AiAccessMode = 'read'): AssistantTool[] {
+export function toolsFor(me: MyPermissions | undefined, mode: AiMode = 'read'): AssistantTool[] {
   return ASSISTANT_TOOLS.filter(
     (tool) =>
-      (mode === 'write' || !tool.mutates) && (!tool.permission || can(me, tool.permission)),
+      decide(mode, tool.risk ?? 'read') !== 'unavailable' &&
+      (!tool.permission || can(me, tool.permission)),
   );
 }
 
 /**
- * Whether write access is even offerable to this caller.
+ * Whether any mode above Read only would give this caller anything.
  *
- * <p>False hides the switch rather than disabling it: a control that can never be turned on for
- * this role is noise, and the tooltip it would need says nothing the empty tool list does not.</p>
+ * <p>False collapses the switch to a single state rather than showing three modes that all
+ * behave identically: a control whose other positions can never do anything is noise, and the
+ * tooltip it would need says nothing the empty tool list does not.</p>
  */
-export function canUseWriteAccess(me: MyPermissions | undefined): boolean {
-  return ASSISTANT_TOOLS.some((tool) => tool.mutates && (!tool.permission || can(me, tool.permission)));
+export function canWrite(me: MyPermissions | undefined): boolean {
+  return ASSISTANT_TOOLS.some(
+    (tool) => tool.risk && (!tool.permission || can(me, tool.permission)),
+  );
+}
+
+/** Look one up by the name the model used. */
+export function findTool(tools: readonly AssistantTool[], name: string): AssistantTool | undefined {
+  return tools.find((tool) => tool.name === name);
 }
 
 /** The wire form the model is given — the `run` function is ours, not its business. */
