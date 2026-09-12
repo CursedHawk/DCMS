@@ -27,7 +27,7 @@ public sealed class SitePublishFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgres = TestPostgres.Build();
     private readonly NatsContainer _nats = new NatsBuilder("nats:2.11").WithCommand("--jetstream").Build();
-    private readonly MinioContainer _minio = new MinioBuilder("minio/minio:latest").Build();
+    private readonly MinioContainer _minio = TestMinio.Build();
 
     // admin-api's permission checks read through the Redis cache, so this needs to
     // be a real server: an unreachable address surfaces as a 500, not a cache miss.

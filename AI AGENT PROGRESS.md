@@ -11,7 +11,7 @@ first. Source brief: [`TODO/AI AGENT IDE REWORK.md`](TODO/AI%20AGENT%20IDE%20REW
 - **6.6 — blocked, not pending.** The Phase 0 token baseline was never taken, so there is **no measured claim that any of this saved tokens**, and there will not be one until somebody runs it against a real billed key on a real site. Everything this document says about cost is a mechanism, never a measurement.
 
 (10.3 split view declined, with reasons.)
-**Tests:** 538 in `apps/admin` (was 204 at the start of this work), 196 in `packages/ui`, 322 in `Dcms.UnitTests`, 73 Playwright e2e, and 25 container-free endpoint-coverage tests in `Dcms.IntegrationTests` (permission + audit). All green; `tsc -b`, `pnpm lint` (0 errors) and `dotnet build` (0 warnings) clean. The *container* part of `Dcms.IntegrationTests` still cannot run on this box — Testcontainers cannot pull `minio/minio` here — so the RLS change is covered by the startup `AssertCoverage` check rather than by a test run.
+**Tests:** 538 in `apps/admin` (was 204 at the start of this work), 196 in `packages/ui`, 322 in `Dcms.UnitTests`, 73 Playwright e2e, and 25 container-free endpoint-coverage tests in `Dcms.IntegrationTests` (permission + audit). All green; `tsc -b`, `pnpm lint` (0 errors) and `dotnet build` (0 warnings) clean. `Dcms.IntegrationTests` is green too — 366 passed, 1 skipped — **including the RLS change, which is now covered by a real test run rather than only by the startup `AssertCoverage` check**. It had been unrunnable here (and, from 2026-09-12, in CI) because MinIO stopped serving anonymous pulls from Docker Hub; the fixtures now pull the same images from quay.io.
 
 ---
 

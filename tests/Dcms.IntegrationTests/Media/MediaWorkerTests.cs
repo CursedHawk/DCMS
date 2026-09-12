@@ -31,7 +31,7 @@ public class MediaWorkerTests : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgres = TestPostgres.Build();
     private readonly NatsContainer _nats = new NatsBuilder("nats:2.11").WithCommand("--jetstream").Build();
-    private readonly MinioContainer _minio = new MinioBuilder("minio/minio:latest").Build();
+    private readonly MinioContainer _minio = TestMinio.Build();
 
     private WebApplicationFactory<MediaWorkerApp::Program> _worker = null!;
     private const string Bucket = "dcms-media";

@@ -114,7 +114,9 @@ services:
       NATS_URL: "nats://nats:4222"
 
   minio:
-    image: minio/minio:latest
+    # quay.io, not Docker Hub: MinIO stopped serving anonymous pulls there, so a
+    # fresh pull on a host without a cached copy fails outright. Same images, no login.
+    image: quay.io/minio/minio:latest
     logging: *default-logging
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -129,7 +131,7 @@ services:
       retries: 10
 
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     depends_on:
       minio:
         condition: service_healthy

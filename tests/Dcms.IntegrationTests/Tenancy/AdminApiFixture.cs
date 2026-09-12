@@ -34,7 +34,7 @@ public sealed class AdminApiFixture : IAsyncLifetime
     /// Object storage, needed by anything that ingests media — including the Meta feed sync,
     /// which mirrors CDN images through the very same pipeline as an admin upload.
     /// </summary>
-    private readonly MinioContainer _minio = new MinioBuilder("minio/minio:latest").Build();
+    private readonly MinioContainer _minio = TestMinio.Build();
 
     private const string MediaBucket = "dcms-media-test";
 
