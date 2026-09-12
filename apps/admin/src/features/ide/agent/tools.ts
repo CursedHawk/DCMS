@@ -1,9 +1,16 @@
-import { isToolchainFile, normalizePath, useVfs } from '../../site-source';
+import type { ToolSpec } from '../../agent/contracts';
+// Direct module imports rather than the feature barrel, which also exports Monaco.
+import { normalizePath } from '../../site-source/paths';
+import { useVfs } from '../../site-source/vfs';
 import type { ToolUseBlock } from './client';
 
 // The agent's file tools, executed locally against the live VFS store so edits
-// land in open tabs and the preview refreshes in real time. Mutations are confined
-// to safe, non-toolchain paths (the site-builder rejects toolchain files anyway).
+// land in open tabs and the preview refreshes in real time.
+//
+// There is no "toolchain file" restriction any more, and the guard that claimed one has been
+// removed: `TOOLCHAIN_FILES` has been empty since Mode B sites started owning their own
+// package.json and lockfile, and the backend accepts anything path-safe. Path safety, via
+// `normalizePath`, is the only constraint on what may be written.
 
 export interface ToolResult {
   content: string;
@@ -15,7 +22,17 @@ export function isMutation(name: string): boolean {
   return name === 'write_file' || name === 'edit_file' || name === 'delete_file';
 }
 
-export const AGENT_TOOLS = [
+/**
+ * What a tool declares to the model.
+ *
+ * <p>The declaration half of the shared {@link ToolSpec}, so the IDE and the console assistant
+ * describe a tool the same way. The execution half is still the `runTool` switch below rather
+ * than a `run` on each entry; Phase 5 replaces both this array and that switch with one
+ * registry of full `ToolSpec`s over the `AgentWorkspace`.</p>
+ */
+type ToolDeclaration = Pick<ToolSpec<never>, 'name' | 'description' | 'input_schema'>;
+
+export const AGENT_TOOLS: readonly ToolDeclaration[] = [
   {
     name: 'list_files',
     description: 'List every file path in the current site (the working draft).',
@@ -26,7 +43,9 @@ export const AGENT_TOOLS = [
     description: 'Read the full contents of one file by its path.',
     input_schema: {
       type: 'object',
-      properties: { path: { type: 'string', description: 'Repo-relative file path, e.g. src/App.tsx' } },
+      properties: {
+        path: { type: 'string', description: 'Repo-relative file path, e.g. src/App.tsx' },
+      },
       required: ['path'],
       additionalProperties: false,
     },
@@ -83,7 +102,11 @@ export function runTool(block: ToolUseBlock): ToolResult {
       case 'write_file':
         return writeFile(String(input.path ?? ''), String(input.content ?? ''));
       case 'edit_file':
-        return editFile(String(input.path ?? ''), String(input.old_string ?? ''), String(input.new_string ?? ''));
+        return editFile(
+          String(input.path ?? ''),
+          String(input.old_string ?? ''),
+          String(input.new_string ?? ''),
+        );
       case 'delete_file':
         return deleteFile(String(input.path ?? ''));
       default:
@@ -105,7 +128,6 @@ function readFile(rawPath: string): ToolResult {
 function writeFile(rawPath: string, content: string): ToolResult {
   const path = normalizePath(rawPath);
   if (!path) return err(`Invalid path: ${rawPath}`);
-  if (isToolchainFile(path)) return err(`${path} is a platform-managed toolchain file and cannot be edited.`);
   const vfs = useVfs.getState();
   const existed = vfs.files[path] !== undefined;
   vfs.writeFile(path, content);
@@ -116,7 +138,6 @@ function writeFile(rawPath: string, content: string): ToolResult {
 function editFile(rawPath: string, oldStr: string, newStr: string): ToolResult {
   const path = normalizePath(rawPath);
   if (!path) return err(`Invalid path: ${rawPath}`);
-  if (isToolchainFile(path)) return err(`${path} is a platform-managed toolchain file and cannot be edited.`);
   const vfs = useVfs.getState();
   const content = vfs.files[path];
   if (content === undefined) return err(`File not found: ${path}`);
@@ -134,7 +155,6 @@ function editFile(rawPath: string, oldStr: string, newStr: string): ToolResult {
 function deleteFile(rawPath: string): ToolResult {
   const path = normalizePath(rawPath);
   if (!path) return err(`Invalid path: ${rawPath}`);
-  if (isToolchainFile(path)) return err(`${path} is a platform-managed toolchain file and cannot be deleted.`);
   const vfs = useVfs.getState();
   if (vfs.files[path] === undefined) return err(`File not found: ${path}`);
   vfs.deleteFile(path);

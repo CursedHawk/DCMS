@@ -8,7 +8,7 @@ import {
   DropdownMenuTrigger,
   cn,
 } from '@dcms/ui';
-import { AI_MODES, type AiMode } from './modes';
+import { AI_MODES, type AiMode } from '../agent/modes';
 
 const ICONS: Record<AiMode, typeof Eye> = {
   read: Eye,

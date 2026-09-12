@@ -97,7 +97,11 @@ export function IdeCommandPalette({
             </Command.Empty>
 
             {fileHits.map((hit) => (
-              <FileRow key={hit.item} hit={hit} onSelect={() => choose(() => onOpenFile(hit.item))} />
+              <FileRow
+                key={hit.item}
+                hit={hit}
+                onSelect={() => choose(() => onOpenFile(hit.item))}
+              />
             ))}
 
             {commandHits.map((hit) => (

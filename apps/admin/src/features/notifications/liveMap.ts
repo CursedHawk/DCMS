@@ -27,3 +27,18 @@ export const LIVE_QUERY_MAP: TagQueryMap = {
   chat: [['chat-conversations']],
   analytics: [['analytics'], ['analytics-dimensions']],
 };
+
+/**
+ * Every key prefix the tenant hub is responsible for, flattened, plus the bell itself.
+ *
+ * <p>This is what a missed-message window costs, so it is what gets refetched when one closes —
+ * see `useHubRevalidation`. Derived from the map rather than written twice, so a tag added
+ * above cannot be forgotten here.</p>
+ *
+ * <p>Invalidating the whole list at once is cheap: react-query only refetches queries that are
+ * currently mounted and marks the rest stale, so this costs the open page and nothing else.</p>
+ */
+export const LIVE_KEYS: readonly (readonly unknown[])[] = [
+  ...Object.values(LIVE_QUERY_MAP).flat(),
+  ['notifications'],
+];

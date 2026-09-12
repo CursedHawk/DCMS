@@ -32,6 +32,10 @@ namespace Dcms.Shared.Data.Migrations.Ai
                     b.Property<DateTimeOffset?>("ArchivedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("Branch")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -49,6 +53,16 @@ namespace Dcms.Shared.Data.Migrations.Ai
                     b.Property<string>("PageArea")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<Guid?>("SiteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Surface")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("console");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uuid");
@@ -71,6 +85,8 @@ namespace Dcms.Shared.Data.Migrations.Ai
                     b.HasIndex("TenantId", "OwnerUserId", "UpdatedAt");
 
                     b.HasIndex("TenantId", "Visibility", "UpdatedAt");
+
+                    b.HasIndex("TenantId", "OwnerUserId", "Surface", "SiteId", "UpdatedAt");
 
                     b.ToTable("conversations", "ai");
                 });
@@ -108,6 +124,61 @@ namespace Dcms.Shared.Data.Migrations.Ai
                         .IsUnique();
 
                     b.ToTable("messages", "ai");
+                });
+
+            modelBuilder.Entity("Dcms.Shared.Data.Ai.AiRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ChangesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Complexity")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("FromSeq")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("MetricsJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Task")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ToSeq")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ValidationJson")
+                        .HasColumnType("jsonb");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ConversationId", "StartedAt");
+
+                    b.ToTable("runs", "ai");
                 });
 
             modelBuilder.Entity("Dcms.Shared.Data.Ai.TenantAiSettings", b =>
@@ -221,9 +292,22 @@ namespace Dcms.Shared.Data.Migrations.Ai
                     b.Navigation("Conversation");
                 });
 
+            modelBuilder.Entity("Dcms.Shared.Data.Ai.AiRun", b =>
+                {
+                    b.HasOne("Dcms.Shared.Data.Ai.AiConversation", "Conversation")
+                        .WithMany("Runs")
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Conversation");
+                });
+
             modelBuilder.Entity("Dcms.Shared.Data.Ai.AiConversation", b =>
                 {
                     b.Navigation("Messages");
+
+                    b.Navigation("Runs");
                 });
 #pragma warning restore 612, 618
         }

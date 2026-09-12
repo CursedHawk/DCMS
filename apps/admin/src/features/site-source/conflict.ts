@@ -11,9 +11,7 @@
 export type ResolutionKind = 'mine' | 'theirs' | 'manual';
 
 export type Resolution =
-  | { kind: 'mine' }
-  | { kind: 'theirs' }
-  | { kind: 'manual'; content: string };
+  { kind: 'mine' } | { kind: 'theirs' } | { kind: 'manual'; content: string };
 
 export interface ConflictFile {
   path: string;

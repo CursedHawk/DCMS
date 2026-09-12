@@ -4,6 +4,7 @@ import { can, relativeTime } from '@dcms/core';
 import { Button, Spinner, cn, usePermissions } from '@dcms/ui';
 import { Perm } from '../../lib/permissions';
 import {
+  type AiSurface,
   type ConversationScope,
   type ConversationSummary,
   useConversations,
@@ -17,6 +18,11 @@ import {
  * is "what was I doing"; Shared is "what has the team agreed the assistant did"; All exists
  * only for the role that answers for the workspace, and is the reason `ai:chats:read-all` is a
  * permission rather than an assumption about owners.</p>
+ *
+ * <p><b>Shared by both surfaces, scoped by `surface`.</b> The console dock and the IDE agent
+ * store their transcripts in one table, so this component serves both — but each instance shows
+ * one surface only. Without that the IDE's many short runs would bury the console's few long
+ * conversations, which is the one real argument against a shared table and is answered here.</p>
  */
 export function ConversationRail({
   scope,
@@ -24,17 +30,23 @@ export function ConversationRail({
   selectedId,
   onSelect,
   onNew,
+  surface = 'console',
+  siteId,
 }: {
   scope: ConversationScope;
   onScopeChange: (scope: ConversationScope) => void;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
+  /** Which surface's history this rail shows. Defaults to the console, its first caller. */
+  surface?: AiSurface;
+  /** Narrows an IDE rail to one site. Ignored on the console surface. */
+  siteId?: string;
 }) {
   const { t } = useTranslation();
   const me = usePermissions();
   const canReadAll = can(me, Perm.AiChatsReadAll);
-  const conversations = useConversations(scope);
+  const conversations = useConversations(scope, surface, { siteId });
   const remove = useDeleteConversation();
 
   const scopes: ConversationScope[] = canReadAll
@@ -130,8 +142,11 @@ function Row({
           ) : null}
           <span className="min-w-0 flex-1 truncate text-[13px]">{conversation.title}</span>
         </span>
-        <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">
+        <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
           {relativeTime(conversation.updatedAt)} · {conversation.messageCount}
+          {/* The branch an IDE conversation was last run against. Absent on the console
+              surface, where there is nothing for it to mean. */}
+          {conversation.branch ? ` · ${conversation.branch}` : ''}
         </span>
       </button>
       {onDelete ? (

@@ -33,7 +33,8 @@ export function useStores() {
   return useQuery({
     queryKey: ['platform-stores'],
     queryFn: () => platformApi.get<StoresResponse>('/stores'),
-    refetchInterval: 60_000,
+    // Object-store usage comes from Prometheus, which announces nothing — so the period lives
+    // in `PlatformSampleBroadcaster` and arrives here as the `stores` tag.
   });
 }
 
@@ -41,8 +42,10 @@ export function usePendingPurges() {
   return useQuery({
     queryKey: ['platform-loki-purges'],
     queryFn: () => platformApi.get<LokiDeleteRequest[]>('/purge/loki'),
-    // The two-hour cancellation window is the safety net; a stale list is a net nobody can see.
-    refetchInterval: 30_000,
+    // The two-hour cancellation window is the safety net, and a stale list is a net nobody can
+    // see — so this stays on the same 30-second cadence it always had. Loki does not announce
+    // when it works through the queue either, so that cadence is now the `stores` sample tick
+    // rather than a timer in each open tab.
   });
 }
 

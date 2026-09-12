@@ -54,6 +54,13 @@ public static class PostgresAdvisoryLock
     public const long PlatformNotificationSweepLockKey = 0x44434D5300000009;
 
     /// <summary>
+    /// Elects the replica that prunes stored agent conversations. Idempotent, so a second
+    /// sweeper would be correct — it would just pay for the same scan and write a second audit
+    /// record saying the same thing.
+    /// </summary>
+    public const long AiConversationRetentionLockKey = 0x44434D530000000A;
+
+    /// <summary>
     /// Blocks until the lock is held. Deliberately blocking rather than
     /// <c>pg_try_advisory_lock</c>: a second instance arriving mid-migration should wait and then
     /// find there is nothing left to do. Giving up and carrying on would let it serve traffic

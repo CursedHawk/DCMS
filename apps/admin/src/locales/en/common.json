@@ -784,7 +784,8 @@
       "noLog": "No build log available.",
       "liveStarted": "A new deployment was started",
       "liveSucceeded": "A deployment finished and is now live",
-      "liveFailed": "A deployment failed"
+      "liveFailed": "A deployment failed",
+      "notLive": "Not receiving live updates — this list refreshes when the connection returns."
     },
     "explorer": "Explorer",
     "restored": "Draft restored from this version",
@@ -804,17 +805,50 @@
     "deleteFolderConfirm_other": "Delete {{path}} and the {{count}} files inside it?",
     "moveFailed": "Could not move to {{path}} — the name is invalid or already taken",
     "agent": {
-      "title": "Assistant",
+      "title": "Agent",
       "modeHint": "Auto applies edits automatically; Manual asks first",
       "auto": "Auto",
       "manual": "Manual",
-      "empty": "Ask the assistant to build or change your site. It edits your files live.",
+      "empty": "Ask the agent to build or change your site. It edits your files while you watch.",
       "approveTitle": "Apply these changes?",
       "needsKeyTitle": "The assistant has no API key",
       "needsKeyBody": "Add an API key to use the assistant.",
       "needsKeyLink": "Open AI settings →",
       "placeholder": "Describe a change…",
-      "needsKeyFor": "This workspace is set up for {{provider}}, and no {{provider}} key is configured."
+      "needsKeyFor": "This workspace is set up for {{provider}}, and no {{provider}} key is configured.",
+      "history": "History",
+      "newConversation": "New conversation",
+      "unsaved": "This run is not being saved — the transcript may be incomplete.",
+      "thinking": "Thinking",
+      "arguments": "Arguments",
+      "result": "Result",
+      "retrying": "Retrying ({{attempt}} of {{of}}) — {{because}}",
+      "changed": "{{count}} file changed",
+      "changed_other": "{{count}} files changed",
+      "revertAll": "Revert all",
+      "revertFile": "Revert {{path}}",
+      "showDiff": "Show changes",
+      "check": {
+        "running": "Checking the build",
+        "passed": "Build passed",
+        "failed": "Build failed",
+        "skipped": "Not checked — the preview is off"
+      },
+      "meter": {
+        "turns": "turns",
+        "tools": "tools",
+        "in": "in",
+        "out": "out",
+        "cached": "cached",
+        "inUnknown": "This provider did not report how many input tokens the run used."
+      },
+      "mode": "Agent mode",
+      "allowOnce": "Allow",
+      "allowForRun": "Allow for this run",
+      "newFile": "new file",
+      "deleteFile": "delete",
+      "moreLines_one": "… and {{count}} more line",
+      "moreLines_other": "… and {{count}} more lines"
     },
     "starter": {
       "title": "Start your React app",
@@ -849,8 +883,13 @@
     "problems": {
       "title": "Problems",
       "none": "No problems in the last build.",
-      "previewOff": "Nothing has been checked",
-      "previewOffHint": "The project is built for the preview, so problems are only found while it is on."
+      "previewOff": "No type problems",
+      "previewOffHint": "Types are checked either way. Build errors need the preview, because that is what compiles the project.",
+      "errors": "{{count}} error",
+      "errors_other": "{{count}} errors",
+      "warnings": "{{count}} warning",
+      "warnings_other": "{{count}} warnings",
+      "typesOnly": "Types only — the build has not run because the preview is closed."
     },
     "palette": {
       "filesTitle": "Go to file",
@@ -873,6 +912,40 @@
       "closeTab": "Close the current tab",
       "togglePreview": "Show or hide the preview",
       "dismiss": "Close what is open"
+    },
+    "breadcrumbs": "File path",
+    "panel": {
+      "tabs": {
+        "problems": "Problems",
+        "output": "Output",
+        "console": "Console",
+        "build": "Build"
+      },
+      "hide": "Hide panel",
+      "resize": "Resize panel",
+      "clear": "Clear",
+      "output": {
+        "empty": "Nothing yet. Saves, branch switches and publishes show up here."
+      },
+      "console": {
+        "empty": "The page has not logged any errors.",
+        "off": "The preview is off, so nothing is listening",
+        "offHint": "Console messages come from the running page. Turn the preview on to collect them."
+      },
+      "build": {
+        "empty": "No builds yet. Edit a file to start one.",
+        "running": "Building…",
+        "succeeded": "Built",
+        "failed": "Build failed",
+        "off": "The preview is off, so nothing is being built",
+        "offHint": "Builds run inside the preview. Turn it on to check your code compiles."
+      }
+    },
+    "tabs": {
+      "pin": "Pin this tab",
+      "unpin": "Unpin",
+      "close": "Close",
+      "closeOthers": "Close other tabs"
     }
   },
   "openapi": {

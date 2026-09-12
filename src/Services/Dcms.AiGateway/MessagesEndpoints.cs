@@ -32,7 +32,7 @@ public static class MessagesEndpoints
     {
         app.MapPost("/v1/messages", async (
             MessagesProxyRequest body, HttpContext ctx, AiProviderResolver resolver,
-            IHttpClientFactory httpClientFactory, DcmsMetrics metrics,
+            IHttpClientFactory httpClientFactory, DcmsMetrics metrics, AiQuota quota,
             ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             var logger = loggerFactory.CreateLogger("ai-gateway.messages");
@@ -40,6 +40,23 @@ public static class MessagesEndpoints
             if (body.TenantId == Guid.Empty || body.Request is null)
             {
                 return Results.BadRequest(new { error = "tenantId and request are required." });
+            }
+
+            /*
+             * Before anything is resolved or sent.
+             *
+             * The agent loop runs in the browser (D1), so nothing on this side can stop it from
+             * asking again — the only thing that ends a runaway run is this endpoint refusing.
+             * Checked before the credential resolve so that a loop hammering a workspace with
+             * broken settings does not also hammer Vault.
+             */
+            var verdict = await quota.CheckAsync(body.TenantId, body.UserId, ct);
+            if (!verdict.Ok)
+            {
+                ctx.Response.Headers.RetryAfter = verdict.RetryAfterSeconds.ToString();
+                return Results.Json(
+                    new { error = verdict.Error, message = verdict.Message },
+                    statusCode: StatusCodes.Status429TooManyRequests);
             }
 
             ResolvedCredentials creds;
@@ -145,9 +162,12 @@ public static class MessagesEndpoints
             finally
             {
                 // Recorded even when the browser disconnects mid-stream: the tokens produced up
-                // to that point were still generated, and still billed.
+                // to that point were still generated, and still billed. The budget counter takes
+                // them for the same reason — a ceiling a broken stream can walk through is not
+                // a ceiling.
                 metrics.AiCall(body.TenantId, systemName, model,
                     promptTokens, completionTokens, Stopwatch.GetElapsedTime(started));
+                await quota.RecordAsync(body.TenantId, promptTokens + completionTokens, CancellationToken.None);
                 activity?.SetTag("gen_ai.usage.input_tokens", promptTokens);
                 activity?.SetTag("gen_ai.usage.output_tokens", completionTokens);
                 upstream.Dispose();

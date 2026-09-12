@@ -50,6 +50,10 @@ public sealed class DcmsMetrics : IDisposable
     // AI
     private readonly Counter<long> _aiTokens;
     private readonly Histogram<double> _aiDuration;
+    private readonly Counter<long> _aiRuns;
+    private readonly Histogram<int> _aiRunTurns;
+    private readonly Histogram<int> _aiRunTools;
+    private readonly Histogram<double> _aiRunDuration;
 
     // Engagement
     private readonly Counter<long> _chatMessages;
@@ -105,6 +109,28 @@ public sealed class DcmsMetrics : IDisposable
             "dcms.ai.tokens", "{token}", "Model tokens, by direction. The cost driver.");
         _aiDuration = _meter.CreateHistogram<double>(
             "dcms.ai.request.duration", "s", "Round-trip time of one model call.");
+
+        /*
+         * The run, which is the unit the agent rework is actually judged in.
+         *
+         * The counters above are per API CALL, which answers "what is this workspace spending"
+         * and cannot answer "did this task get cheaper" — a task is one run and however many
+         * turns it took, and nothing aggregated across calls has a notion of that boundary.
+         *
+         * Tokens are deliberately NOT re-counted here. They are already counted per call in
+         * ai-gateway, which is the only place that sees the real upstream numbers; adding them
+         * again per run would double every "total spend" query on this platform. What a run adds
+         * is the shape of the work: how many turns a task took, how many tools it called, and
+         * how long the person waited.
+         */
+        _aiRuns = _meter.CreateCounter<long>(
+            "dcms.ai.runs", "{run}", "Agent runs that finished, by surface and outcome.");
+        _aiRunTurns = _meter.CreateHistogram<int>(
+            "dcms.ai.run.turns", "{turn}", "Model calls per task. The number the rework is judged on.");
+        _aiRunTools = _meter.CreateHistogram<int>(
+            "dcms.ai.run.tools", "{call}", "Tool calls per task.");
+        _aiRunDuration = _meter.CreateHistogram<double>(
+            "dcms.ai.run.duration", "s", "Wall time of a whole task, as the person experienced it.");
 
         _chatMessages = _meter.CreateCounter<long>(
             "dcms.chat.message", "{message}", "Live-chat messages posted, by sender kind.");
@@ -199,6 +225,27 @@ public sealed class DcmsMetrics : IDisposable
         _aiTokens.Add(completionTokens, completion);
 
         _aiDuration.Record(elapsed.TotalSeconds, baseTags);
+    }
+
+    /// <summary>
+    /// One finished agent run.
+    ///
+    /// <para>Reported by the browser, because the loop runs there (D1) and nothing server-side
+    /// sees a run's boundaries. A run whose tab was closed never reports, which is why
+    /// <c>dcms.ai.runs</c> counts <i>finished</i> runs rather than started ones — an unfinished
+    /// run is visible in <c>ai.runs</c> as a row with no <c>finished_at</c>, and calling it a
+    /// metric here would mean quietly counting it as a completion.</para>
+    /// </summary>
+    /// <param name="surface">"ide" or "console".</param>
+    /// <param name="outcome">"completed", "failed" or "stopped".</param>
+    public void AiRun(
+        Guid tenantId, string surface, string outcome, int turns, int toolCalls, double seconds)
+    {
+        var tags = new TagList { Tenant(tenantId), new("surface", surface), new("outcome", outcome) };
+        _aiRuns.Add(1, tags);
+        _aiRunTurns.Record(turns, tags);
+        _aiRunTools.Record(toolCalls, tags);
+        _aiRunDuration.Record(seconds, tags);
     }
 
     public void ChatMessage(Guid tenantId, string senderKind) =>

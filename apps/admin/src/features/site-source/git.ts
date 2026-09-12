@@ -105,10 +105,12 @@ export const gitApi = {
     api.post<{ name: string; from: string }>(`/admin/sites/${siteId}/git/branches`, { name, from }),
   // Restore a commit's tree into the working draft on a branch (does not commit).
   restore: (siteId: string, sha: string, branch: string) =>
-    api.post<{ branch: string; version: number; files: Record<string, string>; hashes: Record<string, string> }>(
-      `/admin/sites/${siteId}/git/restore?branch=${encodeURIComponent(branch)}`,
-      { sha },
-    ),
+    api.post<{
+      branch: string;
+      version: number;
+      files: Record<string, string>;
+      hashes: Record<string, string>;
+    }>(`/admin/sites/${siteId}/git/restore?branch=${encodeURIComponent(branch)}`, { sha }),
   // Pre-merge review: what merging `head` into `base` (default release) would bring.
   compare: (siteId: string, head: string, base?: string) => {
     const qs = new URLSearchParams({ head });
@@ -119,7 +121,12 @@ export const gitApi = {
   merge: (siteId: string, head: string, base?: string) =>
     api.post<MergeResult>(`/admin/sites/${siteId}/git/merge`, { head, base }),
   // Complete a conflicted merge with per-file resolved content (null = delete).
-  resolveMerge: (siteId: string, head: string, resolutions: Record<string, string | null>, base?: string) =>
+  resolveMerge: (
+    siteId: string,
+    head: string,
+    resolutions: Record<string, string | null>,
+    base?: string,
+  ) =>
     api.post<MergeResult>(`/admin/sites/${siteId}/git/merge/resolve`, { head, base, resolutions }),
   // Recent builds (deployments) for a site, newest first.
   builds: (siteId: string, limit = 20) =>
@@ -130,30 +137,3 @@ export const gitApi = {
   // Force a fresh build+deploy of the current release head (recovers a failed/wedged build).
   rebuild: (siteId: string) => api.post<{ buildId: string }>(`/admin/sites/${siteId}/builds`, {}),
 };
-
-/**
- * How long after triggering a publish the Deployments panel keeps looking for the build it
- * caused. Generous on purpose: the build row is written by the push webhook, which Forgejo
- * delivers on its own schedule, and a panel that gave up at five seconds would be wrong in
- * exactly the case it exists for.
- */
-export const EXPECT_BUILD_WINDOW_MS = 90_000;
-
-const expectedBuilds = new Map<string, number>();
-
-/**
- * Records that a build has just been asked for and has not appeared yet.
- *
- * Module state rather than query cache or a store, because it is neither server data nor UI
- * state — it is a note about something in flight elsewhere, read once per refetch decision and
- * never rendered. Keeping it out of the cache also keeps it out of the invalidation that the
- * publish itself triggers, which would otherwise erase the very marker it just set.
- */
-export function expectBuild(siteId: string): void {
-  expectedBuilds.set(siteId, Date.now());
-}
-
-/** When a build was last expected for this site; 0 if never. */
-export function expectingBuildSince(siteId: string): number {
-  return expectedBuilds.get(siteId) ?? 0;
-}

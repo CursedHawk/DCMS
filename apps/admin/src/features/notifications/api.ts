@@ -37,7 +37,7 @@ export function useNotifications(enabled: boolean) {
     queryKey: notificationsKey(),
     queryFn: () => api.get<NotificationPage>('/admin/notifications?limit=20'),
     enabled,
-    // No refetchInterval: the hub pushes. This is the reconnect/first-load path only, and
+    // No interval of any kind: the hub pushes. This is the reconnect/first-load path only, and
     // `useNotificationHub` invalidates this key when the socket delivers something.
     staleTime: 30_000,
   });

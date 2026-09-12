@@ -30,13 +30,14 @@ export interface PlatformNotificationPage {
 const KEY = ['platform-notifications'];
 
 /**
- * Pushed, with a poll behind it.
+ * Pushed, with nothing behind it but the three moments a push can be missed.
  *
  * The socket (see `useConsoleHub`) invalidates this query the moment a notification is raised,
- * which is what makes the badge immediate. The interval stays as a fallback and is deliberately
- * slow: nothing replays what was pushed while a connection was down, and the one screen an
- * operator opens when the platform is misbehaving is the worst place for a silently stale bell.
- * See ADR 0013 for why this stopped being a poll.
+ * which is what makes the badge immediate. What used to sit behind it was a five-minute timer
+ * in every open tab; what sits behind it now is `useHubRevalidation` in the shell, which
+ * refetches on reconnect, on the tab becoming visible and on coming back online. Nothing
+ * replays what was pushed during an outage, and those are the windows in which one can happen —
+ * so covering them is the whole of what the interval was ever doing.
  */
 export function usePlatformNotifications(enabled: boolean, limit = 20) {
   return useQuery({
@@ -44,7 +45,6 @@ export function usePlatformNotifications(enabled: boolean, limit = 20) {
     enabled,
     queryFn: () =>
       platformApi.get<PlatformNotificationPage>(`/notifications?limit=${limit}`),
-    refetchInterval: 5 * 60_000,
   });
 }
 

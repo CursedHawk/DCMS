@@ -10,11 +10,26 @@
 /** Extensions whose file-map value is base64 of the raw bytes (everything else is literal text). */
 export const BINARY_EXTENSIONS = new Set([
   // images
-  'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'bmp',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'avif',
+  'ico',
+  'bmp',
   // fonts
-  'woff', 'woff2', 'ttf', 'otf', 'eot',
+  'woff',
+  'woff2',
+  'ttf',
+  'otf',
+  'eot',
   // media
-  'mp3', 'mp4', 'webm', 'ogg', 'wav',
+  'mp3',
+  'mp4',
+  'webm',
+  'ogg',
+  'wav',
   // other
   'pdf',
 ]);

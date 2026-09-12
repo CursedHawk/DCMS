@@ -18,7 +18,9 @@ export interface UploadResult {
 /** Read one picked/dropped File into a file-map entry. Throws on oversize files. */
 export async function readUpload(file: File): Promise<UploadResult> {
   if (file.size > MAX_UPLOAD_BYTES) {
-    throw new Error(`${file.name} is larger than ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MB.`);
+    throw new Error(
+      `${file.name} is larger than ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MB.`,
+    );
   }
   // A directory upload (<input webkitdirectory> or a dropped folder) carries the
   // path under webkitRelativePath; a plain file upload only has its name.

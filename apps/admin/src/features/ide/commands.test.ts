@@ -69,8 +69,9 @@ describe('rankPaths', () => {
   });
 
   it('still finds a file by its folder', () => {
-    expect(rankPaths(FILES, 'components/header').map((r) => r.item))
-      .toEqual(['src/app/components/Header.tsx']);
+    expect(rankPaths(FILES, 'components/header').map((r) => r.item)).toEqual([
+      'src/app/components/Header.tsx',
+    ]);
   });
 
   it('returns everything, alphabetically, for an empty query', () => {
@@ -101,7 +102,11 @@ describe('rankCommands', () => {
   ];
 
   it('lists everything for an empty query, in the order given', () => {
-    expect(rankCommands(commands, '').map((r) => r.item.id)).toEqual(['scm', 'problems', 'preview']);
+    expect(rankCommands(commands, '').map((r) => r.item.id)).toEqual([
+      'scm',
+      'problems',
+      'preview',
+    ]);
   });
 
   it('matches the label', () => {

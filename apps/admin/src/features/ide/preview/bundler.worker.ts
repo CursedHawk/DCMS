@@ -81,11 +81,15 @@ function cdnUrl(spec: string, versions: Record<string, string>): string {
   const base = basePackage(spec);
   const version = versions[base] ? `@${versions[base]}` : '';
   const subpath = spec.slice(base.length); // includes leading slash or ''
-  const external = base === 'react' ? '' : base === 'react-dom' ? '?external=react' : '?external=react,react-dom';
+  const external =
+    base === 'react' ? '' : base === 'react-dom' ? '?external=react' : '?external=react,react-dom';
   return `${CDN}/${base}${version}${subpath}${external}`;
 }
 
-function vfsPlugin(files: Record<string, string>, versions: Record<string, string>): esbuild.Plugin {
+function vfsPlugin(
+  files: Record<string, string>,
+  versions: Record<string, string>,
+): esbuild.Plugin {
   return {
     name: 'dcms-vfs',
     setup(build) {
@@ -103,7 +107,10 @@ function vfsPlugin(files: Record<string, string>, versions: Record<string, strin
           return { path: args.path.replace(/^\/+/, ''), namespace: 'vfs' };
         }
         // Relative import from a local file.
-        if (args.namespace === 'vfs' && (args.path.startsWith('./') || args.path.startsWith('../'))) {
+        if (
+          args.namespace === 'vfs' &&
+          (args.path.startsWith('./') || args.path.startsWith('../'))
+        ) {
           const resolved = resolveRelative(args.importer, args.path, files);
           if (resolved) return { path: resolved, namespace: 'vfs' };
           return { errors: [{ text: `Cannot resolve ${args.path} from ${args.importer}` }] };

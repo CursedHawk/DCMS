@@ -36,8 +36,9 @@ export function useHealthSignals(enabled = true) {
     queryKey: ['platform-health-signals'],
     enabled,
     queryFn: () => platformApi.get<HealthSignals>('/health/signals'),
-    // Prometheus's own scrape interval is the floor on how often this can change; asking
-    // faster is asking a question that cannot have a new answer.
-    refetchInterval: 30_000,
+    // Prometheus's own scrape interval is the floor on how often this can change, and that
+    // period is now kept server-side: `PlatformSampleBroadcaster` pushes the `health` tag and
+    // this query refetches on it. Same freshness, and the load on Prometheus stops scaling
+    // with the number of tabs left open on this page.
   });
 }

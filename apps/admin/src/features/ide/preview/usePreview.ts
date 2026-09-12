@@ -4,6 +4,8 @@ import { useVfs } from '../../site-source';
 import { previewEntry } from '../paths';
 import type { BuildRequest, BuildResponse } from './bundler.worker';
 import { toProblems, type BuildProblem } from './problems';
+import { publishBuildResult, registerPreview } from './buildBroker';
+import { BRIDGE_SCRIPT, clearPreviewMessages } from './previewBridge';
 import BundlerWorker from './bundler.worker?worker';
 
 // Drives the esbuild-wasm worker: it rebuilds the preview once the user has
@@ -50,6 +52,10 @@ function shell(js: string, css: string, usesTailwind: boolean): string {
   </head>
   <body>
     <div id="root"></div>
+    <!-- Console/error/network capture for the agent's preview tools. A classic script, and
+         first, so it is installed before the app runs and catches a throw during module
+         evaluation. -->
+    <script>${BRIDGE_SCRIPT}</script>
     <script type="module">${js}</script>
   </body>
 </html>`;
@@ -71,6 +77,9 @@ export function usePreview(enabled: boolean, siteId: string, refreshKey = 0): Pr
   const workerRef = useRef<Worker | null>(null);
   const reqId = useRef(0);
   const didInitialBuild = useRef(false);
+  // The VFS revision the in-flight build was started from, so a published result can say which
+  // version of the project it describes.
+  const builtRev = useRef(0);
 
   // Lazily create the worker the first time a preview is requested.
   useEffect(() => {
@@ -83,6 +92,10 @@ export function usePreview(enabled: boolean, siteId: string, refreshKey = 0): Pr
       // problem in a CDN dependency from offering to open a tab on a file that does not exist.
       const files = useVfs.getState().files;
       const problems = toProblems(e.data.messages, e.data.warnings, (path) => files[path] != null);
+
+      // Publish before setState so the agent's `check_build` sees the result on the same tick
+      // the pane does, rather than a render later.
+      publishBuildResult(e.data.ok, problems, builtRev.current);
 
       if (e.data.ok) {
         setState({
@@ -126,6 +139,10 @@ export function usePreview(enabled: boolean, siteId: string, refreshKey = 0): Pr
       return;
     }
     const id = ++reqId.current;
+    builtRev.current = useVfs.getState().rev;
+    // Errors from the previous version of the code are worse than no errors: the agent would
+    // try to fix something it has already fixed.
+    clearPreviewMessages();
     setState((s) => ({ ...s, building: true }));
     const req: BuildRequest = {
       id,
@@ -149,6 +166,17 @@ export function usePreview(enabled: boolean, siteId: string, refreshKey = 0): Pr
     const handle = setTimeout(build, DEBOUNCE_MS);
     return () => clearTimeout(handle);
   }, [enabled, loaded, rev, build]);
+
+  /*
+   * Publish this pane as the thing that can build, for the agent's `check_build` tool.
+   *
+   * Registered only while the preview is enabled: with the pane closed there is no worker, and
+   * the tool must say it cannot check rather than report a build that never ran.
+   */
+  useEffect(() => {
+    if (!enabled) return;
+    return registerPreview(build);
+  }, [enabled, build]);
 
   // Force an immediate rebuild when the caller bumps refreshKey (e.g. after a
   // sandbox reset). Skips the initial 0 so it doesn't double-build on mount.

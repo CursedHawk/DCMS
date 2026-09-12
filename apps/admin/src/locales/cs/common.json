@@ -801,7 +801,8 @@
       "noLog": "Není k dispozici žádný log sestavení.",
       "liveStarted": "Bylo spuštěno nové nasazení",
       "liveSucceeded": "Nasazení bylo dokončeno a je nyní živé",
-      "liveFailed": "Nasazení selhalo"
+      "liveFailed": "Nasazení selhalo",
+      "notLive": "Živé aktualizace nejsou dostupné — seznam se obnoví po obnovení spojení."
     },
     "explorer": "Průzkumník",
     "restored": "Koncept obnoven z této verze",
@@ -824,17 +825,52 @@
     "deleteFolderConfirm_other": "Smazat {{path}} a {{count}} souborů uvnitř?",
     "moveFailed": "Nelze přesunout do {{path}} — název je neplatný nebo už existuje",
     "agent": {
-      "title": "Asistent",
+      "title": "Agent",
       "modeHint": "Automaticky provádí úpravy sám; Ručně se nejdřív zeptá",
       "auto": "Automaticky",
       "manual": "Ručně",
-      "empty": "Řekněte asistentovi, co má na webu postavit nebo změnit. Upravuje soubory živě.",
+      "empty": "Řekněte agentovi, co na webu postavit nebo změnit. Upravuje vaše soubory přímo před vámi.",
       "approveTitle": "Provést tyto změny?",
       "needsKeyTitle": "Asistent nemá API klíč",
       "needsKeyBody": "Pro použití asistenta přidejte API klíč.",
       "needsKeyLink": "Otevřít nastavení AI →",
       "placeholder": "Popište změnu…",
-      "needsKeyFor": "Tento prostor je nastavený na {{provider}} a žádný klíč pro {{provider}} není nastavený."
+      "needsKeyFor": "Tento prostor je nastavený na {{provider}} a žádný klíč pro {{provider}} není nastavený.",
+      "history": "Historie",
+      "newConversation": "Nová konverzace",
+      "unsaved": "Tento běh se neukládá — přepis může být neúplný.",
+      "thinking": "Přemýšlení",
+      "arguments": "Argumenty",
+      "result": "Výsledek",
+      "retrying": "Zkouším znovu ({{attempt}} z {{of}}) — {{because}}",
+      "changed": "Změněn {{count}} soubor",
+      "changed_few": "Změněny {{count}} soubory",
+      "changed_other": "Změněno {{count}} souborů",
+      "revertAll": "Vrátit vše",
+      "revertFile": "Vrátit {{path}}",
+      "showDiff": "Zobrazit změny",
+      "check": {
+        "running": "Kontroluji sestavení",
+        "passed": "Sestavení prošlo",
+        "failed": "Sestavení selhalo",
+        "skipped": "Nezkontrolováno — náhled je vypnutý"
+      },
+      "meter": {
+        "turns": "kol",
+        "tools": "nástrojů",
+        "in": "vstup",
+        "out": "výstup",
+        "cached": "z cache",
+        "inUnknown": "Tento poskytovatel nenahlásil, kolik vstupních tokenů běh spotřeboval."
+      },
+      "mode": "Režim agenta",
+      "allowOnce": "Povolit",
+      "allowForRun": "Povolit pro celý běh",
+      "newFile": "nový soubor",
+      "deleteFile": "smazat",
+      "moreLines_one": "… a {{count}} další řádek",
+      "moreLines_few": "… a {{count}} další řádky",
+      "moreLines_other": "… a {{count}} dalších řádků"
     },
     "starter": {
       "title": "Založit React aplikaci",
@@ -869,8 +905,15 @@
     "problems": {
       "title": "Problémy",
       "none": "Poslední sestavení proběhlo bez problémů.",
-      "previewOff": "Zatím nic nezkontrolováno",
-      "previewOffHint": "Projekt se sestavuje kvůli náhledu, takže problémy se hledají jen když je zapnutý."
+      "previewOff": "Žádné problémy s typy",
+      "previewOffHint": "Typy se kontrolují tak či tak. Chyby sestavení vyžadují náhled, protože ten projekt kompiluje.",
+      "errors": "{{count}} chyba",
+      "errors_few": "{{count}} chyby",
+      "errors_other": "{{count}} chyb",
+      "warnings": "{{count}} varování",
+      "warnings_few": "{{count}} varování",
+      "warnings_other": "{{count}} varování",
+      "typesOnly": "Pouze typy — sestavení neproběhlo, protože je náhled zavřený."
     },
     "palette": {
       "filesTitle": "Přejít na soubor",
@@ -893,6 +936,40 @@
       "closeTab": "Zavřít aktuální záložku",
       "togglePreview": "Zobrazit nebo skrýt náhled",
       "dismiss": "Zavřít otevřené okno"
+    },
+    "breadcrumbs": "Cesta k souboru",
+    "panel": {
+      "tabs": {
+        "problems": "Problémy",
+        "output": "Výstup",
+        "console": "Konzole",
+        "build": "Sestavení"
+      },
+      "hide": "Skrýt panel",
+      "resize": "Změnit velikost panelu",
+      "clear": "Vymazat",
+      "output": {
+        "empty": "Zatím nic. Ukládání, přepnutí větve a publikování se objeví tady."
+      },
+      "console": {
+        "empty": "Stránka nehlásí žádné chyby.",
+        "off": "Náhled je vypnutý, takže nikdo neposlouchá",
+        "offHint": "Zprávy konzole pocházejí ze spuštěné stránky. Zapněte náhled, aby se sbíraly."
+      },
+      "build": {
+        "empty": "Zatím žádná sestavení. Upravte soubor a spustí se.",
+        "running": "Sestavuji…",
+        "succeeded": "Sestaveno",
+        "failed": "Sestavení selhalo",
+        "off": "Náhled je vypnutý, takže se nic nesestavuje",
+        "offHint": "Sestavení běží uvnitř náhledu. Zapněte ho, aby se kód kontroloval."
+      }
+    },
+    "tabs": {
+      "pin": "Připnout tuto záložku",
+      "unpin": "Odepnout",
+      "close": "Zavřít",
+      "closeOthers": "Zavřít ostatní záložky"
     }
   },
   "openapi": {

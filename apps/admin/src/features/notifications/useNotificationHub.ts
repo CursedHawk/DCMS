@@ -1,6 +1,6 @@
 import type { HubConnection } from '@microsoft/signalr';
 import { useQueryClient } from '@tanstack/react-query';
-import { createResourceInvalidator, type ResourceChange } from '@dcms/ui';
+import { createResourceInvalidator, setHubConnected, type ResourceChange } from '@dcms/ui';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
@@ -26,7 +26,15 @@ import { linkTarget } from './linkPath';
  * This is what replaced the polling: the media grid used to refetch every three seconds while
  * anything was processing, the chat list every fifteen, and the deployments view every two
  * and a half after a publish, all of them guessing at when the server might have news.</p>
+ *
+ * <p>The last of those intervals is now gone too. What covers a message missed while the socket
+ * was down is `useHubRevalidation`, mounted in the shell alongside this hook: nothing replays a
+ * push, so the honest answer is to refetch at the moments a gap can have opened — reconnect,
+ * the tab becoming visible, and coming back online — rather than to keep asking in case.</p>
  */
+/** The name this connection reports under, for `useHubRevalidation`. */
+export const NOTIFICATION_HUB = 'notifications';
+
 export function useNotificationHub(enabled: boolean, myUserId: string | undefined) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -86,6 +94,7 @@ export function useNotificationHub(enabled: boolean, myUserId: string | undefine
 
       connection.onreconnected(() => {
         setConnected(true);
+        setHubConnected(NOTIFICATION_HUB, true);
         /*
          * Everything pushed while the socket was down was missed, and nothing replays it —
          * the hub is push-only and holds no backlog. So a reconnect invalidates the whole
@@ -94,7 +103,10 @@ export function useNotificationHub(enabled: boolean, myUserId: string | undefine
          */
         void qc.invalidateQueries();
       });
-      connection.onclose(() => setConnected(false));
+      connection.onclose(() => {
+        setConnected(false);
+        setHubConnected(NOTIFICATION_HUB, false);
+      });
 
       try {
         await connection.start();
@@ -104,7 +116,9 @@ export function useNotificationHub(enabled: boolean, myUserId: string | undefine
         }
         connRef.current = connection;
         setConnected(true);
+        setHubConnected(NOTIFICATION_HUB, true);
       } catch (err) {
+        setHubConnected(NOTIFICATION_HUB, false);
         // A bell that cannot connect is a degraded bell, not a broken page: the list still
         // loads over REST. Log rather than toast, so a NATS/Redis outage does not greet
         // every admin with an error popup.
@@ -116,6 +130,7 @@ export function useNotificationHub(enabled: boolean, myUserId: string | undefine
       disposed = true;
       void connRef.current?.stop();
       connRef.current = null;
+      setHubConnected(NOTIFICATION_HUB, false);
     };
   }, [enabled, slug, qc]);
 

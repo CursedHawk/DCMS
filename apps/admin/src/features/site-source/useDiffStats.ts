@@ -25,7 +25,9 @@ export function useDiffStats(changes: readonly GitChange[]): Record<string, Diff
   // The identity of `changes` is a fresh array on every query refetch, so the
   // effect keys on the content that actually decides the answer.
   const signature = changes
-    .map((c) => `${c.path}:${c.status}:${c.headContent?.length ?? -1}:${c.draftContent?.length ?? -1}`)
+    .map(
+      (c) => `${c.path}:${c.status}:${c.headContent?.length ?? -1}:${c.draftContent?.length ?? -1}`,
+    )
     .join('|');
 
   useEffect(() => {

@@ -52,8 +52,33 @@ public sealed class PlatformHub(
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, Group);
+        Context.Items[CountedKey] = true;
+        Interlocked.Increment(ref _connected);
         await base.OnConnectedAsync();
     }
+
+    public override Task OnDisconnectedAsync(Exception? exception)
+    {
+        // Only decrement for a connection that was actually counted. SignalR calls this for a
+        // connection aborted above too, and decrementing for one that never incremented would
+        // drift the count below zero — which would read as "nobody is watching" while somebody
+        // is, and silence the sample broadcaster for the rest of the process's life.
+        if (Context.Items.Remove(CountedKey)) Interlocked.Decrement(ref _connected);
+        return base.OnDisconnectedAsync(exception);
+    }
+
+    private const string CountedKey = "dcms.counted";
+    private static int _connected;
+
+    /// <summary>
+    /// Whether this replica is holding any console connection.
+    ///
+    /// <para>Read by <see cref="PlatformSampleBroadcaster"/> so a platform with nobody looking
+    /// at it does no sampling work at all. Per replica, which is the right scope: a replica
+    /// with a connection broadcasts to the whole group over the backplane, so one watcher
+    /// anywhere is enough for everyone to be served.</para>
+    /// </summary>
+    public static bool AnyConnected => Volatile.Read(ref _connected) > 0;
 }
 
 /// <summary>

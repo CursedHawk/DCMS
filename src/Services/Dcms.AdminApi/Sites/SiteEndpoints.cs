@@ -423,7 +423,10 @@ public static class SiteEndpoints
                     Version: draft.Version,
                     Paths: [.. put.Keys, .. del.Select(d => d.Path)],
                     ActorUserId: user.UserId,
-                    OccurredAt: DateTimeOffset.UtcNow), ct);
+                    OccurredAt: DateTimeOffset.UtcNow,
+                    // Echoed so the writing tab can recognise its own save. Clamped: this is
+                    // client-supplied and goes straight back out over the hub.
+                    ClientId: Truncate(body.ClientId, 64)), ct);
             }
 
             return Results.Ok(new
@@ -1268,7 +1271,17 @@ public static class SiteEndpoints
             : branch.Trim();
 
     private sealed record CreateSiteRequest(string Name, string? RenderMode, string? Definition);
-    private sealed record SaveFilesRequest(int? BaseVersion, Dictionary<string, FileWrite>? Put, DeleteEntry[]? Delete);
+    /// <summary>
+    /// Clamps a client-supplied string that is about to be broadcast over the hub.
+    ///
+    /// <para>The client id is opaque to the server — it only ever compares equal or not — so
+    /// nothing here validates its shape. What it must not be is unbounded: it is echoed to every
+    /// connection watching the site, so a long one is a cheap way to make the server shout.</para>
+    /// </summary>
+    private static string? Truncate(string? value, int max) =>
+        string.IsNullOrEmpty(value) ? null : value.Length <= max ? value : value[..max];
+
+    private sealed record SaveFilesRequest(int? BaseVersion, Dictionary<string, FileWrite>? Put, DeleteEntry[]? Delete, string? ClientId, string? Origin);
     private sealed record FileWrite(string Content, string? BaseHash);
     private sealed record DeleteEntry(string Path, string? BaseHash);
     private sealed record GitRestoreRequest(string Sha);

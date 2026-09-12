@@ -26,4 +26,17 @@ public sealed class RedisCacheService(IConnectionMultiplexer redis) : ICacheServ
 
     public Task<long> IncrementAsync(string key, CancellationToken ct = default)
         => Db.StringIncrementAsync(key);
+
+    public async Task<long> IncrementAsync(string key, long by, TimeSpan ttl, CancellationToken ct = default)
+    {
+        var value = await Db.StringIncrementAsync(key, by);
+
+        // Only on creation. `INCR` on a missing key returns exactly `by`, which is how a
+        // counter says "I am new" without a second round trip — and setting the expiry on every
+        // write would push the deadline forward each time, so a window under continuous load
+        // would never close.
+        if (value == by) await Db.KeyExpireAsync(key, ttl);
+
+        return value;
+    }
 }

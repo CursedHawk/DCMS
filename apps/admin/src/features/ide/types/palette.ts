@@ -58,6 +58,9 @@ export async function loadPaletteTypes(monaco: typeof Monaco): Promise<void> {
   } catch (err) {
     // The IDE still works without the palette manifest — just with looser types.
     console.warn('[ide] palette types unavailable; continuing with reduced IntelliSense', err);
-    ts.typescriptDefaults.addExtraLib(AMBIENT_EXTRA, 'file:///node_modules/@dcms-ambient/index.d.ts');
+    ts.typescriptDefaults.addExtraLib(
+      AMBIENT_EXTRA,
+      'file:///node_modules/@dcms-ambient/index.d.ts',
+    );
   }
 }

@@ -13,9 +13,15 @@ import { useVfs } from './vfs';
  *
  * The save is a delta, not a snapshot: each changed file carries the hash it was
  * last synced at, so two tabs editing different files merge and two tabs editing
- * the same file get a 409 instead of one clobbering the other. Autosave pauses
- * entirely while a conflict is unresolved — continuing would keep resending a
- * delta the server has already rejected.
+ * the same file get a 409 instead of one clobbering the other.
+ *
+ * A conflict QUARANTINES the contested files rather than stopping autosave. It used to stop
+ * everything until the author reloaded, which froze the whole project over one file — including
+ * work that would have merged without incident. `takeDelta` skips quarantined paths, so the rest
+ * keeps flowing and the blast radius of a conflict is the file it happened in.
+ *
+ * Autosave also holds for the duration of an agent run, so a run that touches five files
+ * produces one save rather than five. See `VfsState.agentRuns`.
  */
 
 export interface DraftSessionOptions {
@@ -51,6 +57,13 @@ export interface DraftSession {
   openBranch: (branch?: string) => void;
   /** Flush pending changes immediately, e.g. before committing. */
   flush: () => Promise<void>;
+  /**
+   * Pull the server's newer draft and fold it in.
+   *
+   * <p>Called when the hub reports this account's draft moved elsewhere. Returns the paths that
+   * genuinely diverged — everything else is reconciled without the author being asked.</p>
+   */
+  syncFromServer: () => Promise<string[]>;
 }
 
 export function useDraftSession({
@@ -64,6 +77,7 @@ export function useDraftSession({
   const dirty = useVfs((s) => s.dirty);
   const rev = useVfs((s) => s.rev);
   const conflict = useVfs((s) => s.conflict);
+  const agentRuns = useVfs((s) => s.agentRuns);
   const [ready, setReady] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [status, setStatus] = useState('');
@@ -94,6 +108,24 @@ export function useDraftSession({
     },
   });
 
+  /**
+   * Fetch the server's draft and merge it into this tab.
+   *
+   * <p>The merge rules live in the store (`mergeRemote`); this is only the fetch. Files the tab
+   * has not touched are adopted silently, files that happen to match are reconciled, and only
+   * real divergence is reported back.</p>
+   */
+  const pull = useCallback(async (): Promise<string[]> => {
+    try {
+      const data = await ideApi.load(siteId, useVfs.getState().branch);
+      return useVfs.getState().mergeRemote(data.files, data.version, data.hashes);
+    } catch {
+      // A failed pull leaves the tab exactly as it was, which is safe: the local work is intact
+      // and the next save either succeeds or re-reports the conflict.
+      return [];
+    }
+  }, [siteId]);
+
   const save = useMutation({
     mutationFn: async () => {
       const vfs = useVfs.getState();
@@ -109,10 +141,26 @@ export function useDraftSession({
     },
     onError: (e) => {
       if (e instanceof ApiError && e.status === 409) {
-        const paths = ((e.detail as { conflicts?: { path: string }[] })?.conflicts ?? []).map(
-          (c) => c.path,
-        );
+        // Filtered, because a malformed entry is worse than a dropped one: `[undefined]` is a
+        // truthy array, so it raises the banner and then names nothing in it — "changed these
+        // files while you were editing: ." — while also quarantining a path that does not
+        // exist, which silently excludes nothing from every later delta.
+        const paths = ((e.detail as { conflicts?: { path: string }[] })?.conflicts ?? [])
+          .map((c) => c?.path)
+          .filter((p): p is string => typeof p === 'string' && p.length > 0);
+        /*
+         * Quarantine the contested files and keep going.
+         *
+         * Autosave used to stop dead here until the author reloaded, which froze every other
+         * file in the project over one contested one — including work that would have merged
+         * without incident. `takeDelta` now skips quarantined paths, so the rest keeps
+         * flowing and the blast radius of a conflict is the file it happened in.
+         *
+         * The pull that follows is what turns a bare "conflict" into something reviewable: it
+         * fetches the server's text so ConflictResolver has both sides to show.
+         */
         useVfs.getState().setConflict(paths);
+        void pull();
       } else {
         toast.error(t('errors.generic'));
       }
@@ -120,7 +168,8 @@ export function useDraftSession({
   });
 
   const flush = useCallback(async () => {
-    if (useVfs.getState().conflict) return;
+    // No longer refuses outright on conflict: the delta excludes quarantined paths, so a flush
+    // during an unresolved conflict still saves everything that is not contested.
     await save.mutateAsync();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -131,7 +180,7 @@ export function useDraftSession({
       const current = useVfs.getState();
       const leaving = branch !== undefined && branch !== current.branch;
 
-      if (!leaving || !current.dirty || current.conflict) {
+      if (!leaving || !current.dirty) {
         load.mutate(branch);
         return;
       }
@@ -156,13 +205,36 @@ export function useDraftSession({
     openBranch(undefined);
   }, [siteId, openBranch]);
 
-  // Debounced autosave, paused while a conflict is unresolved.
+  /*
+   * Debounced autosave, paused while a conflict is unresolved or an agent run is writing.
+   *
+   * The agent hold is what makes a multi-file change one save rather than one per file. The
+   * debounce alone does not achieve that: it coalesces writes within 1.2s of each other, and a
+   * run that reads, thinks and validates between edits routinely takes longer than that per
+   * file. Without the hold a five-file change is five deltas, five `DraftChanged` messages to
+   * every other tab, and five things for the author to review.
+   *
+   * `agentRuns` returning to zero is itself a dependency, so the flush happens on release
+   * without needing the run to ask for it — which matters because a run that throws still has
+   * its edits in the workspace, and they still need saving.
+   */
   useEffect(() => {
-    if (!ready || !dirty || conflict) return;
+    // `conflict` is deliberately NOT a reason to stop: the delta already excludes quarantined
+    // paths, so continuing saves everything that is not contested. It stays a dependency so a
+    // newly-quarantined path re-triggers the effect and the remaining work flushes promptly.
+    if (!ready || !dirty || agentRuns > 0) return;
     const id = setTimeout(() => save.mutate(), debounceMs);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rev, dirty, conflict, ready, debounceMs]);
+  }, [rev, dirty, conflict, ready, debounceMs, agentRuns]);
 
-  return { ready, switching, saving: save.isPending, status, openBranch, flush };
+  return {
+    ready,
+    switching,
+    saving: save.isPending,
+    status,
+    openBranch,
+    flush,
+    syncFromServer: pull,
+  };
 }

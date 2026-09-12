@@ -9,10 +9,13 @@ import { useQuery } from '@tanstack/react-query';
 import { Bot, MessagesSquare, Send } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Badge, Button, cn, EmptyState, Input } from '@dcms/ui';
+import { Badge, Button, cn, EmptyState, Input, setHubConnected, useHubRevalidation } from '@dcms/ui';
 import { getAccessToken } from '../../auth';
 import { getCurrentTenantSlug } from '../../tenants';
 import { type ChatMessage, chatApi, contentApiBase } from '../../chat/api';
+
+/** The name this page's connection reports under, for `useHubRevalidation`. */
+const CHAT_HUB = 'chat';
 
 export function ChatPage() {
   const { t } = useTranslation();
@@ -28,15 +31,25 @@ export function ChatPage() {
     queryKey: ['chat-conversations'],
     queryFn: () => chatApi.conversations(),
     /*
-     * Only while the socket is down.
+     * Never on a timer.
      *
-     * The hub below already refetches this list on `ConversationStarted` and
-     * `ConversationActivity`, so a fixed 15-second poll was asking the server fifteen times
-     * for news it had already pushed. It is a fallback for a dropped connection, and it says
-     * so by switching itself off when there is one.
+     * The hub below refetches this list on `ConversationStarted` and `ConversationActivity`,
+     * which is every way it can change. The 15-second fallback that used to run while the
+     * socket was down has moved to `useHubRevalidation` underneath: it refetches when this
+     * connection comes back and when the tab becomes visible, which are the only two moments
+     * at which a missed message can actually be noticed.
      */
-    refetchInterval: connected ? false : 15_000,
   });
+
+  // `connected` is this page's own hub state; the presence registry is what lets the shared
+  // helper see it without the socket being lifted out of this component. Cleared on unmount,
+  // because the socket goes with the page and a registry still claiming `true` would be a lie
+  // to whatever reads it next.
+  useEffect(() => {
+    setHubConnected(CHAT_HUB, connected);
+    return () => setHubConnected(CHAT_HUB, false);
+  }, [connected]);
+  useHubRevalidation({ hub: CHAT_HUB, keys: [['chat-conversations']] });
 
   useEffect(() => {
     if (!slug) return;

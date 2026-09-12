@@ -48,6 +48,7 @@ public static class RlsConfigurator
         // tool results — draft content, analytics figures — lifted out of the tenant's data.
         ("ai", "conversations"),
         ("ai", "messages"),
+        ("ai", "runs"),
         ("search", "search_documents"),
         ("analytics", "events"),
         ("analytics", "daily_rollups"),

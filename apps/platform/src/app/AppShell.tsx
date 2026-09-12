@@ -1,11 +1,12 @@
 import { Outlet } from '@tanstack/react-router';
 import { Suspense, useState } from 'react';
-import { AppFrame, Button, CenteredSpinner, PermissionProvider } from '@dcms/ui';
+import { AppFrame, Button, CenteredSpinner, PermissionProvider, useHubRevalidation } from '@dcms/ui';
 import { login, logout } from '../auth';
 import { useAuth } from '../useAuth';
 import { can, Perm, useMe } from '../lib/permissions';
 import { EnvironmentBand } from '../components/EnvironmentBand';
-import { useConsoleHub } from '../features/live/useConsoleHub';
+import { LIVE_KEYS } from '../features/live/liveMap';
+import { CONSOLE_HUB, useConsoleHub } from '../features/live/useConsoleHub';
 import { useNotificationAlerts } from '../features/notifications/useNotificationAlerts';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
@@ -20,6 +21,10 @@ export function AppShell() {
   // with something to watch.
   const isOperator = (me.data?.permissions.length ?? 0) > 0;
   useConsoleHub(isOperator);
+  // What replaced the per-list polling. The socket carries the news while it is up;
+  // this closes the three windows in which it cannot — reconnect, the tab becoming visible
+  // again, and the browser coming back online. See `useHubRevalidation`.
+  useHubRevalidation({ hub: CONSOLE_HUB, keys: LIVE_KEYS, enabled: isOperator });
   useNotificationAlerts(isOperator && can(me.data, Perm.NotificationsRead));
 
   if (loading) return <CenteredSpinner />;

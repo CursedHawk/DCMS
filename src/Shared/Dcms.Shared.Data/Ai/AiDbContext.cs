@@ -25,6 +25,7 @@ public class AiDbContext(DbContextOptions<AiDbContext> options) : DbContext(opti
     public DbSet<UserAiSettings> UserSettings => Set<UserAiSettings>();
     public DbSet<AiConversation> Conversations => Set<AiConversation>();
     public DbSet<AiMessage> Messages => Set<AiMessage>();
+    public DbSet<AiRun> Runs => Set<AiRun>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -60,10 +61,30 @@ public class AiDbContext(DbContextOptions<AiDbContext> options) : DbContext(opti
             e.Property(c => c.Visibility).HasConversion<string>().HasMaxLength(16);
             e.Property(c => c.Mode).HasMaxLength(16);
             e.Property(c => c.PageArea).HasMaxLength(64);
+            /*
+             * Defaulted in the database, not just in C#.
+             *
+             * Every row that existed before this column did is a console conversation, and a
+             * NOT NULL column added without a default backfills them with the empty string —
+             * which is not a surface any rail filters on, so the entire existing history would
+             * have quietly disappeared from the assistant's list. The default is what backfills
+             * them correctly, and it stays afterwards as the right answer for any writer that
+             * does not name a surface.
+             */
+            e.Property(c => c.Surface)
+                .HasMaxLength(16)
+                .HasDefaultValue(AiSurfaces.Console)
+                .IsRequired();
+            e.Property(c => c.Branch).HasMaxLength(200);
 
             // The rail's query in one index: this tenant, newest first, archived rows excluded.
             e.HasIndex(c => new { c.TenantId, c.OwnerUserId, c.UpdatedAt });
             e.HasIndex(c => new { c.TenantId, c.Visibility, c.UpdatedAt });
+
+            // The IDE rail: one member's conversations about one site, newest first. Without
+            // this the surface column would filter after the scan and the IDE's many short
+            // runs would be paying for the console's history on every open.
+            e.HasIndex(c => new { c.TenantId, c.OwnerUserId, c.Surface, c.SiteId, c.UpdatedAt });
         });
 
         builder.Entity<AiMessage>(e =>
@@ -80,6 +101,25 @@ public class AiDbContext(DbContextOptions<AiDbContext> options) : DbContext(opti
             e.HasOne(m => m.Conversation)
                 .WithMany(c => c.Messages)
                 .HasForeignKey(m => m.ConversationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<AiRun>(e =>
+        {
+            e.ToTable("runs");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Task).HasMaxLength(2000).IsRequired();
+            e.Property(r => r.Outcome).HasMaxLength(16).IsRequired();
+            e.Property(r => r.Complexity).HasMaxLength(16);
+            e.Property(r => r.ChangesJson).HasColumnType("jsonb").IsRequired();
+            e.Property(r => r.ValidationJson).HasColumnType("jsonb");
+            e.Property(r => r.MetricsJson).HasColumnType("jsonb");
+
+            e.HasIndex(r => new { r.ConversationId, r.StartedAt });
+
+            e.HasOne(r => r.Conversation)
+                .WithMany(c => c.Runs)
+                .HasForeignKey(r => r.ConversationId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

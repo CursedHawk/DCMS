@@ -14,7 +14,7 @@ public static class ChatEndpoints
     {
         app.MapPost("/v1/chat", async (
             ChatCompletionRequest body, AiProviderResolver resolver, DcmsMetrics metrics,
-            ILoggerFactory loggerFactory, CancellationToken ct) =>
+            AiQuota quota, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             if (body.TenantId == Guid.Empty || string.IsNullOrWhiteSpace(body.Prompt))
             {
@@ -22,6 +22,17 @@ public static class ChatEndpoints
             }
 
             var logger = loggerFactory.CreateLogger("ai-gateway");
+
+            // The same budget as the agent's. A tenant's AI spend is one number whether it was
+            // the IDE, the dock, content generation or the site chatbot that spent it, and a
+            // ceiling that only covered one of those would be a ceiling with a door in it.
+            var verdict = await quota.CheckAsync(body.TenantId, body.UserId, ct);
+            if (!verdict.Ok)
+            {
+                return Results.Json(
+                    new { error = verdict.Error, message = verdict.Message },
+                    statusCode: StatusCodes.Status429TooManyRequests);
+            }
 
             ResolvedProvider resolved;
             try
@@ -57,6 +68,8 @@ public static class ChatEndpoints
                 // the same token count are not the same money.
                 metrics.AiCall(body.TenantId, resolved.Provider.ProviderId, resolved.Model,
                     completion.PromptTokens, completion.CompletionTokens, Stopwatch.GetElapsedTime(started));
+                await quota.RecordAsync(
+                    body.TenantId, completion.PromptTokens + completion.CompletionTokens, ct);
 
                 return Results.Ok(new ChatCompletionResponse(resolved.Provider.ProviderId, resolved.Model, completion.Text));
             }

@@ -2,9 +2,10 @@ import { can, type MyPermissions } from '@dcms/core';
 import { Perm } from '../../lib/permissions';
 import { api } from '../../lib/api';
 import type { Attachment } from './attachments';
-import { type AiMode, decide, type ToolRisk } from './modes';
+import type { ToolSpec } from '../agent/contracts';
+import { type AiMode, decide } from '../agent/modes';
 
-export type { ToolRisk } from './modes';
+export type { ToolRisk } from '../agent/modes';
 
 /** Everything a tool is given beyond its own arguments. */
 export interface ToolContext {
@@ -14,48 +15,22 @@ export interface ToolContext {
   onUploaded: (name: string, assetId: string) => void;
 }
 
-export interface AssistantTool {
-  name: string;
-  description: string;
-  input_schema: Record<string, unknown>;
-  /**
-   * The permission a caller must hold for this tool to exist at all.
-   *
-   * <p><b>Tools the caller cannot use are never offered to the model.</b> Not disabled, not
-   * refused at call time — absent from the tool list it is given. A model that is told a tool
-   * exists will reach for it, and an assistant that keeps announcing it cannot do the thing it
-   * just offered reads as broken rather than as careful. The server refuses independently, as
-   * it does for the UI; this stops the conversation going somewhere it cannot end.</p>
-   */
-  permission?: string;
-  /**
-   * How much this tool can do, for the mode table in `modes.ts`.
-   *
-   * <p>Omitted means it only reads. `safe` writes — drafting, editing, uploading, filing — run
-   * unattended in Agent mode; `dangerous` ones — publishing, scheduling, deleting — stop for a
-   * person unless the operator has explicitly gone to Full auto.</p>
-   */
-  risk?: ToolRisk;
-  /**
-   * Query-key roots to invalidate once this tool has run.
-   *
-   * <p>Content writes raise no `ResourceChanged` on the tenant hub — that carries notification
-   * kinds, and authoring does not raise one — so a list left open behind the dock would keep
-   * showing the world as it was before the assistant changed it.</p>
-   */
-  invalidates?: string[];
-  /** A one-line, human-readable account of what this call will do, for the approval card. */
-  summarize?: (input: Record<string, unknown>) => string;
-  /**
-   * What the transcript's work card says once it has run: "Created draft autumn-26".
-   *
-   * <p>Past tense and specific. `update_content` reading as "update_content" is what made the
-   * old transcript unreadable — a list of function names tells you the agent did twelve things
-   * and nothing about what they were.</p>
-   */
-  describe?: (input: Record<string, unknown>) => string;
+/**
+ * A console assistant tool.
+ *
+ * <p>Every field except `run` comes from the shared {@link ToolSpec}, so the two agent surfaces
+ * cannot drift on what a tool declares — name, schema, permission, risk, invalidation and the
+ * two narration hooks are defined once, in `features/agent/contracts.ts`.</p>
+ *
+ * <p><b>The one deliberate divergence is `run`.</b> The shared contract has a tool return a
+ * `ToolOutcome` — content plus the paths it touched plus whether it was truncated — because
+ * result-size discipline and the change-review pane both need that. These sixteen tools still
+ * return a bare string. Converging them is Phase 5 of the rework, and this type names the gap
+ * rather than hiding it behind a structural type that happens to fit.</p>
+ */
+export type AssistantTool = Omit<ToolSpec<ToolContext>, 'run'> & {
   run: (input: Record<string, unknown>, context: ToolContext) => Promise<string>;
-}
+};
 
 const str = (input: Record<string, unknown>, key: string): string | undefined => {
   const value = input[key];

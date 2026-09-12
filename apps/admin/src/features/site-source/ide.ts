@@ -1,4 +1,5 @@
 import { api } from '../../lib/api';
+import { clientId } from './clientId';
 import type { Delta } from './vfs';
 
 // The Mode B IDE working-draft API. Drafts are per (site, user, branch): the
@@ -21,11 +22,18 @@ export const ideApi = {
   load: (siteId: string, branch?: string) =>
     api.get<IdeState>(`/admin/sites/${siteId}/ide${branchQuery(branch)}`),
 
-  /** Granular save of the working draft (per-file hash conflict → 409). */
-  saveFiles: (siteId: string, branch: string, delta: Delta) =>
+  /**
+   * Granular save of the working draft (per-file hash conflict → 409).
+   *
+   * <p>`clientId` identifies this tab so the `DraftChanged` broadcast that follows can be
+   * recognised as an echo of this very save rather than as somebody else's work. `origin` says
+   * whether a person or the agent wrote it, so the editor can present a run's edits as a change
+   * set instead of as files mutating on their own.</p>
+   */
+  saveFiles: (siteId: string, branch: string, delta: Delta, origin: 'user' | 'agent' = 'user') =>
     api.patch<{ version: number; hashes: Record<string, string> }>(
       `/admin/sites/${siteId}/ide/files${branchQuery(branch)}`,
-      { put: delta.put, delete: delta.delete },
+      { put: delta.put, delete: delta.delete, clientId: clientId(), origin },
     ),
 
   /** Tenant-generated starter files for a new React app (see StarterFlavor). */

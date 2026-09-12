@@ -1,9 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTypeProblems } from './diagnostics/useTypeProblems';
 import { Link } from '@tanstack/react-router';
 import {
-  AlertTriangle, ArrowLeft, Eye, EyeOff, RefreshCw, Rocket, RotateCcw, Terminal, X,
+  AlertTriangle,
+  ArrowLeft,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  Rocket,
+  RotateCcw,
+  Terminal,
+  X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Breadcrumbs } from './Breadcrumbs';
+import { BottomPanel } from './panel/BottomPanel';
+import { usePanelState } from './panel/panelState';
+import { appendOutput } from './panel/output';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button, CenteredSpinner } from '@dcms/ui';
@@ -18,7 +31,6 @@ import {
   RELEASE_BRANCH,
   Resizer,
   StatusBar,
-  expectBuild,
   gitApi,
   ideApi,
   isBinaryPath,
@@ -75,6 +87,13 @@ export function IdePage({ siteId }: { siteId: string }) {
   // Driven here rather than inside PreviewPane: the Problems view lists the messages from this
   // same build, and a second usePreview would be a second worker bundling the same project.
   const preview = usePreview(showPreview, siteId, previewNonce);
+  // Type problems come from Monaco's worker, which is attached whether or not the preview is,
+  // so the Problems panel has something true to say even with the preview closed.
+  const typeProblems = useTypeProblems();
+  const problems = useMemo(
+    () => [...typeProblems, ...preview.problems],
+    [typeProblems, preview.problems],
+  );
   // Marks the site whose persisted tabs have been restored — gates tab autosave so
   // we never write the previous site's tabs under a newly-selected site's key.
   const restoredFor = useRef<string | null>(null);
@@ -83,6 +102,13 @@ export function IdePage({ siteId }: { siteId: string }) {
 
   // Resizable layout: the sidebar view and preview panels remember their width
   // (px) in localStorage; double-clicking a divider restores the default.
+  const panel = usePanelState();
+  const [panelHeight, setPanelHeight, resetPanelHeight] = useStoredWidth(
+    'dcms.ide.panelHeight',
+    220,
+    100,
+    700,
+  );
   const [sidebarWidth, setSidebarWidth, resetSidebarWidth] = useStoredWidth(
     'dcms.ide.sidebarWidth',
     240,
@@ -114,11 +140,24 @@ export function IdePage({ siteId }: { siteId: string }) {
     // Somebody else committed to the branch in this editor. The banner the conflict path
     // already renders is the right place to say so, and it comes with the reload button.
     onCommit: () => setBranchMoved(true),
-    // Your own draft, written from somewhere else — a second tab, or the AI agent. Learning
-    // this now, rather than when the next save is refused, is the difference between merging
-    // two versions and being offered "reload and lose what you typed".
+    /*
+     * Your own draft, written from somewhere else — a second tab, or the AI agent.
+     *
+     * This used to raise a banner offering a reload, which was the wrong default: the
+     * overwhelming majority of these messages are about files this tab has never touched, and
+     * answering "somebody saved another file" with "reload and lose what you typed" is a
+     * false positive with a destructive remedy.
+     *
+     * So pull and merge instead. `syncFromServer` adopts anything untouched here, reconciles
+     * anything that happens to match, and hands back only the paths that genuinely diverged.
+     * The banner appears for those, and only those — usually none.
+     */
     draftVersion: draftVersion,
-    onDraftChanged: (d) => setDraftMovedPaths(d.paths),
+    onDraftChanged: () => {
+      void session.syncFromServer().then((diverged) => {
+        setDraftMovedPaths(diverged.length > 0 ? diverged : null);
+      });
+    },
   });
 
   // A branch switch or a reload settles both banners; clearing on `branch` covers both.
@@ -178,15 +217,24 @@ export function IdePage({ siteId }: { siteId: string }) {
     mutationFn: () => ideApi.regenerate(siteId),
     onSuccess: ({ files }) => {
       const vfs = useVfs.getState();
-      const changed = Object.entries(files).filter(([path, content]) => vfs.files[path] !== content);
+      const changed = Object.entries(files).filter(
+        ([path, content]) => vfs.files[path] !== content,
+      );
       for (const [path, content] of changed) vfs.writeFile(path, content);
-      toast.success(
+      const message =
         changed.length === 0
           ? t('ide.generatedUpToDate')
-          : t('ide.generatedRefreshed', { count: changed.length }),
-      );
+          : t('ide.generatedRefreshed', { count: changed.length });
+      toast.success(message);
+      // …and again where it will still be readable in ten minutes. A toast answers "what just
+      // happened"; the Output tab answers "what happened while I was reading the code".
+      appendOutput('workspace', message);
+      for (const [path] of changed) appendOutput('workspace', `regenerated ${path}`);
     },
-    onError: () => toast.error(t('errors.generic')),
+    onError: () => {
+      toast.error(t('errors.generic'));
+      appendOutput('workspace', t('ide.refreshGenerated'), 'error');
+    },
   });
 
   // Mode B typings are opted into here rather than by the shared Monaco setup, so
@@ -209,8 +257,12 @@ export function IdePage({ siteId }: { siteId: string }) {
     onSuccess: () => {
       setPreviewNonce((n) => n + 1);
       toast.success(t('ide.sandboxReset'));
+      appendOutput('workspace', t('ide.sandboxReset'));
     },
-    onError: () => toast.error(t('errors.generic')),
+    onError: () => {
+      toast.error(t('errors.generic'));
+      appendOutput('workspace', t('ide.resetSandbox'), 'error');
+    },
   });
 
   // Switching branches flushes the branch being left; the shared session handles
@@ -238,7 +290,7 @@ export function IdePage({ siteId }: { siteId: string }) {
       queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
       if (branch === RELEASE_BRANCH) {
         toast.success(t('editor.publishQueued'));
-        expectBuild(siteId);
+        appendOutput('git', t('editor.publishQueued'));
         setSidebarView('deploy');
       } else {
         setPublishMerge(true);
@@ -249,9 +301,11 @@ export function IdePage({ siteId }: { siteId: string }) {
         // Draft save conflict, or the branch moved and the same files were edited on
         // both sides — either way, resolve it in Source Control before publishing.
         toast.error(t('ide.git.resolveInScm'));
+        appendOutput('git', t('ide.git.resolveInScm'), 'error');
         setSidebarView('scm');
       } else {
         toast.error(t('errors.generic'));
+        appendOutput('git', t('errors.generic'), 'error');
       }
     },
   });
@@ -264,10 +318,7 @@ export function IdePage({ siteId }: { siteId: string }) {
    * handler passed in anyway, and the list would then live in two places.
    */
   const mod = modifierLabel();
-  const openPalette = useCallback(
-    (mode: PaletteMode) => setPalette({ open: true, mode }),
-    [],
-  );
+  const openPalette = useCallback((mode: PaletteMode) => setPalette({ open: true, mode }), []);
 
   const paletteCommands: IdeCommand[] = useMemo(() => {
     const view = (id: SidebarView, label: string, shortcut?: string, keywords?: string) => ({
@@ -282,9 +333,47 @@ export function IdePage({ siteId }: { siteId: string }) {
       view('files', t('ide.explorer'), undefined, 'explorer tree'),
       view('search', t('ide.search.title'), `${mod} ⇧ F`, 'find grep'),
       view('scm', t('ide.git.title'), `${mod} ⇧ G`, 'git commit branch diff'),
-      view('problems', t('ide.problems.title'), `${mod} ⇧ M`, 'errors warnings build'),
       view('deploy', t('ide.deploy.title'), undefined, 'builds releases'),
-      view('agent', t('ide.agent.title', 'Assistant'), undefined, 'ai chat'),
+      view('agent', t('ide.agent.title'), undefined, 'ai chat'),
+      /*
+       * The bottom panel, one command per tab.
+       *
+       * Four entries rather than one "toggle panel", because the palette is how somebody finds
+       * a surface they have not met yet — and "Problems" is a word they will search for while
+       * "panel" is not.
+       */
+      {
+        id: 'panel.problems',
+        label: t('ide.problems.title'),
+        shortcut: `${mod} ⇧ M`,
+        keywords: 'errors warnings build panel',
+        run: () => panel.show('problems'),
+      },
+      {
+        id: 'panel.output',
+        label: t('ide.panel.tabs.output'),
+        keywords: 'log panel workspace',
+        run: () => panel.show('output'),
+      },
+      {
+        id: 'panel.console',
+        label: t('ide.panel.tabs.console'),
+        keywords: 'log panel runtime errors',
+        run: () => panel.show('console'),
+      },
+      {
+        id: 'panel.build',
+        label: t('ide.panel.tabs.build'),
+        keywords: 'log panel history compile',
+        run: () => panel.show('build'),
+      },
+      {
+        id: 'tabs.closeOthers',
+        label: t('ide.tabs.closeOthers'),
+        keywords: 'tabs editor tidy',
+        disabled: !activePath,
+        run: () => useVfs.getState().closeOthers(activePath),
+      },
       {
         id: 'preview.toggle',
         label: showPreview ? t('ide.hidePreview') : t('ide.showPreview'),
@@ -342,8 +431,17 @@ export function IdePage({ siteId }: { siteId: string }) {
       },
     ];
   }, [
-    t, mod, showPreview, activePath, conflict, session, preview,
-    refreshGenerated, publish, resetSandbox,
+    t,
+    mod,
+    panel,
+    showPreview,
+    activePath,
+    conflict,
+    session,
+    preview,
+    refreshGenerated,
+    publish,
+    resetSandbox,
   ]);
 
   useIdeShortcuts(
@@ -353,7 +451,11 @@ export function IdePage({ siteId }: { siteId: string }) {
         { key: 'p', shift: true, run: () => openPalette('commands') },
         { key: 'f', shift: true, run: () => setSidebarView('search') },
         { key: 'g', shift: true, run: () => setSidebarView('scm') },
-        { key: 'm', shift: true, run: () => setSidebarView('problems') },
+        { key: 'm', shift: true, run: () => panel.show('problems') },
+        // The backtick is the bottom panel everywhere a bottom panel exists. This hook treats
+        // Meta and Control as one modifier (see its notes), so this answers to both — which
+        // matters here because macOS claims ⌘` for window cycling and will not give it up.
+        { key: '`', run: () => panel.toggle() },
         { key: '\\', run: () => setShowPreview((v) => !v) },
         /*
          * The shortcut sheet is on ⌘? and NOT on ⌘/ — Monaco binds ⌘/ to toggle-comment, which
@@ -377,7 +479,10 @@ export function IdePage({ siteId }: { siteId: string }) {
          * that appeared to be ours. Closing a tab stays a palette command and a click on the ×.
          */
       ],
-      [openPalette, session, t],
+      // `panel` is here because its `toggle` closes over the panel's own open/tab state: a
+      // stale one would toggle against what the panel looked like at the last render, which
+      // shows up as a shortcut that opens the panel when it should close it.
+      [openPalette, panel, session, t],
     ),
   );
 
@@ -385,7 +490,11 @@ export function IdePage({ siteId }: { siteId: string }) {
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
-      <StarterPicker open={pickStarter} pending={scaffold.isPending} onPick={(f) => scaffold.mutate(f)} />
+      <StarterPicker
+        open={pickStarter}
+        pending={scaffold.isPending}
+        onPick={(f) => scaffold.mutate(f)}
+      />
 
       <IdeCommandPalette
         open={palette.open}
@@ -438,7 +547,10 @@ export function IdePage({ siteId }: { siteId: string }) {
           {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           {showPreview ? t('ide.hidePreview') : t('ide.showPreview')}
         </Button>
-        <Button onClick={() => publish.mutate()} disabled={publish.isPending || !!conflict || session.switching}>
+        <Button
+          onClick={() => publish.mutate()}
+          disabled={publish.isPending || !!conflict || session.switching}
+        >
           <Rocket className="h-4 w-4" /> {t('ide.git.publishToRelease')}
         </Button>
       </div>
@@ -450,10 +562,10 @@ export function IdePage({ siteId }: { siteId: string }) {
         open={publishMerge}
         onOpenChange={setPublishMerge}
         onMerged={() => {
-          // Marked before the invalidate: the merge has landed but the build row it causes is
-          // written by the push webhook a moment later, so the refetch this triggers will not
-          // see it. The marker is what keeps the panel looking until it does.
-          expectBuild(siteId);
+          // The merge has landed, but the build row it causes is written by the push webhook
+          // a moment later, so the refetch this triggers will not see it. That is the site
+          // hub's job: `BuildChanged` arrives when the build does. The Deployments panel used
+          // to guess at it with a 2.5-second poll and a 90-second window; it no longer has to.
           queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
           queryClient.invalidateQueries({ queryKey: ['git-changes', siteId] });
           queryClient.invalidateQueries({ queryKey: ['site-builds', siteId] });
@@ -530,10 +642,6 @@ export function IdePage({ siteId }: { siteId: string }) {
           onReload={() => session.openBranch(branch)}
           onRestored={(files, version, hashes) => useVfs.getState().load(files, version, hashes)}
           viewWidth={sidebarWidth}
-          problems={preview.problems}
-          building={preview.building}
-          previewEnabled={showPreview}
-          onEnablePreview={() => setShowPreview(true)}
         />
         <Resizer
           ariaLabel={t('ide.resizeSidebar')}
@@ -542,6 +650,7 @@ export function IdePage({ siteId }: { siteId: string }) {
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <EditorTabs />
+          <Breadcrumbs path={activeDiff ? (activeDiffTab?.path ?? null) : activePath} />
           <div className="relative min-h-0 flex-1">
             <MonacoEditor key={siteId} />
             {activeDiffTab && (
@@ -559,6 +668,19 @@ export function IdePage({ siteId }: { siteId: string }) {
               </div>
             )}
           </div>
+          {/* Under the editor group, not under the whole workspace: everything in the panel is
+              about the code, and stretching it beneath the preview would put build errors under
+              a rendered page they have nothing to do with. */}
+          <BottomPanel
+            state={panel}
+            height={panelHeight}
+            onHeightDelta={(dy) => setPanelHeight((h) => h + dy)}
+            onHeightReset={resetPanelHeight}
+            problems={problems}
+            building={preview.building}
+            previewEnabled={showPreview}
+            onEnablePreview={() => setShowPreview(true)}
+          />
         </div>
         {showPreview && (
           <>

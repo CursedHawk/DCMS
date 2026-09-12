@@ -162,6 +162,9 @@ public static class AuditActions
 
     public const string AiConversationDeleted = "ai.conversation.deleted";
 
+    /// <summary>Stored conversations aged out by the retention sweep.</summary>
+    public const string AiConversationsPruned = "ai.conversations.pruned";
+
     // ---- visitors (site end-users, a separate identity plane from platform users) ----
     public const string VisitorRegistered = "visitor.registered";
     public const string VisitorLoggedIn = "visitor.login.succeeded";

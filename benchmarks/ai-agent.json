@@ -1,0 +1,4 @@
+{
+  "_comment": "IDE agent run records, one per benchmark run. Written by scripts/ai-bench/ai-bench.mjs record; see scripts/ai-bench/README.md for the fixed task set and the measurement's blind spots. Empty until the first real baseline is taken (plan step 0.5).",
+  "runs": []
+}

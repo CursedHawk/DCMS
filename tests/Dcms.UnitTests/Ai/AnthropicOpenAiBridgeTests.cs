@@ -309,6 +309,22 @@ public class AnthropicOpenAiBridgeTests
     }
 
     [Fact]
+    public void Both_sides_of_the_usage_reach_the_browser()
+    {
+        // The prompt side used to be read for the server's own metric and then dropped, so a
+        // browser on an OpenAI-compatible provider could see what a turn produced but not what
+        // it cost to send — and the IDE's per-run benchmark had to record the input as unknown
+        // rather than average a missing number in as free.
+        var translator = new OpenAiStreamTranslator();
+        translator.Feed("""{"choices":[],"usage":{"prompt_tokens":120,"completion_tokens":45}}""");
+        var frames = translator.Finish();
+
+        var delta = frames.Single(f => f.Contains("message_delta"));
+        delta.Should().Contain("\"input_tokens\":120");
+        delta.Should().Contain("\"output_tokens\":45");
+    }
+
+    [Fact]
     public void A_malformed_or_empty_chunk_is_ignored_rather_than_fatal()
     {
         // A keep-alive, the [DONE] sentinel and a truncated chunk are all things a provider

@@ -36,7 +36,10 @@ const SEPARATORS = new Set(['/', '-', '_', '.', ' ']);
  * length, run for every file on every keystroke, to change the order of results that are all
  * already plausible. Returns null when the candidate does not contain the query at all.</p>
  */
-export function fuzzyScore(candidate: string, query: string): { score: number; positions: number[] } | null {
+export function fuzzyScore(
+  candidate: string,
+  query: string,
+): { score: number; positions: number[] } | null {
   if (query === '') return { score: 0, positions: [] };
 
   const haystack = candidate.toLowerCase();
@@ -107,9 +110,7 @@ export function rankPaths(paths: readonly string[], query: string, limit = 50): 
     if (byPath) ranked.push({ item: path, score: byPath.score, positions: byPath.positions });
   }
 
-  return ranked
-    .sort((a, b) => b.score - a.score || a.item.localeCompare(b.item))
-    .slice(0, limit);
+  return ranked.sort((a, b) => b.score - a.score || a.item.localeCompare(b.item)).slice(0, limit);
 }
 
 /** One thing the palette can do. */
@@ -161,7 +162,10 @@ export function rankCommands(commands: readonly IdeCommand[], query: string): Ra
  * adjacent ones, which matters for both the DOM and how it reads when a screen reader announces
  * emphasis.</p>
  */
-export function highlightRuns(text: string, positions: readonly number[]): { text: string; hit: boolean }[] {
+export function highlightRuns(
+  text: string,
+  positions: readonly number[],
+): { text: string; hit: boolean }[] {
   if (positions.length === 0) return [{ text, hit: false }];
 
   const hits = new Set(positions);

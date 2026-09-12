@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, cn } from '@dcms/ui';
 import type { Attachment } from './attachments';
 import { ModeSwitch } from './ModeSwitch';
-import type { AiMode } from './modes';
+import type { AiMode } from '../agent/modes';
 
 /**
  * Where a question is written.

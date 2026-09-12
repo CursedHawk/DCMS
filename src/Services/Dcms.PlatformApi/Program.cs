@@ -63,6 +63,7 @@ if (!string.IsNullOrWhiteSpace(signalRRedis))
 }
 builder.Services.AddSingleton<IPlatformChangePublisher, PlatformChangePublisher>();
 builder.Services.AddHostedService<PlatformLiveUpdates>();
+builder.Services.AddHostedService<PlatformSampleBroadcaster>();
 
 // Read-only access to the obs.* reporting views — the console's cross-tenant read model.
 builder.Services.AddScoped<ObservabilityQuery>();

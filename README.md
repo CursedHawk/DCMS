@@ -45,6 +45,7 @@ the Vault chain and the CI/CD pipeline, from nothing to a host that deploys itse
 - `docs/deploy-linux.md` — single-host bring-up in detail
 - `docs/plugins.md` — writing a plugin
 - `docs/mode-a-builder.md` — the GrapesJS visual builder
+- `docs/ai-agent.md` — the AI agent: the loop, the tool contract, modes and scope
 - `docs/adr/` — architecture decision records
 - `loadtest/README.md` — load and stress testing: scenarios, evidence bundles,
   and how to read one

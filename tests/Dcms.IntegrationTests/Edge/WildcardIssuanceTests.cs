@@ -331,6 +331,9 @@ public sealed class WildcardIssuanceTests : IAsyncLifetime
 
         public Task<long> IncrementAsync(string key, CancellationToken ct = default)
             => throw new NotSupportedException("A DNS-01 order must not touch the HTTP-01 store.");
+
+        public Task<long> IncrementAsync(string key, long by, TimeSpan ttl, CancellationToken ct = default)
+            => throw new NotSupportedException("A DNS-01 order must not touch the HTTP-01 store.");
     }
 
     private sealed class PassthroughTransit : ITransitEncryptor

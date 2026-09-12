@@ -1,5 +1,7 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { attachPreview } from './preview/previewBridge';
 import type { PreviewControls } from './preview/usePreview';
 
 // Live client-side preview: the esbuild-wasm worker bundles the project and we
@@ -11,6 +13,19 @@ import type { PreviewControls } from './preview/usePreview';
 export function PreviewPane({ preview }: { preview: PreviewControls }) {
   const { t } = useTranslation();
   const { srcdoc, error, building, refresh } = preview;
+  const frameRef = useRef<HTMLIFrameElement>(null);
+
+  /*
+   * Connect the running page to the agent's preview tools.
+   *
+   * Re-attached on every `srcdoc` change because a rebuild replaces the document — the old
+   * contentWindow is gone, and a stale reference would answer queries about a page that is no
+   * longer on screen.
+   */
+  useEffect(() => {
+    if (!srcdoc) return;
+    return attachPreview(frameRef.current?.contentWindow ?? null);
+  }, [srcdoc]);
 
   return (
     <div className="relative flex h-full flex-col bg-white">
@@ -30,6 +45,7 @@ export function PreviewPane({ preview }: { preview: PreviewControls }) {
       <div className="relative min-h-0 flex-1">
         {srcdoc ? (
           <iframe
+            ref={frameRef}
             title={t('ide.preview')}
             srcDoc={srcdoc}
             sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"

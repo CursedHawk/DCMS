@@ -2,7 +2,9 @@
 bin/
 # `dotnet ef` on Linux writes its BuildHost payload to a directory literally named
 # "bin\Debug" — one directory, backslash and all — which `bin/` above does not match.
-*bin\Debug/
+# The backslash has to be escaped: unescaped, `\D` is just `D`, so the pattern silently
+# became `*binDebug/` and matched nothing.
+*bin\\Debug/
 obj/
 
 # ...except the Vault CLI shim, which is a directory meant to go on PATH and is not build

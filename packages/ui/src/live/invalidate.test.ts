@@ -61,6 +61,54 @@ describe('createResourceInvalidator', () => {
   });
 });
 
+describe('throttled tags', () => {
+  /**
+   * A tag a server pushes on a timer is broadcast once per replica, so a scaled API multiplies
+   * a tick that carries the same news. The floor makes the cost of a sample independent of how
+   * many replicas happen to be running.
+   */
+  it('drops a repeat inside the floor', () => {
+    vi.useFakeTimers();
+    try {
+      const { client: qc, invalidateQueries } = client();
+      const invalidate = createResourceInvalidator(qc, map, { media: 20_000 });
+
+      invalidate({ tag: 'media' });
+      invalidate({ tag: 'media' });
+      expect(invalidateQueries).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(20_001);
+      invalidate({ tag: 'media' });
+      expect(invalidateQueries).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never throttles a tag with no entry', () => {
+    // Dropping a real change because a similar one arrived recently is exactly the staleness
+    // the push exists to prevent, so an announcement tag must never be rate-limited.
+    const { client: qc, invalidateQueries } = client();
+    const invalidate = createResourceInvalidator(qc, map, { media: 20_000 });
+    invalidate({ tag: 'content' });
+    invalidate({ tag: 'content' });
+    expect(invalidateQueries).toHaveBeenCalledTimes(2);
+  });
+
+  it('throttles each tag on its own clock', () => {
+    vi.useFakeTimers();
+    try {
+      const { client: qc, invalidateQueries } = client();
+      const invalidate = createResourceInvalidator(qc, map, { media: 20_000, content: 20_000 });
+      invalidate({ tag: 'media' });
+      invalidate({ tag: 'content' });
+      expect(invalidateQueries).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('the tag vocabulary', () => {
   it('recognises its own tags', () => {
     for (const tag of RESOURCE_TAGS) expect(isResourceTag(tag)).toBe(true);

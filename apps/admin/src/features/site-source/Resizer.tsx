@@ -1,19 +1,29 @@
 import { useCallback, useState } from 'react';
+import { cn } from '@dcms/ui';
 
-// A thin vertical drag handle for resizing two side-by-side panels. While the
-// pointer is held it reports the horizontal movement (in px) so the caller can
-// grow/shrink an adjacent panel. Double-click invokes onReset (restore default).
+// A thin drag handle for resizing two adjacent panels. While the pointer is held it reports the
+// movement (in px) along its axis so the caller can grow/shrink a neighbour. Double-click
+// invokes onReset (restore default).
+//
+// `horizontal` is the bottom panel's: a handle lying across the layout, dragged up and down.
+// Same mechanics, different axis — worth one prop rather than a second component, because the
+// pointer-capture and iframe-shield behaviour below is the fiddly part and must not be
+// duplicated.
 
 export function Resizer({
   onDelta,
   onReset,
   ariaLabel,
+  orientation = 'vertical',
 }: {
-  onDelta: (dx: number) => void;
+  /** Movement along the handle's axis: px right for a vertical handle, px down for a horizontal one. */
+  onDelta: (delta: number) => void;
   onReset?: () => void;
   ariaLabel?: string;
+  orientation?: 'vertical' | 'horizontal';
 }) {
   const [dragging, setDragging] = useState(false);
+  const horizontal = orientation === 'horizontal';
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -24,10 +34,11 @@ export function Resizer({
       // iframe can't swallow pointer events mid-drag — otherwise the pointerup
       // lands inside the iframe, our listener never fires, and the drag "sticks".
       setDragging(true);
-      let last = e.clientX;
+      let last = horizontal ? e.clientY : e.clientX;
       const move = (ev: PointerEvent) => {
-        onDelta(ev.clientX - last);
-        last = ev.clientX;
+        const now = horizontal ? ev.clientY : ev.clientX;
+        onDelta(now - last);
+        last = now;
       };
       const end = () => {
         window.removeEventListener('pointermove', move);
@@ -39,22 +50,34 @@ export function Resizer({
       window.addEventListener('pointerup', end);
       window.addEventListener('pointercancel', end);
     },
-    [onDelta],
+    [onDelta, horizontal],
   );
 
   return (
     <>
       <div
         role="separator"
-        aria-orientation="vertical"
+        // ARIA's axis is the separator's own orientation, which is the opposite of the axis it
+        // is dragged along: a handle you drag up and down lies horizontally.
+        aria-orientation={horizontal ? 'horizontal' : 'vertical'}
         aria-label={ariaLabel}
         onPointerDown={onPointerDown}
         onDoubleClick={onReset}
-        className="relative z-10 -mx-0.5 w-1 shrink-0 cursor-col-resize bg-transparent transition-colors hover:bg-primary/40 active:bg-primary/60"
+        className={cn(
+          'relative z-10 shrink-0 bg-transparent transition-colors hover:bg-primary/40 active:bg-primary/60',
+          horizontal ? '-my-0.5 h-1 cursor-row-resize' : '-mx-0.5 w-1 cursor-col-resize',
+        )}
       />
       {/* Full-window shield during a drag: keeps every pointer event in this
           document (over iframes too) and carries the resize cursor everywhere. */}
-      {dragging && <div className="fixed inset-0 z-50 cursor-col-resize select-none" />}
+      {dragging && (
+        <div
+          className={cn(
+            'fixed inset-0 z-50 select-none',
+            horizontal ? 'cursor-row-resize' : 'cursor-col-resize',
+          )}
+        />
+      )}
     </>
   );
 }

@@ -12,7 +12,6 @@ import {
   MergeDialog,
   RELEASE_BRANCH,
   Resizer,
-  expectBuild,
   gitApi,
   useDraftSession,
   useSiteLiveUpdates,
@@ -206,7 +205,6 @@ export function BuilderPage({ siteId }: { siteId: string }) {
       queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
       if (branch === RELEASE_BRANCH) {
         toast.success(t('editor.publishQueued'));
-        expectBuild(siteId);
         setSidebarView('deploy');
       } else {
         setPublishMerge(true);
@@ -354,10 +352,10 @@ export function BuilderPage({ siteId }: { siteId: string }) {
         open={publishMerge}
         onOpenChange={setPublishMerge}
         onMerged={() => {
-          // See IdePage: the build this merge causes is created by the push webhook after the
-          // merge returns, so the refetch below cannot see it yet. The marker keeps the
-          // Deployments panel looking until it appears.
-          expectBuild(siteId);
+          // The build this merge causes is created by the push webhook after the merge
+          // returns, so the refetch below cannot see it yet. `BuildChanged` on the site hub is
+          // what announces it when it appears — which is why there is nothing to do here but
+          // refetch what the merge itself changed.
           queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
           queryClient.invalidateQueries({ queryKey: ['git-changes', siteId] });
           queryClient.invalidateQueries({ queryKey: ['site-builds', siteId] });

@@ -1,17 +1,24 @@
 import { useQuery } from '@tanstack/react-query';
-import { CircleAlert, Files, GitBranch, Rocket, Search, Sparkles } from 'lucide-react';
+import { Files, GitBranch, Rocket, Search, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
 import { DeploymentsView, FileTree, SearchView, SourceControlView, gitApi } from '../site-source';
 import { AgentPanel } from './agent/AgentPanel';
-import { countBySeverity, type BuildProblem } from './preview/problems';
-import { ProblemsView } from './ProblemsView';
 
-export type SidebarView = 'files' | 'search' | 'scm' | 'problems' | 'agent' | 'deploy';
+export type SidebarView = 'files' | 'search' | 'scm' | 'agent' | 'deploy';
 
-// VS Code-style left sidebar: a slim activity rail (Explorer / Source Control)
-// plus the active view. The Source Control icon carries a badge with the number
-// of pending changes on the current branch.
+/**
+ * The left sidebar: a slim activity rail plus the active view.
+ *
+ * <p><b>Problems is no longer here.</b> A problem row reads `path:line  message` — it runs
+ * across, and a 260px column wrapped every one of them onto three lines. Worse, it competed for
+ * the same space as the file tree, so you could look at the error or at the file it was in but
+ * never both. It lives in the bottom panel now, under the editor it is about.</p>
+ *
+ * <p>The agent stays a full-height view rather than moving to the bottom panel with the other
+ * log-shaped surfaces: a conversation is tall and narrow and a bottom panel is short and
+ * wide.</p>
+ */
 export function IdeSidebar({
   siteId,
   siteName,
@@ -22,10 +29,6 @@ export function IdeSidebar({
   onReload,
   onRestored,
   viewWidth,
-  problems,
-  building,
-  previewEnabled,
-  onEnablePreview,
 }: {
   siteId: string;
   siteName?: string;
@@ -34,14 +37,13 @@ export function IdeSidebar({
   onViewChange: (v: SidebarView) => void;
   onSwitchBranch: (branch: string) => void;
   onReload: () => void;
-  onRestored: (files: Record<string, string>, version: number, hashes: Record<string, string>) => void;
+  onRestored: (
+    files: Record<string, string>,
+    version: number,
+    hashes: Record<string, string>,
+  ) => void;
   /** Width (px) of the active-view panel; the activity rail stays fixed. */
   viewWidth?: number;
-  /** What the last build reported. Owned by IdePage, which drives the build. */
-  problems: readonly BuildProblem[];
-  building: boolean;
-  previewEnabled: boolean;
-  onEnablePreview: () => void;
 }) {
   const { t } = useTranslation();
   const changes = useQuery({
@@ -49,7 +51,6 @@ export function IdeSidebar({
     queryFn: () => gitApi.changes(siteId, branch),
   });
   const changeCount = changes.data?.length ?? 0;
-  const { errors, warnings } = countBySeverity(problems);
 
   return (
     <div className="flex h-full">
@@ -78,15 +79,6 @@ export function IdeSidebar({
           <GitBranch className="h-5 w-5" />
         </RailButton>
         <RailButton
-          active={view === 'problems'}
-          label={t('ide.problems.title')}
-          onClick={() => onViewChange('problems')}
-          badge={errors + warnings}
-          badgeTone={errors > 0 ? 'error' : 'warning'}
-        >
-          <CircleAlert className="h-5 w-5" />
-        </RailButton>
-        <RailButton
           active={view === 'deploy'}
           label={t('ide.deploy.title')}
           onClick={() => onViewChange('deploy')}
@@ -95,7 +87,7 @@ export function IdeSidebar({
         </RailButton>
         <RailButton
           active={view === 'agent'}
-          label={t('ide.agent.title', 'Assistant')}
+          label={t('ide.agent.title')}
           onClick={() => onViewChange('agent')}
         >
           <Sparkles className="h-5 w-5" />
@@ -116,14 +108,6 @@ export function IdeSidebar({
             onSwitchBranch={onSwitchBranch}
             onReload={onReload}
             onRestored={onRestored}
-          />
-        )}
-        {view === 'problems' && (
-          <ProblemsView
-            problems={problems}
-            building={building}
-            previewEnabled={previewEnabled}
-            onEnablePreview={onEnablePreview}
           />
         )}
         {view === 'deploy' && <DeploymentsView siteId={siteId} />}

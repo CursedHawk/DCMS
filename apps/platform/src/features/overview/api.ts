@@ -25,8 +25,10 @@ export function useOverview() {
   return useQuery({
     queryKey: ['platform-overview'],
     queryFn: () => platformApi.get<OverviewTotals>('/overview'),
-    // The overview is what someone leaves open on a second monitor during an incident.
-    refetchInterval: 30_000,
+    // The overview is what someone leaves open on a second monitor during an incident, so it
+    // has to stay fresh on its own. It no longer does that by asking: these totals move on the
+    // tenant plane, where this API hears nothing, so platform-api samples them on a timer and
+    // pushes the `overview` tag — one timer per replica instead of one per second monitor.
   });
 }
 

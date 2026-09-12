@@ -73,7 +73,10 @@ export function problemSummary(problems: readonly BuildProblem[]): string | null
   return errors.length === 0 ? null : errors.map((p) => p.text).join('\n');
 }
 
-export function countBySeverity(problems: readonly BuildProblem[]): { errors: number; warnings: number } {
+export function countBySeverity(problems: readonly BuildProblem[]): {
+  errors: number;
+  warnings: number;
+} {
   return {
     errors: problems.filter((p) => p.severity === 'error').length,
     warnings: problems.filter((p) => p.severity === 'warning').length,

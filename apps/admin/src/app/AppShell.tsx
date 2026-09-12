@@ -10,11 +10,13 @@ import {
   PermissionProvider,
   TourOverlay,
   TourProvider,
+  useHubRevalidation,
   useSidebarCollapse,
 } from '@dcms/ui';
 import { AiDock } from '../features/assistant/AiDock';
 import { AiProvider } from '../features/assistant/context';
-import { useNotificationHub } from '../features/notifications/useNotificationHub';
+import { LIVE_KEYS } from '../features/notifications/liveMap';
+import { NOTIFICATION_HUB, useNotificationHub } from '../features/notifications/useNotificationHub';
 import { useMyPermissions } from '../lib/permissions';
 import { login, register } from '../auth';
 import { useAuth } from '../useAuth';
@@ -35,6 +37,12 @@ export function AppShell() {
   // the popover does not drop the socket. `sub` is the platform user id, which the toast
   // rule compares against a notification's actor to avoid toasting your own actions back.
   useNotificationHub(!!user, user?.profile.sub);
+
+  // What replaced the polling that used to live in the media, chat and deployment
+  // queries. The hub carries the news while it is up; this refetches at the three moments it
+  // cannot have — when the connection returns, when the tab becomes visible again, and when
+  // the browser comes back online — because nothing replays a push that was missed.
+  useHubRevalidation({ hub: NOTIFICATION_HUB, keys: LIVE_KEYS, enabled: !!user });
 
   if (loading) {
     return <CenteredSpinner />;

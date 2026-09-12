@@ -103,7 +103,9 @@ export function searchFiles(
 }
 
 /** Matches grouped by file, in the order the files were searched. */
-export function groupByFile(matches: readonly SearchMatch[]): { path: string; matches: SearchMatch[] }[] {
+export function groupByFile(
+  matches: readonly SearchMatch[],
+): { path: string; matches: SearchMatch[] }[] {
   const groups: { path: string; matches: SearchMatch[] }[] = [];
   for (const match of matches) {
     const last = groups[groups.length - 1];

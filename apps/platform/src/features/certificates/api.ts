@@ -54,12 +54,10 @@ export function useManagedCertificates() {
   return useQuery({
     queryKey: KEY,
     queryFn: () => platformApi.get<ManagedCertificate[]>('/certificates'),
-    // A fallback now rather than the mechanism: every outcome that changes this table also
-    // raises a platform notification, and that push invalidates this query (see
-    // `useConsoleHub`). The interval is what covers a dropped socket, and it is set to the
-    // period of the worker that notices an outcome in the first place — polling faster than
-    // the thing being polled can learn anything is asking a question with no new answer.
-    refetchInterval: 2 * 60_000,
+    // Purely pushed. Every outcome that changes this table also raises a platform notification,
+    // and that push invalidates this query (see `useConsoleHub`). The two-minute fallback that
+    // used to cover a dropped socket is gone: `useHubRevalidation` refetches when the socket
+    // comes back, which is both sooner and free.
   });
 }
 

@@ -10,11 +10,12 @@ namespace Dcms.PlatformApi.Realtime;
 /// refetches". That last property is what lets the console and its API be deployed
 /// independently.</para>
 ///
-/// <para><b>The list is short because it is honest.</b> Only three things on this console
-/// change in a way something inside the platform can announce. Object-store sizes and Loki's
-/// delete queue are read from those systems, which tell us nothing when they change and are
-/// perfectly well served by the polls they already have — pretending otherwise would be a
-/// socket that carries no news.</para>
+/// <para><b>Two kinds of tag live here, and the difference matters.</b> The first three are
+/// announcements: something inside the platform happened and said so. The last three are
+/// <i>sample ticks</i> for data read out of Prometheus, Loki and the tenant plane, none of
+/// which tell this API anything when they change. Those were browser-side polls until the
+/// console stopped polling entirely; taking the same period server-side keeps the data as
+/// fresh as it ever was while costing one timer per replica instead of one per open tab.</para>
 /// </summary>
 public static class PlatformResourceTags
 {
@@ -26,6 +27,24 @@ public static class PlatformResourceTags
 
     /// <summary>The console's bell has something new in it.</summary>
     public const string Notifications = "notifications";
+
+    /// <summary>
+    /// A fresh sample of the golden signals is available.
+    ///
+    /// <para>The three tags below are different in kind from the three above: nothing inside
+    /// the platform <i>announces</i> that Prometheus scraped again or that a tenant's content
+    /// count moved. They are periodic samples, and they used to be pulled by every open browser
+    /// on its own timer. <see cref="PlatformSampleBroadcaster"/> now takes the sample's period
+    /// server-side and pushes the tick, so the cost is one timer per replica rather than one
+    /// per console, and the console's code path is the same as for a real change.</para>
+    /// </summary>
+    public const string Health = "health";
+
+    /// <summary>Object-store usage and Loki's delete queue, both read from systems that do not push.</summary>
+    public const string Stores = "stores";
+
+    /// <summary>Platform-wide totals, which move on the tenant plane where this API hears nothing.</summary>
+    public const string Overview = "overview";
 
     /// <summary>
     /// The class of data a platform notification kind implies has changed, beyond the bell

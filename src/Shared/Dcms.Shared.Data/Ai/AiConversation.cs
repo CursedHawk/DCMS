@@ -46,6 +46,38 @@ public sealed class AiConversation
     public string? PageArea { get; set; }
 
     /// <summary>
+    /// Which surface held the conversation: <c>console</c> (the assistant dock) or <c>ide</c>
+    /// (the Mode B site builder's agent).
+    ///
+    /// <para><b>One table, filtered — not two tables.</b> The two surfaces run the same agent
+    /// over the same wire format, so their turns are byte-for-byte the same kind of row. A
+    /// second table would have duplicated the whole review story that already hangs off this
+    /// one: the <c>ai:chats:read-all</c> permission, the workspace-visibility rule, the RLS
+    /// registration, the retention sweep. An agent that can publish a site needs reviewing for
+    /// exactly the reason an agent that can publish content does.</para>
+    ///
+    /// <para>What the column must actually earn is the filtering: every rail query names a
+    /// surface. Without that the IDE's runs — which are many and short-lived — would bury the
+    /// console's conversations in a shared list, which is the one real argument for splitting
+    /// the table and is answered by an index instead.</para>
+    /// </summary>
+    public string Surface { get; set; } = AiSurfaces.Console;
+
+    /// <summary>The site an IDE conversation belongs to. Null for the console assistant.</summary>
+    public Guid? SiteId { get; set; }
+
+    /// <summary>
+    /// The branch this conversation was last run against.
+    ///
+    /// <para><b>Last, not first.</b> A branch is a property of when a turn happened rather than
+    /// of the conversation: somebody can start on <c>main</c>, switch to a feature branch and
+    /// keep talking. Storing the latest is what makes the rail's label true right now, which is
+    /// what it is read for; a turn-by-turn history of the branch would live on the run, and
+    /// nothing has asked for it.</para>
+    /// </summary>
+    public string? Branch { get; set; }
+
+    /// <summary>
     /// Denormalised so the conversation rail can be drawn from one query.
     /// </summary>
     public int MessageCount { get; set; }
@@ -58,4 +90,21 @@ public sealed class AiConversation
     public DateTimeOffset? ArchivedAt { get; set; }
 
     public List<AiMessage> Messages { get; set; } = [];
+
+    public List<AiRun> Runs { get; set; } = [];
+}
+
+/// <summary>The surfaces a conversation can belong to. Stored as a plain string, not an enum,
+/// because the browser sends it and a third surface should cost a constant rather than a
+/// migration.</summary>
+public static class AiSurfaces
+{
+    public const string Console = "console";
+    public const string Ide = "ide";
+
+    public static bool IsKnown(string? value) => value is Console or Ide;
+
+    /// <summary>Anything unrecognised is the console, which is the surface that predates the
+    /// column and therefore what every existing row is.</summary>
+    public static string Normalise(string? value) => IsKnown(value) ? value! : Console;
 }

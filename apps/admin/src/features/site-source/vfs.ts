@@ -35,6 +35,14 @@ interface VfsState {
   /** The git branch the working draft targets (drives the /ide + save URLs). */
   branch: string;
   openTabs: string[];
+  /**
+   * Tabs that survive a close-others and sort to the front.
+   *
+   * <p>A reference file — the type you are implementing against, the route table you keep
+   * checking — gets lost among the twenty files an agent run opens. Pinning is how an editor
+   * says "this one stays", and it is the cheapest answer to a tab strip that churns.</p>
+   */
+  pinnedTabs: string[];
   activePath: string | null;
   /** Open diff tabs (branch HEAD vs draft), shown alongside file tabs. */
   openDiffs: DiffTab[];
@@ -56,8 +64,27 @@ interface VfsState {
   dirtyPaths: Set<string>;
   /** Server-known paths deleted locally since the last sync. */
   deletedPaths: Set<string>;
-  /** Paths the server reported as conflicting; autosave pauses until reload. */
+  /**
+   * Paths that could not be reconciled with the server's copy.
+   *
+   * <p>These are QUARANTINED, not a stop signal: `takeDelta` skips them and everything else
+   * keeps saving. Autosave used to halt entirely until the author reloaded, which froze the
+   * whole project over one contested file.</p>
+   */
   conflict: string[] | null;
+
+  /**
+   * How many agent runs are currently writing.
+   *
+   * <p>Autosave holds while this is above zero, and flushes once when it returns to zero. A run
+   * that touches five files would otherwise produce five draft deltas, five `DraftChanged`
+   * messages and five entries in the author's history — the debounce coalesces writes that land
+   * within 1.2s of each other, which a run doing real work between edits routinely does not.</p>
+   *
+   * <p>A counter rather than a flag because runs can overlap (the dock and the IDE panel are two
+   * surfaces over one workspace), and the hold must last until the last of them finishes.</p>
+   */
+  agentRuns: number;
 
   /**
    * A pending "put the caret here". `token` increments on every request so clicking the same
@@ -86,6 +113,9 @@ interface VfsState {
   revealAt: (path: string, line: number, column?: number) => void;
   clearReveal: () => void;
   closeTab: (path: string) => void;
+  togglePin: (path: string) => void;
+  /** Close every unpinned tab. Pinning is what makes this safe to offer. */
+  closeOthers: (keep: string | null) => void;
   /** Restore a previously persisted set of open tabs (dropping any that no longer exist). */
   restoreSession: (openTabs: string[], activePath: string | null) => void;
 
@@ -96,8 +126,11 @@ interface VfsState {
 
   writeFile: (path: string, content: string) => void;
   createFile: (rawPath: string, content?: string) => string | null;
-  /** Bulk-add uploaded files (overwrites existing, skips toolchain). Returns what happened. */
-  importFiles: (entries: { path: string; content: string }[]) => { added: number; skipped: string[] };
+  /** Bulk-add uploaded files (overwrites existing, skips path-unsafe). Returns what happened. */
+  importFiles: (entries: { path: string; content: string }[]) => {
+    added: number;
+    skipped: string[];
+  };
   deleteFile: (path: string) => void;
   renameFile: (from: string, rawTo: string) => string | null;
   /** Delete every file under a folder. Returns how many were removed. */
@@ -111,7 +144,32 @@ interface VfsState {
   reconcile: (delta: Delta, version: number, hashes: Record<string, string>) => void;
   setConflict: (paths: string[]) => void;
   clearConflict: () => void;
+  /**
+   * Settle one conflicted file, taking `content` as the resolved text.
+   *
+   * <p>Pass the server's hash so the resolution saves against the version it was merged from.
+   * The path leaves quarantine and rejoins the normal save flow; the others stay put.</p>
+   */
+  resolveConflict: (path: string, content: string, serverHash: string) => void;
+  /**
+   * Fold a newer server draft into this tab.
+   *
+   * <p>Called when the hub reports that this account's draft moved somewhere else — a second tab
+   * or the agent. Files this tab has not touched are adopted silently; files it has touched are
+   * compared, and only genuinely divergent ones become conflicts. Returns the paths that could
+   * not be reconciled, which is what the banner is for.</p>
+   */
+  mergeRemote: (
+    files: Record<string, string>,
+    version: number,
+    hashes: Record<string, string>,
+  ) => string[];
   snapshot: () => Record<string, string>;
+
+  /** Hold autosave for the duration of an agent run. See {@link VfsState.agentRuns}. */
+  beginAgentRun: () => void;
+  /** Release the hold. The draft session flushes when the count reaches zero. */
+  endAgentRun: () => void;
 }
 
 /** Parse the backend `definition` into a flat file map (tolerates an empty/new site). */
@@ -153,6 +211,7 @@ export const useVfs = create<VfsState>((set, get) => ({
   files: {},
   branch: 'main',
   openTabs: [],
+  pinnedTabs: [],
   activePath: null,
   openDiffs: [],
   activeDiff: null,
@@ -166,6 +225,9 @@ export const useVfs = create<VfsState>((set, get) => ({
   deletedPaths: new Set(),
   conflict: null,
   reveal: null,
+  // Deliberately not reset by load() or seedStarter(): a run in flight survives a branch load,
+  // and zeroing the counter underneath it would release a hold the run still owns.
+  agentRuns: 0,
 
   load: (files, version, hashes) => {
     const first = firstFile(files);
@@ -241,7 +303,27 @@ export const useVfs = create<VfsState>((set, get) => ({
       const openTabs = s.openTabs.filter((p) => p !== path);
       const activePath =
         s.activePath === path ? (openTabs[openTabs.length - 1] ?? null) : s.activePath;
-      return { openTabs, activePath };
+      // Closing a pinned tab unpins it. Keeping the pin would resurrect it on the next open,
+      // which is a tab that reappears for reasons the author cannot see.
+      return { openTabs, activePath, pinnedTabs: s.pinnedTabs.filter((p) => p !== path) };
+    }),
+
+  togglePin: (path) =>
+    set((s) => ({
+      pinnedTabs: s.pinnedTabs.includes(path)
+        ? s.pinnedTabs.filter((p) => p !== path)
+        : [...s.pinnedTabs, path],
+    })),
+
+  closeOthers: (keep) =>
+    set((s) => {
+      const openTabs = s.openTabs.filter((p) => p === keep || s.pinnedTabs.includes(p));
+      return {
+        openTabs,
+        activePath: openTabs.includes(s.activePath ?? '')
+          ? s.activePath
+          : (openTabs[openTabs.length - 1] ?? null),
+      };
     }),
 
   openDiff: (tab) =>
@@ -454,17 +536,32 @@ export const useVfs = create<VfsState>((set, get) => ({
 
   takeDelta: () => {
     const s = get();
+    /*
+     * Conflicted paths are QUARANTINED, not a full stop.
+     *
+     * Autosave used to pause entirely on a 409 until the author reloaded, which meant one
+     * contested file froze every other file in the project — including work that would have
+     * merged without incident. Excluding just the contested paths keeps the rest flowing, so
+     * the blast radius of a conflict is the file it happened in.
+     *
+     * They stay dirty on purpose: once resolved (see resolveConflict) the path leaves
+     * quarantine and the next delta carries it.
+     */
+    const quarantined = new Set(s.conflict ?? []);
     const put: Record<string, PutEntry> = {};
     for (const path of s.dirtyPaths) {
       // A dirty path with no content means it was deleted after being edited; the
       // delete op covers it.
       if (s.files[path] === undefined) continue;
+      if (quarantined.has(path)) continue;
       put[path] = { content: s.files[path], baseHash: s.baseHashes[path] ?? null };
     }
-    const del = [...s.deletedPaths].map((path) => ({
-      path,
-      baseHash: s.baseHashes[path] ?? null,
-    }));
+    const del = [...s.deletedPaths]
+      .filter((path) => !quarantined.has(path))
+      .map((path) => ({
+        path,
+        baseHash: s.baseHashes[path] ?? null,
+      }));
     return { put, delete: del };
   },
 
@@ -493,8 +590,113 @@ export const useVfs = create<VfsState>((set, get) => ({
       };
     }),
 
-  setConflict: (paths) => set({ conflict: paths.length > 0 ? paths : null }),
+  // Union, not replace: a second 409 on a different file must not release the first from
+  // quarantine, which would let the save loop clobber it on the next flush.
+  setConflict: (paths) =>
+    set((s) => {
+      if (paths.length === 0) return s;
+      const merged = new Set([...(s.conflict ?? []), ...paths]);
+      return { conflict: [...merged] };
+    }),
   clearConflict: () => set({ conflict: null }),
+
+  resolveConflict: (path, content, serverHash) =>
+    set((s) => {
+      const remaining = (s.conflict ?? []).filter((p) => p !== path);
+      return {
+        files: { ...s.files, [path]: content },
+        // The resolution is now based on the server's version, so that is the baseline the
+        // next save diffs against — without this the save would 409 again immediately.
+        baseHashes: { ...s.baseHashes, [path]: serverHash },
+        dirtyPaths: new Set(s.dirtyPaths).add(path),
+        conflict: remaining.length > 0 ? remaining : null,
+        dirty: true,
+        rev: s.rev + 1,
+      };
+    }),
+
+  mergeRemote: (remoteFiles, version, hashes) => {
+    const s = get();
+    {
+      const files = { ...s.files };
+      const baseHashes = { ...s.baseHashes };
+      const dirtyPaths = new Set(s.dirtyPaths);
+      const deletedPaths = new Set(s.deletedPaths);
+      const conflicts: string[] = [];
+
+      for (const [path, remote] of Object.entries(remoteFiles)) {
+        const locallyDirty = dirtyPaths.has(path);
+        const local = files[path];
+        /*
+         * Did the SERVER move for this file?
+         *
+         * This is the question, and getting it wrong is the whole bug class. Comparing local
+         * text to remote text answers a different one — an unsaved local edit differs from the
+         * server copy by definition, and calling that a conflict would flag every file the
+         * author is currently typing in every time any other file is saved anywhere.
+         *
+         * A conflict needs both sides to have moved: the server's hash differs from the
+         * baseline this tab last synced at, AND there is an unsaved local edit.
+         */
+        const serverMoved = baseHashes[path] !== hashes[path];
+
+        if (!locallyDirty) {
+          // Untouched here. Adopt it silently — this is the case the whole merge exists for,
+          // and prompting about it is exactly the false positive being removed.
+          if (local !== remote) files[path] = remote;
+          baseHashes[path] = hashes[path];
+          continue;
+        }
+
+        if (!serverMoved) {
+          // Edited here, untouched there. An ordinary unsaved edit; the pending save still
+          // applies cleanly and there is nothing to reconcile.
+          continue;
+        }
+
+        if (local === remote) {
+          // Both arrived at the same text. Not a conflict by any useful definition; take the
+          // server's hash and drop the pending write.
+          baseHashes[path] = hashes[path];
+          dirtyPaths.delete(path);
+          continue;
+        }
+
+        // Genuinely divergent: edited here and changed there. This is the only case a person
+        // needs to see, and ConflictResolver shows both sides.
+        conflicts.push(path);
+      }
+
+      // A file the server no longer has, which this tab has not touched, is gone.
+      for (const path of Object.keys(files)) {
+        if (remoteFiles[path] !== undefined) continue;
+        if (dirtyPaths.has(path)) continue;
+        delete files[path];
+        delete baseHashes[path];
+        deletedPaths.delete(path);
+      }
+
+      const conflict = [...new Set([...(s.conflict ?? []), ...conflicts])];
+      set({
+        files,
+        baseHashes,
+        dirtyPaths,
+        deletedPaths,
+        version,
+        conflict: conflict.length > 0 ? conflict : null,
+        dirty: dirtyPaths.size > 0 || deletedPaths.size > 0,
+        rev: s.rev + 1,
+        // Not a generation bump: the editor keeps its cursors and undo stack. A generation
+        // change resyncs every Monaco model, which throws both away — acceptable on a branch
+        // load, gratuitous when one file changed under a tab nobody was typing in.
+      });
+      return conflicts;
+    }
+  },
+  beginAgentRun: () => set((s) => ({ agentRuns: s.agentRuns + 1 })),
+  // Floored at zero: an endAgentRun without a matching begin (a run torn down twice by a
+  // reload, say) must not leave the counter negative, which would hold autosave forever.
+  endAgentRun: () => set((s) => ({ agentRuns: Math.max(0, s.agentRuns - 1) })),
   setBranch: (branch) => set({ branch }),
   snapshot: () => get().files,
 }));

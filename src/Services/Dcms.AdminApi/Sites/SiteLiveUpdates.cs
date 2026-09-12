@@ -29,13 +29,25 @@ public sealed record CommitUpdate(
     DateTimeOffset OccurredAt);
 
 /// <summary>A working draft that somebody else just wrote to, and which paths they touched.</summary>
+/// <param name="ClientId">
+/// Which browser tab performed the write, echoed back from the save request.
+///
+/// <para>A draft is per account and per branch, so every message about one is about the
+/// recipient's own draft — the interesting writers are a second tab and the AI agent. The editor
+/// used to tell its own writes apart by version number, which is only reliable while saves are
+/// strictly ordered: an agent run flushing a batch while the author keeps typing produces
+/// overlapping saves, and the version test then either suppresses a real remote change or
+/// announces the tab's own work back to it. A client id is the identity the version number was
+/// standing in for.</para>
+/// </param>
 public sealed record DraftUpdate(
     Guid SiteId,
     string Branch,
     int Version,
     IReadOnlyCollection<string> Paths,
     Guid? ActorUserId,
-    DateTimeOffset OccurredAt);
+    DateTimeOffset OccurredAt,
+    string? ClientId = null);
 
 /// <summary>
 /// Tells everyone with a site open that its deployments, its branches or its working draft moved.

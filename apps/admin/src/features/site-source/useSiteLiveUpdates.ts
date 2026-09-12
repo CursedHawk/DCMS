@@ -1,11 +1,13 @@
 import type { HubConnection } from '@microsoft/signalr';
 import { useQueryClient } from '@tanstack/react-query';
+import { setHubConnected } from '@dcms/ui';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { getAccessToken } from '../../auth';
 import { runtimeConfig } from '../../runtime-config';
 import { getCurrentTenantSlug } from '../../tenants';
+import { clientId } from './clientId';
 import type { GitBuild } from './git';
 
 export interface BuildUpdate extends GitBuild {
@@ -20,6 +22,8 @@ export interface DraftUpdate {
   paths: string[];
   actorUserId: string | null;
   occurredAt: string;
+  /** Which tab wrote it, echoed from the save. Absent from an older admin-api. */
+  clientId?: string | null;
 }
 
 export interface CommitUpdate {
@@ -54,8 +58,15 @@ export interface CommitUpdate {
  * Everything that arrives is treated as a hint, never as truth: each message writes what it
  * knows into the cache so the panel moves immediately, and then invalidates so the authoritative
  * REST read — the one with the permission checks and the tenant filter behind it — settles it.
- * A hub that is down costs liveness and nothing else; the panel's own polling still runs.
+ * A hub that is down costs liveness and nothing else — but it no longer costs nothing, because
+ * the panel's own polling is gone. What stands behind this connection is `useHubRevalidation`:
+ * a refetch when it reconnects, when the tab becomes visible, and when the browser comes back
+ * online. The Deployments panel also says out loud when it is not live, because a panel that
+ * has stopped asking and does not admit it is worse than one that polls.
  */
+/** The name this connection reports under, for `useHubRevalidation`. */
+export const SITE_HUB = 'site';
+
 export function useSiteLiveUpdates({
   siteId,
   branch,
@@ -117,7 +128,8 @@ export function useSiteLiveUpdates({
     void (async () => {
       // Lazily imported for the same reason the notification hub is: the signalr chunk is
       // ~55 KB and the IDE route is already the heaviest in the app.
-      const { HttpTransportType, HubConnectionBuilder, LogLevel } = await import('@microsoft/signalr');
+      const { HttpTransportType, HubConnectionBuilder, LogLevel } =
+        await import('@microsoft/signalr');
       if (disposed) return;
 
       const connection = new HubConnectionBuilder()
@@ -141,13 +153,15 @@ export function useSiteLiveUpdates({
         mergeBuild(qc, siteId, update);
         void qc.invalidateQueries({ queryKey: ['site-builds', siteId] });
         // A finished build changes which one is live, so the site row is stale too.
-        if (update.status === 'Succeeded') void qc.invalidateQueries({ queryKey: ['site', siteId] });
+        if (update.status === 'Succeeded')
+          void qc.invalidateQueries({ queryKey: ['site', siteId] });
 
         // Toast only for somebody else's build. Your own publish already told you it was
         // queued, and saying so twice is how a useful notification becomes noise.
         if (update.actorUserId && update.actorUserId === myUserIdRef.current) return;
         if (update.status === 'Queued') toast.info(tRef.current('ide.deploy.liveStarted'));
-        else if (update.status === 'Succeeded') toast.success(tRef.current('ide.deploy.liveSucceeded'));
+        else if (update.status === 'Succeeded')
+          toast.success(tRef.current('ide.deploy.liveSucceeded'));
         else if (update.status === 'Failed') toast.error(tRef.current('ide.deploy.liveFailed'));
       });
 
@@ -168,7 +182,28 @@ export function useSiteLiveUpdates({
         if (draft.siteId !== siteId) return;
         if (branchRef.current && draft.branch !== branchRef.current) return;
         if (!draft.actorUserId || draft.actorUserId !== myUserIdRef.current) return;
-        if (draftVersionRef.current !== undefined && draft.version <= draftVersionRef.current) return;
+
+        /*
+         * Echo suppression, by identity rather than by version.
+         *
+         * The old test was `version <= the version we already hold`, which is only sound while
+         * saves are strictly ordered. They are not: an agent run flushing a batch while the
+         * author keeps typing produces overlapping saves, and the version test then fails both
+         * ways — suppressing a real remote change, or telling the tab its own work happened
+         * somewhere else. The second is the false positive this rework set out to remove.
+         *
+         * The client id says definitively whose save this was. The version comparison stays as
+         * the fallback for an admin-api old enough not to echo one.
+         */
+        if (draft.clientId) {
+          if (draft.clientId === clientId()) return;
+        } else if (
+          draftVersionRef.current !== undefined &&
+          draft.version <= draftVersionRef.current
+        ) {
+          return;
+        }
+
         onDraftChangedRef.current?.(draft);
       });
 
@@ -208,12 +243,16 @@ export function useSiteLiveUpdates({
 
       connection.onreconnected(() => {
         setConnected(true);
+        setHubConnected(SITE_HUB, true);
         // Anything that happened while the socket was down never arrived. Refetch rather than
         // leaving a panel confidently showing a build that finished ten minutes ago.
         void qc.invalidateQueries({ queryKey: ['site-builds', siteId] });
         void qc.invalidateQueries({ queryKey: ['git-history', siteId] });
       });
-      connection.onclose(() => setConnected(false));
+      connection.onclose(() => {
+        setConnected(false);
+        setHubConnected(SITE_HUB, false);
+      });
 
       try {
         await connection.start();
@@ -223,7 +262,9 @@ export function useSiteLiveUpdates({
         }
         connRef.current = connection;
         setConnected(true);
+        setHubConnected(SITE_HUB, true);
       } catch (err) {
+        setHubConnected(SITE_HUB, false);
         // A workspace that cannot reach the hub is a less live workspace, not a broken one:
         // the panel still polls and the REST reads still work. Log rather than toast.
         console.warn('Site hub connection failed.', err);
@@ -234,6 +275,7 @@ export function useSiteLiveUpdates({
       disposed = true;
       void connRef.current?.stop();
       connRef.current = null;
+      setHubConnected(SITE_HUB, false);
     };
   }, [siteId, slug, qc]);
 

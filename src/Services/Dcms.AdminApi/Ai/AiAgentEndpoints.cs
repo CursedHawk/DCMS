@@ -172,6 +172,15 @@ public static class AiAgentEndpoints
 
             ctx.Response.StatusCode = (int)upstream.StatusCode;
             ctx.Response.ContentType = upstream.Content.Headers.ContentType?.ToString() ?? "application/json";
+
+            // The one upstream header worth forwarding. A 429 without it tells the browser it
+            // has been refused and nothing about when to come back, so the panel can only say
+            // "later" — which is the difference between a limit somebody can work with and one
+            // that just looks broken.
+            if (upstream.Headers.RetryAfter?.Delta is { } delta)
+            {
+                ctx.Response.Headers.RetryAfter = ((int)delta.TotalSeconds).ToString();
+            }
             ctx.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpResponseBodyFeature>()?.DisableBuffering();
 
             await using var upstreamStream = await upstream.Content.ReadAsStreamAsync(ct);

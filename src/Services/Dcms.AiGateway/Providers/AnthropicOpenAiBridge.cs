@@ -352,11 +352,29 @@ public sealed class OpenAiStreamTranslator
             }));
         }
 
+        /*
+         * Report BOTH sides of the usage, not just the completion.
+         *
+         * This used to emit `output_tokens` only. The prompt side was read into
+         * `PromptTokens` for the server's own Prometheus counter and then never put on the
+         * wire, so a browser talking to an OpenAI-compatible provider could see what a turn
+         * produced but not what it cost to send — and the IDE's per-run benchmark had to record
+         * the input as *unknown* rather than risk averaging a missing number in as free.
+         *
+         * Anthropic reports the prompt side once in `message_start`; there is no such frame in
+         * this translation, so it rides along here instead. A reader taking the maximum per
+         * field (which both the browser loop and `AnthropicUsageScanner` do) is unaffected by
+         * seeing it on a later frame than Anthropic would have sent it.
+         */
         frames.Add(Frame("message_delta", new JsonObject
         {
             ["type"] = "message_delta",
             ["delta"] = new JsonObject { ["stop_reason"] = _finishReason, ["stop_sequence"] = null },
-            ["usage"] = new JsonObject { ["output_tokens"] = CompletionTokens },
+            ["usage"] = new JsonObject
+            {
+                ["input_tokens"] = PromptTokens,
+                ["output_tokens"] = CompletionTokens,
+            },
         }));
 
         return frames;

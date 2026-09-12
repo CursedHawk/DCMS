@@ -164,6 +164,7 @@ builder.Services.AddHostedService<NotificationIngestConsumer>();
 // that nothing has ever swept. See InvitationExpiryWorker.
 builder.Services.AddHostedService<InvitationExpiryWorker>();
 builder.Services.AddHostedService<NotificationRetentionWorker>();
+builder.Services.AddHostedService<Dcms.AdminApi.Ai.AiConversationRetentionWorker>();
 // The platform console's own bell. Separate publisher and separate tables, because these
 // notifications have no tenant and their audience is a global role admin-api cannot enumerate
 // -- see PlatformNotification. The worker reads the edge's attempt ledger rather than

@@ -70,19 +70,15 @@ export function useMedia(folderId?: string) {
     queryKey: ['media', folderId ?? 'all'],
     queryFn: () => api.get<MediaAsset[]>(`/admin/media${qs}`),
     /*
-     * A fallback, not the mechanism.
+     * Pushed, and nothing else.
      *
      * media-worker publishes `media.processed` / `media.failed`, admin-api turns those into a
      * `media` resource change, and the hub invalidates this query the moment a transcode
-     * finishes — so the grid is normally correct within a few hundred milliseconds without any
-     * polling at all. This interval only covers the case where the socket is down, which is
-     * why it is 15 seconds rather than the 3 it used to be: it is no longer racing the server,
-     * it is insuring against a lost connection.
+     * finishes — so the grid is correct within a few hundred milliseconds without asking. The
+     * 15-second insurance policy that used to sit behind it is gone: it covered a dropped
+     * socket, and a dropped socket is now covered by `useHubRevalidation` in the shell, which
+     * refetches when the connection returns instead of every fifteen seconds in case it has.
      */
-    refetchInterval: (q) =>
-      (q.state.data ?? []).some((a) => a.status === 'Processing' || a.status === 'Uploaded')
-        ? 15_000
-        : false,
   });
 }
 
@@ -91,11 +87,8 @@ export function useMediaDetail(id: string | undefined) {
     queryKey: ['media-detail', id],
     enabled: !!id,
     queryFn: () => api.get<MediaDetail>(`/admin/media/${id}`),
-    // Same reasoning as the list above: the hub is the mechanism, this is the insurance.
-    refetchInterval: (q) =>
-      q.state.data && (q.state.data.status === 'Processing' || q.state.data.status === 'Uploaded')
-        ? 15_000
-        : false,
+    // Same reasoning as the list above: the hub is the mechanism, and there is no longer an
+    // insurance policy in the query because the insurance moved to the shell.
   });
 }
 

@@ -16,6 +16,18 @@ namespace Dcms.Shared.Security;
 /// </remarks>
 public sealed record PermissionMetadata(string Permission) : IAuditPermission;
 
+/// <summary>
+/// Marks an endpoint as deliberately ungated by a permission key.
+///
+/// <para>A handful of routes genuinely need this: anonymous delivery-plane reads, the auth
+/// handshake itself, and endpoints whose only authority check is something other than a
+/// permission (a signed token, a webhook signature, ownership of the row). It is a
+/// <b>declaration</b>, not silence — the coverage test accepts this and rejects an endpoint
+/// that simply forgot.</para>
+/// </summary>
+/// <param name="Reason">Why. Read by whoever revisits the exemption later.</param>
+public sealed record PermissionExemptMetadata(string Reason);
+
 public static class PermissionEndpointExtensions
 {
     /// <summary>
@@ -28,6 +40,17 @@ public static class PermissionEndpointExtensions
     {
         builder.WithMetadata(new PermissionMetadata(permission));
         builder.RequireAuthorization(PermissionPolicyProvider.PolicyName(permission));
+        return builder;
+    }
+
+    /// <summary>
+    /// Declares that an endpoint is gated by something other than a permission key, and says
+    /// what. Sits in the same fluent chain as <see cref="RequirePermission"/>.
+    /// </summary>
+    public static TBuilder PermissionExempt<TBuilder>(this TBuilder builder, string reason)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        builder.WithMetadata(new PermissionExemptMetadata(reason));
         return builder;
     }
 }

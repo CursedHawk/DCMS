@@ -1,13 +1,6 @@
 import { FileCode, FileJson, LayoutTemplate, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import {
-  CenteredSpinner,
-  cn,
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@dcms/ui';
+import { CenteredSpinner, cn, Dialog, DialogContent, DialogHeader, DialogTitle } from '@dcms/ui';
 export type StarterFlavor = 'empty' | 'openapi' | 'client' | 'starter';
 
 // Shown once when a brand-new (empty) ReactApp site is opened: pick what to seed
@@ -41,18 +34,29 @@ export function StarterPicker({
       flavor: 'client',
       icon: Sparkles,
       title: t('ide.starter.clientTitle', 'Typed API client + OpenAPI'),
-      desc: t('ide.starter.clientDesc', 'The generated typed TypeScript client and the OpenAPI spec.'),
+      desc: t(
+        'ide.starter.clientDesc',
+        'The generated typed TypeScript client and the OpenAPI spec.',
+      ),
     },
     {
       flavor: 'starter',
       icon: LayoutTemplate,
       title: t('ide.starter.starterTitle', 'React starter + OpenAPI'),
-      desc: t('ide.starter.starterDesc', 'A ready-to-run React site wired to your content API, plus the spec.'),
+      desc: t(
+        'ide.starter.starterDesc',
+        'A ready-to-run React site wired to your content API, plus the spec.',
+      ),
     },
   ];
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onPick('empty'); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onPick('empty');
+      }}
+    >
       <DialogContent className="max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>{t('ide.starter.title', 'Start your React app')}</DialogTitle>

@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, ChevronDown, ChevronRight, CircleDot, Loader2, RotateCw, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronRight, CircleDot, Loader2, RotateCw, WifiOff, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button, cn } from '@dcms/ui';
+import { Button, cn, useHubConnected, useHubRevalidation } from '@dcms/ui';
 import type { GitBuild, GitBuildStatus } from './git';
-import { EXPECT_BUILD_WINDOW_MS, expectBuild, expectingBuildSince, gitApi } from './git';
+import { gitApi } from './git';
+import { SITE_HUB } from './useSiteLiveUpdates';
 import { useRelativeTime } from './useRelativeTime';
 
 // The Deployments view: every build of the site's `release` branch, newest first,
@@ -17,33 +18,35 @@ export function DeploymentsView({ siteId }: { siteId: string }) {
   const relative = useRelativeTime();
   const queryClient = useQueryClient();
 
+  /*
+   * No interval. `BuildChanged` on the site hub carries every transition of every build on
+   * this site, including the one a publish causes — which is the case the old 2.5-second poll
+   * was really written for, because publishing merges into `release` and the build row appears
+   * afterwards, written by the push webhook. The socket knows the moment it does. Guessing at
+   * 2.5-second intervals never made that arrive sooner, it only made the panel ask 24 times
+   * per minute per open tab in case it had.
+   */
   const builds = useQuery({
     queryKey: ['site-builds', siteId],
     queryFn: () => gitApi.builds(siteId),
-    refetchInterval: (q) => {
-      const list = q.state.data ?? [];
-      if (list.some((b) => b.status === 'Queued' || b.status === 'Building')) return 2500;
-
-      // Also poll for a while after a publish, even though nothing is in flight YET.
-      //
-      // This is the gap that made a publish look like it did nothing. Publishing from a
-      // feature branch merges into `release`, and the build is created afterwards by the push
-      // webhook — so at the moment the panel refreshed, the list genuinely contained no
-      // running build. The old condition read that as "idle", stopped polling, and the panel
-      // sat on the previous deployment while the real one ran to completion behind it.
-      //
-      // The hub push is what normally closes this window; this is the fallback for when the
-      // socket is unavailable, and it stops on its own the moment a build shows up (the branch
-      // above takes over) or the window expires.
-      return Date.now() - expectingBuildSince(siteId) < EXPECT_BUILD_WINDOW_MS ? 2000 : false;
-    },
   });
+
+  // Closes the windows the socket cannot: reconnect, the tab becoming visible, coming online.
+  useHubRevalidation({ hub: SITE_HUB, keys: [['site-builds', siteId]] });
+
+  /*
+   * And when even that is not enough, say so.
+   *
+   * A panel that has stopped polling and stays silent about a dead socket is strictly worse
+   * than one that polls: it looks exactly like a panel that is up to date. `undefined` means no
+   * site hub is mounted on this page at all, which is not the same fact and gets no warning.
+   */
+  const live = useHubConnected(SITE_HUB);
 
   const rebuild = useMutation({
     mutationFn: () => gitApi.rebuild(siteId),
     onSuccess: () => {
       toast.success(t('ide.git.rebuildQueued'));
-      expectBuild(siteId);
       queryClient.invalidateQueries({ queryKey: ['site-builds', siteId] });
     },
     onError: () => toast.error(t('errors.generic')),
@@ -62,6 +65,13 @@ export function DeploymentsView({ siteId }: { siteId: string }) {
           {t('ide.deploy.redeploy')}
         </Button>
       </div>
+
+      {live === false && (
+        <p className="flex shrink-0 items-start gap-1.5 border-b bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-700 dark:text-amber-400">
+          <WifiOff className="mt-px h-3 w-3 shrink-0" />
+          <span>{t('ide.deploy.notLive')}</span>
+        </p>
+      )}
 
       {builds.isLoading && <p className="p-3 text-xs text-muted-foreground">{t('common.loading')}</p>}
       {!builds.isLoading && list.length === 0 && (

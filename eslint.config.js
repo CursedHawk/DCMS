@@ -114,6 +114,34 @@ export default tseslint.config(
     },
   },
   {
+    /*
+     * No polling in the SPAs.
+     *
+     * <p>Both apps are kept current by SignalR — a hub pushes the name of a class of data that
+     * changed and the matching queries refetch. The gaps a push cannot cover (a reconnect, a
+     * tab becoming visible, a browser coming back online) are covered once, in each app's
+     * shell, by `useHubRevalidation`. A `refetchInterval` added to a query re-opens the problem
+     * all of that removed: load that scales with the number of tabs somebody left open, and a
+     * second answer to "is this fresh?" that disagrees with the first.</p>
+     *
+     * <p>Data that genuinely is a periodic sample — read from Prometheus or Loki, which
+     * announce nothing — keeps its period, but keeps it on the server: see
+     * `PlatformSampleBroadcaster`, which broadcasts a tick so the sample is taken once per
+     * replica rather than once per open browser.</p>
+     */
+    files: ['apps/*/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "Property[key.name='refetchInterval'], Property[key.value='refetchInterval']",
+          message:
+            'No polling in the SPAs. The hub pushes; useHubRevalidation covers reconnect, tab focus and coming back online. A genuinely periodic sample belongs on the server — see PlatformSampleBroadcaster.',
+        },
+      ],
+    },
+  },
+  {
     files: ['apps/*/src/**/*.tsx'],
     plugins: { 'react-refresh': reactRefresh },
     rules: {
@@ -130,5 +158,14 @@ export default tseslint.config(
   {
     files: ['**/*.worker.ts', '**/workers/**/*.ts'],
     languageOptions: { globals: { self: 'readonly', postMessage: 'readonly' } },
+  },
+  {
+    /*
+     * Repo tooling. Node, and `.mjs` — which the main block above does not match at all, so
+     * these files get `js.configs.recommended` with no globals and every `console` and
+     * `process` reads as undefined.
+     */
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { globals: { ...globals.node } },
   },
 );
