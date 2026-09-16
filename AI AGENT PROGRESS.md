@@ -855,11 +855,14 @@ P10 (shell early; agent surfaces after P4+P5) ─┘
     which is how the Forms and Branding gaps passed. The auto-refresh hold during an agent run was
     mutation-checked too — and its first test did *not* catch the mutation, because it asserted
     before the fingerprint reached the effect; rewritten until it did.
-- **Not done, deliberately:** instance slugs are not validated against reserved words (`media`,
-  `tags`, …). A tenant *can* create one; content-api's routes would already collide with it. The
-  emitter guarantees compiling output either way (the built-in wins, the instance stays reachable
-  through `api.content`, and `API.md` says why), but slug validation belongs to the plugin-instance
-  endpoints and was not part of this change.
+- **Reserved instance slugs (follow-up, same day):** creating a plugin instance now refuses a
+  slug content-api already routes (`analytics`, `collect`, `media`, `openapi`, `tags`) or that
+  names a built-in client member (`call`, `content`), with a 400 that says what owns it
+  (`PluginInstanceSlugs`, `Dcms.Shared.Data/Cms`). The list is hand-kept but not trusted: a
+  container-free test reads content-api's endpoint table and fails on any literal `/api/<x>` not
+  listed, and another fails on any nameable emitter built-in not listed — both mutation-checked,
+  as was the endpoint's own Docker test. Slugs cannot be renamed, so an instance that already
+  holds one keeps it; the emitter's `API.md` note still covers that case.
 - **Verified:** admin 567/567, e2e 76/76 (3 new: template choice, failed generation with retry,
   refresh on open), `Dcms.IntegrationTests` 387 passed / 1 skipped, PluginSdk 112/112, unit
   322/322, `pnpm -r build`, `pnpm lint` (0 errors; the same 24 warnings as before), `dotnet build`

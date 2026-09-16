@@ -52,9 +52,9 @@ public static class PluginInstanceEndpoints
             {
                 return Results.BadRequest(new { error = "Unknown plugin." });
             }
-            if (string.IsNullOrWhiteSpace(body.Slug) || !IsSlug(body.Slug))
+            if (PluginInstanceSlugs.Problem(body.Slug) is { } slugProblem)
             {
-                return Results.BadRequest(new { error = "slug must be kebab-case." });
+                return Results.BadRequest(new { error = slugProblem });
             }
             if (await db.PluginInstances.AnyAsync(p => p.Slug == body.Slug, ct))
             {
@@ -194,10 +194,6 @@ public static class PluginInstanceEndpoints
             }),
         }),
     };
-
-    private static bool IsSlug(string value) =>
-        value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')
-        && !value.StartsWith('-') && !value.EndsWith('-');
 
     private sealed record CreateInstanceRequest(string PluginId, string Slug, string? Name, string? Description, string? Config);
     private sealed record UpdateInstanceRequest(string? Name, string? Description, string? Config);

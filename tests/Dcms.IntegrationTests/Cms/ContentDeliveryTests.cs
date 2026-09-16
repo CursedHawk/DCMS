@@ -48,6 +48,24 @@ public class ContentDeliveryTests(ContentFlowFixture fixture)
         }, TimeSpan.FromSeconds(20));
     }
 
+    [DockerFact]
+    public async Task An_instance_cannot_take_a_slug_content_api_already_routes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var admin = fixture.Admin.CreateClient();
+        var owner = Guid.NewGuid();
+        var slug = "reserved-" + Guid.NewGuid().ToString("N")[..8];
+        await CreateTenant(admin, slug, owner, ct);
+
+        // GET /api/tags is content-api's own route; an instance there could never be reached.
+        var res = await admin.SendAsync(AdminReq(HttpMethod.Post, "/api/admin/plugins/instances", owner, slug, body:
+            new { pluginId = "blog", slug = "tags", name = "Tags", config = "{}" }), ct);
+
+        res.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("error").GetString()
+            .Should().Contain("reserved");
+    }
+
     // ---- helpers ----
 
     private static HttpRequestMessage TenantReq(string slug, string url)

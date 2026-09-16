@@ -39,8 +39,12 @@ public static class TypeScriptClientEmitter
     internal static readonly IReadOnlySet<string> CapabilityPlugins =
         new HashSet<string>(StringComparer.Ordinal) { "search", "visitor-auth", "live-chat", "analytics" };
 
-    /// <summary>Top-level client members an instance slug must not shadow.</summary>
-    private static readonly IReadOnlySet<string> ReservedTopLevel =
+    /// <summary>
+    /// Top-level client members an instance slug must not shadow. New instances cannot take these
+    /// (<see cref="Dcms.Shared.Data.Cms.PluginInstanceSlugs"/>, kept in step by a test); an instance
+    /// created before that rule still gets a note instead of a member.
+    /// </summary>
+    public static readonly IReadOnlySet<string> ReservedTopLevel =
         new HashSet<string>(StringComparer.Ordinal) { "media", "content", "submitForm", "call", "tags" };
 
     private static readonly string[] Methods = ["get", "post", "put", "patch", "delete"];
