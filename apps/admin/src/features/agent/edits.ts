@@ -198,15 +198,51 @@ function countLines(text: string): number {
  * exactly right — it is only the hash that changed. Refusing that and making the model re-read
  * and re-reason costs a full turn to arrive at the same edit.</p>
  *
- * <p>So a mismatch is retried once against the current content, and succeeds only if the anchor
- * is still unique. If the anchor is gone or has become ambiguous, the human's edit genuinely
- * overlaps the agent's and re-anchoring would be guessing — that is when the model has to look
- * again.</p>
+ * <p>So a mismatch is retried once against the current content, and succeeds only when every one
+ * of these holds. Each is a way a re-anchored patch would stop being the edit the model meant:</p>
+ * <ul>
+ *   <li><b>Not `replaceAll`.</b> The human may have added occurrences the model never saw, and a
+ *   rename would sweep them up.</li>
+ *   <li><b>Unique in the version the model read.</b> An anchor that was
+ *   missing or ambiguous there would have failed without any concurrent edit; a human typing the
+ *   same text afterwards must not turn that failure into a success.</li>
+ *   <li><b>Unique in the current version.</b> Gone means the human edited the anchor itself;
+ *   duplicated means they added a second copy. Either way the edits genuinely overlap, and
+ *   choosing a place would be guessing.</li>
+ * </ul>
+ *
+ * <p>Line-range edits are never rebased: the numbers came from a read the human has since moved,
+ * and there is no anchor left to prove where they now point.</p>
  */
-export function rebaseAnchoredPatch(
-  currentContent: string,
-  oldText: string,
-  newText: string,
-): EditResult {
-  return applyAnchoredPatch(currentContent, oldText, newText);
+export function rebaseAnchoredPatch(args: {
+  /** The content the model read. Without it there is nothing to prove the anchor against. */
+  base: string;
+  current: string;
+  oldText: string;
+  newText: string;
+  replaceAll?: boolean;
+}): EditResult {
+  if (args.replaceAll) {
+    return fail(
+      'hash-mismatch',
+      'The file changed since you read it, and replace_all is never applied to a version you have not seen — it could rewrite occurrences someone else just added.',
+    );
+  }
+  const before = applyAnchoredPatch(args.base, args.oldText, args.newText);
+  if (!before.ok) return before;
+  const after = applyAnchoredPatch(args.current, args.oldText, args.newText);
+  if (after.ok) return after;
+  if (after.reason === 'anchor-missing') {
+    return fail(
+      'anchor-missing',
+      'The file changed since you read it and old_text is no longer in it — the other edit touched the same lines. Re-read the file and redo this edit.',
+    );
+  }
+  if (after.reason === 'anchor-ambiguous') {
+    return fail(
+      'anchor-ambiguous',
+      'The file changed since you read it and old_text now appears more than once. Re-read the file and include enough context to identify one.',
+    );
+  }
+  return after;
 }

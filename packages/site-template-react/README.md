@@ -1,57 +1,33 @@
 # @dcms/site-template-react
 
-A minimal Vite + React + TypeScript starter for a DCMS tenant site. It is wired to
-the tenant content API through `src/api` and the `@dcms/api-client` runtime.
+The starter templates a new DCMS Mode B (React) site begins from. admin-api embeds this package
+(see `src/Services/Dcms.AdminApi/ApiClientGen/SiteTemplates.cs`); the editor's template picker and
+the API Docs "Download React starter" both materialise from it.
 
-## How it's used
+## Layout
 
-This package is the canonical scaffold. The admin app embeds it and, on
-**API Docs → Download React starter**, materializes a per-tenant copy where:
+| Path | What |
+| --- | --- |
+| `shared/` | Files every site gets: `index.html`, Vite/TS config, `src/lib/api.ts`, `src/lib/useApi.ts`, `src/styles/tokens.css` + `base.css`, and the `src/dcms/` analytics + consent runtime. |
+| `templates/blank/` | Nothing on the page yet; everything wired. |
+| `templates/content/` | Multi-page content site on react-router: home, collection pages, item pages. |
+| `templates/landing/` | One page: hero, features, latest items, contact form on the Forms plugin. |
+| `shared/src/api/` | **A fixture, never shipped.** Real generator output for a sample tenant. |
 
-- `src/api/` is replaced by the tenant's **generated, fully-typed** client
-  (`api.<instanceSlug>.<contentType>.list()`), self-contained (runtime vendored under
-  `src/api/runtime/`), so the download needs only the pinned React/Vite toolchain.
-- `.env` is pre-filled with the tenant's domain and a demo instance.
+A site is `shared/`, then the template (which wins on a clash), then the tenant's generated layer:
+`src/api/` (typed client + `API.md`), `src/dcms/` and `openapi.json`. Each template carries an
+`AGENTS.md` describing its layout for authors and for the IDE agent.
 
-## Analytics and cookie consent
+## Why `shared/src/api/` is committed generated code
 
-`src/dcms/` holds the DCMS runtime layer, wired up in `src/main.tsx`
-(`installAnalytics()`) and `src/App.tsx` (`<CookieConsent />`).
-
-**Nothing is stored or sent until the visitor accepts.** The banner only appears
-when there is something to consent to — the tenant has analytics enabled and this
-visitor has not answered — so a site that records nothing shows no notice. Declining
-does not merely hide the banner: no session id is ever created.
-
-It reports the same events as a prerendered Mode A site (pageview, outbound click,
-download, engagement) to the same `/api/collect` endpoint, so a tenant's numbers mean
-the same thing however their site is built. The one addition is client-side route
-changes, which a SPA has to report itself because the document never reloads.
-
-Customise it through arguments, not by editing the files:
-
-```tsx
-installAnalytics({ apiBaseUrl: config.apiBaseUrl, mode: 'banner' });
-<CookieConsent policyUrl="/privacy" message="…" />
-```
-
-Use `trackEvent('signup', { plan: 'pro' })` for your own events.
-
-> `src/api/` and `src/dcms/` are both **generated**. The editor's **Refresh API**
-> button re-pulls them from DCMS, overwriting local edits. Everything else is yours.
-
-In this workspace copy, `src/api` re-exports the generic `@dcms/api-client` runtime so
-the template builds standalone; both expose the same `createTenantClient`, so the app
-code is identical either way.
-
-## Develop
+`pnpm build` typechecks each template against it, so the templates are proven to compile against
+what the generator actually writes rather than against a hand-written stand-in. It is pinned by
+`TemplateFixtureTests` in `Dcms.IntegrationTests`, which fails when the generator's output changes.
+Regenerate it with:
 
 ```bash
-pnpm install
-cp .env.example .env   # set VITE_DEMO_SLUG / VITE_DEMO_CONTENT_TYPE (see the admin API Docs page)
-pnpm dev
+DCMS_UPDATE_TEMPLATE_FIXTURE=1 dotnet test tests/Dcms.IntegrationTests --filter "FullyQualifiedName~TemplateFixture"
 ```
 
-`pnpm build` runs `tsc --noEmit && vite build`. Content is fetched with
-`api.content(slug, contentType).list()` (generic) or, in a downloaded copy, the typed
-`api.<slug>.<contentType>` tree.
+Dependency versions in the templates are pinned to the IDE preview's palette
+(`packages/site-builder-toolchain`), so a site behaves the same in the preview and when published.

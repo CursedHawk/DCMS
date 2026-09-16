@@ -175,6 +175,17 @@ preference, that one is a decision to let publishing happen with nobody watching
 | Skills | `read_skill` |
 | Tenant | content, media, plugins, analytics — the console assistant's registry, reused |
 
+### What the site tells the agent
+
+Two files do more for a run than any prompt text, because they are specific to the site:
+
+- **`AGENTS.md`** — every DCMS starter template ships one: where pages go, what is generated,
+  how to load content. `project_overview` names it first and the prompt says to follow it.
+- **`src/api/API.md`** — generated with the site's API client from the tenant's plugins: every
+  collection, form and call with field names, at a fraction of `openapi.json`'s size. It is
+  regenerated when the plugins change (see `ApiClientGen/GeneratedLayer.cs` and
+  `ide/generated/useGeneratedApi.ts`), so it cannot describe an API the tenant no longer has.
+
 ### Writing a tool
 
 A tool is a `ToolSpec<TContext>` (`agent/contracts.ts`). Add it to the registry
@@ -227,7 +238,16 @@ Things that are easy to get wrong:
 Every run is pinned to a `WorkspaceRevision` — the VFS `rev` plus a path→hash map.
 `edit_file` takes an `expected_hash` from the read that produced it. If the human
 typed into the same file meanwhile, the hash no longer matches and the edit is
-**refused** rather than silently overwriting them.
+**refused** rather than silently overwriting them — unless it can be **rebased**.
+
+A stale `edit_file` is applied to the current file only when the anchor was unique in
+the version the model read *and* is unique now, and the call is not `replace_all`.
+That is the common case — the human edited a different part of the file — and refusing
+it costs a whole turn to arrive at the same edit. "The version the model read" is known,
+not assumed: the transaction keeps a bounded ledger of contents by hash, fed by
+`read_file` and by its own writes, and refuses a hash it never handed out. A rebased
+result tells the model to re-read before using line numbers. See `rebaseAnchoredPatch`
+in `agent/edits.ts`.
 
 Line-based tools (`replace_lines`, `insert_lines`, `delete_lines`) require line
 numbers from a read *in the same turn*, and refuse numbers outside the file.

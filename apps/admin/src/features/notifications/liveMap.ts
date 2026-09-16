@@ -18,7 +18,16 @@ export const LIVE_QUERY_MAP: TagQueryMap = {
   // A build changing also changes what the sites list says is deployed.
   builds: [['site-builds'], ['sites'], ['git-status'], ['git-history']],
   // Enabling a plugin changes the menu, which is the one moment the nav must be immediate.
-  plugins: [['plugin-instances'], ['plugin-catalog'], ['permission-catalog'], ['marketplace'], ['navigation']],
+  // …and it changes the API a Mode B site's generated client should offer. The IDE compares this
+  // fingerprint with the site's manifest and refreshes the client when they differ.
+  plugins: [
+    ['plugin-instances'],
+    ['plugin-catalog'],
+    ['permission-catalog'],
+    ['marketplace'],
+    ['navigation'],
+    ['api-fingerprint'],
+  ],
   domains: [['domains'], ['domain-certificates']],
   // A membership change moves permissions, so the caller's own may have just changed too.
   members: [['members'], ['roles'], ['me-permissions']],

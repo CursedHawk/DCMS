@@ -55,7 +55,7 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
             {
                 var fullPath = $"/api/{instance.Slug}{path.RelativePath}";
                 var pathItem = paths[fullPath] as JsonObject ?? [];
-                pathItem[path.Method] = BuildOperation(fragment.TagName, path, tagging);
+                pathItem[path.Method] = BuildOperation(fragment.TagName, path, tagging && IsListOperation(path, fragment.Schemas));
                 paths[fullPath] = pathItem;
             }
 
@@ -111,15 +111,31 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
     private const string TagIndexTag = "Tags";
 
     /// <summary>
-    /// A list operation is a GET whose path names no single item. That is the
-    /// only shape `?tag=` means anything on — filtering a fetch-by-slug would be
+    /// A list operation is a GET whose path names no single item and whose response is a paged
+    /// list. That is the only shape `?tag=` means anything on — filtering a fetch-by-slug would be
     /// a parameter that can only ever return the item or nothing.
+    ///
+    /// <para>The response half matters: without it, any parameterless GET qualified, so Branding's
+    /// single public object was documented — and its generated client typed — as accepting a tag
+    /// filter it ignores.</para>
     /// </summary>
-    private static bool IsListOperation(OpenApiPathFragment path) =>
-        string.Equals(path.Method, "get", StringComparison.OrdinalIgnoreCase)
-        && !path.RelativePath.Contains('{');
+    private static bool IsListOperation(OpenApiPathFragment path, IReadOnlyDictionary<string, JsonNode> schemas)
+    {
+        if (!string.Equals(path.Method, "get", StringComparison.OrdinalIgnoreCase) || path.RelativePath.Contains('{'))
+        {
+            return false;
+        }
+        var response = path.ResponseSchema;
+        if (response?["$ref"] is JsonValue reference
+            && schemas.TryGetValue(reference.GetValue<string>().Split('/')[^1], out var resolved))
+        {
+            response = resolved;
+        }
+        return response?["properties"] is JsonObject props && props["items"] is not null && props["totalCount"] is not null;
+    }
 
-    private static JsonObject BuildOperation(string tag, OpenApiPathFragment path, bool tagging)
+    /// <param name="listFilter">Whether this operation takes the tag filter — see <see cref="IsListOperation"/>.</param>
+    private static JsonObject BuildOperation(string tag, OpenApiPathFragment path, bool listFilter)
     {
         var operation = new JsonObject
         {
@@ -129,6 +145,11 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
             ["description"] = path.Description,
         };
 
+        if (path.ClientPath is { Count: > 0 } clientPath)
+        {
+            operation["x-dcms-client"] = new JsonArray(clientPath.Select(s => (JsonNode)s).ToArray());
+        }
+
         var parameters = new JsonArray();
         if (path.Parameters is { Count: > 0 })
         {
@@ -137,7 +158,7 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
                 parameters.Add(parameter.DeepClone());
             }
         }
-        if (tagging && IsListOperation(path))
+        if (listFilter)
         {
             parameters.Add(QueryParameter(
                 "tag",

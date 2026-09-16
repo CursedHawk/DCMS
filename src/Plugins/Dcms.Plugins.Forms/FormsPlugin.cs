@@ -130,7 +130,8 @@ public sealed class FormsPlugin : IPlugin
                              + $"\"{form.Title ?? form.Name}\" form.\n\nPlugin: {Manifest.Name} v{Manifest.Version}",
                 ResponseSchema: SubmissionResultSchema(),
                 RequestBodySchema: Ref(bodySchemaName),
-                SuccessStatus: "202"));
+                SuccessStatus: "202",
+                ClientPath: ["forms", form.Name, "submit"]));
         }
 
         schemas[$"{instance.Slug}_submission_result"] = SubmissionResultObject();
@@ -254,6 +255,9 @@ public sealed class FormsPlugin : IPlugin
                     "date" => "date",
                     _ => null,
                 },
+                // The form's own field type. The JSON type above cannot tell a textarea from a
+                // one-line input, and a generated form has to render the right one.
+                ["x-dcms-field"] = field.Type,
             };
             if (field.Required)
             {
@@ -261,7 +265,12 @@ public sealed class FormsPlugin : IPlugin
             }
         }
 
-        var schema = new JsonObject { ["type"] = "object", ["properties"] = properties };
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["title"] = form.Title ?? form.Name,
+            ["properties"] = properties,
+        };
         if (required.Count > 0)
         {
             schema["required"] = required;

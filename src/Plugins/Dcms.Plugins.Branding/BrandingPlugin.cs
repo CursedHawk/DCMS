@@ -172,7 +172,8 @@ public sealed class BrandingPlugin : IPlugin
                         "colours and any public key:value items. The private branding section is " +
                         "never included. Public — no authentication required.\n\n" +
                         $"Plugin: {Manifest.Name} v{Manifest.Version}",
-                    ResponseSchema: Ref($"{instance.Slug}_branding")),
+                    ResponseSchema: Ref($"{instance.Slug}_branding"),
+                    ClientPath: ["branding", "get"]),
             ],
             Schemas: new Dictionary<string, JsonNode> { [$"{instance.Slug}_branding"] = brandingSchema });
     }

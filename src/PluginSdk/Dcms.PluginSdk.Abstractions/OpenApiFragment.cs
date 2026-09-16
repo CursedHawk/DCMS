@@ -22,6 +22,12 @@ public sealed record OpenApiFragment(
 /// <param name="RequestBodySchema">JSON request-body schema for write operations (POST/PUT). Null for reads.</param>
 /// <param name="Parameters">Raw OpenAPI parameter objects (e.g. a required header). Null when none.</param>
 /// <param name="SuccessStatus">HTTP status of the success response (e.g. "200", "202").</param>
+/// <param name="ClientPath">
+/// Where this operation lives in the generated TypeScript client, below the instance: e.g.
+/// <c>["forms", "contact", "submit"]</c> becomes <c>api.{instanceSlug}.forms.contact.submit(body)</c>.
+/// Emitted as <c>x-dcms-client</c>. Null lets the generator derive a name, which it can only do
+/// well for the list + get-by-slug shape; anything else should say what it is called.
+/// </param>
 public sealed record OpenApiPathFragment(
     string RelativePath,                // e.g. "/items/{slug}"
     string Method,                      // get | post | put | delete
@@ -31,4 +37,5 @@ public sealed record OpenApiPathFragment(
     JsonNode? ResponseSchema,
     JsonNode? RequestBodySchema = null,
     IReadOnlyList<JsonNode>? Parameters = null,
-    string SuccessStatus = "200");
+    string SuccessStatus = "200",
+    IReadOnlyList<string>? ClientPath = null);

@@ -72,7 +72,7 @@ public static class OpenApiEndpoints
         // the moment a tenant publishes its first tag, and a key that ignored it
         // would serve the pre-tag document for another 24 hours.
         var tagging = await TagDeliveryEndpoints.HasTagsAsync(tenantId, db, cache, ct);
-        var hash = ConfigHash(instances) + (tagging ? "t" : "");
+        var hash = PluginInstanceFingerprint.Of(instances) + (tagging ? "t" : "");
         var cacheKey = $"t:{tenantId}:openapi:{hash}";
         var cached = await cache.GetAsync<string>(cacheKey, ct);
         if (cached is not null)
@@ -88,18 +88,6 @@ public static class OpenApiEndpoints
         var json = doc.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         await cache.SetAsync(cacheKey, json, TimeSpan.FromHours(24), ct);
         return (json, Quote(hash));
-    }
-
-    private static string ConfigHash(IEnumerable<PluginInstance> instances)
-    {
-        var sb = new StringBuilder();
-        foreach (var p in instances.OrderBy(i => i.Id))
-        {
-            sb.Append(p.Id).Append('|').Append(p.Slug).Append('|').Append(p.PluginId)
-              .Append('|').Append(p.PluginVersion).Append('|').Append(p.Name)
-              .Append('|').Append(p.Description).Append('|').Append(p.ConfigJson).Append(';');
-        }
-        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())))[..16];
     }
 
     private static string Quote(string hash) => $"\"{hash}\"";

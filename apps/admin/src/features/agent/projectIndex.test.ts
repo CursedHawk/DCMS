@@ -160,6 +160,16 @@ describe('summarize', () => {
     expect(text).toContain('components: App, Hero');
   });
 
+  it('points at the project guide and the API reference before anything else, when they exist', () => {
+    const text = summarize(
+      buildIndex({ ...SITE, 'AGENTS.md': '# Guide', 'src/api/API.md': '# Tenant API' }),
+    );
+    const lines = text.split('\n');
+    expect(lines[1]).toMatch(/^read first: AGENTS\.md \(.+\); src\/api\/API\.md \(.+\)$/);
+    // And says nothing about guides a site does not have.
+    expect(summarize(buildIndex(SITE))).not.toContain('read first');
+  });
+
   it('caps the component list so a big site cannot blow the budget', () => {
     const files: Record<string, string> = {};
     for (let i = 0; i < 30; i++) {

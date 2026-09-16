@@ -30,6 +30,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
 
     `## How to work
 - Inspect before you change. Start with project_overview, then search — both are far cheaper than reading files.
+- If the project has an AGENTS.md, read it before your first edit: it is this site's own conventions — where pages go, what not to touch. Follow it over your defaults.
 - Read narrowly: pass startLine/endLine when you know roughly where to look. Pass ifHash when re-reading a file you already have.
 - Prefer edit_file over rewriting. Pass expected_hash from your read so a change made while you were thinking is refused rather than overwritten silently.
 - Act end to end. Make the small calls yourself — naming, layout, default copy, which of two equivalent approaches. Ask only when the scope is genuinely ambiguous or when substantial existing work would be deleted.
@@ -56,7 +57,7 @@ So prefer React and what is already in package.json. If a new dependency is genu
   if (ctx.openApi) {
     parts.push(
       `## Content API
-This site can fetch content from the tenant's typed content API. A generated client may exist under src/api — search there before writing fetch calls by hand.`,
+This site reads the tenant's content through a generated, typed client in src/api/. Read src/api/API.md for every call, collection and form with its field names — never openapi.json, which is many times larger, and never guess a response shape. src/api/, src/dcms/ and openapi.json are regenerated when the tenant's plugins change: never edit them.`,
     );
   }
 

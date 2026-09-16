@@ -11,7 +11,7 @@ first. Source brief: [`TODO/AI AGENT IDE REWORK.md`](TODO/AI%20AGENT%20IDE%20REW
 - **6.6 — blocked, not pending.** The Phase 0 token baseline was never taken, so there is **no measured claim that any of this saved tokens**, and there will not be one until somebody runs it against a real billed key on a real site. Everything this document says about cost is a mechanism, never a measurement.
 
 (10.3 split view declined, with reasons.)
-**Tests:** 538 in `apps/admin` (was 204 at the start of this work), 196 in `packages/ui`, 322 in `Dcms.UnitTests`, 73 Playwright e2e, and 25 container-free endpoint-coverage tests in `Dcms.IntegrationTests` (permission + audit). All green; `tsc -b`, `pnpm lint` (0 errors) and `dotnet build` (0 warnings) clean. `Dcms.IntegrationTests` is green too — 366 passed, 1 skipped — **including the RLS change, which is now covered by a real test run rather than only by the startup `AssertCoverage` check**. It had been unrunnable here (and, from 2026-09-12, in CI) because MinIO stopped serving anonymous pulls from Docker Hub; the fixtures now pull the same images from quay.io.
+**Tests:** 567 in `apps/admin` (was 204 at the start of this work), 196 in `packages/ui`, 322 in `Dcms.UnitTests`, 112 in `Dcms.PluginSdk.Tests`, 76 Playwright e2e. All green; `tsc -b`, `pnpm lint` (0 errors), `pnpm -r build` and `dotnet build` (0 warnings) clean. `Dcms.IntegrationTests` is green too — 387 passed, 1 skipped — **including the RLS change, which is now covered by a real test run rather than only by the startup `AssertCoverage` check**. It had been unrunnable here (and, from 2026-09-12, in CI) because MinIO stopped serving anonymous pulls from Docker Hub; the fixtures now pull the same images from quay.io.
 
 ---
 
@@ -215,9 +215,11 @@ only thing the agent is given.
       report one inside a string (costs one wasted read). Neither is a correctness risk, because
       nothing it returns decides what gets written; every edit is hash-guarded against real
       content.
-- [~] **1.3** `workspace.search` — text mode with compact `path:line` results, `paths` filter,
+- [x] **1.3** `workspace.search` — text mode with compact `path:line` results, `paths` filter,
       `maxResults`, literal-by-default with opt-in regex, binary files skipped.
       **Text mode done**; `mode: "symbol" | "references"` waits on the index (1.2).
+      ✔ *(2026-09-16: the box was stale — both modes shipped with 1.2, in `agent/workspace.ts`,
+      tested in `workspace.test.ts`.)*
       One hit per *line*, not per match — the model is choosing where to look, and saying the
       same line matched four times costs four times as much for the same information.
       `features/site-source/search.ts` stays for now: it backs the human Search panel, which
@@ -261,11 +263,19 @@ only thing the agent is given.
       are two surfaces over one workspace and the hold must outlast the last of them.
       The change set collapses repeated edits to one entry against **pre-run** content, omits a
       file edited back to where it started, and supports revert-all / revert-one.
-- [~] **2.5** Conflict rebase: `rebaseAnchoredPatch` exists in `agent/edits.ts` with the rule —
-      retry once against current content, succeed only if the anchor is still unique, because a
-      gone or newly-ambiguous anchor means the human's edit genuinely overlaps and re-anchoring
-      would be guessing. **Wiring it into the retry path is Phase 4** (the runtime), which is
-      where a failed tool call is turned into a repair.
+- [x] **2.5** Conflict rebase. ✔ **Done 2026-09-16 — and it had not been done before.** The note
+      here said the function "exists with the rule" and that wiring was Phase 4's job; Phase 4
+      closed without it, and `rebaseAnchoredPatch` had no callers and no tests. Now an anchored
+      patch whose `expected_hash` is stale is applied to the current file when, and only when:
+      the anchor is unique in the version the model **read** and unique **now**; the call is not
+      `replace_all` (the human may have added occurrences the model never saw); and the base
+      version is known. The transaction keeps a bounded ledger of contents by hash, fed by
+      `read_file` (`tx.recordRead`) and by its own writes, so "the version the model read" is a
+      fact rather than an assumption — a hash the run never handed out is refused as before.
+      Line-range edits are never rebased: the numbers came from a read the human has since moved.
+      A rebased result says so and tells the model to re-read before using line numbers.
+      11 tests (5 pure rules, 6 through the transaction); mutation-checked — disabling the rebase
+      branch fails exactly the two tests that expect a rebase.
 - [x] **2.6** Dependency policy — **the audit's premise was wrong and the real problem is worse.**
       `TOOLCHAIN_FILES` in `site-source/paths.ts` is already an empty set, so frontend and
       backend already agree that a site owns its `package.json`. What is stale is the *agent's*
@@ -311,9 +321,10 @@ only thing the agent is given.
       already keyed by `(siteId, branch)` and both call sites in `IdePage` pass the branch. No
       change needed. (Cursor/scroll/composer persistence is a Phase 10 nicety, not a correctness
       fix, and is tracked there.)
-- [~] **3.5** Agent writes carry `origin` through the same save path. ✔ on the wire
+- [x] **3.5** Agent writes carry `origin` through the same save path. ✔ on the wire
       (`ideApi.saveFiles(..., origin)` + `SaveFilesRequest.Origin`); the editor-side presentation
-      of a run as a change set is Phase 10.5, which is where the review pane lives.
+      of a run as a change set is Phase 10.5, which is where the review pane lives. ✔ *(Stale box:
+      10.5 shipped `ChangeReview.tsx`.)*
 - [x] **3.6** Tests: `site-source/merge.test.ts`, 15 cases covering adopt-untouched,
       edited-elsewhere, both-sides-same, genuine divergence, unsaved-edit-with-static-server,
       server-side deletion, quarantine of puts and deletes, conflict union, resolve, and the
@@ -356,8 +367,10 @@ only thing the agent is given.
 
 ### Phase 5 — The tool suite
 
-- [~] **5.1** *Workspace*: `project_overview`, `list_files`, `read_file`, `search`
+- [x] **5.1** *Workspace*: `project_overview`, `list_files`, `read_file`, `search`
       (text/symbol/references) — done in `ide/agent/workspaceTools.ts`. `diff` waits on 5.4.
+      ✔ *(Stale box: 5.4 shipped `git_diff` — the branch version against the working draft, which
+      is the diff this was waiting for.)*
 - [x] **5.2** *Edit*: `edit_file`, `create_file`, `delete_file`, `rename_file`, `insert_lines`,
       `replace_lines`, `delete_lines`. ✔ `delete_file` is risk **dangerous**, not safe: unlike an
       edit there is no earlier version in the working draft to go back to until the whole run is
@@ -798,6 +811,59 @@ P10 (shell early; agent surfaces after P4+P5) ─┘
 ---
 
 ## 7. Progress log
+
+### 2026-09-16
+- **2.5 conflict rebase: done** — see the step. It had been recorded as "exists", and was dead code.
+- **1.3, 3.5 and 5.1 ticked.** Stale boxes: each named a dependency that had since shipped.
+- **API generation unified, and the client is generated from the plugins rather than guessed.**
+  Asked for directly: unify Refresh API and the starter templates, better templates for the
+  assistant, and a client generated automatically from the tenant's plugins.
+  - *Found first, all real:* the generated client **had no Forms submissions at all**; it typed
+    Branding's single object as a paged `list()` whose `get(slug)` hits a URL that does not exist;
+    and admin-api's three copy-pasted resolvers never passed `tagging`, so the API Docs preview and
+    every generated client lacked the `/api/tags` index content-api serves. Also: the assembler
+    documented `?tag=` on **every** parameterless GET, Branding included (fixed at the source —
+    a list operation now has to return a paged list). Two of the four starter "flavors" seeded a
+    site that could not build (`openapi.json` alone; a client package with no Vite app), and the
+    editor's own fallback was yet another template, on different dependency versions, with no client.
+  - *One resolver* (`TenantApiResolver`) for the docs preview, both downloads, the starter and
+    Refresh API. *One generated layer* (`GeneratedLayer`: `src/api/`, `src/dcms/`, `openapi.json`,
+    plus `src/api/manifest.json`) written identically by all of them.
+  - *Spec-driven emitter.* Plugins name their client methods (`OpenApiPathFragment.ClientPath` →
+    `x-dcms-client`); the emitter types request and response bodies from the document. Plugin ids
+    appear only for the four whose endpoints are not in the document (search, visitor-auth,
+    live-chat, analytics). It also emits `collections` and `forms` metadata, and **`API.md`** — a
+    reference of every call at under a quarter of `openapi.json`'s size (pinned by a test).
+  - *Automatic regeneration, pushed not polled.* The fingerprint is a hash of the generated
+    **output**, so it moves exactly when there is something to write — including when a deploy
+    improves the generator. The IDE asks on open and when the notification hub reports a plugin
+    change (`api-fingerprint` joined `LIVE_QUERY_MAP.plugins`), compares with the site's
+    manifest, and applies the difference as ordinary pending edits. It holds during an agent run,
+    while the draft is unsettled, and on sites that never used the client; deletes only files the
+    site's own manifest recorded; tries once per fingerprint per branch.
+  - *Templates:* `blank`, `content` (react-router site over any tenant's collections) and `landing`
+    (form wired to the Forms plugin), on shared design tokens, pinned to the preview palette's exact
+    versions so preview and production run the same code. Each ships an **`AGENTS.md`** written for
+    the model. `project_overview` now leads with it and `API.md`; the system prompt and the
+    `react-site` / `dcms-content-api` skills point at them (the latter told the model to call
+    `describe_content_types`, a tool the IDE agent does not have).
+  - *Proved, not asserted:* the package's `shared/src/api/` is real emitter output pinned by a
+    golden test, and `pnpm -r build` typechecks all three templates against it — mutation-checked
+    with a type error and a misspelled client method, both caught. A .NET test resolves every
+    relative import of every materialised template. The emitter's tests now run against a document
+    the real assembler built from real plugins; the old fixture had `"get": {}` with no responses,
+    which is how the Forms and Branding gaps passed. The auto-refresh hold during an agent run was
+    mutation-checked too — and its first test did *not* catch the mutation, because it asserted
+    before the fingerprint reached the effect; rewritten until it did.
+- **Not done, deliberately:** instance slugs are not validated against reserved words (`media`,
+  `tags`, …). A tenant *can* create one; content-api's routes would already collide with it. The
+  emitter guarantees compiling output either way (the built-in wins, the instance stays reachable
+  through `api.content`, and `API.md` says why), but slug validation belongs to the plugin-instance
+  endpoints and was not part of this change.
+- **Verified:** admin 567/567, e2e 76/76 (3 new: template choice, failed generation with retry,
+  refresh on open), `Dcms.IntegrationTests` 387 passed / 1 skipped, PluginSdk 112/112, unit
+  322/322, `pnpm -r build`, `pnpm lint` (0 errors; the same 24 warnings as before), `dotnet build`
+  0 warnings.
 
 ### 2026-09-12
 - **Phase 11 built.** Telemetry (11.3), quota (11.4), injection posture (11.5), e2e (11.6),

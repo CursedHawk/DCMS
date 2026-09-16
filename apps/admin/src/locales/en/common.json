@@ -851,19 +851,19 @@
       "moreLines_other": "… and {{count}} more lines"
     },
     "starter": {
-      "title": "Start your React app",
-      "generating": "Generating…",
-      "emptyTitle": "Empty project",
-      "emptyDesc": "A minimal React + Vite app. Start from scratch.",
-      "openapiTitle": "OpenAPI document only",
-      "openapiDesc": "Just your tenant's content-API OpenAPI spec.",
-      "clientTitle": "Typed API client + OpenAPI",
-      "clientDesc": "The generated typed TypeScript client and the OpenAPI spec.",
-      "starterTitle": "React starter + OpenAPI",
-      "starterDesc": "A ready-to-run React site wired to your content API, plus the spec."
+      "title": "Start your site",
+      "generating": "Generating your site…",
+      "contentTitle": "Content site",
+      "contentDesc": "Pages for everything you publish: a home page with the latest items, a page per collection, a page per item.",
+      "landingTitle": "Landing page",
+      "landingDesc": "One page: headline, reasons, latest items and a contact form wired to your Forms plugin.",
+      "blankTitle": "Blank project",
+      "blankDesc": "An empty page with the API client, loading hook and design tokens ready to use.",
+      "footnote": "Each includes a typed client for your content API and an AGENTS.md the assistant follows.",
+      "failed": "The site could not be generated. Check your connection and choose again."
     },
     "refreshGenerated": "Refresh API",
-    "refreshGeneratedHint": "Re-generate the DCMS-owned files — openapi.json, the typed client in src/api/, and the analytics + cookie-consent layer in src/dcms/ — from this workspace’s current plugins. Your own files are not touched.",
+    "refreshGeneratedHint": "Re-generate the DCMS-owned files — openapi.json, the typed client and API.md in src/api/, and the analytics + cookie-consent layer in src/dcms/ — from this workspace’s current plugins. This also happens on its own when the plugins change. Your own files are not touched.",
     "generatedRefreshed": "Refreshed {{count}} generated files",
     "generatedUpToDate": "Generated files are already up to date",
     "branchMovedWarning": "Someone else committed to {{branch}} while you were editing. Reload to build on their work (your unsaved changes will be lost).",
@@ -946,7 +946,9 @@
       "unpin": "Unpin",
       "close": "Close",
       "closeOthers": "Close other tabs"
-    }
+    },
+    "generatedAutoRefreshed": "Your plugins changed, so the API client was updated ({{count}} files)",
+    "generatedRefreshFailed": "The generated API client could not be refreshed"
   },
   "openapi": {
     "title": "API documentation",

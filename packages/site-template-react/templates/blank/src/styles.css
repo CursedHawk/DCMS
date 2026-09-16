@@ -1,0 +1,7 @@
+/* Tokens (colours, fonts, spacing) live in styles/tokens.css — restyle the site there. */
+@import './styles/tokens.css';
+@import './styles/base.css';
+
+.blank {
+  padding-block: var(--space-6);
+}

@@ -117,6 +117,8 @@ builder.Services.AddDcmsDataProtection(builder.Configuration);
 builder.Services.AddDcmsEdgeData(builder.Configuration);
 builder.Services.AddDcmsVaultTransit();
 builder.Services.AddScoped<AiPromptBuilder>();
+// One resolution of the tenant's content-API document for every generator (see ApiClientGen).
+builder.Services.AddScoped<Dcms.AdminApi.ApiClientGen.TenantApiResolver>();
 builder.Services.AddDcmsTenantResolutionByHeader();
 builder.Services.AddScoped<CurrentUser>();
 // Who may act on platform-wide state: a SuperAdmin here, or the console's API acting for one.

@@ -1,0 +1,13 @@
+# Blank project
+
+A React + TypeScript + Vite site with nothing on the page yet, but with the typed API client, the loading hook and the design tokens ready to use.
+
+Built with React, TypeScript and Vite, and published by DCMS. **`AGENTS.md` describes how the
+project is laid out** — for people and for the DCMS assistant alike.
+
+```bash
+npm install
+npm run dev        # local development; set VITE_API_BASE_URL in .env to reach a remote tenant
+npm run typecheck
+npm run build
+```

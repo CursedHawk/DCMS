@@ -4,6 +4,7 @@ import {
   applyDeleteRange,
   applyInsertAt,
   applyReplaceRange,
+  rebaseAnchoredPatch,
   type EditResult,
 } from './edits';
 import { cachedHash } from './hash';
@@ -63,6 +64,15 @@ export interface AgentTransaction {
   remove(path: string): ToolOutcome;
   rename(from: string, to: string): ToolOutcome;
 
+  /**
+   * Note that the model has just been shown `path` as it currently stands.
+   *
+   * <p>Called by the read tools. It is what lets a stale-hash patch be rebased safely: without the
+   * version the model actually read, "the anchor is unique now" cannot be told apart from "the
+   * anchor only exists because somebody typed it after the read".</p>
+   */
+  recordRead(path: string): void;
+
   /** Every file this run touched, in the order first touched. */
   changes(): FileChange[];
   /** Undo the whole set, restoring each file to what it was before the run. */
@@ -75,6 +85,9 @@ export interface TransactionOptions {
   /** Notified per applied edit, so the UI can stream `file.changed` events. */
   onChange?: (change: FileChange) => void;
 }
+
+/** How many read versions a run remembers for rebasing. A run reads dozens, not hundreds. */
+const MAX_SEEN = 64;
 
 export function createTransaction(
   port: WorkspacePort,
@@ -89,6 +102,20 @@ export function createTransaction(
    */
   const before = new Map<string, string | null>();
   const order: string[] = [];
+
+  /**
+   * Content the model has been shown, by hash — the base a stale patch is rebased from.
+   *
+   * <p>Fed by reads and by this transaction's own writes, since every successful edit hands the
+   * model a new hash it may guard the next edit with. Bounded, and cleared wholesale like the hash
+   * cache: losing an entry only means a mismatch is refused instead of rebased, which is the old
+   * behaviour and always safe.</p>
+   */
+  const seen = new Map<string, string>();
+  function remember(content: string): void {
+    if (seen.size >= MAX_SEEN) seen.clear();
+    seen.set(cachedHash(content), content);
+  }
 
   function note(path: string): void {
     if (before.has(path)) return;
@@ -105,9 +132,16 @@ export function createTransaction(
   }
 
   /** Shared preamble: resolve the path, confirm it exists, and enforce the hash guard. */
-  type Opened = { ok: true; content: string; path: string } | { ok: false; outcome: ToolOutcome };
+  type Opened =
+    | { ok: true; content: string; path: string; stale?: { expected: string; actual: string } }
+    | { ok: false; outcome: ToolOutcome };
 
-  function open(path: string, expectedHash: string | undefined): Opened {
+  /**
+   * @param allowStale Hand a mismatch back to the caller instead of refusing it. Only the anchored
+   * patch passes this, because only an anchored patch can prove where it lands in a version the
+   * model has not read.
+   */
+  function open(path: string, expectedHash: string | undefined, allowStale = false): Opened {
     const resolved = port.normalize(path);
     if (!resolved) return { ok: false, outcome: err(`Invalid path: ${path}`) };
     const content = port.read(resolved);
@@ -115,6 +149,9 @@ export function createTransaction(
 
     if (expectedHash) {
       const actual = cachedHash(content);
+      if (actual !== expectedHash && allowStale) {
+        return { ok: true, content, path: resolved, stale: { expected: expectedHash, actual } };
+      }
       if (actual !== expectedHash) {
         // The whole point of the guard. Telling the model the current hash means its retry can
         // be a re-read at the right version rather than a guess.
@@ -129,21 +166,50 @@ export function createTransaction(
     return { ok: true, content, path: resolved };
   }
 
-  function commit(path: string, result: EditResult, verb: string): ToolOutcome {
+  function commit(path: string, result: EditResult, verb: string, notice = ''): ToolOutcome {
     if (!result.ok) return err(result.message);
     note(path);
     port.write(path, result.content);
+    remember(result.content);
     emit(path);
     return {
-      content: `${verb} ${path} (lines ${result.touched.start}–${result.touched.end}). New hash: ${cachedHash(result.content)}`,
+      content: `${verb} ${path} (lines ${result.touched.start}–${result.touched.end}). New hash: ${cachedHash(result.content)}${notice}`,
       paths: [path],
     };
   }
 
   return {
     patch(path, args) {
-      const o = open(path, args.expectedHash);
+      const o = open(path, args.expectedHash, true);
       if (!o.ok) return o.outcome;
+      const base = o.stale ? seen.get(o.stale.expected) : undefined;
+      if (o.stale && base === undefined) {
+        // A hash this run never handed out — evicted from the ledger, or not from a read at all.
+        // Without the version it names there is nothing to prove the anchor against.
+        return err(
+          `${o.path} changed since you read it (expected ${o.stale.expected}, now ${o.stale.actual}). Re-read it and redo this edit.`,
+        );
+      }
+      if (o.stale && base !== undefined) {
+        const result = rebaseAnchoredPatch({
+          base,
+          current: o.content,
+          oldText: args.oldText,
+          newText: args.newText,
+          replaceAll: args.replaceAll,
+        });
+        if (!result.ok) {
+          return err(`${o.path}: ${result.message} (expected hash ${o.stale.expected}, now ${o.stale.actual})`);
+        }
+        // Said out loud, because the model's picture of the file is now wrong somewhere it did
+        // not edit — and any line number it is still holding for this file is the likeliest casualty.
+        return commit(
+          o.path,
+          result,
+          'Patched',
+          `\nRebased: ${o.path} had changed since you read it (expected ${o.stale.expected}, was ${o.stale.actual}) in lines you did not touch. old_text was still unique, so your edit was applied to the current version. Re-read before using line numbers in this file.`,
+        );
+      }
       return commit(
         o.path,
         applyAnchoredPatch(o.content, args.oldText, args.newText, { replaceAll: args.replaceAll }),
@@ -217,6 +283,12 @@ export function createTransaction(
       emit(src);
       emit(dst);
       return { content: `Renamed ${src} to ${dst}.`, paths: [src, dst] };
+    },
+
+    recordRead(path) {
+      const resolved = port.normalize(path);
+      const content = resolved ? port.read(resolved) : undefined;
+      if (content !== undefined) remember(content);
     },
 
     changes() {

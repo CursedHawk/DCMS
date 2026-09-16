@@ -13,13 +13,19 @@
 export const SKILLS: Record<string, string> = {
   'react-site': `# Mode B site structure
 
+- If AGENTS.md exists, it is the authority on this project's layout. Read it; this skill is the
+  fallback for sites that have none.
 - Entry: \`src/main.tsx\` renders into \`#root\` from \`index.html\`. Never break that wiring.
-- Routing: React Router, if the site uses it. The preview runs the app inside an \`about:srcdoc\`
+- DCMS templates share one layout: pages in \`src/pages/\` registered in \`src/routes.tsx\`,
+  reusable pieces in \`src/components/\`, the API client at \`src/lib/api.ts\`, the loading hook
+  \`useApi\` in \`src/lib/useApi.ts\`, site copy in \`src/site.ts\`. Extend that shape rather than
+  inventing a parallel one.
+- Routing: React Router 7 (\`react-router\`). The preview runs the app inside an \`about:srcdoc\`
   iframe, where browser history is not usable — the preview bundler swaps \`createBrowserRouter\`
   for an in-memory router pinned to "/". So a route you add works in production and may not be
   reachable by clicking in the preview. Verify it by reading the code, not only by clicking.
-- Styling: plain CSS or Tailwind. Tailwind is compiled in-browser for the preview and by the real
-  build for production, so utility classes behave the same in both.
+- Styling: plain CSS on design tokens — change \`src/styles/tokens.css\` before rules. Tailwind also
+  works (compiled in-browser for the preview, by the real build for production).
 - Static assets live beside the source and are referenced by relative path.`,
 
   'dcms-source-control': `# How your edits reach the site
@@ -37,14 +43,21 @@ Consequences:
 
   'dcms-content-api': `# Fetching tenant content
 
-- The site reads content from the tenant's delivery API. A generated typed client may already
-  exist under \`src/api\` — search there before writing \`fetch\` by hand.
-- In the preview, API calls are proxied same-origin and forced into the tenant SANDBOX, so
-  preview writes never touch live content. In production they hit live content.
-- Use \`sandbox_request\` to check an endpoint exists and see its real shape before you write
-  code against it. Guessing at a response shape is the most common cause of a page that builds
-  and then renders nothing.
-- Content types vary per tenant. \`describe_content_types\` tells you what this one has.`,
+- Read \`src/api/API.md\`. It is generated from the tenant's plugins and lists every collection,
+  form and call with its field names, in a few hundred tokens. \`openapi.json\` says the same thing
+  in tens of thousands — do not read it for this.
+- Call through \`api\` from \`src/lib/api.ts\`; never \`fetch('/api/...')\` by hand. Load in
+  components with \`useApi\`, and render loading, error and empty states.
+- Items are \`{ id, slug, data, publishedAt }\` — fields are under \`data\`. Reading \`item.title\`
+  instead of \`item.data.title\` is the classic page that builds and renders nothing.
+- \`collections\` and \`forms\` (from \`src/api\`) describe what this tenant has, including which
+  field is the title, image and body. Use them for pages that should work whatever is published.
+- Media fields hold asset ids: \`api.media.url(id, 'webp-960')\`.
+- \`src/api/\`, \`src/dcms/\` and \`openapi.json\` are regenerated when plugins change. Never edit
+  them; if a call is missing, the tenant's plugins do not offer it.
+- In the preview, API calls are proxied same-origin and forced into the tenant SANDBOX, so preview
+  writes never touch live content. In production they hit live content.
+- \`sandbox_request\` shows an endpoint's real response when API.md is not enough to be sure.`,
 
   frontend: `# Front-end judgement for generated pages
 

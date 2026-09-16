@@ -17,6 +17,10 @@ function branchQuery(branch?: string): string {
   return branch ? `?branch=${encodeURIComponent(branch)}` : '';
 }
 
+/** The starter templates a new Mode B site can begin from, in the order they are offered. */
+export const SITE_TEMPLATES = ['blank', 'content', 'landing'] as const;
+export type SiteTemplate = (typeof SITE_TEMPLATES)[number];
+
 export const ideApi = {
   /** Load (seeding from git HEAD on first open) the user's draft for a branch. */
   load: (siteId: string, branch?: string) =>
@@ -36,20 +40,24 @@ export const ideApi = {
       { put: delta.put, delete: delta.delete, clientId: clientId(), origin },
     ),
 
-  /** Tenant-generated starter files for a new React app (see StarterFlavor). */
-  scaffold: (siteId: string, flavor: 'openapi' | 'client' | 'starter') =>
-    api.get<{ files: Record<string, string> }>(
-      `/admin/sites/${siteId}/starter-files?flavor=${flavor}`,
+  /**
+   * A complete new site from one of the starter templates: the template's files plus this
+   * tenant's generated API layer. See `SiteTemplates` on the server.
+   */
+  scaffold: (siteId: string, template: SiteTemplate) =>
+    api.get<{ fingerprint: string; files: Record<string, string> }>(
+      `/admin/sites/${siteId}/starter-files?template=${template}`,
     ),
 
   /**
-   * Re-emit only the DCMS-owned files — `openapi.json` and the typed client under
-   * `src/api/` — from the tenant's current content API. Used to pull in plugins
-   * installed or reconfigured since the site was scaffolded, without touching a
-   * line the author wrote.
+   * Only the DCMS-owned files — `src/api/`, `src/dcms/` and `openapi.json` — generated from the
+   * tenant's current plugins. Never a file the author wrote.
    */
-  regenerate: (siteId: string) =>
-    api.get<{ files: Record<string, string> }>(
-      `/admin/sites/${siteId}/starter-files?flavor=regenerate`,
+  generatedFiles: (siteId: string) =>
+    api.get<{ fingerprint: string; files: Record<string, string> }>(
+      `/admin/sites/${siteId}/generated-files`,
     ),
+
+  /** The fingerprint of what `generatedFiles` would return now — compared with the site's manifest. */
+  apiFingerprint: () => api.get<{ fingerprint: string }>('/admin/api-fingerprint'),
 };

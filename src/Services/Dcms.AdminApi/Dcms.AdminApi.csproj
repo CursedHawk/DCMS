@@ -14,14 +14,15 @@
     <EmbeddedResource Include="..\..\..\packages\api-client\src\types.ts" LogicalName="Dcms.AdminApi.ApiClientGen.Runtime.types.ts" />
   </ItemGroup>
 
-  <!-- Embed the site-template-react scaffold for the downloadable starter. Targeted
-       globs (src + explicit root files) avoid walking node_modules/dist. -->
+  <!-- Embed the Mode B starter templates (see ApiClientGen/SiteTemplates.cs). Targeted globs
+       avoid walking node_modules. shared/src/api/ is a typecheck fixture of generated output and
+       is never shipped - each tenant's own generated layer takes its place. -->
   <ItemGroup>
-    <EmbeddedResource Include="..\..\..\packages\site-template-react\src\**\*.*">
-      <LogicalName>Dcms.AdminApi.SiteTemplate/src/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    <EmbeddedResource Include="..\..\..\packages\site-template-react\shared\**\*" Exclude="..\..\..\packages\site-template-react\shared\src\api\**">
+      <LogicalName>Dcms.AdminApi.SiteTemplates/shared/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="..\..\..\packages\site-template-react\package.json;..\..\..\packages\site-template-react\tsconfig.json;..\..\..\packages\site-template-react\vite.config.ts;..\..\..\packages\site-template-react\index.html;..\..\..\packages\site-template-react\.env.example;..\..\..\packages\site-template-react\.gitignore;..\..\..\packages\site-template-react\README.md">
-      <LogicalName>Dcms.AdminApi.SiteTemplate/%(Filename)%(Extension)</LogicalName>
+    <EmbeddedResource Include="..\..\..\packages\site-template-react\templates\**\*">
+      <LogicalName>Dcms.AdminApi.SiteTemplates/templates/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

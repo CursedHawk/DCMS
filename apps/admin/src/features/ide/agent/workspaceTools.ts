@@ -119,6 +119,8 @@ export const IDE_TOOLS: IdeTool[] = [
       });
 
       if ('error' in result) return { content: result.error, isError: true };
+      // An `unchanged` answer is a read too: the model is confirming the version it holds.
+      ctx.tx.recordRead(result.path);
       if ('unchanged' in result) {
         return { content: `${result.path} is unchanged (hash ${result.hash}).` };
       }

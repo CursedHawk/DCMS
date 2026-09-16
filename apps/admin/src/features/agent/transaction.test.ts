@@ -207,3 +207,78 @@ describe('revert', () => {
     expect(createTransaction(memoryPort({ 'a.ts': 'x' })).revert('a.ts')).toBe(false);
   });
 });
+
+describe('rebasing a patch onto a file that moved', () => {
+  const read = 'const title = "Hello";\nconst body = "World";\n';
+
+  /** Read the file the way `read_file` does, then let "the human" type into it. */
+  function readThenEdit(edit: (content: string) => string) {
+    const port = memoryPort({ 'a.ts': read });
+    const tx = createTransaction(port);
+    tx.recordRead('a.ts');
+    const hash = cachedHash(read);
+    port.files['a.ts'] = edit(read);
+    return { port, tx, hash };
+  }
+
+  it('applies the edit when someone else changed a different line, and says so', () => {
+    const { port, tx, hash } = readThenEdit((c) => `// header\n${c}`);
+    const r = tx.patch('a.ts', { oldText: '"World"', newText: '"There"', expectedHash: hash });
+
+    expect(r.isError).toBeFalsy();
+    // Both edits survive: the human's header and the agent's change.
+    expect(port.files['a.ts']).toBe('// header\nconst title = "Hello";\nconst body = "There";\n');
+    // The model's picture of the file is stale; it must be told, not left to find out.
+    expect(r.content).toMatch(/Rebased/);
+    expect(r.content).toMatch(/Re-read before using line numbers/);
+    expect(r.content).toContain(cachedHash(port.files['a.ts']));
+  });
+
+  it('refuses when the other edit touched the anchor, leaving the file as the human left it', () => {
+    const { port, tx, hash } = readThenEdit((c) => c.replace('World', 'Planet'));
+    const r = tx.patch('a.ts', { oldText: '"World"', newText: '"There"', expectedHash: hash });
+
+    expect(r.isError).toBe(true);
+    expect(r.content).toMatch(/Re-read/);
+    expect(port.files['a.ts']).toContain('Planet');
+    expect(tx.changes()).toEqual([]);
+  });
+
+  it('refuses a hash it never handed out, because there is no read to prove the anchor against', () => {
+    const { port, tx } = readThenEdit((c) => `// header\n${c}`);
+    const r = tx.patch('a.ts', { oldText: '"World"', newText: '"There"', expectedHash: 'made-up' });
+
+    expect(r.isError).toBe(true);
+    expect(port.files['a.ts']).toContain('"World"');
+  });
+
+  it('rebases from the hash of its own previous edit, not only from reads', () => {
+    const port = memoryPort({ 'a.ts': read });
+    const tx = createTransaction(port);
+    const first = tx.patch('a.ts', { oldText: '"Hello"', newText: '"Hi"' });
+    const hash = /New hash: (\S+)/.exec(first.content)![1];
+    port.files['a.ts'] = `// header\n${port.files['a.ts']}`;
+
+    const r = tx.patch('a.ts', { oldText: '"World"', newText: '"There"', expectedHash: hash });
+    expect(r.isError).toBeFalsy();
+    expect(port.files['a.ts']).toBe('// header\nconst title = "Hi";\nconst body = "There";\n');
+  });
+
+  it('never rebases a line-range edit, whose numbers the other edit has moved', () => {
+    const { port, tx, hash } = readThenEdit((c) => `// header\n${c}`);
+    const r = tx.replaceRange('a.ts', { startLine: 2, endLine: 2, text: 'const body = 1;', expectedHash: hash });
+
+    expect(r.isError).toBe(true);
+    // Line 2 is now the title, which is exactly the line a rebase would have overwritten.
+    expect(port.files['a.ts']).toContain('"Hello"');
+  });
+
+  it('reverts a rebased edit back to the state before the run, not before the human', () => {
+    const { port, tx, hash } = readThenEdit((c) => `// header\n${c}`);
+    tx.patch('a.ts', { oldText: '"World"', newText: '"There"', expectedHash: hash });
+    tx.revertAll();
+    // "Before the run" is what the file held when the run first touched it — which already
+    // included the human's header. Reverting the agent must not also revert the person.
+    expect(port.files['a.ts']).toBe(`// header\n${read}`);
+  });
+});

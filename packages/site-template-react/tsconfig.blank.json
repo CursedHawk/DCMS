@@ -1,0 +1,9 @@
+{
+  // Typechecks templates/blank as it will exist in a site: its own files over shared/.
+  // rootDirs lets a relative import like '../api' resolve into shared/ when the template has no such file.
+  "extends": "./shared/tsconfig.json",
+  "compilerOptions": {
+    "rootDirs": ["./shared", "./templates/blank"]
+  },
+  "include": ["shared/src", "templates/blank/src"]
+}

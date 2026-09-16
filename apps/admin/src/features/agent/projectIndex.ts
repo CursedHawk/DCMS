@@ -298,6 +298,14 @@ export function summarize(index: ProjectIndex): string {
   const fileCount = Object.keys(index.files).length;
   parts.push(`${fileCount} files${index.entry ? `, entry ${index.entry}` : ''}`);
 
+  // Said first, because each replaces a dozen exploratory reads: the project's own conventions,
+  // and every call its generated API client offers. Listed only when the site has them.
+  const guides = [
+    ['AGENTS.md', 'how this project is laid out — read it before changing anything'],
+    ['src/api/API.md', 'every content-API call, collection and form, with field names'],
+  ].filter(([path]) => path in index.files);
+  if (guides.length) parts.push(`read first: ${guides.map(([path, what]) => `${path} (${what})`).join('; ')}`);
+
   const deps = Object.keys(index.dependencies).sort();
   if (deps.length) parts.push(`dependencies: ${deps.join(', ')}`);
 

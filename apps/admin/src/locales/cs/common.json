@@ -873,19 +873,19 @@
       "moreLines_other": "… a {{count}} dalších řádků"
     },
     "starter": {
-      "title": "Založit React aplikaci",
-      "generating": "Generuji…",
-      "emptyTitle": "Prázdný projekt",
-      "emptyDesc": "Minimální aplikace React + Vite. Začnete od nuly.",
-      "openapiTitle": "Jen dokument OpenAPI",
-      "openapiDesc": "Pouze specifikace OpenAPI vašeho content-API.",
-      "clientTitle": "Typovaný API klient + OpenAPI",
-      "clientDesc": "Vygenerovaný typovaný TypeScript klient a specifikace OpenAPI.",
-      "starterTitle": "React starter + OpenAPI",
-      "starterDesc": "Hotový React web napojený na vaše content API a k tomu specifikace."
+      "title": "Začněte svůj web",
+      "generating": "Generuji web…",
+      "contentTitle": "Obsahový web",
+      "contentDesc": "Stránky pro vše, co publikujete: úvodní stránka s nejnovějšími položkami, stránka pro každou kolekci a pro každou položku.",
+      "landingTitle": "Landing page",
+      "landingDesc": "Jedna stránka: hlavní sdělení, důvody, nejnovější položky a kontaktní formulář napojený na plugin Formuláře.",
+      "blankTitle": "Prázdný projekt",
+      "blankDesc": "Prázdná stránka s připraveným API klientem, hookem pro načítání a design tokeny.",
+      "footnote": "Každá šablona obsahuje typovaného klienta pro vaše obsahové API a AGENTS.md, podle kterého pracuje asistent.",
+      "failed": "Web se nepodařilo vygenerovat. Zkontrolujte připojení a vyberte znovu."
     },
     "refreshGenerated": "Obnovit API",
-    "refreshGeneratedHint": "Znovu vygeneruje soubory spravované DCMS — openapi.json, typovaného klienta v src/api/ a vrstvu analytiky a souhlasu s cookies v src/dcms/ — podle aktuálních pluginů tohoto prostoru. Vašich souborů se to nedotkne.",
+    "refreshGeneratedHint": "Znovu vygeneruje soubory spravované DCMS — openapi.json, typovaného klienta a API.md v src/api/ a vrstvu analytiky a souhlasu s cookies v src/dcms/ — podle aktuálních pluginů tohoto prostoru. Děje se to i samo, když se pluginy změní. Vašich souborů se to nedotkne.",
     "generatedRefreshed": "Obnoveno {{count}} vygenerovaných souborů",
     "generatedUpToDate": "Vygenerované soubory jsou aktuální",
     "branchMovedWarning": "Někdo jiný odeslal commit do větve {{branch}}, zatímco jste upravovali. Načtěte znovu, abyste navázali na jeho práci (neuložené změny budou ztraceny).",
@@ -970,7 +970,9 @@
       "unpin": "Odepnout",
       "close": "Zavřít",
       "closeOthers": "Zavřít ostatní záložky"
-    }
+    },
+    "generatedAutoRefreshed": "Pluginy se změnily, API klient byl aktualizován ({{count}} souborů)",
+    "generatedRefreshFailed": "Vygenerovaného API klienta se nepodařilo obnovit"
   },
   "openapi": {
     "title": "API dokumentace",

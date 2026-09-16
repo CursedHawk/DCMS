@@ -41,6 +41,7 @@ import {
   useStoredWidth,
   useVfs,
 } from '../site-source';
+import type { SiteTemplate } from '../site-source/ide';
 import { type IdeCommand, modifierLabel } from './commands';
 import { IdeCommandPalette, type PaletteMode } from './IdeCommandPalette';
 import { IdeSidebar, type SidebarView } from './IdeSidebar';
@@ -48,8 +49,8 @@ import { PreviewPane } from './PreviewPane';
 import { ShortcutSheet } from './ShortcutSheet';
 import { useIdeShortcuts } from './useIdeShortcuts';
 import { usePreview } from './preview/usePreview';
-import { StarterPicker, type StarterFlavor } from './StarterPicker';
-import { STARTER_FILES } from './starter';
+import { StarterPicker } from './StarterPicker';
+import { useGeneratedApi } from './generated/useGeneratedApi';
 import { ensurePaletteTypes } from './types/palette';
 
 const sitesPath: string = '/sites';
@@ -78,6 +79,7 @@ export function IdePage({ siteId }: { siteId: string }) {
   const [publishMerge, setPublishMerge] = useState(false);
   // Shown for a brand-new (empty) site so the user picks what to scaffold.
   const [pickStarter, setPickStarter] = useState(false);
+  const [starterFailed, setStarterFailed] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
   const [palette, setPalette] = useState<{ open: boolean; mode: PaletteMode }>({
     open: false,
@@ -184,57 +186,22 @@ export function IdePage({ siteId }: { siteId: string }) {
     },
   });
 
-  // Seed a brand-new site's workspace from the chosen starter flavor. Everything
-  // but "empty" is generated from the tenant's content API by the backend.
+  // Seed a brand-new site's workspace from the chosen template: the template's files plus this
+  // tenant's generated API client, both from the server.
   const scaffold = useMutation({
-    mutationFn: (flavor: StarterFlavor) =>
-      flavor === 'empty'
-        ? Promise.resolve({ files: { ...STARTER_FILES } })
-        : ideApi.scaffold(siteId, flavor),
+    mutationFn: (template: SiteTemplate) => ideApi.scaffold(siteId, template),
+    onMutate: () => setStarterFailed(false),
     onSuccess: ({ files }) => {
       useVfs.getState().seedStarter(files);
       setPickStarter(false);
     },
-    onError: () => {
-      toast.error(t('errors.generic'));
-      // Fall back to an empty project so the IDE is never left blank.
-      useVfs.getState().seedStarter({ ...STARTER_FILES });
-      setPickStarter(false);
-    },
+    onError: () => setStarterFailed(true),
   });
 
-  /*
-   * Re-pull the DCMS-generated layer (openapi.json + the typed client under
-   * src/api/) from the tenant's current content API. Those files are emitted once
-   * when the site is scaffolded, so they drift the moment a plugin is installed or
-   * reconfigured — this is how the author picks the new endpoints up.
-   *
-   * Written through writeFile rather than seedStarter/importFiles: it must land as
-   * ordinary pending edits (so the normal autosave + git commit carries them) and
-   * must not steal the active tab.
-   */
-  const refreshGenerated = useMutation({
-    mutationFn: () => ideApi.regenerate(siteId),
-    onSuccess: ({ files }) => {
-      const vfs = useVfs.getState();
-      const changed = Object.entries(files).filter(
-        ([path, content]) => vfs.files[path] !== content,
-      );
-      for (const [path, content] of changed) vfs.writeFile(path, content);
-      const message =
-        changed.length === 0
-          ? t('ide.generatedUpToDate')
-          : t('ide.generatedRefreshed', { count: changed.length });
-      toast.success(message);
-      // …and again where it will still be readable in ten minutes. A toast answers "what just
-      // happened"; the Output tab answers "what happened while I was reading the code".
-      appendOutput('workspace', message);
-      for (const [path] of changed) appendOutput('workspace', `regenerated ${path}`);
-    },
-    onError: () => {
-      toast.error(t('errors.generic'));
-      appendOutput('workspace', t('ide.refreshGenerated'), 'error');
-    },
+  // The generated layer — Refresh API, and the automatic refresh when the tenant's plugins change.
+  const generated = useGeneratedApi({
+    siteId,
+    settled: session.ready && !session.switching && !conflict && !pickStarter,
   });
 
   // Mode B typings are opted into here rather than by the shared Monaco setup, so
@@ -405,8 +372,8 @@ export function IdePage({ siteId }: { siteId: string }) {
         id: 'generated.refresh',
         label: t('ide.refreshGenerated'),
         keywords: 'api client openapi types',
-        disabled: refreshGenerated.isPending,
-        run: () => refreshGenerated.mutate(),
+        disabled: generated.refreshing,
+        run: () => generated.refresh(),
       },
       {
         id: 'publish',
@@ -439,7 +406,7 @@ export function IdePage({ siteId }: { siteId: string }) {
     conflict,
     session,
     preview,
-    refreshGenerated,
+    generated,
     publish,
     resetSandbox,
   ]);
@@ -493,7 +460,8 @@ export function IdePage({ siteId }: { siteId: string }) {
       <StarterPicker
         open={pickStarter}
         pending={scaffold.isPending}
-        onPick={(f) => scaffold.mutate(f)}
+        failed={starterFailed}
+        onPick={(template) => scaffold.mutate(template)}
       />
 
       <IdeCommandPalette
@@ -522,8 +490,8 @@ export function IdePage({ siteId }: { siteId: string }) {
         </span>
         <Button
           variant="ghost"
-          onClick={() => refreshGenerated.mutate()}
-          disabled={refreshGenerated.isPending}
+          onClick={() => generated.refresh()}
+          disabled={generated.refreshing}
           title={t('ide.refreshGeneratedHint')}
         >
           <RefreshCw className="h-4 w-4" /> {t('ide.refreshGenerated')}

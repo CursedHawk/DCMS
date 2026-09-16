@@ -4,6 +4,7 @@ import {
   applyDeleteRange,
   applyInsertAt,
   applyReplaceRange,
+  rebaseAnchoredPatch,
   type EditFailure,
   type EditSuccess,
 } from './edits';
@@ -133,5 +134,46 @@ describe('applyInsertAt', () => {
     const r = ok(applyInsertAt('a\nb', 2, 'x\ny'));
     expect(r.content).toBe('a\nx\ny\nb');
     expect(r.touched).toEqual({ start: 2, end: 3 });
+  });
+});
+
+describe('rebaseAnchoredPatch', () => {
+  const base = 'import a from "a";\n\nexport function App() {\n  return <h1>Hello</h1>;\n}\n';
+
+  it('applies a patch whose anchor survived an edit elsewhere in the file', () => {
+    // The human added an import above while the model was working on the heading.
+    const current = 'import a from "a";\nimport b from "b";\n\nexport function App() {\n  return <h1>Hello</h1>;\n}\n';
+    const r = ok(rebaseAnchoredPatch({ base, current, oldText: '<h1>Hello</h1>', newText: '<h1>Hi</h1>' }));
+    expect(r.content).toBe(current.replace('<h1>Hello</h1>', '<h1>Hi</h1>'));
+    // Reported against the current file, where the line actually is now.
+    expect(r.touched.start).toBe(5);
+  });
+
+  it('refuses when the other edit changed the anchor itself', () => {
+    const current = base.replace('Hello', 'Welcome');
+    const r = no(rebaseAnchoredPatch({ base, current, oldText: '<h1>Hello</h1>', newText: '<h1>Hi</h1>' }));
+    expect(r.reason).toBe('anchor-missing');
+    expect(r.message).toMatch(/same lines/);
+  });
+
+  it('refuses when the other edit made the anchor ambiguous', () => {
+    const current = base + 'export const Copy = () => <h1>Hello</h1>;\n';
+    const r = no(rebaseAnchoredPatch({ base, current, oldText: '<h1>Hello</h1>', newText: '<h1>Hi</h1>' }));
+    expect(r.reason).toBe('anchor-ambiguous');
+  });
+
+  it('does not let a human typing the anchor rescue an edit that was wrong against what the model read', () => {
+    // Not in the version the model read, so the edit would have failed on its own merits.
+    const current = base.replace('Hello', 'Hello</h1><h1>Goodbye');
+    const r = no(rebaseAnchoredPatch({ base, current, oldText: '<h1>Goodbye</h1>', newText: 'x' }));
+    expect(r.reason).toBe('anchor-missing');
+  });
+
+  it('never applies replace_all to a version the model has not seen', () => {
+    const current = base + '// Hello again\n';
+    const r = no(
+      rebaseAnchoredPatch({ base, current, oldText: 'Hello', newText: 'Hi', replaceAll: true }),
+    );
+    expect(r.reason).toBe('hash-mismatch');
   });
 });

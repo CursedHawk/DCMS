@@ -213,4 +213,34 @@ public class OpenApiAssemblerTests
 
         doc["tags"]!.AsArray().Select(t => t!["name"]!.GetValue<string>()).Should().Contain("Tags");
     }
+
+    [Fact]
+    public void Offers_the_tag_filter_only_on_operations_that_return_a_list()
+    {
+        // Branding's GET has no path parameter, which is all the old rule looked at — so a
+        // single public object was documented as filterable by tag.
+        var assembler = new OpenApiAssembler(new PluginRegistry([new BlogPlugin(), new Dcms.Plugins.Branding.BrandingPlugin()]));
+
+        var doc = assembler.Build("Acme", [
+            Instance("blog", "devblog", "Dev Blog", "Deep dives."),
+            Instance("branding", "brand", "Brand", "Header branding."),
+        ], tagging: true);
+
+        var branding = doc["paths"]!["/api/brand/branding"]!["get"]!["parameters"]?.AsArray() ?? [];
+        branding.Select(p => p!["name"]!.GetValue<string>()).Should().NotContain("tag");
+
+        var list = doc["paths"]!["/api/devblog/post"]!["get"]!["parameters"]!.AsArray();
+        list.Select(p => p!["name"]!.GetValue<string>()).Should().Contain("tag");
+    }
+
+    [Fact]
+    public void Carries_the_client_name_a_plugin_gives_an_operation()
+    {
+        var assembler = new OpenApiAssembler(new PluginRegistry([new Dcms.Plugins.Branding.BrandingPlugin()]));
+
+        var doc = assembler.Build("Acme", [Instance("branding", "brand", "Brand", "Header branding.")]);
+
+        doc["paths"]!["/api/brand/branding"]!["get"]!["x-dcms-client"]!.AsArray()
+            .Select(n => n!.GetValue<string>()).Should().Equal("branding", "get");
+    }
 }

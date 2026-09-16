@@ -1,0 +1,4 @@
+/** Runtime configuration, from Vite env vars (see .env.example). */
+export const config = {
+  apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? '',
+};

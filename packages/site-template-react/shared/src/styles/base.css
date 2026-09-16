@@ -1,0 +1,145 @@
+/* Reset, typography and the pieces every template uses. Values come from tokens.css. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: 1rem/1.6 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: var(--color-accent);
+  text-underline-offset: 0.2em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  margin: 0 0 var(--space-3);
+}
+
+h1 {
+  font-size: clamp(2rem, 1.4rem + 2.5vw, 3.25rem);
+}
+
+h2 {
+  font-size: clamp(1.4rem, 1.2rem + 0.8vw, 1.9rem);
+}
+
+h3 {
+  font-size: 1.15rem;
+}
+
+/* ---- shared pieces ---- */
+
+.container {
+  width: 100%;
+  max-width: var(--width);
+  margin-inline: auto;
+  padding-inline: var(--space-3);
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space-3);
+  top: -3rem;
+}
+
+.skip-link:focus {
+  top: var(--space-2);
+}
+
+.lead {
+  color: var(--color-muted);
+  font-size: 1.2rem;
+}
+
+.meta {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.status {
+  color: var(--color-muted);
+  padding-block: var(--space-4);
+}
+
+.status--error {
+  color: var(--color-danger);
+}
+
+.button {
+  display: inline-block;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font: inherit;
+  font-weight: 600;
+  padding: var(--space-2) var(--space-4);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* ---- forms ---- */
+
+.field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.field label {
+  font-weight: 600;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-line);
+  border-radius: calc(var(--radius) / 2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.field textarea {
+  min-height: 8rem;
+  resize: vertical;
+}
+
+.field--checkbox {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.field--checkbox input {
+  width: auto;
+}
