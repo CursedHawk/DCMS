@@ -45,6 +45,7 @@ public static class AccountApiEndpoints
         // password, which propagates to Forgejo so it works for git immediately.
         group.MapPost("/password", async (
             ClaimsPrincipal principal, UserManager<DcmsUser> users, ForgejoUserSync forgejo,
+            IOpenIddictTokenManager tokens, IOpenIddictAuthorizationManager authorizations,
             SetPasswordRequest body, CancellationToken ct) =>
         {
             var user = await FindUserAsync(principal, users);
@@ -68,6 +69,11 @@ public static class AccountApiEndpoints
 
             // Propagate to Forgejo (also flips HasGitPassword).
             await forgejo.EnsureAsync(user, body.NewPassword, ct);
+
+            // SEC-05: a password change must invalidate sessions minted under the old one — a
+            // stolen refresh token stays valid otherwise. The caller re-authenticates via silent
+            // renew.
+            await UserSessionRevoker.RevokeAllAsync(tokens, authorizations, users, user, ct);
             return Results.NoContent();
         }).WithAudit(AuditActions.PasswordChanged, category: AuditCategory.Auth);
 

@@ -3,7 +3,6 @@ using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Sites;
-using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Data.Visitors;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
@@ -14,15 +13,15 @@ namespace Dcms.AdminApi.Sites;
 /// <summary>
 /// Backs the site IDE's live preview against real tenant content without a
 /// public domain. The preview iframe runs the site's own code, which fetches
-/// <c>/api/...</c> with no admin token — so this is an <b>anonymous</b>,
+/// <c>/api/...</c> with no admin token — so this is a site:edit-gated,
 /// same-origin reverse proxy to content-api's delivery API that resolves the
 /// tenant from the site id and forces the per-tenant sandbox (X-Dcms-Sandbox)
 /// so preview writes never touch live data.
 ///
-/// Exposing this anonymously is safe: content-api's delivery surface is public
-/// by design (the live site serves the same to anonymous visitors, and its
-/// collect/submit endpoints already allow any origin). A companion,
-/// authenticated endpoint resets the tenant's sandbox.
+/// It only ever proxies as the caller's own tenant: the site is resolved under
+/// the tenant query filter, so a siteId owned by another tenant is a 404.
+/// (SEC-14 — it was previously anonymous and cross-tenant.) A companion
+/// endpoint resets the tenant's sandbox.
 /// </summary>
 public static class SitePreviewEndpoints
 {
@@ -31,6 +30,12 @@ public static class SitePreviewEndpoints
     public static IEndpointRouteBuilder MapSitePreview(this IEndpointRouteBuilder app)
     {
         app.MapMethods("/api/admin/sites/{siteId:guid}/preview/api/{**path}", ProxyMethods, ProxyAsync)
+            // SEC-14: this was unauthenticated and resolved the target tenant from the siteId
+            // with IgnoreQueryFilters(), so an anonymous caller could proxy to content-api as any
+            // tenant's sandbox. It now requires site:edit and resolves the site under the tenant
+            // filter, so a foreign or unknown siteId is a 404 and the proxy only ever acts as the
+            // caller's own tenant.
+            .RequirePermission(PlatformPermissions.SiteEdit)
             .AuditExempt("Transparent proxy to content-api. The real action is recorded there, "
                        + "against the sandbox tenant; recording it here too would double every "
                        + "preview interaction.");
@@ -91,11 +96,15 @@ public static class SitePreviewEndpoints
 
     private static async Task ProxyAsync(
         Guid siteId, string? path, HttpContext http,
-        SitesDbContext sites, TenancyDbContext tenancy,
+        SitesDbContext sites, ITenantContext tenant,
         IHttpClientFactory httpClientFactory, CancellationToken ct)
     {
-        var slug = await ResolveTenantSlugAsync(sites, tenancy, siteId, ct);
-        if (slug is null)
+        // The caller's own tenant, and the site must belong to it. The tenant query filter (no
+        // IgnoreQueryFilters here) is what enforces that: a site in another tenant is invisible,
+        // so a foreign siteId is a 404 rather than a cross-tenant proxy. (SEC-14)
+        var slug = tenant.TenantSlug;
+        if (slug is null || tenant.TenantId is null
+            || !await sites.Sites.AsNoTracking().AnyAsync(s => s.Id == siteId, ct))
         {
             http.Response.StatusCode = StatusCodes.Status404NotFound;
             return;
@@ -131,17 +140,4 @@ public static class SitePreviewEndpoints
         await response.Content.CopyToAsync(http.Response.Body, ct);
     }
 
-    private static async Task<string?> ResolveTenantSlugAsync(
-        SitesDbContext sites, TenancyDbContext tenancy, Guid siteId, CancellationToken ct)
-    {
-        var site = await sites.Sites.IgnoreQueryFilters().AsNoTracking()
-            .FirstOrDefaultAsync(s => s.Id == siteId, ct);
-        if (site is null)
-        {
-            return null;
-        }
-        var tenant = await tenancy.Tenants.AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Id == site.TenantId.ToString(), ct);
-        return tenant?.Identifier;
-    }
 }

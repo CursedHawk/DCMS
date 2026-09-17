@@ -3,6 +3,7 @@ using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Tenancy;
+using Dcms.Shared.Security;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Telemetry;
 using Microsoft.AspNetCore.SignalR;
@@ -29,6 +30,7 @@ public sealed class ChatHub(
 {
     private const string TenantItemKey = "dcms.tenantId";
     private const string RoleItemKey = "dcms.role";
+    private const string ManageItemKey = "dcms.chatManage";
 
     // Public so the out-of-band bot responder can fan replies into the same groups.
     public static string ConversationGroup(Guid conversationId) => $"conv:{conversationId}";
@@ -36,7 +38,29 @@ public sealed class ChatHub(
 
     private Guid TenantId => (Guid)Context.Items[TenantItemKey]!;
     private bool IsAgent => Context.Items.TryGetValue(RoleItemKey, out var role) && (string?)role == "agent";
+    private bool CanManageChat => Context.Items.TryGetValue(ManageItemKey, out var m) && m is true;
     private Guid? UserId => Guid.TryParse(Context.User?.FindFirstValue("sub"), out var id) ? id : null;
+
+    /// <summary>The caller's effective permission strings in the tenant, mirroring admin-api's
+    /// resolver (content-api has no permission cache of its own).</summary>
+    private static async Task<IReadOnlySet<string>> ResolvePermissionsAsync(
+        IServiceScope scope, Guid tenantId, Guid userId)
+    {
+        var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
+        var roleIds = await tenancy.Memberships.IgnoreQueryFilters()
+            .Where(m => m.TenantId == tenantId && m.UserId == userId)
+            .SelectMany(m => m.Roles.Select(r => r.TenantRoleId))
+            .ToListAsync();
+        if (roleIds.Count == 0)
+        {
+            return new HashSet<string>(StringComparer.Ordinal);
+        }
+        var perms = await tenancy.TenantRolePermissions.IgnoreQueryFilters()
+            .Where(p => roleIds.Contains(p.TenantRoleId))
+            .Select(p => p.Permission)
+            .ToListAsync();
+        return perms.ToHashSet(StringComparer.Ordinal);
+    }
 
     public override async Task OnConnectedAsync()
     {
@@ -58,15 +82,25 @@ public sealed class ChatHub(
         }
         Context.Items[TenantItemKey] = tenantId;
 
-        // An authenticated platform user who is a member of this tenant is an agent.
+        // SEC-08: an agent is not merely any member of the tenant — visitor conversations may
+        // hold personal data, so joining the agent group requires chat:read, and speaking or
+        // closing conversations requires chat:manage. A SuperAdmin holds both.
         if (Context.User?.Identity?.IsAuthenticated == true && UserId is { } userId)
         {
-            var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
-            var isMember = await tenancy.Memberships.IgnoreQueryFilters()
-                .AnyAsync(m => m.TenantId == tenantId && m.UserId == userId);
-            if (isMember)
+            var isSuperAdmin = Context.User.FindAll("role").Any(c => c.Value == "SuperAdmin");
+            var perms = isSuperAdmin
+                ? null // unrestricted
+                : await ResolvePermissionsAsync(scope, tenantId, userId);
+
+            var canRead = isSuperAdmin
+                || (perms is not null && perms.Contains(PlatformPermissions.ChatRead));
+            var canManage = isSuperAdmin
+                || (perms is not null && perms.Contains(PlatformPermissions.ChatManage));
+
+            if (canRead)
             {
                 Context.Items[RoleItemKey] = "agent";
+                Context.Items[ManageItemKey] = canManage;
                 await Groups.AddToGroupAsync(Context.ConnectionId, AgentGroup(tenantId));
             }
         }
@@ -78,6 +112,19 @@ public sealed class ChatHub(
     public async Task<object> StartConversation(string? visitorName)
     {
         var tenantId = TenantId;
+
+        // SEC-09: cap how many conversations one connection may open, so a script cannot spin up
+        // unbounded conversations (each of which then admits its own message rate).
+        if (!IsAgent)
+        {
+            var opened = Context.Items.TryGetValue(ConvCountKey, out var n) && n is int ni ? ni : 0;
+            if (opened >= MaxConversationsPerConnection)
+            {
+                throw new HubException("Too many conversations from this session.");
+            }
+            Context.Items[ConvCountKey] = opened + 1;
+        }
+
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
 
@@ -118,24 +165,57 @@ public sealed class ChatHub(
         await Groups.AddToGroupAsync(Context.ConnectionId, ConversationGroup(conversationId));
     }
 
+    // SEC-09: each visitor message can schedule a tenant-billed AI reply, and the WebSocket
+    // transport is exempt from the edge's rate limiter, so the hub throttles per connection.
+    // This bounds the AI calls one connection can trigger; the ai-gateway per-tenant quota is
+    // still the aggregate backstop.
+    private const int VisitorMessagesPerWindow = 20;
+    private static readonly TimeSpan RateWindow = TimeSpan.FromMinutes(1);
+    private const int MaxConversationsPerConnection = 10;
+    private const string RateWindowKey = "dcms.rate.window";
+    private const string RateCountKey = "dcms.rate.count";
+    private const string ConvCountKey = "dcms.conv.count";
+
     /// <summary>Visitor sends a message into a conversation.</summary>
-    public Task SendMessage(Guid conversationId, string body) => PostAsync(conversationId, body, ChatSender.Visitor);
+    public Task SendMessage(Guid conversationId, string body)
+    {
+        // Agents don't trigger the bot and aren't the abuse vector.
+        if (!IsAgent)
+        {
+            var now = DateTimeOffset.UtcNow;
+            var windowStart = Context.Items.TryGetValue(RateWindowKey, out var w) && w is DateTimeOffset dt ? dt : now;
+            var count = Context.Items.TryGetValue(RateCountKey, out var c) && c is int ci ? ci : 0;
+            if (now - windowStart > RateWindow)
+            {
+                windowStart = now;
+                count = 0;
+            }
+            count++;
+            Context.Items[RateWindowKey] = windowStart;
+            Context.Items[RateCountKey] = count;
+            if (count > VisitorMessagesPerWindow)
+            {
+                throw new HubException("You're sending messages too quickly. Please wait a moment.");
+            }
+        }
+        return PostAsync(conversationId, body, ChatSender.Visitor);
+    }
 
     /// <summary>Agent replies into a conversation. Requires an authenticated tenant member.</summary>
     public Task SendAgentMessage(Guid conversationId, string body)
     {
-        if (!IsAgent)
+        if (!CanManageChat)
         {
-            throw new HubException("Not authorized as an agent for this tenant.");
+            throw new HubException("Not authorized to answer chats for this tenant (chat:manage).");
         }
         return PostAsync(conversationId, body, ChatSender.Agent);
     }
 
     public async Task CloseConversation(Guid conversationId)
     {
-        if (!IsAgent)
+        if (!CanManageChat)
         {
-            throw new HubException("Not authorized as an agent for this tenant.");
+            throw new HubException("Not authorized to close chats for this tenant (chat:manage).");
         }
         var tenantId = TenantId;
         using var scope = services.CreateScope();

@@ -120,7 +120,14 @@ public static class PlatformRoutes
         routes.Add(Prefix("platform-identity-api", [platform], "/api/identity", Identity, order: 21));
 
         // ---- Admin REST API, on the admin host ----
-        routes.Add(Prefix("admin-api", [admin], "/api", AdminApi, order: 30));
+        // BUG-02: YARP enforces the server's 30 MB default on proxied bodies unless a route
+        // overrides it, so media (50 MB) and static-site (100 MB) uploads were rejected at the
+        // edge before admin-api's own per-endpoint limit could apply. Lift it here to the
+        // largest documented upload; admin-api still enforces the real per-feature ceilings.
+        routes.Add(Prefix("admin-api", [admin], "/api", AdminApi, order: 30) with
+        {
+            MaxRequestBodySize = 105L * 1024 * 1024,
+        });
 
         // ---- SignalR hubs hosted by content-api, on the admin host ----
         // Same-origin so the SPA's negotiate + WebSocket avoid CORS. YARP proxies the upgrade.

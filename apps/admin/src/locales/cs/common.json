@@ -137,7 +137,9 @@
     "inviteAcceptedTo": "Připojili jste se k {{tenant}}",
     "inviteNoToken": "V tomto odkazu chybí token pozvánky. Použijte prosím odkaz z e-mailu s pozvánkou.",
     "addRole": "Přidat roli",
-    "removeRole": "Odebrat roli {{role}} uživateli {{email}}"
+    "removeRole": "Odebrat roli {{role}} uživateli {{email}}",
+    "remove": "Odebrat {{email}} z pracovního prostoru",
+    "removeConfirm": "Odebrat {{email}} z tohoto pracovního prostoru? Ztratí veškerý přístup."
   },
   "roles": {
     "title": "Role",

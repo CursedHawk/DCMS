@@ -10,6 +10,36 @@ namespace Dcms.Edge;
 public static class EdgeHttpPlane
 {
     /// <summary>
+    /// Refuses every inbound request whose path is under <c>/internal</c> (SEC-03).
+    ///
+    /// <para>site-host maps <c>/internal/tls-allowed</c> and <c>/internal/tls-hostnames</c> for
+    /// the edge's certificate machinery to call, and calls them "internal only". They are not:
+    /// the tenant-sites catch-all (Order 100, no host filter) forwards every path on every
+    /// unmatched host to site-host, so <c>curl -H 'Host: anything' https://&lt;edge&gt;/internal/tls-hostnames</c>
+    /// would return the platform's whole list of verified customer domains, and
+    /// <c>/internal/tls-allowed?domain=</c> is a membership oracle.</para>
+    ///
+    /// <para>This runs ahead of the proxy and short-circuits before any route matches. It is safe
+    /// because the edge's OWN calls to those endpoints do not pass through here: <see
+    /// cref="Certificates.TlsAllowList"/> reaches site-host directly on its cluster address
+    /// (<c>http://site-host:8080/internal/...</c>), never by looping back through the edge's
+    /// public listener. Nothing legitimate is served under <c>/internal</c> on the public plane
+    /// — Forgejo's own internal API lives under the distinct <c>/api/internal</c> prefix, which
+    /// <see cref="Microsoft.AspNetCore.Http.PathString.StartsWithSegments(PathString)"/> does not
+    /// match here.</para>
+    /// </summary>
+    public static IApplicationBuilder UseInternalPathGuard(this IApplicationBuilder app) =>
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/internal"))
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+            await next();
+        });
+
+    /// <summary>
     /// Redirects HTTP to HTTPS, with two exemptions that both matter.
     ///
     /// <para><b>The ACME challenge is not redirected.</b> RFC 8555's HTTP-01 validation is

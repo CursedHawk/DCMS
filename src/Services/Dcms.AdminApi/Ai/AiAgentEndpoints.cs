@@ -50,7 +50,7 @@ public static class AiAgentEndpoints
 
         app.MapPut("/api/admin/ai/user-credentials", async (
             UpdateUserCredentialsRequest body, AiDbContext db, ITenantContext tenant, CurrentUser me,
-            ITransitEncryptor encryptor, CancellationToken ct) =>
+            ITransitEncryptor encryptor, IConfiguration config, CancellationToken ct) =>
         {
             /*
              * Unset means INHERIT, not Anthropic.
@@ -71,7 +71,7 @@ public static class AiAgentEndpoints
             // A base URL is an outbound destination this user chose, and ai-gateway attaches
             // an API key to everything it sends there. Constrain it before it is stored;
             // AiProviderResolver separately refuses to pair it with a key from a broader scope.
-            if (AiBaseUrl.Validate(body.BaseUrl, provider) is { } baseUrlError)
+            if (AiBaseUrl.Validate(body.BaseUrl, provider, AiSettingsEndpoints.AllowedLocalHosts(config)) is { } baseUrlError)
             {
                 return Results.BadRequest(new { error = baseUrlError });
             }

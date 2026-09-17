@@ -81,6 +81,7 @@ public sealed class MediaIngestService(
         if (length > MaxInlineBytes) return Result.Failed("File exceeds the 50 MB inline upload limit.");
 
         MemoryStream? buffered = null;
+        MemoryStream? sanitizedSvg = null;
         try
         {
             if (!source.CanSeek)
@@ -98,25 +99,52 @@ public sealed class MediaIngestService(
             var sniff = ContentSniffer.Sniff(header.AsSpan(0, headerLength));
             if (sniff is null) return Result.Failed("Unsupported or unrecognized file type.");
 
-            source.Position = 0;
+            // SEC-12: an SVG is script-capable, and the delivery endpoints serve the original
+            // inline as image/svg+xml with no status gate. Sanitizing only in the async media
+            // worker left a window — and, if the process message was lost, a permanent hole —
+            // where the raw attacker SVG was served. XML sanitization is cheap (unlike raster
+            // transcoding), so do it here, before the bytes are ever stored.
+            var storeStream = source;
+            var storeLength = length;
+            if (sniff.ContentType == "image/svg+xml")
+            {
+                source.Position = 0;
+                using var raw = new MemoryStream();
+                await source.CopyToAsync(raw, ct);
+                byte[] cleaned;
+                try
+                {
+                    cleaned = SvgSanitizer.Sanitize(raw.ToArray());
+                }
+                catch (MediaSanitizationException ex)
+                {
+                    return Result.Failed(ex.Message);
+                }
+                sanitizedSvg = new MemoryStream(cleaned, writable: false);
+                storeStream = sanitizedSvg;
+                storeLength = cleaned.Length;
+            }
+
+            storeStream.Position = 0;
             using var hasher = SHA256.Create();
-            var digest = await hasher.ComputeHashAsync(source, ct);
+            var digest = await hasher.ComputeHashAsync(storeStream, ct);
 
             var effectiveTenantId = tenantId ?? tenant.TenantId!.Value;
             var assetId = Guid.NewGuid();
             var key = StorageKeys.MediaOriginal(
                 effectiveTenantId, assetId, MediaFileExtensions.ToExtension(sniff.ContentType));
 
-            source.Position = 0;
-            await storage.PutAsync(storageOptions.Value.MediaBucket, key, source, length, sniff.ContentType, ct);
+            storeStream.Position = 0;
+            await storage.PutAsync(storageOptions.Value.MediaBucket, key, storeStream, storeLength, sniff.ContentType, ct);
 
             return await RecordAsync(
-                assetId, effectiveTenantId, sniff, key, length, Convert.ToHexStringLower(digest),
+                assetId, effectiveTenantId, sniff, key, storeLength, Convert.ToHexStringLower(digest),
                 fileName, folderId, createdBy, ct);
         }
         finally
         {
             if (buffered is not null) await buffered.DisposeAsync();
+            if (sanitizedSvg is not null) await sanitizedSvg.DisposeAsync();
         }
     }
 

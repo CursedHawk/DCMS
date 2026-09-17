@@ -22,9 +22,31 @@ public static class MediaEndpoints
     public static IEndpointRouteBuilder MapMediaEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/admin/media", async (
-            IFormFile file, [FromForm] Guid? folderId, MediaIngestService ingest, MediaDbContext db,
+            HttpRequest request, MediaIngestService ingest, MediaDbContext db,
             CurrentUser me, CancellationToken ct) =>
         {
+            // BUG-02: raise this endpoint's Kestrel body limit (default ~28.6 MB) to the 50 MB
+            // the feature advertises, before the multipart body is read. Must precede
+            // ReadFormAsync, which is why the handler takes HttpRequest rather than IFormFile
+            // (parameter binding would read the form first, under the default limit).
+            var sizeFeature = request.HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
+            if (sizeFeature is { IsReadOnly: false })
+            {
+                sizeFeature.MaxRequestBodySize = MediaIngestService.MaxInlineBytes + 1024 * 1024;
+            }
+            if (!request.HasFormContentType)
+            {
+                return Results.BadRequest(new { error = "Expected a multipart file upload." });
+            }
+
+            var form = await request.ReadFormAsync(ct);
+            var file = form.Files["file"] ?? form.Files.FirstOrDefault();
+            if (file is null)
+            {
+                return Results.BadRequest(new { error = "No file was uploaded." });
+            }
+            Guid? folderId = Guid.TryParse(form["folderId"], out var fParsed) ? fParsed : null;
+
             if (file.Length > MediaIngestService.MaxInlineBytes)
             {
                 // Checked before buffering: the point of the limit is not to read 2 GB into

@@ -91,6 +91,12 @@ public sealed class SandboxOptions
         var argv = new List<string>
         {
             "run", "--rm", "--init",
+            // REL-01: name and label the container so a build that outlives its timeout (the
+            // `docker` CLI is what the builder kills, not the container it attached to) can be
+            // force-removed by name, and a startup sweep can find strays by label.
+            "--name", ContainerName(workDir),
+            "--label", "dcms.build=1",
+            "--stop-timeout", "5",
             "--network", network,
             "--read-only",
             "--tmpfs", "/tmp:rw,nosuid,nodev,size=512m",
@@ -143,4 +149,9 @@ public sealed class SandboxOptions
         var root = WorkHostRoot!.TrimEnd('/', '\\');
         return $"{root}/{leaf}";
     }
+
+    /// <summary>Deterministic per-build container name, derived from the unique work-dir leaf, so
+    /// a leaked container can be removed by name and swept by label. (REL-01)</summary>
+    public static string ContainerName(string workDir) =>
+        "dcms-build-" + Path.GetFileName(workDir.TrimEnd('/', '\\'));
 }

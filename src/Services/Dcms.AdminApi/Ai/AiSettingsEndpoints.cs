@@ -34,7 +34,7 @@ public static class AiSettingsEndpoints
 
         app.MapPut("/api/admin/ai/settings", async (
             UpdateAiSettingsRequest body, AiDbContext db, ITenantContext tenant, CurrentUser me,
-            ITransitEncryptor encryptor, CancellationToken ct) =>
+            ITransitEncryptor encryptor, IConfiguration config, CancellationToken ct) =>
         {
             if (!Enum.TryParse<AiProvider>(body.Provider, ignoreCase: true, out var provider))
             {
@@ -42,8 +42,9 @@ public static class AiSettingsEndpoints
             }
 
             // Same constraint as the per-user credential endpoint: this URL becomes an
-            // outbound destination that ai-gateway attaches an API key to.
-            if (AiBaseUrl.Validate(body.BaseUrl, provider) is { } baseUrlError)
+            // outbound destination that ai-gateway attaches an API key to. A "local" provider
+            // may only point at a private host the operator has allow-listed (SEC-01).
+            if (AiBaseUrl.Validate(body.BaseUrl, provider, AllowedLocalHosts(config)) is { } baseUrlError)
             {
                 return Results.BadRequest(new { error = baseUrlError });
             }
@@ -79,6 +80,17 @@ public static class AiSettingsEndpoints
 
         return app;
     }
+
+    /// <summary>
+    /// Hosts an operator has declared safe for a local AI provider (Ollama / LM Studio), read
+    /// from <c>Ai:AllowedLocalHosts</c>. Empty by default, which is what makes a tenant-supplied
+    /// "local" base URL unable to reach an internal service. (SEC-01)
+    /// </summary>
+    internal static IReadOnlySet<string> AllowedLocalHosts(IConfiguration config) =>
+        (config.GetSection("Ai:AllowedLocalHosts").Get<string[]>() ?? [])
+            .Where(h => !string.IsNullOrWhiteSpace(h))
+            .Select(h => h.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     private sealed record UpdateAiSettingsRequest(
         string Provider, string? Model, string? BaseUrl, string? ApiKey, bool ClearApiKey = false);

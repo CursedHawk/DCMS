@@ -175,6 +175,7 @@ public static class TenancyEndpoints
 
         app.MapPost("/api/admin/roles", async (
             CreateRoleRequest body, TenancyDbContext db, ITenantContext tenant,
+            CurrentUser me, TenancyPermissionResolver permissions,
             IEventPublisher events, CancellationToken ct) =>
         {
             if (!tenant.HasTenant)
@@ -182,6 +183,14 @@ public static class TenancyEndpoints
                 return Results.BadRequest(new { error = "Tenant header required." });
             }
             var tenantId = tenant.TenantId!.Value;
+
+            // SEC-06: a role may not be created carrying permissions the caller does not hold.
+            var grantable = await GrantGuard.GrantableAsync(me, tenant, permissions, ct);
+            if (!GrantGuard.MayGrant(grantable, body.Permissions.Distinct()))
+            {
+                return Results.Forbid();
+            }
+
             var role = new TenantRole { Id = Guid.NewGuid(), TenantId = tenantId, Name = body.Name };
             foreach (var permission in body.Permissions.Distinct())
             {
@@ -202,7 +211,8 @@ public static class TenancyEndpoints
         // roles keep their name fixed but their permissions may still be tuned.
         app.MapPut("/api/admin/roles/{id:guid}", async (
             Guid id, UpdateRoleRequest body, TenancyDbContext db, ITenantContext tenant,
-            TenancyPermissionResolver permissions, Dcms.AdminApi.Sites.Git.RepoAccessReconciler repoAccess,
+            CurrentUser me, TenancyPermissionResolver permissions,
+            Dcms.AdminApi.Sites.Git.RepoAccessReconciler repoAccess,
             IAuditRecorder audit, AuditScope scope, CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;
@@ -211,6 +221,23 @@ public static class TenancyEndpoints
             {
                 return Results.NotFound();
             }
+
+            // SEC-06: the Owner system role is the workspace's root authority; its permission
+            // set is fixed (every permission) and must not be narrowed — doing so would strip
+            // the platform's own guarantees and could orphan the workspace. Only a SuperAdmin
+            // may touch it, and even then not through this generic editor.
+            if (role.IsSystem && role.Name == TenantProvisioning.OwnerRole && !me.IsSuperAdmin)
+            {
+                return Results.Forbid();
+            }
+
+            // SEC-06: a caller may not widen a role beyond the permissions they themselves hold.
+            var grantable = await GrantGuard.GrantableAsync(me, tenant, permissions, ct);
+            if (!GrantGuard.MayGrant(grantable, body.Permissions.Distinct()))
+            {
+                return Results.Forbid();
+            }
+
             if (!role.IsSystem && !string.IsNullOrWhiteSpace(body.Name))
             {
                 role.Name = body.Name;
@@ -323,6 +350,19 @@ public static class TenancyEndpoints
             {
                 return Results.BadRequest(new { error = "Unknown role." });
             }
+
+            // SEC-06: a caller may only assign a role whose permissions are a subset of their
+            // own. This is what stops a members:manage holder from assigning themselves Owner.
+            var grantable = await GrantGuard.GrantableAsync(me, tenant, permissions, ct);
+            if (grantable is not null)
+            {
+                var rolePerms = await GrantGuard.RolePermissionsAsync(db, body.RoleId, ct);
+                if (!GrantGuard.MayGrant(grantable, rolePerms))
+                {
+                    return Results.Forbid();
+                }
+            }
+
             if (membership.Roles.All(r => r.TenantRoleId != body.RoleId))
             {
                 db.MemberRoles.Add(new MemberRole
@@ -364,6 +404,28 @@ public static class TenancyEndpoints
             var assignment = membership.Roles.FirstOrDefault(r => r.TenantRoleId == roleId);
             if (assignment is not null)
             {
+                // SEC-06: the Owner role is the workspace's root authority. Only someone who
+                // could grant it (an Owner or SuperAdmin) may revoke it, and never from the last
+                // Owner — otherwise a members:manage holder could lock the real owner out, or
+                // strip the last Owner and orphan the workspace.
+                var role = await db.TenantRoles.FirstOrDefaultAsync(r => r.Id == roleId, ct);
+                if (role is { IsSystem: true } && role.Name == TenantProvisioning.OwnerRole)
+                {
+                    var grantable = await GrantGuard.GrantableAsync(me, tenant, permissions, ct);
+                    if (grantable is not null &&
+                        !GrantGuard.MayGrant(grantable, await GrantGuard.RolePermissionsAsync(db, roleId, ct)))
+                    {
+                        return Results.Forbid();
+                    }
+
+                    var remainingOwners = await db.MemberRoles
+                        .CountAsync(mr => mr.TenantRoleId == roleId && mr.MembershipId != membershipId, ct);
+                    if (remainingOwners == 0)
+                    {
+                        return Results.BadRequest(new { error = "A workspace must keep at least one Owner. Transfer ownership first." });
+                    }
+                }
+
                 db.MemberRoles.Remove(assignment);
                 await db.SaveChangesAsync(ct);
                 await permissions.InvalidateAsync(tenantId, membership.UserId, ct);
@@ -377,6 +439,64 @@ public static class TenancyEndpoints
             }
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRoleRevoked, "membership");
+
+        // MISS-01: remove a member from the workspace entirely (off-boarding). Without this, a
+        // former member kept a membership — and with it access to every bare-RequireAuthorization
+        // admin endpoint — because the only exit was the person deleting their own account.
+        app.MapDelete("/api/admin/members/{membershipId:guid}", async (
+            Guid membershipId, TenancyDbContext db, ITenantContext tenant,
+            IEventPublisher events, TenancyPermissionResolver permissions, CurrentUser me,
+            Dcms.AdminApi.Sites.Git.RepoAccessReconciler repoAccess, CancellationToken ct) =>
+        {
+            var tenantId = tenant.TenantId!.Value;
+            var membership = await db.Memberships.Include(m => m.Roles)
+                .FirstOrDefaultAsync(m => m.Id == membershipId, ct);
+            if (membership is null)
+            {
+                return Results.NotFound();
+            }
+
+            // Self-removal is "leave the workspace", which goes through the account surface so it
+            // can guard sole-ownership; refuse it here to avoid a confusing second path.
+            if (membership.UserId == me.UserId)
+            {
+                return Results.BadRequest(new { error = "Use your account settings to leave a workspace." });
+            }
+
+            // SEC-06 parity: removing an Owner is a privileged act. Only someone who could grant
+            // the Owner role may remove one, and never the last Owner.
+            var ownerRole = await db.TenantRoles
+                .FirstOrDefaultAsync(r => r.IsSystem && r.Name == TenantProvisioning.OwnerRole, ct);
+            if (ownerRole is not null && membership.Roles.Any(r => r.TenantRoleId == ownerRole.Id))
+            {
+                var grantable = await GrantGuard.GrantableAsync(me, tenant, permissions, ct);
+                if (grantable is not null &&
+                    !GrantGuard.MayGrant(grantable, await GrantGuard.RolePermissionsAsync(db, ownerRole.Id, ct)))
+                {
+                    return Results.Forbid();
+                }
+                var otherOwners = await db.MemberRoles
+                    .CountAsync(mr => mr.TenantRoleId == ownerRole.Id && mr.MembershipId != membershipId, ct);
+                if (otherOwners == 0)
+                {
+                    return Results.BadRequest(new { error = "A workspace must keep at least one Owner. Transfer ownership first." });
+                }
+            }
+
+            var userId = membership.UserId;
+            var email = membership.Email;
+            db.MemberRoles.RemoveRange(membership.Roles);
+            db.Memberships.Remove(membership);
+            await db.SaveChangesAsync(ct);
+
+            await permissions.InvalidateAsync(tenantId, userId, ct);
+            await events.PublishAsync(Subjects.MembershipChanged,
+                new MembershipChanged(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, userId), ct);
+            // Drop their git repo access along with the membership.
+            await repoAccess.ReconcileUserAsync(tenantId, userId, email, ct);
+
+            return Results.NoContent();
+        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRemoved, "membership");
 
         // Effective permission catalog: platform keys ∪ installed plugins' manifest
         // permissions ∪ per-site git repo permissions, each with a display name and

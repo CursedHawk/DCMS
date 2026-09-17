@@ -57,7 +57,8 @@ public static class InvitationEndpoints
         // the inviter can copy the link, and is also emailed to the invitee.
         app.MapPost("/api/admin/invitations", async (
             CreateInvitationRequest body, HttpContext http, TenancyDbContext db, ITenantContext tenant,
-            CurrentUser me, IEmailQueue emailQueue, ILoggerFactory loggerFactory, CancellationToken ct) =>
+            CurrentUser me, TenancyPermissionResolver permissions,
+            IEmailQueue emailQueue, ILoggerFactory loggerFactory, CancellationToken ct) =>
         {
             var email = body.Email?.Trim().ToLowerInvariant();
             if (string.IsNullOrWhiteSpace(email))
@@ -66,6 +67,29 @@ public static class InvitationEndpoints
             }
 
             var tenantId = tenant.TenantId!.Value;
+
+            // SEC-06: inviting with a set of roles is a deferred grant, so it is held to the same
+            // rule — the caller may only pre-assign roles whose permissions they hold themselves.
+            var invitedRoleIds = (body.RoleIds ?? [])
+                .Select(s => Guid.TryParse(s, out var g) ? g : (Guid?)null)
+                .Where(g => g is not null)
+                .Select(g => g!.Value)
+                .ToList();
+            if (invitedRoleIds.Count > 0)
+            {
+                var grantable = await GrantGuard.GrantableAsync(me, tenant, permissions, ct);
+                if (grantable is not null)
+                {
+                    var invitedPerms = await db.TenantRolePermissions
+                        .Where(p => invitedRoleIds.Contains(p.TenantRoleId))
+                        .Select(p => p.Permission)
+                        .ToListAsync(ct);
+                    if (!GrantGuard.MayGrant(grantable, invitedPerms))
+                    {
+                        return Results.Forbid();
+                    }
+                }
+            }
 
             // Already a member: inviting again would create an invitation that,
             // once accepted, is a no-op — say so instead.

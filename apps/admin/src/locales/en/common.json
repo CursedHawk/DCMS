@@ -137,7 +137,9 @@
     "inviteAcceptedTo": "You have joined {{tenant}}",
     "inviteNoToken": "This link is missing an invitation token. Please use the link from your invitation email.",
     "addRole": "Add a role",
-    "removeRole": "Remove {{role}} from {{email}}"
+    "removeRole": "Remove {{role}} from {{email}}",
+    "remove": "Remove {{email}} from the workspace",
+    "removeConfirm": "Remove {{email}} from this workspace? They lose all access."
   },
   "roles": {
     "title": "Roles",

@@ -37,7 +37,15 @@ public static class AiBaseUrl
     /// Returns null when <paramref name="baseUrl"/> may be stored, or a message naming
     /// the problem. An absent base URL is valid — it means "use the default".
     /// </summary>
-    public static string? Validate(string? baseUrl, AiProvider provider)
+    /// <param name="allowedLocalHosts">
+    /// Operator-configured hosts (from <c>Ai:AllowedLocalHosts</c>) that a local provider
+    /// (Ollama / LM Studio) may point at even though they are private/plaintext. Empty by
+    /// default: without an explicit opt-in, a caller-supplied "local" base URL is validated
+    /// exactly like a hosted one, so a tenant editor cannot aim the platform's egress at an
+    /// internal service. (SEC-01)
+    /// </param>
+    public static string? Validate(
+        string? baseUrl, AiProvider provider, IReadOnlySet<string>? allowedLocalHosts = null)
     {
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
@@ -61,14 +69,21 @@ public static class AiBaseUrl
             return "The base URL must not embed credentials.";
         }
 
-        if (IsLocalProvider(provider))
+        // A local provider is only allowed its private/plaintext address when the operator has
+        // explicitly allow-listed the host. This is the SSRF fix: the old code returned null
+        // here for ANY local-provider URL, which let a tenant/user point base-url at
+        // http://prometheus:9090, the Docker socket proxy, etc. and have ai-gateway call it.
+        if (IsLocalProvider(provider)
+            && allowedLocalHosts is { Count: > 0 }
+            && allowedLocalHosts.Contains(uri.Host))
         {
             return null;
         }
 
         if (uri.Scheme != Uri.UriSchemeHttps)
         {
-            return "The base URL must use https for a hosted provider.";
+            return "The base URL must use https (a local provider host must be added to "
+                 + "Ai:AllowedLocalHosts by an operator before it can be used).";
         }
 
         if (IsInternalHost(uri))

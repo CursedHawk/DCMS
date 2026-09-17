@@ -5,6 +5,7 @@ using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using OpenIddict.Abstractions;
 
 namespace Dcms.Identity.Endpoints;
 
@@ -119,6 +120,7 @@ public static class PlatformUserEndpoints
 
         group.MapPost("/users/{id:guid}/lock", async (
             Guid id, ClaimsPrincipal principal, UserManager<DcmsUser> users, IdentityDbContext db,
+            IOpenIddictTokenManager tokens, IOpenIddictAuthorizationManager authorizations,
             IAuditRecorder audit, CancellationToken ct) =>
         {
             var user = await users.FindByIdAsync(id.ToString());
@@ -149,6 +151,9 @@ public static class PlatformUserEndpoints
 
             var result = await users.SetLockoutEndDateAsync(user, DateTimeOffset.MaxValue);
             if (!result.Succeeded) return IdentityProblem(result);
+
+            // SEC-05: locking only stops the next sign-in unless the live tokens are killed too.
+            await UserSessionRevoker.RevokeAllAsync(tokens, authorizations, users, user, ct);
 
             audit.Declared?.Platform().About(id).With("email", user.Email);
             return Results.NoContent();

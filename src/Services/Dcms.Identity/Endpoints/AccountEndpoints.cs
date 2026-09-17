@@ -7,8 +7,10 @@ using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Messaging.Email;
 using Dcms.Shared.Telemetry;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using OpenIddict.Abstractions;
 
 namespace Dcms.Identity.Endpoints;
 
@@ -23,11 +25,20 @@ public static class AccountEndpoints
 {
     private const string GoogleScheme = "Google";
 
+    // SEC-07: the hidden antiforgery field for a server-rendered POST form. GetAndStoreTokens
+    // sets the cookie half on the response; the field carries the request half.
+    private static string CsrfField(HttpContext http, IAntiforgery antiforgery)
+    {
+        var t = antiforgery.GetAndStoreTokens(http);
+        return $"<input type=\"hidden\" name=\"{t.FormFieldName}\" value=\"{Enc(t.RequestToken)}\" />";
+    }
+
     public static IEndpointRouteBuilder MapAccountEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/account/login", async (
+            HttpContext http, IAntiforgery antiforgery,
             SignInManager<DcmsUser> signInManager, string? returnUrl, string? error) =>
-            Results.Content(LoginPage(returnUrl, error, await GoogleEnabledAsync(signInManager)), "text/html"));
+            Results.Content(LoginPage(returnUrl, error, await GoogleEnabledAsync(signInManager), CsrfField(http, antiforgery)), "text/html"));
 
         app.MapPost("/account/login", async (
             SignInManager<DcmsUser> signInManager,
@@ -94,13 +105,15 @@ public static class AccountEndpoints
             metrics.Login("password", "succeeded");
 
             return Results.Redirect(SafeReturnUrl(returnUrl));
-        }).DisableAntiforgery().WithAudit(AuditActions.LoginSucceeded, category: AuditCategory.Auth);
+        }).WithAudit(AuditActions.LoginSucceeded, category: AuditCategory.Auth);
 
         app.MapGet("/account/register", async (
+            HttpContext http, IAntiforgery antiforgery,
             SignInManager<DcmsUser> signInManager, string? returnUrl, string? error) =>
-            Results.Content(RegisterPage(returnUrl, error, await GoogleEnabledAsync(signInManager)), "text/html"));
+            Results.Content(RegisterPage(returnUrl, error, await GoogleEnabledAsync(signInManager), CsrfField(http, antiforgery)), "text/html"));
 
         app.MapPost("/account/register", async (
+            HttpContext http, IAntiforgery antiforgery,
             UserManager<DcmsUser> userManager,
             SignInManager<DcmsUser> signInManager,
             ForgejoUserSync forgejo,
@@ -114,7 +127,7 @@ public static class AccountEndpoints
             var googleEnabled = await GoogleEnabledAsync(signInManager);
             if (password != confirmPassword)
             {
-                return RegisterError("Passwords do not match.", returnUrl, googleEnabled);
+                return RegisterError("Passwords do not match.", returnUrl, googleEnabled, CsrfField(http, antiforgery));
             }
 
             var user = new DcmsUser
@@ -126,7 +139,7 @@ public static class AccountEndpoints
             var create = await userManager.CreateAsync(user, password);
             if (!create.Succeeded)
             {
-                return RegisterError(FirstError(create), returnUrl, googleEnabled);
+                return RegisterError(FirstError(create), returnUrl, googleEnabled, CsrfField(http, antiforgery));
             }
 
             // Mirror the new account into Forgejo with the same login + password.
@@ -135,14 +148,14 @@ public static class AccountEndpoints
             await signInManager.SignInAsync(user, isPersistent: false);
             metrics.Signup("password");
             return Results.Redirect(SafeReturnUrl(returnUrl));
-        }).DisableAntiforgery().WithAudit(AuditActions.AccountRegistered, category: AuditCategory.Auth);
+        }).WithAudit(AuditActions.AccountRegistered, category: AuditCategory.Auth);
 
         // Forgot password: enter an email, receive a reset link.
-        app.MapGet("/account/forgot-password", (string? returnUrl) =>
-            Results.Content(ForgotPasswordPage(returnUrl, sent: false, error: null), "text/html"));
+        app.MapGet("/account/forgot-password", (HttpContext http, IAntiforgery antiforgery, string? returnUrl) =>
+            Results.Content(ForgotPasswordPage(returnUrl, sent: false, error: null, CsrfField(http, antiforgery)), "text/html"));
 
         app.MapPost("/account/forgot-password", async (
-            HttpContext context,
+            HttpContext context, IAntiforgery antiforgery,
             UserManager<DcmsUser> userManager,
             IEmailQueue emailQueue,
             ILoggerFactory loggerFactory,
@@ -153,7 +166,7 @@ public static class AccountEndpoints
             email = email?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(email))
             {
-                return Results.Content(ForgotPasswordPage(returnUrl, sent: false, "Please enter your email."), "text/html");
+                return Results.Content(ForgotPasswordPage(returnUrl, sent: false, "Please enter your email.", CsrfField(context, antiforgery)), "text/html");
             }
 
             // Only send when the account exists AND has a usable password (Google-only
@@ -181,22 +194,25 @@ public static class AccountEndpoints
                 }
             }
 
-            return Results.Content(ForgotPasswordPage(returnUrl, sent: true, error: null), "text/html");
-        }).DisableAntiforgery().WithAudit(AuditActions.PasswordResetRequested, category: AuditCategory.Auth);
+            return Results.Content(ForgotPasswordPage(returnUrl, sent: true, error: null, string.Empty), "text/html");
+        }).WithAudit(AuditActions.PasswordResetRequested, category: AuditCategory.Auth);
 
         // Reset password: reached via the emailed link (email + token in the query).
-        app.MapGet("/account/reset-password", (string? email, string? token, string? returnUrl) =>
+        app.MapGet("/account/reset-password", (HttpContext http, IAntiforgery antiforgery, string? email, string? token, string? returnUrl) =>
         {
             if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(token))
             {
                 return Results.Content(ResetInvalidPage(), "text/html");
             }
-            return Results.Content(ResetPasswordPage(email, token, returnUrl, error: null), "text/html");
+            return Results.Content(ResetPasswordPage(email, token, returnUrl, error: null, CsrfField(http, antiforgery)), "text/html");
         });
 
         app.MapPost("/account/reset-password", async (
+            HttpContext http, IAntiforgery antiforgery,
             UserManager<DcmsUser> userManager,
             ForgejoUserSync forgejo,
+            IOpenIddictTokenManager tokens,
+            IOpenIddictAuthorizationManager authorizations,
             [FromForm] string email,
             [FromForm] string token,
             [FromForm] string password,
@@ -206,27 +222,31 @@ public static class AccountEndpoints
         {
             if (password != confirmPassword)
             {
-                return Results.Content(ResetPasswordPage(email, token, returnUrl, "Passwords do not match."), "text/html");
+                return Results.Content(ResetPasswordPage(email, token, returnUrl, "Passwords do not match.", CsrfField(http, antiforgery)), "text/html");
             }
 
             var user = await userManager.FindByEmailAsync(email);
             if (user is null)
             {
                 // Same generic failure as a bad token — don't reveal whether the email exists.
-                return Results.Content(ResetPasswordPage(email, token, returnUrl, "This reset link is invalid or has expired."), "text/html");
+                return Results.Content(ResetPasswordPage(email, token, returnUrl, "This reset link is invalid or has expired.", CsrfField(http, antiforgery)), "text/html");
             }
 
             var result = await userManager.ResetPasswordAsync(user, token, password);
             if (!result.Succeeded)
             {
-                return Results.Content(ResetPasswordPage(email, token, returnUrl, FirstError(result)), "text/html");
+                return Results.Content(ResetPasswordPage(email, token, returnUrl, FirstError(result), CsrfField(http, antiforgery)), "text/html");
             }
 
             // Propagate the new password to Forgejo so git credentials stay in sync.
             await forgejo.EnsureAsync(user, password, ct);
 
+            // SEC-05: a reset is a recovery from a lost/compromised password — kill any sessions
+            // that were minted under the old one.
+            await UserSessionRevoker.RevokeAllAsync(tokens, authorizations, userManager, user, ct);
+
             return Results.Content(ResetDonePage(returnUrl), "text/html");
-        }).DisableAntiforgery().WithAudit(AuditActions.PasswordResetCompleted, category: AuditCategory.Auth);
+        }).WithAudit(AuditActions.PasswordResetCompleted, category: AuditCategory.Auth);
 
         // Google SSO: kick off the challenge, then handle the callback.
         app.MapGet("/account/external/google", (
@@ -238,6 +258,7 @@ public static class AccountEndpoints
         });
 
         app.MapGet("/account/external/callback", async (
+            HttpContext http, IAntiforgery antiforgery,
             SignInManager<DcmsUser> signInManager, string? returnUrl) =>
         {
             var info = await signInManager.GetExternalLoginInfoAsync();
@@ -259,10 +280,11 @@ public static class AccountEndpoints
             // info, so GetExternalLoginInfoAsync works again on the POST below.
             var email = info.Principal.FindFirstValue(ClaimTypes.Email);
             var suggested = SuggestUsername(email, info.Principal.FindFirstValue(ClaimTypes.Name));
-            return Results.Content(CompleteExternalPage(returnUrl, email, suggested, error: null), "text/html");
+            return Results.Content(CompleteExternalPage(returnUrl, email, suggested, error: null, CsrfField(http, antiforgery)), "text/html");
         });
 
         app.MapPost("/account/external/complete", async (
+            HttpContext http, IAntiforgery antiforgery,
             UserManager<DcmsUser> userManager,
             SignInManager<DcmsUser> signInManager,
             ForgejoUserSync forgejo,
@@ -281,11 +303,11 @@ public static class AccountEndpoints
 
             if (string.IsNullOrWhiteSpace(username))
             {
-                return Results.Content(CompleteExternalPage(returnUrl, email, username, "Please choose a username."), "text/html");
+                return Results.Content(CompleteExternalPage(returnUrl, email, username, "Please choose a username.", CsrfField(http, antiforgery)), "text/html");
             }
             if (await userManager.FindByNameAsync(username) is not null)
             {
-                return Results.Content(CompleteExternalPage(returnUrl, email, username, "That username is already taken."), "text/html");
+                return Results.Content(CompleteExternalPage(returnUrl, email, username, "That username is already taken.", CsrfField(http, antiforgery)), "text/html");
             }
 
             var user = new DcmsUser
@@ -298,13 +320,13 @@ public static class AccountEndpoints
             var create = await userManager.CreateAsync(user);
             if (!create.Succeeded)
             {
-                return Results.Content(CompleteExternalPage(returnUrl, email, username, FirstError(create)), "text/html");
+                return Results.Content(CompleteExternalPage(returnUrl, email, username, FirstError(create), CsrfField(http, antiforgery)), "text/html");
             }
 
             var link = await userManager.AddLoginAsync(user, info);
             if (!link.Succeeded)
             {
-                return Results.Content(CompleteExternalPage(returnUrl, email, username, FirstError(link)), "text/html");
+                return Results.Content(CompleteExternalPage(returnUrl, email, username, FirstError(link), CsrfField(http, antiforgery)), "text/html");
             }
 
             // Mirror into Forgejo with no git password (Google-only account). The Web IDE
@@ -313,7 +335,7 @@ public static class AccountEndpoints
 
             await signInManager.SignInAsync(user, isPersistent: false);
             return Results.Redirect(SafeReturnUrl(returnUrl));
-        }).DisableAntiforgery().WithAudit(AuditActions.SsoLinked, category: AuditCategory.Auth);
+        }).WithAudit(AuditActions.SsoLinked, category: AuditCategory.Auth);
 
         return app;
     }
@@ -324,8 +346,8 @@ public static class AccountEndpoints
         return schemes.Any(s => s.Name == GoogleScheme);
     }
 
-    private static IResult RegisterError(string message, string? returnUrl, bool googleEnabled) =>
-        Results.Content(RegisterPage(returnUrl, message, googleEnabled), "text/html");
+    private static IResult RegisterError(string message, string? returnUrl, bool googleEnabled, string csrf) =>
+        Results.Content(RegisterPage(returnUrl, message, googleEnabled, csrf), "text/html");
 
     private static string FirstError(IdentityResult result) =>
         result.Errors.FirstOrDefault()?.Description ?? "Something went wrong. Please try again.";
@@ -343,11 +365,12 @@ public static class AccountEndpoints
             ? returnUrl
             : "/";
 
-    private static string LoginPage(string? returnUrl, string? error, bool googleEnabled)
+    private static string LoginPage(string? returnUrl, string? error, bool googleEnabled, string csrf)
     {
         var errorBlock = error is null ? string.Empty : ErrorBlock("Invalid email or password.");
         var body = $$"""
             <form method="post" action="/account/login">
+              {{csrf}}
               <h1>Sign in to DCMS</h1>
               {{errorBlock}}
               <input type="hidden" name="returnUrl" value="{{Enc(returnUrl)}}" />
@@ -364,11 +387,12 @@ public static class AccountEndpoints
         return Layout("DCMS — Sign in", body);
     }
 
-    private static string RegisterPage(string? returnUrl, string? error, bool googleEnabled)
+    private static string RegisterPage(string? returnUrl, string? error, bool googleEnabled, string csrf)
     {
         var errorBlock = error is null ? string.Empty : ErrorBlock(error);
         var body = $$"""
             <form method="post" action="/account/register">
+              {{csrf}}
               <h1>Create your DCMS account</h1>
               {{errorBlock}}
               <input type="hidden" name="returnUrl" value="{{Enc(returnUrl)}}" />
@@ -386,7 +410,7 @@ public static class AccountEndpoints
         return Layout("DCMS — Sign up", body);
     }
 
-    private static string CompleteExternalPage(string? returnUrl, string? email, string? username, string? error)
+    private static string CompleteExternalPage(string? returnUrl, string? email, string? username, string? error, string csrf)
     {
         var errorBlock = error is null ? string.Empty : ErrorBlock(error);
         var emailBlock = string.IsNullOrEmpty(email)
@@ -394,6 +418,7 @@ public static class AccountEndpoints
             : $"<label>Email</label><input type=\"email\" value=\"{Enc(email)}\" disabled />";
         var body = $$"""
             <form method="post" action="/account/external/complete">
+              {{csrf}}
               <h1>Choose a username</h1>
               <p class="lead">You're almost done. Pick a username to finish creating your account.</p>
               {{errorBlock}}
@@ -407,7 +432,7 @@ public static class AccountEndpoints
         return Layout("DCMS — Choose a username", body);
     }
 
-    private static string ForgotPasswordPage(string? returnUrl, bool sent, string? error)
+    private static string ForgotPasswordPage(string? returnUrl, bool sent, string? error, string csrf)
     {
         if (sent)
         {
@@ -424,6 +449,7 @@ public static class AccountEndpoints
         var errorBlock = error is null ? string.Empty : ErrorBlock(error);
         var body = $$"""
             <form method="post" action="/account/forgot-password">
+              {{csrf}}
               <h1>Reset your password</h1>
               <p class="lead">Enter your email and we'll send you a link to reset your password.</p>
               {{errorBlock}}
@@ -437,11 +463,12 @@ public static class AccountEndpoints
         return Layout("DCMS — Reset your password", body);
     }
 
-    private static string ResetPasswordPage(string email, string token, string? returnUrl, string? error)
+    private static string ResetPasswordPage(string email, string token, string? returnUrl, string? error, string csrf)
     {
         var errorBlock = error is null ? string.Empty : ErrorBlock(error);
         var body = $$"""
             <form method="post" action="/account/reset-password">
+              {{csrf}}
               <h1>Choose a new password</h1>
               {{errorBlock}}
               <input type="hidden" name="email" value="{{Enc(email)}}" />

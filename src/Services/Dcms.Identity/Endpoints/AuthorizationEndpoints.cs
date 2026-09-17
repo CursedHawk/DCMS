@@ -71,6 +71,15 @@ public static class AuthorizationEndpoints
         var user = await userManager.GetUserAsync(result.Principal)
                    ?? throw new InvalidOperationException("Authenticated user not found.");
 
+        // SEC-05: a still-valid interactive cookie must not turn into an authorization code for
+        // an account that has since been locked. Drop the cookie and bounce to sign-in.
+        if (!await signInManager.CanSignInAsync(user) || await userManager.IsLockedOutAsync(user))
+        {
+            await signInManager.SignOutAsync();
+            var returnUrl = context.Request.PathBase + context.Request.Path + context.Request.QueryString;
+            return Results.Redirect("/account/login?error=1&returnUrl=" + Uri.EscapeDataString(returnUrl));
+        }
+
         var principal = await BuildUserPrincipalAsync(user, userManager, scopeManager, request.GetScopes());
         return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
@@ -111,6 +120,20 @@ public static class AuthorizationEndpoints
                     {
                         [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
                         [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The token is no longer valid.",
+                    }));
+            }
+
+            // SEC-05: a locked (or otherwise sign-in-disabled) account must not be able to keep
+            // minting fresh access tokens by refreshing. Without this, "lock account" in the
+            // console left the holder with working tokens for the whole 14-day refresh lifetime.
+            if (await userManager.IsLockedOutAsync(user))
+            {
+                return Results.Forbid(
+                    authenticationSchemes: [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme],
+                    properties: new AuthenticationProperties(new Dictionary<string, string?>
+                    {
+                        [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
+                        [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "This account is locked.",
                     }));
             }
 

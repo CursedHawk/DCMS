@@ -1203,6 +1203,69 @@ public static class SiteEndpoints
     }
 
     /// <summary>
+    /// Latest-wins catch-up (BUG-01). The webhook coalesces: a push that lands while a build
+    /// is already running is dropped, because its snapshot would only stack another build.
+    /// Nothing else ever built that dropped commit, so the live site could stay on the older
+    /// tree indefinitely though the IDE said "released". This runs at the far end of every
+    /// build (success or failure), re-reads the <c>release</c> head, and — if it has moved
+    /// past what the finished build compiled and nothing is already in flight — queues one
+    /// catch-up build of the current head. Any number of pushes that overlapped the build
+    /// collapse into that single build of the latest tree.
+    ///
+    /// <para>Swallows everything: this is a best-effort tail on a notification consumer, and a
+    /// throw here would fail the terminal message and re-run a notification that already
+    /// landed. A missed catch-up is recoverable with a manual redeploy; a duplicated
+    /// "your site is live" is not.</para>
+    /// </summary>
+    internal static async Task ContinueIfReleaseMovedAsync(
+        IServiceProvider scope, Guid tenantId, Guid siteId, Guid completedBuildId, CancellationToken ct)
+    {
+        try
+        {
+            var git = scope.GetRequiredService<Dcms.AdminApi.Sites.Git.SiteGitService>();
+            if (!git.Enabled) return;
+
+            var db = scope.GetRequiredService<SitesDbContext>();
+            var site = await db.Sites.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(s => s.Id == siteId && s.TenantId == tenantId, ct);
+            if (site is null || !site.RenderMode.IsGitBacked() || site.GitRepoFullName is null) return;
+
+            var builtSha = await db.Builds.AsNoTracking().IgnoreQueryFilters()
+                .Where(b => b.Id == completedBuildId)
+                .Select(b => b.GitCommitSha)
+                .FirstOrDefaultAsync(ct);
+
+            var release = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
+            var head = await git.HeadShaAsync(site.GitRepoFullName, release, ct);
+            if (string.IsNullOrEmpty(head) ||
+                string.Equals(head, builtSha, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            // Something is already building (a manual redeploy, or a redelivery of this same
+            // terminal event that already queued the catch-up): let it be — its own completion
+            // re-checks the head, so the chain still converges on the latest commit.
+            var inFlight = await db.Builds.IgnoreQueryFilters().AnyAsync(
+                b => b.SiteId == site.Id &&
+                     (b.Status == SiteBuildStatus.Queued || b.Status == SiteBuildStatus.Building), ct);
+            if (inFlight) return;
+
+            var cms = scope.GetRequiredService<CmsDbContext>();
+            var events = scope.GetRequiredService<IEventPublisher>();
+            var live = scope.GetRequiredService<ISiteLiveUpdates>();
+            var buildId = await EnqueueReleaseBuildAsync(db, cms, events, git, site, live, null, ct);
+
+            scope.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(SiteEndpoints)).LogInformation(
+                "Release head {Head} landed while build {Prev} was running; queued catch-up build {Build} for site {Site}.",
+                SiteLiveUpdates.Short(head), completedBuildId, buildId, site.Id);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            scope.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(SiteEndpoints))
+                .LogWarning(ex, "Could not evaluate the release catch-up for site {Site}.", siteId);
+        }
+    }
+
+    /// <summary>
     /// Whether this tenant records analytics, resolved here and put on the publish
     /// message.
     ///

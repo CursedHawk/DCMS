@@ -55,12 +55,35 @@ public class AiBaseUrlTests
     [Theory]
     [InlineData("http://localhost:11434/v1")]
     [InlineData("http://192.168.1.50:1234/v1")]
-    public void A_local_provider_may_use_a_private_plaintext_address(string value)
+    [InlineData("http://prometheus:9090/api/v1/admin/tsdb/delete_series")]
+    public void A_local_provider_private_address_is_refused_without_an_operator_allow_list(string value)
     {
-        // Ollama and LM Studio are private by definition and are never sent a real credential,
-        // so the hosted-provider rules would make them unusable rather than safer.
-        AiBaseUrl.Validate(value, AiProvider.Ollama).Should().BeNull();
-        AiBaseUrl.Validate(value, AiProvider.LmStudio).Should().BeNull();
+        // SEC-01: with no Ai:AllowedLocalHosts opt-in, a caller-supplied "local" base URL is held
+        // to the hosted rules, so it cannot aim the platform's egress at an internal service.
+        AiBaseUrl.Validate(value, AiProvider.Ollama).Should().NotBeNull();
+        AiBaseUrl.Validate(value, AiProvider.LmStudio).Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData("http://localhost:11434/v1", "localhost")]
+    [InlineData("http://192.168.1.50:1234/v1", "192.168.1.50")]
+    public void A_local_provider_may_use_a_host_the_operator_allow_listed(string value, string host)
+    {
+        // A self-hosted deployment opts its Ollama/LM Studio host in explicitly; only then is
+        // the private, plaintext address permitted.
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { host };
+        AiBaseUrl.Validate(value, AiProvider.Ollama, allowed).Should().BeNull();
+        AiBaseUrl.Validate(value, AiProvider.LmStudio, allowed).Should().BeNull();
+    }
+
+    [Fact]
+    public void An_allow_listed_local_host_does_not_permit_a_different_internal_host()
+    {
+        // Allow-listing the Ollama host must not open the rest of the network.
+        var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "192.168.1.50" };
+        AiBaseUrl.Validate("http://prometheus:9090", AiProvider.Ollama, allowed).Should().NotBeNull();
+        AiBaseUrl.Validate("http://169.254.169.254/latest/meta-data", AiProvider.Ollama, allowed)
+            .Should().NotBeNull();
     }
 
     [Theory]

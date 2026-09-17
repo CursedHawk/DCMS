@@ -237,16 +237,40 @@ public sealed class SitePublishConsumer(
         build.Status = SiteBuildStatus.Succeeded;
         build.CompletedAt = DateTimeOffset.UtcNow;
 
-        var site = await db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == job.SiteId, ct);
+        // BUG-03: resolve the site from the build, not the message, so a message pairing one
+        // site's id with another site's build cannot activate a foreign artifact; and only
+        // advance the active build when this one is at least as new as the current active build,
+        // so a slower, older build (two run concurrently in the static lane) or a build that
+        // finishes after a manual rollback cannot overwrite a newer live artifact.
+        var site = await db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == build.SiteId, ct);
         if (site is not null)
         {
-            site.ActiveBuildId = build.Id;
-            site.UpdatedAt = DateTimeOffset.UtcNow;
+            var supersedes = true;
+            if (site.ActiveBuildId is { } activeId && activeId != build.Id)
+            {
+                var activeCreatedAt = await db.Builds.IgnoreQueryFilters().AsNoTracking()
+                    .Where(b => b.Id == activeId)
+                    .Select(b => (DateTimeOffset?)b.CreatedAt)
+                    .FirstOrDefaultAsync(ct);
+                supersedes = activeCreatedAt is null || build.CreatedAt >= activeCreatedAt;
+            }
+
+            if (supersedes)
+            {
+                site.ActiveBuildId = build.Id;
+                site.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+            else
+            {
+                logger.LogInformation(
+                    "Build {BuildId} finished but a newer build is already active for site {SiteId}; not activating.",
+                    build.Id, site.Id);
+            }
         }
         await db.SaveChangesAsync(ct);
 
         await events.PublishAsync(Subjects.SitePublished, new SitePublished(
-            Guid.NewGuid(), DateTimeOffset.UtcNow, job.TenantId, job.SiteId, build.Id, build.ArtifactPrefix), ct);
+            Guid.NewGuid(), DateTimeOffset.UtcNow, build.TenantId, build.SiteId, build.Id, build.ArtifactPrefix), ct);
     }
 
     // Mode A: assemble the builder's committed HTML/CSS source into static pages.

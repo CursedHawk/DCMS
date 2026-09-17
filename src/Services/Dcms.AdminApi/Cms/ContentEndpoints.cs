@@ -2,6 +2,7 @@ using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Audit.Propagation;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Dcms.AdminApi.Tenancy;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Contracts.Events;
@@ -194,7 +195,10 @@ public static class ContentEndpoints
                 Status = ContentStatus.Draft,
                 CreatedBy = me.UserId,
             };
-            var version = NewVersion(item, 1, body.Data, me.UserId);
+            // SEC-13: rich-text fields are author-supplied HTML injected into the published
+            // site with innerHTML; sanitize on write against the allow-list.
+            var data = SanitizeRichText(body.Data, catalog, instance.PluginId, body.ContentType);
+            var version = NewVersion(item, 1, data, me.UserId);
             item.CurrentDraftVersionId = version.Id;
             item.Versions.Add(version);
             db.ContentItems.Add(item);
@@ -203,7 +207,7 @@ public static class ContentEndpoints
         }).RequirePermission(PlatformPermissions.ContentWrite).WithAudit(AuditActions.ContentCreated, "content_item");
 
         app.MapPut("/api/admin/content/{id:guid}", async (
-            Guid id, UpdateContentRequest body, CmsDbContext db, CurrentUser me, CancellationToken ct) =>
+            Guid id, UpdateContentRequest body, IPluginCatalog catalog, CmsDbContext db, CurrentUser me, CancellationToken ct) =>
         {
             var item = await db.ContentItems.Include(c => c.Versions).FirstOrDefaultAsync(c => c.Id == id, ct);
             if (item is null)
@@ -211,7 +215,8 @@ public static class ContentEndpoints
                 return Results.NotFound();
             }
             var nextNo = item.Versions.Count == 0 ? 1 : item.Versions.Max(v => v.VersionNo) + 1;
-            var version = NewVersion(item, nextNo, body.Data, me.UserId);
+            var data = await SanitizeRichTextAsync(body.Data, db, catalog, item.PluginInstanceId, item.ContentType, ct);
+            var version = NewVersion(item, nextNo, data, me.UserId);
             // Added through the set, not through item.Versions: the key is assigned
             // here rather than by the store, so a new version reached via a tracked
             // entity's navigation is attached as an existing row and saved as an
@@ -231,7 +236,7 @@ public static class ContentEndpoints
         // then clicks Publish, would silently ship the previous revision — the same
         // trap applies to scheduling, which is why it takes `data` too.
         app.MapPost("/api/admin/content/{id:guid}/publish", async (
-            Guid id, PublishRequest? body, CmsDbContext db, ITenantContext tenant,
+            Guid id, PublishRequest? body, IPluginCatalog catalog, CmsDbContext db, ITenantContext tenant,
             CurrentUser me, AuditScope scope, DcmsMetrics metrics, CancellationToken ct) =>
         {
             var item = await db.ContentItems.Include(c => c.Versions)
@@ -242,7 +247,8 @@ public static class ContentEndpoints
             }
             if (body?.Data is { } edits)
             {
-                AddDraftVersion(db, item, edits, me.UserId);
+                var clean = await SanitizeRichTextAsync(edits, db, catalog, item.PluginInstanceId, item.ContentType, ct);
+                AddDraftVersion(db, item, clean ?? edits, me.UserId);
             }
             if (item.CurrentDraftVersionId is null)
             {
@@ -277,7 +283,7 @@ public static class ContentEndpoints
         }).RequirePermission(PlatformPermissions.ContentPublish).WithAudit(AuditActions.ContentPublished, "content_item");
 
         app.MapPost("/api/admin/content/{id:guid}/schedule", async (
-            Guid id, ScheduleRequest body, CmsDbContext db, ITenantContext tenant,
+            Guid id, ScheduleRequest body, IPluginCatalog catalog, CmsDbContext db, ITenantContext tenant,
             CurrentUser me, IAuditRecorder audit, AuditScope scope, CancellationToken ct) =>
         {
             var item = await db.ContentItems.Include(c => c.Versions)
@@ -292,7 +298,8 @@ public static class ContentEndpoints
             }
             if (body.Data is { } edits)
             {
-                AddDraftVersion(db, item, edits, me.UserId);
+                var clean = await SanitizeRichTextAsync(edits, db, catalog, item.PluginInstanceId, item.ContentType, ct);
+                AddDraftVersion(db, item, clean ?? edits, me.UserId);
             }
             if (item.CurrentDraftVersionId is null)
             {
@@ -412,6 +419,61 @@ public static class ContentEndpoints
 
     private static bool PluginDeclaresType(IPluginCatalog catalog, string pluginId, string contentType)
         => catalog.Find(pluginId)?.ContentTypes.Any(t => t.Name == contentType) ?? false;
+
+    /// <summary>
+    /// Sanitizes the <see cref="ContentFieldType.RichText"/> fields of a content data payload
+    /// (SEC-13), resolving the item's plugin id from its instance first. Everything else in the
+    /// payload — plain text, numbers, refs, admin-defined custom values — is left untouched.
+    /// </summary>
+    private static async Task<JsonElement?> SanitizeRichTextAsync(
+        JsonElement? data, CmsDbContext db, IPluginCatalog catalog,
+        Guid pluginInstanceId, string contentType, CancellationToken ct)
+    {
+        if (data is not { ValueKind: JsonValueKind.Object }) return data;
+        var pluginId = await db.PluginInstances.AsNoTracking()
+            .Where(p => p.Id == pluginInstanceId)
+            .Select(p => p.PluginId)
+            .FirstOrDefaultAsync(ct);
+        return pluginId is null ? data : SanitizeRichText(data, catalog, pluginId, contentType);
+    }
+
+    /// <summary>
+    /// Rewrites each declared rich-text string field of <paramref name="data"/> through
+    /// <see cref="HtmlContentSanitizer"/>. Returns the original element when the content type is
+    /// unknown, declares no rich-text field, or nothing needed changing — so an unchanged save
+    /// still round-trips byte-for-byte.
+    /// </summary>
+    private static JsonElement? SanitizeRichText(
+        JsonElement? data, IPluginCatalog catalog, string pluginId, string contentType)
+    {
+        if (data is not { ValueKind: JsonValueKind.Object } obj) return data;
+        var def = catalog.Find(pluginId)?.ContentTypes.FirstOrDefault(t => t.Name == contentType);
+        if (def is null) return data;
+        var richFields = def.Fields
+            .Where(f => f.Type == ContentFieldType.RichText)
+            .Select(f => f.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        if (richFields.Count == 0) return data;
+
+        var node = JsonNode.Parse(obj.GetRawText())!.AsObject();
+        var changed = false;
+        foreach (var name in richFields)
+        {
+            if (node.TryGetPropertyValue(name, out var value)
+                && value is JsonValue jv
+                && jv.TryGetValue<string>(out var html)
+                && html is not null)
+            {
+                var clean = HtmlContentSanitizer.Sanitize(html);
+                if (!string.Equals(clean, html, StringComparison.Ordinal))
+                {
+                    node[name] = clean;
+                    changed = true;
+                }
+            }
+        }
+        return changed ? JsonSerializer.SerializeToElement(node) : data;
+    }
 
     private sealed record CreateContentRequest(Guid PluginInstanceId, string ContentType, string Slug, JsonElement? Data);
     private sealed record UpdateContentRequest(JsonElement? Data);

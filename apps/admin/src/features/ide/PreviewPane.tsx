@@ -48,7 +48,12 @@ export function PreviewPane({ preview }: { preview: PreviewControls }) {
             ref={frameRef}
             title={t('ide.preview')}
             srcDoc={srcdoc}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"
+            /* No allow-same-origin: the preview runs tenant- and CDN-authored code, so it must
+               execute in an opaque origin — otherwise it shares this admin origin and can read
+               the OIDC tokens in localStorage and script the parent. The agent bridge talks to
+               it over postMessage (see previewBridge), which works cross-origin, so the sandbox
+               costs nothing here. (SEC-10) */
+            sandbox="allow-scripts allow-forms allow-modals allow-popups"
             className="h-full w-full border-0 bg-white"
           />
         ) : (

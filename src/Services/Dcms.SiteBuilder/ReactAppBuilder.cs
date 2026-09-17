@@ -49,6 +49,22 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
     private static bool IsBinaryPath(string path) => SiteFileMap.IsBinaryPath(path);
 
     /// <summary>
+    /// Package-manager configuration that can execute code or redirect the install, and must
+    /// never be honoured from an untrusted site tree. (SEC-02)
+    /// </summary>
+    private static bool IsForbiddenToolchainFile(string relative)
+    {
+        var normalized = relative.Replace('\\', '/');
+        var name = normalized[(normalized.LastIndexOf('/') + 1)..];
+        if (name is ".pnpmfile.cjs" or ".pnpmfile.js" or ".npmrc" or ".yarnrc" or ".yarnrc.yml")
+        {
+            return true;
+        }
+        // Anything under a `.yarn/` directory (yarn Berry plugins/releases run as yarn itself).
+        return normalized == ".yarn" || normalized.StartsWith(".yarn/", StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Build the site. All step output (install + build) is appended to
     /// <paramref name="log"/> so the caller can persist it whether the build
     /// succeeds or fails — a failing build must be inspectable in the IDE.
@@ -67,6 +83,17 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
             if (relative.Contains("..", StringComparison.Ordinal) || Path.IsPathRooted(relative))
             {
                 throw new InvalidOperationException($"Illegal path in file map: {relative}");
+            }
+
+            // SEC-02: `--ignore-scripts` stops lifecycle scripts but NOT package-manager config
+            // files that run code by design — pnpm's `.pnpmfile.cjs` hooks and yarn 1's
+            // `.yarnrc` `yarn-path` (which re-execs an arbitrary file). Those, plus `.npmrc`
+            // (registry/auth override), never come from the tenant's tree: drop them before the
+            // network-enabled install runs.
+            if (IsForbiddenToolchainFile(relative))
+            {
+                log.AppendLine($"› Ignoring package-manager config file from the site tree: {relative}");
+                continue;
             }
             var target = Path.Combine(workDir, relative.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -216,7 +243,7 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
             "react-popper": "2.3.0",
             "react-resizable-panels": "2.1.7",
             "react-responsive-masonry": "2.7.1",
-            "react-router": "7.13.0",
+            "react-router": "7.18.2",
             "react-slick": "0.31.0",
             "recharts": "2.15.2",
             "slick-carousel": "1.8.1",
@@ -266,8 +293,11 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
 
             if (Has("pnpm-lock.yaml"))
             {
+                // --ignore-pnpmfile: a leftover .pnpmfile.cjs is already stripped from the tree,
+                // but the flag is defence in depth against one arriving another way. (SEC-02)
                 return new PackageManager("pnpm", "pnpm",
-                    "install --frozen-lockfile --ignore-scripts", "install --no-frozen-lockfile --ignore-scripts",
+                    "install --frozen-lockfile --ignore-scripts --ignore-pnpmfile",
+                    "install --no-frozen-lockfile --ignore-scripts --ignore-pnpmfile",
                     _ => hasBuildScript ? "run build" : "exec vite build");
             }
             if (Has("yarn.lock"))
@@ -419,10 +449,20 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
         {
             try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            // REL-01: killing the `docker` CLI does not stop the container it attached to, so
+            // remove it by name or it keeps burning its CPU/memory allowance after the build fails.
+            await ReapContainerAsync(fileName, workDir, env);
             var partial = string.Join('\n', (await stderr).Trim(), (await stdout).Trim()).Trim();
             log.AppendLine(partial);
             log.AppendLine($"✗ Timed out after {timeout.TotalMinutes:0} min during {label}.");
             throw new InvalidOperationException($"Timed out after {timeout.TotalMinutes:0} minutes while trying to {label}.");
+        }
+        catch (OperationCanceledException)
+        {
+            // Host shutdown (ct cancelled). Same reasoning: don't leave a container running.
+            try { process.Kill(entireProcessTree: true); } catch { /* best effort */ }
+            await ReapContainerAsync(fileName, workDir, env);
+            throw;
         }
 
         var output = string.Join('\n', (await stdout).Trim(), (await stderr).Trim()).Trim();
@@ -433,6 +473,46 @@ public sealed class ReactAppBuilder(ILogger<ReactAppBuilder> logger)
             logger.LogWarning("Build step `{File} {Args}` failed: {Output}", fileName, string.Join(' ', argv), output);
             var tail = Tail(output, 1500);
             throw new InvalidOperationException($"Failed to {label}.\n{tail}");
+        }
+    }
+
+    /// <summary>Force-removes the named sandbox container after a timeout/cancel, since a killed
+    /// `docker run` client leaves its container running. No-op for the direct dev path. (REL-01)</summary>
+    private async Task ReapContainerAsync(
+        string fileName, string workDir, IReadOnlyDictionary<string, string> env)
+    {
+        if (!_sandbox.Enabled || fileName != "docker")
+        {
+            return;
+        }
+        try
+        {
+            var reap = new ProcessStartInfo("docker")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            reap.ArgumentList.Add("rm");
+            reap.ArgumentList.Add("-f");
+            reap.ArgumentList.Add(SandboxOptions.ContainerName(workDir));
+            reap.Environment.Clear();
+            reap.Environment["PATH"] = env.TryGetValue("PATH", out var p) ? p : "/usr/local/bin:/usr/bin:/bin";
+            if (_sandbox.DockerHost is { Length: > 0 } host)
+            {
+                reap.Environment["DOCKER_HOST"] = host;
+            }
+            using var proc = Process.Start(reap);
+            if (proc is not null)
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                await proc.WaitForExitAsync(cts.Token);
+            }
+        }
+        catch
+        {
+            // Best effort: if the daemon is unreachable the container will be reaped by the
+            // startup sweep (label dcms.build=1) or by --rm once it exits on its own.
         }
     }
 

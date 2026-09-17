@@ -70,6 +70,15 @@ export function MembersPage() {
     onError: () => toast.error(t('errors.generic')),
   });
 
+  // MISS-01: off-board a member (remove the whole membership, not only a role).
+  const removeMember = useMutation({
+    mutationFn: (membershipId: string) => api.del(`/admin/members/${membershipId}`),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['members'] });
+    },
+    onError: (e) => toastApiError(e, t),
+  });
+
   const invite = useMutation({
     mutationFn: () =>
       api.post<{ link: string; email: string }>('/admin/invitations', {
@@ -184,6 +193,29 @@ export function MembersPage() {
           </DropdownMenu>
         );
       },
+    },
+    {
+      id: 'remove',
+      header: '',
+      srHeader: t('members.remove'),
+      width: 'w-10',
+      align: 'right',
+      // MISS-01: off-board a member. The backend refuses removing the last Owner and self.
+      cell: (m) => (
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label={t('members.remove', { email: m.email })}
+          disabled={removeMember.isPending}
+          onClick={() => {
+            if (window.confirm(t('members.removeConfirm', { email: m.email }))) {
+              removeMember.mutate(m.membershipId);
+            }
+          }}
+        >
+          <Trash2 className="h-4 w-4" aria-hidden />
+        </Button>
+      ),
     },
   ];
 

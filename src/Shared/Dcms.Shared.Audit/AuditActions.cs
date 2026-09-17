@@ -35,6 +35,7 @@ public static class AuditActions
     public const string MemberRoleGranted = "member.role.granted";
     public const string MemberRoleRevoked = "member.role.revoked";
     public const string MemberLeft = "member.left";
+    public const string MemberRemoved = "member.removed";
 
     public const string RoleCreated = "role.created";
     public const string RoleUpdated = "role.updated";

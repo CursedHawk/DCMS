@@ -191,6 +191,9 @@ builder.Services.AddAuthorization(options =>
         .RequireAuthenticatedUser()
         .RequireRole(Dcms.Identity.Domain.GlobalRoles.SuperAdmin));
 });
+// SEC-07: antiforgery for the server-rendered account forms (login/register/reset/etc.), so a
+// cross-site POST to /account/login cannot log a victim into an attacker's account.
+builder.Services.AddAntiforgery();
 builder.Services.AddHostedService<IdentitySeeder>();
 
 // Forgejo user mirror: provision a Forgejo account per DCMS user and keep the
@@ -284,6 +287,11 @@ app.UseDcmsProblemDetails();
 
 app.UseForwardedHeaders(forwardedHeaders);
 
+// SEC-07: the interactive sign-in / register / reset pages are served here and were framable
+// (no X-Frame-Options / frame-ancestors), which enables clickjacking of the login form. This
+// adds DENY framing, nosniff and a referrer policy to every identity response.
+app.UseDcmsSecurityHeaders();
+
 // After UseForwardedHeaders (so the client address is the caller's): sign-in failures
 // are one of the few records where the address is most of the value.
 app.UseDcmsAudit();
@@ -291,6 +299,9 @@ app.UseDcmsAudit();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Validates the antiforgery token on the account form POSTs (SEC-07).
+app.UseAntiforgery();
 
 app.MapDcmsDefaultEndpoints();
 app.MapAccountEndpoints();

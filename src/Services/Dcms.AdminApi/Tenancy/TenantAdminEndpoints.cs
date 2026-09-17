@@ -10,7 +10,9 @@ using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
+using Dcms.Shared.Data.Notifications;
 using Dcms.Shared.Data.Search;
+using Dcms.Shared.Data.Social;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Data.Visitors;
@@ -255,6 +257,8 @@ public sealed class TenantDeleter(
     ChatDbContext chat,
     AiDbContext ai,
     VisitorsDbContext visitors,
+    SocialDbContext social,
+    NotificationsDbContext notifications,
     SiteDeleter siteDeleter,
     SiteGitService git,
     IObjectStorage storage,
@@ -329,9 +333,28 @@ public sealed class TenantDeleter(
             ("chat.Messages", () => chat.Messages.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("chat.Conversations", () => chat.Conversations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
+        // BUG-04: the transcripts hold whole AI tool results (draft content, analytics figures)
+        // lifted out of the tenant's data, so a purge that left them behind was an erasure gap.
+        // Messages and runs are deleted before their conversation so no orphan survives a DB
+        // whose cascade is not configured.
         await SweepAsync(ai, manifest, ct,
+            ("ai.Messages", () => ai.Messages.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("ai.Runs", () => ai.Runs.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("ai.Conversations", () => ai.Conversations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("ai.UserSettings", () => ai.UserSettings.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("ai.Settings", () => ai.Settings.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+
+        // BUG-04: Meta connections hold Transit-encrypted access/page tokens; purge them too.
+        await SweepAsync(social, manifest, ct,
+            ("social.MediaMap", () => social.MediaMap.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("social.SyncStates", () => social.SyncStates.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("social.OAuthStates", () => social.OAuthStates.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("social.Connections", () => social.Connections.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+
+        // BUG-04: the tenant's in-app notifications (the platform_* tables are not tenant-scoped).
+        await SweepAsync(notifications, manifest, ct,
+            ("notifications.Recipients", () => notifications.Recipients.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("notifications.Notifications", () => notifications.Notifications.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         await SweepAsync(visitors, manifest, ct,
             ("visitors.RefreshTokens", () => visitors.RefreshTokens.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),

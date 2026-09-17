@@ -191,6 +191,10 @@ app.MapEdgeAuthEndpoints();
 // otherwise hand to site-host — and site-host, correctly, has never heard of it.
 app.MapAcmeChallenge();
 
+// Before the proxy can match the tenant catch-all: /internal/* is site-host's edge-only TLS
+// API and must never be reachable from a public host (SEC-03).
+app.UseInternalPathGuard();
+
 app.MapReverseProxy(proxyPipeline =>
 {
     // Inside the proxy pipeline because it needs the matched route: which headers a caller may

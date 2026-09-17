@@ -43,6 +43,10 @@
        there to force the patched version. Drop both once Testcontainers raises its
        own floor. -->
   <ItemGroup Label="Security pins">
+    <!-- Server-side allow-list sanitizer for author-supplied CMS rich text (SEC-13). The
+         canonical mganss/Ganss.Xss library; parses with AngleSharp so it collapses the same
+         mutation-XSS quirks a browser would, which a hand-rolled stripper cannot. -->
+    <PackageVersion Include="HtmlSanitizer" Version="9.2.1039" />
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.11" />
   </ItemGroup>

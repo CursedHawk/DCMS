@@ -209,10 +209,8 @@ public sealed class AdminApiPermissionCoverageTests : PermissionCoverageTestsBas
         "POST /api/admin/notifications/{id:guid}/read",
         // Self-service: any authenticated person may create a workspace. Audited.
         "POST /api/admin/tenants",
-        // The preview proxy. Tenant membership gates the request, but the site is resolved with
-        // IgnoreQueryFilters(), so the tenant it proxies to comes from the siteId rather than
-        // from the caller's own tenant. Worth a decision before it is written down as fine.
-        "POST/PUT/PATCH/DELETE /api/admin/sites/{siteId:guid}/preview/api/{**path}",
+        // (The preview proxy used to be listed here; it now carries RequirePermission(site:edit)
+        // and resolves the site under the tenant filter, so it is a decided endpoint — SEC-14.)
     ];
 }
 
