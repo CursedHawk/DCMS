@@ -185,7 +185,7 @@ Legend: **[fixed]** = remediated in the working tree (not committed/deployed); *
 * SEC-02 — Mode B install phase runs tenant code (pnpmfile/yarnPath) with network (MEDIUM) **[fixed]**
 * SEC-03 — site-host /internal endpoints reachable via edge catch-all (LOW, VERIFIED) **[fixed]**
 * SEC-04 — Grafana auth.proxy without source whitelist (LOW) **[deferred]**
-* INF-01 — Flat network; unauthenticated NATS/Redis; write-enabled Docker proxy (MEDIUM, VERIFIED) **[deferred]**
+* INF-01 — Flat network; unauthenticated NATS/Redis; write-enabled Docker proxy (MEDIUM, VERIFIED) **[partially fixed]** — the write-enabled Docker API (the host-takeover path) now sits alone on an internal `docker-api` network with site-builder, its only client; NATS/Redis auth still **[deferred]**
 * REL-01 — Timed-out Mode B build container keeps running (MEDIUM, VERIFIED) **[fixed]**
 * BUG-01 — Push to release during a build is never deployed (MEDIUM, VERIFIED) **[fixed]**
 * BUG-02 — Upload limits >28.6 MB unreachable (edge/Kestrel defaults) (LOW) **[fixed]**
@@ -214,6 +214,6 @@ Three remediation passes fixed every actionable finding; only the infra/architec
 **Shipped to `master`** (commits `a7f931c` remediation, `04f157a` preview API fix, `6a776b6` preview-proxy hardening, `cc57d42` SEC-03/06 regression tests). The preview-proxy hardening closed a confused-deputy path-traversal + a missing postMessage source check that the post-push security review found in the live-preview API proxy.
 
 * **Fixed (20):** SEC-01, SEC-02, SEC-03, SEC-05, SEC-06, SEC-07, SEC-08, SEC-09, SEC-10 (origin), SEC-11, SEC-12, SEC-13, SEC-14, REL-01, BUG-01, BUG-02, BUG-03, BUG-04, MISS-01, DEP-01 (tenant react-router), DEAD-01, PERF-01. 
-* **Deferred (5):** INF-01, SEC-04, SEC-10 (localStorage→BFF), DEP-01 (admin-only transitives), ARCH-01.
+* **Deferred (5):** INF-01 (NATS/Redis auth; Docker API isolated), SEC-04, SEC-10 (localStorage→BFF), DEP-01 (admin-only transitives), ARCH-01.
 * **New dependency:** `HtmlSanitizer` 9.2.1039 (Ganss/AngleSharp), pinned in `Directory.Packages.props`, referenced by `Dcms.Shared.Security` — the only package added.
 * **Regression tests added:** `/internal` edge 404 (SEC-03, `EdgeHttpPlaneTests`); escalation-subset rule (SEC-06, `TenancyIsolationTests`); lock + password change revoke live tokens/authorizations and rotate the stamp (SEC-05, `SessionRevocationTests`); a push that lands mid-build gets exactly one catch-up build, none when the head is unchanged or one is in flight (BUG-01, `ReleaseCatchUpTests`); exact-byte range delivery against MinIO (PERF-01, `HlsServingTests`). SEC-05 and BUG-01 are mutation-checked (each fails with its fix removed); the PERF-01 test failed on a real SDK bug before its fix landed.

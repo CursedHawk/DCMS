@@ -316,6 +316,11 @@ services:
         condition: service_started
     volumes:
       - build-work:/var/build-work
+    # `default` must stay listed: naming any network replaces the implicit one, and
+    # site-builder still needs Postgres, NATS, MinIO and Vault there.
+    networks:
+      - default
+      - docker-api
 
   # Least-privilege Docker API so the site-builder can launch per-build sandbox
   # containers WITHOUT mounting the raw (root-equivalent) docker socket itself.
@@ -337,6 +342,12 @@ services:
       LOG_LEVEL: "warning"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    # INF-01: this API can create and start containers — CONTAINERS=1 + POST=1 opens the whole
+    # /containers namespace, so any client can run a privileged container that mounts the host.
+    # On the shared network that was every container, including the internet-facing ones. It now
+    # sits alone on `docker-api` with its one client, site-builder, and is unreachable otherwise.
+    networks:
+      - docker-api
 
   site-host:
     environment:
@@ -498,3 +509,10 @@ volumes:
   # set in the vps overlay). Anonymous named volume by default; re-pointed to a bind
   # mount on hosts that need a known host path for the nested docker run.
   build-work:
+
+networks:
+  # The write-enabled Docker API's private network (INF-01): docker-socket-proxy and
+  # site-builder only. `internal` — the proxy talks to the daemon over the mounted socket and
+  # needs no route anywhere; image pulls are done by the daemon, not the proxy container.
+  docker-api:
+    internal: true
