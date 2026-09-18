@@ -81,6 +81,44 @@ public class EdgeHttpPlaneTests
         context.Response.Headers.Location.ToString().Should().Be("https://shop.tenant.example:8443/");
     }
 
+    [Theory]
+    [InlineData("/internal")]
+    [InlineData("/internal/publish")]
+    [InlineData("/internal/site-host/warm")]
+    public async Task Blocks_the_internal_surface_at_the_public_edge(string path)
+    {
+        // SEC-03: /internal/* is the site-host's cluster-only API (release warmups, cache purges).
+        // The public tenant catch-all has no host filter, so without this guard an inbound
+        // /internal/* from the internet would route straight to it. The edge's own internal calls
+        // go direct to the site-host cluster address and never traverse this listener, so a hard
+        // 404 here costs nothing legitimate.
+        var context = Request(path, port: 8443);
+        context.Request.Scheme = "https";
+
+        var reached = await RunInternalGuard(context);
+
+        reached.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound);
+    }
+
+    [Theory]
+    [InlineData("/api/internal/health")] // the guard matches segments, so /api/internal is NOT /internal
+    [InlineData("/internalized")]        // a path that merely starts with the text is a different segment
+    [InlineData("/tenant/blog")]
+    public async Task Lets_everything_else_through(string path)
+    {
+        // The guard must be exact about the segment boundary: /api/internal is a real public
+        // route (the admin API's own internal-identity handshake), and swallowing it — or any
+        // path that only shares the prefix text — would take out live traffic.
+        var context = Request(path, port: 8443);
+        context.Request.Scheme = "https";
+
+        var reached = await RunInternalGuard(context);
+
+        reached.Should().BeTrue();
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+    }
+
     [Fact]
     public async Task Sends_HSTS_only_over_HTTPS_and_only_when_asked_to()
     {
@@ -120,6 +158,10 @@ public class EdgeHttpPlaneTests
 
     private static async Task<bool> RunHsts(HttpContext context, CertificateOptions options)
         => await Run(context, options, app => app.UseEdgeHsts());
+
+    /// <returns>Whether the request reached the end of the pipeline instead of being 404'd.</returns>
+    private static async Task<bool> RunInternalGuard(HttpContext context)
+        => await Run(context, new CertificateOptions(), app => app.UseInternalPathGuard());
 
     private static async Task<bool> Run(
         HttpContext context, CertificateOptions options, Action<IApplicationBuilder> configure)

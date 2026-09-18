@@ -128,4 +128,51 @@ public class TenancyIsolationTests(AdminApiFixture fixture)
         var afterUpgrade = await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", invitee, tenantSlug: slug), ct);
         afterUpgrade.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    [DockerFact]
+    public async Task Roles_manager_cannot_mint_a_role_beyond_their_own_permissions()
+    {
+        // SEC-06: a delegated roles:manage holder is bounded by their own effective permissions.
+        // Without the grant guard they could author a role carrying members:manage (or Owner's
+        // everything), assign it to themselves, and escalate out of the box they were put in.
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var owner = Guid.NewGuid();
+        var manager = Guid.NewGuid();
+        var slug = "esc-" + Guid.NewGuid().ToString("N")[..8];
+
+        await CreateTenantAsync(client, slug, owner, ct);
+
+        // The owner builds a limited role: enough to manage roles and read media, and nothing
+        // else. This is the caller's whole effective set once they hold only this role.
+        var createLimited = await client.SendAsync(Req(HttpMethod.Post, "/api/admin/roles", owner, tenantSlug: slug,
+            body: new { name = "PermManager", permissions = new[] { "roles:manage", "media:read" } }), ct);
+        createLimited.StatusCode.Should().Be(HttpStatusCode.Created);
+        var limitedRoleId = (await createLimited.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetGuid();
+
+        // Bring the manager in on exactly that role (invite → accept → assign, as a real one would).
+        var invite = await client.SendAsync(Req(HttpMethod.Post, "/api/admin/invitations", owner, tenantSlug: slug,
+            body: new { email = $"{manager:N}@dcms.test", roleIds = new[] { limitedRoleId.ToString() } }), ct);
+        invite.StatusCode.Should().Be(HttpStatusCode.Created);
+        var token = (await invite.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("token").GetString();
+        var accept = await client.SendAsync(Req(HttpMethod.Post, "/api/admin/invitations/accept", manager,
+            body: new { token }), ct);
+        accept.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // A role that is a subset of what the manager holds is allowed.
+        var withinRights = await client.SendAsync(Req(HttpMethod.Post, "/api/admin/roles", manager, tenantSlug: slug,
+            body: new { name = "MediaViewer", permissions = new[] { "media:read" } }), ct);
+        withinRights.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // A role carrying a permission the manager does NOT hold is refused — the escalation.
+        var beyondRights = await client.SendAsync(Req(HttpMethod.Post, "/api/admin/roles", manager, tenantSlug: slug,
+            body: new { name = "ShadowAdmin", permissions = new[] { "members:manage" } }), ct);
+        beyondRights.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // And they cannot widen the role they hold to grant themselves more, either.
+        var widenSelf = await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/roles/{limitedRoleId}", manager,
+            tenantSlug: slug,
+            body: new { name = "PermManager", permissions = new[] { "roles:manage", "media:read", "members:manage" } }), ct);
+        widenSelf.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
 }
