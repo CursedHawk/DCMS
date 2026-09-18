@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { renewSilently } from '../../auth';
 import { adminHeaders } from '../../tenants';
 import { attachPreview, type PreviewFetchProxy } from './preview/previewBridge';
+import { previewProxyTarget } from './preview/proxyTarget';
 import type { PreviewControls } from './preview/usePreview';
 
 // Live client-side preview: the esbuild-wasm worker bundles the project and we
@@ -31,15 +32,20 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
    */
   const proxyFetch = useCallback<PreviewFetchProxy>(
     async (req) => {
+      // Confused-deputy guard: normalise the attacker-controlled URL and confirm it stays inside
+      // this site's own preview subtree before replaying it with the admin token. See
+      // previewProxyTarget — a raw startsWith() would let `${prefix}../../tenants` reach another
+      // admin route. We fetch the returned path, never req.url.
       const prefix = `/api/admin/sites/${siteId}/preview/`;
-      if (!req.url.startsWith(prefix)) {
+      const target = previewProxyTarget(req.url, prefix, window.location.origin);
+      if (target === null) {
         return { status: 403, statusText: 'Forbidden', headers: {}, body: '' };
       }
       const send = async () => {
         const headers: Record<string, string> = { ...(await adminHeaders()) };
         const contentType = req.headers['content-type'] ?? req.headers['Content-Type'];
         if (contentType) headers['Content-Type'] = contentType;
-        return fetch(req.url, {
+        return fetch(target, {
           method: req.method,
           headers,
           body: req.body ?? undefined,

@@ -169,6 +169,10 @@ export const BRIDGE_SCRIPT = `
     });
   };
   window.addEventListener('message', function (ev) {
+    // Only our host (the parent that injected this) may answer a proxy request or ask a query.
+    // A real message always carries its source, so this keeps another frame from feeding the
+    // preview forged API responses or driving its query surface.
+    if (ev.source && ev.source !== parent) return;
     var data = ev.data;
     if (data && data.__dcms === 'proxy-reply' && proxyPending[data.id]) {
       var cb = proxyPending[data.id];
@@ -217,6 +221,14 @@ export function attachPreview(target: Window | null, proxy?: PreviewFetchProxy):
   messages = [];
 
   const onMessage = (event: MessageEvent) => {
+    // Only the attached preview iframe may drive the bridge. The preview is opaque-origin, so
+    // event.origin is the string "null" and cannot single it out — but its window identity can.
+    // A real cross-window postMessage always carries its source, so pinning to `frame` keeps any
+    // other embedded frame or stray script from spoofing console output or, far worse, triggering
+    // an authenticated proxy-fetch. (A null source only arises for synthetic events — our own
+    // tests — and a same-window sender, neither of which can smuggle the admin response anywhere.)
+    if (event.source && event.source !== frame) return;
+
     const data = event.data as
       {
         __dcms?: string;

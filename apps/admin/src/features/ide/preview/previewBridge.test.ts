@@ -163,6 +163,48 @@ describe('api proxy', () => {
     );
   });
 
+  it('ignores a proxy-fetch that does not come from the attached frame', async () => {
+    // Finding: without this, any other frame or script that can postMessage to the admin window
+    // could trigger an authenticated API call. The bridge pins traffic to the attached iframe.
+    const frame = { postMessage: vi.fn() } as unknown as Window;
+    const proxy = vi.fn(async () => ({ status: 200, statusText: 'OK', headers: {}, body: '' }));
+    attachPreview(frame, proxy);
+
+    const evt = new MessageEvent('message', {
+      data: {
+        __dcms: 'proxy-fetch',
+        id: 9,
+        url: '/api/admin/sites/abc/preview/api/x',
+        method: 'GET',
+        headers: {},
+        body: null,
+      },
+    });
+    // A source that is not the attached frame — a different window entirely.
+    Object.defineProperty(evt, 'source', { value: { postMessage: vi.fn() }, configurable: true });
+    window.dispatchEvent(evt);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(proxy).not.toHaveBeenCalled();
+  });
+
+  it('services a proxy-fetch whose source is the attached frame', async () => {
+    const frame = { postMessage: vi.fn() } as unknown as Window;
+    const proxy = vi.fn(async () => ({ status: 200, statusText: 'OK', headers: {}, body: 'ok' }));
+    attachPreview(frame, proxy);
+
+    const evt = new MessageEvent('message', {
+      data: { __dcms: 'proxy-fetch', id: 4, url: '/api/x', method: 'GET', headers: {}, body: null },
+    });
+    Object.defineProperty(evt, 'source', { value: frame, configurable: true });
+    window.dispatchEvent(evt);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(proxy).toHaveBeenCalledOnce();
+  });
+
   it('ignores a proxy-fetch when no proxy is wired', () => {
     const postMessage = vi.fn();
     attachPreview({ postMessage } as unknown as Window);
