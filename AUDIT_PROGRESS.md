@@ -203,7 +203,7 @@ Legend: **[fixed]** = remediated in the working tree (not committed/deployed); *
 * SEC-13 — CMS rich-text stored/rendered without server-side sanitization (LOW, VERIFIED) **[fixed]**
 * SEC-14 — IDE site-preview proxy unauthenticated + cross-tenant (found in verify pass) **[fixed]**
 * MISS-01 — No way to remove a workspace member (MEDIUM, VERIFIED) **[fixed]**
-* DEP-01 — 21 high npm transitive advisories (MEDIUM) **[fixed]** react-router in tenant template; Scalar/ajv/vite residual **[deferred]**
+* DEP-01 — 21 high npm transitive advisories (MEDIUM) **[fixed]** react-router in tenant template; all 13 HIGH admin-only transitives pinned to patched versions via `pnpm-workspace.yaml` overrides (postcss/nanoid/fast-uri/shell-quote/browserslist/esbuild). Residual **[deferred]**: unhead, vitest/@vitest/mocker, ts-deepmerge — each needs a major bump (blocked consumer / vitest 4 / v8), all admin-only LOW/MODERATE
 * DEAD-01 — Inert plugin custom-endpoint interface + unwired edge.routes overlay (LOW) **[fixed]** — both dead surfaces removed; `edge.routes` table dropped (`DropEdgeRoutesOverlay` migration)
 * ARCH-01 — RLS not forced; EF query filters are the sole runtime tenant guard (INFORMATIONAL) **[deferred]**
 
