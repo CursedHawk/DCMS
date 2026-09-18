@@ -44,18 +44,9 @@ public static class MediaDeliveryEndpoints
                 contentType = v.ContentType;
             }
 
-            Stream stream;
-            try
-            {
-                stream = await storage.GetAsync(storageOptions.Value.MediaBucket, key, ct);
-            }
-            catch (Minio.Exceptions.ObjectNotFoundException)
-            {
-                return Results.NotFound();
-            }
-
             http.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
-            return Results.Stream(stream, contentType, enableRangeProcessing: true);
+            return await ObjectStreaming.WriteObjectAsync(
+                http, storage, storageOptions.Value.MediaBucket, key, contentType, ct);
         });
 
         // HLS playlists + segments live under the asset's hls/ prefix. Segments are
@@ -76,22 +67,13 @@ public static class MediaDeliveryEndpoints
             }
 
             var key = StorageKeys.MediaVariant(asset.TenantId, assetId, $"hls/{file}");
-            Stream stream;
-            try
-            {
-                stream = await storage.GetAsync(storageOptions.Value.MediaBucket, key, ct);
-            }
-            catch (Minio.Exceptions.ObjectNotFoundException)
-            {
-                return Results.NotFound();
-            }
-
             var contentType = HlsContentType(file);
             // Playlists may change between publishes; segments are immutable.
             http.Response.Headers.CacheControl = file.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase)
                 ? "public, max-age=60"
                 : "public, max-age=31536000, immutable";
-            return Results.Stream(stream, contentType, enableRangeProcessing: true);
+            return await ObjectStreaming.WriteObjectAsync(
+                http, storage, storageOptions.Value.MediaBucket, key, contentType, ct);
         });
 
         return app;

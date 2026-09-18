@@ -400,8 +400,8 @@ public static class MediaEndpoints
             // Bytes are content-addressed by asset id (+ variant kind), so they're
             // immutable — let the browser cache repeats. Private: it's bearer-gated.
             http.Response.Headers.CacheControl = "private, max-age=86400, immutable";
-            var stream = await storage.GetAsync(storageOptions.Value.MediaBucket, key, ct);
-            return Results.Stream(stream, contentType, enableRangeProcessing: true);
+            return await ObjectStreaming.WriteObjectAsync(
+                http, storage, storageOptions.Value.MediaBucket, key, contentType, ct);
         }).RequirePermission(PlatformPermissions.MediaRead);
 
         return app;

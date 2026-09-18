@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using Minio;
 using Minio.DataModel.Args;
@@ -27,6 +28,85 @@ public sealed class MinioObjectStorage(IMinioClient client) : IObjectStorage
         await client.GetObjectAsync(args, ct);
         buffer.Position = 0;
         return buffer;
+    }
+
+    public async Task GetToAsync(
+        string bucket, string key, Stream destination,
+        long? offset = null, long? length = null, CancellationToken ct = default)
+    {
+        if (length is <= 0)
+        {
+            return;
+        }
+
+        // ponytail: a range is served by reading from the start and discarding up to the offset,
+        // not by a ranged GET. minio-dotnet 7.0.0's WithOffsetAndLength is unusable: GetObject
+        // first stats the object with the SAME range, MinIO rightly answers that HEAD with 206,
+        // and the SDK throws PartialContentException. Memory is one pooled buffer either way —
+        // the ceiling is internal bandwidth on tail ranges of large objects. Upgrade path: a
+        // presigned-URL GET carrying a Range header, or an SDK whose stat accepts the 206.
+        var args = new GetObjectArgs()
+            .WithBucket(bucket)
+            .WithObject(key)
+            .WithCallbackStream(async (stream, token) =>
+            {
+                if (offset is > 0)
+                {
+                    await PumpAsync(stream, null, offset.Value, token);
+                }
+                if (length is { } count)
+                {
+                    // Stop once the slice is written; the rest of the object is never read.
+                    await PumpAsync(stream, destination, count, token);
+                }
+                else
+                {
+                    await stream.CopyToAsync(destination, token);
+                }
+            });
+
+        await client.GetObjectAsync(args, ct);
+    }
+
+    /// <summary>Moves up to <paramref name="count"/> bytes to <paramref name="destination"/>, or
+    /// discards them when it is null.</summary>
+    private static async Task PumpAsync(Stream source, Stream? destination, long count, CancellationToken ct)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(81920);
+        try
+        {
+            while (count > 0)
+            {
+                var read = await source.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, count)), ct);
+                if (read == 0)
+                {
+                    break;
+                }
+                if (destination is not null)
+                {
+                    await destination.WriteAsync(buffer.AsMemory(0, read), ct);
+                }
+                count -= read;
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    public async Task<StoredObjectInfo?> StatAsync(string bucket, string key, CancellationToken ct = default)
+    {
+        try
+        {
+            var args = new StatObjectArgs().WithBucket(bucket).WithObject(key);
+            var stat = await client.StatObjectAsync(args, ct);
+            return new StoredObjectInfo(stat.Size, stat.ContentType);
+        }
+        catch (Minio.Exceptions.ObjectNotFoundException)
+        {
+            return null;
+        }
     }
 
     public async Task<bool> ExistsAsync(string bucket, string key, CancellationToken ct = default)

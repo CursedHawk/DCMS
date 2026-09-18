@@ -30,6 +30,10 @@ public class HlsServingTests : IAsyncLifetime
     private readonly Guid _assetId = Guid.NewGuid();
     private const string Slug = "hls-tenant";
 
+    /// <summary>A segment whose every slice is distinct (251 is prime, so no 256-byte repeat),
+    /// so a range served from the wrong offset cannot pass by coincidence the way zeros would.</summary>
+    private static readonly byte[] Segment = [.. Enumerable.Range(0, 4096).Select(i => (byte)(i % 251))];
+
     public async ValueTask InitializeAsync()
     {
         await Task.WhenAll(_postgres.StartAsync(), _minio.StartAsync());
@@ -62,7 +66,7 @@ public class HlsServingTests : IAsyncLifetime
         // Upload fake HLS artifacts under the asset's hls/ prefix.
         await PutText(minio, "hls/master.m3u8", "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2800000\nr720.m3u8\n");
         await PutText(minio, "hls/r720.m3u8", "#EXTM3U\n#EXTINF:6.0,\nr720_000.ts\n#EXT-X-ENDLIST\n");
-        await PutBytes(minio, "hls/r720_000.ts", new byte[4096]);
+        await PutBytes(minio, "hls/r720_000.ts", Segment);
 
         _content = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
@@ -95,11 +99,67 @@ public class HlsServingTests : IAsyncLifetime
         var segRes = await client.SendAsync(seg, ct);
         segRes.StatusCode.Should().Be(HttpStatusCode.PartialContent);
         segRes.Content.Headers.ContentType!.MediaType.Should().Be("video/mp2t");
+        segRes.Content.Headers.ContentRange!.ToString().Should().Be("bytes 0-1023/4096");
+        (await segRes.Content.ReadAsByteArrayAsync(ct)).Should().Equal(Segment[..1024]);
+
+        // PERF-01: ranges are now pulled from MinIO by offset rather than sliced out of a fully
+        // downloaded buffer, so a NON-zero offset is the case that proves it. A suffix range is
+        // what a player sends for an MP4's trailing moov atom.
+        var tail = Req($"/api/media/{_assetId}/hls/r720_000.ts");
+        tail.Headers.Range = new RangeHeaderValue(null, 100);
+        var tailRes = await client.SendAsync(tail, ct);
+        tailRes.StatusCode.Should().Be(HttpStatusCode.PartialContent);
+        tailRes.Content.Headers.ContentRange!.ToString().Should().Be("bytes 3996-4095/4096");
+        (await tailRes.Content.ReadAsByteArrayAsync(ct)).Should().Equal(Segment[3996..]);
+
+        // No Range header → the whole object, streamed, with its length declared.
+        var whole = await client.SendAsync(Req($"/api/media/{_assetId}/hls/r720_000.ts"), ct);
+        whole.StatusCode.Should().Be(HttpStatusCode.OK);
+        whole.Content.Headers.ContentLength.Should().Be(4096);
+        (await whole.Content.ReadAsByteArrayAsync(ct)).Should().Equal(Segment);
+
+        // A range past the end is refused, and says how big the object is.
+        var past = Req($"/api/media/{_assetId}/hls/r720_000.ts");
+        past.Headers.Range = new RangeHeaderValue(5000, null);
+        var pastRes = await client.SendAsync(past, ct);
+        pastRes.StatusCode.Should().Be(HttpStatusCode.RequestedRangeNotSatisfiable);
+        pastRes.Content.Headers.ContentRange!.ToString().Should().Be("bytes */4096");
+
+        // A missing segment is still a 404, not a 500 from the stat.
+        (await client.SendAsync(Req($"/api/media/{_assetId}/hls/r720_999.ts"), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         // Cross-tenant isolation: a different tenant slug cannot see the asset.
         var foreignReq = new HttpRequestMessage(HttpMethod.Get, $"/api/media/{_assetId}/hls/master.m3u8");
         foreignReq.Headers.Add("X-Dcms-Tenant", "someone-else");
         (await client.SendAsync(foreignReq, ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [DockerFact]
+    public async Task Storage_streams_exact_byte_ranges_from_minio()
+    {
+        // The primitive delivery is built on, against a real MinIO: a ranged GET must return
+        // exactly the asked-for slice, including from a non-zero offset, with nothing buffered.
+        var ct = TestContext.Current.CancellationToken;
+        var endpoint = $"{_minio.Hostname}:{_minio.GetMappedPublicPort(9000)}";
+        var storage = new MinioObjectStorage(new MinioClient().WithEndpoint(endpoint)
+            .WithCredentials(_minio.GetAccessKey(), _minio.GetSecretKey()).WithSSL(false).Build());
+        var key = StorageKeys.MediaVariant(_tenantId, _assetId, "hls/r720_000.ts");
+
+        (await storage.StatAsync(Bucket, key, ct))!.Size.Should().Be(4096);
+        (await storage.StatAsync(Bucket, key + ".missing", ct)).Should().BeNull();
+
+        using var head = new MemoryStream();
+        await storage.GetToAsync(Bucket, key, head, 0, 1024, ct);
+        head.ToArray().Should().Equal(Segment[..1024]);
+
+        using var tail = new MemoryStream();
+        await storage.GetToAsync(Bucket, key, tail, 3996, 100, ct);
+        tail.ToArray().Should().Equal(Segment[3996..]);
+
+        using var all = new MemoryStream();
+        await storage.GetToAsync(Bucket, key, all, ct: ct);
+        all.ToArray().Should().Equal(Segment);
     }
 
     private static HttpRequestMessage Req(string url)

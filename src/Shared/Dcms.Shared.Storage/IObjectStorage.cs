@@ -7,7 +7,27 @@ namespace Dcms.Shared.Storage;
 public interface IObjectStorage
 {
     Task PutAsync(string bucket, string key, Stream content, long size, string contentType, CancellationToken ct = default);
+
+    /// <summary>
+    /// Downloads the whole object into memory. Only for callers that genuinely need a seekable
+    /// stream over the entire object (the publish consumer reading a zip's central directory).
+    /// <b>Never on a request path</b> — see <see cref="GetToAsync"/>: buffering here makes memory
+    /// use scale with concurrency × file size, which is how a delivery endpoint becomes a DoS.
+    /// </summary>
     Task<Stream> GetAsync(string bucket, string key, CancellationToken ct = default);
+
+    /// <summary>
+    /// Copies the object — or, when <paramref name="offset"/> and <paramref name="length"/> are
+    /// given, just that byte range — straight to <paramref name="destination"/>, holding only the
+    /// copy buffer. This is what request paths serve from.
+    /// </summary>
+    Task GetToAsync(
+        string bucket, string key, Stream destination,
+        long? offset = null, long? length = null, CancellationToken ct = default);
+
+    /// <summary>Size and content type without transferring the body; null when absent.</summary>
+    Task<StoredObjectInfo?> StatAsync(string bucket, string key, CancellationToken ct = default);
+
     Task<bool> ExistsAsync(string bucket, string key, CancellationToken ct = default);
     Task DeleteAsync(string bucket, string key, CancellationToken ct = default);
 
@@ -22,6 +42,10 @@ public interface IObjectStorage
     /// </summary>
     Task<int> DeletePrefixAsync(string bucket, string prefix, CancellationToken ct = default);
 }
+
+/// <summary>What a HEAD on an object tells us: enough to answer a range request without
+/// transferring the body. Named to avoid colliding with MinIO's own <c>ObjectStat</c>.</summary>
+public sealed record StoredObjectInfo(long Size, string? ContentType);
 
 public static class StorageKeys
 {

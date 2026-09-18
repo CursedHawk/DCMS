@@ -30,24 +30,35 @@ public static class SiteHostEndpoints
             // with the asset's content-type (e.g. a missing .js → HTML parsed as JS).
             var isAsset = !string.IsNullOrWhiteSpace(path) && Path.HasExtension(path);
 
-            byte[]? bytes = null;
+            // Resolve which candidate exists with a HEAD, then stream that one. Probing used to
+            // download each candidate in full and copy it again into a byte[] — 2× the file in
+            // memory per request, for a file we might then discard (PERF-01).
+            string? resolvedKey = null;
             foreach (var candidate in candidates)
             {
-                bytes = await TryGet(storage, bucket, $"{route.ArtifactPrefix}/{candidate}", ct);
-                if (bytes is not null) break;
+                var candidateKey = $"{route.ArtifactPrefix}/{candidate}";
+                if (await storage.StatAsync(bucket, candidateKey, ct) is not null)
+                {
+                    resolvedKey = candidateKey;
+                    break;
+                }
             }
-            if (bytes is null && !isAsset)
+            if (resolvedKey is null && !isAsset)
             {
-                bytes = await TryGet(storage, bucket, $"{route.ArtifactPrefix}/index.html", ct);
+                var indexKey = $"{route.ArtifactPrefix}/index.html";
+                if (await storage.StatAsync(bucket, indexKey, ct) is not null)
+                {
+                    resolvedKey = indexKey;
+                }
             }
-            if (bytes is null)
+            if (resolvedKey is null)
             {
                 return Results.NotFound();
             }
 
             var contentType = StaticSiteFiles.ContentTypeFor(fileName);
             http.Response.Headers.CacheControl = "public, max-age=60";
-            return Results.Bytes(bytes, contentType);
+            return await ObjectStreaming.WriteObjectAsync(http, storage, bucket, resolvedKey, contentType, ct);
         });
 
         return app;
@@ -92,18 +103,4 @@ public static class SiteHostEndpoints
         return exact == wildcard ? [exact] : [exact, wildcard];
     }
 
-    private static async Task<byte[]?> TryGet(IObjectStorage storage, string bucket, string key, CancellationToken ct)
-    {
-        try
-        {
-            await using var stream = await storage.GetAsync(bucket, key, ct);
-            using var ms = new MemoryStream();
-            await stream.CopyToAsync(ms, ct);
-            return ms.ToArray();
-        }
-        catch (Minio.Exceptions.ObjectNotFoundException)
-        {
-            return null;
-        }
-    }
 }

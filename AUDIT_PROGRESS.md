@@ -191,7 +191,7 @@ Legend: **[fixed]** = remediated in the working tree (not committed/deployed); *
 * BUG-02 — Upload limits >28.6 MB unreachable (edge/Kestrel defaults) (LOW) **[fixed]**
 * BUG-03 — Build activation last-finisher-wins; rollback not invalidated (LOW, VERIFIED) **[fixed]**
 * BUG-04 — Tenant purge orphans AI transcripts, social tokens, notifications (MEDIUM, VERIFIED) **[fixed]**
-* PERF-01 — Delivery paths buffer whole objects per request (MEDIUM, VERIFIED) **[deferred]**
+* PERF-01 — Delivery paths buffer whole objects per request (MEDIUM, VERIFIED) **[fixed]** — content-api media/HLS, site-host and admin media now stream via `ObjectStreaming.WriteObjectAsync` (HEAD + single-range 206/416, one pooled buffer); compose `mem_limit` residual (deploy-side)
 * SEC-05 — Account lock / password change don't revoke tokens or git access (HIGH, VERIFIED) **[fixed]**
 * SEC-06 — members:manage / roles:manage escalate to Owner and tenant purge (HIGH, VERIFIED) **[fixed]**
 * SEC-07 — Identity pages: login CSRF, framing, unverified registration, enumeration (LOW) **[fixed]**
@@ -213,7 +213,7 @@ Three remediation passes fixed every actionable finding; only the infra/architec
 
 **Shipped to `master`** (commits `a7f931c` remediation, `04f157a` preview API fix, `6a776b6` preview-proxy hardening, `cc57d42` SEC-03/06 regression tests). The preview-proxy hardening closed a confused-deputy path-traversal + a missing postMessage source check that the post-push security review found in the live-preview API proxy.
 
-* **Fixed (19):** SEC-01, SEC-02, SEC-03, SEC-05, SEC-06, SEC-07, SEC-08, SEC-09, SEC-10 (origin), SEC-11, SEC-12, SEC-13, SEC-14, REL-01, BUG-01, BUG-02, BUG-03, BUG-04, MISS-01, DEP-01 (tenant react-router), DEAD-01. 
-* **Deferred (6):** INF-01, PERF-01, SEC-04, SEC-10 (localStorage→BFF), DEP-01 (admin-only transitives), ARCH-01.
+* **Fixed (20):** SEC-01, SEC-02, SEC-03, SEC-05, SEC-06, SEC-07, SEC-08, SEC-09, SEC-10 (origin), SEC-11, SEC-12, SEC-13, SEC-14, REL-01, BUG-01, BUG-02, BUG-03, BUG-04, MISS-01, DEP-01 (tenant react-router), DEAD-01, PERF-01. 
+* **Deferred (5):** INF-01, SEC-04, SEC-10 (localStorage→BFF), DEP-01 (admin-only transitives), ARCH-01.
 * **New dependency:** `HtmlSanitizer` 9.2.1039 (Ganss/AngleSharp), pinned in `Directory.Packages.props`, referenced by `Dcms.Shared.Security` — the only package added.
 * **Regression tests added:** `/internal` edge 404 (SEC-03, container-free in `EdgeHttpPlaneTests`); escalation-subset rule (SEC-06, docker-backed in `TenancyIsolationTests`). Still open: locked-user refresh (SEC-05, needs the OIDC login+refresh flow), overlapping-push catch-up (BUG-01, needs the site-build pipeline harness).
