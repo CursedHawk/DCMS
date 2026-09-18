@@ -7,15 +7,24 @@
  * browser already does.</p>
  *
  * <h3>Why a message channel and not contentDocument</h3>
- * <p>A `srcdoc` iframe inherits the parent's origin, so reaching into `contentDocument` would
- * work today. It would also mean the agent's tools hold a live DOM reference into a document
- * that is replaced on every rebuild, and that any stray query runs synchronously on the parent's
- * thread. A message channel keeps the boundary explicit and survives the iframe being swapped.</p>
+ * <p>The preview iframe runs in an opaque origin (its sandbox deliberately omits
+ * `allow-same-origin`, so tenant- and CDN-authored code cannot read this admin origin's tokens
+ * or script the parent — SEC-10). `contentDocument` is therefore cross-origin and unreadable,
+ * and a message channel is not an optimisation but the only channel there is. It also survives
+ * the iframe being swapped on every rebuild, where a held DOM reference would go stale.</p>
  *
  * <h3>What is collected, and what is not</h3>
  * <p>Console errors and warnings, uncaught exceptions, failed promises and failed network
  * requests. Not `console.log`: a React app in development is chatty, and a debug line the author
  * left in is not a signal the agent should be reasoning about — or paying for.</p>
+ *
+ * <h3>The API proxy</h3>
+ * <p>Because the iframe is opaque-origin it cannot reach the DCMS API itself: a relative
+ * `/api/...` has no origin to resolve against, and it holds no admin token for the `site:edit`
+ * gated preview endpoint. So the injected shim forwards those requests to this parent over the
+ * same channel; the parent replays them with the admin session (see {@link PreviewFetchProxy})
+ * and only ever for paths inside the site's own preview subtree, which is what lets the live
+ * preview show real tenant content without ever handing the sandbox a credential.</p>
  */
 
 export interface PreviewMessage {
@@ -23,6 +32,32 @@ export interface PreviewMessage {
   text: string;
   at: number;
 }
+
+/** One API request the sandboxed preview asks the parent to make on its behalf. */
+export interface PreviewFetchRequest {
+  /** The path the site fetched, always an absolute `/api/...` path (never a foreign origin). */
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  /** A string body only (JSON); the site's content/analytics/form calls never stream. */
+  body: string | null;
+}
+
+/** The parent's answer, marshalled back across the channel into a real {@link Response}. */
+export interface PreviewFetchResult {
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+}
+
+/**
+ * Replays a preview request against the DCMS API with the admin session. Supplied by the
+ * pane, because only it has the token and knows which site's preview subtree is in bounds —
+ * this module stays free of app auth. A handler MUST reject any path outside that subtree
+ * (return status 403) so preview code cannot borrow the admin token for another endpoint.
+ */
+export type PreviewFetchProxy = (req: PreviewFetchRequest) => Promise<PreviewFetchResult>;
 
 /** Ring buffer size. A page in a render loop can produce thousands; the newest ones are what matter. */
 const MAX_MESSAGES = 100;
@@ -55,18 +90,92 @@ export const BRIDGE_SCRIPT = `
   window.addEventListener('unhandledrejection', function (e) {
     post('rejection', (e.reason && (e.reason.message || e.reason)) || 'Unhandled rejection');
   });
+  // API requests are proxied through the parent: the iframe is opaque-origin, so a relative
+  // /api/... has no origin to resolve and it holds no admin token. Everything else (a CDN font,
+  // an absolute URL) goes straight to the network. See the "API proxy" note in previewBridge.ts.
+  var proxySeq = 0;
+  var proxyPending = {};
+  var urlOf = function (input) {
+    return typeof input === 'string' ? input : (input && input.url) || '';
+  };
+  var headersOf = function (init, input) {
+    var out = {};
+    try {
+      var h = (init && init.headers) || (input && input.headers);
+      if (!h) return out;
+      if (typeof h.forEach === 'function' && !Array.isArray(h)) {
+        h.forEach(function (v, k) { out[k] = v; });
+      } else if (Array.isArray(h)) {
+        h.forEach(function (p) { out[p[0]] = p[1]; });
+      } else {
+        Object.keys(h).forEach(function (k) { out[k] = h[k]; });
+      }
+    } catch (e) {}
+    return out;
+  };
   var fetchOriginal = window.fetch;
   window.fetch = function (input, init) {
+    var u = urlOf(input);
+    // Same-origin API paths only. A tenant site never legitimately fetches another absolute path
+    // from the opaque origin, and the parent enforces the exact preview subtree besides.
+    if (typeof u === 'string' && u.indexOf('/api/') === 0) {
+      var method = (init && init.method) || (input && input.method) || 'GET';
+      var body = init && typeof init.body === 'string' ? init.body : null;
+      var headers = headersOf(init, input);
+      return new Promise(function (resolve, reject) {
+        var id = ++proxySeq;
+        var timer = setTimeout(function () {
+          if (proxyPending[id]) {
+            delete proxyPending[id];
+            post('network', 'timeout ' + u);
+            reject(new TypeError('Failed to fetch'));
+          }
+        }, 20000);
+        proxyPending[id] = function (d) {
+          clearTimeout(timer);
+          var status = d.status || 0;
+          if (!status) {
+            post('network', 'failed ' + u + ' — preview proxy error');
+            reject(new TypeError('Failed to fetch'));
+            return;
+          }
+          var noBody = status === 204 || status === 205 || status === 304;
+          var res = new Response(noBody ? null : (d.body || ''), {
+            status: status,
+            statusText: d.statusText || '',
+            headers: d.headers || {},
+          });
+          if (!res.ok) post('network', status + ' ' + u);
+          resolve(res);
+        };
+        try {
+          parent.postMessage(
+            { __dcms: 'proxy-fetch', id: id, url: u, method: method, headers: headers, body: body },
+            '*',
+          );
+        } catch (e) {
+          clearTimeout(timer);
+          delete proxyPending[id];
+          reject(e);
+        }
+      });
+    }
     return fetchOriginal.apply(this, arguments).then(function (res) {
-      if (!res.ok) post('network', res.status + ' ' + (typeof input === 'string' ? input : (input && input.url) || ''));
+      if (!res.ok) post('network', res.status + ' ' + u);
       return res;
     }, function (err) {
-      post('network', 'failed ' + (typeof input === 'string' ? input : '') + ' — ' + (err && err.message));
+      post('network', 'failed ' + u + ' — ' + (err && err.message));
       throw err;
     });
   };
   window.addEventListener('message', function (ev) {
     var data = ev.data;
+    if (data && data.__dcms === 'proxy-reply' && proxyPending[data.id]) {
+      var cb = proxyPending[data.id];
+      delete proxyPending[data.id];
+      cb(data);
+      return;
+    }
     if (!data || data.__dcms !== 'query') return;
     var reply = function (text) {
       parent.postMessage({ __dcms: 'reply', id: data.id, text: String(text).slice(0, 20000) }, '*');
@@ -95,7 +204,7 @@ export const BRIDGE_SCRIPT = `
  * errors from the previous version of the code are worse than no errors — the agent would try to
  * fix something it has already fixed.</p>
  */
-export function attachPreview(target: Window | null): () => void {
+export function attachPreview(target: Window | null, proxy?: PreviewFetchProxy): () => void {
   // Detach whatever was listening first.
   //
   // The caller is expected to run the teardown, and in the app React does. But a re-attach
@@ -109,7 +218,16 @@ export function attachPreview(target: Window | null): () => void {
 
   const onMessage = (event: MessageEvent) => {
     const data = event.data as
-      { __dcms?: string; kind?: PreviewMessage['kind']; text?: string; id?: number } | undefined;
+      {
+        __dcms?: string;
+        kind?: PreviewMessage['kind'];
+        text?: string;
+        id?: number;
+        url?: string;
+        method?: string;
+        headers?: Record<string, string>;
+        body?: string | null;
+      } | undefined;
     if (!data || typeof data !== 'object') return;
 
     if (data.__dcms === 'preview' && data.kind) {
@@ -120,6 +238,26 @@ export function attachPreview(target: Window | null): () => void {
     if (data.__dcms === 'reply' && typeof data.id === 'number') {
       pending.get(data.id)?.(data.text ?? '');
       pending.delete(data.id);
+      return;
+    }
+    // The sandboxed preview asking us to make an API call it cannot make itself. Only honoured
+    // when a proxy is wired and the reply goes back to the same iframe; the proxy decides what
+    // is in bounds. `frame` is captured so a rebuild that swaps the iframe mid-flight replies to
+    // the window that asked, not whatever is on screen when the answer returns.
+    if (data.__dcms === 'proxy-fetch' && typeof data.id === 'number' && proxy) {
+      const id = data.id;
+      const source = frame;
+      const req: PreviewFetchRequest = {
+        url: typeof data.url === 'string' ? data.url : '',
+        method: typeof data.method === 'string' ? data.method : 'GET',
+        headers: data.headers ?? {},
+        body: typeof data.body === 'string' ? data.body : null,
+      };
+      const answer = (result: PreviewFetchResult) =>
+        source?.postMessage({ __dcms: 'proxy-reply', id, ...result }, '*');
+      void proxy(req).then(answer, () =>
+        answer({ status: 0, statusText: 'proxy error', headers: {}, body: '' }),
+      );
     }
   };
 

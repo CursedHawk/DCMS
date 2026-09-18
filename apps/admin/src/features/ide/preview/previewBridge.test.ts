@@ -114,6 +114,66 @@ describe('queries', () => {
   });
 });
 
+describe('api proxy', () => {
+  it('replays a preview request through the injected proxy and replies to the frame', async () => {
+    const postMessage = vi.fn();
+    const proxy = vi.fn(async () => ({
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'application/json' },
+      body: '{"items":[]}',
+    }));
+    attachPreview({ postMessage } as unknown as Window, proxy);
+
+    fromFrame({
+      __dcms: 'proxy-fetch',
+      id: 7,
+      url: '/api/admin/sites/abc/preview/api/blog/posts',
+      method: 'GET',
+      headers: {},
+      body: null,
+    });
+    // Let the proxy promise settle.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(proxy).toHaveBeenCalledWith(
+      expect.objectContaining({ url: '/api/admin/sites/abc/preview/api/blog/posts', method: 'GET' }),
+    );
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ __dcms: 'proxy-reply', id: 7, status: 200, body: '{"items":[]}' }),
+      '*',
+    );
+  });
+
+  it('answers with a proxy error rather than hanging when the proxy rejects', async () => {
+    const postMessage = vi.fn();
+    const proxy = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    attachPreview({ postMessage } as unknown as Window, proxy);
+
+    fromFrame({ __dcms: 'proxy-fetch', id: 3, url: '/api/x', method: 'GET', headers: {}, body: null });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ __dcms: 'proxy-reply', id: 3, status: 0 }),
+      '*',
+    );
+  });
+
+  it('ignores a proxy-fetch when no proxy is wired', () => {
+    const postMessage = vi.fn();
+    attachPreview({ postMessage } as unknown as Window);
+    // No proxy passed: the message must be a no-op, not a throw or a reply.
+    expect(() =>
+      fromFrame({ __dcms: 'proxy-fetch', id: 1, url: '/api/x', method: 'GET' }),
+    ).not.toThrow();
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+});
+
 describe('injected script', () => {
   it('is syntactically valid JavaScript', () => {
     /*
@@ -133,6 +193,13 @@ describe('injected script', () => {
     for (const hook of ['console', 'error', 'unhandledrejection', 'fetch', 'message']) {
       expect(BRIDGE_SCRIPT).toContain(hook);
     }
+  });
+
+  it('speaks the API proxy protocol', () => {
+    // The opaque-origin preview reaches the API only by asking the parent; a rename on either
+    // side of this envelope silently breaks live data with no error anywhere.
+    expect(BRIDGE_SCRIPT).toContain('proxy-fetch');
+    expect(BRIDGE_SCRIPT).toContain('proxy-reply');
   });
 
   it('does not forward console.log', () => {

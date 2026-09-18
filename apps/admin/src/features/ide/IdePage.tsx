@@ -658,7 +658,7 @@ export function IdePage({ siteId }: { siteId: string }) {
               onReset={resetPreviewWidth}
             />
             <div className="shrink-0 border-l" style={{ width: `${previewWidth}px` }}>
-              <PreviewPane preview={preview} />
+              <PreviewPane preview={preview} siteId={siteId} />
             </div>
           </>
         )}
