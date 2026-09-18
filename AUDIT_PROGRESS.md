@@ -209,9 +209,11 @@ Legend: **[fixed]** = remediated in the working tree (not committed/deployed); *
 
 ## Remediation Status
 
-Three remediation passes fixed every actionable finding; only the infra/architectural set is deferred (documented in report §Remediation Applied → Deferred). Verification on this build-only box: whole-solution `dotnet build` clean; **337 unit tests** pass (incl. new `HtmlContentSanitizerTests`, which caught a real mis-configured scheme allow-list before it shipped); the **24 container-free coverage integration tests** (permission + audit) pass. Not committed or deployed — the working tree holds the changes.
+Three remediation passes fixed every actionable finding; only the infra/architectural set is deferred (documented in report §Remediation Applied → Deferred). Verification on this build-only box: whole-solution `dotnet build` clean; **337 unit tests** pass (incl. new `HtmlContentSanitizerTests`, which caught a real mis-configured scheme allow-list before it shipped); the **24 container-free coverage integration tests** (permission + audit) pass.
+
+**Shipped to `master`** (commits `a7f931c` remediation, `04f157a` preview API fix, `6a776b6` preview-proxy hardening, `cc57d42` SEC-03/06 regression tests). The preview-proxy hardening closed a confused-deputy path-traversal + a missing postMessage source check that the post-push security review found in the live-preview API proxy.
 
 * **Fixed (18):** SEC-01, SEC-02, SEC-03, SEC-05, SEC-06, SEC-07, SEC-08, SEC-09, SEC-10 (origin), SEC-11, SEC-12, SEC-13, SEC-14, REL-01, BUG-01, BUG-02, BUG-03, BUG-04, MISS-01, DEP-01 (tenant react-router). 
 * **Deferred (7):** INF-01, PERF-01, SEC-04, SEC-10 (localStorage→BFF), DEP-01 (admin-only transitives), DEAD-01, ARCH-01.
 * **New dependency:** `HtmlSanitizer` 9.2.1039 (Ganss/AngleSharp), pinned in `Directory.Packages.props`, referenced by `Dcms.Shared.Security` — the only package added.
-* **Suggested regression tests** (need the container harness, not added here): locked-user refresh (SEC-05), escalation subset rule (SEC-06), overlapping-push catch-up (BUG-01), `/internal` edge 404 (SEC-03).
+* **Regression tests added:** `/internal` edge 404 (SEC-03, container-free in `EdgeHttpPlaneTests`); escalation-subset rule (SEC-06, docker-backed in `TenancyIsolationTests`). Still open: locked-user refresh (SEC-05, needs the OIDC login+refresh flow), overlapping-push catch-up (BUG-01, needs the site-build pipeline harness).
