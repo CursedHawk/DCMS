@@ -1,7 +1,4 @@
 using Dcms.PluginSdk.Abstractions;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
 
 namespace Dcms.PluginSdk.Runtime;
 
@@ -38,16 +35,12 @@ public sealed class ContentRouteInfo
 }
 
 /// <summary>
-/// IPluginEndpointBuilder that records declarations instead of mounting routes.
-/// Custom MapGet/MapPost and direct Group access are not supported in this phase
-/// (plugins needing them arrive later); the convention helpers are.
+/// IPluginEndpointBuilder that records a plugin's content-route declarations instead of mounting
+/// routes, so the delivery runtime can serve them generically per instance.
 /// </summary>
 internal sealed class RecordingEndpointBuilder : IPluginEndpointBuilder
 {
     public Dictionary<string, ContentRouteInfo> Routes { get; } = new(StringComparer.Ordinal);
-
-    public RouteGroupBuilder Group =>
-        throw new NotSupportedException("Direct route group access is not available during route recording.");
 
     public void MapContentList(string contentType, Action<ContentQueryOptions>? configure = null)
     {
@@ -57,12 +50,6 @@ internal sealed class RecordingEndpointBuilder : IPluginEndpointBuilder
     }
 
     public void MapContentGetBySlug(string contentType) => GetOrAdd(contentType).GetBySlug = true;
-
-    public RouteHandlerBuilder MapGet(string pattern, Delegate handler) =>
-        throw new NotSupportedException("Custom plugin endpoints are not supported yet.");
-
-    public RouteHandlerBuilder MapPost(string pattern, Delegate handler) =>
-        throw new NotSupportedException("Custom plugin endpoints are not supported yet.");
 
     private ContentRouteInfo GetOrAdd(string contentType)
     {

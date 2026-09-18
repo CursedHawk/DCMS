@@ -27,7 +27,6 @@ public class EdgeDbContext(DbContextOptions<EdgeDbContext> options)
 
     public DbSet<EdgeCertificate> Certificates => Set<EdgeCertificate>();
     public DbSet<AcmeAccount> AcmeAccounts => Set<AcmeAccount>();
-    public DbSet<EdgeRoute> Routes => Set<EdgeRoute>();
 
     /// <summary>The domains DCMS keeps renewed on its own behalf. See ADR 0011.</summary>
     public DbSet<EdgeManagedCertificate> ManagedCertificates => Set<EdgeManagedCertificate>();
@@ -132,16 +131,6 @@ public class EdgeDbContext(DbContextOptions<EdgeDbContext> options)
             e.Property(k => k.FriendlyName).HasMaxLength(256);
         });
 
-        builder.Entity<EdgeRoute>(e =>
-        {
-            e.ToTable("routes");
-            e.HasKey(r => r.Id);
-            e.HasIndex(r => r.RouteId).IsUnique();
-            e.Property(r => r.RouteId).HasMaxLength(128).IsRequired();
-            e.Property(r => r.Hosts).HasMaxLength(2000);
-            e.Property(r => r.PathPattern).HasMaxLength(512).IsRequired();
-            e.Property(r => r.ClusterId).HasMaxLength(128).IsRequired();
-        });
     }
 }
 

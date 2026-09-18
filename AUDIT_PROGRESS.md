@@ -204,7 +204,7 @@ Legend: **[fixed]** = remediated in the working tree (not committed/deployed); *
 * SEC-14 — IDE site-preview proxy unauthenticated + cross-tenant (found in verify pass) **[fixed]**
 * MISS-01 — No way to remove a workspace member (MEDIUM, VERIFIED) **[fixed]**
 * DEP-01 — 21 high npm transitive advisories (MEDIUM) **[fixed]** react-router in tenant template; Scalar/ajv/vite residual **[deferred]**
-* DEAD-01 — Inert plugin custom-endpoint interface + unwired edge.routes overlay (LOW) **[deferred]**
+* DEAD-01 — Inert plugin custom-endpoint interface + unwired edge.routes overlay (LOW) **[fixed]** — both dead surfaces removed; `edge.routes` table dropped (`DropEdgeRoutesOverlay` migration)
 * ARCH-01 — RLS not forced; EF query filters are the sole runtime tenant guard (INFORMATIONAL) **[deferred]**
 
 ## Remediation Status
@@ -213,7 +213,7 @@ Three remediation passes fixed every actionable finding; only the infra/architec
 
 **Shipped to `master`** (commits `a7f931c` remediation, `04f157a` preview API fix, `6a776b6` preview-proxy hardening, `cc57d42` SEC-03/06 regression tests). The preview-proxy hardening closed a confused-deputy path-traversal + a missing postMessage source check that the post-push security review found in the live-preview API proxy.
 
-* **Fixed (18):** SEC-01, SEC-02, SEC-03, SEC-05, SEC-06, SEC-07, SEC-08, SEC-09, SEC-10 (origin), SEC-11, SEC-12, SEC-13, SEC-14, REL-01, BUG-01, BUG-02, BUG-03, BUG-04, MISS-01, DEP-01 (tenant react-router). 
-* **Deferred (7):** INF-01, PERF-01, SEC-04, SEC-10 (localStorage→BFF), DEP-01 (admin-only transitives), DEAD-01, ARCH-01.
+* **Fixed (19):** SEC-01, SEC-02, SEC-03, SEC-05, SEC-06, SEC-07, SEC-08, SEC-09, SEC-10 (origin), SEC-11, SEC-12, SEC-13, SEC-14, REL-01, BUG-01, BUG-02, BUG-03, BUG-04, MISS-01, DEP-01 (tenant react-router), DEAD-01. 
+* **Deferred (6):** INF-01, PERF-01, SEC-04, SEC-10 (localStorage→BFF), DEP-01 (admin-only transitives), ARCH-01.
 * **New dependency:** `HtmlSanitizer` 9.2.1039 (Ganss/AngleSharp), pinned in `Directory.Packages.props`, referenced by `Dcms.Shared.Security` — the only package added.
 * **Regression tests added:** `/internal` edge 404 (SEC-03, container-free in `EdgeHttpPlaneTests`); escalation-subset rule (SEC-06, docker-backed in `TenancyIsolationTests`). Still open: locked-user refresh (SEC-05, needs the OIDC login+refresh flow), overlapping-push catch-up (BUG-01, needs the site-build pipeline harness).

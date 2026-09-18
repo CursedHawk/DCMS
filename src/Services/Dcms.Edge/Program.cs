@@ -26,7 +26,6 @@ builder.Services.Configure<CertificateOptions>(builder.Configuration.GetSection(
 builder.Services.Configure<EdgeAuthOptions>(builder.Configuration.GetSection(EdgeAuthOptions.SectionName));
 
 // ---- Routing ----
-builder.Services.AddSingleton<DatabaseRouteSource>();
 builder.Services.AddSingleton<EdgeConfigProvider>();
 builder.Services.AddSingleton<IProxyConfigProvider>(sp => sp.GetRequiredService<EdgeConfigProvider>());
 builder.Services.AddHostedService<EdgeConfigInvalidator>();

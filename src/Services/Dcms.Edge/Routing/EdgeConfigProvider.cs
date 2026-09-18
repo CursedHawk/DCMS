@@ -16,16 +16,13 @@ namespace Dcms.Edge.Routing;
 /// config that fails validation is rejected and the previous one keeps serving, so a bad route
 /// cannot take the edge down.</para>
 ///
-/// <para><b>Composed from sources, most-trusted first.</b> Today the only source is
-/// <see cref="PlatformRoutes"/>, built from configuration so the edge can serve the operator
-/// hosts before Postgres is reachable. Phase 2 adds a database-backed source layered on top for
-/// per-tenant routing; <see cref="Reload"/> and the change token exist now so that addition is
-/// a new source rather than a new mechanism.</para>
+/// <para>The route table is built from configuration (<see cref="PlatformRoutes"/>) so the edge
+/// can serve the operator hosts before Postgres is reachable. <see cref="Reload"/> and the change
+/// token let it be swapped at runtime as options change, without a restart.</para>
 /// </summary>
 public sealed class EdgeConfigProvider : IProxyConfigProvider
 {
     private readonly IOptionsMonitor<EdgeOptions> options;
-    private readonly DatabaseRouteSource databaseRoutes;
     private readonly bool authEnabled;
     private readonly bool cacheEnabled;
     private readonly ILogger<EdgeConfigProvider> logger;
@@ -34,13 +31,11 @@ public sealed class EdgeConfigProvider : IProxyConfigProvider
 
     public EdgeConfigProvider(
         IOptionsMonitor<EdgeOptions> options,
-        DatabaseRouteSource databaseRoutes,
         IOptions<EdgeAuthOptions> auth,
         IConfiguration configuration,
         ILogger<EdgeConfigProvider> logger)
     {
         this.options = options;
-        this.databaseRoutes = databaseRoutes;
         // Read once, not per rebuild. A route naming a policy the container does not have makes
         // YARP reject the config as a WHOLE -- every route, not just that one -- and the edge is
         // left serving 404s. The flag and the policy registration must come from the same
@@ -79,26 +74,7 @@ public sealed class EdgeConfigProvider : IProxyConfigProvider
     private EdgeConfig BuildConfig(EdgeOptions edgeOptions)
     {
         var (staticRoutes, clusters) = PlatformRoutes.Build(edgeOptions, authEnabled, cacheEnabled);
-
-        // Static first, overlay second. A database row may not replace a platform route: the
-        // operator hosts are how the platform is administered, and a route table that can lock
-        // an operator out of the console that edits it is a table nobody should be editing.
-        var clusterIds = clusters.Select(c => c.ClusterId).ToHashSet(StringComparer.Ordinal);
-        var staticIds = staticRoutes.Select(r => r.RouteId).ToHashSet(StringComparer.Ordinal);
-
-        var routes = new List<RouteConfig>(staticRoutes);
-        foreach (var overlay in databaseRoutes.Load(clusterIds))
-        {
-            if (staticIds.Contains(overlay.RouteId))
-            {
-                logger.LogWarning(
-                    "Ignoring edge route {RouteId}: it collides with a platform route.", overlay.RouteId);
-                continue;
-            }
-            routes.Add(overlay);
-        }
-
-        return new EdgeConfig(routes, clusters);
+        return new EdgeConfig(staticRoutes, clusters);
     }
 
     private sealed class EdgeConfig : IProxyConfig

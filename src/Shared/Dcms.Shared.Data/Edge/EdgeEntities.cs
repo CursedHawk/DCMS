@@ -130,42 +130,6 @@ public sealed class AcmeAccount
 }
 
 /// <summary>
-/// A route the edge serves in addition to the platform-plane table built from configuration.
-///
-/// <para>Rows here are an overlay, not a replacement: the four operator hosts stay in
-/// configuration so the edge can serve them before Postgres answers, and this table carries what
-/// only the running platform knows. A row is picked up on the next reload, which the domain
-/// events already trigger — no restart, and none of the stale-inode problem the bind-mounted
-/// a bind-mounted config file had.</para>
-/// </summary>
-public sealed class EdgeRoute
-{
-    public Guid Id { get; set; } = Guid.NewGuid();
-
-    /// <summary>Unique across the whole table. YARP rejects a config with duplicate route ids.</summary>
-    public string RouteId { get; set; } = string.Empty;
-
-    /// <summary>Comma-separated hostnames. Empty matches any host, like the tenant catch-all.</summary>
-    public string? Hosts { get; set; }
-
-    /// <summary>An ASP.NET route template, e.g. <c>/api/{**catch-all}</c>.</summary>
-    public string PathPattern { get; set; } = "/{**catch-all}";
-
-    /// <summary>
-    /// One of the cluster ids the static table defines. A row naming an unknown cluster is
-    /// skipped with a warning rather than applied: YARP would reject the whole config, and one
-    /// bad row must not be able to take every route down with it.
-    /// </summary>
-    public string ClusterId { get; set; } = string.Empty;
-
-    /// <summary>Lower wins. Below 100 to out-rank the tenant catch-all; above it to fall behind.</summary>
-    public int Order { get; set; } = 90;
-
-    public bool Enabled { get; set; } = true;
-    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-}
-
-/// <summary>
 /// A certificate the platform keeps renewed on its own behalf, described by the names it must
 /// cover rather than by a single hostname.
 ///

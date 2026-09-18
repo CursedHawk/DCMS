@@ -102,7 +102,7 @@ These are the findings whose fix is a deployment topology change, an architectur
 * **SEC-04** (LOW) — Grafana `auth.proxy` needs a source whitelist bound to the edge's IP. Requires a fixed edge address / dedicated network (couples to INF-01); guessing an IP risks locking out Grafana. Fix alongside INF-01.
 * **SEC-10 residual** (architectural) — move OIDC tokens out of `localStorage` to a BFF/cookie model. Separate from the iframe-origin fix already applied.
 * **DEP-01 residual** — Scalar/ajv/vite/vitest advisories are admin-only, build-time transitives; the risky major bumps belong in a dependency-focused change.
-* **DEAD-01** (LOW) — inert plugin custom-endpoint interface + unwired `edge.routes` overlay; a cleanup decision, no runtime risk today.
+* **DEAD-01** (LOW) — **FIXED**: removed the inert plugin custom-endpoint surface (`IPluginEndpointBuilder.Group`/`MapGet`/`MapPost` + their throwing recorder) and the producer-less `edge.routes` overlay (`DatabaseRouteSource`, the `EdgeConfigProvider` merge, the `EdgeRoute` entity and DbSet), and dropped the empty `edge.routes` table (`DropEdgeRoutesOverlay` migration).
 * **ARCH-01** (INFORMATIONAL) — RLS is not `FORCE`d; EF query filters are the runtime tenant guard. An ADR-level decision, not a bug.
 
 **Recommended regression tests to add** (behavioural, need the container harness): locked-user refresh rejection (SEC-05), privilege-escalation subset rule (SEC-06), overlapping-push catch-up (BUG-01), and the `/internal` edge 404 (SEC-03).
@@ -797,6 +797,8 @@ Sanitize rich-text server-side on write (e.g. HtmlSanitizer/Ganss) against an al
 **Confidence:** HIGH
 
 **Status:** VERIFIED (code)
+
+**Remediation:** FIXED in working tree — chose removal over implementation (nothing consumed either surface). Dropped `IPluginEndpointBuilder.Group`/`MapGet`/`MapPost` and their throwing recorder; removed the `edge.routes` overlay end to end (`DatabaseRouteSource`, the `EdgeConfigProvider` merge, `EdgeRoute` entity + DbSet) and dropped the empty table via the `DropEdgeRoutesOverlay` migration. Build clean, 343 unit tests pass.
 
 **Location:**
 
