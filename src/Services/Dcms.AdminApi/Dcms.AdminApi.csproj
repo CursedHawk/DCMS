@@ -8,6 +8,12 @@
     <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
   </ItemGroup>
 
+  <!-- The release catch-up (BUG-01) is an internal tail on a notification consumer; the
+       integration test drives it directly rather than racing a JetStream delivery. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dcms.IntegrationTests" />
+  </ItemGroup>
+
   <!-- Vendor the @dcms/api-client runtime source into the downloadable client zip. -->
   <ItemGroup>
     <EmbeddedResource Include="..\..\..\packages\api-client\src\index.ts" LogicalName="Dcms.AdminApi.ApiClientGen.Runtime.index.ts" />
