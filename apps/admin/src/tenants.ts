@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { csrfHeader } from '@dcms/core';
 import { getAccessToken } from './auth';
 import { runtimeConfig } from './runtime-config';
 
@@ -52,11 +53,20 @@ export function setCurrentTenantSlug(slug: string | null): void {
 }
 
 /**
- * Authorization + tenant headers for admin-api calls. The tenant header carries
- * the tenant SLUG (Finbuckle resolves the tenant by identifier).
+ * The ambient headers every admin-api call carries.
+ *
+ * <p>`X-Dcms-Tenant` carries the tenant SLUG (Finbuckle resolves the tenant by identifier),
+ * in both authentication modes — it names a tenant rather than claiming one, and
+ * TenantMembershipMiddleware still refuses a caller who is not a member.</p>
+ *
+ * <p>What differs is the credential. In bearer mode this attaches the access token. In BFF
+ * mode (ADR 0014) `getAccessToken()` returns undefined, so no Authorization header is sent —
+ * which is precisely what tells the edge to attach its own — and the CSRF token goes instead.
+ * Every hand-rolled fetch in this app builds its headers from here (chat, the IDE agent
+ * client, the preview proxy), so this is the one place either of those had to be said.</p>
  */
 export async function adminHeaders(): Promise<Record<string, string>> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...csrfHeader() };
   const token = await getAccessToken();
   if (token) headers.Authorization = `Bearer ${token}`;
   const slug = getCurrentTenantSlug();

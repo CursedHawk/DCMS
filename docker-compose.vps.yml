@@ -306,6 +306,11 @@ services:
     # which is what makes promoting a tested artifact possible.
     environment:
       DCMS_OIDC_AUTHORITY: "https://${AUTH_HOST:-auth.highgeek.eu}"
+      # ADR 0014 phase 3. `bearer` — the browser holds the tokens, as it always has. Setting
+      # ADMIN_AUTH_MODE=bff in this host's .env is the cutover, and setting it back is the
+      # whole rollback: a runtime value in index.html, so it costs a container restart rather
+      # than a revert and a pipeline. Flip it only on an edge that already has EDGE_BFF on.
+      DCMS_AUTH_MODE: "${ADMIN_AUTH_MODE:-bearer}"
 
   # Grafana publishes no host port in any profile — the edge is the only route in, the same
   # shape as admin-spa and forgejo. That is what makes X-WEBAUTH-USER safe to trust.

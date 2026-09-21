@@ -25,12 +25,16 @@ TEMPLATE="$ROOT/index.html.template"
 : "${DCMS_OIDC_CLIENT_ID:=dcms-admin-spa}"
 : "${DCMS_ADMIN_API_BASE:=/api}"
 : "${DCMS_CONTENT_API_BASE:=}"
+# ADR 0014. `bearer` until the cutover; `bff` moves the tokens to the edge. Runtime, so the
+# rollback is this variable and a container restart rather than a revert and a pipeline.
+: "${DCMS_AUTH_MODE:=bearer}"
 
 sed \
   -e "s|__DCMS_OIDC_AUTHORITY__|${DCMS_OIDC_AUTHORITY}|g" \
   -e "s|__DCMS_OIDC_CLIENT_ID__|${DCMS_OIDC_CLIENT_ID}|g" \
   -e "s|__DCMS_ADMIN_API_BASE__|${DCMS_ADMIN_API_BASE}|g" \
   -e "s|__DCMS_CONTENT_API_BASE__|${DCMS_CONTENT_API_BASE}|g" \
+  -e "s|__DCMS_AUTH_MODE__|${DCMS_AUTH_MODE}|g" \
   "$TEMPLATE" > "$ROOT/index.html"
 
 # An empty authority means nothing substituted it, and the SPA would fall back to a localhost
@@ -39,5 +43,5 @@ sed \
 if [ -z "$DCMS_OIDC_AUTHORITY" ]; then
   echo "admin-spa: WARNING: DCMS_OIDC_AUTHORITY is not set; the SPA will fall back to its build-time default." >&2
 else
-  echo "admin-spa: runtime config applied (authority=$DCMS_OIDC_AUTHORITY)."
+  echo "admin-spa: runtime config applied (authority=$DCMS_OIDC_AUTHORITY, authMode=$DCMS_AUTH_MODE)."
 fi

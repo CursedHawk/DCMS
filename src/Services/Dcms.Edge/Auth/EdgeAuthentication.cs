@@ -18,6 +18,15 @@ public static class EdgeAuthentication
     public const string SignedOutCallbackPath = "/.edge/signout-callback-oidc";
     public const string SignOutPath = "/.edge/signout";
 
+    /// <summary>
+    /// The query parameter identity reads to land a caller on the sign-up form rather than the
+    /// sign-in form, and the authentication-property key that carries it across the challenge.
+    /// Spelled the same on both sides on purpose -- identity's AccountEndpoints reads exactly
+    /// this name.
+    /// </summary>
+    private const string RegisterFlowItem = "dcms_flow";
+    private const string RegisterFlow = "register";
+
     public static void AddEdgeAuthentication(this WebApplicationBuilder builder)
     {
         var auth = builder.Configuration.GetSection(EdgeAuthOptions.SectionName).Get<EdgeAuthOptions>()
@@ -144,6 +153,17 @@ public static class EdgeAuthentication
 
                 options.Events = new OpenIdConnectEvents
                 {
+                    // Carries the sign-up hint from /.edge/signin onto the authorization
+                    // request. Only ever the one literal value; see that endpoint.
+                    OnRedirectToIdentityProvider = context =>
+                    {
+                        if (context.Properties.Items.ContainsKey(RegisterFlowItem))
+                        {
+                            context.ProtocolMessage.Parameters[RegisterFlowItem] = RegisterFlow;
+                        }
+                        return Task.CompletedTask;
+                    },
+
                     OnRemoteFailure = context =>
                     {
                         // A failed sign-in must not be an unhandled 500 on the public ingress.
@@ -215,13 +235,25 @@ public static class EdgeAuthentication
             return;
         }
 
-        app.MapGet("/.edge/signin", (HttpContext context, string? returnUrl) =>
-            Results.Challenge(
-                new Microsoft.AspNetCore.Authentication.AuthenticationProperties
-                {
-                    RedirectUri = LocalOrRoot(context, returnUrl),
-                },
-                [OpenIdConnectDefaults.AuthenticationScheme]));
+        app.MapGet("/.edge/signin", (HttpContext context, string? returnUrl, string? flow) =>
+        {
+            var properties = new Microsoft.AspNetCore.Authentication.AuthenticationProperties
+            {
+                RedirectUri = LocalOrRoot(context, returnUrl),
+            };
+
+            // "Sign up" and "sign in" are the same authorization request with a hint that lands
+            // identity on the other form. The console used to add it itself, as an OIDC extra
+            // query parameter; under the BFF the console no longer builds that request, so the
+            // hint has to survive the challenge. Anything other than the one value we know is
+            // ignored rather than forwarded -- this ends up in a URL identity acts on.
+            if (string.Equals(flow, RegisterFlow, StringComparison.Ordinal))
+            {
+                properties.Items[RegisterFlowItem] = RegisterFlow;
+            }
+
+            return Results.Challenge(properties, [OpenIdConnectDefaults.AuthenticationScheme]);
+        });
 
         app.MapGet(SignOutPath, async (HttpContext context) =>
         {

@@ -142,23 +142,44 @@ public class PlatformRouteTableTests
     }
 
     /// <summary>
-    /// The edge may present an operator's session as a bearer token on exactly two routes
-    /// (ADR 0014), and both are on the admin host.
+    /// The edge may present an operator's session as a bearer token on exactly three routes
+    /// (ADR 0014), and every one of them is on the admin host.
     ///
     /// <para>Marking anything else would hand a caller the console's API token on a route that
     /// was never meant to carry one — the public tenant plane most of all, where the caller is
-    /// an anonymous visitor. This is the assertion that makes adding a third route a decision
-    /// somebody had to change a test for.</para>
+    /// an anonymous visitor. This is the assertion that makes adding a fourth a decision
+    /// somebody had to change a test for; it already refused <c>admin-account-api</c> once.</para>
     /// </summary>
     [Fact]
-    public void Only_the_admin_hosts_api_and_hub_are_authenticated_from_the_edge_session()
+    public void Only_the_admin_hosts_own_api_routes_are_authenticated_from_the_edge_session()
     {
         var marked = Routes
             .Where(r => r.Metadata?.ContainsKey(Dcms.Edge.Auth.BffAuthentication.MetadataKey) == true)
             .ToList();
 
-        marked.Select(r => r.RouteId).Should().BeEquivalentTo(["admin-api", "admin-hub"]);
+        marked.Select(r => r.RouteId)
+            .Should().BeEquivalentTo(["admin-api", "admin-hub", "admin-account-api"]);
         marked.Should().OnlyContain(r => r.Match.Hosts!.Contains(Admin));
+    }
+
+    /// <summary>
+    /// Identity's account API answers on the admin host, ahead of admin-api's <c>/api</c>
+    /// catch-all and ahead of the SPA's.
+    ///
+    /// <para>It is a different prefix, so nothing claims it today — but the order is stated
+    /// rather than inferred for the same reason every other route's is: the failure of getting
+    /// it wrong is the SPA's index.html being returned as a 200 to a JSON caller, which renders
+    /// as a blank page with nothing in any log.</para>
+    /// </summary>
+    [Fact]
+    public void The_account_api_on_the_admin_host_reaches_identity()
+    {
+        ResolveCluster(Admin, "/account/api/me").Should().Be(PlatformRoutes.Identity);
+        ResolveCluster(Admin, "/account/api/ssh-keys").Should().Be(PlatformRoutes.Identity);
+
+        // And only the API. The interactive account pages stay on the auth host, because they
+        // set identity's own cookie and a second origin would scope that session too widely.
+        ResolveCluster(Admin, "/account/login").Should().Be(PlatformRoutes.AdminSpa);
     }
 
     /// <summary>Replicates YARP's selection contract: host and path must both match; lowest Order wins.</summary>

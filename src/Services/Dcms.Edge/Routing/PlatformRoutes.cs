@@ -138,6 +138,27 @@ public static class PlatformRoutes
             Metadata = BffMetadata,
         });
 
+        // ---- Identity's account API, on the admin host ----
+        //
+        // ADR 0014. The console's account settings live at identity's /account/api/*, which is
+        // cross-origin in bearer mode and depends on identity's CORS allow-list. A BFF session
+        // has no token to send cross-origin at all, so this brings the prefix onto the admin
+        // host, where the edge can attach the session's bearer — and retires that CORS
+        // dependency with it.
+        //
+        // The path is NOT rewritten: identity already serves /account/api, so proxying the
+        // same prefix means one fewer transform and one fewer thing to get wrong. Ordered
+        // ahead of admin-api's /api catch-all, which would otherwise claim nothing here (a
+        // different prefix) but will if either ever moves.
+        //
+        // Only /account/api. The interactive account pages stay on the auth host: they set
+        // identity's own cookie, and serving them from a second origin would scope a session
+        // cookie to a host that is not the issuer.
+        routes.Add(Prefix("admin-account-api", [admin], "/account/api", Identity, order: 29) with
+        {
+            Metadata = BffMetadata,
+        });
+
         // ---- SignalR hubs hosted by content-api, on the admin host ----
         // Same-origin so the SPA's negotiate + WebSocket avoid CORS. YARP proxies the upgrade.
         //

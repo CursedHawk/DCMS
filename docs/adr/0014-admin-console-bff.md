@@ -1,6 +1,6 @@
 # ADR 0014: The admin console authenticates by session cookie at the edge, not by a token in `localStorage`
 
-**Status:** accepted (2026-09-21) — phases 1 and 2 landed. Closes the SEC-10 residual from
+**Status:** accepted (2026-09-21) — phases 1–3 landed; the cutover (4) is not. Closes the SEC-10 residual from
 `AUDIT_REPORT.md`. Builds on [ADR 0010](0010-yarp-edge.md).
 
 ## Context
@@ -152,7 +152,7 @@ for this ADR.
 | `packages/core/src/http.ts` | `headers()` no longer returns `Authorization`. Add `X-Dcms-Csrf`. A 401 means the session is gone: redirect to sign-in instead of calling `renew`. |
 | `apps/admin/src/tenants.ts` | `adminHeaders()` keeps `X-Dcms-Tenant`, drops the token read. |
 | `useNotificationHub.ts`, `useSiteLiveUpdates.ts`, `ChatPage.tsx` | Drop `accessTokenFactory`. Same-origin cookie rides the handshake. |
-| `apps/admin/src/features/account/accountApi.ts` | Repoint from `auth.<domain>/account/api` to `/api/account` on the admin host, behind a **new edge route** → identity. Makes it same-origin, lets the BFF attach the bearer, and retires the console's dependency on identity's `Cors:AllowedOrigins`. |
+| `apps/admin/src/features/account/accountApi.ts` | ✅ Repointed to `/account/api` on the admin host in BFF mode, behind a **new edge route** → identity. Same prefix rather than `/api/account`, so the proxy needs no path rewrite. Makes it same-origin, lets the BFF attach the bearer, and retires the console's dependency on identity's `Cors:AllowedOrigins`. |
 | `PreviewPane.tsx` | Unchanged in shape. It already replays through the parent; the parent now sends a cookie instead of a header, and the iframe still holds nothing. |
 | `uploadWithProgress` (XHR path) | Add the CSRF header. No `withCredentials` needed — same-origin. |
 
@@ -205,8 +205,16 @@ independently shippable and reversible:
    nothing and would make those sign-ins depend on Redis being up — a new way for the
    dashboards to be unreachable at the moment somebody needs them to find out why Redis
    is down.
-3. **SPA, flagged off.** Cookie mode behind `window.__DCMS_CONFIG__.authMode`, default
-   `bearer`. Both paths build and both are tested. Ship.
+3. **SPA, flagged off.** ✅ *Landed.* Cookie mode behind
+   `window.__DCMS_CONFIG__.authMode` (`DCMS_AUTH_MODE` / `ADMIN_AUTH_MODE`), default
+   `bearer`. Both paths build and both are tested.
+
+   `AuthClient` now covers both shapes, so the shell cannot tell which one it is in:
+   `subscribe` replaces the `UserManager` events the admin console read directly, and
+   `AuthSession` replaces `User` (oidc-client-ts's `User` is structurally assignable to
+   it, so bearer mode needed no mapping and **no component changed**). The platform
+   console keeps its `UserManager` through the narrower `BearerAuthClient` that
+   `createAuth` returns, so it was not touched at all.
 4. **Flip `authMode: bff`** on vps1, soak, then prod. Rollback is one env var and a
    container restart — no code, no migration.
 5. **Remove the fallback.** Delete `oidc-client-ts` and the `dcms-admin-spa` client's
@@ -250,8 +258,17 @@ deployment note rather than a code change.
   refused; missing `X-Dcms-Csrf` → refused; concurrent expired-token requests → one
   refresh, one surviving session (this is the one that catches the rotation race, and it
   should fail with the lock removed).
-- **e2e** (`pnpm e2e`, real SPAs against a mocked server) — sign-in redirect, `/.edge/me`
-  shaping the shell, CSRF header on a write, 401 → sign-in.
+- **SPA** — ✅ `packages/core/src/auth.test.ts`: `getAccessToken()` returns undefined (the
+  absence the whole mode rests on — a string there and the edge passes the request through
+  untouched, silently un-doing the cutover); a 401 from `/.edge/me` is signed-out rather
+  than an error; a session with no `sub` is no session; a network failure keeps the session
+  instead of signing the operator out of a page they are working in; subscribers fire on
+  change and not on a repeat read; sign-in/sign-up/sign-out navigate to the edge carrying
+  the return path; and `csrfHeader` refuses a cookie that matches only because `.` is a
+  regex wildcard.
+- **e2e** — ✅ `pnpm e2e` (76 tests) green in bearer mode, which is what says the refactor
+  of `useAuth`/`AuthClient` left the shipped path alone. The BFF path has no e2e yet: it
+  needs a real edge, which is phase 4's soak rather than something this harness can mock.
 - **Only on vps1** — real `SameSite` behaviour across real hosts, the tenant-subdomain
   CSRF attempt against a real browser, and cookie size after chunking. None of that is
   observable on this box, which is why phase 3 exists as its own step.

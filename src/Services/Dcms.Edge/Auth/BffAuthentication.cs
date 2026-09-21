@@ -145,6 +145,10 @@ public static class BffAuthentication
 
             return Results.Ok(new
             {
+                // `sub` is the platform user id. The console passes it to the notification and
+                // site hubs so a browser can tell its own events from a colleague's, and it is
+                // the one field here the UI cannot do without.
+                sub = context.User.FindFirst("sub")?.Value,
                 email = context.User.FindFirst("email")?.Value,
                 name = context.User.FindFirst("name")?.Value,
                 roles = context.User.FindAll(EdgePolicies.RoleClaimType).Select(c => c.Value).ToArray(),
