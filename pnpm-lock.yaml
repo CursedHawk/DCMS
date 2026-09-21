@@ -174,9 +174,6 @@ importers:
       monaco-editor:
         specifier: ^0.52
         version: 0.52.2
-      oidc-client-ts:
-        specifier: ^3
-        version: 3.5.0
       react:
         specifier: ^19
         version: 19.2.7

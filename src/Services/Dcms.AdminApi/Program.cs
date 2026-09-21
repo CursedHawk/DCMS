@@ -52,26 +52,15 @@ builder.Services.AddDcmsCaching(builder.Configuration);
 builder.Services.AddDcmsEmailQueue();
 builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
 
-// The notification hub's token arrives in the query string: the WebSocket transport cannot
-// set an Authorization header. Scoped to /api/hub so a leaked URL from anywhere else in the
-// API is not a way to authenticate with a token in a log line or a Referer.
-builder.Services.Configure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
-    Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme, jwt =>
-    {
-        jwt.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
-        {
-            OnMessageReceived = context =>
-            {
-                var token = context.Request.Query["access_token"];
-                if (!string.IsNullOrEmpty(token) &&
-                    context.HttpContext.Request.Path.StartsWithSegments("/api/hub"))
-                {
-                    context.Token = token;
-                }
-                return Task.CompletedTask;
-            },
-        };
-    });
+// The hubs' token used to arrive in the query string, because a WebSocket handshake cannot set
+// an Authorization header. ADR 0014 phase 5 removed that: the edge sets one on the operator's
+// behalf as it proxies the handshake, which a browser cannot do for itself. What goes with it
+// is a token in a URL — and therefore in an access log, a Referer and anything that samples
+// either.
+//
+// The hubs are reachable no other way: /api is a BFF route, so the edge strips a
+// client-supplied Authorization header there and dcms-admin-spa no longer holds a scope that
+// would let a browser obtain a token for this API at all.
 
 // Notification fan-out across replicas. The channel prefix MUST differ from content-api's
 // "dcms-chat": both services share one Redis, and a shared prefix would cross-deliver

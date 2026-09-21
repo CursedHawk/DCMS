@@ -46,17 +46,27 @@ public static class BffAuthentication
         {
             var auth = context.RequestServices.GetRequiredService<IOptions<EdgeAuthOptions>>().Value;
             var sessionId = BffTokenProvider.SessionIdOf(context.User);
+            var bffRoute = IsBffRoute(context);
 
-            // Four terms, one function, one test: see BffGuard.ShouldAuthenticate. Anything
-            // that is not all four passes through exactly as it does today — including a
-            // request with no session, which the destination answers with its own 401.
-            // Challenging here would turn an expired API call into an HTML redirect, which an
-            // http client hands to the caller as a string: a blank screen and nothing logged.
-            if (!BffGuard.ShouldAuthenticate(
-                    auth.BffEnabled,
-                    IsBffRoute(context),
-                    context.Request.Headers.ContainsKey("Authorization"),
-                    sessionId))
+            // Phase 5: on a BFF route the session is the ONLY credential, so a client-supplied
+            // Authorization header is removed before anything downstream can read it.
+            //
+            // Unconditionally, including when there is no session — otherwise "no session" would
+            // be the one state in which a caller could still choose its own bearer, which is the
+            // hole rather than the exception. HeaderScrubbing deliberately leaves Authorization
+            // alone globally because Forgejo's git-over-HTTP needs it; this is the narrow
+            // opposite, scoped to the three routes that opted in.
+            if (auth.BffEnabled && bffRoute)
+            {
+                context.Request.Headers.Remove("Authorization");
+            }
+
+            // Three terms, one function, one test: see BffGuard.ShouldAuthenticate. A request
+            // with no session passes through unauthenticated and the destination answers with
+            // its own 401. Challenging here would turn an expired API call into an HTML
+            // redirect, which an http client hands to the caller as a string: a blank screen
+            // and nothing logged.
+            if (!BffGuard.ShouldAuthenticate(auth.BffEnabled, bffRoute, sessionId))
             {
                 await next();
                 return;

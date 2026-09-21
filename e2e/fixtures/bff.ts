@@ -38,6 +38,8 @@ export interface EdgeOptions {
   issueCsrf?: boolean;
   /** The workspace the console sends as `X-Dcms-Tenant`. */
   tenantSlug?: string;
+  /** Off for the one spec that is about the storage notice itself. */
+  dismissStorageNotice?: boolean;
 }
 
 /**
@@ -51,13 +53,18 @@ export async function useBffMode(page: Page, options: EdgeOptions = {}): Promise
   const session = options.session === undefined ? BFF_OPERATOR : options.session;
   const issueCsrf = options.issueCsrf ?? true;
   const tenantSlug = options.tenantSlug ?? 'acme';
+  const dismissNotice = options.dismissStorageNotice ?? true;
 
-  // Tenant selection stays in localStorage in BFF mode — it names a workspace rather than
-  // carrying a credential — so it is seeded the same way the bearer fixtures seed it.
-  await page.addInitScript(([slug]) => {
-    if (!window.localStorage.getItem('dcms.tenant')) window.localStorage.setItem('dcms.tenant', slug as string);
-    window.localStorage.setItem('dcms.storage-notice', '1');
-  }, [tenantSlug] as const);
+  // Tenant selection stays in localStorage — it names a workspace rather than carrying a
+  // credential — so it is seeded here. Written only when nothing has chosen one: an init script
+  // re-runs on every navigation, and the workspace switcher reloads the page deliberately, so
+  // writing unconditionally would put the original workspace back and undo the switch.
+  await page.addInitScript(([slug, dismiss]) => {
+    if (slug && !window.localStorage.getItem('dcms.tenant')) {
+      window.localStorage.setItem('dcms.tenant', slug as string);
+    }
+    if (dismiss) window.localStorage.setItem('dcms.storage-notice', '1');
+  }, [tenantSlug, dismissNotice ? '1' : ''] as const);
 
   // The entrypoint's substitution, done here.
   //

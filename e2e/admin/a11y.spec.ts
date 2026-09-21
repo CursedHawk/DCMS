@@ -1,4 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
+import { useBffMode } from '../fixtures/bff';
 import { test, expect } from '../fixtures/test';
 
 /**
@@ -42,7 +43,9 @@ for (const [name, path] of PAGES) {
 }
 
 test('the sign-in screen has no serious axe violations', async ({ page }) => {
-  await page.context().addInitScript(() => window.localStorage.clear());
+  // Signed out is the edge reporting no session, not empty localStorage — the console holds
+  // nothing to clear since ADR 0014. Re-registering the route wins over the fixture's.
+  await useBffMode(page, { session: null });
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
 

@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { csrfHeader } from '@dcms/core';
-import { getAccessToken } from './auth';
 import { runtimeConfig } from './runtime-config';
 
 const adminApiBase = runtimeConfig.adminApiBase;
@@ -59,16 +58,13 @@ export function setCurrentTenantSlug(slug: string | null): void {
  * in both authentication modes — it names a tenant rather than claiming one, and
  * TenantMembershipMiddleware still refuses a caller who is not a member.</p>
  *
- * <p>What differs is the credential. In bearer mode this attaches the access token. In BFF
- * mode (ADR 0014) `getAccessToken()` returns undefined, so no Authorization header is sent —
- * which is precisely what tells the edge to attach its own — and the CSRF token goes instead.
- * Every hand-rolled fetch in this app builds its headers from here (chat, the IDE agent
- * client, the preview proxy), so this is the one place either of those had to be said.</p>
+ * <p>No Authorization header, and that absence is the point: it is what tells the edge to
+ * attach the session's own (ADR 0014). What goes in its place on a write is the CSRF token.
+ * Every hand-rolled fetch in this app builds its headers from here — chat, the IDE agent
+ * client, the preview proxy — so this is the one place either had to be said.</p>
  */
 export async function adminHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = { ...csrfHeader() };
-  const token = await getAccessToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
   const slug = getCurrentTenantSlug();
   if (slug) headers['X-Dcms-Tenant'] = slug;
   return headers;
@@ -79,10 +75,7 @@ export function useMyTenants(enabled: boolean) {
     queryKey: ['me-tenants'],
     enabled,
     queryFn: async (): Promise<TenantSummary[]> => {
-      const token = await getAccessToken();
-      const res = await fetch(`${adminApiBase}/admin/me/tenants`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
+      const res = await fetch(`${adminApiBase}/admin/me/tenants`);
       if (!res.ok) throw new Error(`me/tenants failed: ${res.status}`);
       return res.json();
     },

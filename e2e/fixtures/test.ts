@@ -1,7 +1,8 @@
 import { test as base, expect } from '@playwright/test';
 import { adminApi, platformApi, type MockApi } from './api';
+import { useBffMode } from './bff';
 import { adminHub, platformHub, type HubMock } from './hub';
-import { ADMIN_CLIENT_ID, PLATFORM_CLIENT_ID, signIn, stubOidcDiscovery } from './oidc';
+import { PLATFORM_CLIENT_ID, signIn } from './oidc';
 import * as data from './data';
 
 export { expect, data };
@@ -28,11 +29,17 @@ interface ConsoleFixtures {
 /**
  * The admin console, signed in, with a faked server and a faked hub.
  *
- * <p>`api` is an <b>auto</b> fixture. Both the route handlers and the seeded OIDC user have to
- * be in place before the page navigates, and Playwright only runs a fixture a test actually
- * depends on — so a spec that destructured just `{ page }` would render the sign-in screen and
- * fail on a locator, which reads as a bug in the app rather than a missing dependency. Auto
- * removes the trap; specs still name `api` when they want to assert on what was sent.</p>
+ * <p>Signed in by the EDGE since ADR 0014 phase 5: `useBffMode` serves the console the way its
+ * container entrypoint does and stands in for `/.edge/me`. There is no seeded OIDC user any
+ * more, because there is no bearer mode left to seed one for — the admin console holds no
+ * tokens. `signIn` and the OIDC constants are still used by the platform console below, which
+ * has not moved.</p>
+ *
+ * <p>`api` is an <b>auto</b> fixture. Both the route handlers and the session have to be in
+ * place before the page navigates, and Playwright only runs a fixture a test actually depends
+ * on — so a spec that destructured just `{ page }` would render the sign-in screen and fail on
+ * a locator, which reads as a bug in the app rather than a missing dependency. Auto removes the
+ * trap; specs still name `api` when they want to assert on what was sent.</p>
  *
  * <p>Teardown asserts the console called nothing the fixtures do not answer. That is the check
  * that keeps a mocked suite honest: without it, a screen whose query silently 501s renders its
@@ -48,7 +55,7 @@ export const test = base.extend<ConsoleFixtures>({
     async ({ page, grants, superAdmin, tenantSlug, dismissStorageNotice }, use) => {
       const api = adminApi({ permissions: grants ?? undefined, isSuperAdmin: superAdmin });
       await api.install(page);
-      await signIn(page, { clientId: ADMIN_CLIENT_ID, tenantSlug, dismissStorageNotice });
+      await useBffMode(page, { tenantSlug, dismissStorageNotice });
       await use(api);
       api.expectNoMissingRoutes();
     },
@@ -92,12 +99,13 @@ export const platformTest = base.extend<ConsoleFixtures>({
  * The mock server is still installed, so a stray request is still recorded rather than escaping
  * to a proxy with nothing behind it.
  */
+/** The admin console with no session: the edge answers /.edge/me with a 401. */
 export const anonymousTest = base.extend<{ api: MockApi }>({
   api: [
     async ({ page }, use) => {
       const api = adminApi();
       await api.install(page);
-      await stubOidcDiscovery(page);
+      await useBffMode(page, { session: null });
       await use(api);
     },
     { auto: true },

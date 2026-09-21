@@ -1,7 +1,8 @@
 # ADR 0014: The admin console authenticates by session cookie at the edge, not by a token in `localStorage`
 
-**Status:** accepted (2026-09-21) — phases 1–4 landed. The console's tokens are at the
-edge; only the bearer fallback (5) is left. Closes the SEC-10 residual from
+**Status:** accepted (2026-09-21) — **complete**. All five phases landed; the soak between 4
+and 5 found and fixed one bug (see phase 4). The admin console holds no credential, and no
+browser client can obtain one for admin-api. Closes the SEC-10 residual from
 `AUDIT_REPORT.md`. Builds on [ADR 0010](0010-yarp-edge.md).
 
 ## Context
@@ -240,10 +241,26 @@ independently shippable and reversible:
    started; a write succeeds (CSRF); an upload succeeds (the multipart path the Origin
    check exists for); the notification bell connects (SignalR handshake carrying the
    injected header); account settings load (the new same-origin route).
-5. **Remove the fallback.** Delete `oidc-client-ts` and the `dcms-admin-spa` client's
-   `dcms.admin` scope — *that* is the commit where the token stops existing in the
-   browser — strip inbound `Authorization` unconditionally on BFF routes, and delete the
-   `access_token` query-string handling in both hubs.
+5. **Remove the fallback.** ✅ *Landed, after the phase-4 soak came back clean.*
+   - `dcms-admin-spa` lost the `dcms.admin` scope. **This is the commit SEC-10 was about**:
+     it turns "the console no longer puts a token in localStorage" into "a token in
+     localStorage could not call admin-api if it were there", and the second survives a
+     regression in the first. The client is kept, registered and scopeless — its redirect
+     URIs are still the console's, and re-granting a scope is a one-line change where
+     re-registering a client is not.
+   - The edge now **strips** a client-supplied `Authorization` on a BFF route, and
+     unconditionally — including when there is no session, which would otherwise be the one
+     state in which a caller could still choose its own bearer.
+   - `oidc-client-ts` is gone from the admin console, along with `authMode`, the OIDC
+     runtime config, the `/auth/callback` route and the `DCMS_OIDC_AUTHORITY` the container
+     was given. `@dcms/core` keeps `createAuth` for the platform console, which has not
+     moved.
+   - The `access_token` query-string handling is gone from both hubs, and with it a token in
+     a URL — and therefore in an access log, a `Referer`, and anything that samples either.
+     Site visitors are unaffected: the chat widget has never sent a token at all.
+
+   **The rollback is now a revert.** `ADMIN_AUTH_MODE` no longer exists; `EDGE_BFF=false`
+   alone would leave the console sending no credential to an edge attaching none.
 
 **Why the flag exists, and why it is two steps rather than one.** Turning the BFF on makes
 the edge request `dcms.admin` and `offline_access` at sign-in, and OpenIddict refuses an
@@ -270,11 +287,14 @@ deployment note rather than a code change.
   `expires_in` not marking the token expired on arrival).
 - **Seeder** — ✅ `IdentityClientSeedConvergenceTests` boots identity twice over one
   database and asserts the edge client *gains* `dcms.admin` without losing what it had.
-  Mutation-checked: it fails with the convergence reverted to URIs-only.
+  Mutation-checked: it fails with the convergence reverted to URIs-only. The same
+  convergence is what makes phase 5's removal apply to databases that already exist.
 - **Sign-in** — ✅ `EdgeClientAuthorizationTests` drives the real authorization endpoint
   with the scopes the flag adds and asserts it reaches the login page, with the scopes it
   asked for before as a second case and a scope the client does not hold as the control.
-  Mutation-checked: removing the `dcms.admin` grant fails it.
+  Mutation-checked: removing the `dcms.admin` grant fails it. Phase 5 added the mirror
+  image: `dcms-admin-spa` is refused `dcms.admin` outright, while still being able to sign
+  somebody in.
 - **Integration** (`EdgeHttpPlaneTests` already drives the edge in-process) — no cookie →
   challenge, not a proxied 200; cookie → `Authorization` present downstream; inbound
   `Authorization` on a BFF route → replaced, not forwarded; cross-origin multipart POST →
@@ -289,7 +309,10 @@ deployment note rather than a code change.
   change and not on a repeat read; sign-in/sign-up/sign-out navigate to the edge carrying
   the return path; and `csrfHeader` refuses a cookie that matches only because `.` is a
   regex wildcard.
-- **e2e** — ✅ `pnpm e2e`, 83 tests. `admin/bffAuth.spec.ts` drives the real console in BFF
+- **e2e** — ✅ `pnpm e2e`, 81 tests, and since phase 5 the admin fixtures *are* the BFF: the
+  shared `test` fixture serves the console through `useBffMode` rather than seeding an OIDC
+  user, because there is no bearer mode left to seed one for. The bearer sign-in spec was
+  deleted and its register case moved across. `admin/bffAuth.spec.ts` drives the real console in BFF
   mode against a stand-in for the edge (`fixtures/bff.ts` substitutes `__DCMS_AUTH_MODE__`
   into the served document exactly as the container entrypoint does) and asserts what only
   a browser can say: **no `Authorization` header on any API call**, the CSRF token echoed

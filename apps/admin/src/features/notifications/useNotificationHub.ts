@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { getAccessToken } from '../../auth';
 import { runtimeConfig } from '../../runtime-config';
 import { getCurrentTenantSlug } from '../../tenants';
 import { type Notification, notificationsKey, parseParams } from './api';
@@ -77,7 +76,9 @@ export function useNotificationHub(enabled: boolean, myUserId: string | undefine
         // backplane fans messages out across replicas; it says nothing about which replica a
         // single client's two handshake requests reach.
         .withUrl(`${runtimeConfig.adminApiBase}/hub/notifications?tenant=${encodeURIComponent(slug)}`, {
-          accessTokenFactory: async () => (await getAccessToken()) ?? '',
+          // No accessTokenFactory: the edge attaches the operator's bearer as it proxies the
+          // handshake (ADR 0014), which a browser cannot do for itself — a WebSocket handshake
+          // takes no custom headers. That is what retired the token-in-the-query-string.
           skipNegotiation: true,
           transport: HttpTransportType.WebSockets,
         })

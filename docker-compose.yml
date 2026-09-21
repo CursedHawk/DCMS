@@ -886,10 +886,9 @@ services:
     build:
       context: .
       dockerfile: apps/admin/Dockerfile
-    # Runtime, not a build arg: the image is environment-agnostic and these are substituted
-    # into index.html when the container starts. See apps/admin/docker-entrypoint.sh.
-    environment:
-      DCMS_OIDC_AUTHORITY: "http://dcms-identity:8080"
+    # No environment. The console holds no tokens and speaks to no identity server since ADR
+    # 0014 phase 5 -- it is signed in by the edge -- and its API base is same-origin, which is
+    # the entrypoint's default. What remains substitutable is in apps/admin/docker-entrypoint.sh.
     restart: unless-stopped
     logging: *default-logging
     depends_on:

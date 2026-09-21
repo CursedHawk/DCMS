@@ -73,23 +73,24 @@ public static class BffGuard
         => !isWebSocketHandshake && !IsSafeMethod(method);
 
     /// <summary>
-    /// Whether the edge may present its own session as this request's credential. Every way
-    /// phase 1 of ADR 0014 stays inert is one of these four terms, which is why it is a
-    /// function with a test rather than a condition in the middle of a middleware.
+    /// Whether the edge may present its own session as this request's credential.
+    ///
+    /// <para>Three terms since phase 5. It used to take a fourth — whether the caller brought
+    /// its own <c>Authorization</c> header, which won — because that is what let every phase
+    /// before the cutover be a no-op for a console that still held a token. Nothing holds one
+    /// now: <c>dcms-admin-spa</c> no longer carries the <c>dcms.admin</c> scope, so no browser
+    /// client can obtain a token for admin-api at all. A bearer arriving on one of these routes
+    /// is therefore not a caller to defer to; the middleware strips it.</para>
     /// </summary>
     /// <param name="bffEnabled"><c>Edge:Auth:Bff</c>, and a client secret to be confidential
-    /// with. Off until an operator turns it on.</param>
-    /// <param name="bffRoute">Route metadata. Only the admin host's <c>/api</c> and <c>/hub</c>
-    /// carry it; a public-plane route never will.</param>
-    /// <param name="hasAuthorizationHeader">The console sends its own bearer until its phase,
-    /// and so does every older bundle still in a browser. Theirs wins, untouched.</param>
+    /// with.</param>
+    /// <param name="bffRoute">Route metadata. Only the admin host's own API routes carry it; a
+    /// public-plane route never will.</param>
     /// <param name="sessionId">Present only on a session the edge minted for the BFF. A Grafana
     /// or Forgejo cookie has no session id and must not be mistaken for one.</param>
-    public static bool ShouldAuthenticate(
-        bool bffEnabled, bool bffRoute, bool hasAuthorizationHeader, string? sessionId)
+    public static bool ShouldAuthenticate(bool bffEnabled, bool bffRoute, string? sessionId)
         => bffEnabled
            && bffRoute
-           && !hasAuthorizationHeader
            && !string.IsNullOrEmpty(sessionId);
 
     /// <summary>

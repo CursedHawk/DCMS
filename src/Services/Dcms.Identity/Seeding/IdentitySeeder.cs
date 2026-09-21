@@ -166,11 +166,20 @@ public sealed class IdentitySeeder(
                             ?? "http://localhost:5173/;http://localhost:5000/")
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
+        // NO RESOURCE SCOPE, since ADR 0014 phase 5. This client used to hold dcms.admin, which
+        // is what let a token in a browser's localStorage call admin-api — the whole of SEC-10.
+        // The console is signed in by the edge now and never sees a token, so taking the scope
+        // away is the moment that stops being possible rather than merely stopping happening.
+        //
+        // The client itself is kept, registered and scopeless: its redirect URIs are still the
+        // console's, and re-granting a scope is a one-line change where re-registering a client
+        // from scratch is not. EnsurePublicSpaClientAsync converges scope permissions, so this
+        // removal applies to databases that already exist — which is the only kind that matters.
         await EnsurePublicSpaClientAsync(
             manager,
             DcmsOAuth.Clients.AdminSpa,
             "DCMS Admin SPA",
-            [DcmsOAuth.Scopes.Admin],
+            [],
             spaRedirects,
             spaPostLogout,
             ct);

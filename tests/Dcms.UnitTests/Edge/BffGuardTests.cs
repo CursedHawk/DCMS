@@ -158,41 +158,35 @@ public class BffGuardTests
     }
 
     [Fact]
-    public void Authenticates_from_the_session_only_when_all_four_terms_hold()
+    public void Authenticates_from_the_session_when_all_three_terms_hold()
     {
-        BffGuard.ShouldAuthenticate(
-            bffEnabled: true, bffRoute: true, hasAuthorizationHeader: false, sessionId: "sid-1")
+        BffGuard.ShouldAuthenticate(bffEnabled: true, bffRoute: true, sessionId: "sid-1")
             .Should().BeTrue();
     }
 
     /// <summary>
-    /// The inertness claim ADR 0014's staged rollout rests on, one case per way out.
+    /// The three ways a request is left alone, one case each.
     ///
-    /// <para>As of phase 2 the flag is on, and the <b>only</b> thing still keeping the console's
-    /// API calls on their own bearer token is that the console sends one. That makes the third
-    /// case below the load-bearing one until phase 4 retires it: if this test ever goes green on
-    /// a case it should refuse, a deploy silently changes how every admin API call is
-    /// authenticated.</para>
+    /// <para>There used to be a fourth — a caller that brought its own <c>Authorization</c>
+    /// header won — and it was the term every phase before the cutover leaned on to stay a
+    /// no-op. Phase 5 removed it: nothing can obtain a token for admin-api in a browser any
+    /// more, so a bearer on one of these routes is stripped rather than deferred to.</para>
     /// </summary>
     [Theory]
     // The kill switch, EDGE_BFF=false. Phase 1 shipped this way.
-    [InlineData(false, true, false, "sid-1")]
+    [InlineData(false, true, "sid-1")]
     // Not a route that opted in — the public tenant plane is this case, and the one that would
     // hand an anonymous visitor an operator's token.
-    [InlineData(true, false, false, "sid-1")]
-    // The caller brought its own credential. Every console bundle in a browser today does.
-    [InlineData(true, true, true, "sid-1")]
-    // Authenticated at the edge but with no BFF session: a cookie minted before the flag was
-    // switched on, or one from a host the edge does not mint a session id for. Note this is not
-    // the control that keeps a Grafana cookie away from admin-api — the cookie is host-scoped
-    // and only the admin host has a route that opts in. This is the belt.
-    [InlineData(true, true, false, null)]
-    [InlineData(true, true, false, "")]
-    public void Passes_everything_else_through_untouched(
-        bool bffEnabled, bool bffRoute, bool hasAuthorizationHeader, string? sessionId)
+    [InlineData(true, false, "sid-1")]
+    // Authenticated at the edge but with no BFF session: a Grafana or Forgejo cookie, or one
+    // minted on a host the edge does not create a session id for. Note this is not the control
+    // that keeps a Grafana cookie away from admin-api — the cookie is host-scoped and only the
+    // admin host has a route that opts in. This is the belt.
+    [InlineData(true, true, null)]
+    [InlineData(true, true, "")]
+    public void Passes_everything_else_through_untouched(bool bffEnabled, bool bffRoute, string? sessionId)
     {
-        BffGuard.ShouldAuthenticate(bffEnabled, bffRoute, hasAuthorizationHeader, sessionId)
-            .Should().BeFalse();
+        BffGuard.ShouldAuthenticate(bffEnabled, bffRoute, sessionId).Should().BeFalse();
     }
 
     /// <summary>A fresh ephemeral key ring per call, so the cross-ring case is a real one.</summary>

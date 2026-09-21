@@ -1,18 +1,9 @@
-import {
-  Outlet,
-  createRootRoute,
-  createRoute,
-  redirect,
-  useNavigate,
-  useParams,
-} from '@tanstack/react-router';
-import { lazy, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Outlet, createRootRoute, createRoute, redirect, useParams } from '@tanstack/react-router';
+import { lazy } from 'react';
 import { RequirePermission } from '@dcms/ui';
 import { AppShell } from './app/AppShell';
 import { LEGACY_SETTINGS_PATHS, ROUTE_GUARDS, type RouteGuard } from './app/routeGuards';
 import { DashboardPage } from './features/dashboard/DashboardPage';
-import { completeSignin } from './auth';
 
 /*
  * Every page except the dashboard is loaded on demand.
@@ -67,24 +58,12 @@ const SiteWorkspace = lazy(() =>
   import('./features/sites/SiteWorkspace').then((m) => ({ default: m.SiteWorkspace })),
 );
 
-// Root renders just an outlet; the authenticated shell is a pathless layout so
-// the OIDC callback can complete outside the shell (before a user exists).
+// Root renders just an outlet, and the authenticated shell is a pathless layout beneath it.
+// That shape outlived its original reason — it existed so the OIDC callback route could render
+// outside the shell, before a user existed. The edge owns the callback now (ADR 0014), so there
+// is no /auth/callback here any more; the layout stays because the shell still decides between
+// itself and the sign-in screen.
 const rootRoute = createRootRoute({ component: () => <Outlet /> });
-
-const callbackRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/auth/callback',
-  component: function Callback() {
-    const navigate = useNavigate();
-    const { t } = useTranslation();
-    useEffect(() => {
-      completeSignin()
-        .catch((err) => console.error('OIDC sign-in callback failed', err))
-        .finally(() => void navigate({ to: '/' }));
-    }, [navigate]);
-    return <p className="p-10 text-center text-sm text-muted-foreground">{t('auth.completing')}</p>;
-  },
-});
 
 const appLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -232,7 +211,6 @@ const editorRoute = createRoute({
 });
 
 export const routeTree = rootRoute.addChildren([
-  callbackRoute,
   appLayoutRoute.addChildren([
     indexRoute,
     tenantsRoute,

@@ -4,7 +4,6 @@ import { setHubConnected } from '@dcms/ui';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { getAccessToken } from '../../auth';
 import { runtimeConfig } from '../../runtime-config';
 import { getCurrentTenantSlug } from '../../tenants';
 import { clientId } from './clientId';
@@ -139,7 +138,9 @@ export function useSiteLiveUpdates({
         .withUrl(
           `${runtimeConfig.adminApiBase}/hub/sites?tenant=${encodeURIComponent(slug)}&siteId=${encodeURIComponent(siteId)}`,
           {
-            accessTokenFactory: async () => (await getAccessToken()) ?? '',
+            // No accessTokenFactory: the edge attaches the operator's bearer as it proxies the
+            // handshake (ADR 0014), which a browser cannot do for itself — a WebSocket handshake
+            // takes no custom headers. That is what retired the token-in-the-query-string.
             skipNegotiation: true,
             transport: HttpTransportType.WebSockets,
           },

@@ -105,26 +105,14 @@ builder.Services.AddDcmsTenantResolutionByHeader();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<Dcms.Shared.Kernel.Abstractions.ISandboxContext, Dcms.ContentApi.HeaderSandboxContext>();
 
-// Platform-user authentication for the chat hub's agent role. Visitors connect
-// anonymously; only agents present a platform JWT (carried in the access_token
-// query string because WebSockets can't set custom headers).
+// Platform-user authentication for the chat hub's agent role. Visitors connect anonymously and
+// always did; only an agent presents a platform JWT.
+//
+// That JWT used to ride in the access_token query string, because a WebSocket handshake cannot
+// set a header. Since ADR 0014 phase 5 the edge sets one as it proxies the agent's handshake
+// (/hub on the admin host is a BFF route), so the query-string path is gone and with it a token
+// in a URL. Visitors are unaffected: the site chat widget has never sent a token at all.
 builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
-builder.Services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, jwt =>
-{
-    jwt.Events = new JwtBearerEvents
-    {
-        OnMessageReceived = context =>
-        {
-            var token = context.Request.Query["access_token"];
-            var path = context.HttpContext.Request.Path;
-            if (!string.IsNullOrEmpty(token) && path.StartsWithSegments("/hub"))
-            {
-                context.Token = token;
-            }
-            return Task.CompletedTask;
-        },
-    };
-});
 
 // Live chat: SignalR with a Redis backplane so message fan-out crosses replicas.
 var signalR = builder.Services.AddSignalR();

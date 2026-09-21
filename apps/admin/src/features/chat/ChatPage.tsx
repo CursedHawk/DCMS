@@ -10,7 +10,6 @@ import { Bot, MessagesSquare, Send } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Badge, Button, cn, EmptyState, Input, setHubConnected, useHubRevalidation } from '@dcms/ui';
-import { getAccessToken } from '../../auth';
 import { getCurrentTenantSlug } from '../../tenants';
 import { type ChatMessage, chatApi, contentApiBase } from '../../chat/api';
 
@@ -66,7 +65,9 @@ export function ChatPage() {
       // The access token still travels as the `access_token` query parameter, which is what
       // content-api already reads for hub requests.
       .withUrl(`${contentApiBase}/hub/chat?tenant=${encodeURIComponent(slug)}`, {
-        accessTokenFactory: async () => (await getAccessToken()) ?? '',
+        // No accessTokenFactory: the edge attaches the operator's bearer as it proxies the
+        // handshake (ADR 0014), which a browser cannot do for itself — a WebSocket handshake
+        // takes no custom headers. That is what retired the token-in-the-query-string.
         skipNegotiation: true,
         transport: HttpTransportType.WebSockets,
       })

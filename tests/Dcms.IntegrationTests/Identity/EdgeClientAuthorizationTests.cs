@@ -10,7 +10,8 @@ using Testcontainers.PostgreSql;
 namespace Dcms.IntegrationTests.Identity;
 
 /// <summary>
-/// ADR 0014 phase 2: whether the edge may ask for what its BFF session needs.
+/// Who may ask identity for what, on both sides of ADR 0014: the edge acquiring the console's
+/// session (phase 2), and the browser client losing the ability to (phase 5).
 ///
 /// <para><b>This is the one thing that flip can break, and it breaks wide.</b> Turning
 /// <c>Edge:Auth:Bff</c> on adds <c>dcms.admin</c> and <c>offline_access</c> to the scopes the
@@ -32,11 +33,12 @@ namespace Dcms.IntegrationTests.Identity;
 public sealed class EdgeClientAuthorizationTests : IAsyncLifetime
 {
     private const string RedirectUri = "https://admin.example.test/.edge/signin-oidc";
+    private const string SpaRedirectUri = "https://admin.example.test/auth/callback";
 
     /// <summary>What EdgeAuthentication asks for once Edge:Auth:Bff is on.</summary>
     private const string BffScopes = "openid profile email roles dcms.admin offline_access";
 
-    /// <summary>What it asks for today, with the flag off.</summary>
+    /// <summary>What it asked for before the BFF, and what a sign-in needs regardless.</summary>
     private const string CurrentScopes = "openid profile email roles";
 
     private readonly PostgreSqlContainer _postgres = TestPostgres.Build();
@@ -57,6 +59,8 @@ public sealed class EdgeClientAuthorizationTests : IAsyncLifetime
             builder.UseSetting("Identity:Edge:Secret", "edge-test-secret");
             builder.UseSetting("Identity:Edge:RedirectUris", RedirectUri);
             builder.UseSetting("Identity:Edge:PostLogoutUris", "https://admin.example.test/.edge/signout-callback-oidc");
+            builder.UseSetting("Identity:Spa:RedirectUris", SpaRedirectUri);
+            builder.UseSetting("Identity:Spa:PostLogoutUris", "https://admin.example.test/");
             builder.ConfigureAppConfiguration((_, config) =>
                 config.AddInMemoryCollection(new Dictionary<string, string?> { ["Nats:Url"] = "nats://localhost:4222" }));
         });
@@ -85,6 +89,34 @@ public sealed class EdgeClientAuthorizationTests : IAsyncLifetime
 
         outcome.Error.Should().BeNull();
         outcome.Location.Should().StartWith("/account/login");
+        // Also the EDGE_BFF=false path, so this file fails if converging the client's scope
+        // permissions ever took away something it already had.
+    }
+
+    /// <summary>
+    /// ADR 0014 phase 5: the browser client can no longer ask for admin-api at all.
+    ///
+    /// <para>This is the assertion SEC-10 was actually about. Taking <c>dcms.admin</c> off
+    /// <c>dcms-admin-spa</c> is what turns "the console no longer puts a token in localStorage"
+    /// into "a token in localStorage could not call admin-api if it were there" — the second
+    /// survives a regression in the first.</para>
+    /// </summary>
+    [DockerFact]
+    public async Task The_browser_client_can_no_longer_ask_for_the_admin_api()
+    {
+        var outcome = await AuthorizeAsync("openid profile email roles dcms.admin", clientId: "dcms-admin-spa");
+
+        outcome.Status.Should().Be(HttpStatusCode.BadRequest);
+        outcome.Description.Should().Contain("not allowed to use the specified scope");
+    }
+
+    [DockerFact]
+    public async Task The_browser_client_can_still_sign_somebody_in()
+    {
+        // The client is kept, registered and scopeless: only the resource scope was withdrawn.
+        var outcome = await AuthorizeAsync("openid profile email roles", clientId: "dcms-admin-spa");
+
+        outcome.Error.Should().BeNull();
     }
 
     [DockerFact]
@@ -108,13 +140,13 @@ public sealed class EdgeClientAuthorizationTests : IAsyncLifetime
     /// not use is <b>not</b> redirected back to the client — OpenIddict answers 400 with a text
     /// body of <c>key:value</c> lines — so both shapes are handled here rather than assumed.</para>
     /// </summary>
-    private async Task<AuthorizeOutcome> AuthorizeAsync(string scope)
+    private async Task<AuthorizeOutcome> AuthorizeAsync(string scope, string clientId = "dcms-edge")
     {
         var client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         var url = QueryHelpers.AddQueryString("/connect/authorize", new Dictionary<string, string?>
         {
-            ["client_id"] = "dcms-edge",
-            ["redirect_uri"] = RedirectUri,
+            ["client_id"] = clientId,
+            ["redirect_uri"] = clientId == "dcms-edge" ? RedirectUri : SpaRedirectUri,
             ["response_type"] = "code",
             ["scope"] = scope,
             ["state"] = "state-1",

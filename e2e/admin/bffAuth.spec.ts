@@ -106,6 +106,19 @@ test('renders the sign-in screen when the edge reports no session', async ({ pag
   expect(api.requests).toEqual([]);
 });
 
+test('create an account asks the edge for the sign-up form', async ({ page }) => {
+  await useBffMode(page, { session: null });
+  await page.goto('/');
+
+  const signin = page.waitForRequest((r) => r.url().includes('/.edge/signin'));
+  await page.getByRole('button', { name: 'Create account' }).click();
+
+  // Same redirect with the hint the edge forwards to identity, which lands a new user on the
+  // registration form rather than a sign-in form they have no account for. The console used to
+  // add this itself as an OIDC extra query parameter; it no longer builds that request at all.
+  expect(new URL((await signin).url()).searchParams.get('flow')).toBe('register');
+});
+
 test('sign in and sign out are handed to the edge, not driven from the browser', async ({ page }) => {
   await useBffMode(page, { session: null });
   await page.goto('/');

@@ -3,16 +3,21 @@ import type { Page } from '@playwright/test';
 /**
  * Puts a signed-in user in place before the app's first line of JavaScript runs.
  *
- * <p>Both SPAs read their user from `oidc-client-ts`, which keeps it in localStorage under
+ * <p><b>The platform console only.</b> The admin console moved to an edge-held session in ADR
+ * 0014 and holds no tokens; its fixtures are in `bff.ts`. This file is what is left for the
+ * console that has not moved.</p>
+ *
+ * <p>The platform SPA reads its user from `oidc-client-ts`, which keeps it in localStorage under
  * `oidc.user:{authority}:{client_id}` as the JSON that `User.toStorageString()` writes. Seeding
  * that record is the whole of "signing in" from the app's point of view: `getUser()` finds a
  * non-expired user and never goes near the identity server.</p>
  *
  * <p>Driving the real authorization-code flow instead would mean running OpenIddict, a database
  * and a login form in order to test what the console does <em>after</em> sign-in — and would
- * make every spec here fail whenever the identity server was the thing that was broken. The one
- * thing that seeding cannot cover, whether the redirect to `/connect/authorize` is built
- * correctly, is asserted directly in `admin/signin.spec.ts` against the real UserManager.</p>
+ * make every spec here fail whenever the identity server was the thing that was broken. What
+ * seeding cannot cover — whether the redirect to `/connect/authorize` is built correctly — is
+ * currently unasserted for the platform console; the admin console's equivalent moved to
+ * `admin/bffAuth.spec.ts` when it stopped building that request at all.</p>
  *
  * <p>`expires_at` is a day out. It has to be comfortably beyond the 60-second "expiring" mark,
  * or `automaticSilentRenew` schedules a renewal that fires mid-test against a server that is
@@ -28,11 +33,10 @@ export interface SeedUserOptions {
   profile?: Record<string, unknown>;
 }
 
-export const ADMIN_CLIENT_ID = 'dcms-admin-spa';
 export const PLATFORM_CLIENT_ID = 'dcms-platform-spa';
 export const AUTHORITY = 'http://localhost:5001';
 
-/** The signed-in operator every spec uses unless it says otherwise. */
+/** The signed-in operator every spec uses unless it says otherwise. Shared with `bff.ts`. */
 export const OPERATOR_SUB = '11111111-1111-1111-1111-111111111111';
 
 export function userStorage(options: SeedUserOptions): { key: string; value: string } {
@@ -88,47 +92,5 @@ export async function signIn(
       if (dismiss) window.localStorage.setItem('dcms.storage-notice', '1');
     },
     [key, value, tenant ?? '', dismissNotice ? '1' : ''] as const,
-  );
-}
-
-/** Leaves storage empty, so the app renders its sign-in screen. */
-export async function signedOut(page: Page): Promise<void> {
-  await page.addInitScript(() => window.localStorage.clear());
-}
-
-/**
- * The identity server's discovery document, and a stand-in for its authorize page.
- *
- * <p>`signinRedirect()` does not build a URL from configuration — it fetches
- * `/.well-known/openid-configuration` first and reads `authorization_endpoint` out of it. With
- * nothing answering, the redirect never happens and a test asserting on the authorize URL waits
- * for a request that is never made. That failure looks exactly like "the sign-in button is
- * broken", which is the wrong thing for a test to say when the truth is "no identity server is
- * running", so the document is stubbed rather than the button being trusted.</p>
- *
- * <p>The authorize endpoint itself answers with a page, so the browser lands somewhere instead
- * of on a connection error. What it returns does not matter; the assertion is on the request.</p>
- */
-export async function stubOidcDiscovery(page: Page, authority = AUTHORITY): Promise<void> {
-  await page.route('**/.well-known/openid-configuration', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        issuer: authority,
-        authorization_endpoint: `${authority}/connect/authorize`,
-        token_endpoint: `${authority}/connect/token`,
-        userinfo_endpoint: `${authority}/connect/userinfo`,
-        end_session_endpoint: `${authority}/connect/logout`,
-        jwks_uri: `${authority}/.well-known/jwks`,
-        response_types_supported: ['code'],
-        code_challenge_methods_supported: ['S256'],
-        grant_types_supported: ['authorization_code', 'refresh_token'],
-      }),
-    }),
-  );
-
-  await page.route('**/connect/authorize*', (route) =>
-    route.fulfill({ status: 200, contentType: 'text/html', body: '<title>identity</title>' }),
   );
 }

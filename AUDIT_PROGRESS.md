@@ -197,7 +197,7 @@ Legend: **[fixed]** = remediated in the working tree (not committed/deployed); *
 * SEC-07 — Identity pages: login CSRF, framing, unverified registration, enumeration (LOW) **[fixed]**
 * SEC-08 — Chat hub agent role granted to any member; chat:manage never enforced (MEDIUM, VERIFIED) **[fixed]**
 * SEC-09 — Anonymous chat triggers unthrottled AI calls; drains tenant budget (MEDIUM, VERIFIED) **[fixed]**
-* SEC-10 — IDE preview runs tenant/CDN JS in admin origin (HIGH, VERIFIED) **[fixed]** (iframe origin; localStorage→BFF residual **[deferred]** — the only one left, see report)
+* SEC-10 — IDE preview runs tenant/CDN JS in admin origin (HIGH, VERIFIED) **[fixed]** — iframe origin, and the localStorage→BFF residual is now closed too (ADR 0014, five phases, soaked on vps1): the console holds no token and `dcms-admin-spa` no longer holds a scope that could call admin-api
 * SEC-11 — Consoles lack CSP/framing/HSTS (LOW, VERIFIED) **[fixed]**
 * SEC-12 — SVG sanitized in an async window after ingest (MEDIUM) **[fixed]**
 * SEC-13 — CMS rich-text stored/rendered without server-side sanitization (LOW, VERIFIED) **[fixed]**
@@ -229,6 +229,6 @@ confused-deputy path-traversal + a missing postMessage source check that the pos
 review found in the live-preview API proxy.
 
 * **Fixed (25):** SEC-01 … SEC-15 (all but SEC-10's BFF residual), REL-01, BUG-01 … BUG-04, MISS-01, DEP-01, DEAD-01, PERF-01, INF-01.
-* **Deferred (2):** SEC-10's localStorage→BFF migration (needs its own design and browser verification; the CSRF half is the blocker, because tenant sites share a registrable domain with the console so `SameSite=Lax` does not cover it) and ARCH-01's forced RLS (an ADR-level decision rather than a defect).
+* **Deferred (1):** ARCH-01's forced RLS — an ADR-level decision rather than a defect. SEC-10's localStorage→BFF migration is **done** (ADR 0014): designed, staged over five deploys, soaked on vps1 between the cutover and the fallback removal. The soak earned its place — it caught the edge refusing every WebSocket handshake, because a handshake over HTTP/2 is an extended CONNECT rather than a GET.
 * **New dependency:** `HtmlSanitizer` 9.2.1039 (Ganss/AngleSharp), pinned in `Directory.Packages.props`, referenced by `Dcms.Shared.Security` — the only package added.
 * **Regression tests added:** `/internal` edge 404 (SEC-03, `EdgeHttpPlaneTests`); escalation-subset rule (SEC-06, `TenancyIsolationTests`); lock + password change revoke live tokens/authorizations and rotate the stamp (SEC-05, `SessionRevocationTests`); a push that lands mid-build gets exactly one catch-up build, none when the head is unchanged or one is in flight (BUG-01, `ReleaseCatchUpTests`); exact-byte range delivery against MinIO (PERF-01, `HlsServingTests`). RLS coverage and partition protection, with the catalogue as the oracle (SEC-15, `RlsCoverageTests`). SEC-05 and BUG-01 are mutation-checked (each fails with its fix removed), as are both SEC-15 policy tests (each drops a policy and asserts the named failure); the PERF-01 test failed on a real SDK bug before its fix landed.

@@ -300,24 +300,12 @@ services:
       <<: *vps-resource-auth
       Auth__Audience: "dcms-ai-gateway"
 
-  admin-spa:
-    # The SPA fetches OIDC discovery from here. Supplied at RUNTIME so this host's hostname is
-    # not compiled into the image -- the same digest built on master serves dev and production,
-    # which is what makes promoting a tested artifact possible.
-    environment:
-      DCMS_OIDC_AUTHORITY: "https://${AUTH_HOST:-auth.highgeek.eu}"
-      # ADR 0014 phase 4 — THE CUTOVER. `bff`: the edge holds this console's tokens and the
-      # browser holds none. An XSS anywhere in the console now gets the session for as long as
-      # the page is open rather than a portable 14-day refresh token.
-      #
-      # Requires the edge to have EDGE_BFF on, which phase 2 made the default. If it does not,
-      # the console sends no Authorization header to an edge that attaches none, and every API
-      # call 401s — so the two must not be rolled back in the wrong order.
-      #
-      # Rollback: ADMIN_AUTH_MODE=bearer in this host's .env, then restart admin-spa. It is a
-      # runtime value substituted into index.html, so that costs a container restart rather
-      # than a revert and a pipeline.
-      DCMS_AUTH_MODE: "${ADMIN_AUTH_MODE:-bff}"
+  # admin-spa needs no environment of its own any more.
+  #
+  # It used to be given the OIDC authority to fetch discovery from, and (briefly) the auth mode.
+  # Since ADR 0014 phase 5 the console holds no tokens and speaks to no identity server: it is
+  # signed in by the edge, and its only API base is same-origin. What is left is the base
+  # compose's defaults, which are correct behind the edge without being told anything.
 
   # Grafana publishes no host port in any profile — the edge is the only route in, the same
   # shape as admin-spa and forgejo. That is what makes X-WEBAUTH-USER safe to trust.
