@@ -70,9 +70,14 @@ x-vps-identity-seed: &vps-identity-seed
   #
   # One redirect URI per gated host. Exact matches, not a wildcard -- that is what makes a
   # stolen authorization code useless on the other host.
+  #
+  # The admin host is listed too, for ADR 0014: when the edge becomes the console's BFF it
+  # signs operators in on that host as well. Registering the URI ahead of the flag costs
+  # nothing — an unused redirect URI is never redirected to — and means turning the BFF on is
+  # one variable rather than a variable plus a client-registration change.
   Identity__Edge__Secret: "${EDGE_OIDC_CLIENT_SECRET:-}"
-  Identity__Edge__RedirectUris: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}/.edge/signin-oidc;https://${GIT_HOST:-git.highgeek.eu}/.edge/signin-oidc"
-  Identity__Edge__PostLogoutUris: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}/.edge/signout-callback-oidc;https://${GIT_HOST:-git.highgeek.eu}/.edge/signout-callback-oidc"
+  Identity__Edge__RedirectUris: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}/.edge/signin-oidc;https://${GIT_HOST:-git.highgeek.eu}/.edge/signin-oidc;https://${ADMIN_HOST:-admin.highgeek.eu}/.edge/signin-oidc"
+  Identity__Edge__PostLogoutUris: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}/.edge/signout-callback-oidc;https://${GIT_HOST:-git.highgeek.eu}/.edge/signout-callback-oidc;https://${ADMIN_HOST:-admin.highgeek.eu}/.edge/signout-callback-oidc"
 
 x-vps-resource-auth: &vps-resource-auth
   # Discover the OIDC metadata internally over HTTP (no public DNS / TLS needed

@@ -279,6 +279,16 @@ public sealed class IdentitySeeder(
                 Permissions.Scopes.Email,
                 Permissions.Scopes.Profile,
                 Permissions.Scopes.Roles,
+                // ADR 0014: the edge holds the admin console's API token, so it has to be
+                // allowed to ask for the scope naming that resource. Granting it here does
+                // nothing on its own -- the edge only requests it when Edge:Auth:Bff is on, and
+                // it must be granted BEFORE that flag is flipped, because OpenIddict refuses an
+                // authorization request naming a scope the client does not hold and the
+                // refusal takes Grafana and Forgejo sign-in with it.
+                //
+                // `offline_access` needs no scope permission of its own; the refresh-token
+                // grant type below is what authorises it, exactly as for the two SPA clients.
+                Permissions.Prefixes.Scope + DcmsOAuth.Scopes.Admin,
             },
             Requirements = { Requirements.Features.ProofKeyForCodeExchange },
         };
@@ -301,12 +311,27 @@ public sealed class IdentitySeeder(
 
         var urisChanged = !current.RedirectUris.SetEquals(descriptor.RedirectUris)
                           || !current.PostLogoutRedirectUris.SetEquals(descriptor.PostLogoutRedirectUris);
-        if (urisChanged)
+
+        // Scope permissions converge too, and they have to: this client already exists on every
+        // deployed database, so a permission added to the descriptor above would otherwise
+        // apply to fresh installs only -- and the one place that matters is the host that has
+        // been running longest. Same convergence the service and SPA clients already do.
+        var wantedScopes = descriptor.Permissions
+            .Where(p => p.StartsWith(Permissions.Prefixes.Scope, StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        var heldScopes = current.Permissions
+            .Where(p => p.StartsWith(Permissions.Prefixes.Scope, StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        var scopesChanged = !heldScopes.SetEquals(wantedScopes);
+
+        if (urisChanged || scopesChanged)
         {
             current.RedirectUris.Clear();
             current.PostLogoutRedirectUris.Clear();
             foreach (var uri in descriptor.RedirectUris) current.RedirectUris.Add(uri);
             foreach (var uri in descriptor.PostLogoutRedirectUris) current.PostLogoutRedirectUris.Add(uri);
+            foreach (var scope in heldScopes) current.Permissions.Remove(scope);
+            foreach (var scope in wantedScopes) current.Permissions.Add(scope);
             await manager.PopulateAsync(existing, current, ct);
         }
 
@@ -320,8 +345,8 @@ public sealed class IdentitySeeder(
         // to compare. Now the configured value is simply what is stored, every time.
         await manager.UpdateAsync(existing, secret, ct);
         logger.LogInformation(
-            urisChanged
-                ? "Updated edge OIDC client redirect URIs and secret from configuration."
+            urisChanged || scopesChanged
+                ? "Updated edge OIDC client redirect URIs, scopes and secret from configuration."
                 : "Edge OIDC client secret converged from configuration.");
     }
 

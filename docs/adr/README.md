@@ -20,4 +20,4 @@ as their implementation phase lands.
 - [0011](0011-wildcard-tls-dns01.md) — DCMS-managed wildcard certificates over DNS-01
 - [0012](0012-platform-notifications.md) — Platform notifications: addressed to a role, no fan-out
 - [0013](0013-platform-console-live-updates.md) — The platform console gets a socket of its own (supersedes 0012's polling)
-- [0014](0014-admin-console-bff.md) — The admin console authenticates by session cookie at the edge, not by a token in `localStorage` (proposed)
+- [0014](0014-admin-console-bff.md) — The admin console authenticates by session cookie at the edge, not by a token in `localStorage`

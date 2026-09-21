@@ -85,7 +85,55 @@ public sealed class IdentityClientSeedConvergenceTests : IAsyncLifetime
         permissions.Should().NotContain(OpenIddictConstants.Permissions.Prefixes.Scope + "dcms.admin");
     }
 
-    private WebApplicationFactory<IdentityApp::Program> Boot(string redirect, string postLogout)
+    /// <summary>
+    /// ADR 0014 phase 1: the edge client gains the scope it will need to hold the admin
+    /// console's API token, and it has to gain it on a database that already exists.
+    ///
+    /// <para><b>This is the ordering hazard the phase is built around.</b> Once the edge is
+    /// told to request <c>dcms.admin</c>, OpenIddict refuses the whole authorization request
+    /// until this permission is present — and that refusal takes Grafana and Forgejo sign-in
+    /// with it, because they share the client. The edge client has existed on every deployed
+    /// database since the YARP migration, and the seeder used to converge only its URIs and its
+    /// secret, so a permission added to the descriptor would have applied to fresh installs
+    /// only. The one host that matters is the one that has been running longest.</para>
+    /// </summary>
+    [DockerFact]
+    public async Task Reseeding_grants_the_edge_client_the_scope_the_console_bff_needs()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        const string secret = "edge-test-secret";
+
+        // First boot registers the client as it existed before this change: no dcms.admin.
+        await using (var before = Boot("https://platform.example.test/auth/callback", "https://platform.example.test/", secret))
+        {
+            using var scope = before.Services.CreateScope();
+            var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+            var application = await manager.FindByClientIdAsync("dcms-edge", ct);
+            var descriptor = new OpenIddictApplicationDescriptor();
+            await manager.PopulateAsync(descriptor, application!, ct);
+            descriptor.Permissions.Remove(OpenIddictConstants.Permissions.Prefixes.Scope + "dcms.admin");
+            await manager.PopulateAsync(application!, descriptor, ct);
+            await manager.UpdateAsync(application!, ct);
+        }
+
+        // The next deploy.
+        await using var after = Boot("https://platform.example.test/auth/callback", "https://platform.example.test/", secret);
+        var permissions = (await DescribeAsync(after, ct, "dcms-edge")).Permissions;
+
+        permissions.Should().Contain(OpenIddictConstants.Permissions.Prefixes.Scope + "dcms.admin");
+        // Everything the edge already had is still there. Converging a permission set by
+        // replacing it is exactly how a client loses one nobody meant to take away, and the
+        // symptom would be Grafana sign-in failing on a claim that is suddenly absent.
+        permissions.Should().Contain(OpenIddictConstants.Permissions.Scopes.Email);
+        permissions.Should().Contain(OpenIddictConstants.Permissions.Scopes.Profile);
+        permissions.Should().Contain(OpenIddictConstants.Permissions.Scopes.Roles);
+        // offline_access rides on the grant type rather than a scope permission, so this is the
+        // one that authorises the refresh the BFF session lives on.
+        permissions.Should().Contain(OpenIddictConstants.Permissions.GrantTypes.RefreshToken);
+    }
+
+    private WebApplicationFactory<IdentityApp::Program> Boot(
+        string redirect, string postLogout, string? edgeSecret = null)
     {
         var factory = new WebApplicationFactory<IdentityApp::Program>().WithWebHostBuilder(builder =>
         {
@@ -96,6 +144,12 @@ public sealed class IdentityClientSeedConvergenceTests : IAsyncLifetime
             builder.UseSetting("Identity:Seed", "true");
             builder.UseSetting("Identity:PlatformSpa:RedirectUris", redirect);
             builder.UseSetting("Identity:PlatformSpa:PostLogoutUris", postLogout);
+            if (edgeSecret is not null)
+            {
+                // Without a secret the edge client is not seeded at all -- deliberately, so an
+                // installation with no edge auth does not carry a dead client.
+                builder.UseSetting("Identity:Edge:Secret", edgeSecret);
+            }
             builder.ConfigureAppConfiguration((_, config) =>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
@@ -117,12 +171,13 @@ public sealed class IdentityClientSeedConvergenceTests : IAsyncLifetime
         (await DescribeAsync(factory, ct)).PostLogoutRedirectUris.Select(u => u.ToString()).ToList();
 
     private static async Task<OpenIddictApplicationDescriptor> DescribeAsync(
-        WebApplicationFactory<IdentityApp::Program> factory, CancellationToken ct)
+        WebApplicationFactory<IdentityApp::Program> factory, CancellationToken ct,
+        string clientId = "dcms-platform-spa")
     {
         using var scope = factory.Services.CreateScope();
         var manager = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
-        var application = await manager.FindByClientIdAsync("dcms-platform-spa", ct);
-        application.Should().NotBeNull("the seeder must register the platform console client");
+        var application = await manager.FindByClientIdAsync(clientId, ct);
+        application.Should().NotBeNull($"the seeder must register {clientId}");
 
         var descriptor = new OpenIddictApplicationDescriptor();
         await manager.PopulateAsync(descriptor, application!, ct);

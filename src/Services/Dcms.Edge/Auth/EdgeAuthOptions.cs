@@ -61,4 +61,40 @@ public sealed class EdgeAuthOptions
     public string CookieName { get; set; } = "dcms.edge";
 
     public int SessionHours { get; set; } = 8;
+
+    /// <summary>
+    /// Whether the edge acts as the admin console's BFF: holding its API tokens server-side and
+    /// attaching the bearer on the way through (ADR 0014).
+    ///
+    /// <para><b>Off by default, and that is the phase-1 rollout rather than timidity.</b>
+    /// Turning it on makes the edge request <c>dcms.admin</c> and <c>offline_access</c> at
+    /// sign-in, which OpenIddict refuses until identity has seeded the matching scope
+    /// permission on the <c>dcms-edge</c> client. Both ship in one push, but the edge does not
+    /// wait on identity in <c>depends_on</c>, so a rolling deploy can start the edge first — and
+    /// the symptom of losing that race is operators unable to sign in to Grafana. Shipping the
+    /// code off and flipping this afterwards removes the ordering question entirely, and leaves
+    /// a kill switch on the public ingress that needs no revert.</para>
+    ///
+    /// <para>Even on, it only acts on requests that arrive with no <c>Authorization</c> header;
+    /// the console sends one until its own phase. So this being true is not yet the cutover.</para>
+    /// </summary>
+    public bool Bff { get; set; }
+
+    /// <summary>True once the BFF is both wanted and possible.</summary>
+    public bool BffEnabled => Bff && Enabled;
+
+    /// <summary>
+    /// The scope naming the resource the console calls. One scope covers both destinations:
+    /// content-api validates the audience <c>dcms-admin-api</c> too
+    /// (<c>Dcms.ContentApi/appsettings.json</c>), so the chat hub accepts the same token
+    /// admin-api does.
+    /// </summary>
+    public string ApiScope { get; set; } = "dcms.admin";
+
+    /// <summary>
+    /// The readable half of the double-submit CSRF pair. Not a credential on its own — it is
+    /// only good presented alongside the HttpOnly session cookie, and it is bound to that
+    /// session. See <see cref="BffGuard"/>.
+    /// </summary>
+    public string CsrfCookieName { get; set; } = "dcms.csrf";
 }

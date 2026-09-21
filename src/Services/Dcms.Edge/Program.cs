@@ -107,6 +107,7 @@ builder.Services.AddHealthChecks()
 // secret, in which case no route carries a policy either -- see EdgeAuthOptions.ClientSecret for
 // why a missing secret opens the loop rather than closing the door.
 builder.AddEdgeAuthentication();
+builder.AddBff();
 
 // Shedding load costs nothing downstream, and this is the only hop where the client address is
 // the actual TCP peer rather than a header the edge itself assembled.
@@ -184,6 +185,7 @@ if (EdgeOutputCache.IsEnabled(app.Configuration))
 // The edge's own handful of endpoints, namespaced under /.edge/ because every host it serves
 // belongs to somebody else.
 app.MapEdgeAuthEndpoints();
+app.MapBffEndpoints();
 
 // Before the proxy, and matched ahead of every host route. The certificate authority fetches
 // this on the domain it is validating, which is by definition a hostname the proxy would
@@ -200,6 +202,11 @@ app.MapReverseProxy(proxyPipeline =>
     // set depends on whether this request came from an operator on one of our hosts or an
     // anonymous visitor on a tenant's domain.
     proxyPipeline.UsePublicPlaneHeaderScrubbing();
+
+    // After the scrubber, so the header it sets is the last word, and inside the proxy
+    // pipeline because whether this request may be authenticated from the edge's own session
+    // depends on the matched route. Inert unless Edge:Auth:Bff is on -- ADR 0014.
+    proxyPipeline.UseBffAuthentication();
 });
 
 app.Run();

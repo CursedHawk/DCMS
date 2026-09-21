@@ -117,6 +117,17 @@ public static class EdgeAuthentication
                 options.Scope.Add("email");
                 options.Scope.Add("roles");
 
+                // Only when the edge is the console's BFF. These two are what turn a sign-in
+                // into something that can call admin-api on the operator's behalf, and asking
+                // for a scope identity has not granted this client is an outright refusal of the
+                // authorization request -- i.e. nobody signs in to Grafana either. See
+                // EdgeAuthOptions.Bff for why that is a flag rather than a version.
+                if (auth.Bff)
+                {
+                    options.Scope.Add(auth.ApiScope);
+                    options.Scope.Add("offline_access");
+                }
+
                 // Off, so a claim called "role" stays called "role". The default mapping renames
                 // it to the long WS-Federation URI, and the policies above -- and every other
                 // service on this stack, which all spell it "role" -- would then match nothing.
@@ -139,6 +150,39 @@ public static class EdgeAuthentication
                         context.Response.Redirect("/.edge/denied");
                         context.HandleResponse();
                         return Task.CompletedTask;
+                    },
+
+                    // Where a BFF session is born. The tokens go to Redis and the principal
+                    // carries only the id of the row — see BffSessionStore for why not
+                    // SaveTokens. Nothing here runs when the BFF is off, so the ticket is the
+                    // same claims-only ticket Grafana and Forgejo have always had.
+                    OnTokenValidated = async context =>
+                    {
+                        if (!auth.Bff || context.TokenEndpointResponse is null)
+                        {
+                            return;
+                        }
+
+                        var response = context.TokenEndpointResponse;
+                        if (BffTokenProvider.Create(
+                                response.AccessToken,
+                                response.RefreshToken,
+                                response.ExpiresIn,
+                                previousRefreshToken: null) is not { } tokens)
+                        {
+                            // No access token, or no refresh token to renew it with. Refusing
+                            // the sign-in is better than issuing a session that dies in ten
+                            // minutes for reasons nobody can see.
+                            context.Fail("The token response carried no usable access/refresh token pair.");
+                            return;
+                        }
+
+                        var sessionId = Guid.NewGuid().ToString("N");
+                        ((System.Security.Claims.ClaimsIdentity)context.Principal!.Identity!)
+                            .AddClaim(new System.Security.Claims.Claim(BffSessionStore.SessionIdClaim, sessionId));
+                        await context.HttpContext.RequestServices
+                            .GetRequiredService<BffSessionStore>()
+                            .SaveAsync(sessionId, tokens);
                     },
                 };
             });
@@ -165,10 +209,15 @@ public static class EdgeAuthentication
                 },
                 [OpenIdConnectDefaults.AuthenticationScheme]));
 
-        app.MapGet(SignOutPath, (HttpContext context) =>
-            Results.SignOut(
+        app.MapGet(SignOutPath, async (HttpContext context) =>
+        {
+            // Server-side first: a cookie-only sign-out leaves a live token row that a captured
+            // cookie still presents.
+            await BffAuthentication.EndSessionAsync(context);
+            return Results.SignOut(
                 new Microsoft.AspNetCore.Authentication.AuthenticationProperties { RedirectUri = "/" },
-                [CookieAuthenticationDefaults.AuthenticationScheme, OpenIdConnectDefaults.AuthenticationScheme]));
+                [CookieAuthenticationDefaults.AuthenticationScheme, OpenIdConnectDefaults.AuthenticationScheme]);
+        });
 
         app.MapGet("/.edge/denied", () => Results.Problem(
             title: "Not authorized",

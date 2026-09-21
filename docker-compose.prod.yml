@@ -454,6 +454,14 @@ services:
       # Must equal Identity__Edge__Secret. Unset disables edge authentication and both consoles
       # fall back to their own login -- deliberately, rather than taking the ingress down.
       Edge__Auth__ClientSecret: "${EDGE_OIDC_CLIENT_SECRET:-}"
+      # ADR 0014, phase 1: the console's BFF ships OFF. Turning it on makes the edge request
+      # dcms.admin at sign-in, which OpenIddict refuses until identity has seeded the matching
+      # scope permission -- and the edge does not wait on identity in depends_on, so a rolling
+      # deploy could start it first and take Grafana sign-in down with it. Flip this only after
+      # a deploy whose identity log says the edge client's scopes converged. Even then it is
+      # inert: it acts on requests that arrive with no Authorization header, and the console
+      # sends one until its own phase.
+      Edge__Auth__Bff: "${EDGE_BFF:-false}"
 
   ai-gateway:
     environment:

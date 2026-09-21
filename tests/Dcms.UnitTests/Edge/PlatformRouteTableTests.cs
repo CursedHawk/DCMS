@@ -141,6 +141,26 @@ public class PlatformRouteTableTests
         marked.Should().BeEquivalentTo(["tenant-sites"]);
     }
 
+    /// <summary>
+    /// The edge may present an operator's session as a bearer token on exactly two routes
+    /// (ADR 0014), and both are on the admin host.
+    ///
+    /// <para>Marking anything else would hand a caller the console's API token on a route that
+    /// was never meant to carry one — the public tenant plane most of all, where the caller is
+    /// an anonymous visitor. This is the assertion that makes adding a third route a decision
+    /// somebody had to change a test for.</para>
+    /// </summary>
+    [Fact]
+    public void Only_the_admin_hosts_api_and_hub_are_authenticated_from_the_edge_session()
+    {
+        var marked = Routes
+            .Where(r => r.Metadata?.ContainsKey(Dcms.Edge.Auth.BffAuthentication.MetadataKey) == true)
+            .ToList();
+
+        marked.Select(r => r.RouteId).Should().BeEquivalentTo(["admin-api", "admin-hub"]);
+        marked.Should().OnlyContain(r => r.Match.Hosts!.Contains(Admin));
+    }
+
     /// <summary>Replicates YARP's selection contract: host and path must both match; lowest Order wins.</summary>
     private static string? ResolveCluster(string host, string path)
         => Routes

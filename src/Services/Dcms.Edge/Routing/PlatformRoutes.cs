@@ -71,6 +71,10 @@ public static class PlatformRoutes
         "/api/internal/{**catch-all}",
     ];
 
+    /// <summary>Marks a route as one the edge may authenticate from its own session (ADR 0014).</summary>
+    private static readonly IReadOnlyDictionary<string, string> BffMetadata =
+        new Dictionary<string, string> { [Auth.BffAuthentication.MetadataKey] = "true" };
+
     public static (IReadOnlyList<RouteConfig> Routes, IReadOnlyList<ClusterConfig> Clusters) Build(
         EdgeOptions options, bool authEnabled = false, bool cacheEnabled = false)
     {
@@ -124,14 +128,27 @@ public static class PlatformRoutes
         // overrides it, so media (50 MB) and static-site (100 MB) uploads were rejected at the
         // edge before admin-api's own per-endpoint limit could apply. Lift it here to the
         // largest documented upload; admin-api still enforces the real per-feature ceilings.
+        //
+        // The BFF metadata (ADR 0014) marks the two routes on which the edge may present the
+        // operator's session as a bearer token. Inert until Edge:Auth:Bff is on AND the request
+        // arrives without an Authorization header of its own; see BffAuthentication.
         routes.Add(Prefix("admin-api", [admin], "/api", AdminApi, order: 30) with
         {
             MaxRequestBodySize = 105L * 1024 * 1024,
+            Metadata = BffMetadata,
         });
 
         // ---- SignalR hubs hosted by content-api, on the admin host ----
         // Same-origin so the SPA's negotiate + WebSocket avoid CORS. YARP proxies the upgrade.
-        routes.Add(Prefix("admin-hub", [admin], "/hub", ContentApi, order: 31));
+        //
+        // BFF too, and it needs nothing special: the negotiate POST and the WebSocket upgrade
+        // are both HTTP requests through this proxy, so both carry the injected header. Which is
+        // also what retires the `access_token` query string the hubs read today, since a
+        // WebSocket handshake cannot set one but a proxy in front of it can.
+        routes.Add(Prefix("admin-hub", [admin], "/hub", ContentApi, order: 31) with
+        {
+            Metadata = BffMetadata,
+        });
 
         // ---- Static SPAs and the two third-party consoles (nginx does SPA fallback) ----
         routes.Add(CatchAll("platform-spa", [platform], PlatformSpa, order: 50));

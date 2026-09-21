@@ -1,7 +1,7 @@
 # ADR 0014: The admin console authenticates by session cookie at the edge, not by a token in `localStorage`
 
-**Status:** proposed (2026-09-21) — closes the SEC-10 residual from `AUDIT_REPORT.md`.
-Builds on [ADR 0010](0010-yarp-edge.md).
+**Status:** accepted (2026-09-21) — phase 1 landed. Closes the SEC-10 residual from
+`AUDIT_REPORT.md`. Builds on [ADR 0010](0010-yarp-edge.md).
 
 ## Context
 
@@ -52,16 +52,21 @@ keep validating a JWT exactly as they do now.
   `openid profile email roles`, and `IdentitySeeder` grants the `dcms-edge` client
   `Permissions.Prefixes.Scope + "dcms.admin"` and `Permissions.GrantTypes.RefreshToken`
   (it already has the latter).
-- Tokens go into a **server-side ticket store**, not the cookie.
-  `CookieAuthenticationOptions.SessionStore` backed by the Redis the edge already
-  depends on (its `/health` already folds in a Redis check). The cookie carries an
-  opaque session id.
+- Tokens go into a **server-side store**, not the cookie, backed by the Redis the edge
+  already depends on (its `/health` already folds in a Redis check). The principal
+  carries a `dcms_sid` claim naming the row; the cookie carries nothing else new.
 
   Not `SaveTokens = true` into the cookie, for three reasons: an ID token plus an
   access token plus a refresh token overflows 4 KB and chunks; every refresh rewrites
   the cookie, so two concurrent requests can race and one loses the rotated refresh
   token, which kills the session; and there is no way to revoke a session that is
   entirely in the client's hands.
+
+  **As built this is a token store keyed by a session id, not an `ITicketStore`**
+  (`BffSessionStore`). It has the same three properties with less machinery: the ticket
+  stays claims-only and small, refresh writes one Redis key under a lock rather than
+  going through `SignInAsync` — which, with a session store, removes and re-stores the
+  ticket under a *new* key on every call — and deleting the row is revocation.
 - **Refresh is serialised per session.** OpenIddict rotates refresh tokens, so two
   concurrent requests that both find the access token expired will both redeem it and
   the loser gets `invalid_grant` — ending a session that was healthy. A Redis `SET NX`
@@ -182,18 +187,30 @@ than the platform-wide one that also protects every user's git credential.
 A push to `master` is the deploy, so this cannot be one commit. Four phases, each one
 independently shippable and reversible:
 
-1. **Edge-side, inert.** Ticket store, token acquisition and refresh lock, `/.edge/me`,
-   Origin check, CSRF issuance. `dcms.bff` transforms run *only* when the request has no
-   `Authorization` header — so every existing bundle keeps working unchanged. Ship and
-   verify against the live console.
-2. **SPA, flagged off.** Cookie mode behind `window.__DCMS_CONFIG__.authMode`, default
+1. **Edge-side, code only, flag off.** ✅ *Landed.* Session store, token acquisition and
+   refresh lock, `/.edge/me`, Origin check, CSRF mint/verify, `dcms.bff` route metadata,
+   and the `dcms-edge` client's `dcms.admin` scope permission converging onto existing
+   databases. `Edge:Auth:Bff` ships **false**.
+2. **Flip `EDGE_BFF=true` on vps1.** Still inert: the middleware acts only on requests
+   that arrive with no `Authorization` header, and the console sends one. What this step
+   proves is that sign-in still works for Grafana and Forgejo now that the edge asks for
+   two more scopes.
+3. **SPA, flagged off.** Cookie mode behind `window.__DCMS_CONFIG__.authMode`, default
    `bearer`. Both paths build and both are tested. Ship.
-3. **Flip on vps1** (`authMode: bff`), soak, then flip prod. Rollback is one env var and
-   a container restart — no code, no migration.
-4. **Remove the fallback.** Delete `oidc-client-ts` and the `dcms-admin-spa` client's
+4. **Flip `authMode: bff`** on vps1, soak, then prod. Rollback is one env var and a
+   container restart — no code, no migration.
+5. **Remove the fallback.** Delete `oidc-client-ts` and the `dcms-admin-spa` client's
    `dcms.admin` scope — *that* is the commit where the token stops existing in the
    browser — strip inbound `Authorization` unconditionally on BFF routes, and delete the
    `access_token` query-string handling in both hubs.
+
+**Why the flag exists, and why it is two steps rather than one.** Turning the BFF on makes
+the edge request `dcms.admin` and `offline_access` at sign-in, and OpenIddict refuses an
+authorization request naming a scope the client does not hold. The edge and identity ship
+in the same push, but the edge does not wait on identity in `depends_on` — so a rolling
+deploy can start the edge first, and the symptom of losing that race is every operator
+locked out of Grafana. Shipping the code inert and flipping it afterwards removes the
+ordering question, and leaves a kill switch on the public ingress that needs no revert.
 
 `EdgeAuthOptions.Enabled` is false when no client secret is configured, and that is a
 deliberate open loop: the edge must not refuse to start and take every tenant site
@@ -204,9 +221,15 @@ deployment note rather than a code change.
 
 ## How it is verified
 
-- **Unit** — CSRF mint/verify including a token bound to a different session; the Origin
-  decision as a table (same origin, tenant subdomain, custom domain, absent, safe
-  method).
+- **Unit** — ✅ `BffGuardTests` (CSRF bound to its own session, junk and foreign-key-ring
+  tokens refused rather than thrown, the Origin decision as a table including the
+  same-registrable-domain tenant page and the CORS-simple multipart forge, and
+  `ShouldAuthenticate` — one case per way phase 1 stays inert); `BffTokenTests` (refresh
+  rotation kept vs. taken, a sign-in with no refresh token refused, an unusable
+  `expires_in` not marking the token expired on arrival).
+- **Seeder** — ✅ `IdentityClientSeedConvergenceTests` boots identity twice over one
+  database and asserts the edge client *gains* `dcms.admin` without losing what it had.
+  Mutation-checked: it fails with the convergence reverted to URIs-only.
 - **Integration** (`EdgeHttpPlaneTests` already drives the edge in-process) — no cookie →
   challenge, not a proxied 200; cookie → `Authorization` present downstream; inbound
   `Authorization` on a BFF route → replaced, not forwarded; cross-origin multipart POST →
