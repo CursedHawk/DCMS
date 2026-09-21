@@ -403,6 +403,28 @@ services:
       context: .
       dockerfile: src/Services/Dcms.AdminApi/Dockerfile
     <<: *service-defaults
+    # PERF-01's other half. Streaming the delivery paths removed the way a request could
+    # allocate a whole object; a ceiling is what keeps whatever is left of that class from
+    # reaching the host. vps1 has 7.6 GB and no swap, and an unbounded container there is
+    # not one service falling over, it is the box.
+    #
+    # It is also a correctness knob, not only a guard rail: .NET reads the cgroup limit and
+    # sizes the GC heap against it. With no limit every service sizes against the whole host
+    # and eight of them each believe they own 7.6 GB.
+    #
+    # The numbers are ceilings with room above measured use, not budgets, and they are
+    # overridable per host because the right value is a property of that host's traffic.
+    # Raise the variable rather than the default if one of these OOM-kills; `docker stats`
+    # and the infrastructure dashboard's per-container-usage-vs-limit panel are the evidence.
+    # admin-api is the largest because it builds the api-client and site-starter zips and the
+    # static site bundle in memory.
+    #
+    # These four bring the declared ceilings on vps1 to ~7.1 GB against 7.6 GB of RAM, and
+    # several containers still have none. That is deliberate and not a budget error: a ceiling
+    # is not a reservation, and every one of these sits far above steady state. What it buys is
+    # that a single runaway is killed at its own limit instead of taking the host -- it is not
+    # a promise that all sixteen can peak at once.
+    mem_limit: "${ADMIN_API_MEM_LIMIT:-768m}"
     environment:
       <<: *service-env
       Auth__Authority: "http://dcms-identity:8080/"
@@ -421,6 +443,9 @@ services:
       context: .
       dockerfile: src/Services/Dcms.ContentApi/Dockerfile
     <<: *service-defaults
+    # See admin-api. This is the anonymous delivery plane -- the one PERF-01 was actually
+    # about -- so it is the one a ceiling matters most on.
+    mem_limit: "${CONTENT_API_MEM_LIMIT:-640m}"
     environment:
       <<: *service-env
       # The public delivery plane's per-IP rate limit, settable per host.
@@ -524,6 +549,8 @@ services:
       context: .
       dockerfile: src/Services/Dcms.SiteHost/Dockerfile
     <<: *service-defaults
+    # See admin-api. Serves every tenant site's static assets.
+    mem_limit: "${SITE_HOST_MEM_LIMIT:-512m}"
     environment:
       <<: *service-env
 
@@ -543,6 +570,9 @@ services:
       dockerfile: src/Services/Dcms.Edge/Dockerfile
     restart: unless-stopped
     logging: *default-logging
+    # See admin-api. Every byte the platform serves passes through here, so this is the last
+    # container that should be able to take the host with it.
+    mem_limit: "${EDGE_MEM_LIMIT:-512m}"
     depends_on:
       postgres:
         condition: service_healthy
