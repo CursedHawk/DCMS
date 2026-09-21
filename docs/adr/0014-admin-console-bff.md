@@ -1,6 +1,7 @@
 # ADR 0014: The admin console authenticates by session cookie at the edge, not by a token in `localStorage`
 
-**Status:** accepted (2026-09-21) — phases 1–3 landed; the cutover (4) is not. Closes the SEC-10 residual from
+**Status:** accepted (2026-09-21) — phases 1–4 landed. The console's tokens are at the
+edge; only the bearer fallback (5) is left. Closes the SEC-10 residual from
 `AUDIT_REPORT.md`. Builds on [ADR 0010](0010-yarp-edge.md).
 
 ## Context
@@ -215,8 +216,21 @@ independently shippable and reversible:
    it, so bearer mode needed no mapping and **no component changed**). The platform
    console keeps its `UserManager` through the narrower `BearerAuthClient` that
    `createAuth` returns, so it was not touched at all.
-4. **Flip `authMode: bff`** on vps1, soak, then prod. Rollback is one env var and a
-   container restart — no code, no migration.
+4. **The cutover.** ✅ *Landed.* `DCMS_AUTH_MODE` defaults to `bff`, so the next deploy
+   moves vps1 onto it. Rollback is `ADMIN_AUTH_MODE=bearer` in the host's `.env` and an
+   `admin-spa` restart — a runtime value in index.html, so no revert and no pipeline.
+
+   **Order matters on the way back.** The console sending no `Authorization` header only
+   works against an edge that attaches one, so `EDGE_BFF` must not be turned off while
+   `ADMIN_AUTH_MODE` is still `bff` — that combination 401s every API call. Roll the
+   console back first, the edge second.
+
+   The soak is a human step and deliberately not automated: real `SameSite` behaviour
+   across real hosts, and the tenant-subdomain CSRF attempt, are the things this box
+   cannot see. What to watch, in the order they would break: sign-in returns to where it
+   started; a write succeeds (CSRF); an upload succeeds (the multipart path the Origin
+   check exists for); the notification bell connects (SignalR handshake carrying the
+   injected header); account settings load (the new same-origin route).
 5. **Remove the fallback.** Delete `oidc-client-ts` and the `dcms-admin-spa` client's
    `dcms.admin` scope — *that* is the commit where the token stops existing in the
    browser — strip inbound `Authorization` unconditionally on BFF routes, and delete the
@@ -266,9 +280,16 @@ deployment note rather than a code change.
   change and not on a repeat read; sign-in/sign-up/sign-out navigate to the edge carrying
   the return path; and `csrfHeader` refuses a cookie that matches only because `.` is a
   regex wildcard.
-- **e2e** — ✅ `pnpm e2e` (76 tests) green in bearer mode, which is what says the refactor
-  of `useAuth`/`AuthClient` left the shipped path alone. The BFF path has no e2e yet: it
-  needs a real edge, which is phase 4's soak rather than something this harness can mock.
+- **e2e** — ✅ `pnpm e2e`, 83 tests. `admin/bffAuth.spec.ts` drives the real console in BFF
+  mode against a stand-in for the edge (`fixtures/bff.ts` substitutes `__DCMS_AUTH_MODE__`
+  into the served document exactly as the container entrypoint does) and asserts what only
+  a browser can say: **no `Authorization` header on any API call**, the CSRF token echoed
+  on a write and absent when the edge minted none, the workspace header unchanged, the
+  sign-in screen on a 401 with no requests issued, and sign-in handed to the edge carrying
+  only a return path. Mutation-checked: making `getAccessToken()` return a string fails the
+  no-Authorization assertion — which is the failure that would otherwise be silent, because
+  the edge leaves a request with its own bearer alone and the cutover would look like it
+  happened while nothing had.
 - **Only on vps1** — real `SameSite` behaviour across real hosts, the tenant-subdomain
   CSRF attempt against a real browser, and cookie size after chunking. None of that is
   observable on this box, which is why phase 3 exists as its own step.
