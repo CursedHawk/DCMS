@@ -1,6 +1,6 @@
 # ADR 0014: The admin console authenticates by session cookie at the edge, not by a token in `localStorage`
 
-**Status:** accepted (2026-09-21) — phase 1 landed. Closes the SEC-10 residual from
+**Status:** accepted (2026-09-21) — phases 1 and 2 landed. Closes the SEC-10 residual from
 `AUDIT_REPORT.md`. Builds on [ADR 0010](0010-yarp-edge.md).
 
 ## Context
@@ -191,10 +191,20 @@ independently shippable and reversible:
    refresh lock, `/.edge/me`, Origin check, CSRF mint/verify, `dcms.bff` route metadata,
    and the `dcms-edge` client's `dcms.admin` scope permission converging onto existing
    databases. `Edge:Auth:Bff` ships **false**.
-2. **Flip `EDGE_BFF=true` on vps1.** Still inert: the middleware acts only on requests
-   that arrive with no `Authorization` header, and the console sends one. What this step
-   proves is that sign-in still works for Grafana and Forgejo now that the edge asks for
-   two more scopes.
+2. **Turn the flag on.** ✅ *Landed.* `Edge:Auth:Bff` now defaults to `true`, so the
+   deploy carries it; `EDGE_BFF=false` in a host's `.env` remains the kill switch. Still
+   inert for the console: the middleware acts only on requests that arrive with no
+   `Authorization` header, and the console sends one.
+
+   What this step actually changes is the **sign-in**, which is why that is what
+   `EdgeClientAuthorizationTests` covers — the authorization request now names two more
+   scopes, and OpenIddict refuses one the client does not hold with a bare `400`
+   (`invalid_request`, ID2051) rather than a redirect, on a client Grafana and Forgejo
+   share. A BFF session is also minted **only on the admin host**: it is the only host
+   with a route that opts in, so minting one for a Grafana or Forgejo sign-in would buy
+   nothing and would make those sign-ins depend on Redis being up — a new way for the
+   dashboards to be unreachable at the moment somebody needs them to find out why Redis
+   is down.
 3. **SPA, flagged off.** Cookie mode behind `window.__DCMS_CONFIG__.authMode`, default
    `bearer`. Both paths build and both are tested. Ship.
 4. **Flip `authMode: bff`** on vps1, soak, then prod. Rollback is one env var and a
@@ -230,6 +240,10 @@ deployment note rather than a code change.
 - **Seeder** — ✅ `IdentityClientSeedConvergenceTests` boots identity twice over one
   database and asserts the edge client *gains* `dcms.admin` without losing what it had.
   Mutation-checked: it fails with the convergence reverted to URIs-only.
+- **Sign-in** — ✅ `EdgeClientAuthorizationTests` drives the real authorization endpoint
+  with the scopes the flag adds and asserts it reaches the login page, with the scopes it
+  asked for before as a second case and a scope the client does not hold as the control.
+  Mutation-checked: removing the `dcms.admin` grant fails it.
 - **Integration** (`EdgeHttpPlaneTests` already drives the edge in-process) — no cookie →
   challenge, not a proxied 200; cookie → `Authorization` present downstream; inbound
   `Authorization` on a BFF route → replaced, not forwarded; cross-origin multipart POST →

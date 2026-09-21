@@ -82,8 +82,10 @@ public class BffTokenTests
             [new System.Security.Claims.Claim(BffSessionStore.SessionIdClaim, "sid-1")], "test");
 
         BffTokenProvider.SessionIdOf(new System.Security.Claims.ClaimsPrincipal(identity)).Should().Be("sid-1");
-        // A Grafana or Forgejo session has no session id, and must not be mistaken for one that
-        // can call admin-api.
+        // A session with no id: one minted before the BFF was switched on and still inside its
+        // 8-hour cookie lifetime, or a sign-in on a host the edge does not mint one for (only
+        // the admin host gets one — see EdgeAuthentication.OnTokenValidated). Neither may be
+        // mistaken for a session that can call admin-api.
         BffTokenProvider.SessionIdOf(new System.Security.Claims.ClaimsPrincipal()).Should().BeNull();
         BffTokenProvider.SessionIdOf(null).Should().BeNull();
     }

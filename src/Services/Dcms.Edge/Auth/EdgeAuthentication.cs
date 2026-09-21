@@ -156,9 +156,23 @@ public static class EdgeAuthentication
                     // carries only the id of the row — see BffSessionStore for why not
                     // SaveTokens. Nothing here runs when the BFF is off, so the ticket is the
                     // same claims-only ticket Grafana and Forgejo have always had.
+                    //
+                    // AND NOT ON THEIR HOSTS EITHER, which is not tidiness. A BFF session is
+                    // only ever used on the admin host — it is the only host with a route that
+                    // opts in — so minting one for a Grafana or Forgejo sign-in would buy
+                    // nothing and would make those sign-ins depend on Redis being up. That is a
+                    // new way for the dashboards to be unreachable at exactly the moment
+                    // somebody needs them to diagnose why Redis is down.
                     OnTokenValidated = async context =>
                     {
-                        if (!auth.Bff || context.TokenEndpointResponse is null)
+                        var edge = context.HttpContext.RequestServices
+                            .GetRequiredService<IOptions<EdgeOptions>>().Value;
+                        if (!auth.Bff
+                            || context.TokenEndpointResponse is null
+                            || !string.Equals(
+                                context.HttpContext.Request.Host.Host,
+                                edge.AdminHost,
+                                StringComparison.OrdinalIgnoreCase))
                         {
                             return;
                         }

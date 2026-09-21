@@ -112,22 +112,26 @@ public class BffGuardTests
     }
 
     /// <summary>
-    /// The inertness claim ADR 0014's phase 1 rests on, one case per way out.
+    /// The inertness claim ADR 0014's staged rollout rests on, one case per way out.
     ///
-    /// <para>Phase 1 ships with <c>Edge:Auth:Bff</c> off, and the console sends its own bearer
-    /// until a later phase — so in production today <i>two</i> of these are false at once. If
-    /// this test ever goes green on a case it should refuse, a deploy silently changes how every
-    /// admin API call is authenticated.</para>
+    /// <para>As of phase 2 the flag is on, and the <b>only</b> thing still keeping the console's
+    /// API calls on their own bearer token is that the console sends one. That makes the third
+    /// case below the load-bearing one until phase 4 retires it: if this test ever goes green on
+    /// a case it should refuse, a deploy silently changes how every admin API call is
+    /// authenticated.</para>
     /// </summary>
     [Theory]
-    // The flag is off: phase 1 as deployed.
+    // The kill switch, EDGE_BFF=false. Phase 1 shipped this way.
     [InlineData(false, true, false, "sid-1")]
     // Not a route that opted in — the public tenant plane is this case, and the one that would
     // hand an anonymous visitor an operator's token.
     [InlineData(true, false, false, "sid-1")]
     // The caller brought its own credential. Every console bundle in a browser today does.
     [InlineData(true, true, true, "sid-1")]
-    // A Grafana or Forgejo cookie: authenticated at the edge, but not a BFF session.
+    // Authenticated at the edge but with no BFF session: a cookie minted before the flag was
+    // switched on, or one from a host the edge does not mint a session id for. Note this is not
+    // the control that keeps a Grafana cookie away from admin-api — the cookie is host-scoped
+    // and only the admin host has a route that opts in. This is the belt.
     [InlineData(true, true, false, null)]
     [InlineData(true, true, false, "")]
     public void Passes_everything_else_through_untouched(
