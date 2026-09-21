@@ -3,7 +3,7 @@
 ## Overall Status
 
 * Started: 2026-09-17
-* Last updated: 2026-09-17 (session 1 + open-point verification pass + three remediation passes)
+* Last updated: 2026-09-21 (session 1 + open-point verification pass + remediation passes 1-5; the deferred set is now down to SEC-10's BFF migration)
 * Audited commit: `22816b6` (master)
 * Overall completion estimate: 100% (all map areas have a status; depth varies — see report §Audit Coverage)
 * Projects/components identified: 78 (from REPOSITORY_MAP.md §15)
@@ -184,36 +184,51 @@ Legend: **[fixed]** = remediated in the working tree (not committed/deployed); *
 * SEC-01 — SSRF from site editors via local-provider AI base URL (HIGH, VERIFIED) **[fixed]**
 * SEC-02 — Mode B install phase runs tenant code (pnpmfile/yarnPath) with network (MEDIUM) **[fixed]**
 * SEC-03 — site-host /internal endpoints reachable via edge catch-all (LOW, VERIFIED) **[fixed]**
-* SEC-04 — Grafana auth.proxy without source whitelist (LOW) **[deferred]**
-* INF-01 — Flat network; unauthenticated NATS/Redis; write-enabled Docker proxy (MEDIUM, VERIFIED) **[partially fixed]** — the write-enabled Docker API (the host-takeover path) now sits alone on an internal `docker-api` network with site-builder, its only client; NATS/Redis auth still **[deferred]**
+* SEC-04 — Grafana auth.proxy without source whitelist (LOW) **[fixed]** — plus Forgejo, whose REVERSE_PROXY_TRUSTED_PROXIES was the whole 172.16.0.0/12 bridge range; both now name the declared-subnet `edge-trusted` network
+* INF-01 — Flat network; unauthenticated NATS/Redis; write-enabled Docker proxy (MEDIUM, VERIFIED) **[fixed]** — the write-enabled Docker API (the host-takeover path) sits alone on an internal `docker-api` network with site-builder, its only client; `no_auth_user` is gone from NATS and Redis has a `requirepass`, with both credentials generated into `.env` by `scripts/deploy.sh` so a new host still needs no hand-written value
 * REL-01 — Timed-out Mode B build container keeps running (MEDIUM, VERIFIED) **[fixed]**
 * BUG-01 — Push to release during a build is never deployed (MEDIUM, VERIFIED) **[fixed]**
 * BUG-02 — Upload limits >28.6 MB unreachable (edge/Kestrel defaults) (LOW) **[fixed]**
 * BUG-03 — Build activation last-finisher-wins; rollback not invalidated (LOW, VERIFIED) **[fixed]**
 * BUG-04 — Tenant purge orphans AI transcripts, social tokens, notifications (MEDIUM, VERIFIED) **[fixed]**
-* PERF-01 — Delivery paths buffer whole objects per request (MEDIUM, VERIFIED) **[fixed]** — content-api media/HLS, site-host and admin media now stream via `ObjectStreaming.WriteObjectAsync` (HEAD + single-range 206/416, one pooled buffer); compose `mem_limit` residual (deploy-side)
+* PERF-01 — Delivery paths buffer whole objects per request (MEDIUM, VERIFIED) **[fixed]** — content-api media/HLS, site-host and admin media now stream via `ObjectStreaming.WriteObjectAsync` (HEAD + single-range 206/416, one pooled buffer); `mem_limit` now set on admin-api, content-api, site-host and edge
 * SEC-05 — Account lock / password change don't revoke tokens or git access (HIGH, VERIFIED) **[fixed]**
 * SEC-06 — members:manage / roles:manage escalate to Owner and tenant purge (HIGH, VERIFIED) **[fixed]**
 * SEC-07 — Identity pages: login CSRF, framing, unverified registration, enumeration (LOW) **[fixed]**
 * SEC-08 — Chat hub agent role granted to any member; chat:manage never enforced (MEDIUM, VERIFIED) **[fixed]**
 * SEC-09 — Anonymous chat triggers unthrottled AI calls; drains tenant budget (MEDIUM, VERIFIED) **[fixed]**
-* SEC-10 — IDE preview runs tenant/CDN JS in admin origin (HIGH, VERIFIED) **[fixed]** (iframe origin; localStorage→BFF residual **[deferred]**)
+* SEC-10 — IDE preview runs tenant/CDN JS in admin origin (HIGH, VERIFIED) **[fixed]** (iframe origin; localStorage→BFF residual **[deferred]** — the only one left, see report)
 * SEC-11 — Consoles lack CSP/framing/HSTS (LOW, VERIFIED) **[fixed]**
 * SEC-12 — SVG sanitized in an async window after ingest (MEDIUM) **[fixed]**
 * SEC-13 — CMS rich-text stored/rendered without server-side sanitization (LOW, VERIFIED) **[fixed]**
 * SEC-14 — IDE site-preview proxy unauthenticated + cross-tenant (found in verify pass) **[fixed]**
 * MISS-01 — No way to remove a workspace member (MEDIUM, VERIFIED) **[fixed]**
-* DEP-01 — 21 high npm transitive advisories (MEDIUM) **[fixed]** react-router in tenant template; all 13 HIGH admin-only transitives pinned to patched versions via `pnpm-workspace.yaml` overrides (postcss/nanoid/fast-uri/shell-quote/browserslist/esbuild). Residual **[deferred]**: unhead, vitest/@vitest/mocker, ts-deepmerge — each needs a major bump (blocked consumer / vitest 4 / v8), all admin-only LOW/MODERATE
+* DEP-01 — 21 high npm transitive advisories (MEDIUM) **[fixed]** — react-router in the tenant template; 13 HIGH admin-only transitives pinned via `pnpm-workspace.yaml` overrides; and the three that needed a major taken as majors (vitest 3→4, `@scalar/api-reference-react` 0.7→0.9 which brings `@unhead/vue` 2 and drops ts-deepmerge, plus undici/@ai-sdk/provider-utils overrides for what 0.9 pulled in). `pnpm audit`: no known vulnerabilities, from 37
 * DEAD-01 — Inert plugin custom-endpoint interface + unwired edge.routes overlay (LOW) **[fixed]** — both dead surfaces removed; `edge.routes` table dropped (`DropEdgeRoutesOverlay` migration)
-* ARCH-01 — RLS not forced; EF query filters are the sole runtime tenant guard (INFORMATIONAL) **[deferred]**
+* ARCH-01 — RLS not forced; EF query filters are the sole runtime tenant guard (INFORMATIONAL) **[deferred by design]** — forcing RLS is an ADR-level change, not a bug
+* SEC-15 — RLS policy on `audit.audit_events` did not cover its monthly partitions, which `dcms_rls` holds a default-privilege SELECT on (MEDIUM, VERIFIED, found in remediation pass 5) **[fixed]** — partitions protected with their parents and at creation; `ApplyAsync` now verifies against `pg_class`/`pg_policy` instead of logging an array length
 
 ## Remediation Status
 
-Three remediation passes fixed every actionable finding; only the infra/architectural set is deferred (documented in report §Remediation Applied → Deferred). Verification on this build-only box: whole-solution `dotnet build` clean; **337 unit tests** pass (incl. new `HtmlContentSanitizerTests`, which caught a real mis-configured scheme allow-list before it shipped); the **24 container-free coverage integration tests** (permission + audit) pass.
+Five remediation passes fixed every actionable finding. Two remain open on purpose, both
+architectural, both stated plainly in report §Remediation Applied → Deferred.
 
-**Shipped to `master`** (commits `a7f931c` remediation, `04f157a` preview API fix, `6a776b6` preview-proxy hardening, `cc57d42` SEC-03/06 regression tests). The preview-proxy hardening closed a confused-deputy path-traversal + a missing postMessage source check that the post-push security review found in the live-preview API proxy.
+Verification on this build-only box: whole-solution `dotnet build` clean, 0 warnings;
+**358 unit tests**; the integration suite under filters (`~Rls` 5, `~Audit` 59, `~Tenancy` 4);
+`pnpm build`, all 7 vitest suites and `pnpm lint` (0 errors, the same 24 pre-existing warnings);
+`pnpm audit` clean. The infrastructure changes were proved against real containers rather than
+read off documentation — nats:2.11 and redis:7 for INF-01, grafana:12.3.1 on two subnets for
+SEC-04, `alloy validate` (with a deliberately misspelled attribute, to check the check), and
+postgres:18 for SEC-15.
 
-* **Fixed (20):** SEC-01, SEC-02, SEC-03, SEC-05, SEC-06, SEC-07, SEC-08, SEC-09, SEC-10 (origin), SEC-11, SEC-12, SEC-13, SEC-14, REL-01, BUG-01, BUG-02, BUG-03, BUG-04, MISS-01, DEP-01 (tenant react-router), DEAD-01, PERF-01. 
-* **Deferred (5):** INF-01 (NATS/Redis auth; Docker API isolated), SEC-04, SEC-10 (localStorage→BFF), DEP-01 (admin-only transitives), ARCH-01.
+**Shipped to `master`** (`a7f931c` remediation, `04f157a` preview API fix, `6a776b6`
+preview-proxy hardening, `cc57d42` SEC-03/06 tests, `874c7cf` DEAD-01, `8e11267` + `392644d`
+DEP-01, `ba27bb4` + `3379b9d` PERF-01, `8342f57` SEC-05/BUG-01 tests, `755cce9` + `1bd8864`
+INF-01, `fb52db3` SEC-04, `ccc4149` SEC-15). The preview-proxy hardening closed a
+confused-deputy path-traversal + a missing postMessage source check that the post-push security
+review found in the live-preview API proxy.
+
+* **Fixed (25):** SEC-01 … SEC-15 (all but SEC-10's BFF residual), REL-01, BUG-01 … BUG-04, MISS-01, DEP-01, DEAD-01, PERF-01, INF-01.
+* **Deferred (2):** SEC-10's localStorage→BFF migration (needs its own design and browser verification; the CSRF half is the blocker, because tenant sites share a registrable domain with the console so `SameSite=Lax` does not cover it) and ARCH-01's forced RLS (an ADR-level decision rather than a defect).
 * **New dependency:** `HtmlSanitizer` 9.2.1039 (Ganss/AngleSharp), pinned in `Directory.Packages.props`, referenced by `Dcms.Shared.Security` — the only package added.
-* **Regression tests added:** `/internal` edge 404 (SEC-03, `EdgeHttpPlaneTests`); escalation-subset rule (SEC-06, `TenancyIsolationTests`); lock + password change revoke live tokens/authorizations and rotate the stamp (SEC-05, `SessionRevocationTests`); a push that lands mid-build gets exactly one catch-up build, none when the head is unchanged or one is in flight (BUG-01, `ReleaseCatchUpTests`); exact-byte range delivery against MinIO (PERF-01, `HlsServingTests`). SEC-05 and BUG-01 are mutation-checked (each fails with its fix removed); the PERF-01 test failed on a real SDK bug before its fix landed.
+* **Regression tests added:** `/internal` edge 404 (SEC-03, `EdgeHttpPlaneTests`); escalation-subset rule (SEC-06, `TenancyIsolationTests`); lock + password change revoke live tokens/authorizations and rotate the stamp (SEC-05, `SessionRevocationTests`); a push that lands mid-build gets exactly one catch-up build, none when the head is unchanged or one is in flight (BUG-01, `ReleaseCatchUpTests`); exact-byte range delivery against MinIO (PERF-01, `HlsServingTests`). RLS coverage and partition protection, with the catalogue as the oracle (SEC-15, `RlsCoverageTests`). SEC-05 and BUG-01 are mutation-checked (each fails with its fix removed), as are both SEC-15 policy tests (each drops a policy and asserts the named failure); the PERF-01 test failed on a real SDK bug before its fix landed.
