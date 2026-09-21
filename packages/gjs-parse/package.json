@@ -23,6 +23,6 @@
     "@types/css-tree": "^2",
     "@types/js-beautify": "^1",
     "typescript": "^5",
-    "vitest": "^3"
+    "vitest": "^4"
   }
 }

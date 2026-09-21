@@ -20,6 +20,6 @@
     "grapesjs": "^0.23",
     "jsdom": "^27",
     "typescript": "^5",
-    "vitest": "^3"
+    "vitest": "^4"
   }
 }

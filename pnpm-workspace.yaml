@@ -9,12 +9,12 @@ allowBuilds:
   '@tailwindcss/oxide': true
   esbuild: true
   vue-demi: true
-# DEP-01: pin high-severity transitive advisories to their patched version within the same
-# major. All are deep transitives of the admin SPA's API-reference viewer / rjsf / vite
-# toolchain — an override is the surgical fix, leaving the direct deps put. Left residual:
-# ts-deepmerge (8), vitest and @vitest/mocker (4) need a major bump; unhead's fix is in 2.x but
-# the consumer (@unhead/vue@1) is still on unhead 1 and 2.x drops createServerHead — all three
-# belong in a dedicated toolchain upgrade, and all are LOW/MODERATE and admin-only.
+# DEP-01: pin transitive advisories to their patched version within the same major. All are
+# deep transitives of the admin SPA's API-reference viewer / rjsf / vite toolchain — an
+# override is the surgical fix, leaving the direct deps put. unhead and ts-deepmerge needed a
+# major their consumer refused, so @scalar/api-reference-react was bumped 0.7 -> 0.9 instead
+# (0.9 ships @unhead/vue 2 and drops ts-deepmerge); undici and @ai-sdk/provider-utils below are
+# what that newer Scalar brought in. vitest went 3 -> 4 in the seven packages that declare it.
 overrides:
   postcss: ^8.5.23
   nanoid@^3.0.0: ^3.3.18
@@ -25,3 +25,5 @@ overrides:
   baseline-browser-mapping: ^2.11.0
   yaml: ^2.8.3
   esbuild: ^0.28.1
+  undici: ^7.29.0
+  '@ai-sdk/provider-utils': ^4.0.33
