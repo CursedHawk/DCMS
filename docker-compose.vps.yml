@@ -312,9 +312,10 @@ services:
 
   # ---- NATS $SYS account ----
   #
-  # Replaces NATS's flag-only startup with a config file, which is what gives nats-surveyor
-  # a system account to collect from. The ten streams stay in $G and `no_auth_user` keeps
-  # all eight services connecting exactly as they did — none of them gained a credential.
+  # The config-file startup that creates this account moved to docker-compose.prod.yml when
+  # INF-01 turned authentication on: it is no longer a vps1-only observability nicety, it is
+  # what stops anything on the network publishing onto any queue. Only the collector is left
+  # here, because only this host runs one.
   #
   # This is the server that carries every queue on the platform and the failure mode of
   # getting it wrong is "the streams are gone", so it was landed through the gate in
@@ -322,13 +323,6 @@ services:
   # throwaway container pointed at a *copy* of it. That rehearsal is what caught both real
   # defects — `system_account: $SYS` unquoted is read as a variable reference, and `$G`
   # cannot be declared as an account at all — before either could touch production.
-  nats:
-    command: ["-c", "/etc/nats/nats.conf"]
-    environment:
-      NATS_APP_PASSWORD: "${NATS_APP_PASSWORD:?set NATS_APP_PASSWORD in .env}"
-      NATS_SYS_PASSWORD: "${NATS_SYS_PASSWORD:?set NATS_SYS_PASSWORD in .env}"
-    volumes:
-      - ./infra/nats/nats.conf:/etc/nats/nats.conf:ro
 
   # Collects from the $SYS account the config above creates: per-account statistics and the
   # JetStream advisories that say when a consumer is falling behind, which the plain

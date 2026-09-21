@@ -84,7 +84,11 @@ EDGE_OIDC_CLIENT_SECRET=…     # must match Identity__Edge__Secret (same var, b
 GRAFANA_DB_PASSWORD=…         # the dcms_grafana Postgres role, step 5
 ALERT_WEBHOOK_SECRET=…        # bearer token for POST /api/internal/alerts
 NATS_SYS_PASSWORD=…           # the $SYS account user nats-surveyor collects as
-NATS_APP_PASSWORD=…           # the $G user; nothing authenticates with it (no_auth_user)
+NATS_APP_PASSWORD=…           # the $G user every service authenticates as (INF-01)
+REDIS_PASSWORD=…              # Redis requirepass (INF-01)
+
+# All three are generated into .env by scripts/deploy.sh on a host that has none, so
+# a fresh host needs no hand-written value; set them yourself only to pin or rotate.
 
 # Optional. Comma-separated. Defaults to SUPERADMIN_EMAIL, which is the person who
 # would be woken up anyway.
@@ -288,8 +292,9 @@ docker run -d --name nats-verify --network dcms_default -v /tmp/nats-verify:/dat
 # 4. Three questions of the throwaway, in this order.
 #    a) do all ten streams restore, with their consumers?
 nats --server nats://nats-verify:4222 stream report
-#    b) can an UNAUTHENTICATED client still publish? (this is what the eight services are)
-nats --server nats://nats-verify:4222 pub tenant.verify.test hello
+#    b) is an UNAUTHENTICATED client refused, and the app user accepted? (INF-01)
+nats --server nats://nats-verify:4222 pub tenant.verify.test hello   # expect: Authorization Violation
+nats --server "nats://app:$NATS_APP_PASSWORD@nats-verify:4222" pub tenant.verify.test hello
 #    c) does the sys user actually reach the system account?
 nats --server nats://nats-verify:4222 --user sys --password "$NATS_SYS_PASSWORD" server list
 ```
@@ -308,11 +313,12 @@ outage discovered at 4222:
    `authorization` block**, which is the documented way to place a user in `$G`. So the
    streams never move.
 
-`no_auth_user: app` then maps every unauthenticated client to that user, so **no service
-changed its connection string and none gained a credential to manage**. Note what that does
-*not* mean: anything that can reach 4222 still has full application access. It did before
-too, and NATS publishes no host port, so this is not a regression — but do not read the
-presence of a password in `nats.conf` as NATS having been locked down.
+This originally shipped with `no_auth_user: app`, mapping every unauthenticated client onto
+that user so no service changed its connection string — with the caveat recorded here that
+anything reaching 4222 still had full application access. **INF-01 removed it.** Every
+service now authenticates, `Nats__Url` on the `x-prod-env` anchor carries
+`app:${NATS_APP_PASSWORD}`, and the config-file startup moved from the vps overlay into
+`docker-compose.prod.yml` — because without it a deployed NATS has no authentication at all.
 
 Verified after the switch: all ten streams, all thirteen consumers, message counts matching
 the baseline; five requests through the public edge produced five audit rows and five new
@@ -322,7 +328,12 @@ logged no NATS error since.
 **Rolling back** is putting `command: ["--jetstream", "--store_dir", "/data", "--http_port",
 "8222"]` back on the `nats` service and removing the `nats.conf` mount. Surveyor then has no
 `$SYS` to collect from and its target goes down; `nats-exporter` is unaffected and keeps the
-stream-depth and consumer-lag panels working, which is why it exists separately.
+stream-depth and consumer-lag panels working, which is why it exists separately. Since
+INF-01 that rollback also reopens the broker to anonymous publishers. It does not break the
+services: a NATS with no authorization configured accepts a connection that carries a
+credential and ignores it (verified against nats:2.11 with the NATS.Net 2.8.1 client), so
+`Nats__Url` can keep its `app:` prefix either way. The security loss is silent, which is the
+point worth knowing before rolling back.
 
 ## Is the budget actually being kept?
 

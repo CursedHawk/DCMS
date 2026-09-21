@@ -891,6 +891,11 @@ services:
       # needs pg_stat_* views, which are readable by any role — it never touches table data.
       POSTGRES_EXPORTER_USER: "${GRAFANA_DB_USER:-dcms_grafana}"
       POSTGRES_EXPORTER_PASSWORD: "${GRAFANA_DB_PASSWORD:-dcms-grafana-dev}"
+      # Empty in local dev, where Redis takes no password — and an empty password is what
+      # tells the embedded exporter not to send AUTH at all, which is what that Redis wants.
+      # Without this the Redis dashboard renders "No data" everywhere INF-01 set a password,
+      # and "No data" reads exactly like an idle cache rather than like a locked-out exporter.
+      REDIS_EXPORTER_PASSWORD: "${REDIS_PASSWORD:-}"
     volumes:
       - ./infra/observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
       # Extra postgres_exporter collectors for views the built-in ones miss on PG 18.

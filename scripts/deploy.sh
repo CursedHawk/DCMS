@@ -182,11 +182,38 @@ env_value() {
 
 docker compose version >/dev/null 2>&1 || die "docker compose plugin not available"
 
-# Compose substitutes ${VAR} from .env. Two NATS passwords use the ${VAR:?}
+# Compose substitutes ${VAR} from .env. The broker passwords use the ${VAR:?}
 # form, so a missing one fails the whole invocation rather than silently
 # starting a server nobody can authenticate against.
 if [ "$ENVIRONMENT" != "local" ] && [ ! -f .env ]; then
   die ".env not found in $REPO_ROOT -- compose has nothing to substitute"
+fi
+
+# Generates a secret into .env if the host does not already have one.
+#
+# These three are the host's own broker credentials: no human ever types them, no other
+# system holds them, and they are meaningless off this machine. The alternative was a
+# runbook line telling an operator to invent a Redis password before the next deploy --
+# which is the kind of step that silently never happens, and until it did the deploy
+# would fail on ${REDIS_PASSWORD:?}. Generated once, appended once, then never touched:
+# env_value finding anything at all is enough to leave it alone, so a rotation done by
+# hand survives every later deploy.
+ensure_env_secret() {
+  local key="$1" value
+  [ -n "$(env_value "$key")" ] && return 0
+  value="$(openssl rand -hex 32 2>/dev/null || true)"
+  [ -n "$value" ] || value="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  [ -n "$value" ] || die "could not generate $key (no openssl and no /dev/urandom)"
+  # A .env whose last line has no newline would otherwise swallow the new key.
+  [ -s .env ] && [ -n "$(tail -c1 .env)" ] && printf '\n' >>.env
+  printf '%s=%s\n' "$key" "$value" >>.env
+  log "generated $key into .env (first deploy on this host)"
+}
+
+if [ "$ENVIRONMENT" != "local" ]; then
+  ensure_env_secret REDIS_PASSWORD
+  ensure_env_secret NATS_APP_PASSWORD
+  ensure_env_secret NATS_SYS_PASSWORD
 fi
 
 # `config` fully resolves the overlay set and every substitution. If the files

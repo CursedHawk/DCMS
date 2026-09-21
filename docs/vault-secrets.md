@@ -248,7 +248,7 @@ Each is read by a container that cannot talk to Vault.
 | `POSTGRES_PASSWORD` | the postgres container itself |
 | `SITEBUILDER_DB_PASSWORD`, `RLS_DB_PASSWORD`, `GRAFANA_DB_USER`, `GRAFANA_DB_PASSWORD` | `postgres-bootstrap`, which creates the roles |
 | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `SITEBUILDER_MINIO_USER`, `SITEBUILDER_MINIO_PASSWORD` | the minio container and its init job |
-| `NATS_APP_PASSWORD`, `NATS_SYS_PASSWORD` | the nats container (`${VAR:?}` — a missing one fails the whole compose invocation) |
+| `NATS_APP_PASSWORD`, `NATS_SYS_PASSWORD`, `REDIS_PASSWORD` | the nats and redis containers **and** every service's `Nats__Url` / `ConnectionStrings__Redis` (`${VAR:?}` — a missing one fails the whole compose invocation). `scripts/deploy.sh` generates each into `.env` on a host that has none, so a new host needs no hand-written value; a value already there is never rewritten, which is what makes a hand rotation stick |
 | `GRAFANA_ADMIN_PASSWORD` | the grafana container |
 | `EDGE_OIDC_CLIENT_SECRET` | the edge **and** identity, which seeds the client — moving it would create a second copy to rotate, not remove one |
 | `ALERT_WEBHOOK_SECRET` | grafana **and** admin-api, which compares it; same reason. A mismatch rejects every alert, and a rejected alert looks exactly like having nothing to alert about |

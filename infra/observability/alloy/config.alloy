@@ -294,6 +294,9 @@ prometheus.exporter.postgres "db" {
 
 prometheus.exporter.redis "cache" {
   redis_addr = "redis:6379"
+  // INF-01 put a requirepass on Redis in every deployed environment. Empty in local dev,
+  // where the exporter then sends no AUTH at all — which is what an unprotected Redis wants.
+  redis_password = env("REDIS_EXPORTER_PASSWORD")
 }
 
 // Synthetic probes. These answer a question no in-process metric can: whether the thing is

@@ -752,8 +752,8 @@ OpenIddict discovery/JWKS endpoints are provided by the library (`/.well-known/o
 | admin-api → content-api (preview proxy) | **none**; sets tenant + sandbox headers |
 | platform-api → Prometheus/Loki/log-janitor | none / Loki `X-Scope-OrgID: fake` / log-janitor secret from Vault (see `janitor.py`) |
 | services → Vault | AppRole (`VAULT_ROLE_ID/SECRET_ID`) or `VAULT_TOKEN` (dev root `dcms-dev-root`; refused when `DCMS_REFUSE_DEV_VAULT`) |
-| services → NATS | `nats.conf` defines user `app` and **`no_auth_user: app`**; services connect with only `Nats:Url` |
-| services → Postgres/Redis/MinIO | connection strings (Vault in deployed envs); Redis without auth in base compose |
+| services → NATS | `nats.conf` defines user `app`; `Nats:Url` carries `app:${NATS_APP_PASSWORD}` in every deployed environment (base compose is unauthenticated for local dev only) |
+| services → Postgres/Redis/MinIO | connection strings (Vault in deployed envs); Redis `requirepass ${REDIS_PASSWORD}` in the prod overlay, no auth in base compose (local dev) |
 | admin-api → Forgejo | `Forgejo:Token`; identity → Forgejo `Forgejo:AdminToken` |
 
 ---

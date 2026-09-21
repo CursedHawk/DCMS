@@ -25,8 +25,8 @@ x-prod-env: &prod-env
   DOTNET_ENVIRONMENT: "Production"
   DCMS_REFUSE_DEV_VAULT: "true"
   ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=${POSTGRES_PASSWORD}"
-  ConnectionStrings__Redis: "redis:6379"
-  Nats__Url: "nats://nats:4222"
+  ConnectionStrings__Redis: "redis:6379,password=${REDIS_PASSWORD}"
+  Nats__Url: "nats://app:${NATS_APP_PASSWORD}@nats:4222"
   Storage__Endpoint: "minio:9000"
   Storage__AccessKey: "${MINIO_ROOT_USER}"
   Storage__SecretKey: "${MINIO_ROOT_PASSWORD}"
@@ -59,6 +59,43 @@ x-prod-env: &prod-env
   # docs/adr/0007-audit-logging.md and docs/vault-secrets.md.
 
 services:
+  # INF-01: the two brokers on the compose network used to accept any connection that
+  # reached them. Redis holds every session's SignalR backplane traffic, the output cache
+  # and the rate-limit counters; NATS carries site publishes, audit records and outbound
+  # mail. Anonymous access to either is a full platform compromise from any foothold in
+  # the network — including a tenant's own build container. Both now require a password.
+  #
+  # REDIS_PASSWORD and the two NATS passwords are generated into .env by scripts/deploy.sh
+  # on a host that has none, so bringing up a new host is still a single deploy with no
+  # human step. They are the host's own credentials and never leave it.
+  redis:
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+      - "--requirepass"
+      - "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env (scripts/deploy.sh generates it)}"
+    healthcheck:
+      # The base file's bare `redis-cli ping` answers NOAUTH once a password is set, so the
+      # service would never become healthy and everything depending on it would never start.
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:?}", "ping"]
+
+  # Replaces NATS's flag-only startup with the config file. That file is what creates the
+  # $SYS account nats-surveyor collects from AND what requires authentication at all — a
+  # NATS started from the base file's flags has neither, so this mount belongs with every
+  # deployed environment rather than only on vps1.
+  nats:
+    command: ["-c", "/etc/nats/nats.conf"]
+    environment:
+      NATS_APP_PASSWORD: "${NATS_APP_PASSWORD:?set NATS_APP_PASSWORD in .env (scripts/deploy.sh generates it)}"
+      NATS_SYS_PASSWORD: "${NATS_SYS_PASSWORD:?set NATS_SYS_PASSWORD in .env (scripts/deploy.sh generates it)}"
+    volumes:
+      - ./infra/nats/nats.conf:/etc/nats/nats.conf:ro
+
+  nats-init:
+    environment:
+      NATS_URL: "nats://app:${NATS_APP_PASSWORD}@nats:4222"
+
   postgres:
     # pg_stat_statements is what turns "the database is slow" into "this statement is slow".
     # It must be preloaded at startup — it cannot be enabled on a running server — so this
@@ -273,7 +310,7 @@ services:
       # Harmless while Vault holds only placeholders; invisible once it holds real secrets.
       VAULT_ADDR: "http://vault:8200"
       DOTNET_ENVIRONMENT: "Production"
-      Nats__Url: "nats://nats:4222"
+      Nats__Url: "nats://app:${NATS_APP_PASSWORD}@nats:4222"
 
   # The site-builder deliberately does NOT inherit *prod-env (no root MinIO creds,
   # no Vault token, no broad DB user). It gets least-privilege scoped credentials
@@ -294,8 +331,8 @@ services:
       VAULT_ADDR: "http://vault:8200"
       DOTNET_ENVIRONMENT: "Production"
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_sitebuilder;Password=${SITEBUILDER_DB_PASSWORD:-dcms-sitebuilder-dev}"
-      ConnectionStrings__Redis: "redis:6379"
-      Nats__Url: "nats://nats:4222"
+      ConnectionStrings__Redis: "redis:6379,password=${REDIS_PASSWORD}"
+      Nats__Url: "nats://app:${NATS_APP_PASSWORD}@nats:4222"
       Storage__Endpoint: "minio:9000"
       Storage__AccessKey: "${SITEBUILDER_MINIO_USER:-dcms-sitebuilder}"
       Storage__SecretKey: "${SITEBUILDER_MINIO_PASSWORD:-dcms-sitebuilder-dev}"
@@ -372,8 +409,8 @@ services:
       VAULT_ADDR: "http://vault:8200"
       VAULT_TOKEN: "${VAULT_TOKEN:-}"
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_edge;Password=${EDGE_DB_PASSWORD:-dcms-edge-dev}"
-      ConnectionStrings__Redis: "redis:6379"
-      Nats__Url: "nats://nats:4222"
+      ConnectionStrings__Redis: "redis:6379,password=${REDIS_PASSWORD}"
+      Nats__Url: "nats://app:${NATS_APP_PASSWORD}@nats:4222"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy:4317"
       OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
       Edge__AdminHost: "${ADMIN_HOST:-admin.highgeek.eu}"
@@ -448,8 +485,8 @@ services:
       # ConnectionStrings__Postgres is DELIBERATELY ABSENT. It carries the dcms_platform
       # password, so it comes from secret/dcms/platform-api and from nowhere else — leaving a
       # value here would also override Vault, which loads after the environment.
-      ConnectionStrings__Redis: "redis:6379"
-      Nats__Url: "nats://nats:4222"
+      ConnectionStrings__Redis: "redis:6379,password=${REDIS_PASSWORD}"
+      Nats__Url: "nats://app:${NATS_APP_PASSWORD}@nats:4222"
       Auth__Authority: "http://identity:8080/"
       Auth__Audience: "dcms-platform-api"
       Auth__RequireHttpsMetadata: "true"
