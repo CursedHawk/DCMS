@@ -232,16 +232,27 @@ services:
       # header injection entirely; this is the second lock on the same door.
       FORGEJO__service__ENABLE_REVERSE_PROXY_AUTHENTICATION_API: "false"
       FORGEJO__security__REVERSE_PROXY_AUTHENTICATION_USER: "X-WEBAUTH-USER"
-      # The docker bridge range, and deliberately NOT 127.0.0.0/8 (Forgejo's default), because
-      # this container publishes HTTP on the host's loopback. Trusting loopback would let any
-      # process on the host set X-WEBAUTH-USER and be any git user; trusting only the compose
-      # network means the edge is the only thing that can.
-      FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES: "172.16.0.0/12"
+      # SEC-04, same shape as Grafana's whitelist. Deliberately NOT 127.0.0.0/8 (Forgejo's
+      # default), because this container publishes HTTP on the host's loopback and trusting
+      # loopback would let any process on the host set X-WEBAUTH-USER and be any git user.
+      # It used to be 172.16.0.0/12 -- the whole docker bridge range, which is every container
+      # on the compose network rather than only the edge. Now it is the edge-trusted network,
+      # whose subnet is declared and whose only other member is the edge.
+      #
+      # admin-api and identity are unaffected: they call /api/v1 with their own tokens over
+      # `default` and send no X-WEBAUTH header, and reverse-proxy auth is off for the API
+      # anyway (two lines up).
+      FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES: "10.201.0.0/24"
       # Webhooks target admin-api on the internal docker network (a private host),
       # which Forgejo's SSRF guard blocks by default — allow the internal range.
       FORGEJO__webhook__ALLOWED_HOST_LIST: "private,loopback"
     volumes:
       - forgejo-data:/data
+    networks:
+      default: {}
+      # `forgejo-auth` resolves on this network only — see Edge__Upstreams__Forgejo.
+      edge-trusted:
+        aliases: [forgejo-auth]
     ports:
       # HTTP/web UI on loopback only — in prod the edge proxies it over the internal
       # network and terminates TLS; in dev the developer reaches it at localhost.
@@ -606,6 +617,15 @@ services:
       # site is a way to be confidently wrong in public.
       Edge__Cache__Enabled: "${EDGE_CACHE_ENABLED:-false}"
       Edge__Cache__Seconds: "${EDGE_CACHE_SECONDS:-60}"
+      # SEC-04: the aliases Grafana and Forgejo answer to on the edge-trusted network ONLY.
+      # Both are on `default` as well, so their plain names resolve to two addresses and this
+      # connection would be free to take either — arriving from a source address the two
+      # header-auth allow-lists do not cover. An alias that exists on one network cannot.
+      Edge__Upstreams__Grafana: "http://grafana-auth:3000"
+      Edge__Upstreams__Forgejo: "http://forgejo-auth:3000"
+    networks:
+      - default
+      - edge-trusted
 
   # A throwaway ACME certificate authority, for proving the edge's issuance path without
   # spending a Let's Encrypt rate limit. OFF unless asked for: `--profile acmetest`.
@@ -1121,6 +1141,22 @@ services:
       GRAFANA_ROOT_URL: "${GRAFANA_ROOT_URL:-http://localhost:3001/}"
       GRAFANA_DOMAIN: "${GRAFANA_DOMAIN:-localhost}"
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:8080}"
+      # SEC-04. X-WEBAUTH-USER is a bearer credential in header form, and until now Grafana
+      # accepted it from any source on the compose network -- so any compromised container
+      # could assert any operator, including an admin. This limits it to the `edge-trusted`
+      # network below, which the edge is the only other member of.
+      #
+      # A literal CIDR is safe here only because that network declares its own subnet: the
+      # objection recorded in grafana.ini was that compose assigns addresses dynamically, and
+      # an explicitly-declared subnet is what answers it. The two values must agree, so this
+      # one is set here, next to the network, rather than in the bind-mounted ini.
+      GF_AUTH_PROXY_WHITELIST: "10.201.0.0/24"
+    networks:
+      default: {}
+      # `grafana-auth` resolves on this network only, which is how the edge pins the path —
+      # see Edge__Upstreams__Grafana.
+      edge-trusted:
+        aliases: [grafana-auth]
     volumes:
       - ./infra/observability/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
       - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
@@ -1155,6 +1191,35 @@ services:
     depends_on:
       nats:
         condition: service_started
+
+networks:
+  # SEC-04: the one path over which Grafana and Forgejo will believe an X-WEBAUTH-USER
+  # header. Three members — the edge, Grafana, Forgejo — and `internal`, because this
+  # network carries nothing but those two hops.
+  #
+  # Both consoles sign operators in by header, which makes that header a bearer credential:
+  # whoever can set it on a request that arrives IS that user. The edge strips client-supplied
+  # X-WEBAUTH-* on the way in, so the remaining question was who else on the network could
+  # send one — and the answer was everything. Grafana had no whitelist at all and Forgejo
+  # trusted 172.16.0.0/12, the whole docker bridge range.
+  #
+  # The subnet is spelled out rather than left to Docker, and that is the point rather than a
+  # detail: both allow-lists take addresses, and the reason this platform had none worth the
+  # name was that compose assigns addresses dynamically, so a value pinned today is wrong
+  # after the next `up` — with every operator locked out of the dashboards. A declared subnet
+  # is stable across `up`, `down` and a host reboot, so GF_AUTH_PROXY_WHITELIST and
+  # FORGEJO__security__REVERSE_PROXY_TRUSTED_PROXIES can name it and stay right.
+  #
+  # 10.201.0.0/24 sits outside Docker's default address pools (172.17-172.31 and the 192.168
+  # range it falls back to), so creating it cannot collide with one Docker allocated itself.
+  # It is a NEW network rather than a subnet pinned onto `default`: pinning the existing one
+  # would make compose refuse to reconcile it on a running host ("network has incorrect
+  # config"), which turns a deploy into a hand-run `down`.
+  edge-trusted:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.201.0.0/24
 
 volumes:
   postgres-data:
