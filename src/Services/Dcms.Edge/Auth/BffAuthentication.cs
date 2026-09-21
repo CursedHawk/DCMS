@@ -62,19 +62,26 @@ public static class BffAuthentication
                 return;
             }
 
+            // A WebSocket handshake is neither safe nor able to carry a CSRF token, so it gets
+            // the origin check and only the origin check. See BffGuard.IsWebSocketHandshake for
+            // why the method is not the thing to key on.
+            var isHandshake = BffGuard.IsWebSocketHandshake(
+                context.WebSockets.IsWebSocketRequest, context.Request.Method);
+
             var expectedOrigin = BffGuard.OriginOf(context.Request.Host.Host);
             if (!BffGuard.IsSameOrigin(
                     context.Request.Method,
                     context.Request.Headers.Origin.ToString(),
                     context.Request.Headers["Sec-Fetch-Site"].ToString(),
-                    expectedOrigin))
+                    expectedOrigin,
+                    isHandshake))
             {
                 await RefuseAsync(context, "cross-origin");
                 return;
             }
 
             var protection = context.RequestServices.GetRequiredService<IDataProtectionProvider>();
-            if (!BffGuard.IsSafeMethod(context.Request.Method)
+            if (BffGuard.RequiresCsrf(context.Request.Method, isHandshake)
                 && !BffGuard.VerifyCsrf(protection, sessionId!, context.Request.Headers[BffGuard.CsrfHeaderName]))
             {
                 await RefuseAsync(context, "csrf");

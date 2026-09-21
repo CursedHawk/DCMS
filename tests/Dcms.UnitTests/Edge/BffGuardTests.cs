@@ -66,6 +66,60 @@ public class BffGuardTests
         BffGuard.IsSameOrigin("POST", Console, "cross-site", Console).Should().BeFalse();
     }
 
+    /// <summary>
+    /// The regression that took the hubs down at the phase-4 cutover, in the shape it actually
+    /// arrived in.
+    ///
+    /// <para>A WebSocket handshake over HTTP/1.1 is a GET; over HTTP/2 it is an extended CONNECT
+    /// (RFC 8441), and that is what a browser sends to an edge that negotiates h2 — which this
+    /// one does. CONNECT is not a safe method, so the CSRF branch demanded a header that a
+    /// handshake cannot carry, and every hub got 403 from the edge while REST worked beside it.
+    /// Both shapes are here because keying on either one alone is exactly the bug.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(true, "CONNECT")]
+    [InlineData(true, "GET")]
+    [InlineData(false, "CONNECT")]
+    public void A_websocket_handshake_is_never_asked_for_a_csrf_token(bool isWebSocketRequest, string method)
+    {
+        var handshake = BffGuard.IsWebSocketHandshake(isWebSocketRequest, method);
+
+        handshake.Should().BeTrue();
+        BffGuard.RequiresCsrf(method, handshake).Should().BeFalse(
+            "a browser cannot set a custom header on a WebSocket handshake, which is the same "
+            + "constraint that makes SignalR put its token in the query string");
+    }
+
+    [Fact]
+    public void An_ordinary_write_is_still_asked_for_one()
+    {
+        BffGuard.RequiresCsrf("POST", BffGuard.IsWebSocketHandshake(false, "POST")).Should().BeTrue();
+        BffGuard.RequiresCsrf("GET", BffGuard.IsWebSocketHandshake(false, "GET")).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("CONNECT")]
+    public void A_websocket_handshake_from_a_tenant_page_is_refused(string method)
+    {
+        // Cross-site WebSocket hijacking, which the origin check is the whole defence against
+        // because no token can be sent. Note the HTTP/1.1 shape: keying the check on "is this a
+        // safe method" let a GET handshake past unexamined, so fixing the 403 by exempting
+        // handshakes from BOTH checks would have traded an outage for a hole.
+        BffGuard.IsSameOrigin(method, TenantSite, secFetchSite: null, Console, isWebSocketHandshake: true)
+            .Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("CONNECT")]
+    public void A_websocket_handshake_from_the_console_itself_is_allowed(string method)
+    {
+        // Browsers send no Sec-Fetch-Site on a handshake, so Origin is what decides.
+        BffGuard.IsSameOrigin(method, Console, secFetchSite: null, Console, isWebSocketHandshake: true)
+            .Should().BeTrue();
+    }
+
     [Fact]
     public void A_csrf_token_is_only_good_for_the_session_it_was_minted_for()
     {

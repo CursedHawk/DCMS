@@ -41,6 +41,38 @@ public static class BffGuard
     public static bool IsSafeMethod(string method) => SafeMethods.Contains(method);
 
     /// <summary>
+    /// Whether this is a WebSocket handshake — which is neither a safe request nor one that can
+    /// carry a CSRF token, and so needs a rule of its own.
+    ///
+    /// <para><b>The method is not GET when it matters.</b> Over HTTP/1.1 a handshake is a GET
+    /// with <c>Upgrade: websocket</c>. Over HTTP/2 it is an extended CONNECT (RFC 8441), which
+    /// is what a browser actually sends to this edge, because Kestrel negotiates h2 by ALPN. A
+    /// check that keyed on GET therefore let the HTTP/1.1 shape through unexamined and refused
+    /// the HTTP/2 one as a CSRF failure — the second of which is what took the notification,
+    /// site and chat hubs down at the phase-4 cutover, in two services at once, with REST
+    /// working perfectly beside it.</para>
+    ///
+    /// <para><c>IsWebSocketRequest</c> is the answer ASP.NET gives for both shapes, and
+    /// <c>EdgeRateLimiting</c> already exempts long-lived connections by the same question. The
+    /// CONNECT fallback is belt and braces: if that feature is ever not populated, an extended
+    /// CONNECT must still not be mistaken for an ordinary state-changing request.</para>
+    /// </summary>
+    public static bool IsWebSocketHandshake(bool isWebSocketRequest, string method)
+        => isWebSocketRequest || string.Equals(method, "CONNECT", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether this request has to present a CSRF token.
+    ///
+    /// <para>A WebSocket handshake never does, and not as a concession: a browser cannot set a
+    /// custom header on one. That is the same constraint that makes SignalR put its token in the
+    /// query string. What protects a handshake instead is the origin check below, which is the
+    /// standard defence against cross-site WebSocket hijacking and which browsers always supply
+    /// an <c>Origin</c> for.</para>
+    /// </summary>
+    public static bool RequiresCsrf(string method, bool isWebSocketHandshake)
+        => !isWebSocketHandshake && !IsSafeMethod(method);
+
+    /// <summary>
     /// Whether the edge may present its own session as this request's credential. Every way
     /// phase 1 of ADR 0014 stays inert is one of these four terms, which is why it is a
     /// function with a test rather than a condition in the middle of a middleware.
@@ -70,9 +102,16 @@ public static class BffGuard
     /// POST/PUT/PATCH/DELETE, so a request without one is not a browser doing what this session
     /// exists for.</para>
     /// </summary>
-    public static bool IsSameOrigin(string method, string? origin, string? secFetchSite, string expectedOrigin)
+    public static bool IsSameOrigin(
+        string method, string? origin, string? secFetchSite, string expectedOrigin,
+        bool isWebSocketHandshake = false)
     {
-        if (IsSafeMethod(method))
+        // A handshake is checked even though its HTTP/1.1 shape is a GET. Treating it as a safe
+        // read would leave cross-site WebSocket hijacking wide open: a page on a tenant's
+        // subdomain can open a socket to this host, the session cookie rides along because the
+        // two are same-site, and from then on it is talking to the hub as the operator. The
+        // origin check is the whole of the defence there, because no CSRF token can be sent.
+        if (!isWebSocketHandshake && IsSafeMethod(method))
         {
             return true;
         }

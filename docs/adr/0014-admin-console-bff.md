@@ -225,6 +225,15 @@ independently shippable and reversible:
    `ADMIN_AUTH_MODE` is still `bff` — that combination 401s every API call. Roll the
    console back first, the edge second.
 
+   **The soak found a bug, and it is fixed.** Every hub 403'd at the edge: a WebSocket
+   handshake over HTTP/2 is an extended CONNECT (RFC 8441), not a GET, so the CSRF branch
+   demanded a header a handshake cannot carry. REST worked perfectly beside it, and it hit
+   two services at once, which is what pointed at the edge. Fixed by asking
+   `HttpContext.WebSockets.IsWebSocketRequest` rather than keying on the method — and while
+   there, by *starting* to check the origin of a handshake at all: the HTTP/1.1 shape is a
+   GET, so it had been passing unexamined, which is cross-site WebSocket hijacking on a
+   host whose tenant subdomains are same-site. See `BffGuard.IsWebSocketHandshake`.
+
    The soak is a human step and deliberately not automated: real `SameSite` behaviour
    across real hosts, and the tenant-subdomain CSRF attempt, are the things this box
    cannot see. What to watch, in the order they would break: sign-in returns to where it
