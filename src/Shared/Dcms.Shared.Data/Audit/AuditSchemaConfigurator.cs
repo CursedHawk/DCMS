@@ -1,4 +1,5 @@
 using System.Globalization;
+using Dcms.Shared.Data.Rls;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -61,7 +62,15 @@ public static class AuditSchemaConfigurator
                 // partition, which blocks attaching a real one. Worth a warning rather than a
                 // crash: writes still succeed into the default, so nothing is lost meanwhile.
                 logger.LogWarning(ex, "Could not create audit partition {Partition}; records will fall to the default partition.", name);
+                continue;
             }
+
+            // A partition is not covered by its parent's row-security policy when a query is
+            // aimed straight at it, and 01-rls.sql's ALTER DEFAULT PRIVILEGES hands dcms_rls
+            // SELECT on it the moment it exists. So it is protected here, as it is created,
+            // rather than at the next startup's RlsConfigurator.ApplyAsync — the maintenance
+            // worker calls this method months after a restart.
+            await RlsConfigurator.ProtectAsync(context, "audit", name, logger, ct);
         }
     }
 

@@ -1,4 +1,7 @@
+using System.Data;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace Dcms.Shared.Data.Rls;
@@ -20,7 +23,7 @@ public static class RlsConfigurator
     // (schema, table) pairs whose rows carry a "TenantId" column and are
     // tenant-filtered in EF. Cross-tenant scan tables (content_outbox,
     // scheduled_publishes) are deliberately excluded.
-    private static readonly (string Schema, string Table)[] TenantTables =
+    public static readonly IReadOnlyList<(string Schema, string Table)> TenantTables =
     [
         ("tenancy", "domains"),
         ("tenancy", "tenant_memberships"),
@@ -88,7 +91,7 @@ public static class RlsConfigurator
     /// it. Kept as data rather than as a comment so <see cref="AssertCoverage"/> can tell
     /// "decided against" apart from "not noticed".
     /// </summary>
-    private static readonly (string Schema, string Table)[] ExemptTables =
+    public static readonly IReadOnlyList<(string Schema, string Table)> ExemptTables =
     [
         ("cms", "content_outbox"),        // drained by a cross-tenant dispatcher
         ("cms", "scheduled_publishes"),   // scanned across tenants by the publish worker
@@ -148,7 +151,7 @@ public static class RlsConfigurator
         {
             logger.LogInformation(
                 "RLS coverage verified: {Covered} protected, {Exempt} deliberately exempt.",
-                TenantTables.Length, ExemptTables.Length);
+                TenantTables.Count, ExemptTables.Count);
             return;
         }
 
@@ -162,38 +165,194 @@ public static class RlsConfigurator
     {
         foreach (var (schema, table) in TenantTables)
         {
-            var qualified = $"\"{schema}\".\"{table}\"";
-            // The policy is the important part — apply it unconditionally.
-            // CREATE POLICY has no IF NOT EXISTS; drop-then-create keeps it idempotent.
-            var policySql = $"""
-                ALTER TABLE {qualified} ENABLE ROW LEVEL SECURITY;
-                DROP POLICY IF EXISTS tenant_isolation ON {qualified};
-                CREATE POLICY tenant_isolation ON {qualified}
-                    USING ("TenantId" = nullif(current_setting('app.tenant_id', true), '')::uuid)
-                    WITH CHECK ("TenantId" = nullif(current_setting('app.tenant_id', true), '')::uuid);
-                """;
-            try
-            {
-                await context.Database.ExecuteSqlRawAsync(policySql, ct);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "RLS policy apply failed for {Table}.", qualified);
-                continue;
-            }
+            await ProtectAsync(context, schema, table, logger, ct);
+        }
 
-            // Grants to the least-privilege test/raw-access role are best-effort:
-            // the role only exists where infra/postgres/init/01-rls.sql ran.
-            var grantSql = $"GRANT USAGE ON SCHEMA \"{schema}\" TO dcms_rls; GRANT SELECT ON {qualified} TO dcms_rls;";
-            try
+        // Partitions do not inherit their parent's protection for a query aimed straight at
+        // them, so each is protected in its own right. See PartitionsAsync.
+        foreach (var (schema, table) in await PartitionsAsync(context, TenantTables, ct))
+        {
+            await ProtectAsync(context, schema, table, logger, ct);
+        }
+
+        await AssertAppliedAsync(context, logger, ct);
+    }
+
+    /// <summary>
+    /// Enables row security on one table and (re)creates the tenant policy on it. Idempotent,
+    /// and safe on a table that is already protected.
+    ///
+    /// <para>Public because a partition created after startup — <c>AuditSchemaConfigurator</c>
+    /// makes one whenever the maintenance worker rolls a month — has to be protected when it is
+    /// created, not at the next restart.</para>
+    /// </summary>
+    public static async Task ProtectAsync(
+        DbContext context, string schema, string table, ILogger logger, CancellationToken ct = default)
+    {
+        var qualified = $"\"{schema}\".\"{table}\"";
+        // The policy is the important part — apply it unconditionally.
+        // CREATE POLICY has no IF NOT EXISTS; drop-then-create keeps it idempotent.
+        var policySql = $"""
+            ALTER TABLE {qualified} ENABLE ROW LEVEL SECURITY;
+            DROP POLICY IF EXISTS tenant_isolation ON {qualified};
+            CREATE POLICY tenant_isolation ON {qualified}
+                USING ("TenantId" = nullif(current_setting('app.tenant_id', true), '')::uuid)
+                WITH CHECK ("TenantId" = nullif(current_setting('app.tenant_id', true), '')::uuid);
+            """;
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(policySql, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "RLS policy apply failed for {Table}.", qualified);
+            return;
+        }
+
+        // Grants to the least-privilege test/raw-access role are best-effort:
+        // the role only exists where infra/postgres/init/01-rls.sql ran.
+        var grantSql = $"GRANT USAGE ON SCHEMA \"{schema}\" TO dcms_rls; GRANT SELECT ON {qualified} TO dcms_rls;";
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(grantSql, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "RLS grant to dcms_rls skipped for {Table} (role absent).", qualified);
+        }
+    }
+
+    /// <summary>
+    /// Every partition, at any depth, of the given tables.
+    ///
+    /// <para><b>Why this is not a detail.</b> Postgres applies a partitioned table's row-security
+    /// policy to queries that go <i>through the parent</i>. A query aimed straight at a partition
+    /// is checked against that partition's own policies — and enabling row security on the parent
+    /// enables nothing on the children. Meanwhile <c>infra/postgres/init/01-rls.sql</c> holds an
+    /// ALTER DEFAULT PRIVILEGES that grants <c>dcms_rls</c> SELECT on every table <c>dcms</c>
+    /// creates in these schemas, and each monthly audit partition is one of those. So
+    /// <c>audit.audit_events</c> was protected while <c>SELECT * FROM audit.audit_events_2026m09</c>
+    /// returned every tenant's records to the one role that exists to prove it cannot.</para>
+    /// </summary>
+    private static async Task<List<(string Schema, string Table)>> PartitionsAsync(
+        DbContext context, IReadOnlyList<(string Schema, string Table)> parents, CancellationToken ct)
+    {
+        const string sql = """
+            WITH RECURSIVE listed AS (
+                SELECT c.oid
+                FROM unnest(@schemas, @tables) AS w(schema_name, table_name)
+                JOIN pg_namespace n ON n.nspname = w.schema_name
+                JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = w.table_name
+            ),
+            parts AS (
+                SELECT i.inhrelid AS oid FROM pg_inherits i JOIN listed l ON i.inhparent = l.oid
+                UNION ALL
+                SELECT i.inhrelid FROM pg_inherits i JOIN parts p ON i.inhparent = p.oid
+            )
+            SELECT n.nspname, c.relname
+            FROM parts
+            JOIN pg_class c ON c.oid = parts.oid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            """;
+
+        var found = new List<(string, string)>();
+        await using var command = await CommandAsync(context, sql, parents, ct);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            found.Add((reader.GetString(0), reader.GetString(1)));
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// Asks Postgres which of the listed tables are actually protected, and refuses to finish
+    /// the migration if any is not.
+    ///
+    /// <para><b>Why the count in the log was never evidence.</b> "applied to N tenant tables"
+    /// is <c>TenantTables.Count</c> — it says how long the array is, not what the database
+    /// did with it. And the loop above deliberately continues past a failure, so one table
+    /// whose <c>ALTER</c>/<c>CREATE POLICY</c> did not take (a lock timeout, a table a
+    /// migration had not created yet, a rename) left a WARNING in the log, a table with a
+    /// <c>dcms_rls</c> SELECT grant, and no policy behind it. The grants are default-ALLOW and
+    /// the policies opt-in, so that combination is readable unfiltered across every tenant —
+    /// which is the whole failure this class exists to prevent.</para>
+    ///
+    /// <para>This reads <c>pg_class.relrowsecurity</c> and <c>pg_policy</c>: the database's own
+    /// answer rather than the application's intention.</para>
+    /// </summary>
+    public static async Task AssertAppliedAsync(DbContext context, ILogger logger, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT n.nspname || '.' || c.relname
+            FROM unnest(@schemas, @tables) AS w(schema_name, table_name)
+            LEFT JOIN pg_namespace n ON n.nspname = w.schema_name
+            LEFT JOIN pg_class c ON c.relnamespace = n.oid AND c.relname = w.table_name
+            WHERE c.oid IS NULL
+               OR NOT c.relrowsecurity
+               OR NOT EXISTS (
+                   SELECT 1 FROM pg_policy p
+                   WHERE p.polrelid = c.oid AND p.polname = 'tenant_isolation')
+            """;
+
+        // Partitions are checked alongside their parents, for the same reason they are
+        // protected alongside them: a query aimed at one is not checked against the other.
+        List<(string Schema, string Table)> targets = [.. TenantTables, .. await PartitionsAsync(context, TenantTables, ct)];
+
+        var unprotected = new SortedSet<string>(StringComparer.Ordinal);
+        await using (var command = await CommandAsync(context, sql, targets, ct))
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
             {
-                await context.Database.ExecuteSqlRawAsync(grantSql, ct);
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug(ex, "RLS grant to dcms_rls skipped for {Table} (role absent).", qualified);
+                unprotected.Add(reader.GetString(0));
             }
         }
-        logger.LogInformation("Row-Level Security policies applied to {Count} tenant tables.", TenantTables.Length);
+
+        if (unprotected.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Row-Level Security is NOT in force on {string.Join(", ", unprotected)}. Each is " +
+                "listed in RlsConfigurator.TenantTables (or is a partition of one) and was granted " +
+                "to dcms_rls, so leaving it without a tenant_isolation policy would expose its rows " +
+                "unfiltered across every tenant. Check the RLS warnings logged above this line.");
+        }
+
+        logger.LogInformation(
+            "Row-Level Security verified in the catalogue on all {Count} tenant tables and partitions.",
+            targets.Count);
+    }
+
+    /// <summary>
+    /// A command over the (schema, table) pair list. The <c>unnest()</c> pair keeps the whole
+    /// list one parameterised round trip rather than a generated IN list, and keeps table names
+    /// out of the SQL text.
+    /// </summary>
+    private static async Task<DbCommand> CommandAsync(
+        DbContext context, string sql, IReadOnlyList<(string Schema, string Table)> tables, CancellationToken ct)
+    {
+        var connection = context.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open)
+        {
+            await connection.OpenAsync(ct);
+        }
+
+        var command = connection.CreateCommand();
+        command.CommandText = sql;
+        AddArray(command, "schemas", [.. tables.Select(t => t.Schema)]);
+        AddArray(command, "tables", [.. tables.Select(t => t.Table)]);
+        if (context.Database.CurrentTransaction is { } transaction)
+        {
+            command.Transaction = transaction.GetDbTransaction();
+        }
+        return command;
+
+        static void AddArray(DbCommand command, string name, string[] values)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = values;
+            command.Parameters.Add(parameter);
+        }
     }
 }
