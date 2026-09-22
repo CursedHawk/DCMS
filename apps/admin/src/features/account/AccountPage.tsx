@@ -15,6 +15,7 @@ import {
 } from '@dcms/ui';
 import { accountApi } from './accountApi';
 import { DeleteAccountCard } from './DeleteAccountCard';
+import { SessionsCard } from './SessionsCard';
 
 export function AccountPage() {
   const { t } = useTranslation();
@@ -88,6 +89,9 @@ export function AccountPage() {
             ) : null}
           </CardContent>
         </Card>
+
+        {/* Live sessions */}
+        <SessionsCard />
 
         {/* Git password */}
         <Card>

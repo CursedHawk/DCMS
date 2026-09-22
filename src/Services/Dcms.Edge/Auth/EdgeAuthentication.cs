@@ -211,12 +211,37 @@ public static class EdgeAuthentication
                             return;
                         }
 
+                        // Indexed by sub, which is what lets the account page list an operator's
+                        // own sessions and end any of them. A ticket with no sub is one the
+                        // account page could never offer to sign out, so it is refused here
+                        // rather than becoming a session nobody can revoke.
+                        if (context.Principal!.FindFirst("sub")?.Value is not { Length: > 0 } subject)
+                        {
+                            context.Fail("The token carried no subject to attribute the session to.");
+                            return;
+                        }
+
+                        var now = DateTimeOffset.UtcNow;
+                        var request = context.HttpContext.Request;
+                        var session = new BffSession(
+                            tokens,
+                            new BffSessionInfo(
+                                subject,
+                                CreatedAt: now,
+                                LastSeenAt: now,
+                                // The edge is the outermost hop, so this is the TCP peer rather
+                                // than anything reconstructed from a header a client can set.
+                                Ip: context.HttpContext.Connection.RemoteIpAddress?.ToString(),
+                                // Capped: the console renders it, and an unbounded header would
+                                // otherwise be stored and shipped back verbatim on every listing.
+                                UserAgent: Truncate(request.Headers.UserAgent.ToString(), 400)));
+
                         var sessionId = Guid.NewGuid().ToString("N");
-                        ((System.Security.Claims.ClaimsIdentity)context.Principal!.Identity!)
+                        ((System.Security.Claims.ClaimsIdentity)context.Principal.Identity!)
                             .AddClaim(new System.Security.Claims.Claim(BffSessionStore.SessionIdClaim, sessionId));
                         await context.HttpContext.RequestServices
                             .GetRequiredService<BffSessionStore>()
-                            .SaveAsync(sessionId, tokens);
+                            .SaveAsync(sessionId, session);
                     },
                 };
             });
@@ -270,6 +295,9 @@ public static class EdgeAuthentication
             detail: "Your DCMS account does not have access to this service.",
             statusCode: StatusCodes.Status403Forbidden));
     }
+
+    private static string? Truncate(string? value, int max)
+        => string.IsNullOrEmpty(value) ? null : value.Length <= max ? value : value[..max];
 
     /// <summary>
     /// Only ever returns somewhere on the host that was asked. An attacker-supplied absolute

@@ -371,3 +371,33 @@ deployment note rather than a code change.
 - CSRF becomes a standing concern for the admin host and must be considered for every new
   unsafe endpoint. That is the price of an ambient credential and it is paid in exchange
   for it not being readable.
+
+## Addendum: active sessions (after phase 5)
+
+Moving the session server-side made something possible that was not, before: the operator can
+see every browser they are signed in on, and end any of them. While the console held its own
+tokens there was nothing to list — a refresh token in `localStorage` stayed valid until it
+expired, on a machine nobody could reach. Now the session is a row, so "sign out the laptop I
+left at the office" is a delete.
+
+- The stored value gained a second half. `BffSession` is `BffTokens` plus a `BffSessionInfo`
+  — subject, signed-in-at, last-seen, client IP, user agent — in **one key**, so the two share
+  a lifetime. Split across two keys they drift: a refresh slides the token key's TTL and the
+  metadata expires underneath it, leaving a live session the account page cannot describe and
+  therefore cannot offer to end.
+- `edge:bff:user:{sub}` indexes a subject's sessions. Listing prunes members whose row is gone,
+  and checks each row's own subject rather than trusting the set it was found in.
+- Last-seen is written back at most once a minute, from the read the proxy pipeline already
+  does. A write per request would make every proxied call a Redis round trip to record
+  something nobody reads at that resolution.
+- `/.edge/sessions` (GET) and `/.edge/sessions/{id}` (DELETE), on the main pipeline. **The proxy
+  pipeline's origin and CSRF middleware does not run there**, so the delete makes both checks
+  itself — an endpoint that ends somebody's session is exactly the one that must not be callable
+  from a tenant's page. Ownership comes from the target row's subject, and a session that is not
+  the caller's is answered the same as one that is already gone.
+- `/.edge/me` now reads the store as well as the cookie. Without that, a revoked session keeps
+  rendering a signed-in shell whose every API call 401s — the state the feature exists to end.
+- No call to identity's revocation endpoint: the refresh token existed only in that row.
+- A session minted by the previous release deserialises with no `Info` and is read as absent,
+  which signs those operators out once. Identity's own cookie is still in the browser, so the
+  next navigation completes the redirect without a prompt.

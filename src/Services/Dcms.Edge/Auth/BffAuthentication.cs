@@ -128,11 +128,17 @@ public static class BffAuthentication
            && string.Equals(enabled, "true", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The endpoints the console itself calls: who am I, and the CSRF token to echo.
+    /// The endpoints the console itself calls: who am I, the CSRF token to echo, and the
+    /// operator's own live sessions.
     ///
-    /// <para>Replaces reading the ID token's profile out of <c>localStorage</c>. It answers 401
+    /// <para>Replaces reading the ID token's profile out of <c>localStorage</c>. They answer 401
     /// rather than redirecting, because the caller is <c>fetch</c> and a redirect to identity's
     /// login page would come back as HTML the SPA cannot use.</para>
+    ///
+    /// <para><b>These are on the main pipeline, not the proxy pipeline</b>, so
+    /// <see cref="UseBffAuthentication"/> never sees them and its origin/CSRF checks do not
+    /// apply. The write below therefore makes both checks itself. Forgetting that is how an
+    /// endpoint that ends somebody's session ends up callable from a tenant's page.</para>
     /// </summary>
     public static void MapBffEndpoints(this WebApplication app)
     {
@@ -142,9 +148,19 @@ public static class BffAuthentication
             return;
         }
 
-        app.MapGet("/.edge/me", (HttpContext context, IDataProtectionProvider protection) =>
+        app.MapGet("/.edge/me", async (
+            HttpContext context, IDataProtectionProvider protection, BffSessionStore sessions) =>
         {
             if (BffTokenProvider.SessionIdOf(context.User) is not { Length: > 0 } sessionId)
+            {
+                return Results.Unauthorized();
+            }
+
+            // The cookie alone is not the session: the row behind it is, and it can be deleted
+            // from another device. Without this check a revoked session keeps rendering a
+            // signed-in shell whose every API call 401s — which is exactly the state "sign out
+            // my other devices" is supposed to end.
+            if (await sessions.GetAsync(sessionId) is null)
             {
                 return Results.Unauthorized();
             }
@@ -171,7 +187,97 @@ public static class BffAuthentication
                 roles = context.User.FindAll(EdgePolicies.RoleClaimType).Select(c => c.Value).ToArray(),
             });
         });
+
+        // Every browser this operator is signed in on. Scoped to the caller's own `sub` — the
+        // store is asked for that subject's sessions and never for a subject the request named,
+        // so there is no id here to tamper with.
+        app.MapGet("/.edge/sessions", async (HttpContext context, BffSessionStore sessions) =>
+        {
+            if (Caller(context) is not ({ } sessionId, { } subject))
+            {
+                return Results.Unauthorized();
+            }
+
+            var live = await sessions.ListAsync(subject);
+            return Results.Ok(live.Select(s => new
+            {
+                id = s.SessionId,
+                // Which row this very request arrived on. The console labels it and offers no
+                // button for it: ending it here works, but leaves a shell whose every request
+                // 401s until something reloads, and the user menu's sign-out already does the
+                // whole job including identity's own cookie.
+                current = string.Equals(s.SessionId, sessionId, StringComparison.Ordinal),
+                createdAt = s.Info.CreatedAt,
+                lastSeenAt = s.Info.LastSeenAt,
+                ip = s.Info.Ip,
+                userAgent = s.Info.UserAgent,
+            }));
+        });
+
+        // Ends one session — this one, or another of the caller's own.
+        app.MapDelete("/.edge/sessions/{id}", async (
+            string id, HttpContext context, IDataProtectionProvider protection, BffSessionStore sessions) =>
+        {
+            if (Caller(context) is not ({ } sessionId, { } subject))
+            {
+                return Results.Unauthorized();
+            }
+            if (!IsTrustedWrite(context, protection, sessionId))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            // Ownership from the row itself, not from the index: whoever is asking must be the
+            // subject the target session was minted for. Otherwise a guessed id would sign out
+            // a stranger, and session ids are the one thing here a caller supplies.
+            if (await sessions.GetAsync(id) is not { } target
+                || !string.Equals(target.Info.Subject, subject, StringComparison.Ordinal))
+            {
+                // Indistinguishable from "already gone", deliberately: telling a caller that an
+                // id they guessed exists but is not theirs is an account-enumeration oracle.
+                return Results.NoContent();
+            }
+
+            await sessions.RemoveAsync(id);
+
+            // Ending the session this request arrived on also drops the CSRF cookie, so the
+            // browser is not left holding a token for a row that no longer exists. The console
+            // does not offer this, but the endpoint has to be correct for a caller that does:
+            // the edge session cookie survives and /.edge/me now reports it as signed out.
+            if (string.Equals(id, sessionId, StringComparison.Ordinal))
+            {
+                context.Response.Cookies.Delete(auth.CsrfCookieName);
+            }
+
+            return Results.NoContent();
+        });
     }
+
+    /// <summary>The caller's session id and subject, or nulls when this is not a BFF session.</summary>
+    private static (string? SessionId, string? Subject) Caller(HttpContext context)
+    {
+        var sessionId = BffTokenProvider.SessionIdOf(context.User);
+        var subject = context.User.FindFirst("sub")?.Value;
+        return string.IsNullOrEmpty(sessionId) || string.IsNullOrEmpty(subject)
+            ? (null, null)
+            : (sessionId, subject);
+    }
+
+    /// <summary>
+    /// The same two checks <see cref="UseBffAuthentication"/> applies to a proxied write, for an
+    /// endpoint the edge answers itself.
+    ///
+    /// <para>Not a WebSocket handshake and never a safe method, so both checks are unconditional
+    /// here — which is why this is three lines rather than a copy of that middleware.</para>
+    /// </summary>
+    private static bool IsTrustedWrite(
+        HttpContext context, IDataProtectionProvider protection, string sessionId)
+        => BffGuard.IsSameOrigin(
+               context.Request.Method,
+               context.Request.Headers.Origin.ToString(),
+               context.Request.Headers["Sec-Fetch-Site"].ToString(),
+               BffGuard.OriginOf(context.Request.Host.Host))
+           && BffGuard.VerifyCsrf(protection, sessionId, context.Request.Headers[BffGuard.CsrfHeaderName]);
 
     /// <summary>
     /// Ends the session server-side as well as in the browser. A cookie-only sign-out leaves a

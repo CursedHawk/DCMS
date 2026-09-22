@@ -28,6 +28,13 @@ public sealed class BffTokenProvider(
     /// </summary>
     private static readonly TimeSpan RefreshWindow = TimeSpan.FromSeconds(60);
 
+    /// <summary>
+    /// How stale "last seen" is allowed to get before a read writes it back. Coarse on purpose:
+    /// this is a line on an account page, and a write per request would turn every proxied call
+    /// into a Redis round trip to record something nobody reads at that resolution.
+    /// </summary>
+    private static readonly TimeSpan SeenResolution = TimeSpan.FromMinutes(1);
+
     /// <summary>The session id this principal carries, or null if it is not a BFF session.</summary>
     public static string? SessionIdOf(ClaimsPrincipal? user)
         => user?.FindFirst(BffSessionStore.SessionIdClaim)?.Value;
@@ -45,14 +52,15 @@ public sealed class BffTokenProvider(
             return null;
         }
 
-        var tokens = await sessions.GetAsync(sessionId);
-        if (tokens is null)
+        var session = await sessions.GetAsync(sessionId);
+        if (session is null)
         {
             return null;
         }
-        if (tokens.ExpiresAt - DateTimeOffset.UtcNow > RefreshWindow)
+        if (session.Tokens.ExpiresAt - DateTimeOffset.UtcNow > RefreshWindow)
         {
-            return tokens.AccessToken;
+            await TouchAsync(sessionId, session);
+            return session.Tokens.AccessToken;
         }
 
         await using var held = await sessions.LockAsync(sessionId);
@@ -62,18 +70,18 @@ public sealed class BffTokenProvider(
             // the time a second redemption of the same rotated token could be attempted it
             // would already be revoked.
             var refreshed = await sessions.GetAsync(sessionId);
-            return refreshed?.AccessToken ?? tokens.AccessToken;
+            return refreshed?.Tokens.AccessToken ?? session.Tokens.AccessToken;
         }
 
         // Re-read inside the lock. Between noticing the expiry and taking the lock, the holder
         // may have finished — in which case there is nothing left to do.
-        tokens = await sessions.GetAsync(sessionId) ?? tokens;
-        if (tokens.ExpiresAt - DateTimeOffset.UtcNow > RefreshWindow)
+        session = await sessions.GetAsync(sessionId) ?? session;
+        if (session.Tokens.ExpiresAt - DateTimeOffset.UtcNow > RefreshWindow)
         {
-            return tokens.AccessToken;
+            return session.Tokens.AccessToken;
         }
 
-        var renewed = await RedeemAsync(tokens.RefreshToken, ct);
+        var renewed = await RedeemAsync(session.Tokens.RefreshToken, ct);
         if (renewed is null)
         {
             // Revoked, expired, or identity is down. Drop the session so the next request goes
@@ -82,8 +90,27 @@ public sealed class BffTokenProvider(
             return null;
         }
 
-        await sessions.SaveAsync(sessionId, renewed);
+        await sessions.SaveAsync(
+            sessionId,
+            session with { Tokens = renewed, Info = session.Info with { LastSeenAt = DateTimeOffset.UtcNow } });
         return renewed.AccessToken;
+    }
+
+    /// <summary>
+    /// Records that this session is still in use, at most once per <see cref="SeenResolution"/>.
+    ///
+    /// <para>Two concurrent requests can both decide to write; they write the same minute and
+    /// the same tokens, so the loser is a duplicate rather than a lost update. Not worth the
+    /// lock — unlike a refresh, where the loser destroys a rotated token.</para>
+    /// </summary>
+    private async Task TouchAsync(string sessionId, BffSession session)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (now - session.Info.LastSeenAt < SeenResolution)
+        {
+            return;
+        }
+        await sessions.SaveAsync(sessionId, session with { Info = session.Info with { LastSeenAt = now } });
     }
 
     /// <summary>
