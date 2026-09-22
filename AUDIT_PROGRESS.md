@@ -3,7 +3,7 @@
 ## Overall Status
 
 * Started: 2026-09-17
-* Last updated: 2026-09-21 (session 1 + open-point verification pass + remediation passes 1-5; the deferred set is now down to SEC-10's BFF migration)
+* Last updated: 2026-09-22 (session 1 + open-point verification pass + remediation passes 1-6; the deferred set is now ARCH-01 alone)
 * Audited commit: `22816b6` (master)
 * Overall completion estimate: 100% (all map areas have a status; depth varies — see report §Audit Coverage)
 * Projects/components identified: 78 (from REPOSITORY_MAP.md §15)
@@ -210,8 +210,8 @@ Legend: **[fixed]** = remediated in the working tree (not committed/deployed); *
 
 ## Remediation Status
 
-Five remediation passes fixed every actionable finding. Two remain open on purpose, both
-architectural, both stated plainly in report §Remediation Applied → Deferred.
+Six remediation passes fixed every actionable finding. One remains open on purpose (ARCH-01),
+architectural, stated plainly in report §Remediation Applied → Deferred.
 
 Verification on this build-only box: whole-solution `dotnet build` clean, 0 warnings;
 **358 unit tests**; the integration suite under filters (`~Rls` 5, `~Audit` 59, `~Tenancy` 4);
@@ -229,6 +229,19 @@ confused-deputy path-traversal + a missing postMessage source check that the pos
 review found in the live-preview API proxy.
 
 * **Fixed (25):** SEC-01 … SEC-15 (all but SEC-10's BFF residual), REL-01, BUG-01 … BUG-04, MISS-01, DEP-01, DEAD-01, PERF-01, INF-01.
+* **Pass 6 (2026-09-22) — the two residuals ADR 0014 wrote down and did not action.** Both
+  closed. *The edge's data-protection key ring is now Vault-Transit-wrapped* on its own key
+  (`dcms-edge-dataprotection`), which the BFF made load-bearing: a read of
+  `edge.data_protection_keys` used to forge a Grafana/Forgejo session and since the cutover
+  forges an authenticated admin-API session for any user. The blocker was `TransitXmlEncryptor`
+  pinning one key name platform-wide; the name is now per-instance and recorded in each wrapped
+  element, so one ring can hold rows wrapped by different keys — which is what makes turning it
+  on retroactively safe (existing plaintext keys stay readable, nobody is signed out). *And
+  content-api's default CORS policy is gone*: the audit ADR 0014 asked for found the origin list
+  clean (prod named only `PUBLIC_BASE_URL`, and unlike identity it inherited no localhost
+  origins from the base compose file) but also found nothing using it — every browser reaching
+  content-api is same-origin through Vite's proxy, the edge, or site-host. Its cross-origin
+  surface is now the three anonymous any-origin policies and nothing else.
 * **Deferred (1):** ARCH-01's forced RLS — an ADR-level decision rather than a defect. SEC-10's localStorage→BFF migration is **done** (ADR 0014): designed, staged over five deploys, soaked on vps1 between the cutover and the fallback removal. The soak earned its place — it caught the edge refusing every WebSocket handshake, because a handshake over HTTP/2 is an extended CONNECT rather than a GET.
 * **New dependency:** `HtmlSanitizer` 9.2.1039 (Ganss/AngleSharp), pinned in `Directory.Packages.props`, referenced by `Dcms.Shared.Security` — the only package added.
 * **Regression tests added:** `/internal` edge 404 (SEC-03, `EdgeHttpPlaneTests`); escalation-subset rule (SEC-06, `TenancyIsolationTests`); lock + password change revoke live tokens/authorizations and rotate the stamp (SEC-05, `SessionRevocationTests`); a push that lands mid-build gets exactly one catch-up build, none when the head is unchanged or one is in flight (BUG-01, `ReleaseCatchUpTests`); exact-byte range delivery against MinIO (PERF-01, `HlsServingTests`). RLS coverage and partition protection, with the catalogue as the oracle (SEC-15, `RlsCoverageTests`). SEC-05 and BUG-01 are mutation-checked (each fails with its fix removed), as are both SEC-15 policy tests (each drops a policy and asserts the named failure); the PERF-01 test failed on a real SDK bug before its fix landed.

@@ -125,17 +125,19 @@ if (!string.IsNullOrWhiteSpace(redisConnection))
 
 builder.Services.AddDcmsRateLimiting(builder.Configuration);
 
-// CORS for the admin SPA's cross-origin chat-hub connection (SignalR with a
-// credentialed token requires explicit origins + AllowCredentials).
-var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?? ["http://localhost:5173", "http://localhost:5000"];
+// No default policy, deliberately. There used to be one -- an origin list that allowed
+// credentials -- and the last thing that needed it was the admin console reaching the
+// chat hub cross-origin. Nothing does any more: Vite proxies /api and /hub in dev, the edge
+// routes them in production, and site-host proxies /api/* for tenant sites, so every browser
+// that talks to this service is same-origin and never asks for CORS at all.
+//
+// Removing it rather than leaving it harmless. A credentialed policy is the surface that
+// turns a cookie into a cross-origin capability, and content-api is the internet-facing
+// service; keeping one that nothing uses means the next person to add a cookie here inherits
+// it without deciding to. The three policies below are the cross-origin surface, all
+// anonymous and all named at the endpoint that wants them.
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy => policy
-        .WithOrigins(corsOrigins)
-        .AllowAnyHeader()
-        .AllowAnyMethod()
-        .AllowCredentials());
     // Anonymous analytics beacon: any origin may POST events (no credentials),
     // so externally hosted sites can use the documented collect API.
     options.AddPolicy(AnalyticsIngestEndpoints.CollectCorsPolicy, policy => policy

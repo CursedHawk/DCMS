@@ -305,7 +305,7 @@ There is **no CLI tool project**. Operational CLIs are shell (`scripts/`, `infra
 | Header scrubbing (X-Forwarded-*, X-WEBAUTH-*, X-Dcms-Tenant/Sandbox on public plane) | `Dcms.Edge/Transforms/HeaderScrubbing.cs` |
 | Identity headers to Grafana/Forgejo | `Dcms.Edge/Transforms/IdentityHeaders.cs` |
 | Forwarded headers | admin-api, content-api, identity, site-host, all with `KnownIPNetworks/KnownProxies.Clear()` |
-| CORS | content-api (default credentialed policy with `Cors:AllowedOrigins` plus any-origin policies for `collect`, form submit, branding read); identity (default policy, origins from config, dev localhost fallback). No CORS on admin-api/platform-api (same origin behind edge). |
+| CORS | content-api (no default policy; any-origin anonymous policies for `collect`, form submit, branding read only); identity (default policy, origins from config, dev localhost fallback). No CORS on admin-api/platform-api (same origin behind edge). |
 | Antiforgery | Not registered. `.DisableAntiforgery()` on identity form posts and multipart uploads. |
 | API versioning | **None** |
 | Controllers / MVC filters | **None** (Minimal APIs only) |
@@ -1015,7 +1015,7 @@ CLAUDE.md: the full integration suite OOMs on the dev box; run it filtered.
 | `Services:AiGateway/ContentApi/AdminApi` | service URLs | — |
 | `Identity:Issuer`, `Identity:SigningCertificate`, `Identity:EncryptionCertificate`, `Identity:AllowEphemeralKeys`, `Identity:AllowInsecureHttp`, `Identity:Migrate`, `Identity:Seed`, `Identity:SuperAdmin:*`, `Identity:Spa:*`, `Identity:PlatformSpa:*`, `Identity:AdminApiService:Secret`, `Identity:PlatformApiService:Secret`, `Identity:Edge:*` | identity | — |
 | `Authentication:Google:*` | identity | optional |
-| `Cors:AllowedOrigins` | identity, content-api | — |
+| `Cors:AllowedOrigins` | identity | — |
 | `Visitor:SigningKey`, `AccessTokenMinutes`, `RefreshTokenDays` | content-api | prod guard |
 | `Forgejo:BaseUrl/Token/AdminToken/WebhookSecret/Enabled` | admin-api, identity | prod guard on webhook secret |
 | `Alerting:WebhookSecret`, recipients | admin-api | prod guard |

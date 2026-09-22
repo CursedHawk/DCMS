@@ -341,13 +341,14 @@ deployment note rather than a code change.
 
 ## Risks
 
-- **content-api's default CORS policy is `AllowCredentials()` with an explicit origin
-  list** (`Dcms.ContentApi/Program.cs:144-150`; prod sets
-  `Cors__AllowedOrigins__0: ${PUBLIC_BASE_URL}`). Harmless while the credential is a
-  bearer token the SPA attaches deliberately; under cookie auth it becomes a credentialed
-  cross-origin surface. Audit the list before phase 3, and consider dropping the default
-  policy entirely — the chat hub is reached same-origin through the edge, so the admin
-  SPA no longer needs it.
+- ~~**content-api's default CORS policy is `AllowCredentials()` with an explicit origin
+  list**~~ **Dropped.** The list turned out to be clean — prod named only
+  `PUBLIC_BASE_URL`, and unlike identity it inherited no localhost origins from the base
+  compose file — but nothing used it either: Vite proxies `/api` and `/hub` in dev, the
+  edge routes them in production, and site-host proxies `/api/*` for tenant sites, so
+  every browser reaching content-api is same-origin. The default policy is gone and the
+  prod env var with it; the three anonymous any-origin policies (`collect`, form submit,
+  branding read) are now content-api's whole cross-origin surface.
 - **One session, wider blast radius.** The edge cookie currently grants Grafana and
   Forgejo; afterwards it grants the admin API too. The host-scoped cookie keeps it off
   the other hosts, and the ticket store makes revocation real — but the Prerequisite is

@@ -273,7 +273,9 @@ services:
       <<: *prod-env
       Auth__Authority: "http://identity:8080/"
       Auth__RequireHttpsMetadata: "true"
-      Cors__AllowedOrigins__0: "${PUBLIC_BASE_URL}"
+      # No Cors__AllowedOrigins here any more: content-api has no default CORS policy. Every
+      # browser that reaches it does so same-origin through the edge or site-host, and the
+      # three anonymous policies it does declare name their own origins (any). See Program.cs.
       # AI Chatbot: content-api calls ai-gateway for visitor replies, reusing the
       # shared dcms.ai service client (same secret as admin-api).
       ServiceClient__TokenEndpoint: "http://identity:8080/connect/token"
