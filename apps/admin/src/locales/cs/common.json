@@ -1019,6 +1019,7 @@
     "sessionEnd": "Odhlásit",
     "sessionEnded": "Relace ukončena.",
     "sessionEndFailed": "Relaci se nepodařilo ukončit — zařízení je stále přihlášeno. Zkuste to znovu.",
+    "sessionEndStale": "Tato relace vznikla před zavedením vzdáleného odhlášení. Přihlaste se na daném zařízení znovu a pak ji ukončete odsud.",
     "sessionLastSeen": "Naposledy použito {{when}}",
     "sessionSignedIn": "Přihlášeno {{when}}",
     "sessionUnknownDevice": "Neznámé zařízení",

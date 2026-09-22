@@ -81,15 +81,48 @@ public static class AuthorizationEndpoints
         }
 
         // The id of the interactive login this authorization is being issued from, so the
-        // session it produces can be ended together with the login behind it. Read from the
-        // cookie's properties rather than its claims — see LoginSessions.PropertyItem for why
-        // a claim would be replaced every half hour.
-        string? loginSessionId = null;
-        result.Properties?.Items.TryGetValue(LoginSessions.PropertyItem, out loginSessionId);
+        // session it produces can be ended together with the login behind it.
+        var loginSessionId = await EnsureLoginSessionAsync(context, result, user);
 
         var principal = await BuildUserPrincipalAsync(
             user, userManager, scopeManager, request.GetScopes(), loginSessionId);
         return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+    }
+
+    /// <summary>
+    /// The id of the interactive login this cookie represents, minting and storing one if it
+    /// does not have it yet.
+    ///
+    /// <para><b>Here, and not at sign-in.</b> The obvious place is the cookie's
+    /// <c>OnSigningIn</c>, and that is where this started. It fires only on an explicit
+    /// <c>SignInAsync</c> — so a browser already holding a cookie from before the feature
+    /// shipped never gets an id, every console session it creates is unrevokable, and it stays
+    /// that way for the cookie's whole 14-day sliding life. The bug presents as "sign out that
+    /// device" working perfectly in a private window and never in the browser you actually use,
+    /// which is a long way from the code that causes it.</para>
+    ///
+    /// <para>Every authorization passes through here, and this is the only thing that reads the
+    /// id, so minting on demand makes it true for every cookie at the moment it first matters.
+    /// The cookie is re-issued so the id is <b>stable</b>: without that, each authorization
+    /// would invent a new one, and ending a session would revoke an id the login had already
+    /// stopped using — the same silent failure, one layer down.</para>
+    /// </summary>
+    private static async Task<string> EnsureLoginSessionAsync(
+        HttpContext context, AuthenticateResult result, DcmsUser user)
+    {
+        var properties = result.Properties ?? new AuthenticationProperties();
+        if (properties.Items.TryGetValue(LoginSessions.PropertyItem, out var existing)
+            && !string.IsNullOrEmpty(existing))
+        {
+            return existing;
+        }
+
+        var minted = LoginSessions.New(user.Id.ToString());
+        properties.Items[LoginSessions.PropertyItem] = minted;
+        // Re-issues the cookie in place. The principal is the one it already carries, so this
+        // changes nothing about who is signed in — only that the login can now be named.
+        await context.SignInAsync(IdentityConstants.ApplicationScheme, result.Principal!, properties);
+        return minted;
     }
 
     private static async Task<IResult> ExchangeAsync(

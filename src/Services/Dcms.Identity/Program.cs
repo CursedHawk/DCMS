@@ -77,29 +77,19 @@ builder.Services.AddScoped<LoginSessionRevocations>();
 // Per-device sign-out. The account page lists a person's live console sessions and ends one;
 // ending only the edge's session leaves identity's cookie in that browser, and the next press
 // of "Sign in" completes /connect/authorize silently. See LoginSessions.
+//
+// The id itself is minted at the authorization endpoint, not here — see
+// AuthorizationEndpoints.EnsureLoginSessionAsync. Minting it in OnSigningIn instead was the
+// first attempt and it does not work: that event fires only on an explicit SignInAsync, so a
+// browser holding a cookie from before the feature shipped never gets one, and every session
+// it goes on to create is unrevokable for the cookie's whole 14-day life. The symptom is
+// "sign out that device" working in a private window and nowhere else.
 builder.Services.ConfigureApplicationCookie(options =>
 {
     // Pinned rather than left to the default so LoginSessions.Retention has something to be
     // longer than. Both values are what ASP.NET Identity already used.
     options.ExpireTimeSpan = TimeSpan.FromDays(14);
     options.SlidingExpiration = true;
-
-    // Every interactive sign-in goes through here — password, registration, Google, and the
-    // link-and-create path — so the id is minted in ONE place rather than at four call sites,
-    // three of which would be found later.
-    //
-    // Only when absent: SecurityStampValidator re-signs the cookie every 30 minutes and passes
-    // the existing properties through. Minting unconditionally would hand the login a new id on
-    // the half-hour, and the id recorded at sign-in would quietly stop naming anything.
-    options.Events.OnSigningIn = context =>
-    {
-        if (!context.Properties.Items.ContainsKey(LoginSessions.PropertyItem)
-            && context.Principal?.FindFirst(Claims.Subject)?.Value is { Length: > 0 } subject)
-        {
-            context.Properties.Items[LoginSessions.PropertyItem] = LoginSessions.New(subject);
-        }
-        return Task.CompletedTask;
-    };
 
     // Chained, not replaced: AddIdentity puts SecurityStampValidator here, and dropping it
     // would undo "lock account" and "password changed" ending live sessions (SEC-05). The

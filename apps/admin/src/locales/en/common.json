@@ -995,6 +995,7 @@
     "sessionEnd": "Sign out",
     "sessionEnded": "Session ended.",
     "sessionEndFailed": "Could not end that session — the device is still signed in. Try again.",
+    "sessionEndStale": "This session started before remote sign-out was available. Sign in once on that device, then end it from here.",
     "sessionLastSeen": "Last used {{when}}",
     "sessionSignedIn": "Signed in {{when}}",
     "sessionUnknownDevice": "Unrecognised device",

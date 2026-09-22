@@ -245,16 +245,28 @@ public static class BffAuthentication
             // in that browser, so one press of "Sign in" completes the authorization silently
             // and the device is back. Doing it in this order means a failure is a failure the
             // operator sees, instead of a device that was reported signed out and is not.
-            if (target.Info.LoginSessionId is { Length: > 0 } loginSessionId)
+            if (target.Info.LoginSessionId is not { Length: > 0 } loginSessionId)
             {
-                // The caller's token, not the target's: the target's is about to be destroyed,
-                // and identity authorises this on the subject, which is the same person.
-                var accessToken = await tokens.GetAccessTokenAsync(context.User, context.RequestAborted);
-                if (accessToken is null
-                    || !await tokens.RevokeLoginSessionAsync(accessToken, loginSessionId, context.RequestAborted))
-                {
-                    return Results.StatusCode(StatusCodes.Status502BadGateway);
-                }
+                // A session from before identity issued the claim. Nothing here can name the
+                // login behind it, so ending the row would sign the device out of the console
+                // for as long as it takes to press a button. Refused rather than half-done —
+                // reporting a sign-out that did not happen is the whole defect this guards.
+                context.RequestServices.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger(typeof(BffAuthentication))
+                    .LogWarning(
+                        "Cannot end session {SessionId}: it carries no login session id, so identity "
+                        + "cannot be told to end the login. That device must sign in again first.",
+                        id);
+                return Results.StatusCode(StatusCodes.Status409Conflict);
+            }
+
+            // The caller's token, not the target's: the target's is about to be destroyed, and
+            // identity authorises this on the subject, which is the same person.
+            var accessToken = await tokens.GetAccessTokenAsync(context.User, context.RequestAborted);
+            if (accessToken is null
+                || !await tokens.RevokeLoginSessionAsync(accessToken, loginSessionId, context.RequestAborted))
+            {
+                return Results.StatusCode(StatusCodes.Status502BadGateway);
             }
 
             await sessions.RemoveAsync(id);

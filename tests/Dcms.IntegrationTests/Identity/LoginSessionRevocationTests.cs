@@ -30,6 +30,13 @@ namespace Dcms.IntegrationTests.Identity;
 /// one redirect. The device that was reported signed out never was, and the failure is
 /// invisible from the device that did the revoking.</para>
 ///
+/// <para><b>And the cookie is the part that got this wrong.</b> The first attempt minted the id
+/// when the user signed in, which leaves every browser already holding a cookie without one —
+/// forever, since nothing signs them in again. It worked in a private window and nowhere else.
+/// So these tests deliberately never re-enter a password between the sign-in and the
+/// authorization: the cookie arrives at <c>/connect/authorize</c> exactly as an old one does,
+/// and the id has to come from there.</para>
+///
 /// <para>So this drives the whole chain rather than any one part of it: a real interactive
 /// login, a real authorization code exchanged for real tokens, the id read out of the ID token
 /// the client actually receives, the revoke endpoint called with that client's own bearer, and
@@ -111,6 +118,28 @@ public sealed class LoginSessionRevocationTests : IAsyncLifetime
         second.Location.Should().StartWith("/account/login",
             "the login behind the session is ended, so the cookie no longer authorizes and the "
             + "device has to present credentials again");
+    }
+
+    [DockerFact]
+    public async Task One_browser_keeps_one_login_id_across_authorizations()
+    {
+        // The id has to be STABLE, not merely present. If each authorization minted a fresh one
+        // the list would still show a session and revoking it would still answer 204 — while
+        // revoking an id the login had already stopped using. That is the identical symptom as
+        // having no id at all, one layer further down, and nothing about it is visible from
+        // either device.
+        var ct = TestContext.Current.CancellationToken;
+        var browser = Browser();
+        await SignInAsync(browser, ct);
+
+        var first = await AuthorizeAsync(browser, ct);
+        var second = await AuthorizeAsync(browser, ct);
+
+        var firstId = IdTokenClaim(await ExchangeAsync(browser, CodeFrom(first.Location), first.Verifier, ct), "dcms_lsid");
+        var secondId = IdTokenClaim(await ExchangeAsync(browser, CodeFrom(second.Location), second.Verifier, ct), "dcms_lsid");
+
+        firstId.Should().NotBeNullOrEmpty();
+        secondId.Should().Be(firstId, "the id is minted once and written back to the cookie");
     }
 
     [DockerFact]

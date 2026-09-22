@@ -36,10 +36,11 @@ export const sessionsApi = {
       method: 'DELETE',
       headers: csrfHeader(),
     });
-    // Every failure means the same thing to the person reading it: that device is still signed
-    // in. 502 is the edge unable to reach identity to end the login behind the session, and it
-    // deliberately leaves the session in place rather than reporting a sign-out that did not
-    // happen; 403 is a CSRF token older than the one the edge now expects, which a reload fixes.
+    // Failures the caller can tell apart: 409 is a session created before remote sign-out
+    // existed, which cannot be ended until that device signs in once more; 502 is the edge
+    // unable to reach identity to end the login, and it deliberately leaves the session in
+    // place rather than reporting a sign-out that did not happen; 403 is a CSRF token older
+    // than the one the edge now expects, which a reload fixes.
     if (!res.ok) throw new SessionRevokeError(res.status);
   },
 };

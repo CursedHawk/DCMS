@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { dateTime, relativeTime } from '@dcms/core';
 import { Badge, Button, Card, CardContent, Spinner } from '@dcms/ui';
-import { type EdgeSessionSummary, sessionsApi } from './sessionsApi';
+import { type EdgeSessionSummary, SessionRevokeError, sessionsApi } from './sessionsApi';
 import { describeAgent } from './userAgent';
 
 /**
@@ -31,8 +31,15 @@ export function SessionsCard() {
       toast.success(t('account.sessionEnded'));
       void qc.invalidateQueries({ queryKey: ['edge-sessions'] });
     },
-    // The status does not help anyone here: whatever went wrong, the device is still signed in.
-    onError: () => toast.error(t('account.sessionEndFailed')),
+    // 409 is the one failure with a different answer: the session predates remote sign-out and
+    // that device has to sign in once before it can be ended. Everything else means the same
+    // thing — it is still signed in, try again.
+    onError: (e: Error) =>
+      toast.error(
+        e instanceof SessionRevokeError && e.status === 409
+          ? t('account.sessionEndStale')
+          : t('account.sessionEndFailed'),
+      ),
   });
 
   return (

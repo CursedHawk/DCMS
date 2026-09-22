@@ -414,11 +414,16 @@ ASP.NET Identity's answer to "end a session" is the security stamp, and it is th
 rotating it ends **every** device, including the one asking. So each interactive login now
 carries an id of its own (`identity/LoginSessions.cs`):
 
-- Minted in `OnSigningIn` on the Identity cookie — one hook covering password, registration,
-  Google and link-and-create, rather than four call sites of which three get found later. Only
-  when absent: `SecurityStampValidator` re-signs the cookie every 30 minutes and passes the
-  properties through, so minting unconditionally would hand the login a new id on the half hour
-  and the recorded one would stop naming anything.
+- Minted **at the authorization endpoint**, on demand, and written back to the cookie. The
+  obvious place is the cookie's `OnSigningIn`, and that is where this started — it fires only on
+  an explicit `SignInAsync`, so a browser already holding a cookie from before the feature
+  shipped never got one, and every session it went on to create was unrevokable for that
+  cookie's whole 14-day sliding life. It worked in a private window and nowhere else, which is a
+  long way from the code that caused it. Every authorization passes through the endpoint and
+  nothing reads the id earlier, so minting there makes it true for every cookie at the moment it
+  first matters. The write-back is what makes it *stable*: without it each authorization would
+  invent a new id, and ending a session would revoke one the login had already stopped using —
+  the same silent failure one layer down.
 - Carried as an **authentication-property item, not a claim**. Claims are rebuilt from the user
   on that same refresh; properties are not.
 - Into the ID token as `dcms_lsid`, added at both the authorize endpoint (from the cookie) and
@@ -441,7 +446,10 @@ The edge calls identity **before** deleting its own row, with the revoking sessi
 token, and answers 502 if that call fails. The other order reports a sign-out that did not
 happen, which is the whole defect.
 
-Two things this deliberately does not do. A session minted before this shipped has no id, so it
-can only have its edge row deleted — those roll over at the next sign-in. And a user whose
-Google session is still live can sign in again without a password; that is what federated SSO
-means by sign-out, and it is true of every sign-out button on the platform.
+A session minted before any of this shipped carries no id, and the edge **refuses** to end it
+(409) rather than deleting the row and reporting a sign-out that did not happen; the console
+says that device has to sign in once more first. Those disappear as sessions turn over.
+
+One thing this deliberately does not do: a user whose Google session is still live can sign in
+again without a password. That is what federated SSO means by sign-out, and it is true of every
+sign-out button on the platform.
