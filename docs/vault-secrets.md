@@ -270,7 +270,7 @@ live in Vault, and every bootstrap chain terminates somewhere.
 | Key | Wraps |
 |---|---|
 | `transit/keys/dcms-tenant-secrets` | tenant AI provider keys, stored encrypted in the database |
-| `transit/keys/dcms-dataprotection` | the ASP.NET Data Protection key ring, when `DataProtection:ProtectWithTransit` is on |
+| `transit/keys/dcms-dataprotection` | the shared ASP.NET Data Protection key ring (identity, content-api, ai-gateway, admin-api); `DataProtection:ProtectWithTransit`, **on** in production |
 | `transit/keys/dcms-social-tokens` | tenant Meta (Facebook/Instagram) OAuth tokens in `social.meta_connections` |
 | `transit/keys/dcms-tls-keys` | tenant TLS private keys and the ACME account key, held by the edge |
 | `transit/keys/dcms-edge-dataprotection` | the edge's own Data Protection key ring in `edge.data_protection_keys`, always |

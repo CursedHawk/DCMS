@@ -44,12 +44,17 @@ public static class DataProtectionServiceCollectionExtensions
             .SetApplicationName(ApplicationName)
             .PersistKeysToDbContext<DataProtectionDbContext>();
 
-        // Encryption of the key ring at rest, off by default.
+        // Encryption of the key ring at rest. Off by default and ON in production, where Vault
+        // auto-unseals against a Transit seal.
         //
         // It makes minting or reading a key depend on Vault being reachable and unsealed. On a
         // Shamir-sealed Vault that turns a reboot into "nobody can log in" — the same outage
         // auto-unseal exists to prevent, arriving through a different door. So enable this and
         // Transit auto-unseal together; see infra/vault/server/seal-transit.hcl.example.
+        //
+        // Every service sharing this ring must have the flag set the same way and hold both
+        // directions on the key: a key wrapped by one of them is read back by all of them. The
+        // compose env anchor and KeyRingWrappingWiringTests are what keep that true.
         if (configuration.GetValue("DataProtection:ProtectWithTransit", false))
         {
             // Configured through the options pipeline rather than passed an instance, because

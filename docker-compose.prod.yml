@@ -44,6 +44,28 @@ x-prod-env: &prod-env
   # belong. Anything without them falls back to the token below.
   VAULT_TOKEN: "${VAULT_TOKEN:-}"
   #
+  # Encrypt the shared Data Protection key ring at rest with Vault Transit, so
+  # dataprotection.data_protection_keys is ciphertext rather than the plaintext XML the
+  # framework writes. Without it, a database dump, a backup or a misconfigured reporting role
+  # yields the master key for identity's auth cookie, the Google correlation cookie, and every
+  # ForgejoSyncOutbox password.
+  #
+  # ON THE ANCHOR ON PURPOSE, unlike most things here. Four services share one ring
+  # (identity, content-api, ai-gateway, admin-api) and a key wrapped by any of them is read
+  # back by all of them -- so a service left out would meet a wrapped row it cannot read,
+  # which is an unreadable auth cookie rather than a degraded feature. The anchor is what
+  # makes "all of them" impossible to get wrong, including for a service added later.
+  #
+  # The availability cost this was held back for is now paid either way: since the Vault
+  # configuration provider stopped swallowing non-404s, a hardened service already refuses to
+  # start when Vault is unreachable or sealed, and vps1 auto-unseals against VPSM.
+  #
+  # ONE-WAY, in practice. Keys written wrapped cannot be read without Vault, so setting this
+  # back to false does not restore the previous state -- it leaves the wrapped keys unreadable,
+  # which signs everyone out and strands the Forgejo outbox. The decryptor stays registered
+  # either way so a ring holding both shapes resolves.
+  DataProtection__ProtectWithTransit: "true"
+  #
   # Audit__ChainKey is NOT here any more. It lives in Vault, in the six per-service
   # paths of the services that own the audit schema — deliberately not in
   # secret/dcms/shared, which email-worker and site-builder can also read and which

@@ -241,7 +241,14 @@ review found in the live-preview API proxy.
   clean (prod named only `PUBLIC_BASE_URL`, and unlike identity it inherited no localhost
   origins from the base compose file) but also found nothing using it — every browser reaching
   content-api is same-origin through Vite's proxy, the edge, or site-host. Its cross-origin
-  surface is now the three anonymous any-origin policies and nothing else.
+  surface is now the three anonymous any-origin policies and nothing else. *And the shared
+  ring followed the edge's*: `DataProtection:ProtectWithTransit` is on in the production env
+  anchor, so `dataprotection.data_protection_keys` — the master key for identity's auth cookie,
+  the Google correlation cookie and every `ForgejoSyncOutbox` password — is ciphertext in a
+  dump or a backup. It was held back for an availability cost that is already paid: a hardened
+  service refuses to start when Vault is unreachable or sealed, and vps1 auto-unseals. The four
+  services sharing that ring are all-or-nothing, which `KeyRingWrappingWiringTests` now asserts
+  against the source rather than a hand-written list.
 * **Deferred (1):** ARCH-01's forced RLS — an ADR-level decision rather than a defect. SEC-10's localStorage→BFF migration is **done** (ADR 0014): designed, staged over five deploys, soaked on vps1 between the cutover and the fallback removal. The soak earned its place — it caught the edge refusing every WebSocket handshake, because a handshake over HTTP/2 is an extended CONNECT rather than a GET.
 * **New dependency:** `HtmlSanitizer` 9.2.1039 (Ganss/AngleSharp), pinned in `Directory.Packages.props`, referenced by `Dcms.Shared.Security` — the only package added.
 * **Regression tests added:** `/internal` edge 404 (SEC-03, `EdgeHttpPlaneTests`); escalation-subset rule (SEC-06, `TenancyIsolationTests`); lock + password change revoke live tokens/authorizations and rotate the stamp (SEC-05, `SessionRevocationTests`); a push that lands mid-build gets exactly one catch-up build, none when the head is unchanged or one is in flight (BUG-01, `ReleaseCatchUpTests`); exact-byte range delivery against MinIO (PERF-01, `HlsServingTests`). RLS coverage and partition protection, with the catalogue as the oracle (SEC-15, `RlsCoverageTests`). SEC-05 and BUG-01 are mutation-checked (each fails with its fix removed), as are both SEC-15 policy tests (each drops a policy and asserts the named failure); the PERF-01 test failed on a real SDK bug before its fix landed.

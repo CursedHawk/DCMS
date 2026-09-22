@@ -68,3 +68,16 @@ path "transit/decrypt/dcms-social-tokens" {
 path "transit/encrypt/dcms-tls-keys" {
   capabilities = ["update"]
 }
+
+# The shared Data Protection key ring (dataprotection.data_protection_keys), wrapped at rest
+# when DataProtection:ProtectWithTransit is on. Both directions, and every service that shares
+# the ring needs both: a key wrapped by one of them is read back by all of them, so a service
+# holding only decrypt could not mint a key when one rolls, and one holding neither would find
+# a wrapped row it cannot read -- which is an unreadable auth cookie, not a degraded feature.
+path "transit/encrypt/dcms-dataprotection" {
+  capabilities = ["update"]
+}
+
+path "transit/decrypt/dcms-dataprotection" {
+  capabilities = ["update"]
+}

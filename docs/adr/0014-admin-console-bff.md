@@ -193,9 +193,11 @@ unconditional rather than behind `DataProtection:ProtectWithTransit`: the availa
 cost that flag defers is already paid on the edge, which cannot read a single TLS private
 key without Vault. Keys already in the table stay plaintext and stay readable; the next
 key to roll is written wrapped, so nobody is signed out by turning it on — only by turning
-it back off. The shared ring (identity, content-api, ai-gateway) is still unwrapped: that
-is the documented `ProtectWithTransit` default, and flipping it needs a Transit grant in
-three more service policies, which is its own change.
+it back off. The shared ring (identity, content-api, ai-gateway, admin-api) is wrapped
+too, in a change of its own: `ProtectWithTransit` is on in the production env anchor, all
+four policies carry both directions on `dcms-dataprotection`, and the Transit client is
+registered unconditionally so a service still reading the ring with the flag off can
+decrypt what a service with it on wrote.
 
 ## Rollout
 

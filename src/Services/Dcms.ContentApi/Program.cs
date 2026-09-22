@@ -64,13 +64,12 @@ builder.Services.AddDcmsChatData(builder.Configuration);
 // rather than as a configuration fault. The same ring is recreated on every container
 // restart, which turns one deploy into a round of failed reconnects even at a single replica.
 //
-// Transit wrapping is registered only when the ring is configured to be wrapped: the
-// encryptor resolves ITransitEncryptor, and registering the client unconditionally would
-// give content-api a hard Vault dependency on every key operation, not just at startup.
-if (builder.Configuration.GetValue("DataProtection:ProtectWithTransit", false))
-{
-    builder.Services.AddDcmsVaultTransit();
-}
+// The encryptor that wraps the ring resolves ITransitEncryptor, so the Vault client is
+// registered unconditionally and the flag decides only whether keys are WRITTEN wrapped. A
+// service reading the shared ring with the flag still off would otherwise meet a wrapped row
+// it had no client to decrypt. Registering costs nothing on its own -- the client logs in
+// lazily and only talks to Vault when asked to encrypt or decrypt.
+builder.Services.AddDcmsVaultTransit();
 builder.Services.AddDcmsDataProtection(builder.Configuration);
 
 builder.Services.Configure<VisitorTokenOptions>(builder.Configuration.GetSection(VisitorTokenOptions.SectionName));

@@ -25,13 +25,12 @@ builder.Services.AddDcmsAuditData(builder.Configuration);
 // Protection -- the interactive auth cookie, the Google external-login correlation cookie,
 // and ForgejoSyncOutbox password ciphertext -- and all three break across replicas without it.
 //
-// Transit is registered only when the key ring is configured to be wrapped: the encryptor
-// resolves ITransitEncryptor, and registering the client unconditionally would give identity
-// a Vault dependency it does not otherwise have.
-if (builder.Configuration.GetValue("DataProtection:ProtectWithTransit", false))
-{
-    builder.Services.AddDcmsVaultTransit();
-}
+// Transit is registered unconditionally, and the flag decides only whether keys are WRITTEN
+// wrapped. It used to be registered only when the flag was on, which made turning the flag on
+// a two-sided change: one service reading the shared ring with the flag still off would meet a
+// wrapped row it had no client to decrypt. Registering costs nothing on its own -- the client
+// logs in lazily and only talks to Vault when something asks for an encrypt or decrypt.
+builder.Services.AddDcmsVaultTransit();
 builder.Services.AddDcmsDataProtection(builder.Configuration);
 
 var connectionString = builder.Configuration.GetConnectionString("Postgres")

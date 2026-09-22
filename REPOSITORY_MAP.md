@@ -829,7 +829,7 @@ Base type `TenantEntity` (`Shared.Data/TenantEntity.cs`). Sandbox scoping via `I
   - SignalR backplanes with channel prefixes `dcms-notify`, `dcms-chat`, `dcms-console`
 - **Connection config:** `ConnectionStrings:Postgres` (default fallback `Host=localhost;…;Password=dcms-dev` hardcoded in `TenancyServiceCollectionExtensions` and `Identity/Program.cs`), `ConnectionStrings:Redis`, `Nats:Url`, `Storage:*`.
 - **Object storage (MinIO):** buckets configured by `StorageOptions` (e.g. `SitesBucket`) and `infra/minio/init.sh` (scoped `dcms-sitebuilder` account).
-- **Data Protection:** key ring in Postgres (`dataprotection` schema), optionally wrapped with Vault Transit (`DataProtection:ProtectWithTransit`, `TransitXmlEncryptor`).
+- **Data Protection:** shared key ring in Postgres (`dataprotection` schema), wrapped with Vault Transit in production (`DataProtection:ProtectWithTransit`, on in `docker-compose.prod.yml`'s env anchor, key `dcms-dataprotection`). The edge keeps its own ring in `edge.data_protection_keys`, always wrapped, on its own key `dcms-edge-dataprotection`.
 
 ---
 
@@ -1021,7 +1021,7 @@ CLAUDE.md: the full integration suite OOMs on the dev box; run it filtered.
 | `Alerting:WebhookSecret`, recipients | admin-api | prod guard |
 | `Social:SyncEnabled`, `Social:*` (Meta app) | admin-api | — |
 | `Tenancy:Migrate`, `Tenancy:ApplyRls`, `Observability:ApplyViews` | admin-api migrator | — |
-| `DataProtection:ProtectWithTransit` | identity, content-api, ai-gateway | — |
+| `DataProtection:ProtectWithTransit` | identity, content-api, ai-gateway, admin-api | `true` (prod env anchor) |
 | `Ai:Defaults:Provider/BaseUrl/ApiKey/Model` | ai-gateway | — |
 | `Edge:*` (AdminHost, PlatformHost, AuthHost, GrafanaHost, GitHost, Certificates:TlsEnabled/AcmeDirectory/AcceptInsecureAcmeDirectory/ContactEmail, Auth:Authority/InternalAuthority/ClientSecret, RateLimiting:*, Cache:*, Dns:*) | edge | — |
 | `Observability:PrometheusUrl/LokiUrl/LogJanitorUrl` | platform-api | — |
