@@ -12,11 +12,17 @@ namespace Dcms.Shared.Data.Rls;
 /// query filters (the primary isolation guarantee). Idempotent — safe to run on
 /// every startup. See <c>infra/postgres/init/01-rls.sql</c> and ADR 0003.
 ///
-/// Each table gets a single policy keyed on the <c>app.tenant_id</c> GUC:
-/// a row is visible/insertable only when its <c>TenantId</c> equals the GUC. The
-/// app connects as the table owner and bypasses RLS, so this changes nothing for
-/// the running services; it constrains any non-owner (e.g. the <c>dcms_rls</c>
-/// role used by the isolation test) reading the data with a raw connection.
+/// Each table gets two permissive policies, which Postgres ORs together:
+/// <c>tenant_isolation</c> admits a row whose <c>TenantId</c> equals the
+/// <c>app.tenant_id</c> GUC, and <c>platform_scope</c> admits any row while the
+/// <c>app.scope</c> GUC is <c>platform</c> — the explicit, per-operation widening that
+/// replaces <c>IgnoreQueryFilters()</c> once the services stop being the table owner
+/// (ADR 0015).
+///
+/// <para>Today the app still connects as the owner and bypasses RLS, so this constrains
+/// only a non-owner: <c>dcms_rls</c>, which the isolation test uses, and <c>dcms_app</c>,
+/// which is the runtime role the services move onto one at a time in ADR 0015 phase 4.
+/// Both are granted here as each table is protected.</para>
 /// </summary>
 public static class RlsConfigurator
 {
@@ -190,14 +196,26 @@ public static class RlsConfigurator
         DbContext context, string schema, string table, ILogger logger, CancellationToken ct = default)
     {
         var qualified = $"\"{schema}\".\"{table}\"";
-        // The policy is the important part — apply it unconditionally.
+        // The policies are the important part — apply them unconditionally.
         // CREATE POLICY has no IF NOT EXISTS; drop-then-create keeps it idempotent.
+        //
+        // Two PERMISSIVE policies, which Postgres ORs together. tenant_isolation is the one
+        // from ADR 0005 and is unchanged. platform_scope is ADR 0015's replacement for
+        // IgnoreQueryFilters(): once the services connect as a NOBYPASSRLS role, ignoring the
+        // EF filter stops widening anything, and the paths that legitimately cross tenants —
+        // the outbox dispatchers, the publish worker, SuperAdmin listings, tenant resolution
+        // itself — need a way to say so. Saying it as a GUC keeps the decision at the call
+        // site that knows, rather than at the registration that does not.
         var policySql = $"""
             ALTER TABLE {qualified} ENABLE ROW LEVEL SECURITY;
             DROP POLICY IF EXISTS tenant_isolation ON {qualified};
             CREATE POLICY tenant_isolation ON {qualified}
                 USING ("TenantId" = nullif(current_setting('app.tenant_id', true), '')::uuid)
                 WITH CHECK ("TenantId" = nullif(current_setting('app.tenant_id', true), '')::uuid);
+            DROP POLICY IF EXISTS platform_scope ON {qualified};
+            CREATE POLICY platform_scope ON {qualified}
+                USING (current_setting('app.scope', true) = 'platform')
+                WITH CHECK (current_setting('app.scope', true) = 'platform');
             """;
         try
         {
@@ -209,8 +227,14 @@ public static class RlsConfigurator
             return;
         }
 
-        // Grants to the least-privilege test/raw-access role are best-effort:
-        // the role only exists where infra/postgres/init/01-rls.sql ran.
+        // Grants to the least-privilege roles are best-effort: each exists only where
+        // infra/postgres/init/ ran. dcms_rls reads (the isolation test); dcms_app is ADR
+        // 0015's runtime role and needs DML, since it is what the services become.
+        //
+        // The bootstrap job grants both on whole schemas already. Repeating it per table is
+        // for the table that did not exist when that job last ran — a migration creates it
+        // moments later, and ALTER DEFAULT PRIVILEGES covers that, so this is the belt to
+        // those braces.
         var grantSql = $"GRANT USAGE ON SCHEMA \"{schema}\" TO dcms_rls; GRANT SELECT ON {qualified} TO dcms_rls;";
         try
         {
@@ -219,6 +243,17 @@ public static class RlsConfigurator
         catch (Exception ex)
         {
             logger.LogDebug(ex, "RLS grant to dcms_rls skipped for {Table} (role absent).", qualified);
+        }
+
+        var appGrantSql =
+            $"GRANT USAGE ON SCHEMA \"{schema}\" TO dcms_app; GRANT SELECT, INSERT, UPDATE, DELETE ON {qualified} TO dcms_app;";
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(appGrantSql, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Grant to dcms_app skipped for {Table} (role absent).", qualified);
         }
     }
 
@@ -293,6 +328,9 @@ public static class RlsConfigurator
                OR NOT EXISTS (
                    SELECT 1 FROM pg_policy p
                    WHERE p.polrelid = c.oid AND p.polname = 'tenant_isolation')
+               OR NOT EXISTS (
+                   SELECT 1 FROM pg_policy p
+                   WHERE p.polrelid = c.oid AND p.polname = 'platform_scope')
             """;
 
         // Partitions are checked alongside their parents, for the same reason they are

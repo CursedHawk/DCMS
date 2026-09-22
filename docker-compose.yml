@@ -326,6 +326,7 @@ services:
       PGPASSWORD: "dcms-dev"
       SITEBUILDER_DB_PASSWORD: "dcms-sitebuilder-dev"
       EDGE_DB_PASSWORD: "dcms-edge-dev"
+      APP_DB_PASSWORD: "dcms-app-dev"
       GRAFANA_DB_PASSWORD: "dcms-grafana-dev"
       RLS_DB_PASSWORD: "dcms-rls-dev"
 

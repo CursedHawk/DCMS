@@ -21,3 +21,4 @@ as their implementation phase lands.
 - [0012](0012-platform-notifications.md) — Platform notifications: addressed to a role, no fan-out
 - [0013](0013-platform-console-live-updates.md) — The platform console gets a socket of its own (supersedes 0012's polling)
 - [0014](0014-admin-console-bff.md) — The admin console authenticates by session cookie at the edge, not by a token in `localStorage`
+- [0015](0015-forced-rls.md) — The database enforces tenant isolation, not just the ORM (supersedes 0005's deferral)

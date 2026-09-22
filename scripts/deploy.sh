@@ -214,6 +214,11 @@ if [ "$ENVIRONMENT" != "local" ]; then
   ensure_env_secret REDIS_PASSWORD
   ensure_env_secret NATS_APP_PASSWORD
   ensure_env_secret NATS_SYS_PASSWORD
+  # Same reasoning, for the NOBYPASSRLS runtime role of ADR 0015. Generated now, while the
+  # role is unused, so that the phase that moves a service onto it is a connection-string
+  # change and not also a "first invent a password" step -- the kind that silently never
+  # happens. postgres-bootstrap converges the role to whatever is here on every deploy.
+  ensure_env_secret APP_DB_PASSWORD
 fi
 
 # `config` fully resolves the overlay set and every substitution. If the files

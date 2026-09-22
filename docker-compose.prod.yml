@@ -212,6 +212,10 @@ services:
       PGPASSWORD: "${POSTGRES_PASSWORD}"
       SITEBUILDER_DB_PASSWORD: "${SITEBUILDER_DB_PASSWORD}"
       EDGE_DB_PASSWORD: "${EDGE_DB_PASSWORD:-dcms-edge-dev}"
+      # No dev fallback: scripts/deploy.sh generates this into .env on a host that has
+      # none, so an empty one here means the deploy did not run and the role would
+      # otherwise be converged to a password published in this repository.
+      APP_DB_PASSWORD: "${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
       GRAFANA_DB_PASSWORD: "${GRAFANA_DB_PASSWORD}"
       RLS_DB_PASSWORD: "${RLS_DB_PASSWORD:-}"
 

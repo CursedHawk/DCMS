@@ -285,12 +285,15 @@ TS, reaches the hub through site-host's `/hub` proxy).
 
 ### Hardening (Phase 12)
 
-- **RLS** — `RlsConfigurator` enables a `tenant_isolation` policy (keyed on the
-  `app.tenant_id` GUC) on every tenant-scoped table after migrations, as
-  defense-in-depth on top of the EF query filters. The app connects as the table
-  owner and is unaffected; the least-privilege `dcms_rls` role (no BYPASSRLS) is
-  what the isolation test uses to prove the policy. Gate with `Tenancy:ApplyRls`.
-  See ADR 0005.
+- **RLS** — `RlsConfigurator` puts two permissive policies on every tenant-scoped
+  table after migrations: `tenant_isolation` (keyed on the `app.tenant_id` GUC) and
+  `platform_scope` (keyed on `app.scope = 'platform'`, the explicit widening for
+  cross-tenant work). Defense-in-depth on top of the EF query filters. The app still
+  connects as the table owner and is unaffected; `dcms_rls` (read-only, no BYPASSRLS)
+  is what the isolation test uses, and `dcms_app` (DML, no BYPASSRLS) is the runtime
+  role the services move onto in ADR 0015 phase 4 — created by `postgres-bootstrap`,
+  not yet connected to by anything. Gate with `Tenancy:ApplyRls`. See ADR 0005 and
+  ADR 0015.
 - **Rate limiting** — content-api applies a per-client (IP) fixed-window global
   limiter (`RateLimiting:PermitLimit`/`WindowSeconds`, default 600/60 s); `/health`
   and `/hub` are exempt. 429 on exceed.

@@ -75,4 +75,7 @@ PGHOST="$PGHOST" sh /init/04-platform-role.sh
 echo "postgres-bootstrap: dcms_edge role"
 PGHOST="$PGHOST" sh /init/05-edge-role.sh
 
+echo "postgres-bootstrap: dcms_app role"
+PGHOST="$PGHOST" sh /init/06-app-role.sh
+
 echo "postgres-bootstrap: complete."

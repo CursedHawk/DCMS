@@ -1,6 +1,6 @@
 # ADR 0005: Postgres RLS as a defense-in-depth backstop (owner-bypass model)
 
-**Status:** accepted (2026-06-15) · **Phase:** 12
+**Status:** accepted (2026-06-15) · **Phase:** 12 · **The deferral below is superseded by [ADR 0015](0015-forced-rls.md)**, which makes RLS load-bearing by moving the services off the owner connection. The policies and the `dcms_rls` role are unchanged; what changes is who connects.
 
 ## Context
 
