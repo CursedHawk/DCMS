@@ -59,4 +59,10 @@ if ! vault read transit/keys/dcms-tenant-secrets >/dev/null 2>&1; then
   vault write -f transit/keys/dcms-tenant-secrets
 fi
 
+# The edge wraps its Data Protection key ring with this unconditionally, so a dev edge needs it
+# present before it mints its first session key.
+if ! vault read transit/keys/dcms-edge-dataprotection >/dev/null 2>&1; then
+  vault write -f transit/keys/dcms-edge-dataprotection
+fi
+
 echo "Vault provisioning complete."

@@ -26,10 +26,33 @@ namespace Dcms.Shared.Data.DataProtection;
 /// out. The decryptor stays registered either way so a ring containing both shapes still
 /// resolves.</para>
 /// </summary>
-public sealed class TransitXmlEncryptor(ITransitEncryptor transit) : IXmlEncryptor
+public sealed class TransitXmlEncryptor(ITransitEncryptor transit, string? transitKeyName = null) : IXmlEncryptor
 {
-    /// <summary>Transit key name. Recreating it invalidates every wrapped key ring entry.</summary>
+    /// <summary>
+    /// The shared key ring's Transit key. Recreating it invalidates every wrapped key ring
+    /// entry, which logs everyone out and strands the Forgejo outbox.
+    /// </summary>
     public const string KeyName = "dcms-dataprotection";
+
+    /// <summary>
+    /// The edge's own key, for the separate ring in <c>edge.data_protection_keys</c>.
+    ///
+    /// <para>A second key rather than the shared one, for the same reason the edge holds
+    /// <c>dcms-tls-keys</c> alone: it is the process an anonymous request from the internet
+    /// reaches first, and pointing it at <see cref="KeyName"/> would hand the public ingress
+    /// the key that also protects identity's cookies and every user's queued git credential —
+    /// which is the thing the edge's separate ring exists to avoid.</para>
+    /// </summary>
+    public const string EdgeKeyName = "dcms-edge-dataprotection";
+
+    /// <summary>
+    /// Recorded in every wrapped element so the decryptor asks Vault for the key that actually
+    /// wrapped it, rather than assuming the shared one. Rows written before this existed carry
+    /// no name and are read against <see cref="KeyName"/>, which is what wrote them.
+    /// </summary>
+    internal const string KeyNameElementName = "transitKey";
+
+    private readonly string keyName = transitKeyName ?? KeyName;
 
     public EncryptedXmlInfo Encrypt(XElement plaintextElement)
     {
@@ -38,12 +61,13 @@ public sealed class TransitXmlEncryptor(ITransitEncryptor transit) : IXmlEncrypt
         // Synchronous by interface. The key ring is read once at startup and written only when
         // a key rolls (every 90 days by default), so this blocks approximately never.
         var ciphertext = transit
-            .EncryptAsync(KeyName, System.Text.Encoding.UTF8.GetBytes(plaintextElement.ToString(SaveOptions.DisableFormatting)))
+            .EncryptAsync(keyName, System.Text.Encoding.UTF8.GetBytes(plaintextElement.ToString(SaveOptions.DisableFormatting)))
             .GetAwaiter()
             .GetResult();
 
         var element = new XElement("encryptedKey",
             new XComment(" This key is encrypted with Vault Transit. "),
+            new XElement(KeyNameElementName, keyName),
             new XElement("value", ciphertext));
 
         return new EncryptedXmlInfo(element, typeof(TransitXmlDecryptor));
@@ -87,7 +111,13 @@ public sealed class TransitXmlDecryptor(IServiceProvider services) : IXmlDecrypt
                 + "The key ring row is corrupt; delete it and let a new key be minted (this logs "
                 + "existing sessions out, but they are unreadable either way).");
 
-        var plaintext = transit.DecryptAsync(TransitXmlEncryptor.KeyName, ciphertext)
+        // Absent on rows written before the name was recorded, and those were all wrapped with
+        // the shared key -- there was no other one.
+        var keyName = encryptedElement.Element(TransitXmlEncryptor.KeyNameElementName)?.Value is { Length: > 0 } named
+            ? named
+            : TransitXmlEncryptor.KeyName;
+
+        var plaintext = transit.DecryptAsync(keyName, ciphertext)
             .GetAwaiter()
             .GetResult();
 

@@ -184,6 +184,19 @@ phase 3. The machinery exists (`Dcms.Shared.Data.DataProtection.TransitXmlEncryp
 what is missing is a configurable key name so the edge gets its own Transit key rather
 than the platform-wide one that also protects every user's git credential.
 
+**Closed, after phase 5 rather than before phase 3.** `TransitXmlEncryptor` now takes the
+key name, records it in each wrapped element, and the decryptor reads it back — so a ring
+can hold rows wrapped by different keys, which is what makes this safe to turn on
+retroactively. The edge wraps with `dcms-edge-dataprotection`, provisioned by
+`infra/vault/apply.sh` and granted by `infra/vault/policies/dcms-edge.hcl`, and it is
+unconditional rather than behind `DataProtection:ProtectWithTransit`: the availability
+cost that flag defers is already paid on the edge, which cannot read a single TLS private
+key without Vault. Keys already in the table stay plaintext and stay readable; the next
+key to roll is written wrapped, so nobody is signed out by turning it on — only by turning
+it back off. The shared ring (identity, content-api, ai-gateway) is still unwrapped: that
+is the documented `ProtectWithTransit` default, and flipping it needs a Transit grant in
+three more service policies, which is its own change.
+
 ## Rollout
 
 A push to `master` is the deploy, so this cannot be one commit. Four phases, each one

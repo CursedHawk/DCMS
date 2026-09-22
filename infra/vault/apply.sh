@@ -325,6 +325,15 @@ echo "  transit key dcms-social-tokens present"
 vault write -f transit/keys/dcms-tls-keys >/dev/null
 echo "  transit key dcms-tls-keys present"
 
+# The edge's Data Protection key ring (edge.data_protection_keys), which protects the session
+# cookie the edge asserts to Grafana, Forgejo and the admin API. A separate key from
+# dcms-dataprotection for the same reason as above: a compromise of the public ingress must not
+# decrypt identity's cookies or the queued git credentials that share the platform ring. Same
+# warning -- recreating it makes the wrapped ring entries unreadable, which signs everyone out
+# of the console.
+vault write -f transit/keys/dcms-edge-dataprotection >/dev/null
+echo "  transit key dcms-edge-dataprotection present"
+
 echo "==> Policies"
 for svc in $SERVICES; do
   vault policy write "dcms-$svc" - < "policies/dcms-$svc.hcl" >/dev/null

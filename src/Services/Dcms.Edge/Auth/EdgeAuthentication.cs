@@ -1,7 +1,10 @@
+using Dcms.Shared.Data.DataProtection;
 using Dcms.Shared.Data.Edge;
+using Dcms.Shared.Vault;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
@@ -35,18 +38,29 @@ public static class EdgeAuthentication
         // The key ring lives in the edge's OWN schema under its OWN application name, so these
         // cookies are the only thing it can read or forge. See EdgeDbContext.DataProtectionKeys.
         //
-        // KNOWN GAP: not wrapped with Vault Transit, unlike the TLS private keys sitting in the
-        // same schema. Someone who can read edge.data_protection_keys can forge a session the
-        // edge asserts to Grafana and Forgejo. The wrapping machinery exists
-        // (Dcms.Shared.Data.DataProtection.TransitXmlEncryptor) but pins one Transit key name
-        // for the whole platform, and pointing the edge at that key would hand the public
-        // ingress the ring that also protects every user's git credential -- which is the thing
-        // this separate context exists to avoid. Closing it properly means making that key name
-        // configurable and giving the edge its own; until then it is a gap that is written down
-        // rather than one nobody noticed.
+        // Wrapped with Vault Transit, like the TLS private keys sitting in the same schema, and
+        // on the edge's OWN key: a read of edge.data_protection_keys -- a dump, a backup, a
+        // reporting role -- otherwise yields the master key for the session the edge asserts to
+        // Grafana, Forgejo and (since ADR 0014) the admin API. Unconditional rather than behind
+        // DataProtection:ProtectWithTransit, because the availability cost that flag exists to
+        // defer is already paid here: the edge cannot read a single TLS private key without
+        // Vault, so a sealed Vault is a dead ingress with or without this.
+        //
+        // Additive on an existing deployment. Keys already in the table stay plaintext and stay
+        // readable; the next key to roll is written wrapped. Nobody is logged out by turning it
+        // on -- only by turning it back off.
+        builder.Services.AddSingleton<TransitXmlDecryptor>();
         builder.Services.AddDataProtection()
             .SetApplicationName("dcms-edge")
             .PersistKeysToDbContext<EdgeDbContext>();
+
+        // Through the options pipeline rather than an instance, because the encryptor needs
+        // ITransitEncryptor out of the container and this runs during registration, before
+        // there is a provider to resolve it from. Same shape as AddDcmsDataProtection.
+        builder.Services.AddOptions<KeyManagementOptions>()
+            .Configure<IServiceProvider>((options, sp) => options.XmlEncryptor =
+                new TransitXmlEncryptor(
+                    sp.GetRequiredService<ITransitEncryptor>(), TransitXmlEncryptor.EdgeKeyName));
 
         builder.Services.AddAuthorization(options =>
         {

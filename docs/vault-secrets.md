@@ -272,12 +272,16 @@ live in Vault, and every bootstrap chain terminates somewhere.
 | `transit/keys/dcms-tenant-secrets` | tenant AI provider keys, stored encrypted in the database |
 | `transit/keys/dcms-dataprotection` | the ASP.NET Data Protection key ring, when `DataProtection:ProtectWithTransit` is on |
 | `transit/keys/dcms-social-tokens` | tenant Meta (Facebook/Instagram) OAuth tokens in `social.meta_connections` |
+| `transit/keys/dcms-tls-keys` | tenant TLS private keys and the ACME account key, held by the edge |
+| `transit/keys/dcms-edge-dataprotection` | the edge's own Data Protection key ring in `edge.data_protection_keys`, always |
 
 A new key of the same name **cannot decrypt existing ciphertext**. Recreating
 `dcms-tenant-secrets` makes every tenant's stored provider key unreadable; recreating
 `dcms-dataprotection` invalidates the key ring, which logs everyone out and strands the Forgejo
 sync outbox; recreating `dcms-social-tokens` makes every stored Meta connection unreadable and
-every tenant has to reconnect their account by hand. `infra/vault/apply.sh` uses
+every tenant has to reconnect their account by hand; recreating `dcms-edge-dataprotection`
+signs everyone out of the console, and `dcms-tls-keys` makes every stored certificate unusable
+so the platform reissues them all at once against the CA's rate limit. `infra/vault/apply.sh` uses
 `vault write -f`, which is a no-op on an existing key — that is deliberate, not laziness.
 
 `dcms-social-tokens` is the one key a single service holds **both** directions on, which is
