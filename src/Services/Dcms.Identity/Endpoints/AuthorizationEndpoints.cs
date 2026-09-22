@@ -80,7 +80,15 @@ public static class AuthorizationEndpoints
             return Results.Redirect("/account/login?error=1&returnUrl=" + Uri.EscapeDataString(returnUrl));
         }
 
-        var principal = await BuildUserPrincipalAsync(user, userManager, scopeManager, request.GetScopes());
+        // The id of the interactive login this authorization is being issued from, so the
+        // session it produces can be ended together with the login behind it. Read from the
+        // cookie's properties rather than its claims — see LoginSessions.PropertyItem for why
+        // a claim would be replaced every half hour.
+        string? loginSessionId = null;
+        result.Properties?.Items.TryGetValue(LoginSessions.PropertyItem, out loginSessionId);
+
+        var principal = await BuildUserPrincipalAsync(
+            user, userManager, scopeManager, request.GetScopes(), loginSessionId);
         return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
@@ -137,7 +145,12 @@ public static class AuthorizationEndpoints
                     }));
             }
 
-            var principal = await BuildUserPrincipalAsync(user, userManager, scopeManager, result.Principal!.GetScopes());
+            // Carried forward from the authorization code (and then from each refresh token),
+            // which is what puts it in the ID token the client actually receives: in the code
+            // flow the ID token is minted here, not at the authorize endpoint.
+            var principal = await BuildUserPrincipalAsync(
+                user, userManager, scopeManager, result.Principal!.GetScopes(),
+                result.Principal!.FindFirst(LoginSessions.ClaimType)?.Value);
             return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         }
 
@@ -182,7 +195,8 @@ public static class AuthorizationEndpoints
     /// </summary>
     private static async Task<ClaimsPrincipal> BuildUserPrincipalAsync(
         DcmsUser user, UserManager<DcmsUser> userManager,
-        IOpenIddictScopeManager scopeManager, IEnumerable<string> scopes)
+        IOpenIddictScopeManager scopeManager, IEnumerable<string> scopes,
+        string? loginSessionId = null)
     {
         var identity = new ClaimsIdentity(
             OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
@@ -221,6 +235,16 @@ public static class AuthorizationEndpoints
         {
             identity.AddClaim(new Claim("forgejo_username", user.ForgejoUsername)
                 .SetDestinations(Destinations.AccessToken, Destinations.IdentityToken));
+        }
+
+        // Identity token only. The resource servers have no use for it — it names a browser
+        // login, not an authorization — and a claim in an access token is a claim ten services
+        // start reading. OpenIddict persists it in the authorization code and refresh token
+        // regardless of destination, which is what lets the exchange above carry it forward.
+        if (!string.IsNullOrEmpty(loginSessionId))
+        {
+            identity.AddClaim(new Claim(LoginSessions.ClaimType, loginSessionId)
+                .SetDestinations(Destinations.IdentityToken));
         }
 
         var principal = new ClaimsPrincipal(identity);

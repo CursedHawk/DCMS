@@ -216,7 +216,8 @@ public static class BffAuthentication
 
         // Ends one session — this one, or another of the caller's own.
         app.MapDelete("/.edge/sessions/{id}", async (
-            string id, HttpContext context, IDataProtectionProvider protection, BffSessionStore sessions) =>
+            string id, HttpContext context, IDataProtectionProvider protection,
+            BffSessionStore sessions, BffTokenProvider tokens) =>
         {
             if (Caller(context) is not ({ } sessionId, { } subject))
             {
@@ -236,6 +237,24 @@ public static class BffAuthentication
                 // Indistinguishable from "already gone", deliberately: telling a caller that an
                 // id they guessed exists but is not theirs is an account-enumeration oracle.
                 return Results.NoContent();
+            }
+
+            // Identity FIRST, and the row only if it worked.
+            //
+            // Deleting the row alone looks like success and is not: identity's cookie is still
+            // in that browser, so one press of "Sign in" completes the authorization silently
+            // and the device is back. Doing it in this order means a failure is a failure the
+            // operator sees, instead of a device that was reported signed out and is not.
+            if (target.Info.LoginSessionId is { Length: > 0 } loginSessionId)
+            {
+                // The caller's token, not the target's: the target's is about to be destroyed,
+                // and identity authorises this on the subject, which is the same person.
+                var accessToken = await tokens.GetAccessTokenAsync(context.User, context.RequestAborted);
+                if (accessToken is null
+                    || !await tokens.RevokeLoginSessionAsync(accessToken, loginSessionId, context.RequestAborted))
+                {
+                    return Results.StatusCode(StatusCodes.Status502BadGateway);
+                }
             }
 
             await sessions.RemoveAsync(id);

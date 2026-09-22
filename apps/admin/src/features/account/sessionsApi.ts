@@ -16,6 +16,14 @@ export interface EdgeSessionSummary {
   userAgent: string | null;
 }
 
+/** Carries the status so a caller can tell "still signed in" from "reload and retry". */
+export class SessionRevokeError extends Error {
+  constructor(readonly status: number) {
+    super(`DELETE /.edge/sessions \u2192 ${status}`);
+    this.name = 'SessionRevokeError';
+  }
+}
+
 export const sessionsApi = {
   async list(): Promise<EdgeSessionSummary[]> {
     const res = await fetch('/.edge/sessions', { headers: { Accept: 'application/json' } });
@@ -28,8 +36,10 @@ export const sessionsApi = {
       method: 'DELETE',
       headers: csrfHeader(),
     });
-    // 403 is the edge refusing a write whose CSRF token did not verify — a page that has been
-    // open since before the token was reissued. Reloading gets a fresh one.
-    if (!res.ok) throw new Error(`DELETE /.edge/sessions → ${res.status}`);
+    // Every failure means the same thing to the person reading it: that device is still signed
+    // in. 502 is the edge unable to reach identity to end the login behind the session, and it
+    // deliberately leaves the session in place rather than reporting a sign-out that did not
+    // happen; 403 is a CSRF token older than the one the edge now expects, which a reload fixes.
+    if (!res.ok) throw new SessionRevokeError(res.status);
   },
 };

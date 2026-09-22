@@ -24,12 +24,18 @@ public sealed record BffTokens(string AccessToken, string RefreshToken, DateTime
 /// the real client address rather than something reconstructed from a header a client can set.</param>
 /// <param name="UserAgent">Verbatim, and rendered by the console. Attacker-controlled text on a
 /// page the victim reads, so it is data — never markup, never a link.</param>
+/// <param name="LoginSessionId">The interactive login at identity this session was issued from
+/// (identity's <c>LoginSessions</c>). Ending a session without ending this leaves identity's
+/// cookie in that browser, and the next press of "Sign in" completes the authorization silently
+/// — the device is back within one redirect and nothing looks wrong. Null on a session minted
+/// before identity started issuing the claim.</param>
 public sealed record BffSessionInfo(
     string Subject,
     DateTimeOffset CreatedAt,
     DateTimeOffset LastSeenAt,
     string? Ip,
-    string? UserAgent);
+    string? UserAgent,
+    string? LoginSessionId = null);
 
 /// <summary>One row of the session store: the credential half and the visible half.</summary>
 public sealed record BffSession(BffTokens Tokens, BffSessionInfo Info);

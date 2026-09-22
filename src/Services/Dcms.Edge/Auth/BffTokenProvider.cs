@@ -114,6 +114,52 @@ public sealed class BffTokenProvider(
     }
 
     /// <summary>
+    /// Asks identity to end one interactive login, which is the other half of signing a device
+    /// out (ADR 0014 addendum).
+    ///
+    /// <para>Deleting the edge's session row stops that browser calling the API, and the
+    /// console correctly falls back to its sign-in screen — but identity's cookie is still
+    /// there, so pressing "Sign in" completes <c>/connect/authorize</c> with no prompt and the
+    /// device is back inside one redirect. That is the bug this closes, and it is invisible
+    /// from the revoking device: the session disappears from the list exactly as it should.</para>
+    ///
+    /// <para>Called with the <b>revoking</b> session's access token, not the target's — the
+    /// target's is about to be destroyed, and identity authorises this on the caller's subject
+    /// anyway. Over <c>options.Backchannel</c> so it reaches identity's internal address the
+    /// same way the refresh does, rather than back out through this very proxy.</para>
+    /// </summary>
+    /// <returns>True when the login is ended, or was already gone.</returns>
+    public async Task<bool> RevokeLoginSessionAsync(
+        string accessToken, string loginSessionId, CancellationToken ct)
+    {
+        var options = oidcOptions.Get(OpenIdConnectDefaults.AuthenticationScheme);
+        var auth = authOptions.Value;
+        try
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Delete,
+                $"{auth.Authority.TrimEnd('/')}/account/api/sessions/{Uri.EscapeDataString(loginSessionId)}");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+            using var response = await options.Backchannel.SendAsync(request, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                return true;
+            }
+
+            logger.LogWarning(
+                "Identity refused to end login session {Status}; the device would still be able to sign back in.",
+                (int)response.StatusCode);
+            return false;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
+        {
+            logger.LogWarning(ex, "Could not reach identity to end a login session.");
+            return false;
+        }
+    }
+
+    /// <summary>
     /// The refresh_token grant, over the OIDC handler's own back channel — which carries
     /// <see cref="InternalIdentityHandler"/>, so the call reaches identity's internal address
     /// while the discovery document keeps advertising the public one.

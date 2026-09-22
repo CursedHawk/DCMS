@@ -198,6 +198,35 @@ public static class AccountApiEndpoints
             return Results.NoContent();
         }).WithAudit(AuditActions.SshKeyRemoved, category: AuditCategory.Auth);
 
+        // Ends one interactive login — the half of "sign out that device" that lives here.
+        //
+        // <para>The edge calls this when the account page ends a console session. Deleting the
+        // edge's own session is not enough on its own: identity's cookie is still in that
+        // browser, so the next press of "Sign in" completes /connect/authorize with no prompt
+        // and the device is back within one redirect. See LoginSessions.</para>
+        group.MapDelete("/sessions/{id}", async (
+            string id, ClaimsPrincipal principal, UserManager<DcmsUser> users,
+            LoginSessionRevocations revocations, CancellationToken ct) =>
+        {
+            var user = await FindUserAsync(principal, users);
+            if (user is null) return Results.Unauthorized();
+
+            // Ownership without storing live logins: the id carries its owner's subject, and
+            // the random half is what makes it unguessable. A caller may only end their own.
+            // Refused rather than ignored — unlike the edge's listing, a caller here names an
+            // id they were given, so a mismatch is a bug or an attempt, never a race.
+            if (!string.Equals(LoginSessions.SubjectOf(id), user.Id.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                // An explicit status, not Results.Forbid(): with no scheme named that negotiates
+                // the default one, which here is the interactive cookie — so a JSON caller would
+                // be answered with a 302 to a sign-in page it cannot use.
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            await revocations.RevokeAsync(id, ct);
+            return Results.NoContent();
+        }).WithAudit(AuditActions.SessionRevoked, category: AuditCategory.Auth);
+
         return app;
     }
 

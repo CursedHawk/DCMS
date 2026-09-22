@@ -31,7 +31,8 @@ export function SessionsCard() {
       toast.success(t('account.sessionEnded'));
       void qc.invalidateQueries({ queryKey: ['edge-sessions'] });
     },
-    onError: (e: Error) => toast.error(e.message),
+    // The status does not help anyone here: whatever went wrong, the device is still signed in.
+    onError: () => toast.error(t('account.sessionEndFailed')),
   });
 
   return (

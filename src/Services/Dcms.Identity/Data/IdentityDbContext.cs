@@ -17,6 +17,10 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
 
     public DbSet<ForgejoSyncOutbox> ForgejoSyncOutbox => Set<ForgejoSyncOutbox>();
 
+    /// <summary>Interactive logins that have been ended from another device. See
+    /// <see cref="LoginSessions"/>.</summary>
+    public DbSet<RevokedLoginSession> RevokedLoginSessions => Set<RevokedLoginSession>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -27,6 +31,17 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
         {
             e.Property(u => u.ForgejoUsername).HasMaxLength(64);
             e.HasIndex(u => u.ForgejoUsername).IsUnique().HasFilter(null);
+        });
+
+        builder.Entity<RevokedLoginSession>(e =>
+        {
+            e.ToTable("revoked_login_sessions");
+            // The id is the key: every read is "has this login been ended", by id, and there is
+            // no second way to ask.
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Id).HasMaxLength(128);
+            // Drives the prune on write.
+            e.HasIndex(r => r.ExpiresAt);
         });
 
         builder.Entity<ForgejoSyncOutbox>(e =>

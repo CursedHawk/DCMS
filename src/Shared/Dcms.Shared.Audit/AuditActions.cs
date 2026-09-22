@@ -179,6 +179,9 @@ public static class AuditActions
     public const string LoginFailed = "auth.login.failed";
     public const string LoginLockedOut = "auth.login.lockedout";
     public const string Logout = "auth.logout";
+
+    /// <summary>One device signed out from the account page, leaving the others alone.</summary>
+    public const string SessionRevoked = "auth.session.revoked";
     public const string PasswordChanged = "auth.password.changed";
     public const string PasswordResetRequested = "auth.password.reset.requested";
     public const string PasswordResetCompleted = "auth.password.reset.completed";

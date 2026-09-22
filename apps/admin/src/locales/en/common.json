@@ -994,6 +994,7 @@
     "sessionCurrent": "This device",
     "sessionEnd": "Sign out",
     "sessionEnded": "Session ended.",
+    "sessionEndFailed": "Could not end that session — the device is still signed in. Try again.",
     "sessionLastSeen": "Last used {{when}}",
     "sessionSignedIn": "Signed in {{when}}",
     "sessionUnknownDevice": "Unrecognised device",

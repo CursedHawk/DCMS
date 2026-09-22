@@ -10,6 +10,7 @@ using Dcms.Shared.Vault;
 using Dcms.Shared.Hosting;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Messaging.Email;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -70,6 +71,58 @@ if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(goo
         options.SignInScheme = IdentityConstants.ExternalScheme;
     });
 }
+
+builder.Services.AddScoped<LoginSessionRevocations>();
+
+// Per-device sign-out. The account page lists a person's live console sessions and ends one;
+// ending only the edge's session leaves identity's cookie in that browser, and the next press
+// of "Sign in" completes /connect/authorize silently. See LoginSessions.
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    // Pinned rather than left to the default so LoginSessions.Retention has something to be
+    // longer than. Both values are what ASP.NET Identity already used.
+    options.ExpireTimeSpan = TimeSpan.FromDays(14);
+    options.SlidingExpiration = true;
+
+    // Every interactive sign-in goes through here — password, registration, Google, and the
+    // link-and-create path — so the id is minted in ONE place rather than at four call sites,
+    // three of which would be found later.
+    //
+    // Only when absent: SecurityStampValidator re-signs the cookie every 30 minutes and passes
+    // the existing properties through. Minting unconditionally would hand the login a new id on
+    // the half-hour, and the id recorded at sign-in would quietly stop naming anything.
+    options.Events.OnSigningIn = context =>
+    {
+        if (!context.Properties.Items.ContainsKey(LoginSessions.PropertyItem)
+            && context.Principal?.FindFirst(Claims.Subject)?.Value is { Length: > 0 } subject)
+        {
+            context.Properties.Items[LoginSessions.PropertyItem] = LoginSessions.New(subject);
+        }
+        return Task.CompletedTask;
+    };
+
+    // Chained, not replaced: AddIdentity puts SecurityStampValidator here, and dropping it
+    // would undo "lock account" and "password changed" ending live sessions (SEC-05). The
+    // revocation check runs first because it is the cheaper refusal and it is unconditional.
+    var validateStamp = options.Events.OnValidatePrincipal;
+    options.Events.OnValidatePrincipal = async context =>
+    {
+        if (context.Properties.Items.TryGetValue(LoginSessions.PropertyItem, out var loginSessionId)
+            && loginSessionId is { Length: > 0 }
+            && await context.HttpContext.RequestServices
+                .GetRequiredService<LoginSessionRevocations>()
+                .IsRevokedAsync(loginSessionId, context.HttpContext.RequestAborted))
+        {
+            context.RejectPrincipal();
+            // Deleted as well as refused, so the browser stops presenting a cookie that will
+            // never work again and the next visit is a plain sign-in rather than a lookup.
+            await context.HttpContext.SignOutAsync(IdentityConstants.ApplicationScheme);
+            return;
+        }
+
+        await validateStamp(context);
+    };
+});
 
 // Align Identity's claim names with the OpenIddict claim names so the issued
 // principal carries sub/name/role as expected by resource servers.

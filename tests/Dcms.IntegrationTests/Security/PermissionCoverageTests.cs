@@ -246,6 +246,10 @@ public sealed class IdentityPermissionCoverageTests : PermissionCoverageTestsBas
         "ANY /health",
         "ANY /health/live",
         "DELETE /account/api/me",
+        // Self-scoped by construction: a login id carries its owner's subject, and the handler
+        // refuses one that is not the caller's. Identity does not reference the permission
+        // library at all — see this class's summary — so the declaration lives here.
+        "DELETE /account/api/sessions/{id}",
         "DELETE /account/api/ssh-keys/{id:long}",
         "DELETE /api/identity/users/{id:guid}/roles/{role}",
         "POST /account/api/password",

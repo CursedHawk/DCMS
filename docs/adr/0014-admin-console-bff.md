@@ -401,3 +401,47 @@ left at the office" is a delete.
 - A session minted by the previous release deserialises with no `Info` and is read as absent,
   which signs those operators out once. Identity's own cookie is still in the browser, so the
   next navigation completes the redirect without a prompt.
+
+### Ending a session has to end the login behind it
+
+The first cut of the above ended the edge's session and stopped there, and the device it was
+used on could sign straight back in: identity's own cookie was untouched, so pressing "Sign in"
+completed `/connect/authorize` with no prompt and the browser was back inside one redirect.
+From the device doing the revoking nothing looked wrong — the session disappeared from the list
+exactly as it should. A sign-out that silently is not one is worse than no button at all.
+
+ASP.NET Identity's answer to "end a session" is the security stamp, and it is the wrong shape:
+rotating it ends **every** device, including the one asking. So each interactive login now
+carries an id of its own (`identity/LoginSessions.cs`):
+
+- Minted in `OnSigningIn` on the Identity cookie — one hook covering password, registration,
+  Google and link-and-create, rather than four call sites of which three get found later. Only
+  when absent: `SecurityStampValidator` re-signs the cookie every 30 minutes and passes the
+  properties through, so minting unconditionally would hand the login a new id on the half hour
+  and the recorded one would stop naming anything.
+- Carried as an **authentication-property item, not a claim**. Claims are rebuilt from the user
+  on that same refresh; properties are not.
+- Into the ID token as `dcms_lsid`, added at both the authorize endpoint (from the cookie) and
+  the token endpoint (from the authorization code). The second is load-bearing: in the code flow
+  the ID token is minted at `/connect/token`, so a claim added only at `/connect/authorize` never
+  reaches the client at all. Not spelled `sid` — that name belongs to OIDC session management,
+  which this is not, and a claim the authorization server also has opinions about is one that can
+  be filtered out from under you.
+- Ended through `DELETE /account/api/sessions/{id}`, which records it in
+  `identity.revoked_login_sessions`, and refused thereafter in `OnValidatePrincipal` — chained
+  in front of the security-stamp validator rather than replacing it, because replacing it would
+  quietly undo SEC-05.
+- **Revocations, not sessions.** Only ended logins are stored, so a live login writes nothing and
+  the table holds a handful of rows, pruned whenever one is added. Identity therefore cannot
+  enumerate logins, and does not need to — the edge has the list. Ownership comes from the id
+  itself: it is `{subject}.{random}`, so identity can check that a caller owns what they are
+  ending without keeping a row to look it up in.
+
+The edge calls identity **before** deleting its own row, with the revoking session's access
+token, and answers 502 if that call fails. The other order reports a sign-out that did not
+happen, which is the whole defect.
+
+Two things this deliberately does not do. A session minted before this shipped has no id, so it
+can only have its edge row deleted — those roll over at the next sign-in. And a user whose
+Google session is still live can sign in again without a password; that is what federated SSO
+means by sign-out, and it is true of every sign-out button on the platform.
