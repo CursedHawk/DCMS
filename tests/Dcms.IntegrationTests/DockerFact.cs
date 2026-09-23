@@ -7,7 +7,12 @@ namespace Dcms.IntegrationTests;
 /// <summary>
 /// Integration tests need a Docker daemon for Testcontainers. This fact
 /// self-skips when Docker is unavailable so the suite stays green on machines
-/// without it (CI runs with Docker and exercises everything).
+/// without it.
+///
+/// <para>That includes the pipeline: its test job has no Docker daemon, so there these
+/// skip and only the plain facts run. A plain fact inside a container-fixture
+/// <c>[Collection]</c> therefore builds that fixture in CI and fails the whole collection
+/// — see <c>DockerCollectionTests</c>.</para>
 /// </summary>
 public sealed class DockerFactAttribute : FactAttribute
 {
