@@ -229,8 +229,19 @@ shippable, reversible, and leaves the platform working.
    `docker-compose.yml` and `docker-compose.prod.yml` give it the `dcms_app` connection
    string (`APP_DB_PASSWORD`, which `deploy.sh` already generates) and `Rls__Enforce`.
 
-   Still to move, in order: ai-gateway (one context, one resolver), site-host, content-api
-   and admin-api. Each gets its enforced run before its compose lines change: site-host and
+   *ai-gateway, second.* It is called service to service and the tenant arrives in the
+   request body, so nothing ambient carries it. `AiDbContext` has no query filters either,
+   so the sweep never saw its one reader, and the failure it would have produced is quiet.
+   `AiProviderResolver` would have found no settings rows and fallen through to the
+   platform's provider and key: the call still succeeds, on the platform's bill, with the
+   tenant's own configuration ignored. The resolver now enters `RlsScope.Tenant` for the
+   tenant it was handed. `AiProviderResolverRlsTests` runs it as `dcms_app` with the
+   interceptor on; with the scope removed it resolves `sk-platform`. The guard now covers
+   every file that uses one of the three contexts that map policed tables without query
+   filters (`AiDbContext`, `AnalyticsDbContext`, and `AuditDbContext`'s rows). The admin-api
+   endpoints among them read only the request's tenant and say so.
+
+   Still to move, in order: site-host, content-api and admin-api. Each gets its enforced run before its compose lines change: site-host and
    content-api need an enforced fixture of their own, and admin-api's is the
    `DCMS_TEST_RLS_ENFORCE` collection.
 

@@ -21,16 +21,18 @@ namespace Dcms.IntegrationTests.Hardening;
 public sealed partial class RlsScopeCoverageTests
 {
     [Fact]
-    public void Every_file_ignoring_query_filters_or_reading_the_audit_log_has_decided_what_the_database_is_told()
+    public void Every_file_ignoring_query_filters_or_reading_an_unfiltered_context_has_decided_what_the_database_is_told()
     {
         var root = SourceRoot();
         var offenders = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
             .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
-                           && !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+                           && !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                           // Generated, and run by the migrate job as the owner.
+                           && !file.Contains($"{Path.DirectorySeparatorChar}Migrations{Path.DirectorySeparatorChar}"))
             .Where(file =>
             {
                 var source = File.ReadAllText(file);
-                return (IgnoreCall().IsMatch(source) || ReadsAuditEvents(source))
+                return (IgnoreCall().IsMatch(source) || ReadsUnfilteredTenantContext(source))
                        && !ScopeCall().IsMatch(source)
                        && !source.Contains("// rls:", StringComparison.Ordinal);
             })
@@ -46,13 +48,17 @@ public sealed partial class RlsScopeCoverageTests
     }
 
     /// <summary>
-    /// The audit log's rows are policed like any tenant table, but <c>AuditDbContext</c> has no
-    /// query filters to ignore, so its cross-tenant readers never call
-    /// <c>IgnoreQueryFilters()</c> and the check above could not see them. The sealer, the gap
-    /// detector and the platform audit view were all found that way, after the sweep.
+    /// Three contexts map policed tables and have no query filters to ignore, so their readers
+    /// never call <c>IgnoreQueryFilters()</c> and the check above cannot see them. Found after
+    /// the sweep, one service at a time: the audit sealer and platform audit view, then
+    /// ai-gateway's provider lookup, which would have quietly swapped a tenant's own API key for
+    /// the platform's. For audit only the rows count; the outbox it also maps is unpoliced and
+    /// written from everywhere.
     /// </summary>
-    private static bool ReadsAuditEvents(string source) =>
-        source.Contains("AuditDbContext", StringComparison.Ordinal) && EventsCall().IsMatch(source);
+    private static bool ReadsUnfilteredTenantContext(string source) =>
+        (source.Contains("AuditDbContext", StringComparison.Ordinal) && EventsCall().IsMatch(source))
+        || source.Contains("AiDbContext", StringComparison.Ordinal)
+        || source.Contains("AnalyticsDbContext", StringComparison.Ordinal);
 
     [GeneratedRegex(@"^(?![ \t]*(//|\*))[^\n]*\.Events\b", RegexOptions.Multiline | RegexOptions.CultureInvariant)]
     private static partial Regex EventsCall();

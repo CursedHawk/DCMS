@@ -24,6 +24,8 @@ namespace Dcms.AdminApi.Ai;
 /// loop speaks; which provider actually serves it is ai-gateway's decision, and it translates
 /// where it has to. Nothing here is Anthropic-specific any more.</para>
 /// </summary>
+// rls: request tenant. Every query here is the request's own tenant (tenant.TenantId), which
+// is what the interceptor tells the database.
 public static class AiAgentEndpoints
 {
     private const string AiScope = "dcms.ai";

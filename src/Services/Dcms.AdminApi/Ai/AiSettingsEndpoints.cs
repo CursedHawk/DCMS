@@ -14,6 +14,8 @@ namespace Dcms.AdminApi.Ai;
 /// Per-tenant AI configuration. The API key is accepted once on write, encrypted
 /// via Vault Transit, and never returned — GET reports only whether a key is set.
 /// </summary>
+// rls: request tenant. Every query here is the request's own tenant (tenant.TenantId), which
+// is what the interceptor tells the database.
 public static class AiSettingsEndpoints
 {
     public static IEndpointRouteBuilder MapAiSettingsEndpoints(this IEndpointRouteBuilder app)

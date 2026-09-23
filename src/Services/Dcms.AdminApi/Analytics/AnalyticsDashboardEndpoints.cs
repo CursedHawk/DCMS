@@ -19,6 +19,8 @@ namespace Dcms.AdminApi.Analytics;
 /// sum, so per-day visitor columns could not be added up into a period total
 /// without over-counting everyone who came back the next day.
 /// </summary>
+// rls: request tenant. Every query here is the request's own tenant (tenant.TenantId), which
+// is what the interceptor tells the database.
 public static class AnalyticsDashboardEndpoints
 {
     /// <summary>How many rows each breakdown returns. Enough to be useful, bounded.</summary>

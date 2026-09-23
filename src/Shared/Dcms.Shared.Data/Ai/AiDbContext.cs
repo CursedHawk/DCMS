@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Shared.Data.Ai;
 
+// rls: defines the context; with no query filters, every reader decides (RlsScopeCoverageTests).
 /// <summary>
 /// Owns the "ai" schema. Two things live here: provider configuration
 /// (tenant_ai_settings, user_ai_settings), written by admin-api's settings UI and

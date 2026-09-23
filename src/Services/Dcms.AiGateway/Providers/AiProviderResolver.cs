@@ -1,6 +1,7 @@
 using Dcms.Shared.Audit;
 using System.Text;
 using Dcms.Shared.Data.Ai;
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Vault;
 using Microsoft.EntityFrameworkCore;
 
@@ -46,6 +47,12 @@ public sealed class AiProviderResolver(
 
     public async Task<ResolvedCredentials> ResolveCredentialsAsync(Guid tenantId, Guid? userId, CancellationToken ct)
     {
+        // ADR 0015. The tenant arrives in the calling service's request body; nothing ambient
+        // carries it here. Without this the database shows no settings rows, and the lookup
+        // "succeeds" by falling through to the platform's provider and key -- the tenant's own
+        // BYOK key silently replaced by ours, which is the worst way for this to fail.
+        using var rls = RlsScope.Tenant(tenantId);
+
         var userSettings = userId is { } uid
             ? await db.UserSettings.AsNoTracking().FirstOrDefaultAsync(s => s.TenantId == tenantId && s.UserId == uid, ct)
             : null;

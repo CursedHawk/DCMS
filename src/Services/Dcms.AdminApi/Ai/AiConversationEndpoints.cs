@@ -24,6 +24,8 @@ namespace Dcms.AdminApi.Ai;
 /// resuming a conversation is the stored array handed back to the model unchanged. Which
 /// provider serves it is ai-gateway's business, not this table's.</para>
 /// </summary>
+// rls: request tenant. Every query here is the request's own tenant (tenant.TenantId), which
+// is what the interceptor tells the database.
 public static class AiConversationEndpoints
 {
     /*

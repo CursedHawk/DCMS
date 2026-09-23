@@ -17,6 +17,7 @@ namespace Dcms.Shared.Data.Analytics;
 /// </summary>
 // Raw visitor telemetry: written on every page view, tenant-purgeable, and already a record of itself. Auditing it would drown the log in traffic.
 [AuditIgnore]
+// rls: defines the context; with no query filters, every reader decides (RlsScopeCoverageTests).
 public sealed class AnalyticsEvent
 {
     public long Id { get; set; }

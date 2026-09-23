@@ -22,6 +22,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Tenancy;
 
+// rls: the migrate job, on the owner connection; it creates the policies rather than meeting them.
 /// <summary>
 /// Applies every schema change the platform owns: EF migrations for the twelve contexts, the
 /// hand-written audit partition DDL, the RLS backstop, the reporting views and the owner-permission

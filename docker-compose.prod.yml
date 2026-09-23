@@ -506,6 +506,11 @@ services:
   ai-gateway:
     environment:
       <<: *prod-env
+      # ADR 0015 phase 4, second: on dcms_app, NOBYPASSRLS. The tenant comes in each request
+      # body, and AiProviderResolver declares it (RlsScope.Tenant). Moved back by deleting
+      # these two lines.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
+      Rls__Enforce: "true"
       Auth__Authority: "http://identity:8080/"
       Auth__Audience: "dcms-ai-gateway"
       Auth__RequireHttpsMetadata: "true"

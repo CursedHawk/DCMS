@@ -731,6 +731,11 @@ services:
       <<: *service-env
       Auth__Authority: "http://dcms-identity:8080/"
       Auth__Audience: "dcms-ai-gateway"
+      # ADR 0015 phase 4, second: on dcms_app, NOBYPASSRLS. The tenant comes in each request
+      # body, and AiProviderResolver declares it (RlsScope.Tenant). Moved back by deleting
+      # these two lines.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=dcms-app-dev"
+      Rls__Enforce: "true"
 
   # Truncates a DCMS container's Docker json log file, and nothing else.
   #
