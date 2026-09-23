@@ -1,6 +1,7 @@
 using Dcms.Shared.Audit;
 using Dcms.Shared.Data;
 using Dcms.Shared.Data.Audit;
+using Dcms.Shared.Data.Rls;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Audit;
@@ -86,12 +87,14 @@ public sealed class AuditMaintenanceWorker(
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
 
+        // Every step here reads every tenant's chain: sealing verifies each segment, the gap
+        // check walks every producer. Under the tenant-less default the database would show
+        // them empty chains, and a verifier handed an empty chain has nothing to object to.
+        using var rls = RlsScope.Platform();
+
         // Partitions first: the writer needs somewhere to put today's records, and that has to
-        // be true before anything else in this pass matters.
+        // be true before anything else in this pass matters. Chain indexes come with them.
         await AuditSchemaConfigurator.EnsurePartitionsAsync(db, logger, ct);
-        // A partition created here is brand new, so it needs its chain index too — the parent
-        // cannot carry that one, see EnsureChainIndexesAsync.
-        await AuditSchemaConfigurator.EnsureChainIndexesAsync(db, logger, ct);
 
         var retention = scope.ServiceProvider.GetRequiredService<AuditRetention>();
         await retention.ApplyAsync(ct);

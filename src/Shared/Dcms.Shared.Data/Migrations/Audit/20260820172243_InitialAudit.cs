@@ -31,7 +31,7 @@ namespace Dcms.Shared.Data.Migrations.Audit
             //
             // The chain constraint ("ChainKey","Period","Seq") cannot be spelled that way: it
             // must not gain OccurredAt, or two rows could claim one Seq. So it lives as a
-            // UNIQUE index on each partition instead — see EnsureChainIndexesAsync in
+            // UNIQUE index on each partition instead — see audit.ensure_partitions in
             // AuditSchemaConfigurator, which creates it for every partition and is what keeps
             // it in place for months created later. Per-partition uniqueness is global
             // uniqueness here because Period is the month of OccurredAt, so all rows of one

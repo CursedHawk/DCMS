@@ -80,24 +80,23 @@ public sealed class AuditRetention(
     {
         var name = $"audit_events_{period:yyyy}m{period:MM}";
 
-        // Built into a local first, which is also what stops EF1002 firing: a Postgres
-        // identifier cannot be parameterised, so the name has to be interpolated. It comes
-        // from a DateOnly format string and nothing else, so there is no caller-supplied
-        // text anywhere near this SQL.
-        var sql = $"""
-                   ALTER TABLE audit.audit_events DETACH PARTITION audit."{name}";
-                   DROP TABLE audit."{name}";
-                   """;
-
         try
         {
-            // Detach before dropping so a reader mid-query against the parent sees a clean
-            // partition set rather than a table disappearing underneath it.
-            await db.Database.ExecuteSqlRawAsync(sql, ct);
+            // Through the owner's function, not DDL of our own: this runs as dcms_app, which
+            // may drop nothing. The function re-checks the sealing above in the database, so
+            // the order that is the whole safety property does not rest on this code alone.
+            // See AuditSchemaConfigurator.CreateMaintenanceFunctionsAsync.
+            var dropped = await db.Database
+                .SqlQuery<bool>($"SELECT audit.drop_sealed_partition({period}) AS \"Value\"")
+                .SingleAsync(ct);
+            if (!dropped)
+            {
+                // The partition was never created: a month with no records at all.
+                return false;
+            }
         }
         catch (Exception ex)
         {
-            // Most likely the partition was never created — a month with no records at all.
             logger.LogWarning(ex, "Could not drop audit partition {Partition}.", name);
             return false;
         }

@@ -320,6 +320,11 @@ services:
   media-worker:
     environment:
       <<: *prod-env
+      # ADR 0015 phase 4: the first service off the owner connection. dcms_app is NOBYPASSRLS,
+      # so the database confines every job to its tenant (MediaConsumerBase enters
+      # RlsScope.Tenant). Moved back by deleting these two lines.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
+      Rls__Enforce: "true"
 
   # Like the site-builder, email-worker deliberately does NOT inherit *prod-env: the
   # mail relay is all it needs to reach. Host-specific SMTP settings are layered on

@@ -59,4 +59,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE :"owner" IN SCHEMA :"schema"
 SQL
 done
 
-echo "postgres-bootstrap: dcms_app role ready (NOBYPASSRLS; not yet used by any service)"
+echo "postgres-bootstrap: dcms_app role ready (NOBYPASSRLS; ADR 0015 phase 4 moves services onto it)"

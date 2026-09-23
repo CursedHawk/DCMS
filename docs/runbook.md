@@ -288,12 +288,14 @@ TS, reaches the hub through site-host's `/hub` proxy).
 - **RLS** — `RlsConfigurator` puts two permissive policies on every tenant-scoped
   table after migrations: `tenant_isolation` (keyed on the `app.tenant_id` GUC) and
   `platform_scope` (keyed on `app.scope = 'platform'`, the explicit widening for
-  cross-tenant work). Defense-in-depth on top of the EF query filters. The app still
-  connects as the table owner and is unaffected; `dcms_rls` (read-only, no BYPASSRLS)
-  is what the isolation test uses, and `dcms_app` (DML, no BYPASSRLS) is the runtime
-  role the services move onto in ADR 0015 phase 4 — created by `postgres-bootstrap`,
-  not yet connected to by anything. Gate with `Tenancy:ApplyRls`. See ADR 0005 and
-  ADR 0015.
+  cross-tenant work). Defense-in-depth on top of the EF query filters. Services on the
+  owner connection are unaffected; `dcms_rls` (read-only, no BYPASSRLS) is what the
+  isolation test uses, and `dcms_app` (DML, no BYPASSRLS) is the runtime role the
+  services move onto in ADR 0015 phase 4 — media-worker runs as it now. **A service on
+  `dcms_app` that shows blank pages or unprocessed jobs has lost its tenant, not its
+  data:** move it back by deleting its `ConnectionStrings__Postgres` and `Rls__Enforce`
+  lines in `docker-compose.yml` and `docker-compose.prod.yml`, and push. Gate with
+  `Tenancy:ApplyRls`. See ADR 0005 and ADR 0015.
 - **Rate limiting** — content-api applies a per-client (IP) fixed-window global
   limiter (`RateLimiting:PermitLimit`/`WindowSeconds`, default 600/60 s); `/health`
   and `/hub` are exempt. 429 on exceed.

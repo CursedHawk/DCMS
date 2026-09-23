@@ -135,6 +135,12 @@ public sealed class AdminApiFixture : IAsyncLifetime
                 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "{schema}" TO dcms_app;
                 """);
         }
+        // The migrate boot made these before the role existed, so it could not grant them; in a
+        // deploy postgres-bootstrap runs first and AuditSchemaConfigurator grants them itself.
+        sql.AppendLine("""
+            GRANT EXECUTE ON FUNCTION audit.ensure_partitions(int) TO dcms_app;
+            GRANT EXECUTE ON FUNCTION audit.drop_sealed_partition(date) TO dcms_app;
+            """);
         await using var connection = new Npgsql.NpgsqlConnection(_postgres.GetConnectionString());
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();

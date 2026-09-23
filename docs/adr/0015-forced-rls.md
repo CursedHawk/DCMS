@@ -184,20 +184,55 @@ shippable, reversible, and leaves the platform working.
      append ran with no tenant. `UseDcmsRlsEnforcement` now attaches that one interceptor
      alone.
 
-   Left for phase 4, deliberately:
+   Left for phase 4, deliberately (all three are taken up there):
    - `AuditMaintenanceWorker` creates monthly partitions and their indexes at runtime,
-     which is DDL `dcms_app` cannot run. The migrate job creates three months ahead on
-     every deploy, so this is not an immediate break, but admin-api cannot move until the
-     maintenance runs on an owner connection or moves into the migrate job.
+     which is DDL `dcms_app` cannot run.
    - Only the AdminApi collection has an enforced mode. content-api, site-host and
-     media-worker paths were swept by reading them, and they get their own enforced fixture
-     or a soak before they move.
+     media-worker paths were swept by reading them.
    - The pipeline has no Docker, so the enforced run happens on a developer machine only
      (see `DockerCollectionTests`).
 
 4. **One service at a time onto `dcms_app`**, starting with the one whose blast radius
    is smallest and whose paths are most uniform, and soaking between each. A service that
-   misbehaves is moved back by changing one connection string.
+   misbehaves is moved back by deleting its two compose lines. *In progress.*
+
+   *Before any service moved: the audit log's DDL.* An owner connection kept in admin-api
+   for the maintenance worker would have left the most exposed service holding the
+   credentials this ADR takes away, so the DDL moved into the database instead.
+   `AuditSchemaConfigurator` (run by the migrate job, as the owner) creates two
+   `SECURITY DEFINER` functions with a pinned `search_path` and EXECUTE revoked from
+   PUBLIC, granted to `dcms_app` alone:
+   - `audit.ensure_partitions(months_ahead)` creates the coming months' partitions,
+     protects each (both policies, the role grants) and indexes every partition's chain.
+     It is the only way the runtime can create a table, and it can only create these.
+   - `audit.drop_sealed_partition(period)` is retention's drop. It holds the safety rule
+     itself rather than trusting its caller: it refuses the current or a future month, and
+     any month holding a row whose chain has no anchor. It checks the rows, not
+     `chain_heads`, because the app role can delete a head. It cannot check an anchor's
+     HMAC, so a forged anchor row would pass; verification against the Vault key still
+     exposes the forgery afterwards. That ceiling is marked in the code.
+
+   *A gap the phase 3 sweep could not see.* `AuditDbContext` has no query filters, so its
+   cross-tenant readers never call `IgnoreQueryFilters()`: the sealer, the gap detector and
+   the platform audit view. Under enforcement the sealer would have verified empty chains,
+   and the tenant audit page would have lost its members' logins, which are platform
+   records (`TenantId = Guid.Empty`). The maintenance pass and the audit read endpoints now
+   run under `RlsScope.Platform` with their explicit predicates. `RlsScopeCoverageTests`
+   now also covers files that read `AuditDbContext.Events`, and it counts `RlsScope` only on
+   a code line. It had accepted a comment that merely mentioned it, which a mutation check
+   caught.
+
+   *media-worker, first.* It is consumer-only, every message already enters
+   `RlsScope.Tenant` in `MediaConsumerBase`, and it touches three tables. Its integration
+   test now always runs the worker as `dcms_app` with `Rls:Enforce` on. With the tenant
+   scope removed the job never completes, so the test is known to be enforcing.
+   `docker-compose.yml` and `docker-compose.prod.yml` give it the `dcms_app` connection
+   string (`APP_DB_PASSWORD`, which `deploy.sh` already generates) and `Rls__Enforce`.
+
+   Still to move, in order: ai-gateway (one context, one resolver), site-host, content-api
+   and admin-api. Each gets its enforced run before its compose lines change: site-host and
+   content-api need an enforced fixture of their own, and admin-api's is the
+   `DCMS_TEST_RLS_ENFORCE` collection.
 
 5. **Remove the owner connection from the service environment** once every service is
    across, leaving `dcms` to the migration jobs alone.

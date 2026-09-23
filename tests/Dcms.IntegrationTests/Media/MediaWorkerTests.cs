@@ -2,10 +2,12 @@ extern alias MediaWorkerApp;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Data.Media;
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Storage;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Minio;
 using Minio.DataModel.Args;
 using NATS.Client.Core;
@@ -26,6 +28,10 @@ namespace Dcms.IntegrationTests.Media;
 /// Verifies the image pipeline: a published media.process.image job is consumed
 /// by media-worker, which loads the original from MinIO, generates the webp
 /// ladder, writes media_variants and marks the asset Ready.
+///
+/// <para>The worker runs here the way it runs in a deploy since ADR 0015 phase 4: as
+/// <c>dcms_app</c>, <c>NOBYPASSRLS</c>, with the tenant GUC interceptor on and the media tables
+/// under their policies. The fixture itself stays the owner, as the migrate job is.</para>
 /// </summary>
 public class MediaWorkerTests : IAsyncLifetime
 {
@@ -35,6 +41,7 @@ public class MediaWorkerTests : IAsyncLifetime
 
     private WebApplicationFactory<MediaWorkerApp::Program> _worker = null!;
     private const string Bucket = "dcms-media";
+    private const string AppRolePassword = "dcms-app-test";
 
     public async ValueTask InitializeAsync()
     {
@@ -69,12 +76,33 @@ public class MediaWorkerTests : IAsyncLifetime
             await audit.Database.MigrateAsync();
         }
 
+        await using (var owner = NewDb(Guid.Empty))
+        {
+            // What the migrate job's RlsConfigurator and postgres-bootstrap's 06-app-role.sh do,
+            // for the tables this worker touches.
+            foreach (var table in new[] { "media_assets", "media_variants", "media_folders" })
+            {
+                await RlsConfigurator.ProtectAsync(owner, "media", table, NullLogger.Instance);
+            }
+            await owner.Database.ExecuteSqlRawAsync($"""
+                CREATE ROLE dcms_app LOGIN PASSWORD '{AppRolePassword}' NOSUPERUSER NOBYPASSRLS;
+                GRANT USAGE ON SCHEMA media, audit TO dcms_app;
+                GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA media, audit TO dcms_app;
+                GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA media, audit TO dcms_app;
+                """);
+        }
+
         var endpoint = $"{_minio.Hostname}:{_minio.GetMappedPublicPort(9000)}";
         await MinioClientFactory(endpoint, _minio.GetAccessKey(), _minio.GetSecretKey()).MakeBucketAsync(new MakeBucketArgs().WithBucket(Bucket));
 
         _worker = new WebApplicationFactory<MediaWorkerApp::Program>().WithWebHostBuilder(b =>
         {
-            b.UseSetting("ConnectionStrings:Postgres", _postgres.GetConnectionString());
+            b.UseSetting("ConnectionStrings:Postgres", new Npgsql.NpgsqlConnectionStringBuilder(_postgres.GetConnectionString())
+            {
+                Username = "dcms_app",
+                Password = AppRolePassword,
+            }.ConnectionString);
+            b.UseSetting("Rls:Enforce", "true");
             b.UseSetting("Nats:Url", _nats.GetConnectionString());
             b.UseSetting("Storage:Endpoint", endpoint);
             b.UseSetting("Storage:AccessKey", _minio.GetAccessKey());

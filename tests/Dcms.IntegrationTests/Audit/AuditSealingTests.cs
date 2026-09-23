@@ -186,6 +186,64 @@ public sealed class AuditSealingTests : IAsyncLifetime
         (await _db.Events.AsNoTracking().CountAsync(e => e.Period == LastPeriod)).Should().Be(2);
     }
 
+    /// <summary>
+    /// ADR 0015 phase 4. The maintenance worker runs as <c>dcms_app</c>, which may run no DDL, so
+    /// partition upkeep and retention go through the owner's SECURITY DEFINER functions. This is
+    /// that role doing both, and failing at the same drop done by hand.
+    /// </summary>
+    [DockerFact]
+    public async Task The_runtime_role_maintains_partitions_through_the_functions_and_no_other_way()
+    {
+        await AppendPastAsync(3);
+        await _sealer.SealCompletedAsync();
+
+        await _db.Database.ExecuteSqlRawAsync("""
+            CREATE ROLE dcms_app LOGIN PASSWORD 'app' NOSUPERUSER NOBYPASSRLS;
+            GRANT USAGE ON SCHEMA audit TO dcms_app;
+            GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA audit TO dcms_app;
+            """);
+        // What the migrate job does after postgres-bootstrap has made the role.
+        await AuditSchemaConfigurator.ApplyAsync(_db, NullLogger.Instance);
+
+        await using var app = new AuditDbContext(new DbContextOptionsBuilder<AuditDbContext>()
+            .UseNpgsql(new Npgsql.NpgsqlConnectionStringBuilder(_postgres.GetConnectionString())
+            {
+                Username = "dcms_app",
+                Password = "app",
+            }.ConnectionString)
+            .Options);
+
+        await AuditSchemaConfigurator.EnsurePartitionsAsync(app, NullLogger.Instance);
+
+        var drop = $"DROP TABLE audit.\"audit_events_{LastPeriod:yyyy}m{LastPeriod:MM}\"";
+        var byHand = () => app.Database.ExecuteSqlRawAsync(drop);
+        (await byHand.Should().ThrowAsync<Npgsql.PostgresException>()).Which.SqlState.Should().Be("42501");
+
+        (await RetentionFor(retentionDays: 1, app).ApplyAsync()).Should().Be(1);
+        (await _db.Events.AsNoTracking().CountAsync(e => e.Period == LastPeriod)).Should().Be(0);
+    }
+
+    /// <summary>
+    /// The sealing rule held by the database itself, with AuditRetention's own check out of the
+    /// way: the function is callable by the app role, so it must not trust its caller.
+    /// </summary>
+    [DockerFact]
+    public async Task The_drop_function_refuses_an_unsealed_month_and_the_current_one()
+    {
+        await AppendPastAsync(3);
+
+        var unsealed = () => _db.Database.ExecuteSqlAsync(
+            $"SELECT audit.drop_sealed_partition({LastPeriod})");
+        (await unsealed.Should().ThrowAsync<Npgsql.PostgresException>())
+            .WithMessage("*unsealed chain*");
+
+        var current = AuditChainAppender.PeriodOf(DateTimeOffset.UtcNow);
+        var live = () => _db.Database.ExecuteSqlAsync($"SELECT audit.drop_sealed_partition({current})");
+        (await live.Should().ThrowAsync<Npgsql.PostgresException>()).WithMessage("*not a finished month*");
+
+        (await _db.Events.AsNoTracking().CountAsync(e => e.Period == LastPeriod)).Should().Be(3);
+    }
+
     [DockerFact]
     public async Task A_missing_producer_sequence_is_detected()
     {
@@ -245,9 +303,9 @@ public sealed class AuditSealingTests : IAsyncLifetime
 
     private AuditGapDetector Detector() => new(_db, NullLogger<AuditGapDetector>.Instance);
 
-    private AuditRetention RetentionFor(int retentionDays) => new(
-        _db,
-        _sealer,
+    private AuditRetention RetentionFor(int retentionDays, AuditDbContext? db = null) => new(
+        db ?? _db,
+        db is null ? _sealer : new AuditChainSealer(db, new AuditChainVerifier(db, _keys, new AuditMetrics(new TestMeterFactory())), _keys, NullLogger<AuditChainSealer>.Instance),
         new AuditOptions { RetentionDays = retentionDays },
         new NullRecorder(),
         NullLogger<AuditRetention>.Instance);
@@ -295,7 +353,7 @@ public sealed class AuditSealingTests : IAsyncLifetime
         // The chain's unique index lives per-partition, never on the parent, so a partition
         // made by hand here has to be given it the same way production does — otherwise these
         // tests run against a weaker table than the one they are meant to describe.
-        await AuditSchemaConfigurator.EnsureChainIndexesAsync(_db, NullLogger.Instance);
+        await AuditSchemaConfigurator.EnsurePartitionsAsync(_db, NullLogger.Instance);
     }
 
     private static AuditEvent Event(string action, long seq = 1, DateTimeOffset? at = null) => new()

@@ -24,6 +24,8 @@ public sealed record AuditChainSegmentResult(
 /// legitimately disagree and a verifier that assumed otherwise would report tampering on a
 /// healthy system.</para>
 /// </summary>
+// rls: none of its own. The verify endpoint reads as the request's tenant, which owns the
+// chain it asks for; the sealer calls it inside the maintenance worker's RlsScope.Platform.
 public sealed class AuditChainVerifier(AuditDbContext db, IAuditChainKeyProvider keys, AuditMetrics metrics)
 {
     public async Task<AuditChainSegmentResult> VerifySegmentAsync(

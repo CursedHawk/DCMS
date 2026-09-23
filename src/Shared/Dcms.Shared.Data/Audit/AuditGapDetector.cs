@@ -37,6 +37,8 @@ public sealed record AuditProducerGap(
 /// shortfall of one or two on an instance that is still running, and treat a gap on a
 /// <i>retired</i> instance as real.</para>
 /// </summary>
+// rls: none of its own; it walks every producer, and its one caller, the maintenance worker,
+// runs it inside RlsScope.Platform.
 public sealed class AuditGapDetector(AuditDbContext db, ILogger<AuditGapDetector> logger)
 {
     /// <summary>

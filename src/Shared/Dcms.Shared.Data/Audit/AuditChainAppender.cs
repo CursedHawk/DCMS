@@ -21,6 +21,7 @@ namespace Dcms.Shared.Data.Audit;
 /// Because the existence check happens under the head lock, and an event belongs to exactly one
 /// chain, check-then-insert is sound here — the unique index remains as a backstop.</para>
 /// </summary>
+// rls: none of its own; the chain writer drains every tenant's outbox inside RlsScope.Platform.
 public sealed class AuditChainAppender(
     AuditDbContext db,
     IAuditChainKeyProvider keys,

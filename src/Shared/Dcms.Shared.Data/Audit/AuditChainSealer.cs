@@ -27,6 +27,8 @@ namespace Dcms.Shared.Data.Audit;
 /// existing anchor alone, because a second anchor for one segment would make the pair
 /// meaningless.</para>
 /// </summary>
+// rls: none of its own; it seals every tenant's segments, and its caller (retention, from the
+// maintenance worker) runs inside RlsScope.Platform.
 public sealed class AuditChainSealer(
     AuditDbContext db,
     AuditChainVerifier verifier,

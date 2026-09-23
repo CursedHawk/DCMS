@@ -21,7 +21,7 @@ namespace Dcms.IntegrationTests.Hardening;
 public sealed partial class RlsScopeCoverageTests
 {
     [Fact]
-    public void Every_file_ignoring_query_filters_has_decided_what_the_database_is_told()
+    public void Every_file_ignoring_query_filters_or_reading_the_audit_log_has_decided_what_the_database_is_told()
     {
         var root = SourceRoot();
         var offenders = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
@@ -30,8 +30,8 @@ public sealed partial class RlsScopeCoverageTests
             .Where(file =>
             {
                 var source = File.ReadAllText(file);
-                return IgnoreCall().IsMatch(source)
-                       && !source.Contains("RlsScope.", StringComparison.Ordinal)
+                return (IgnoreCall().IsMatch(source) || ReadsAuditEvents(source))
+                       && !ScopeCall().IsMatch(source)
                        && !source.Contains("// rls:", StringComparison.Ordinal);
             })
             .Select(file => Path.GetRelativePath(root, file).Replace('\\', '/'))
@@ -44,6 +44,22 @@ public sealed partial class RlsScopeCoverageTests
             + "request's own tenant (or an unpoliced table) already suffices. Undecided:\n{0}",
             string.Join("\n", offenders));
     }
+
+    /// <summary>
+    /// The audit log's rows are policed like any tenant table, but <c>AuditDbContext</c> has no
+    /// query filters to ignore, so its cross-tenant readers never call
+    /// <c>IgnoreQueryFilters()</c> and the check above could not see them. The sealer, the gap
+    /// detector and the platform audit view were all found that way, after the sweep.
+    /// </summary>
+    private static bool ReadsAuditEvents(string source) =>
+        source.Contains("AuditDbContext", StringComparison.Ordinal) && EventsCall().IsMatch(source);
+
+    [GeneratedRegex(@"^(?![ \t]*(//|\*))[^\n]*\.Events\b", RegexOptions.Multiline | RegexOptions.CultureInvariant)]
+    private static partial Regex EventsCall();
+
+    /// <summary>In code: a comment that merely names <c>RlsScope</c> decides nothing.</summary>
+    [GeneratedRegex(@"^(?![ \t]*(//|\*))[^\n]*\bRlsScope\.", RegexOptions.Multiline | RegexOptions.CultureInvariant)]
+    private static partial Regex ScopeCall();
 
     /// <summary>A call in code, not in a comment line or an XML doc.</summary>
     [GeneratedRegex(@"^(?![ \t]*(//|\*))[^\n]*\.IgnoreQueryFilters\(\)", RegexOptions.Multiline | RegexOptions.CultureInvariant)]

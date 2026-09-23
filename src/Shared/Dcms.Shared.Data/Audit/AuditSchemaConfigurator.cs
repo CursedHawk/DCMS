@@ -1,4 +1,3 @@
-using System.Globalization;
 using Dcms.Shared.Data.Rls;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -25,75 +24,100 @@ public static class AuditSchemaConfigurator
 
     public static async Task ApplyAsync(DbContext context, ILogger logger, CancellationToken ct = default)
     {
+        await CreateMaintenanceFunctionsAsync(context, ct);
         await EnsurePartitionsAsync(context, logger, ct);
-        await EnsureChainIndexesAsync(context, logger, ct);
         await EnsureAppendOnlyAsync(context, logger, ct);
     }
 
     /// <summary>
-    /// Creates this month's partition and the next few. Runs at every startup so a service that
-    /// has been up across a month boundary — or one that was down when the maintenance worker
-    /// would have run — still has somewhere to put today's records.
+    /// Creates this month's partition and the next few, protects each one, and gives every
+    /// partition its chain index. Runs at every migration and every hour from the maintenance
+    /// worker, so a service that has been up across a month boundary -- or one that was down
+    /// when the worker would have run -- still has somewhere to put today's records.
+    ///
+    /// <para>Through <c>audit.ensure_partitions</c> rather than DDL of its own: the worker runs
+    /// as <c>dcms_app</c> (ADR 0015), which may create no table. The function is owned by the
+    /// migrating role and runs with its rights, and creating the next months' partitions is all
+    /// it can be made to do.</para>
     /// </summary>
     public static async Task EnsurePartitionsAsync(DbContext context, ILogger logger, CancellationToken ct = default)
     {
-        var month = new DateOnly(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+        var failures = await context.Database
+            .SqlQuery<string>($"SELECT unnest(audit.ensure_partitions({MonthsAhead})) AS \"Value\"")
+            .ToListAsync(ct);
 
-        for (var i = 0; i <= MonthsAhead; i++)
+        foreach (var failure in failures)
         {
-            var from = month.AddMonths(i);
-            var to = from.AddMonths(1);
-            var name = $"audit_events_{from:yyyy}m{from:MM}";
-
-            var sql = $"""
-                CREATE TABLE IF NOT EXISTS audit."{name}"
-                    PARTITION OF audit.audit_events
-                    FOR VALUES FROM ('{from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}')
-                                 TO ('{to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}');
-                """;
-
-            try
-            {
-                await context.Database.ExecuteSqlRawAsync(sql, ct);
-            }
-            catch (Exception ex)
-            {
-                // The likely cause is rows for this month already sitting in the DEFAULT
-                // partition, which blocks attaching a real one. Worth a warning rather than a
-                // crash: writes still succeed into the default, so nothing is lost meanwhile.
-                logger.LogWarning(ex, "Could not create audit partition {Partition}; records will fall to the default partition.", name);
-                continue;
-            }
-
-            // A partition is not covered by its parent's row-security policy when a query is
-            // aimed straight at it, and 01-rls.sql's ALTER DEFAULT PRIVILEGES hands dcms_rls
-            // SELECT on it the moment it exists. So it is protected here, as it is created,
-            // rather than at the next startup's RlsConfigurator.ApplyAsync — the maintenance
-            // worker calls this method months after a restart.
-            await RlsConfigurator.ProtectAsync(context, "audit", name, logger, ct);
+            // The likely cause is rows for a month already sitting in the DEFAULT partition,
+            // which blocks attaching a real one. Worth a warning rather than a crash: writes
+            // still succeed into the default, so nothing is lost meanwhile.
+            logger.LogWarning("Audit partition maintenance: {Failure}", failure);
         }
     }
 
     /// <summary>
-    /// Gives every partition its UNIQUE index on ("ChainKey", "Period", "Seq").
+    /// The only DDL the audit log needs after migration, as functions the runtime role may call
+    /// and nothing else. <c>SECURITY DEFINER</c> with a pinned <c>search_path</c>, and EXECUTE
+    /// revoked from PUBLIC, which a new function otherwise grants to everyone.
     ///
-    /// <para>It cannot live on the parent: Postgres requires a unique index on a partitioned
-    /// table to include the partition key, and adding OccurredAt to this one would defeat it —
-    /// two rows could then claim the same Seq at different instants. Per-partition uniqueness
-    /// is the real thing here, because Period is the month of OccurredAt and each partition is
-    /// one month, so every row of a given (ChainKey, Period) lands in the same partition.</para>
+    /// <para><c>ensure_partitions</c> is what <see cref="RlsConfigurator.ProtectAsync"/> and the
+    /// chain index used to do per partition, in SQL. A partition is not covered by its parent's
+    /// policy when a query names it directly, so it is protected as it is created;
+    /// <c>RlsCoverageTests</c> holds both copies of the policy to the same catalogue check.</para>
     ///
-    /// <para>Runs after <see cref="EnsurePartitionsAsync"/> and over <i>all</i> partitions, not
-    /// just the ones just created, so a month created by an older build — or by the maintenance
-    /// worker — is covered too. The write path serialises on the chain-head row lock; this index
-    /// is the backstop behind it.</para>
+    /// <para><c>drop_sealed_partition</c> is <see cref="AuditRetention"/>'s drop with its safety
+    /// property moved into the database: it refuses the current or a future month, and any
+    /// month holding a row whose chain has no anchor. It reads the rows rather than
+    /// <c>chain_heads</c> on purpose -- the app role can delete a head, and a check over heads
+    /// would then pass for a month nobody sealed.</para>
     /// </summary>
-    public static async Task EnsureChainIndexesAsync(DbContext context, ILogger logger, CancellationToken ct = default)
+    private static async Task CreateMaintenanceFunctionsAsync(DbContext context, CancellationToken ct)
     {
+        // ponytail: an anchor's HMAC cannot be checked in SQL, so a forged anchor row satisfies
+        // drop_sealed_partition. Verification against the Vault key still exposes the forgery,
+        // but the month is gone. Moving drops into the migrate job closes that, at the cost of
+        // retention only running when something deploys.
         const string sql = """
-            DO $$
-            DECLARE part text;
+            CREATE OR REPLACE FUNCTION audit.ensure_partitions(months_ahead int) RETURNS text[]
+                LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $fn$
+            DECLARE
+                m date := date_trunc('month', now() AT TIME ZONE 'UTC')::date;
+                part text;
+                failures text[] := ARRAY[]::text[];
             BEGIN
+                FOR i IN 0..months_ahead LOOP
+                    part := 'audit_events_' || to_char(m, 'YYYY') || 'm' || to_char(m, 'MM');
+                    BEGIN
+                        EXECUTE format(
+                            'CREATE TABLE IF NOT EXISTS audit.%I PARTITION OF audit.audit_events FOR VALUES FROM (%L) TO (%L)',
+                            part, m, (m + interval '1 month')::date);
+                        EXECUTE format('ALTER TABLE audit.%I ENABLE ROW LEVEL SECURITY', part);
+                        EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON audit.%I', part);
+                        EXECUTE format(
+                            'CREATE POLICY tenant_isolation ON audit.%I '
+                            'USING ("TenantId" = nullif(current_setting(''app.tenant_id'', true), '''')::uuid) '
+                            'WITH CHECK ("TenantId" = nullif(current_setting(''app.tenant_id'', true), '''')::uuid)', part);
+                        EXECUTE format('DROP POLICY IF EXISTS platform_scope ON audit.%I', part);
+                        EXECUTE format(
+                            'CREATE POLICY platform_scope ON audit.%I '
+                            'USING (current_setting(''app.scope'', true) = ''platform'') '
+                            'WITH CHECK (current_setting(''app.scope'', true) = ''platform'')', part);
+                        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dcms_rls') THEN
+                            EXECUTE format('GRANT SELECT ON audit.%I TO dcms_rls', part);
+                        END IF;
+                        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dcms_app') THEN
+                            EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON audit.%I TO dcms_app', part);
+                        END IF;
+                    EXCEPTION WHEN others THEN
+                        failures := failures || format('could not create %s (%s); records will fall to the default partition', part, SQLERRM);
+                    END;
+                    m := (m + interval '1 month')::date;
+                END LOOP;
+
+                -- Per partition, never on the parent: a unique index on a partitioned table must
+                -- include the partition key, and adding OccurredAt would let two rows claim one
+                -- Seq. Period is the month of OccurredAt, so per-partition uniqueness is the real
+                -- thing. Over ALL partitions, so one made by an older build is covered too.
                 FOR part IN
                     SELECT child.relname
                     FROM pg_inherits i
@@ -102,23 +126,59 @@ public static class AuditSchemaConfigurator
                     JOIN pg_namespace n ON n.oid = parent.relnamespace
                     WHERE n.nspname = 'audit' AND parent.relname = 'audit_events'
                 LOOP
-                    EXECUTE format(
-                        'CREATE UNIQUE INDEX IF NOT EXISTS %I ON audit.%I ("ChainKey", "Period", "Seq")',
-                        'UX_' || part || '_chain', part);
+                    BEGIN
+                        EXECUTE format(
+                            'CREATE UNIQUE INDEX IF NOT EXISTS %I ON audit.%I ("ChainKey", "Period", "Seq")',
+                            'UX_' || part || '_chain', part);
+                    EXCEPTION WHEN others THEN
+                        -- Duplicate (ChainKey, Period, Seq) rows would be the surprising cause:
+                        -- a chain problem to look at, not a reason to refuse to start.
+                        failures := failures || format('could not index %s (%s)', part, SQLERRM);
+                    END;
                 END LOOP;
+
+                RETURN failures;
+            END $fn$;
+
+            CREATE OR REPLACE FUNCTION audit.drop_sealed_partition(p_period date) RETURNS boolean
+                LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $fn$
+            DECLARE
+                part text := 'audit_events_' || to_char(p_period, 'YYYY') || 'm' || to_char(p_period, 'MM');
+                unsealed boolean;
+            BEGIN
+                IF p_period <> date_trunc('month', p_period)::date
+                   OR p_period >= date_trunc('month', now() AT TIME ZONE 'UTC')::date THEN
+                    RAISE EXCEPTION 'audit.%: not a finished month', part;
+                END IF;
+                IF to_regclass(format('audit.%I', part)) IS NULL THEN
+                    RETURN false;
+                END IF;
+
+                EXECUTE format(
+                    'SELECT EXISTS (SELECT 1 FROM audit.%I e WHERE NOT EXISTS ('
+                    'SELECT 1 FROM audit.chain_anchors a WHERE a."ChainKey" = e."ChainKey" AND a."Period" = %L))',
+                    part, p_period) INTO unsealed;
+                IF unsealed THEN
+                    RAISE EXCEPTION 'audit.%: holds records of an unsealed chain', part;
+                END IF;
+
+                -- Detach first so a reader mid-query against the parent sees a clean partition set.
+                EXECUTE format('ALTER TABLE audit.audit_events DETACH PARTITION audit.%I', part);
+                EXECUTE format('DROP TABLE audit.%I', part);
+                RETURN true;
+            END $fn$;
+
+            REVOKE ALL ON FUNCTION audit.ensure_partitions(int) FROM PUBLIC;
+            REVOKE ALL ON FUNCTION audit.drop_sealed_partition(date) FROM PUBLIC;
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dcms_app') THEN
+                    GRANT EXECUTE ON FUNCTION audit.ensure_partitions(int) TO dcms_app;
+                    GRANT EXECUTE ON FUNCTION audit.drop_sealed_partition(date) TO dcms_app;
+                END IF;
             END $$;
             """;
 
-        try
-        {
-            await context.Database.ExecuteSqlRawAsync(sql, ct);
-        }
-        catch (Exception ex)
-        {
-            // Duplicate (ChainKey, Period, Seq) rows would be the surprising cause, and that is
-            // a chain problem to look at rather than a reason to refuse to start.
-            logger.LogWarning(ex, "Could not ensure the audit chain unique indexes.");
-        }
+        await context.Database.ExecuteSqlRawAsync(sql, ct);
     }
 
     private static async Task EnsureAppendOnlyAsync(DbContext context, ILogger logger, CancellationToken ct)

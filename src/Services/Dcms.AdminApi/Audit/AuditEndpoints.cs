@@ -3,6 +3,7 @@ using System.Text.Json;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Audit;
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
@@ -73,6 +74,7 @@ public static class AuditEndpoints
             }
 
             var take = Math.Clamp(limit ?? 50, 1, MaxPageSize);
+            using var rls = RlsScope.Platform(); // see VisibleAsync
 
             // No tenant header is required in platform scope, which is the point: an operator
             // reading the platform's log is not working inside any tenant.
@@ -118,6 +120,7 @@ public static class AuditEndpoints
             });
         }).RequirePermission(PlatformPermissions.AuditRead);
 
+        // rls: the request's tenant -- a tenant's chain holds only its own rows.
         app.MapGet("/api/admin/audit/verify", async (
             AuditChainVerifier verifier,
             ITenantContext tenantContext,
@@ -160,6 +163,7 @@ public static class AuditEndpoints
                 return Results.BadRequest(new { error = "No tenant selected." });
             }
 
+            using var rls = RlsScope.Platform(); // see VisibleAsync
             var visible = await VisibleAsync(db, tenancy, tenantId, ct);
             var row = await visible
                 .FirstOrDefaultAsync(e => e.Id == id, ct);
@@ -208,6 +212,7 @@ public static class AuditEndpoints
                 .With("limit", take);
             await audit.FlushAsync(ct);
 
+            using var rls = RlsScope.Platform(); // see VisibleAsync
             var rows = await ApplyFilters(await VisibleAsync(db, tenancy, tenantId, ct), filter)
                 .OrderByDescending(e => e.OccurredAt)
                 .ThenByDescending(e => e.Seq)
@@ -240,6 +245,11 @@ public static class AuditEndpoints
     /// usually the whole reason someone opens this page — so they are resolved by membership
     /// rather than duplicated per tenant at write time, which would break dedup and freeze a
     /// membership snapshot into the log.</para>
+    ///
+    /// <para>Which is why every caller reads under <c>RlsScope.Platform</c> (ADR 0015): those
+    /// rows are no tenant's, so the request's own tenant would hide them, and the platform list
+    /// reads nothing else. The predicate below is the whole of the visibility rule, and it is
+    /// explicit on every query.</para>
     /// </summary>
     private static async Task<IQueryable<AuditEventRow>> VisibleAsync(
         AuditDbContext db, TenancyDbContext tenancy, Guid tenantId, CancellationToken ct)
