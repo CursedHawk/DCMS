@@ -35,6 +35,7 @@ public sealed class SitePublishFixture : IAsyncLifetime
 
     public WebApplicationFactory<AdminApiApp::Program> Admin { get; private set; } = null!;
     public WebApplicationFactory<SiteHostApp::Program> Host { get; private set; } = null!;
+    private const string AppRolePassword = "dcms-app-test";
     private WebApplicationFactory<SiteBuilderApp::Program> _builder = null!;
 
     public async ValueTask InitializeAsync()
@@ -79,7 +80,36 @@ public sealed class SitePublishFixture : IAsyncLifetime
         _builder = new WebApplicationFactory<SiteBuilderApp::Program>().WithWebHostBuilder(Storage);
         using (_builder.CreateClient()) { }
 
-        Host = new WebApplicationFactory<SiteHostApp::Program>().WithWebHostBuilder(Storage);
+        // ADR 0015 phase 4: site-host runs as it does in a deploy, on dcms_app (NOBYPASSRLS)
+        // with the tenant GUC interceptor on. admin-api above is the owner and has migrated and
+        // applied the policies, as the migrate job does; this is 06-app-role.sh's part.
+        await using (var owner = new Npgsql.NpgsqlConnection(_postgres.GetConnectionString()))
+        {
+            await owner.OpenAsync();
+            await using var grant = owner.CreateCommand();
+            // Behind the maintenance lock: admin-api's audit worker makes its first pass at
+            // startup, and a GRANT over the audit schema racing its DDL fails with "tuple
+            // concurrently updated". The lock is the connection's, released as it closes.
+            grant.CommandText = $"""
+                SELECT pg_advisory_lock({Dcms.Shared.Data.PostgresAdvisoryLock.AuditMaintenanceLockKey});
+                CREATE ROLE dcms_app LOGIN PASSWORD '{AppRolePassword}' NOSUPERUSER NOBYPASSRLS;
+                GRANT USAGE ON SCHEMA tenancy, sites, audit TO dcms_app;
+                GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA tenancy, sites, audit TO dcms_app;
+                GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA tenancy, sites, audit TO dcms_app;
+                """;
+            await grant.ExecuteNonQueryAsync();
+        }
+
+        Host = new WebApplicationFactory<SiteHostApp::Program>().WithWebHostBuilder(b =>
+        {
+            Storage(b);
+            b.UseSetting("ConnectionStrings:Postgres", new Npgsql.NpgsqlConnectionStringBuilder(_postgres.GetConnectionString())
+            {
+                Username = "dcms_app",
+                Password = AppRolePassword,
+            }.ConnectionString);
+            b.UseSetting("Rls:Enforce", "true");
+        });
         using (Host.CreateClient()) { }
     }
 

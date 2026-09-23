@@ -213,7 +213,20 @@ public sealed class AuditSealingTests : IAsyncLifetime
             }.ConnectionString)
             .Options);
 
+        // The furthest month ahead, made missing again, so the app role has one to create: this
+        // is the path the hourly pass takes at every month boundary.
+        var ahead = AuditChainAppender.PeriodOf(DateTimeOffset.UtcNow).AddMonths(3);
+        var aheadName = $"audit_events_{ahead:yyyy}m{ahead:MM}";
+        var dropAhead = $"DROP TABLE audit.\"{aheadName}\"";
+        await _db.Database.ExecuteSqlRawAsync(dropAhead);
+
         await AuditSchemaConfigurator.EnsurePartitionsAsync(app, NullLogger.Instance);
+
+        var policies = await _db.Database
+            .SqlQuery<string>($"SELECT policyname AS \"Value\" FROM pg_policies WHERE schemaname = 'audit' AND tablename = {aheadName}")
+            .ToListAsync();
+        policies.Should().BeEquivalentTo(["tenant_isolation", "platform_scope"],
+            "a partition is protected by the pass that creates it, or a query naming it directly reads every tenant");
 
         var drop = $"DROP TABLE audit.\"audit_events_{LastPeriod:yyyy}m{LastPeriod:MM}\"";
         var byHand = () => app.Database.ExecuteSqlRawAsync(drop);

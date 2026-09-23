@@ -20,9 +20,8 @@ public class SitePublishTests(SitePublishFixture fixture)
 
         // Tenant + site with a one-page source tree, in the Mode A file-map format
         // the visual builder commits (site.json + pages/*.html + styles/*.css).
-        (await admin.SendAsync(Admin(HttpMethod.Post, "/api/admin/tenants", slug,
-            new { slug, name = slug, ownerUserId = Owner, ownerEmail = "o@dcms.test" }, superAdmin: true), ct))
-            .EnsureSuccessStatusCode();
+        var tenantId = await Id(admin, Admin(HttpMethod.Post, "/api/admin/tenants", slug,
+            new { slug, name = slug, ownerUserId = Owner, ownerEmail = "o@dcms.test" }, superAdmin: true), ct);
 
         var manifest = """
             {
@@ -73,6 +72,27 @@ public class SitePublishTests(SitePublishFixture fixture)
         var foreign = new HttpRequestMessage(HttpMethod.Get, "/");
         foreign.Headers.Host = "unknown.example.com";
         (await hostClient.SendAsync(foreign, ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // The edge's certificate gate reads every tenant's domains (RlsScope.Platform); under the
+        // app role a missing scope would refuse every certificate rather than leak anything.
+        (await hostClient.GetAsync($"/internal/tls-allowed?domain={hostname}", ct))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        (await hostClient.GetAsync("/internal/tls-allowed?domain=unknown.example.com", ct))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await hostClient.GetFromJsonAsync<string[]>("/internal/tls-hostnames", ct))
+            .Should().Contain(hostname);
+
+        // Suspension reaches the public site through TenantStatusInvalidator, which reads the
+        // tenant's domains as that tenant. If it read nothing, the route would stay cached for
+        // its five-minute TTL and the suspended site would keep serving well past this poll.
+        (await admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/tenants/{tenantId}/suspend", slug, null, superAdmin: true), ct))
+            .EnsureSuccessStatusCode();
+        await PollUntil(async () =>
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, "/");
+            req.Headers.Host = hostname;
+            return (await hostClient.SendAsync(req, ct)).StatusCode == HttpStatusCode.NotFound;
+        }, TimeSpan.FromSeconds(15));
     }
 
     private static HttpRequestMessage Admin(HttpMethod method, string url, string slug, object? body, bool superAdmin = false)
@@ -93,7 +113,9 @@ public class SitePublishTests(SitePublishFixture fixture)
         res.IsSuccessStatusCode.Should().BeTrue(
             $"request to {req.RequestUri} should succeed but was {res.StatusCode}: {raw}");
         var json = await res.Content.ReadFromJsonAsync<JsonElement>(ct);
-        return json.TryGetProperty("id", out var id) ? id.GetGuid() : json.GetProperty("siteId").GetGuid();
+        return json.TryGetProperty("id", out var id) ? id.GetGuid()
+            : json.TryGetProperty("tenantId", out var tenant) ? tenant.GetGuid()
+            : json.GetProperty("siteId").GetGuid();
     }
 
     private static async Task PollUntil(Func<Task<bool>> condition, TimeSpan timeout)
@@ -104,6 +126,6 @@ public class SitePublishTests(SitePublishFixture fixture)
             if (await condition()) return;
             await Task.Delay(500);
         }
-        throw new TimeoutException("Site was not served in time.");
+        throw new TimeoutException("Site-host did not reach the expected state in time.");
     }
 }

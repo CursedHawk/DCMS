@@ -81,12 +81,20 @@ public static class AuditSchemaConfigurator
             CREATE OR REPLACE FUNCTION audit.ensure_partitions(months_ahead int) RETURNS text[]
                 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $fn$
             DECLARE
-                m date := date_trunc('month', now() AT TIME ZONE 'UTC')::date;
+                this_month date := date_trunc('month', now() AT TIME ZONE 'UTC')::date;
+                m date;
                 part text;
                 failures text[] := ARRAY[]::text[];
             BEGIN
                 FOR i IN 0..months_ahead LOOP
+                    m := (this_month + make_interval(months => i))::date;
                     part := 'audit_events_' || to_char(m, 'YYYY') || 'm' || to_char(m, 'MM');
+                    -- Only a partition this pass creates is protected here. One that exists was
+                    -- protected when it was made, and the migrate job's RlsConfigurator re-checks
+                    -- every partition on each deploy; re-running the policy DDL hourly bought
+                    -- nothing, and churned catalog rows a concurrent GRANT could collide with
+                    -- ("tuple concurrently updated").
+                    CONTINUE WHEN to_regclass(format('audit.%I', part)) IS NOT NULL;
                     BEGIN
                         EXECUTE format(
                             'CREATE TABLE IF NOT EXISTS audit.%I PARTITION OF audit.audit_events FOR VALUES FROM (%L) TO (%L)',
@@ -111,7 +119,6 @@ public static class AuditSchemaConfigurator
                     EXCEPTION WHEN others THEN
                         failures := failures || format('could not create %s (%s); records will fall to the default partition', part, SQLERRM);
                     END;
-                    m := (m + interval '1 month')::date;
                 END LOOP;
 
                 -- Per partition, never on the parent: a unique index on a partitioned table must

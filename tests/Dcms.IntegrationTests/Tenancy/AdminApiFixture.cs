@@ -120,7 +120,11 @@ public sealed class AdminApiFixture : IAsyncLifetime
     {
         // Kept in step with SCHEMAS in infra/postgres/init/06-app-role.sh.
         const string schemas = "tenancy plugins cms media sites search analytics chat visitors ai forms audit social notifications dataprotection edge platform";
+        // Behind the audit maintenance lock, as SitePublishFixture does: the owner boot's audit
+        // worker may still be in its first pass, and a GRANT racing its DDL fails with "tuple
+        // concurrently updated". The lock is the connection's, released as it closes.
         var sql = new System.Text.StringBuilder($$"""
+            SELECT pg_advisory_lock({{Dcms.Shared.Data.PostgresAdvisoryLock.AuditMaintenanceLockKey}});
             DO $$ BEGIN
                 IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dcms_app') THEN
                     CREATE ROLE dcms_app LOGIN PASSWORD '{{AppRolePassword}}' NOSUPERUSER NOBYPASSRLS;

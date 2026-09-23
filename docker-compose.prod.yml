@@ -422,6 +422,11 @@ services:
   site-host:
     environment:
       <<: *prod-env
+      # ADR 0015 phase 4, third: on dcms_app, NOBYPASSRLS. DomainResolver reads the hostname
+      # platform-wide and the site as the domain's tenant; the invalidators act as the event's
+      # tenant. Moved back by deleting these two lines.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
+      Rls__Enforce: "true"
       Services__ContentApi: "http://content-api:8080"
 
   # Like site-builder and platform-api, the edge deliberately does NOT inherit *prod-env: that

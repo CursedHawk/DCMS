@@ -241,7 +241,28 @@ shippable, reversible, and leaves the platform working.
    filters (`AiDbContext`, `AnalyticsDbContext`, and `AuditDbContext`'s rows). The admin-api
    endpoints among them read only the request's tenant and say so.
 
-   Still to move, in order: site-host, content-api and admin-api. Each gets its enforced run before its compose lines change: site-host and
+   *site-host, third.* Every public site request goes through `DomainResolver`, which the
+   phase 3 sweep had already scoped. It reads the hostname platform-wide, then the site and
+   build as the domain's tenant, and the TLS gate reads platform-wide. The invalidators act
+   as the event's tenant. The move added evidence, not code. `SitePublishFixture` now always
+   runs site-host as `dcms_app` with enforcement on. `SitePublishTests` serves a published
+   site on its domain and checks the edge's certificate gate. It also suspends the tenant
+   and expects the site to go dark within seconds, well inside the five-minute route cache.
+   Each of those failed with its scope removed. `SiteCacheInvalidator`'s republish path is
+   scoped the same way but untested; broken, it delays a republish by the cache TTL and
+   leaks nothing.
+
+   That fixture also turned up an intermittent `tuple concurrently updated`. Its GRANT over
+   the audit schema raced admin-api's first maintenance pass, because
+   `audit.ensure_partitions` re-ran the policy DDL and grants on every existing partition,
+   every hour. It now protects only a partition the same pass creates. The migrate job's
+   `RlsConfigurator` still re-checks every partition on each deploy. The fixtures take the
+   maintenance advisory lock around their grants. The rewrite briefly left the month
+   counter stuck on the current month, so no month ahead would ever have been created, and
+   the existing tests only looked at the current month. The runtime-role test now drops the
+   partition three months ahead and has `dcms_app` recreate it with both policies.
+
+   Still to move: content-api, then admin-api. Each gets its enforced run before its compose lines change: site-host and
    content-api need an enforced fixture of their own, and admin-api's is the
    `DCMS_TEST_RLS_ENFORCE` collection.
 

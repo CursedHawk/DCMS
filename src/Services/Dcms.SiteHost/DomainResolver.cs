@@ -62,8 +62,8 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
     /// </summary>
     public async Task<IReadOnlyList<string>> TlsAllowedHostnamesAsync(CancellationToken ct)
     {
-    // Every tenant's verified domains: the answer is platform-wide by nature (ADR 0015).
-    using var rls = RlsScope.Platform();
+        // Every tenant's verified domains: the answer is platform-wide by nature (ADR 0015).
+        using var rls = RlsScope.Platform();
         using var scope = services.CreateScope();
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
         return await tenancy.Domains.IgnoreQueryFilters().AsNoTracking()

@@ -559,6 +559,11 @@ services:
     mem_limit: "${SITE_HOST_MEM_LIMIT:-512m}"
     environment:
       <<: *service-env
+      # ADR 0015 phase 4, third: on dcms_app, NOBYPASSRLS. DomainResolver reads the hostname
+      # platform-wide and the site as the domain's tenant; the invalidators act as the event's
+      # tenant. Moved back by deleting these two lines.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=dcms-app-dev"
+      Rls__Enforce: "true"
 
   # The platform's public ingress: TLS termination, ACME, routing, and the single sign-in
   # that Grafana and Forgejo read out of a header. It publishes no host port in dev, where
