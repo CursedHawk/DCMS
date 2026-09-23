@@ -3,6 +3,7 @@ using Dcms.Shared.Data.Tenancy;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Notifications;
 
@@ -63,6 +64,9 @@ public sealed class NotificationPublisher(
 {
     public async Task<int> RaiseAsync(NotificationRequest request, CancellationToken ct = default)
     {
+        // Recipients are resolved and rows written for exactly this tenant, whoever calls -- a
+        // consumer, a sweep, or a request in another tenant's context (ADR 0015).
+        using var rls = RlsScope.Tenant(request.TenantId);
         try
         {
             return await RaiseCoreAsync(request, ct);

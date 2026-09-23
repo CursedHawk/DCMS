@@ -78,8 +78,79 @@ public sealed class AdminApiFixture : IAsyncLifetime
 
         MetaStub = await MetaStubServer.StartAsync();
 
-        Factory = new WebApplicationFactory<AdminApiApp::Program>().WithWebHostBuilder(builder =>
+        if (RlsEnforced)
         {
+            // Migrations and RlsConfigurator are DDL, which the enforcing role cannot run. So
+            // boot once as the owner to build the schema -- exactly what the migrate job does
+            // in a deploy -- then grant dcms_app and boot the app under test as that role.
+            await using (var migrate = Create(_postgres.GetConnectionString(), migrate: true, enforce: false, minioEndpoint))
+            {
+                using var _ = migrate.CreateClient();
+            }
+            await GrantAppRoleAsync();
+            Factory = Create(AppRoleConnectionString, migrate: false, enforce: true, minioEndpoint);
+        }
+        else
+        {
+            Factory = Create(_postgres.GetConnectionString(), migrate: true, enforce: false, minioEndpoint);
+        }
+
+        using var client = Factory.CreateClient();
+    }
+
+    /// <summary>
+    /// ADR 0015. Set <c>DCMS_TEST_RLS_ENFORCE=1</c> to run this collection the way a service runs
+    /// after phase 4: connected as <c>dcms_app</c>, <c>NOBYPASSRLS</c>, with the tenant GUC
+    /// interceptor on. Every test then proves its path works under the database's isolation, not
+    /// only EF's -- which is the evidence the IgnoreQueryFilters() sweep is judged by.
+    /// </summary>
+    public static bool RlsEnforced => Environment.GetEnvironmentVariable("DCMS_TEST_RLS_ENFORCE") == "1";
+
+    private const string AppRolePassword = "dcms-app-test";
+
+    private string AppRoleConnectionString => new Npgsql.NpgsqlConnectionStringBuilder(_postgres.GetConnectionString())
+    {
+        Username = "dcms_app",
+        Password = AppRolePassword,
+    }.ConnectionString;
+
+    /// <summary>What infra/postgres/init/06-app-role.sh does in a deploy, against every table the
+    /// owner boot just created.</summary>
+    private async Task GrantAppRoleAsync()
+    {
+        // Kept in step with SCHEMAS in infra/postgres/init/06-app-role.sh.
+        const string schemas = "tenancy plugins cms media sites search analytics chat visitors ai forms audit social notifications dataprotection edge platform";
+        var sql = new System.Text.StringBuilder($$"""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dcms_app') THEN
+                    CREATE ROLE dcms_app LOGIN PASSWORD '{{AppRolePassword}}' NOSUPERUSER NOBYPASSRLS;
+                END IF;
+            END $$;
+            """);
+        foreach (var schema in schemas.Split(' '))
+        {
+            sql.AppendLine($"""
+                GRANT USAGE ON SCHEMA "{schema}" TO dcms_app;
+                GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{schema}" TO dcms_app;
+                GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "{schema}" TO dcms_app;
+                """);
+        }
+        await using var connection = new Npgsql.NpgsqlConnection(_postgres.GetConnectionString());
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql.ToString();
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private WebApplicationFactory<AdminApiApp::Program> Create(string postgres, bool migrate, bool enforce, string minioEndpoint)
+        => new WebApplicationFactory<AdminApiApp::Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Rls:Enforce", enforce ? "true" : "false");
+            if (FileErrorSink.PathFromEnvironment is { } logPath)
+            {
+                builder.ConfigureTestServices(services =>
+                    services.AddSingleton<Serilog.Core.ILogEventSink>(new FileErrorSink(logPath)));
+            }
             // A Meta app has to look configured or the connect endpoint returns 501. The
             // secrets are nonsense on purpose: every call goes to the stub.
             builder.UseSetting("Social:Meta:AppId", "test-fb-app");
@@ -97,10 +168,10 @@ public sealed class AdminApiFixture : IAsyncLifetime
             builder.UseSetting("Storage:SecretKey", _minio.GetSecretKey());
             builder.UseSetting("Storage:UseSsl", "false");
             builder.UseSetting("Storage:MediaBucket", MediaBucket);
-            builder.UseSetting("ConnectionStrings:Postgres", _postgres.GetConnectionString());
+            builder.UseSetting("ConnectionStrings:Postgres", postgres);
             builder.UseSetting("ConnectionStrings:Redis", _redis.GetConnectionString());
             builder.UseSetting("Nats:Url", _nats.GetConnectionString());
-            builder.UseSetting("Tenancy:Migrate", "true");
+            builder.UseSetting("Tenancy:Migrate", migrate ? "true" : "false");
             builder.UseSetting("Domains:AutoVerify", "true");
             builder.UseSetting("Scheduler:PollSeconds", "1"); // fast scheduler for tests
 
@@ -114,9 +185,6 @@ public sealed class AdminApiFixture : IAsyncLifetime
                 services.AddSingleton<Dcms.Shared.Vault.ITransitEncryptor, FakeTransitEncryptor>();
             });
         });
-
-        using var _ = Factory.CreateClient();
-    }
 
     public async ValueTask DisposeAsync()
     {

@@ -7,6 +7,7 @@ using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Messaging;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Tenancy;
 
@@ -34,6 +35,9 @@ public static class MyAccountEndpoints
         app.MapGet("/api/admin/me/account", async (
             CurrentUser me, TenancyDbContext db, CancellationToken ct) =>
         {
+            // The caller's own rows in every tenant they belong to: keyed by user, not by any one
+            // tenant, so platform scope (ADR 0015).
+            using var rls = RlsScope.Platform();
             var userId = me.RequireUserId();
             var memberships = await LoadMembershipsAsync(db, userId, ct);
             return Results.Ok(new
@@ -62,6 +66,9 @@ public static class MyAccountEndpoints
             TenancyPermissionResolver permissions, IEventPublisher events,
             IAuditRecorder audit, AuditScope scope, CancellationToken ct) =>
         {
+            // The caller's own rows in every tenant they belong to: keyed by user, not by any one
+            // tenant, so platform scope (ADR 0015).
+            using var rls = RlsScope.Platform();
             var userId = me.RequireUserId();
             var memberships = await LoadMembershipsAsync(db, userId, ct);
 

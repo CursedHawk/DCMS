@@ -6,7 +6,7 @@ public sealed record ChatMessagePosted(
     Guid TenantId,
     Guid ConversationId,
     Guid MessageId,
-    string Sender) : IDcmsEvent
+    string Sender) : ITenantEvent
 {
     public int Version => 1;
 }

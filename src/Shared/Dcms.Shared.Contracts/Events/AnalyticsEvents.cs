@@ -6,7 +6,7 @@ public sealed record AnalyticsEventBatch(
     Guid EventId,
     DateTimeOffset OccurredAt,
     Guid TenantId,
-    IReadOnlyList<AnalyticsEvent> Events) : IDcmsEvent
+    IReadOnlyList<AnalyticsEvent> Events) : ITenantEvent
 {
     public int Version => 1;
 }

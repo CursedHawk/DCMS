@@ -23,6 +23,8 @@ public static class ChatEndpoints
             {
                 return Results.NotFound();
             }
+            // rls: request tenant. tenantId is the request's own, so the database already narrows to
+            // it and no RlsScope is needed (ADR 0015).
             var owned = await chat.Conversations.IgnoreQueryFilters()
                 .AnyAsync(c => c.Id == conversationId && c.TenantId == tenantId, ct);
             if (!owned)

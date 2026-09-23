@@ -63,6 +63,8 @@ public static class SitePreviewEndpoints
             // left to five records that never mention the sandbox.
             using var _ = scope.SuppressBulkCapture();
 
+            // rls: request tenant. tenantId is the request's own; IgnoreQueryFilters() here is for the
+            // sandbox filter, not the tenant one, so the database's narrowing already matches (ADR 0015).
             var submissions = await forms.Submissions.IgnoreQueryFilters()
                 .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
             var messages = await chat.Messages.IgnoreQueryFilters()

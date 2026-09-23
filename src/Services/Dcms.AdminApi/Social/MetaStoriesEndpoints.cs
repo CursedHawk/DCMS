@@ -7,6 +7,7 @@ using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Social;
 using Dcms.Shared.Vault;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Social;
 
@@ -57,7 +58,8 @@ public static class MetaStoriesEndpoints
 
             // No ambient tenant: the caller is a service, not a person in a workspace. Both
             // ids are matched together so a tenant id from the caller can never reach another
-            // tenant's instance.
+            // tenant's instance -- and the database is told the same tenant (ADR 0015).
+            using var rls = RlsScope.Tenant(body.TenantId);
             var instance = await cms.PluginInstances.IgnoreQueryFilters().AsNoTracking()
                 .FirstOrDefaultAsync(
                     p => p.Id == body.InstanceId && p.TenantId == body.TenantId && p.Enabled, ct);

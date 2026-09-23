@@ -1,6 +1,7 @@
 using Dcms.AdminApi.Media;
 using Dcms.Shared.Data.Social;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Social;
 
@@ -36,9 +37,10 @@ public sealed class MetaMediaMirror(
         Guid connectionId,
         string externalMediaId,
         string? url,
-        CancellationToken ct)
-    {
-        if (string.IsNullOrWhiteSpace(url)) return null;
+            CancellationToken ct)
+        {
+            using var rls = RlsScope.Tenant(tenantId); // ADR 0015: mirrors into this tenant's media only.
+            if (string.IsNullOrWhiteSpace(url)) return null;
 
         var existing = await social.MediaMap.IgnoreQueryFilters().FirstOrDefaultAsync(
             m => m.TenantId == tenantId

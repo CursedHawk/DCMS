@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.MediaWorker;
 
@@ -136,6 +137,9 @@ public abstract class MediaConsumerBase(
         // Renews this message's redelivery lease for as long as the job runs -- see AckWait.
         await using var lease = AckHeartbeat.Start(msg, AckHeartbeatInterval, logger);
 
+        // The job's tenant, for the database too: every asset lookup below goes by id alone, and
+        // this is what keeps them inside that tenant (ADR 0015). MarkFailedAsync runs inside it.
+        using var rls = RlsScope.Tenant(job.TenantId);
         using var scope = services.CreateScope();
 
         // The person who uploaded the asset, carried from the upload request. Without it the

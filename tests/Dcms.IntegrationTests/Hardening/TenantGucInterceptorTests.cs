@@ -62,12 +62,35 @@ public class TenantGucInterceptorTests(AdminApiFixture fixture)
 
         (await TenantIdsAsync(db, ct)).Should().BeEquivalentTo([a]);
 
-        using (PlatformScope.Enter())
+        using (RlsScope.Platform())
         {
             (await TenantIdsAsync(db, ct)).Should().Contain([a, b]);
         }
 
         (await TenantIdsAsync(db, ct)).Should().BeEquivalentTo([a], "leaving the scope has to narrow again");
+    }
+
+    [DockerFact]
+    public async Task A_tenant_scope_overrides_the_request_and_narrows_inside_a_platform_one()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (a, b) = await TwoTenantsAsync(ct);
+
+        // No ambient tenant at all: the shape of a consumer handling one tenant's event.
+        await using var db = Context(new SettableTenant(), AppConnection());
+
+        using (RlsScope.Platform())
+        {
+            (await TenantIdsAsync(db, ct)).Should().Contain([a, b]);
+
+            using (RlsScope.Tenant(b))
+            {
+                (await TenantIdsAsync(db, ct)).Should().BeEquivalentTo([b],
+                    "the per-item step of a scan is one tenant's work, and the database has to hold it there");
+            }
+        }
+
+        (await TenantIdsAsync(db, ct)).Should().BeEmpty();
     }
 
     [DockerFact]
@@ -117,7 +140,7 @@ public class TenantGucInterceptorTests(AdminApiFixture fixture)
         int backend;
         await using (var db = Context(new SettableTenant { TenantId = a }, connection))
         {
-            using (PlatformScope.Enter())
+            using (RlsScope.Platform())
             {
                 backend = await db.Database.SqlQueryRaw<int>("SELECT pg_backend_pid() AS \"Value\"").SingleAsync(ct);
             }

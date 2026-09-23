@@ -5,7 +5,7 @@ public sealed record TenantCreated(
     DateTimeOffset OccurredAt,
     Guid TenantId,
     string Slug,
-    string Name) : IDcmsEvent
+    string Name) : ITenantEvent
 {
     public int Version => 1;
 }
@@ -15,7 +15,7 @@ public sealed record TenantDomainVerified(
     DateTimeOffset OccurredAt,
     Guid TenantId,
     Guid DomainId,
-    string Hostname) : IDcmsEvent
+    string Hostname) : ITenantEvent
 {
     public int Version => 1;
 }
@@ -26,7 +26,7 @@ public sealed record PluginInstanceChanged(
     Guid TenantId,
     Guid InstanceId,
     string PluginId,
-    PluginInstanceChangeKind Kind) : IDcmsEvent
+    PluginInstanceChangeKind Kind) : ITenantEvent
 {
     public int Version => 1;
 }
@@ -50,7 +50,7 @@ public sealed record TenantStatusChanged(
     DateTimeOffset OccurredAt,
     Guid TenantId,
     string Slug,
-    bool Suspended) : IDcmsEvent
+    bool Suspended) : ITenantEvent
 {
     public int Version => 1;
 }
@@ -59,7 +59,7 @@ public sealed record MembershipChanged(
     Guid EventId,
     DateTimeOffset OccurredAt,
     Guid TenantId,
-    Guid UserId) : IDcmsEvent
+    Guid UserId) : ITenantEvent
 {
     public int Version => 1;
 }

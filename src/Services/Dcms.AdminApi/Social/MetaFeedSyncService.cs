@@ -11,6 +11,7 @@ using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Social;
 using Dcms.Shared.Vault;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Social;
 
@@ -39,6 +40,9 @@ public sealed class MetaFeedSyncService(
 
     public async Task<SyncOutcome> SyncInstanceAsync(PluginInstance instance, CancellationToken ct)
     {
+        // One instance, one tenant, whether a timer or the sync-now button asked (ADR 0015). The
+        // media lookup in TrimAsync names no tenant; this is what keeps it inside this one.
+        using var rls = RlsScope.Tenant(instance.TenantId);
         var settings = MetaFeedSettings.Read(instance.ConfigJson);
         if (settings is null)
         {

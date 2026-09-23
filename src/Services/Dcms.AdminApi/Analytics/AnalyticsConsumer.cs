@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using EventEntity = Dcms.Shared.Data.Analytics.AnalyticsEvent;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Analytics;
 
@@ -62,6 +63,8 @@ public sealed class AnalyticsConsumer(
 
     private async Task PersistAsync(AnalyticsEventBatch batch, CancellationToken ct)
     {
+        // One batch is one tenant's visitors; its rows and rollups are written as that tenant (ADR 0015).
+        using var rls = RlsScope.Tenant(batch.TenantId);
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AnalyticsDbContext>();
 

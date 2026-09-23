@@ -3,6 +3,7 @@ using Dcms.Shared.Audit.Propagation;
 using Dcms.Shared.Data;
 using Dcms.Shared.Data.Notifications;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Notifications;
 
@@ -52,6 +53,9 @@ public sealed class NotificationRetentionWorker(
 
     private async Task SweepAsync(CancellationToken ct)
     {
+        // A sweep over every tenant's rows (ADR 0015). Anything it raises narrows again inside
+        // NotificationPublisher, which acts as each notification's own tenant.
+        using var rls = RlsScope.Platform();
         var connectionString = configuration.GetConnectionString("Postgres");
         if (string.IsNullOrWhiteSpace(connectionString))
         {

@@ -2,6 +2,7 @@ using Dcms.Shared.Audit;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Tenancy;
 
@@ -29,7 +30,9 @@ public static class OwnerPermissionBackfill
         CancellationToken ct)
     {
         // Query filters are bypassed throughout: this runs at startup with no ambient tenant,
-        // and the point is to reach every tenant's Owner role.
+        // and the point is to reach every tenant's Owner role -- so platform scope for the
+        // database too (ADR 0015).
+        using var rls = RlsScope.Platform();
         var ownerRoles = await db.TenantRoles
             .IgnoreQueryFilters()
             .Where(r => r.IsSystem && r.Name == TenantProvisioning.OwnerRole)

@@ -20,9 +20,14 @@ set -e
 
 PW="${APP_DB_PASSWORD:-dcms-app-dev}"
 
-# Every schema holding a table with a TenantId. NOT identity, dataprotection or edge: no
-# tenant column, no policy, and no reason for this role to reach them. NOT obs.
-SCHEMAS="tenancy plugins cms media sites search analytics chat visitors ai forms audit social notifications"
+# Every schema holding a table with a TenantId, plus the three the five services also read and
+# write through their own contexts today as the owner: dataprotection (the shared key ring --
+# admin-api, content-api and ai-gateway mint and read keys there), edge (admin-api's certificate
+# status and custom-upload endpoints) and platform (admin-api registers PlatformDbContext). None
+# of those three carries a tenant column, so no policy applies to them; leaving them out would
+# not have narrowed anything, it would have broken the service at the first cookie or
+# certificate read. NOT identity, which is identity's alone, and NOT obs.
+SCHEMAS="tenancy plugins cms media sites search analytics chat visitors ai forms audit social notifications dataprotection edge platform"
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
   --set=app_pw="$PW" --set=owner="$POSTGRES_USER" <<'SQL'

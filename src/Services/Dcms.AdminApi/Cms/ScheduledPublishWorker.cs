@@ -3,6 +3,7 @@ using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Cms;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Cms;
 
@@ -59,10 +60,15 @@ public sealed class ScheduledPublishWorker(
             return;
         }
 
+        // The claim above reads cms.scheduled_publishes, which carries no policy (ADR 0005 exempts
+        // it: this scan is its whole purpose). Each item is then published as its schedule's own
+        // tenant and saved before the next, still inside the claim's transaction -- so an item id
+        // that pointed into another tenant is "not found" rather than published (ADR 0015).
         foreach (var schedule in due)
         {
+            using var rls = RlsScope.Tenant(schedule.TenantId);
             var item = await db.ContentItems.IgnoreQueryFilters()
-                .FirstOrDefaultAsync(c => c.Id == schedule.ItemId, ct);
+                .FirstOrDefaultAsync(c => c.Id == schedule.ItemId && c.TenantId == schedule.TenantId, ct);
             if (item is null)
             {
                 schedule.Status = ScheduledPublishStatus.Failed;
@@ -86,11 +92,13 @@ public sealed class ScheduledPublishWorker(
                 PayloadJson = JsonSerializer.Serialize(evt),
             });
 
-            schedule.Status = ScheduledPublishStatus.Done;
-            schedule.ProcessedAt = DateTimeOffset.UtcNow;
-        }
+                schedule.Status = ScheduledPublishStatus.Done;
+                schedule.ProcessedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(ct);
+            }
 
-        await db.SaveChangesAsync(ct);
+            // What is left is the failed schedules' own rows, in the unpoliced table.
+            await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         logger.LogInformation("Published {Count} scheduled item(s).", due.Count);
     }

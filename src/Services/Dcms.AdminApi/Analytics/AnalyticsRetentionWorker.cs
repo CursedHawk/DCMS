@@ -3,6 +3,7 @@ using Dcms.Shared.Audit.Propagation;
 using Dcms.Shared.Data;
 using Dcms.Shared.Data.Analytics;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Analytics;
 
@@ -107,6 +108,8 @@ public sealed class AnalyticsRetentionWorker(
 
     private async Task RunOnceAsync(CancellationToken ct)
     {
+    // Retention is cross-tenant by nature (ADR 0015).
+    using var rls = RlsScope.Platform();
         var days = configuration.GetValue("Analytics:RetentionDays", 90);
         if (days <= 0)
         {

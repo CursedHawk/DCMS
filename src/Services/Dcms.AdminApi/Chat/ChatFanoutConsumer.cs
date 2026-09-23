@@ -7,6 +7,7 @@ using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Chat;
 
@@ -79,6 +80,7 @@ public sealed class ChatFanoutConsumer(
         }
 
         using var scope = services.CreateScope();
+        using var rls = RlsScope.Tenant(e.TenantId); // ADR 0015: the event's tenant, for the database too.
         var chat = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
 
         // Cross-tenant consumer with no ambient tenant or sandbox, so both filter terms are

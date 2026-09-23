@@ -15,7 +15,7 @@ public sealed record MediaProcessRequested(
     Guid AssetId,
     MediaCategory Category,
     string OriginalObjectKey,
-    string ContentType) : IDcmsEvent
+    string ContentType) : ITenantEvent
 {
     public int Version => 1;
 }
@@ -26,7 +26,7 @@ public sealed record MediaProcessed(
     Guid TenantId,
     Guid AssetId,
     MediaCategory Category,
-    IReadOnlyList<string> VariantKinds) : IDcmsEvent
+    IReadOnlyList<string> VariantKinds) : ITenantEvent
 {
     public int Version => 1;
 }
@@ -36,7 +36,7 @@ public sealed record MediaFailed(
     DateTimeOffset OccurredAt,
     Guid TenantId,
     Guid AssetId,
-    string Reason) : IDcmsEvent
+    string Reason) : ITenantEvent
 {
     public int Version => 1;
 }

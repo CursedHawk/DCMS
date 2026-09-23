@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using SearchDocument = Dcms.Shared.Data.Search.SearchDocument;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.ContentApi.Delivery;
 
@@ -67,6 +68,9 @@ public sealed class SearchIndexer(
 
     private async Task HandleAsync(string subject, IndexEvent e, CancellationToken ct)
     {
+        // The event's tenant, for the database too: the plugin-instance, item and version lookups
+        // below go by id alone, and this is what keeps them inside that tenant (ADR 0015).
+        using var rls = RlsScope.Tenant(e.TenantId);
         using var scope = services.CreateScope();
         var cms = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
         var search = scope.ServiceProvider.GetRequiredService<SearchDbContext>();

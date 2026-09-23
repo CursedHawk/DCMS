@@ -114,6 +114,8 @@ internal static class SiteNameLookup
     public static async Task<string> ResolveAsync(
         IServiceProvider scope, Guid tenantId, Guid siteId, CancellationToken ct)
     {
+        // rls: event tenant. Runs inside NotificationConsumerBase, which acts as the event's tenant
+        // for the whole handler (ADR 0015); the explicit TenantId predicates below are EF's half.
         var db = scope.GetRequiredService<SitesDbContext>();
         var name = await db.Sites.AsNoTracking().IgnoreQueryFilters()
             .Where(s => s.TenantId == tenantId && s.Id == siteId)

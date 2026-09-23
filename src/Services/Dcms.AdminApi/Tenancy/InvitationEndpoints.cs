@@ -12,6 +12,7 @@ using Dcms.Shared.Messaging;
 using Dcms.Shared.Messaging.Email;
 using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Tenancy;
 
@@ -199,14 +200,21 @@ public static class InvitationEndpoints
         {
             var userId = me.RequireUserId();
             var hash = HashToken(body.Token);
-            var invitation = await db.Invitations.IgnoreQueryFilters()
-                .FirstOrDefaultAsync(i => i.TokenHash == hash, ct);
+            // The token is all the caller has: which tenant it belongs to is what this lookup
+            // finds out, so it alone is platform-wide. Everything after acts as that tenant.
+            Invitation? invitation;
+            using (RlsScope.Platform())
+            {
+                invitation = await db.Invitations.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(i => i.TokenHash == hash, ct);
+            }
             if (invitation is null || !invitation.IsPending)
             {
                 return Results.BadRequest(new { error = "Invitation is invalid or expired." });
             }
 
             var tenantId = invitation.TenantId;
+            using var rls = RlsScope.Tenant(tenantId);
             var membership = await db.Memberships.IgnoreQueryFilters()
                 .Include(m => m.Roles)
                 .FirstOrDefaultAsync(m => m.TenantId == tenantId && m.UserId == userId, ct);

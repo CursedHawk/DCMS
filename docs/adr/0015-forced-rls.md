@@ -59,6 +59,10 @@ Tenant isolation becomes a property of the database. Concretely:
    listings, `/me/tenants`, invitation accept, the anonymous Meta OAuth callback that
    *establishes* the tenant — wraps itself in it.
 
+   *Refined in phase 3:* most of those turned out to be one tenant's work rather than
+   everyone's, and they act as that tenant (`RlsScope.Tenant`) instead of widening. Only
+   the genuine scans stay platform-wide. See Rollout, phase 3.
+
 This turns the failure mode inside out. Today a forgotten filter is a cross-tenant read
 that looks like a working feature. Afterwards it is an empty result or a failed write:
 loud, local, and wrong in the direction that does not leak.
@@ -117,8 +121,8 @@ shippable, reversible, and leaves the platform working.
    platform scope can be entered while a transaction holds the connection. It is
    registered by `AddDcmsRlsEnforcement` in the five services that read tenant tables,
    only when `Rls:Enforce` is on, and attached to every business context through the
-   existing `UseDcmsAuditInterceptors` hook. `PlatformScope` is a static `AsyncLocal`
-   helper, inert without the interceptor, so phase 3 can adopt it ahead of phase 4.
+   existing `UseDcmsAuditInterceptors` hook. `PlatformScope` (renamed `RlsScope` in phase
+   3) is a static `AsyncLocal` helper, inert without the interceptor, so phase 3 can adopt it ahead of phase 4.
 
    Two things surfaced while building it. `ContentListQueries` and `TagQueries` opened the
    raw connection themselves, which skips EF's interceptors — under enforcement every
@@ -132,11 +136,64 @@ shippable, reversible, and leaves the platform working.
    mutation-checked with the reset turned off), and a guard refuses `No Reset On Close`
    and `Multiplexing` in any deployed connection string.
 
-3. **The `IgnoreQueryFilters()` sweep.** All 140, decided one at a time into two piles:
-   re-scoped by an explicit `TenantId` (needs nothing) or genuinely cross-tenant (wraps
-   in `PlatformScope`). A test asserts every call site is one or the other, so a 141st
-   has to declare which it is. This is the bulk of the work and the phase most likely to
-   surface a real bug.
+3. **The `IgnoreQueryFilters()` sweep.** ✅ *Landed.* All 123 calls in code (the 140
+   counted above included comments), decided one at a time. What the sweep actually found
+   reshaped it in three ways.
+
+   *Two piles became three, and the helper grew a second entry.* The plan said "re-scoped
+   by an explicit `TenantId` (needs nothing)". That turned out to be wrong: no consumer or
+   worker sets an ambient tenant, so under a `NOBYPASSRLS` role an explicit predicate on
+   its own returns nothing at all. Most of those paths are not cross-tenant, though. They
+   handle one tenant's event, so widening them to every tenant would have thrown away
+   exactly the protection this ADR exists for. `PlatformScope` became `RlsScope`, with
+   two entries. `RlsScope.Tenant(id)` acts as one named tenant and is the default.
+   `RlsScope.Platform()` is for work that genuinely spans tenants. The innermost block
+   wins, so a scan runs under `Platform` and hands each item to work the database confines
+   to that item's tenant.
+
+   *The unit is the entry point, not the call.* Every event carrying a tenant now
+   implements `ITenantEvent`, and there are 16 of them. So `NotificationConsumerBase` and
+   `MediaConsumerBase` act as the event's tenant for each message in one place, and so
+   does `NotificationPublisher.RaiseAsync` for every notification whoever raises it.
+   Paths that write without ever calling `IgnoreQueryFilters()` would never have shown up
+   in a call-site sweep. The chat hub's `StartConversation`, the analytics consumer and
+   tenant provisioning are three of them, and they were found by running the suite under
+   enforcement.
+
+   *The evidence is a run, not a grep.* `DCMS_TEST_RLS_ENFORCE=1` boots the AdminApi
+   collection the way a phase-4 service runs: it migrates as the owner, then connects as
+   `dcms_app` with the interceptor on. The first run failed 55 tests. The last failed
+   none. `RlsScopeCoverageTests` is the standing guard. It is per file, like the audit
+   bulk-statement guard it copies: every file calling `IgnoreQueryFilters()` must use
+   `RlsScope` or say in an `// rls:` comment why the request's own tenant, or an
+   unpoliced table, is enough.
+
+   The sweep also hardened five lookups that went by id alone, with no tenant predicate.
+   They are the scheduled-publish worker's item, the search indexer's instance, item and
+   version, the media worker's asset, and the Meta trim's asset. Each is now held to its
+   event's tenant by the database. The scheduled publisher also gained the explicit
+   predicate itself, and now saves each item as its own tenant inside the claim
+   transaction instead of in one save across tenants.
+
+   Things phase 3 fixed that phase 4 would otherwise have hit:
+   - `dcms_app` had no grant on `dataprotection`, `edge` or `platform`, which the services
+     read and write today as the owner. Every cookie read in admin-api, content-api and
+     ai-gateway would have failed. The grants are added.
+   - `AuditDbContext` deliberately skips `UseDcmsAuditInterceptors` so the audit log does
+     not audit itself, and that meant the GUC interceptor was skipped too. Every chain
+     append ran with no tenant. `UseDcmsRlsEnforcement` now attaches that one interceptor
+     alone.
+
+   Left for phase 4, deliberately:
+   - `AuditMaintenanceWorker` creates monthly partitions and their indexes at runtime,
+     which is DDL `dcms_app` cannot run. The migrate job creates three months ahead on
+     every deploy, so this is not an immediate break, but admin-api cannot move until the
+     maintenance runs on an owner connection or moves into the migrate job.
+   - Only the AdminApi collection has an enforced mode. content-api, site-host and
+     media-worker paths were swept by reading them, and they get their own enforced fixture
+     or a soak before they move.
+   - The pipeline has no Docker, so the enforced run happens on a developer machine only
+     (see `DockerCollectionTests`).
 
 4. **One service at a time onto `dcms_app`**, starting with the one whose blast radius
    is smallest and whose paths are most uniform, and soaking between each. A service that

@@ -9,9 +9,9 @@ namespace Dcms.Shared.Data.Rls;
 /// Tells Postgres which tenant a unit of work belongs to, so the row-security policies can
 /// enforce what the EF query filters only request (ADR 0015).
 ///
-/// <para>Sets two GUCs: <c>app.tenant_id</c> from <see cref="ITenantContext"/>, which the
-/// <c>tenant_isolation</c> policy reads, and <c>app.scope</c> from <see cref="PlatformScope"/>,
-/// which <c>platform_scope</c> reads. Both, always, including when a value is empty — an
+/// <para>Sets two GUCs: <c>app.tenant_id</c> from an enclosing <see cref="RlsScope.Tenant"/>
+/// block, else from <see cref="ITenantContext"/>, which the <c>tenant_isolation</c> policy reads;
+/// and <c>app.scope</c> from <see cref="RlsScope.Platform"/>, which <c>platform_scope</c> reads. Both, always, including when a value is empty — an
 /// assignment that only ever sets the tenant would leave the previous one in place the first
 /// time the tenant is absent.</para>
 ///
@@ -44,7 +44,8 @@ public sealed class TenantGucInterceptor(ITenantContext tenant, ILogger<TenantGu
     private readonly Dictionary<DbConnection, (string Tenant, string Scope)> applied = new();
 
     private (string Tenant, string Scope) Desired
-        => (tenant.TenantId?.ToString() ?? string.Empty, PlatformScope.IsActive ? "platform" : string.Empty);
+        => ((RlsScope.TenantOverride ?? tenant.TenantId)?.ToString() ?? string.Empty,
+            RlsScope.IsPlatform ? "platform" : string.Empty);
 
     public void ConnectionOpened(DbConnection connection, ConnectionEndEventData eventData)
         => Apply(connection, transaction: null);

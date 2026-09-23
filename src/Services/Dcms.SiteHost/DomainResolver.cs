@@ -2,6 +2,7 @@ using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.SiteHost;
 
@@ -37,6 +38,8 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
     public async Task<bool> IsTlsAllowedAsync(string host, CancellationToken ct)
     {
         var hostname = Normalize(host);
+        // Every tenant's verified domains: the answer is platform-wide by nature (ADR 0015).
+        using var rls = RlsScope.Platform();
         using var scope = services.CreateScope();
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
         return await tenancy.Domains.IgnoreQueryFilters().AsNoTracking()
@@ -59,6 +62,8 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
     /// </summary>
     public async Task<IReadOnlyList<string>> TlsAllowedHostnamesAsync(CancellationToken ct)
     {
+    // Every tenant's verified domains: the answer is platform-wide by nature (ADR 0015).
+    using var rls = RlsScope.Platform();
         using var scope = services.CreateScope();
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
         return await tenancy.Domains.IgnoreQueryFilters().AsNoTracking()
@@ -82,12 +87,19 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
         var sites = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
 
-        var domain = await tenancy.Domains.IgnoreQueryFilters().AsNoTracking()
-            .FirstOrDefaultAsync(d => d.Hostname == hostname && d.VerifiedAt != null && d.SiteId != null, ct);
+        // The hostname is what says whose site this is, so only this lookup is platform-wide;
+        // the site and build after it are read as the domain's tenant (ADR 0015).
+        Domain? domain;
+        using (RlsScope.Platform())
+        {
+            domain = await tenancy.Domains.IgnoreQueryFilters().AsNoTracking()
+                .FirstOrDefaultAsync(d => d.Hostname == hostname && d.VerifiedAt != null && d.SiteId != null, ct);
+        }
         if (domain?.SiteId is not { } siteId)
         {
             return null;
         }
+        using var rls = RlsScope.Tenant(domain.TenantId);
 
         var site = await sites.Sites.IgnoreQueryFilters().AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == siteId, ct);

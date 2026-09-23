@@ -8,6 +8,7 @@ using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Tenancy;
 
@@ -70,7 +71,15 @@ public static class DomainEndpoints
             {
                 return Results.BadRequest(new { error = "Invalid hostname." });
             }
-            if (await db.Domains.IgnoreQueryFilters().AnyAsync(d => d.Hostname == hostname, ct))
+            // Uniqueness is platform-wide, so the check has to see every tenant's domains. Under
+            // the request's own tenant it would miss a clash and let the unique index answer
+            // with a 500 instead of this 409 (ADR 0015).
+            bool taken;
+            using (RlsScope.Platform())
+            {
+                taken = await db.Domains.IgnoreQueryFilters().AnyAsync(d => d.Hostname == hostname, ct);
+            }
+            if (taken)
             {
                 return Results.Conflict(new { error = "Hostname already registered." });
             }

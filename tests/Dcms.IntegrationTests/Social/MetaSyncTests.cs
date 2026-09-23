@@ -9,6 +9,7 @@ using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Social;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.IntegrationTests.Social;
 
@@ -294,6 +295,8 @@ public class MetaSyncTests(AdminApiFixture fixture)
     {
         using var scope = fixture.Factory.Services.CreateScope();
         var cms = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
+        // The test observing the database from outside any tenant (ADR 0015).
+        using var rls = RlsScope.Platform();
 
         var json = await cms.ContentItems.IgnoreQueryFilters()
             .Where(c => c.Slug == itemSlug && c.PluginInstanceId == t.InstanceId)
@@ -308,6 +311,7 @@ public class MetaSyncTests(AdminApiFixture fixture)
     {
         using var scope = fixture.Factory.Services.CreateScope();
         var media = scope.ServiceProvider.GetRequiredService<MediaDbContext>();
+        using var rls = RlsScope.Platform();
         return await media.Assets.IgnoreQueryFilters().AnyAsync(a => a.Id == assetId, ct);
     }
 

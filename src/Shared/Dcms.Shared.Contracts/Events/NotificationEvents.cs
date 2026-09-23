@@ -34,7 +34,7 @@ public sealed record NotificationRaiseRequested(
     string? LinkPath = null,
     string? ResourceType = null,
     Guid? ResourceId = null,
-    Guid? ActorUserId = null) : IDcmsEvent
+    Guid? ActorUserId = null) : ITenantEvent
 {
     public int Version => 1;
 }

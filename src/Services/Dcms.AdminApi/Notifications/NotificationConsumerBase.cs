@@ -2,6 +2,7 @@ using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Telemetry;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Notifications;
 
@@ -108,6 +109,9 @@ public abstract class NotificationConsumerBase<TEvent>(
             if (msg.Data is { } evt && !IsStale(evt))
             {
                 using var scope = services.CreateScope();
+                // As the event's tenant, for the database (ADR 0015). Every consumer's lookups name it
+                // explicitly already; this is what stops one that forgets from reading anyone else's.
+                using var rls = evt is ITenantEvent tenantEvent ? RlsScope.Tenant(tenantEvent.TenantId) : null;
                 var request = await MapAsync(evt, scope.ServiceProvider, ct);
                 if (request is not null)
                 {

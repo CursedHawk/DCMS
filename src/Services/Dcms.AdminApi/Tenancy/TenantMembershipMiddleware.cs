@@ -120,6 +120,8 @@ public sealed class TenantMembershipMiddleware(RequestDelegate next)
         //
         // Deliberately a membership test rather than a permission test: a member holding no
         // permissions is still a member, and telling the two apart is the whole point.
+        // rls: request tenant. tenantId is the one Finbuckle resolved for this request, so the
+        // database's app.tenant_id already names it and no RlsScope is needed (ADR 0015).
         var db = context.RequestServices.GetRequiredService<TenancyDbContext>();
         var isMember = await db.Memberships.AsNoTracking()
             .IgnoreQueryFilters()

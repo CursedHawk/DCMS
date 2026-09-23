@@ -3,6 +3,7 @@ using Dcms.Shared.Audit.Propagation;
 using Dcms.Shared.Data;
 using Dcms.Shared.Data.Ai;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Ai;
 
@@ -61,6 +62,8 @@ public sealed class AiConversationRetentionWorker(
 
     private async Task SweepAsync(CancellationToken ct)
     {
+    // Retention is cross-tenant by nature (ADR 0015).
+    using var rls = RlsScope.Platform();
         var connectionString = configuration.GetConnectionString("Postgres");
         if (string.IsNullOrWhiteSpace(connectionString)) return;
 

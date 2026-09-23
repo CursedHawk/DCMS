@@ -22,6 +22,7 @@ using Dcms.Shared.Security;
 using Dcms.Shared.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Tenancy;
 
@@ -269,6 +270,10 @@ public sealed class TenantDeleter(
 {
     public async Task<TenantDeletionResult?> DeleteAsync(Guid tenantId, CancellationToken ct)
     {
+        // Every statement below is keyed on this one tenant, whether an owner or the platform
+        // console asked for it -- so the database is told exactly that, not "all tenants". A
+        // delete that lost its predicate empties this tenant's table, not everyone's (ADR 0015).
+        using var rls = RlsScope.Tenant(tenantId);
         var key = tenantId.ToString();
         var tenant = await tenancy.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == key, ct);
         if (tenant is null)

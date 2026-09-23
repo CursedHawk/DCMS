@@ -4,6 +4,7 @@ using Dcms.Shared.Data;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Social;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Social;
 
@@ -88,7 +89,9 @@ public sealed class MetaSyncWorker(
         var sync = scope.ServiceProvider.GetRequiredService<MetaFeedSyncService>();
 
         // Cross-tenant by design, so the tenant query filters have to be off: this job runs on
-        // a timer with no request behind it and therefore no ambient tenant.
+        // a timer with no request behind it and therefore no ambient tenant. Platform scope for
+        // the scan; SyncOneAsync narrows to each instance's tenant (ADR 0015).
+        using var rls = RlsScope.Platform();
         var instances = await cms.PluginInstances.IgnoreQueryFilters()
             .Where(p => p.Enabled && FeedPlugins.Contains(p.PluginId))
             .ToListAsync(ct);
@@ -102,8 +105,9 @@ public sealed class MetaSyncWorker(
 
     private async Task SyncOneAsync(
         PluginInstance instance, SocialDbContext social, MetaFeedSyncService sync, CancellationToken ct)
-    {
-        var settings = MetaFeedSettings.Read(instance.ConfigJson);
+        {
+            using var rls = RlsScope.Tenant(instance.TenantId);
+            var settings = MetaFeedSettings.Read(instance.ConfigJson);
         if (settings is null) return;
 
         // One state row per instance drives the schedule. The per-content-type rows the sync

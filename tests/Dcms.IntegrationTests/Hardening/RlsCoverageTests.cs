@@ -27,8 +27,10 @@ public sealed class RlsCoverageTests(AdminApiFixture fixture)
     public async Task Every_registered_tenant_table_is_protected_in_the_catalogue()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var scope = fixture.Factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
+        // As the owner, never the app's own connection: these read the catalogue and then drop
+        // and restore policies, which is DDL -- and under DCMS_TEST_RLS_ENFORCE the app is
+        // dcms_app, which may not.
+        await using var db = OwnerContext();
 
         // The fixture's host has already run this on startup; running it again is the assertion,
         // and it is idempotent by design.
@@ -44,8 +46,10 @@ public sealed class RlsCoverageTests(AdminApiFixture fixture)
     public async Task A_table_that_loses_its_policy_fails_the_assertion()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var scope = fixture.Factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
+        // As the owner, never the app's own connection: these read the catalogue and then drop
+        // and restore policies, which is DDL -- and under DCMS_TEST_RLS_ENFORCE the app is
+        // dcms_app, which may not.
+        await using var db = OwnerContext();
 
         // A table nothing else in this collection writes through a policy-sensitive path.
         const string victim = "\"analytics\".\"daily_rollups\"";
@@ -79,8 +83,10 @@ public sealed class RlsCoverageTests(AdminApiFixture fixture)
     public async Task An_audit_partition_is_protected_in_its_own_right()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var scope = fixture.Factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
+        // As the owner, never the app's own connection: these read the catalogue and then drop
+        // and restore policies, which is DDL -- and under DCMS_TEST_RLS_ENFORCE the app is
+        // dcms_app, which may not.
+        await using var db = OwnerContext();
 
         var partition = $"audit_events_{DateTime.UtcNow:yyyy}m{DateTime.UtcNow:MM}";
         await ExecAsync(db, $"DROP POLICY IF EXISTS tenant_isolation ON \"audit\".\"{partition}\"", ct);
@@ -146,4 +152,14 @@ public sealed class RlsCoverageTests(AdminApiFixture fixture)
 
     private static Task ExecAsync(DbContext db, string sql, CancellationToken ct) =>
         db.Database.ExecuteSqlRawAsync(sql, ct);
+
+    private TenancyDbContext OwnerContext() => new(
+        new DbContextOptionsBuilder<TenancyDbContext>().UseNpgsql(fixture.PostgresConnectionString).Options,
+        new NoTenant());
+
+    private sealed class NoTenant : Dcms.Shared.Kernel.Abstractions.ITenantContext
+    {
+        public Guid? TenantId => null;
+        public string? TenantSlug => null;
+    }
 }

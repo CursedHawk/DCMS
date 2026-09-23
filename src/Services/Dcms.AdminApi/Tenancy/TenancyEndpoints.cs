@@ -14,6 +14,7 @@ using Dcms.Shared.Security;
 using Dcms.Shared.Security.Authorization;
 using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Tenancy;
 
@@ -25,6 +26,8 @@ public static class TenancyEndpoints
         app.MapGet("/api/admin/me/tenants", async (CurrentUser me, TenancyDbContext db, CancellationToken ct) =>
         {
             var userId = me.RequireUserId();
+            // The caller's memberships across every tenant, with no ambient one (ADR 0015).
+            using var rls = RlsScope.Platform();
             var memberships = await db.Memberships
                 .IgnoreQueryFilters()
                 .Where(m => m.UserId == userId)
@@ -675,7 +678,8 @@ public static class TenancyEndpoints
         }
 
         // IgnoreQueryFilters: tenants is not a tenant-scoped table, but this endpoint runs with
-        // no ambient tenant at all, and being explicit costs nothing.
+        // no ambient tenant at all, and being explicit costs nothing. No RlsScope for the same
+        // reason: tenancy.tenants carries no policy, so the database has nothing to narrow.
         var tenant = await db.Tenants
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(x => x.Id == tenantId.ToString(), ct);

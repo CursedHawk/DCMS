@@ -14,6 +14,7 @@ using NATS.Client.JetStream.Models;
 using NATS.Net;
 using SiteEndpoints = AdminApiApp::Dcms.AdminApi.Sites.SiteEndpoints;
 using ForgejoClient = AdminApiApp::Dcms.AdminApi.Sites.Git.ForgejoClient;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.IntegrationTests.Sites;
 
@@ -94,6 +95,8 @@ public sealed class ReleaseCatchUpTests(AdminApiFixture fixture)
         var db = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
 
         var tenantId = Guid.NewGuid();
+        // The test is writing as that tenant; say so, or an enforcing run refuses the rows.
+        using var rls = RlsScope.Tenant(tenantId);
         var site = new Site
         {
             Id = Guid.NewGuid(), TenantId = tenantId, Name = "catch-up",
@@ -124,6 +127,7 @@ public sealed class ReleaseCatchUpTests(AdminApiFixture fixture)
     {
         using var scope = host.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SitesDbContext>();
+        using var rls = RlsScope.Platform();
         return await db.Builds.IgnoreQueryFilters().AsNoTracking()
             .Where(b => b.SiteId == siteId && b.Status == SiteBuildStatus.Queued)
             .ToListAsync(ct);

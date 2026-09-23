@@ -3,6 +3,7 @@ using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Messaging;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Audit;
 
@@ -60,6 +61,9 @@ public sealed class AuditChainWriter(
 
     private async Task<int> DrainBatchAsync(CancellationToken cancellationToken)
     {
+        // Every tenant's records, in one chain-ordered batch: platform work by definition
+        // (ADR 0015). Entered before the scope so the claim transaction's connection opens with it.
+        using var rls = RlsScope.Platform();
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
         var appender = scope.ServiceProvider.GetRequiredService<AuditChainAppender>();

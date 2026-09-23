@@ -46,6 +46,8 @@ public sealed class ImageProcessingConsumer(
 
     protected override async Task ProcessAsync(MediaProcessRequested job, IServiceScope scope, CancellationToken ct)
     {
+        // rls: job tenant. MediaConsumerBase acts as the job's tenant around ProcessAsync (ADR 0015),
+        // so this lookup by id alone cannot reach another tenant's asset.
         var db = scope.ServiceProvider.GetRequiredService<MediaDbContext>();
         var asset = await db.Assets.IgnoreQueryFilters().FirstOrDefaultAsync(a => a.Id == job.AssetId, ct)
                     ?? throw new InvalidOperationException($"Media asset {job.AssetId} no longer exists.");

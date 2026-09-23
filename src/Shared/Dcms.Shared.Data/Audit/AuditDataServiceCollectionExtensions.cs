@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.Shared.Data.Audit;
 
@@ -26,9 +27,12 @@ public static class AuditDataServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<AuditDbContext>(options =>
+        // Not UseDcmsAuditInterceptors -- the audit log does not audit itself -- but the tenant GUC
+        // interceptor, yes: audit_events carries a policy like any other tenant table (ADR 0015).
+        services.AddDbContext<AuditDbContext>((sp, options) =>
             options.UseNpgsql(connectionString, npgsql =>
-                npgsql.MigrationsHistoryTable("__ef_migrations_history", AuditDbContext.Schema)));
+                    npgsql.MigrationsHistoryTable("__ef_migrations_history", AuditDbContext.Schema))
+                .UseDcmsRlsEnforcement(sp));
 
         var options = configuration.GetSection(AuditOptions.SectionName).Get<AuditOptions>() ?? new AuditOptions();
         services.TryAddSingleton(options);

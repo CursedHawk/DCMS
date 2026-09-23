@@ -1,6 +1,7 @@
 using Dcms.Shared.Audit;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Security;
@@ -64,7 +65,13 @@ public sealed class TenantProvisioning(TenancyDbContext db, IEventPublisher even
         });
         db.Memberships.Add(membership);
 
-        await db.SaveChangesAsync(ct);
+        // As the new tenant, for the database's benefit (ADR 0015). The caller is a SuperAdmin
+        // with no ambient tenant, so the row-security policy would refuse every row above --
+        // and the right widening is to exactly this tenant, not to all of them.
+        using (RlsScope.Tenant(tenantId))
+        {
+            await db.SaveChangesAsync(ct);
+        }
 
         await events.PublishAsync(Subjects.TenantCreated,
             new TenantCreated(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, slug, tenant.Name!), ct);

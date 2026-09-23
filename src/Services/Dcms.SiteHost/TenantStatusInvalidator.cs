@@ -4,6 +4,7 @@ using Dcms.Shared.Data.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.SiteHost;
 
@@ -72,6 +73,7 @@ public sealed class TenantStatusInvalidator(
             return;
         }
 
+        using var rls = RlsScope.Tenant(evt.TenantId); // ADR 0015: the event's tenant.
         using var scope = services.CreateScope();
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
 

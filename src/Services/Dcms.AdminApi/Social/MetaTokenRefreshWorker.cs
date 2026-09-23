@@ -10,6 +10,7 @@ using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Messaging.Email;
 using Dcms.Shared.Vault;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Social;
 
@@ -99,6 +100,9 @@ public sealed class MetaTokenRefreshWorker(
 
         var deadline = DateTimeOffset.UtcNow.Add(RefreshWindow);
 
+        // Platform scope for the scan; each refresh and notification below narrows to its
+        // connection's tenant (ADR 0015).
+        using var rls = RlsScope.Platform();
         // Cross-tenant: a timer has no ambient tenant. Only Active connections — one already
         // marked NeedsReauth has nothing left to refresh, and retrying it daily would be a
         // guaranteed-failing call plus a duplicate notification every morning.
@@ -120,9 +124,10 @@ public sealed class MetaTokenRefreshWorker(
     private async Task RefreshOneAsync(
         MetaConnection connection, SocialDbContext social, MetaOAuthClient oauth,
         ITransitEncryptor encryptor, IAuditRecorder audit, CancellationToken ct)
-    {
-        try
         {
+            using var rls = RlsScope.Tenant(connection.TenantId);
+            try
+            {
             audit.Record(AuditActions.SecretAccessed)
                 .InTenant(connection.TenantId)
                 .For("meta_connection", connection.Id, connection.AccountName)
@@ -199,6 +204,7 @@ public sealed class MetaTokenRefreshWorker(
     /// </summary>
     private async Task NotifyAsync(MetaConnection connection, CancellationToken ct)
     {
+        using var rls = RlsScope.Tenant(connection.TenantId);
         try
         {
             using var scope = services.CreateScope();

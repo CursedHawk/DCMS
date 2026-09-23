@@ -67,6 +67,8 @@ public sealed class MediaProcessedNotificationConsumer(
     protected override async Task<NotificationRequest?> MapAsync(
         MediaProcessed evt, IServiceProvider scope, CancellationToken ct)
     {
+        // rls: event tenant. Runs inside NotificationConsumerBase, which acts as the event's tenant
+        // for the whole handler (ADR 0015); the explicit TenantId predicates below are EF's half.
         var db = scope.GetRequiredService<MediaDbContext>();
         var asset = await db.Assets.AsNoTracking().IgnoreQueryFilters()
             .Where(a => a.TenantId == evt.TenantId && a.Id == evt.AssetId)

@@ -22,7 +22,7 @@ public sealed record SitePublishRequested(
     Guid SiteId,
     Guid BuildId,
     string RenderMode,
-    bool? AnalyticsEnabled = null) : IDcmsEvent
+    bool? AnalyticsEnabled = null) : ITenantEvent
 {
     public int Version => 1;
 }
@@ -33,7 +33,7 @@ public sealed record SitePublished(
     Guid TenantId,
     Guid SiteId,
     Guid BuildId,
-    string ArtifactPrefix) : IDcmsEvent
+    string ArtifactPrefix) : ITenantEvent
 {
     public int Version => 1;
 }
@@ -44,7 +44,7 @@ public sealed record SiteBuildFailed(
     Guid TenantId,
     Guid SiteId,
     Guid BuildId,
-    string Reason) : IDcmsEvent
+    string Reason) : ITenantEvent
 {
     public int Version => 1;
 }

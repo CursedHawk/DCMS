@@ -10,6 +10,7 @@ using Dcms.Shared.Security;
 using Dcms.Shared.Vault;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Social;
 
@@ -99,9 +100,15 @@ public static class MetaOAuthEndpoints
 
             // IgnoreQueryFilters is required and load-bearing: this request has no tenant
             // context, and this row is what establishes it.
+            // So that one lookup is platform-wide (ADR 0015); everything after acts as the tenant
+            // the row names.
             var hash = Sha256Hex(state);
-            var pending = await db.OAuthStates.IgnoreQueryFilters()
-                .FirstOrDefaultAsync(s => s.StateHash == hash, ct);
+            MetaOAuthState? pending;
+            using (RlsScope.Platform())
+            {
+                pending = await db.OAuthStates.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(s => s.StateHash == hash, ct);
+            }
 
             if (pending is null || pending.ConsumedAt is not null || pending.ExpiresAt < DateTimeOffset.UtcNow)
             {
@@ -112,6 +119,7 @@ public static class MetaOAuthEndpoints
                 return Results.BadRequest(new { error = "This connection link is no longer valid. Start again." });
             }
 
+            using var rls = RlsScope.Tenant(pending.TenantId);
             pending.ConsumedAt = DateTimeOffset.UtcNow;
 
             try

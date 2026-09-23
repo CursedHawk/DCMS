@@ -9,6 +9,7 @@ using Dcms.Shared.Security;
 using Dcms.Shared.Telemetry;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.ContentApi.Chat;
 
@@ -56,6 +57,8 @@ public sealed class ChatBotResponder(
 
     private async Task RespondAsync(Guid tenantId, Guid conversationId, string visitorMessage, CancellationToken ct)
     {
+        // Runs off the request, with no ambient tenant; it knows exactly one (ADR 0015).
+        using var rls = RlsScope.Tenant(tenantId);
         using var scope = services.CreateScope();
         var sp = scope.ServiceProvider;
         var cms = sp.GetRequiredService<CmsDbContext>();

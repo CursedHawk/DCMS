@@ -2,6 +2,7 @@ using Dcms.Shared.Data.Notifications;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Notifications;
 
@@ -48,6 +49,9 @@ public sealed class InvitationExpiryWorker(
 
     private async Task SweepAsync(CancellationToken ct)
     {
+        // A sweep over every tenant's rows (ADR 0015). Anything it raises narrows again inside
+        // NotificationPublisher, which acts as each notification's own tenant.
+        using var rls = RlsScope.Platform();
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
         var publisher = scope.ServiceProvider.GetRequiredService<INotificationPublisher>();

@@ -7,7 +7,7 @@ public sealed record ContentPublished(
     Guid PluginInstanceId,
     Guid ContentItemId,
     string ContentType,
-    string Slug) : IDcmsEvent
+    string Slug) : ITenantEvent
 {
     public int Version => 1;
 }
@@ -19,7 +19,7 @@ public sealed record ContentUnpublished(
     Guid PluginInstanceId,
     Guid ContentItemId,
     string ContentType,
-    string Slug) : IDcmsEvent
+    string Slug) : ITenantEvent
 {
     public int Version => 1;
 }

@@ -3,6 +3,7 @@ using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Analytics;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Analytics;
 
@@ -74,6 +75,8 @@ public static class AnalyticsPruneEndpoints
                     .With("onDemand", true),
                 ct);
 
+            // A platform operator pruning every tenant's raw events (ADR 0015).
+            using var rls = RlsScope.Platform();
             var total = 0;
             for (var batch = 0; batch < MaxBatches && !ct.IsCancellationRequested; batch++)
             {

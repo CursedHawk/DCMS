@@ -3,6 +3,7 @@ using Dcms.Shared.Data.Tenancy;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Notifications;
 
@@ -69,6 +70,9 @@ public sealed class NotificationHub(IServiceProvider services, ILogger<Notificat
         // Membership is re-checked here rather than trusted from the token: per ADR 0003 the
         // access token carries no tenant claim at all, so this is the only thing standing
         // between an authenticated user and another tenant's notification stream.
+        // A hub connection resolves no tenant of its own: the caller names one, and this checks
+        // that claim -- as that tenant, so the database checks it too (ADR 0015).
+        using var rls = RlsScope.Tenant(tenantId);
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
         var isMember = await tenancy.Memberships.IgnoreQueryFilters()
             .AnyAsync(m => m.TenantId == tenantId && m.UserId == userId);

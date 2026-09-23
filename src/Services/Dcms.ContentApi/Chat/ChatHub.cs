@@ -8,6 +8,7 @@ using Dcms.Shared.Messaging;
 using Dcms.Shared.Telemetry;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.ContentApi.Chat;
 
@@ -46,6 +47,8 @@ public sealed class ChatHub(
     private static async Task<IReadOnlySet<string>> ResolvePermissionsAsync(
         IServiceScope scope, Guid tenantId, Guid userId)
     {
+        // A hub connection resolves no tenant of its own; the query string names one (ADR 0015).
+        using var rls = RlsScope.Tenant(tenantId);
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
         var roleIds = await tenancy.Memberships.IgnoreQueryFilters()
             .Where(m => m.TenantId == tenantId && m.UserId == userId)
@@ -126,6 +129,7 @@ public sealed class ChatHub(
         }
 
         using var scope = services.CreateScope();
+        using var rls = RlsScope.Tenant(tenantId); // the connection's tenant, for the database too (ADR 0015)
         var db = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
 
         var conversation = new ChatConversation
@@ -155,6 +159,7 @@ public sealed class ChatHub(
     {
         var tenantId = TenantId;
         using var scope = services.CreateScope();
+        using var rls = RlsScope.Tenant(tenantId); // the connection's tenant, for the database too (ADR 0015)
         var db = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
         var exists = await db.Conversations.IgnoreQueryFilters()
             .AnyAsync(c => c.Id == conversationId && c.TenantId == tenantId);
@@ -219,6 +224,7 @@ public sealed class ChatHub(
         }
         var tenantId = TenantId;
         using var scope = services.CreateScope();
+        using var rls = RlsScope.Tenant(tenantId); // the connection's tenant, for the database too (ADR 0015)
         var db = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
         var conversation = await db.Conversations.IgnoreQueryFilters()
             .FirstOrDefaultAsync(c => c.Id == conversationId && c.TenantId == tenantId);
@@ -245,6 +251,7 @@ public sealed class ChatHub(
 
         var tenantId = TenantId;
         using var scope = services.CreateScope();
+        using var rls = RlsScope.Tenant(tenantId); // the connection's tenant, for the database too (ADR 0015)
         var db = scope.ServiceProvider.GetRequiredService<ChatDbContext>();
 
         var conversation = await db.Conversations.IgnoreQueryFilters()

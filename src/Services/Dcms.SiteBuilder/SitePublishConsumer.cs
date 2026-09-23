@@ -31,6 +31,8 @@ namespace Dcms.SiteBuilder;
 /// arriving on the "wrong" lane still builds correctly. The lane decides only what waits
 /// behind what.</para>
 /// </summary>
+// rls: not applicable. site-builder connects as dcms_sitebuilder, which holds BYPASSRLS on
+// purpose (infra/postgres/init/02-service-roles.sh) and does not move to dcms_app under ADR 0015.
 public sealed class SitePublishConsumer(
     SiteBuildLane lane,
     INatsJSContext jetStream,

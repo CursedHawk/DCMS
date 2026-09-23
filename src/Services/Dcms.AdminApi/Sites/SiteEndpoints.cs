@@ -16,6 +16,7 @@ using Dcms.Shared.Storage;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.AdminApi.Sites;
 
@@ -1020,9 +1021,17 @@ public static class SiteEndpoints
             var repoFull = repoEl.TryGetProperty("full_name", out var fn) ? fn.GetString() ?? "" : "";
             var afterSha = root.TryGetProperty("after", out var af) ? af.GetString() : null;
 
-            var site = await db.Sites.IgnoreQueryFilters()
-                .FirstOrDefaultAsync(s => s.GitRepoFullName == repoFull, ct);
+            // A signed webhook with no tenant: the repository name is what says whose site this is,
+            // so that one lookup is platform-wide and everything after it acts as the site's tenant.
+            // ReapStaleBuildsAsync and AnalyticsEnabledAsync, below, inherit that (ADR 0015).
+            Site? site;
+            using (RlsScope.Platform())
+            {
+                site = await db.Sites.IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(s => s.GitRepoFullName == repoFull, ct);
+            }
             if (site is null) return Results.Ok(new { ignored = "unknown repo" });
+            using var rls = RlsScope.Tenant(site.TenantId);
 
             // Only pushes to the release (production) branch build+deploy.
             var branch = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
@@ -1220,6 +1229,8 @@ public static class SiteEndpoints
     internal static async Task ContinueIfReleaseMovedAsync(
         IServiceProvider scope, Guid tenantId, Guid siteId, Guid completedBuildId, CancellationToken ct)
     {
+        // Runs from a build's terminal event, with no ambient tenant; the event names it (ADR 0015).
+        using var rls = RlsScope.Tenant(tenantId);
         try
         {
             var git = scope.GetRequiredService<Dcms.AdminApi.Sites.Git.SiteGitService>();
