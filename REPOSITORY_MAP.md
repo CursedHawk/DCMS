@@ -1021,6 +1021,7 @@ CLAUDE.md: the full integration suite OOMs on the dev box; run it filtered.
 | `Alerting:WebhookSecret`, recipients | admin-api | prod guard |
 | `Social:SyncEnabled`, `Social:*` (Meta app) | admin-api | — |
 | `Tenancy:Migrate`, `Tenancy:ApplyRls`, `Observability:ApplyViews` | admin-api migrator | — |
+| `Rls:Enforce` | admin-api, content-api, site-host, media-worker, ai-gateway | `false` everywhere until ADR 0015 phase 4 flips it per service with the `dcms_app` connection string |
 | `DataProtection:ProtectWithTransit` | identity, content-api, ai-gateway, admin-api | `true` (prod env anchor) |
 | `Ai:Defaults:Provider/BaseUrl/ApiKey/Model` | ai-gateway | — |
 | `Edge:*` (AdminHost, PlatformHost, AuthHost, GrafanaHost, GitHost, Certificates:TlsEnabled/AcmeDirectory/AcceptInsecureAcmeDirectory/ContactEmail, Auth:Authority/InternalAuthority/ClientSecret, RateLimiting:*, Cache:*, Dns:*) | edge | — |

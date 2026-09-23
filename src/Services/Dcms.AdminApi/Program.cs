@@ -44,6 +44,7 @@ using Dcms.Shared.Storage;
 using Dcms.Shared.Vault;
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Microsoft.AspNetCore.HttpOverrides;
+using Dcms.Shared.Data.Rls;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddDcmsServiceDefaults("admin-api");
@@ -92,6 +93,8 @@ builder.Services.AddDcmsChatData(builder.Configuration);
 builder.Services.AddDcmsFormsData(builder.Configuration);
 builder.Services.AddDcmsNotificationsData(builder.Configuration);
 builder.Services.AddDcmsAuditData(builder.Configuration);
+// ADR 0015: sets app.tenant_id / app.scope per unit of work when Rls:Enforce is on; absent otherwise.
+builder.Services.AddDcmsRlsEnforcement(builder.Configuration);
 // admin-api owns no platform-console data and reads none of it. It registers the context
 // solely so the migrate job (this image, --migrate-only) creates the schema as the owner;
 // platform-api then reaches the rows through the least-privilege dcms_platform role.

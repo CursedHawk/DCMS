@@ -7,6 +7,7 @@ using Dcms.Shared.Hosting;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
 using Microsoft.AspNetCore.HttpOverrides;
+using Dcms.Shared.Data.Rls;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddDcmsServiceDefaults("site-host");
@@ -19,6 +20,8 @@ builder.Services.AddHttpForwarder();
 builder.Services.AddDcmsTenancyData(builder.Configuration);
 builder.Services.AddDcmsSitesData(builder.Configuration);
 builder.Services.AddDcmsAuditData(builder.Configuration);
+// ADR 0015: sets app.tenant_id / app.scope per unit of work when Rls:Enforce is on; absent otherwise.
+builder.Services.AddDcmsRlsEnforcement(builder.Configuration);
 builder.Services.AddNullTenantContext();
 builder.Services.AddSingleton<DomainResolver>();
 builder.Services.AddHostedService<SiteCacheInvalidator>();

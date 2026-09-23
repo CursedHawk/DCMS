@@ -382,7 +382,11 @@ public static class ContentListQueries
         var opened = connection.State != ConnectionState.Open;
         if (opened)
         {
-            await connection.OpenAsync(ct);
+            // Through EF, not the raw connection: EF's open is what runs the connection
+            // interceptors, and under RLS enforcement (ADR 0015) that is what tells the
+            // database which tenant this query belongs to. A raw OpenAsync would run it with
+            // no tenant set and return nothing.
+            await db.Database.OpenConnectionAsync(ct);
         }
 
         try
@@ -409,7 +413,7 @@ public static class ContentListQueries
         {
             if (opened)
             {
-                await connection.CloseAsync();
+                await db.Database.CloseConnectionAsync();
             }
         }
     }

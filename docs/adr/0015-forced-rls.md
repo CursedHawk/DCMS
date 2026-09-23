@@ -110,10 +110,27 @@ shippable, reversible, and leaves the platform working.
    role the services will actually use: no GUC sees nothing, a tenant GUC sees one
    tenant, `app.scope=platform` sees everything.
 
-2. **The GUC, behind a flag, with the services still on the owner connection.** The
-   connection interceptor and the `PlatformScope` helper, registered only when
-   `Rls:Enforce` is on. Off, they are not in the container at all — deliberately, because
-   a GUC that is set but not enforced is a control that looks present and is not.
+2. **The GUC, behind a flag, with the services still on the owner connection.** ✅
+   *Landed.* `TenantGucInterceptor` sets both GUCs on every connection open and again
+   before any command whose desired values changed since — open alone is not enough,
+   because Finbuckle resolves the tenant through the context it later filters and a
+   platform scope can be entered while a transaction holds the connection. It is
+   registered by `AddDcmsRlsEnforcement` in the five services that read tenant tables,
+   only when `Rls:Enforce` is on, and attached to every business context through the
+   existing `UseDcmsAuditInterceptors` hook. `PlatformScope` is a static `AsyncLocal`
+   helper, inert without the interceptor, so phase 3 can adopt it ahead of phase 4.
+
+   Two things surfaced while building it. `ContentListQueries` and `TagQueries` opened the
+   raw connection themselves, which skips EF's interceptors — under enforcement every
+   content list and tag cloud would have come back empty; they now open through EF. And
+   the leak protection turned out to depend on Npgsql resetting session state when a
+   connection returns to its pool: the interceptor writes both values before any EF
+   command, but a raw connection drawn from the same pool would otherwise inherit the last
+   request's. Session `set_config` was kept over `SET LOCAL`, which would drop the values
+   at a commit on a connection EF holds open while the bookkeeping believed them set. So
+   the reset is now tested against a pool of one (same backend pid, both GUCs empty —
+   mutation-checked with the reset turned off), and a guard refuses `No Reset On Close`
+   and `Multiplexing` in any deployed connection string.
 
 3. **The `IgnoreQueryFilters()` sweep.** All 140, decided one at a time into two piles:
    re-scoped by an explicit `TenantId` (needs nothing) or genuinely cross-tenant (wraps

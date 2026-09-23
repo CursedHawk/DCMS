@@ -29,6 +29,7 @@ using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using StackExchange.Redis;
+using Dcms.Shared.Data.Rls;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddDcmsServiceDefaults("content-api");
@@ -40,6 +41,8 @@ builder.Services.AddDcmsObjectStorage(builder.Configuration);
 // site-host in Phase 8). Reads the tenancy + CMS schemas owned by admin-api.
 builder.Services.AddDcmsTenancyData(builder.Configuration);
 builder.Services.AddDcmsAuditData(builder.Configuration);
+// ADR 0015: sets app.tenant_id / app.scope per unit of work when Rls:Enforce is on; absent otherwise.
+builder.Services.AddDcmsRlsEnforcement(builder.Configuration);
 builder.Services.AddDcmsCmsData(builder.Configuration);
 builder.Services.AddDcmsMediaData(builder.Configuration);
 builder.Services.AddDcmsFormsData(builder.Configuration);

@@ -6,6 +6,7 @@ using Dcms.Shared.Hosting;
 using Dcms.Shared.Media;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
+using Dcms.Shared.Data.Rls;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddDcmsServiceDefaults("media-worker", AuditProfile.Consumer);
@@ -17,6 +18,8 @@ builder.Services.AddDcmsMediaData(builder.Configuration);
 // Reaches the audit schema on the shared connection, so it gets the strong path: its records
 // commit in the same transaction as the variants it writes.
 builder.Services.AddDcmsAuditData(builder.Configuration);
+// ADR 0015: sets app.tenant_id / app.scope per unit of work when Rls:Enforce is on; absent otherwise.
+builder.Services.AddDcmsRlsEnforcement(builder.Configuration);
 builder.Services.AddNullTenantContext();
 // Sanitising moved off the admin-api request path and into this worker, so the sanitizer is
 // registered here now rather than only there. See ImageProcessingConsumer.

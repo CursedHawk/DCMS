@@ -8,6 +8,7 @@ using Dcms.Shared.Data.DataProtection;
 using Dcms.Shared.Hosting;
 using Dcms.Shared.Security;
 using Dcms.Shared.Vault;
+using Dcms.Shared.Data.Rls;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddDcmsServiceDefaults("ai-gateway");
@@ -17,6 +18,8 @@ builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
 // Reads tenant AI settings; decrypts tenant keys via Vault Transit at call time.
 builder.Services.AddDcmsAiData(builder.Configuration);
 builder.Services.AddDcmsAuditData(builder.Configuration);
+// ADR 0015: sets app.tenant_id / app.scope per unit of work when Rls:Enforce is on; absent otherwise.
+builder.Services.AddDcmsRlsEnforcement(builder.Configuration);
 
 // Data Protection, persisted to Postgres and shared with every other service.
 //
