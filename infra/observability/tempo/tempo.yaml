@@ -65,6 +65,16 @@ storage:
 
 overrides:
   defaults:
+    # Bounded, so a burst is refused rather than held. Unset, the per-tenant defaults (15 MB/s,
+    # 10 000 live traces) are far more than 384m can buffer: a 2026-09-24 load test at
+    # ~250 req/s OOM-killed Tempo 40+ times in a row -- each restart met Alloy's retry backlog
+    # and died again. Over these limits the distributor answers RESOURCE_EXHAUSTED, Alloy's
+    # bounded retry gives up, and those traces are lost; the store is not.
+    # DO NOT raise mem_limit to "fix" an OOM here -- lower these, or sample in Alloy.
+    ingestion:
+      rate_limit_bytes: 2000000
+      burst_size_bytes: 4000000
+      max_traces_per_user: 2000
     metrics_generator:
       processors: [service-graphs, span-metrics]
 

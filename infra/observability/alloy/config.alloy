@@ -116,6 +116,18 @@ otelcol.exporter.otlp "tempo" {
     endpoint = "tempo:4317"
     tls { insecure = true }
   }
+
+  // Bounded, because the defaults (1000 queued requests, five minutes of retries) turn a burst
+  // into a backlog: during a 2026-09-24 load test Tempo OOM'd, and every restart met this queue
+  // replaying at full speed, so it OOM'd again -- 40+ times -- while Alloy sat at its 512m limit
+  // holding the queue. Now a Tempo outage costs at most a minute of traces, not the store and
+  // not Alloy. Pairs with the ingestion limits in tempo.yaml.
+  sending_queue {
+    queue_size = 100
+  }
+  retry_on_failure {
+    max_elapsed_time = "1m"
+  }
 }
 
 otelcol.exporter.prometheus "default" {
