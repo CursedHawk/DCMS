@@ -81,7 +81,8 @@ Verified locally (2026-09-24) before shipping:
   the call phase 4's per-service check will use.
 - An empty bind-backed named volume is populated as 10001:10001 — no chown, no `user:`.
 - 17 MiB idle.
-- `/ready` is 503 for ~45 s after start (metastore 15 s + segment writer 30 s), then `ready`.
+- `/ready` is 503 for ~45 s counted from the FIRST `/ready` request, not from start (metastore
+  15 s + segment writer 30 s). obs-smoke.sh waits it out.
 - Grafana 12.3.1: datasource health "Data source is working"; Tempo `tracesToProfiles`
   provisioned as written; `grafana-pyroscope-app` (Profiles Drilldown) enabled.
 - Grafana has basic auth off and a `Secure` session cookie: to hit its API in a test, POST
@@ -142,6 +143,9 @@ builds on this box — vps1 via the pipeline is the test, which is what the cana
 - Only traces the Alloy tail sampler keeps get a link. Fine.
 
 ## Phase 4 — verification + docs — ✅
+
+obs-smoke.sh on vps1 after the edge deploy (2026-09-24 ~13:58 UTC): **all 10 services
+profiled**; platform-api now checked for metrics and logs too, both OK.
 
 - [x] `obs-smoke.sh`: asserts **each of the 10** `service_name`s has profiles in the last
       hour (`QuerierService/LabelValues` from the prometheus container). Also added

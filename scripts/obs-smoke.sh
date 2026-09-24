@@ -217,12 +217,18 @@ fi
 
 echo
 echo "== profiles"
-# A freshly started pyroscope reports 503 for ~45 s (metastore 15 s, then segment writer
-# 30 s), so a FAIL in the first minute after a deploy is expected — re-run before digging.
-case "$(fetch 'http://pyroscope:4040/ready')" in
+# Pyroscope's readiness gate starts counting at the FIRST /ready request, not at container
+# start: 15 s for the metastore, then 30 s for the segment writer. So the first check after a
+# deploy (which recreates it) always sees 503 — waited out here rather than reported as a FAIL.
+ready=""
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    ready=$(fetch 'http://pyroscope:4040/ready')
+    case "$ready" in ready*) break ;; esac
+    sleep 5
+done
+case "$ready" in
     ready*) ok "pyroscope ready" ;;
-    '') fail "pyroscope unreachable or not ready" ;;
-    *) fail "pyroscope not ready" ;;
+    *) fail "pyroscope not ready after 60 s" ;;
 esac
 
 # Per service, for the same reason as the log and metric loops above: a profiler that fails
