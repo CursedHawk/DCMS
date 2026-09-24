@@ -125,9 +125,14 @@ services:
       NATS_URL: "nats://nats:4222"
 
   minio:
-    # quay.io, not Docker Hub: MinIO stopped serving anonymous pulls there, so a
-    # fresh pull on a host without a cached copy fails outright. Same images, no login.
-    image: quay.io/minio/minio:latest
+    # Our own registry, not upstream's. MinIO stopped publishing images: Docker Hub (minio/*)
+    # went 401, then quay.io/minio/* did too (2026-09-24), and each time every deploy's
+    # `compose pull` and every Testcontainers fixture failed for a reason outside this repo.
+    # These are the official images vps1 had cached -- the exact bytes it was running --
+    # pushed to mirror/ in this project's registry with scripts/mirror-image.sh. The deploy is
+    # already logged in to that registry; a dev machine needs `docker login` once.
+    # Keep in lockstep with tests/Dcms.IntegrationTests/TestMinio.cs.
+    image: registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/minio:RELEASE.2025-09-07T16-13-09Z
     logging: *default-logging
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -142,7 +147,7 @@ services:
       retries: 10
 
   minio-init:
-    image: quay.io/minio/mc:latest
+    image: registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
       minio:
         condition: service_healthy

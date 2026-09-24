@@ -81,6 +81,10 @@ integration:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
   script:
+    # Testcontainers pulls MinIO from this project's registry (mirror/, see TestMinio.cs), which
+    # needs credentials. This job has no docker CLI to `docker login` with; Testcontainers reads
+    # DOCKER_AUTH_CONFIG instead. Built from the job token, so it dies with the job.
+    - export DOCKER_AUTH_CONFIG="{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 -w0)\"}}}"
     - dotnet test tests/Dcms.IntegrationTests -c Release
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'

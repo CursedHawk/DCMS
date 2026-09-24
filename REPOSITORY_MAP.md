@@ -158,7 +158,7 @@ baas-dcms/
 | Multi-tenancy | Finbuckle.MultiTenant (header strategy `X-Dcms-Tenant`) | 10.1.1 | `TenancyServiceCollectionExtensions.cs` |
 | Cache / backplane | Redis (StackExchange.Redis), SignalR Redis backplane | redis:7, SE.Redis 2.13.17 | compose, `Dcms.Shared.Caching` |
 | Messaging | NATS JetStream (NATS.Net) | nats:2.11, NATS.Net 2.8.1 | compose, `Dcms.Shared.Messaging` |
-| Object storage | MinIO (Minio SDK) | quay.io/minio/minio:latest, SDK 7.0.0 | compose, `Dcms.Shared.Storage` |
+| Object storage | MinIO (Minio SDK) | official RELEASE.2025-09-07 mirrored to our registry (`mirror/minio`), SDK 7.0.0 | compose, `Dcms.Shared.Storage` |
 | Secrets | HashiCorp Vault KV v2 + Transit (VaultSharp) | hashicorp/vault:latest, VaultSharp 1.17.5.1 | `Dcms.Shared.Vault`, `infra/vault` |
 | Authentication (server) | OpenIddict server + ASP.NET Core Identity + Google OAuth | OpenIddict 7.5.0, AspNetCore 10.0.9 | `Dcms.Identity/Program.cs` |
 | Authentication (resource) | JwtBearer against identity discovery | 10.0.9 | `Dcms.Shared.Security/AuthServiceCollectionExtensions.cs` |
@@ -879,7 +879,7 @@ Base type `TenantEntity` (`Shared.Data/TenantEntity.cs`). Sandbox scoping via `I
 | `docker-compose.prod.yml` | Production: pinned behaviour, `docker-socket-proxy` (privileged, CONTAINERS/IMAGES/NETWORKS/POST enabled), sandboxed Mode B builds (`DCMS_BUILD_REQUIRE_SANDBOX`, `DCMS_BUILD_NETWORK_BUILD: none`), `*prod-env` anchor |
 | `docker-compose.vps.yml` | Host overlay: edge on 80/443, nats-surveyor, AppRole env, Forgejo, etc. |
 
-**Dev infra images use floating tags:** `hashicorp/vault:latest`, `quay.io/minio/minio:latest`, `mc:latest`, `natsio/nats-box:latest`, `axllent/mailpit:latest`, `tecnativa/docker-socket-proxy:latest`, `dcms/site-build-sandbox:latest`.
+**Dev infra images use floating tags:** `hashicorp/vault:latest`, `natsio/nats-box:latest`, `axllent/mailpit:latest`, `tecnativa/docker-socket-proxy:latest`, `dcms/site-build-sandbox:latest`.
 
 **Ports** (base): Forgejo `127.0.0.1:3000` and `2222:22` (SSH on all interfaces). Other host ports come from the override/vps overlays.
 

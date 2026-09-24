@@ -5,12 +5,13 @@ namespace Dcms.IntegrationTests;
 /// <summary>
 /// The throwaway object store every media-touching fixture boots against.
 ///
-/// <para><b>Pulled from quay.io, not Docker Hub.</b> MinIO's Docker Hub repositories
-/// (<c>minio/minio</c> and <c>minio/mc</c>) stopped serving anonymous pulls, so every fixture
-/// using them began failing with "pull access denied ... may require 'docker login'" — 56 tests
-/// at once, none of them for a reason in this repository. quay.io is MinIO's own registry and
-/// serves the same images without credentials, which keeps CI and a fresh developer machine
-/// working with no secret to distribute.</para>
+/// <para><b>Pulled from this project's own registry.</b> MinIO stopped publishing images: first
+/// its Docker Hub repositories (<c>minio/minio</c>, <c>minio/mc</c>) and then quay.io/minio/*
+/// began refusing anonymous pulls, each time failing every fixture here at once (56 tests) for a
+/// reason outside this repository. The image is now the official build, mirrored into
+/// <c>mirror/</c> of the GitLab registry. CI authenticates through <c>DOCKER_AUTH_CONFIG</c>
+/// (the integration job builds it from the job token); a developer machine needs
+/// <c>docker login registry-gitlab.highgeek.eu</c> once.</para>
 ///
 /// <para>Shared here rather than repeated in each fixture: four copies of an image literal is
 /// exactly how the next registry change turns into four separate discoveries. <c>docker-compose.yml</c>
@@ -19,7 +20,7 @@ namespace Dcms.IntegrationTests;
 internal static class TestMinio
 {
     /// <summary>Keep in lockstep with the <c>minio</c> service in docker-compose.yml.</summary>
-    public const string Image = "quay.io/minio/minio:latest";
+    public const string Image = "registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/minio:RELEASE.2025-09-07T16-13-09Z";
 
     public static MinioContainer Build() => new MinioBuilder(Image).Build();
 }
