@@ -17,6 +17,7 @@ using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using Pyroscope.OpenTelemetry;
 using Serilog;
 using Serilog.Sinks.OpenTelemetry;
 
@@ -166,6 +167,16 @@ public static class DcmsHostingExtensions
         if (!string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Redis")))
         {
             otel.WithTracing(tracing => tracing.AddRedisInstrumentation());
+        }
+
+        // Span profiles: stamps pyroscope.profile.id on each span, which is what lets Tempo open
+        // the CPU flame graph of exactly that span. The processor only talks to the native CLR
+        // profiler the service images load (CORECLR_* in each Dockerfile), so it is attached
+        // only when that profiler is switched on -- never for a bare `dotnet run` or a test host,
+        // and not when an operator has set CORECLR_ENABLE_PROFILING=0 as the kill switch.
+        if (Environment.GetEnvironmentVariable("CORECLR_ENABLE_PROFILING") == "1")
+        {
+            otel.WithTracing(tracing => tracing.AddProcessor(new PyroscopeSpanProcessor()));
         }
 
         if (otlpEnabled)

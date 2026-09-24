@@ -372,6 +372,9 @@ services:
         condition: service_started
     environment:
       <<: *service-env
+      # A few seconds of migration would land in the service's own profiles under its name
+      # (the image sets PYROSCOPE_APPLICATION_NAME), which only misleads. The kill switch.
+      CORECLR_ENABLE_PROFILING: "0"
       # The owner: this job runs the DDL. See x-service-env.
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev"
       # The job migrates regardless of these; they are set so the job's configuration
@@ -394,6 +397,9 @@ services:
         condition: service_started
     environment:
       <<: *service-env
+      # A few seconds of migration would land in the service's own profiles under its name
+      # (the image sets PYROSCOPE_APPLICATION_NAME), which only misleads. The kill switch.
+      CORECLR_ENABLE_PROFILING: "0"
       # The owner: this job runs the DDL. See x-service-env.
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev"
       Identity__Issuer: "http://dcms-identity:8080/"

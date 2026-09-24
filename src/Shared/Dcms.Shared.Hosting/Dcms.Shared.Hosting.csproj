@@ -13,6 +13,8 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
     <PackageReference Include="OpenTelemetry.Instrumentation.StackExchangeRedis" />
     <PackageReference Include="Npgsql.OpenTelemetry" />
+    <PackageReference Include="Pyroscope" />
+    <PackageReference Include="Pyroscope.OpenTelemetry" />
     <PackageReference Include="Serilog.AspNetCore" />
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
   </ItemGroup>

@@ -33,6 +33,17 @@ Kept here so an interrupted session can be picked up without re-deriving anythin
 
 ## Decisions
 
+- **Why the image and not "just the NuGet package":** the `Pyroscope` NuGet package is a
+  14 KB managed API (labels, span-profile ids) that P/Invokes into
+  `Pyroscope.Profiler.Native`; its README lists the native profiler as a prerequisite. It
+  collects nothing on its own. A CLR profiler can only be loaded by the runtime at process
+  start, from `CORECLR_*` environment variables — which is why those, and the `.so`, live in
+  the image. So it is both layers, not either: image = the profiler, package = the optional
+  trace link.
+- **Non-.NET containers** (postgres, redis, nats, minio, vault, forgejo, the Node build
+  sandbox) cannot take the .NET profiler at all. Their only route is Alloy `pyroscope.ebpf`,
+  rejected below; they already have exporters/cAdvisor.
+
 - **In-process CLR profiler, not Alloy `pyroscope.ebpf`.** eBPF needs a privileged Alloy
   with host PID, undoing the docker-socket-proxy isolation, and gives CPU only with weaker
   .NET symbolisation. The CLR profiler gives CPU, exceptions, lock contention, allocations.
@@ -76,7 +87,7 @@ Verified locally (2026-09-24) before shipping:
 - Grafana has basic auth off and a `Secure` session cookie: to hit its API in a test, POST
   `/login` and send `grafana_session` as an explicit `Cookie:` header.
 
-## Phase 2 — profiler in every image — 🟡 email-worker canary shipped
+## Phase 2 — profiler in every image — 🟡 9 of 10 shipped, edge left
 
 Shape (identical in every Dockerfile — copy it from `src/Services/Dcms.EmailWorker/Dockerfile`):
 - A `pyroscope` stage on the sdk image downloads the pinned 1.5.1 tarball, checks its sha256
@@ -91,28 +102,45 @@ Shape (identical in every Dockerfile — copy it from `src/Services/Dcms.EmailWo
 - [x] `x-otel-env`: `PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040`, exception + lock on.
       Reaches all 10 services + the 2 migrate jobs; inert for an image without the profiler.
 - [x] email-worker Dockerfile (canary).
-- [ ] Confirm on vps1: email-worker healthy, `service_name=email-worker` in Pyroscope, RSS vs
-      the **baseline 71 MiB / 0.08 % CPU** (2026-09-24, before the profiler).
-- [ ] The other 9 Dockerfiles; **edge last** (sole ingress). platform-api is the tightest
-      (106 of 256 MiB at baseline).
+- [x] Canary confirmed on vps1 (2026-09-24, ~2 h in): healthy; Pyroscope has
+      `service_name=email-worker` with `process_cpu`, `lock`, `gc` types; **84 MiB vs 71 MiB
+      baseline (+13 MiB)**, CPU 0.16 % vs 0.08 % (noise). Pyroscope itself 43 MiB.
+- [x] admin-api, ai-gateway, content-api, identity, media-worker, platform-api, site-builder,
+      site-host. platform-api is the tightest (106 of 256 MiB at baseline, so ~120 expected).
+- [x] `migrate` / `identity-migrate`: `CORECLR_ENABLE_PROFILING: "0"` — they reuse the
+      admin-api / identity images and would otherwise land in those services' profiles.
+- [ ] **edge** (sole ingress), after the eight are confirmed.
+- Watch: admin-api spawns `git` and site-builder the `docker` CLI; both inherit `LD_PRELOAD`.
+  The ApiWrapper is meant to be preloaded process-wide and the docker CLI is static Go, but
+  the conflict-resolve merge path in admin-api is the one to try after this deploy.
+- Harmless at startup: `[Pyroscope-DotNet-Profiler-Native] [error] Error creating native
+  log file` — the non-root uid cannot write the profiler's own log dir; it logs to stdout.
+- Disk: after ~2 h of one service, profile data was 1.9 MB (~1 MB / 30 min); the other
+  65 MB is the metastore's preallocated raft WAL segment, a fixed cost. Ten services ≈ 2–3 GB
+  per 7 days before compaction — at the 2 GB budget; re-measure a day after the rollout.
 
 Not verified locally: VPSM's disk was at 100 % (GitLab + registry live there), so no image
 builds on this box — vps1 via the pipeline is the test, which is what the canary is for.
 
-## Phase 3 — span profiles (trace → profile) — ⬜
+## Phase 3 — span profiles (trace → profile) — 🟡 shipped, confirm on vps1
 
-- [ ] `Pyroscope.OpenTelemetry` in `Directory.Packages.props` + `Dcms.Shared.Hosting`;
-      confirm it resolves against OpenTelemetry 1.16.
-- [ ] `AddProcessor(new PyroscopeSpanProcessor())` in `AddDcmsServiceDefaults`, **only when
-      `PYROSCOPE_PROFILING_ENABLED=1`** — without the preloaded native wrapper (bare
-      `dotnet run`, unit tests) its native calls fail.
+- [x] `Pyroscope.OpenTelemetry` 0.5.1 (needs OpenTelemetry 1.16.0 — exactly ours) in
+      `Directory.Packages.props` + `Dcms.Shared.Hosting`; the managed `Pyroscope` package is
+      pinned to **1.5.1, the same version as the native library** — the API checks native
+      compatibility, and the OpenTelemetry package alone would resolve 1.3.0. Bump together.
+- [x] `AddProcessor(new PyroscopeSpanProcessor())` in `AddDcmsServiceDefaults`, only when
+      `CORECLR_ENABLE_PROFILING == "1"` — the same variable that is the kill switch, so turning
+      the profiler off also detaches the processor.
+- [ ] On vps1: a Tempo span of a profiled service carries `pyroscope.profile.id` and its
+      "Profiles for this span" link opens a flame graph.
 - Only traces the Alloy tail sampler keeps get a link. Fine.
 
 ## Phase 4 — verification + docs — ⬜
 
 - [ ] `obs-smoke.sh`: assert **each of the 10** `service_name`s has profiles — a global
       count would hide one missing service.
-- [ ] Unit test for the phase-3 gating.
+- Dropped: a unit test for the phase-3 gate. It is one env comparison, and the managed API
+  guards itself anyway (`IsNativeInteropAvailable`).
 - [ ] `infra/observability/README.md`: service/budget table, diagram.
 - [ ] ADR 0008 amendment (or ADR 0016).
 
