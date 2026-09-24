@@ -395,6 +395,7 @@ app.MapDomainCertificateEndpoints();
 // The platform's OWN certificates, from the platform console. Here rather than in platform-api
 // because admin-api already owns and migrates the edge schema; see ADR 0011.
 app.MapManagedCertificateEndpoints();
+app.MapRateLimitExemptionEndpoints();
 app.MapPluginEndpoints();
 app.MapNavigationEndpoints();
 app.MapMarketplaceEndpoints();

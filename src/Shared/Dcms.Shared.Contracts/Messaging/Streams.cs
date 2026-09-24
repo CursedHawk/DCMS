@@ -51,6 +51,13 @@ public static class Subjects
     public const string ManagedCertificateReissueRequested = "edge.certificate.reissue-requested";
 
     /// <summary>
+    /// The rate-limit exemption list was edited in the platform console. A broadcast to every
+    /// edge replica, which reloads the list at once; on the TENANCY stream under `edge.>` for
+    /// the same reason as the subject above.
+    /// </summary>
+    public const string RateLimitExemptionsChanged = "edge.ratelimit.exemptions-changed";
+
+    /// <summary>
     /// A platform notification was recorded. Consumed by platform-api, which turns it into a
     /// push to every open console so the bell and the page behind it stop waiting for a poll.
     /// On the TENANCY stream for the same reason as the subject above.

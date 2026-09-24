@@ -38,6 +38,9 @@ public class EdgeDbContext(DbContextOptions<EdgeDbContext> options)
     public DbSet<EdgeManagedCertificateAttempt> ManagedCertificateAttempts
         => Set<EdgeManagedCertificateAttempt>();
 
+    /// <summary>Client addresses and ranges the edge does not rate-limit.</summary>
+    public DbSet<EdgeRateLimitExemption> RateLimitExemptions => Set<EdgeRateLimitExemption>();
+
     /// <summary>
     /// The edge's OWN key ring, not the shared <c>dataprotection</c> schema every other service
     /// uses.
@@ -113,6 +116,17 @@ public class EdgeDbContext(DbContextOptions<EdgeDbContext> options)
                 .WithMany()
                 .HasForeignKey(a => a.ManagedCertificateId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<EdgeRateLimitExemption>(e =>
+        {
+            e.ToTable("rate_limit_exemptions");
+            e.HasKey(x => x.Id);
+            // Canonical form, so the same range cannot be listed twice under two spellings.
+            e.HasIndex(x => x.Cidr).IsUnique();
+            e.Property(x => x.Cidr).HasMaxLength(64).IsRequired();
+            e.Property(x => x.Note).HasMaxLength(500).IsRequired();
+            e.Property(x => x.CreatedBy).HasMaxLength(320);
         });
 
         builder.Entity<AcmeAccount>(e =>

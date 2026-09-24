@@ -23,3 +23,15 @@ public sealed record ManagedCertificateReissueRequested(
 {
     public int Version => 1;
 }
+
+/// <summary>
+/// The rate-limit exemption list changed. Carries nothing but the fact: every edge replica
+/// re-reads the whole list from <c>edge.rate_limit_exemptions</c>, which is small, so a missed
+/// or reordered message cannot leave a replica holding a list nobody saved.
+/// </summary>
+public sealed record RateLimitExemptionsChanged(
+    Guid EventId,
+    DateTimeOffset OccurredAt) : IDcmsEvent
+{
+    public int Version => 1;
+}

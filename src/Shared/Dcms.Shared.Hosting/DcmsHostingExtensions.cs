@@ -228,9 +228,14 @@ public static class DcmsHostingExtensions
                 // /api/hub is admin-api's notification hub; /hub is content-api's chat hub.
                 // A long-lived WebSocket is not what this limiter is for, and a reconnect
                 // storm after a deploy would otherwise trip it for every admin at once.
+                // X-Dcms-RateLimit-Exempt: the edge found this client on the platform console's
+                // exemption list (a load generator, a probe). Only the edge can have set it -- it
+                // strips every inbound copy -- which is the same trust X-Forwarded-For, and so
+                // this limiter's own partition key, already rests on.
                 if (path.StartsWithSegments("/health")
                     || path.StartsWithSegments("/hub")
-                    || path.StartsWithSegments("/api/hub"))
+                    || path.StartsWithSegments("/api/hub")
+                    || httpContext.Request.Headers["X-Dcms-RateLimit-Exempt"] == "1")
                 {
                     return RateLimitPartition.GetNoLimiter("unlimited");
                 }

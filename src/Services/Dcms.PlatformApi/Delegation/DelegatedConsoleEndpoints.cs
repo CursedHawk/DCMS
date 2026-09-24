@@ -42,6 +42,17 @@ public static class DelegatedConsoleEndpoints
             "/api/admin/platform/certificates/{0}/reissue",
             PlatformConsolePermissions.CertificatesManage);
 
+        // ---- Rate-limit exemptions (edge schema; the edge reloads them live) ----
+
+        var exemptions = app.MapGroup("/api/platform/rate-limit-exemptions");
+
+        Delegate(exemptions, HttpMethod.Get, "", "/api/admin/platform/rate-limit-exemptions",
+            PlatformConsolePermissions.RateLimitsManage);
+        Delegate(exemptions, HttpMethod.Post, "", "/api/admin/platform/rate-limit-exemptions",
+            PlatformConsolePermissions.RateLimitsManage);
+        Delegate(exemptions, HttpMethod.Delete, "/{id:guid}", "/api/admin/platform/rate-limit-exemptions/{0}",
+            PlatformConsolePermissions.RateLimitsManage);
+
         // ---- The console's bell (notifications schema) ----
 
         var notifications = app.MapGroup("/api/platform/notifications");

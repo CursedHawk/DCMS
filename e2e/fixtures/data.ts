@@ -184,7 +184,7 @@ export const NOTIFICATIONS = {
 export const PLATFORM_PERMISSIONS = [
   'platform:overview:read', 'platform:tenants:read', 'platform:tenants:lifecycle',
   'platform:users:read', 'platform:audit:read', 'platform:observability:read',
-  'platform:logs:read', 'platform:roles:manage', 'platform:certificates:manage',
+  'platform:logs:read', 'platform:roles:manage', 'platform:certificates:manage', 'platform:ratelimits:manage',
   'platform:notifications:read', 'platform:ops:act',
 ];
 

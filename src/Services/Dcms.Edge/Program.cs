@@ -153,6 +153,10 @@ app.UseDcmsProblemDetails();
 // boundary, and everything behind it trusts its caller completely.
 app.UseUntrustedHeaderScrubbing();
 
+// Straight after the scrubber: marks requests whose real TCP peer is on the platform console's
+// rate-limit exemption list, for this edge's limiter and for the services behind it.
+app.UseRateLimitExemption();
+
 // After the scrubber (so the Host it counts is one a client cannot forge into a header) and
 // before the redirect (so a redirected request is still counted as traffic the edge handled).
 app.UseEdgeRequestMetrics();

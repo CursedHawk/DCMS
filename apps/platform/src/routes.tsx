@@ -29,6 +29,7 @@ const CertificatesPage = page(
   () => import('./features/certificates/CertificatesPage'),
   'CertificatesPage',
 );
+const RateLimitsPage = page(() => import('./features/ratelimits/RateLimitsPage'), 'RateLimitsPage');
 const NotificationsPage = page(
   () => import('./features/notifications/NotificationsPage'),
   'NotificationsPage',
@@ -98,6 +99,7 @@ export const routeTree = rootRoute.addChildren([
     child('/storage', StoragePage),
     child('/access', AccessPage),
     child('/certificates', CertificatesPage),
+    child('/rate-limits', RateLimitsPage),
     // Reached from the bell rather than the sidebar: it is per-operator, not an area of the
     // platform, and every nav item here names a permission this one would have to invent.
     child('/notifications', NotificationsPage),

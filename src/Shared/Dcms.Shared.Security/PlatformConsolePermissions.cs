@@ -103,6 +103,13 @@ public static class PlatformConsolePermissions
     /// </summary>
     public const string CertificatesManage = "platform:certificates:manage";
 
+    /// <summary>
+    /// Which client addresses the edge does not rate-limit. A ":manage" key with no ":read"
+    /// sibling, for the reason given on <see cref="CertificatesManage"/>: taking an address out of
+    /// a DoS control is not a support question.
+    /// </summary>
+    public const string RateLimitsManage = "platform:ratelimits:manage";
+
     /// <summary>The prefix every key here carries. Used to tell the two permission
     /// spaces apart when both could appear in one list.</summary>
     public const string Prefix = "platform:";
@@ -117,6 +124,7 @@ public static class PlatformConsolePermissions
         LogsRead, LogsPurge,
         RolesManage,
         CertificatesManage,
+        RateLimitsManage,
         NotificationsRead,
     ];
 

@@ -129,20 +129,34 @@ Two consequences:
   component that turns a session into a bearer admin-api accepts; `run.sh` refuses it.
   `delivery`, `sitehost` and `ratelimit` need no credential and still run internally.
 
-### The rate limiter
+### The rate limiters, and exempting the generator
 
-content-api applies a global per-IP fixed-window limiter, 600 requests / 60 s by default
-(`src/Shared/Dcms.Shared.Hosting/DcmsHostingExtensions.cs:206`). A load generator is one IP,
-so **any run above ~10 req/s measures the limiter, not the platform**.
+Two limiters stand between a load generator and the platform, both per client IP:
 
-`RATE_LIMIT_PERMITS` in the host's `.env` raises it for a measurement window. Raise it,
-measure, **put it back**, and re-assert it:
+- **the edge**: 1200 requests per 60 s across every host it serves (`EDGE_RATE_LIMIT`,
+  `src/Services/Dcms.Edge/Protection/EdgeRateLimiting.cs`);
+- **content-api and site-host**: 600 per 60 s each (`RATE_LIMIT_PERMITS`,
+  `AddDcmsRateLimiting`).
+
+A load generator is one IP, so **a run above ~10 req/s measures the limiters, not the
+platform**. The first run after the edge replaced Caddy found this the hard way: `delivery` at
+10 VUs came back 97 % 429s, the edge rejecting ~427 req/s.
+
+**Exempt the generator instead of raising the limits.** Platform console → Operations →
+**Rate limits**, add the generator's public address (or its range) with a note. The edge matches
+the connection's real address, stands aside, and tells content-api and site-host to do the same
+(`X-Dcms-RateLimit-Exempt`, which the edge strips from every inbound request). It takes effect
+within seconds, and nothing is lowered for anyone else. Remove it when the run is over. The
+sign-in limit (30/min) still applies to an exempt address.
+
+Verify both states with the `ratelimit` scenario: exempt, it should see no 429s; after
+removing the exemption, it must see them again:
 
 ```sh
-./loadtest/run.sh --env vps1 --scenario ratelimit --vus 20 --duration 90s
+./loadtest/run.sh --env vps1 --scenario ratelimit --vus 20 --duration 90s --via vps1
 ```
 
-A DoS control raised for convenience and never restored is the one nobody checks again.
+A DoS control relaxed for convenience and never restored is the one nobody checks again.
 That scenario exists so this one cannot happen quietly.
 
 ---

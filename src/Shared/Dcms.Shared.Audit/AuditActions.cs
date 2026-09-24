@@ -74,6 +74,16 @@ public static class AuditActions
     /// <summary>A superadmin asked for one to be reissued before it was due.</summary>
     public const string ManagedCertificateReissued = "managed.certificate.reissued";
 
+    // Rate-limit exemptions: a superadmin taking an address out of a DoS control. Audited for
+    // the same reason as the certificates above -- it is an operator decision about the
+    // platform's own boundary, and "who exempted this range, and why" is the first question
+    // when one is abused.
+
+    /// <summary>A superadmin exempted an address or range from rate limiting.</summary>
+    public const string RateLimitExemptionAdded = "ratelimit.exemption.added";
+    /// <summary>An exemption was removed; that address is rate-limited again.</summary>
+    public const string RateLimitExemptionRemoved = "ratelimit.exemption.removed";
+
     // ---- content ----
     public const string ContentCreated = "content.created";
     public const string ContentUpdated = "content.updated";

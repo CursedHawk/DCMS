@@ -19,6 +19,7 @@ export const ROUTE_GUARDS: Readonly<Record<string, RouteGuard>> = {
   '/storage': { perm: Perm.LogsRead },
   '/access': { perm: Perm.RolesManage },
   '/certificates': { perm: Perm.CertificatesManage },
+  '/rate-limits': { perm: Perm.RateLimitsManage },
   // Reached from the bell rather than the sidebar: it is per-operator, not an area of the
   // platform, and every nav item here names a permission this one would have to invent.
   '/notifications': { superAdmin: true },

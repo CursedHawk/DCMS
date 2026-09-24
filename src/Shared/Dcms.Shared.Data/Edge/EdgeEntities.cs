@@ -245,3 +245,29 @@ public sealed class EdgeManagedCertificateAttempt
     /// <summary>The CA's own sentence when it refused. Usually the only thing that says why.</summary>
     public string? Error { get; set; }
 }
+
+/// <summary>
+/// A client address or range the edge does not rate-limit — a load generator, a monitoring
+/// probe, a partner's egress range. Managed from the platform console.
+///
+/// <para>Matched against the connection's real TCP peer at the edge, never against a header, and
+/// the edge then tells the services behind it (<c>X-Dcms-RateLimit-Exempt</c>) so their own
+/// limiters stand aside for the same request. The stricter sign-in limit still applies: an
+/// exempt address is trusted with capacity, not with unlimited password guesses.</para>
+/// </summary>
+public sealed class EdgeRateLimitExemption
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    /// <summary>Canonical CIDR — a single address is stored as /32 or /128.</summary>
+    public string Cidr { get; set; } = string.Empty;
+
+    /// <summary>Why this address is exempt. Required in the console: an unexplained hole in a
+    /// DoS control is the one nobody dares remove.</summary>
+    public string Note { get; set; } = string.Empty;
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>The operator's email, for the same reason as <see cref="Note"/>.</summary>
+    public string? CreatedBy { get; set; }
+}

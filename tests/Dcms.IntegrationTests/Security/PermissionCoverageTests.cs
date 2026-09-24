@@ -108,6 +108,10 @@ public abstract class PermissionCoverageTestsBase<TEntryPoint> : IDisposable
     private static bool IsDecided(RouteEndpoint endpoint)
     {
         if (endpoint.Metadata.GetMetadata<PermissionMetadata>() is not null) return true;
+        // platform-api's own gate (RequirePlatformPermission). Not recognised until the rate-limit
+        // exemption routes were added, which is why every delegated console route sat in
+        // KnownUndeclared although each one names a platform:* key.
+        if (endpoint.Metadata.GetMetadata<PlatformPermissionMetadata>() is not null) return true;
         if (endpoint.Metadata.GetMetadata<PermissionExemptMetadata>() is not null) return true;
         if (endpoint.Metadata.GetMetadata<IAllowAnonymous>() is not null) return true;
         return endpoint.Metadata.Any(m => GateAttributes.Contains(m.GetType().Name, StringComparer.Ordinal));
@@ -283,20 +287,5 @@ public sealed class PlatformApiPermissionCoverageTests : PermissionCoverageTests
         "ANY /health/live",
         "ANY /api/platform/hub/console",
         "ANY /api/platform/hub/console/negotiate",
-        "DELETE /api/platform/certificates/{id:guid}",
-        "DELETE /api/platform/purge/loki/{requestId}",
-        "POST /api/platform/certificates/",
-        "POST /api/platform/certificates/{id:guid}/reissue",
-        "POST /api/platform/notifications/read-all",
-        "POST /api/platform/notifications/{id:guid}/dismiss",
-        "POST /api/platform/notifications/{id:guid}/read",
-        "POST /api/platform/ops/analytics/prune",
-        "POST /api/platform/purge/docker-logs",
-        "POST /api/platform/purge/loki",
-        "POST /api/platform/purge/prometheus",
-        "POST /api/platform/tenants/{id:guid}/resume",
-        "POST /api/platform/tenants/{id:guid}/suspend",
-        "PUT /api/platform/certificates/{id:guid}",
-        "PUT /api/platform/roles/{roleName}/permissions",
     ];
 }

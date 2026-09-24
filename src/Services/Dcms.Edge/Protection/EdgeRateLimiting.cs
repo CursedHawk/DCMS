@@ -28,8 +28,25 @@ public static class EdgeRateLimiting
     /// </summary>
     public const string AuthPolicy = "edge.auth";
 
+    /// <summary>
+    /// Marks requests from exempt addresses (see <see cref="RateLimitExemptions"/>). Register right
+    /// after <c>UseUntrustedHeaderScrubbing</c> and before <c>UseRateLimiter</c>.
+    /// </summary>
+    public static IApplicationBuilder UseRateLimitExemption(this IApplicationBuilder app)
+    {
+        var exemptions = app.ApplicationServices.GetRequiredService<RateLimitExemptions>();
+        return app.Use((context, next) =>
+        {
+            exemptions.Mark(context);
+            return next(context);
+        });
+    }
+
     public static void AddEdgeRateLimiting(this WebApplicationBuilder builder)
     {
+        builder.Services.AddSingleton<RateLimitExemptions>();
+        builder.Services.AddHostedService<RateLimitExemptionLoader>();
+
         var configuration = builder.Configuration;
         var permitLimit = configuration.GetValue("Edge:RateLimiting:PermitLimit", 1200);
         var windowSeconds = configuration.GetValue("Edge:RateLimiting:WindowSeconds", 60);
@@ -71,7 +88,7 @@ public static class EdgeRateLimiting
         var path = context.Request.Path;
 
         // Three exemptions, each of which would otherwise cause the failure it is meant to
-        // prevent.
+        // prevent, and a fourth an operator chose.
         //
         //   /.well-known/acme-challenge -- a certificate authority validating a domain is not a
         //   client to be throttled, and a 429 here fails issuance with an error that says
@@ -85,9 +102,13 @@ public static class EdgeRateLimiting
         //   and a reconnect storm after a deploy would trip it for every client at once. This is
         //   the same exemption AddDcmsRateLimiting makes for /hub, expressed as what it actually
         //   means rather than as a path list the edge would have to keep in step.
+        //
+        //   An address listed in the platform console's rate-limit exemptions -- a load
+        //   generator, a monitoring probe. See RateLimitExemptions.
         if (path.StartsWithSegments("/.well-known/acme-challenge")
             || path.StartsWithSegments("/health")
-            || context.WebSockets.IsWebSocketRequest)
+            || context.WebSockets.IsWebSocketRequest
+            || RateLimitExemptions.IsMarked(context))
         {
             return RateLimitPartition.GetNoLimiter("unlimited");
         }
