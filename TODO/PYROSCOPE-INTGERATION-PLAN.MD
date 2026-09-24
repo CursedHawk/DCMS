@@ -61,6 +61,9 @@ Kept here so an interrupted session can be picked up without re-deriving anythin
 - [x] `scripts/deploy.sh`: pyroscope added to `CONFIG_MOUNTED_SERVICES` (its config is a
       bind-mounted file — the stale-inode trap).
 
+Deployed to vps1 2026-09-24: `dcms-pyroscope-1` up at 18 MiB; deploy.sh created
+`~/dcms-data/pyroscope` and Docker owned it 10001 — no hand step.
+
 Verified locally (2026-09-24) before shipping:
 - Config loads clean on 2.3.1 (`architecture_storage: v2`, `limits.retention_period: 7d`);
   a folded-format push to `/ingest` reads back through `QuerierService/LabelValues` —
@@ -73,20 +76,28 @@ Verified locally (2026-09-24) before shipping:
 - Grafana has basic auth off and a `Secure` session cookie: to hit its API in a test, POST
   `/login` and send `grafana_session` as an explicit `Cookie:` header.
 
-## Phase 2 — profiler in every image — ⬜
+## Phase 2 — profiler in every image — 🟡 email-worker canary shipped
 
-- [ ] Each of the 10 Dockerfiles, runtime stage, before `COPY --from=build` (cached layer):
-      download the pinned 1.5.1 tarball, **verify sha256**, extract to `/opt/pyroscope`;
-      `ENV CORECLR_ENABLE_PROFILING=1`, `CORECLR_PROFILER={BD1A650D-AC5D-4896-B64F-D6FA25D6B26A}`,
-      `CORECLR_PROFILER_PATH`, `LD_PRELOAD` (ApiWrapper), `LD_LIBRARY_PATH`,
-      `PYROSCOPE_APPLICATION_NAME=<service>`.
-- [ ] `x-otel-env`: `PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040`,
-      `PYROSCOPE_PROFILING_ENABLED=1` (the kill switch), exception + lock on.
-- [ ] Roll out on **email-worker first**, measure RSS/CPU against its baseline, then the
-      rest; **edge last** (sole ingress).
-- Local `dotnet run` / `dotnet test` unaffected — the env lives in the images.
-- A missing `.so` makes the CLR log "failed to load profiler" and carry on — silent, which
-  is why phase 4's per-service check exists.
+Shape (identical in every Dockerfile — copy it from `src/Services/Dcms.EmailWorker/Dockerfile`):
+- A `pyroscope` stage on the sdk image downloads the pinned 1.5.1 tarball, checks its sha256
+  (`06bc3888…4b88d18`), and **strips** the native library: the release ships it with debug
+  info at 181 MB, stripped it is 12.7 MB. Only the two stripped `.so` files (mode 755, so the
+  non-root `$APP_UID` can load them) reach the runtime image, in `/opt/pyroscope/`.
+- The runtime stage sets `CORECLR_ENABLE_PROFILING=1`, `CORECLR_PROFILER`, `CORECLR_PROFILER_PATH`,
+  `LD_PRELOAD` (ApiWrapper), `LD_LIBRARY_PATH`, `PYROSCOPE_PROFILING_ENABLED=1`,
+  `PYROSCOPE_APPLICATION_NAME=<compose service name>`.
+- **Kill switch, no rebuild:** `CORECLR_ENABLE_PROFILING: "0"` in that service's compose environment.
+
+- [x] `x-otel-env`: `PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040`, exception + lock on.
+      Reaches all 10 services + the 2 migrate jobs; inert for an image without the profiler.
+- [x] email-worker Dockerfile (canary).
+- [ ] Confirm on vps1: email-worker healthy, `service_name=email-worker` in Pyroscope, RSS vs
+      the **baseline 71 MiB / 0.08 % CPU** (2026-09-24, before the profiler).
+- [ ] The other 9 Dockerfiles; **edge last** (sole ingress). platform-api is the tightest
+      (106 of 256 MiB at baseline).
+
+Not verified locally: VPSM's disk was at 100 % (GitLab + registry live there), so no image
+builds on this box — vps1 via the pipeline is the test, which is what the canary is for.
 
 ## Phase 3 — span profiles (trace → profile) — ⬜
 

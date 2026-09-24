@@ -29,6 +29,13 @@ x-otel-env: &otel-env
   # unset value means "collect nothing, cost nothing" for a bare `dotnet run`.
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy:4317"
   OTEL_EXPORTER_OTLP_PROTOCOL: "grpc"
+  # Continuous profiling. The profiler itself, and the switch that loads it, live in each
+  # service's image (CORECLR_* in its Dockerfile); these only say where to push and what to
+  # collect beyond CPU. Allocation and live-heap stay off until their overhead is measured
+  # on vps1 -- they are the expensive ones. TODO/PYROSCOPE-INTGERATION-PLAN.MD.
+  PYROSCOPE_SERVER_ADDRESS: "http://pyroscope:4040"
+  PYROSCOPE_PROFILING_EXCEPTION_ENABLED: "true"
+  PYROSCOPE_PROFILING_LOCK_ENABLED: "true"
 
 x-service-env: &service-env
   <<: *otel-env
