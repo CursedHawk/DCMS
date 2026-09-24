@@ -22,10 +22,9 @@
 import http from 'k6/http';
 import { check, fail, sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
-import { deliveryTarget, pickTenant, thresholds } from '../lib/k6.js';
+import { adminHeaders as sessionHeaders, deliveryTarget, pickTenant, requireSession, thresholds } from '../lib/k6.js';
 
 const BASE = __ENV.ADMIN_BASE;
-const TOKEN = __ENV.ACCESS_TOKEN;
 
 const publishToVisible = new Trend('publish_to_visible_ms', true);
 const neverAppeared = new Counter('publish_never_visible');
@@ -49,16 +48,12 @@ export const options = {
 };
 
 export function setup() {
-  if (!TOKEN) fail('ACCESS_TOKEN is empty; run this through loadtest/run.sh');
+  requireSession();
 }
 
 export default function () {
   const tenant = pickTenant(__ITER);
-  const adminHeaders = {
-    Authorization: `Bearer ${TOKEN}`,
-    'X-Dcms-Tenant': tenant.slug,
-    'Content-Type': 'application/json',
-  };
+  const adminHeaders = { ...sessionHeaders(tenant), 'Content-Type': 'application/json' };
   // Unique per VU and iteration so two VUs never contend for one slug, and so a slug is
   // never reused across iterations -- a reused slug could be served from a cache entry the
   // previous iteration warmed, and would report a publish latency of zero.

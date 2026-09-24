@@ -35,7 +35,7 @@ secret — credentials come from the environment, so profiles are shareable.
 | Profile | Target | Notes |
 |---|---|---|
 | `local` | docker compose on your box | Correctness, not numbers: the generator shares the CPUs it is measuring. |
-| `vps1` | `https://admin.dev.highgeek.eu` | The measurement target. 4 cores / 7.6 GB. |
+| `vps1` | `https://admin.highgeek.eu` (what the host's `.env` sets, not the CI label) | The measurement target. 4 cores / 7.6 GB. |
 
 Override anything by dotted path: `--vus 25`, `--duration 3m`, or `-e thresholds.deliveryP95=200`.
 
@@ -103,17 +103,31 @@ above the consumer's concurrency is for.
 > nothing else — which is exactly how it went missing on vps1. `scripts/deploy.sh` now fails
 > the deploy if the tag does not resolve.
 
-### The eight-minute ceiling
+### Signing in: through the edge, as the console does
 
-Identity issues access tokens with a **ten minute** lifetime
-(`src/Services/Dcms.Identity/Program.cs:113`), and refresh tokens rotate, so concurrent VUs
-cannot share one refresh chain without racing. `run.sh` therefore mints a token immediately
-before k6 starts and **refuses an authenticated run longer than eight minutes**.
+The admin plane sits behind the edge BFF (ADR 0014). The edge **strips** any
+`Authorization` a client sends on the admin host's `/api` and attaches its own, and since
+BFF phase 5 `dcms-admin-spa` no longer holds `dcms.admin`. So there is no bearer token a
+load generator could mint that admin-api would ever see.
 
-Unauthenticated scenarios (`delivery`, `sitehost`, `ratelimit`) have no such limit and are
-the ones to use for a soak. If an authenticated soak is ever needed, the fix is a
-single-writer token daemon holding the refresh chain — deliberately not built until
-something needs it.
+`lib/mint-session.mjs` therefore signs in the way a browser does:
+- `/.edge/signin`
+- identity's login form (antiforgery token included)
+- the `form_post` back to `/.edge/signin-oidc`
+- `/.edge/me` for the CSRF token
+
+Every admin request then carries the session cookie, `X-Dcms-Csrf` and a same-origin
+`Origin` (`adminHeaders()` in `lib/k6.js`). That is exactly what the console sends, so
+the edge's session lookup and token attach are now part of every admin measurement.
+
+Two consequences:
+
+- **No run-length limit.** The edge refreshes the tokens behind the session, serialised per
+  session, so one session serves every VU for as long as the run lasts. The old eight-minute
+  ceiling was the ten-minute token lifetime and is gone.
+- **Admin scenarios cannot run in `internal` mode.** Skipping the edge skips the only
+  component that turns a session into a bearer admin-api accepts; `run.sh` refuses it.
+  `delivery`, `sitehost` and `ratelimit` need no credential and still run internally.
 
 ### The rate limiter
 
@@ -181,6 +195,8 @@ runs/<timestamp>-<scenario>-<env>/
   k6.log                   the run's console output
   prom/*.json              36 query_range results over exactly the run window
   traces/*.json            the slowest traces in the window, fetched whole
+  profiles/<service>.json  Pyroscope CPU flamegraph per service for the window
+  profiles/top.txt         per service, the functions with the most self CPU time
   logs/errors.json         warning and error log lines
   pg_stat_statements.txt   top 40 statements by total execution time
   compose-ps.txt, docker-stats.txt, host.txt
@@ -217,10 +233,15 @@ The order matters. Each step narrows what the next one has to look at.
    slow; the span tree says which SQL statement or which MinIO call inside it owns the time.
    That is the difference between a finding and a guess.
 
-6. **`pg_stat_statements.txt`** — ordered by *total* time, not mean: a fast statement run a
+6. **`profiles/top.txt`** — where the CPU went *inside* a process, including the parts no
+   span covers: GC, serialization, a hot loop between two instrumented calls. It is self
+   time per function. For the path that led there, open the service in Grafana → Explore →
+   Profiles for the same window, or follow a slow trace's "Profiles for this span" link.
+
+7. **`pg_stat_statements.txt`** — ordered by *total* time, not mean: a fast statement run a
    million times costs more than a slow one run twice.
 
-7. **`prom/pipeline_*.json`** — a request path can look healthy while the queue behind it
+8. **`prom/pipeline_*.json`** — a request path can look healthy while the queue behind it
    grows without bound. `pipeline_outbox_depth`, `pipeline_jetstream_pending` and
    `pipeline_*_duration` are where a worker bottleneck shows up.
 

@@ -8,25 +8,19 @@
 
   "edge": {
     "admin": "http://localhost:5002",
-    "identity": "http://dcms-identity:8080",
     "content": "http://localhost:5003",
-    "siteHost": "http://localhost:5006",
-    "spaRedirectUri": "http://localhost:5000/auth/callback"
+    "siteHost": "http://localhost:5006"
   },
 
   "internal": {
     "admin": "http://admin-api:8080",
-    "identity": "http://identity:8080",
     "content": "http://content-api:8080",
-    "siteHost": "http://site-host:8080",
-    "spaRedirectUri": "http://localhost:5000/auth/callback"
+    "siteHost": "http://site-host:8080"
   },
 
   "auth": {
     "username": "${DCMS_LOADTEST_USER:-admin@dcms.local}",
-    "password": "${DCMS_LOADTEST_PASSWORD:-Admin!23456}",
-    "clientId": "dcms-admin-spa",
-    "scope": "openid profile email roles dcms.admin offline_access"
+    "password": "${DCMS_LOADTEST_PASSWORD:-Admin!23456}"
   },
 
   "seed": {

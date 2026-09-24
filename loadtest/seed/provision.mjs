@@ -13,7 +13,7 @@
 // name alone, without this file having to have been the thing that made it.
 
 import { loadProfile, parseArgs, targets } from '../lib/config.mjs';
-import { login, inspect } from '../lib/auth.mjs';
+import { edgeSession } from '../lib/auth.mjs';
 import { AdminApi, HttpError } from '../lib/api.mjs';
 import { writeFixtures, fixturesPath } from '../lib/fixtures.mjs';
 import { png, siteBundle } from './assets.mjs';
@@ -30,18 +30,12 @@ async function main() {
 
   log(`profile '${profile.name}' (mode ${t.mode}) -> ${t.admin}`);
 
-  const tokens = await login({
-    identity: t.identity,
-    redirectUri: t.spaRedirectUri,
-    clientId: profile.auth.clientId,
-    scope: profile.auth.scope,
-    username: profile.auth.username,
-    password: profile.auth.password,
+  const session = await edgeSession({
+    admin: t.admin, username: profile.auth.username, password: profile.auth.password,
   });
-  const claims = inspect(tokens.accessToken);
-  log(`signed in as ${profile.auth.username}; token aud=${JSON.stringify(claims?.aud)} exp=${new Date(tokens.expiresAt).toISOString()}`);
+  log(`signed in as ${profile.auth.username} through the edge`);
 
-  const api = new AdminApi({ base: t.admin, token: tokens.accessToken });
+  const api = new AdminApi({ base: t.admin, session });
 
   // Provisioning a tenant is SuperAdmin-only, and so is listing them. Failing here with a
   // clear message beats failing later with a 403 on an endpoint that looks unrelated.

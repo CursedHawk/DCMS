@@ -20,7 +20,6 @@ const out = {
   PROFILE: profile.name,
   MODE: t.mode,
   ADMIN_BASE: t.admin,
-  IDENTITY_BASE: t.identity,
   CONTENT_BASE: t.content,
   SITEHOST_BASE: t.siteHost,
   VUS: profile.load.vus,

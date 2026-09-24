@@ -15,7 +15,7 @@
 // nothing to tear down cannot be put in a trap handler, which is where this belongs.
 
 import { loadProfile, parseArgs, targets } from '../lib/config.mjs';
-import { login } from '../lib/auth.mjs';
+import { edgeSession } from '../lib/auth.mjs';
 import { AdminApi, HttpError } from '../lib/api.mjs';
 import { fixturesPath } from '../lib/fixtures.mjs';
 import { rm } from 'node:fs/promises';
@@ -36,15 +36,10 @@ async function main() {
       + `Teardown deletes every tenant whose slug starts with it.`);
   }
 
-  const tokens = await login({
-    identity: t.identity,
-    redirectUri: t.spaRedirectUri,
-    clientId: profile.auth.clientId,
-    scope: profile.auth.scope,
-    username: profile.auth.username,
-    password: profile.auth.password,
+  const session = await edgeSession({
+    admin: t.admin, username: profile.auth.username, password: profile.auth.password,
   });
-  const api = new AdminApi({ base: t.admin, token: tokens.accessToken });
+  const api = new AdminApi({ base: t.admin, session });
 
   const all = await api.get('/api/admin/tenants');
   const doomed = all.filter((x) => x.slug.startsWith(`${prefix}-`));

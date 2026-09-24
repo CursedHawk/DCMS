@@ -12,10 +12,9 @@
 
 import http from 'k6/http';
 import { check } from 'k6';
-import { pickTenant, ramp, thresholds } from '../lib/k6.js';
+import { adminHeaders, pickTenant, ramp, requireSession, thresholds } from '../lib/k6.js';
 
 const BASE = __ENV.ADMIN_BASE;
-const TOKEN = __ENV.ACCESS_TOKEN;
 
 export const options = {
   scenarios: { admin: ramp() },
@@ -28,18 +27,12 @@ export const options = {
 };
 
 export function setup() {
-  if (!TOKEN) {
-    throw new Error('ACCESS_TOKEN is empty. run.sh mints one for this scenario; '
-      + 'running k6 by hand needs: -e ACCESS_TOKEN=$(node loadtest/lib/mint-token.mjs --env <env>)');
-  }
+  requireSession();
 }
 
 export default function () {
   const tenant = pickTenant(__ITER);
-  const headers = {
-    Authorization: `Bearer ${TOKEN}`,
-    'X-Dcms-Tenant': tenant.slug,
-  };
+  const headers = adminHeaders(tenant);
 
   // Cheap and permission-resolving: hits the Redis-cached effective-permission set
   // (perm:{tenantId}:{userId}, 5 min TTL), so a miss here is a Postgres round trip that

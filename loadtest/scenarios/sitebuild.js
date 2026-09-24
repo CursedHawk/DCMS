@@ -36,10 +36,9 @@
 import http from 'k6/http';
 import { check, fail, sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
-import { pickTenant, thresholds } from '../lib/k6.js';
+import { adminHeaders, pickTenant, requireSession, thresholds } from '../lib/k6.js';
 
 const BASE = __ENV.ADMIN_BASE;
-const TOKEN = __ENV.ACCESS_TOKEN;
 const MODE = __ENV.BUILD_MODE || 'StaticFiles';
 
 // One trend per mode as well as the combined one. Averaging a 4-second Mode C extract with
@@ -78,7 +77,7 @@ export const options = {
 };
 
 export function setup() {
-  if (!TOKEN) fail('ACCESS_TOKEN is empty; run this through loadtest/run.sh');
+  requireSession();
   const known = ['StaticFiles', 'StaticPrerender', 'ReactApp', 'all'];
   if (!known.includes(MODE)) fail(`BUILD_MODE must be one of ${known.join(', ')} (got '${MODE}')`);
 }
@@ -106,7 +105,7 @@ export default function () {
     return;
   }
 
-  const auth = { Authorization: `Bearer ${TOKEN}`, 'X-Dcms-Tenant': tenant.slug };
+  const auth = adminHeaders(tenant);
   const siteId = site.siteId;
 
   const startedAt = Date.now();

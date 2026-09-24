@@ -17,10 +17,8 @@
 
   "edge": {
     "admin": "${PUBLIC_BASE_URL:-https://admin.highgeek.eu}",
-    "identity": "${PUBLIC_BASE_URL:-https://admin.highgeek.eu}",
     "content": "${PUBLIC_BASE_URL:-https://admin.highgeek.eu}",
-    "siteHost": "${PUBLIC_BASE_URL:-https://admin.highgeek.eu}",
-    "spaRedirectUri": "${PUBLIC_BASE_URL:-https://admin.highgeek.eu}/auth/callback"
+    "siteHost": "${PUBLIC_BASE_URL:-https://admin.highgeek.eu}"
   },
 
   // Reached only when running with --via ssh:<host>, from a k6 container attached to
@@ -28,19 +26,15 @@
   // on a deployed host the application services publish none.
   "internal": {
     "admin": "http://admin-api:8080",
-    "identity": "http://identity:8080",
     "content": "http://content-api:8080",
-    "siteHost": "http://site-host:8080",
-    "spaRedirectUri": "${PUBLIC_BASE_URL:-https://admin.highgeek.eu}/auth/callback"
+    "siteHost": "http://site-host:8080"
   },
 
   "ssh": "${DCMS_VPS1_SSH:-vps1}",
 
   "auth": {
     "username": "${DCMS_LOADTEST_USER}",
-    "password": "${DCMS_LOADTEST_PASSWORD}",
-    "clientId": "dcms-admin-spa",
-    "scope": "openid profile email roles dcms.admin offline_access"
+    "password": "${DCMS_LOADTEST_PASSWORD}"
   },
 
   "seed": {

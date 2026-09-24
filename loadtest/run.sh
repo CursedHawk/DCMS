@@ -95,29 +95,23 @@ FIXTURES="$REPO/loadtest/fixtures/$PROFILE.json"
 # that starts exactly when k6 does can miss the sample that contains the ramp.
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-# Scenarios that drive the admin plane need a bearer token. Minted here rather than at
-# seed time because the access-token lifetime is ten minutes: see lib/mint-token.mjs.
+# Scenarios that drive the admin plane need an edge session (lib/mint-session.mjs): the
+# admin host is behind the edge BFF, which strips a client's bearer and attaches its own.
+# The edge refreshes the tokens behind the session, so there is no run-length limit.
 # ---------------------------------------------------------------------------
-ACCESS_TOKEN=""
+ADMIN_SESSION=""
 case "$SCENARIO" in
     admin|publish|media|sitebuild|mixed)
-        # Reject a run that cannot finish inside one token rather than producing a bundle
-        # whose second half is 401s.
-        total_seconds=$(node -e '
-            const s = (v) => /^(\d+)(s|m|h)$/.exec(v);
-            const to = (v) => { const m = s(v); if (!m) return 0;
-                return +m[1] * ({ s: 1, m: 60, h: 3600 })[m[2]]; };
-            console.log(to(process.argv[1]) + to(process.argv[2]) + 10);
-        ' "$DURATION" "$RAMP")
-        if [ "$total_seconds" -gt 480 ]; then
-            echo "Refusing: '$SCENARIO' needs a bearer token, and this run is ${total_seconds}s." >&2
-            echo "Access tokens live 600s and are not refreshed mid-run. Keep ramp+duration under 8m." >&2
-            rmdir "$OUT" 2>/dev/null
-            exit 2
+        # Internal mode skips the edge, and the edge is the only thing that turns a session
+        # into a bearer admin-api accepts. No client can mint that token itself any more.
+        if [ "$MODE" = "internal" ]; then
+            echo "Refusing: '$SCENARIO' drives the admin plane, which is reachable only through the" >&2
+            echo "edge BFF (ADR 0014). Internal mode is for delivery, sitehost and ratelimit." >&2
+            rmdir "$OUT" 2>/dev/null; exit 2
         fi
         echo
-        echo "== minting access token"
-        ACCESS_TOKEN="$(node "$REPO/loadtest/lib/mint-token.mjs" --env "$ENVNAME" --inspect)" || {
+        echo "== signing in through the edge"
+        ADMIN_SESSION="$(node "$REPO/loadtest/lib/mint-session.mjs" --env "$ENVNAME")" || {
             echo "could not sign in -- check DCMS_LOADTEST_USER / DCMS_LOADTEST_PASSWORD" >&2
             rmdir "$OUT" 2>/dev/null; exit 1; }
         ;;
@@ -126,7 +120,7 @@ esac
 START=$(( $(date -u +%s) - 30 ))
 
 K6_ENV=(
-    -e "ACCESS_TOKEN=$ACCESS_TOKEN"
+    -e "ADMIN_SESSION=$ADMIN_SESSION"
     -e "PROFILE=$PROFILE" -e "MODE=$MODE"
     -e "CONTENT_BASE=$CONTENT_BASE" -e "SITEHOST_BASE=$SITEHOST_BASE" -e "ADMIN_BASE=$ADMIN_BASE"
     -e "VUS=$VUS" -e "DURATION=$DURATION" -e "RAMP=$RAMP"
@@ -190,6 +184,9 @@ if [ "$COLLECT" = "1" ]; then
 else
     COLLECT_STATUS=0
 fi
+# One flamegraph per service is unreadable in a terminal; top.txt is the per-service self-time
+# table to start from. Runs here, not on the host, because the host is not assumed to have node.
+[ -d "$OUT/profiles" ] && node "$REPO/loadtest/collect/profiles-top.mjs" "$OUT"
 
 # ---------------------------------------------------------------------------
 # The manifest is what makes a bundle readable months later: which commit, which profile,

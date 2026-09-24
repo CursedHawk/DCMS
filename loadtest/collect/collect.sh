@@ -124,6 +124,28 @@ fi
 
 # ---------------------------------------------------------------------------
 echo
+echo "== pyroscope (CPU profile per service)"
+# ---------------------------------------------------------------------------
+# What the traces cannot say: where CPU went INSIDE a process that no span covers -- GC,
+# serialization, a hot loop between two instrumented calls. One flamegraph per service for
+# the window; run.sh turns them into profiles/top.txt (self time by function).
+# A fixed list rather than asking Pyroscope: its label-values GET answers 400, and a service
+# that pushed nothing should show up here as a WARN, not silently drop out of the list.
+mkdir -p "$OUT/profiles"
+PROFILE_TYPE='process_cpu:cpu:nanoseconds:cpu:nanoseconds'
+for svc in identity admin-api content-api ai-gateway media-worker site-builder site-host email-worker edge platform-api; do
+    q="$(urlencode "$PROFILE_TYPE{service_name=\"$svc\"}")"
+    fetch "http://pyroscope:4040/pyroscope/render?query=$q&from=$START&until=$END&format=json" \
+        > "$OUT/profiles/$svc.json"
+    if grep -q '"numTicks":[1-9]' "$OUT/profiles/$svc.json" 2>/dev/null; then
+        ok "profile $svc"
+    else
+        warn "profile $svc: no CPU samples in window"
+    fi
+done
+
+# ---------------------------------------------------------------------------
+echo
 echo "== loki (warnings and errors)"
 # ---------------------------------------------------------------------------
 # Loki wants nanoseconds. Labels are what alloy's docker scrape sets: source/service/container.

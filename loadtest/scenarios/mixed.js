@@ -18,10 +18,9 @@
 
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { deliveryTarget, siteTarget, pickTenant, thresholds } from '../lib/k6.js';
+import { adminHeaders, deliveryTarget, hasSession, siteTarget, pickTenant, thresholds } from '../lib/k6.js';
 
 const BASE = __ENV.ADMIN_BASE;
-const TOKEN = __ENV.ACCESS_TOKEN;
 const VUS = Number(__ENV.VUS || 30);
 const DURATION = __ENV.DURATION || '5m';
 
@@ -82,9 +81,9 @@ export function reader() {
 }
 
 export function operator() {
-  if (!TOKEN) return;
+  if (!hasSession) return;
   const tenant = pickTenant(__ITER);
-  const headers = { Authorization: `Bearer ${TOKEN}`, 'X-Dcms-Tenant': tenant.slug };
+  const headers = adminHeaders(tenant);
   check(http.get(`${BASE}/api/admin/content?instanceId=${tenant.instanceId}&contentType=${tenant.contentType}`,
     { headers, tags: { surface: 'admin', endpoint: 'content' } }), { 'content 200': (r) => r.status === 200 });
   check(http.get(`${BASE}/api/admin/media`, { headers, tags: { surface: 'admin', endpoint: 'media' } }),
@@ -95,12 +94,9 @@ export function operator() {
 }
 
 export function author() {
-  if (!TOKEN) return;
+  if (!hasSession) return;
   const tenant = pickTenant(__ITER);
-  const headers = {
-    Authorization: `Bearer ${TOKEN}`, 'X-Dcms-Tenant': tenant.slug,
-    'Content-Type': 'application/json',
-  };
+  const headers = { ...adminHeaders(tenant), 'Content-Type': 'application/json' };
   const slug = `mixed-${__VU}-${__ITER}-${Date.now()}`;
   const created = http.post(`${BASE}/api/admin/content`, JSON.stringify({
     pluginInstanceId: tenant.instanceId,

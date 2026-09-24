@@ -18,10 +18,9 @@
 import http from 'k6/http';
 import { check, fail, sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
-import { pickTenant, thresholds } from '../lib/k6.js';
+import { adminHeaders, pickTenant, requireSession, thresholds } from '../lib/k6.js';
 
 const BASE = __ENV.ADMIN_BASE;
-const TOKEN = __ENV.ACCESS_TOKEN;
 const PROFILE = __ENV.PROFILE || 'local';
 
 // open() is init-context only and returns an ArrayBuffer for binary reads. The seeder
@@ -58,13 +57,13 @@ export const options = {
 };
 
 export function setup() {
-  if (!TOKEN) fail('ACCESS_TOKEN is empty; run this through loadtest/run.sh');
+  requireSession();
 }
 
 export default function () {
   const tenant = pickTenant(__ITER);
   const image = images[__ITER % images.length];
-  const auth = { Authorization: `Bearer ${TOKEN}`, 'X-Dcms-Tenant': tenant.slug };
+  const auth = adminHeaders(tenant);
 
   const uploaded = http.post(`${BASE}/api/admin/media`, {
     file: http.file(image.bytes, `loadtest-${__VU}-${__ITER}-${image.name}`, 'image/png'),

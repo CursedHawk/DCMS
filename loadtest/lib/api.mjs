@@ -8,12 +8,15 @@
  * and TenantMembershipMiddleware 403s a caller who names a tenant they are not a member
  * of. A SuperAdmin passes, which is why seeding runs as one.
  */
-export class AdminApi {
-  #base; #token; #tenant;
+import { sessionHeaders } from './auth.mjs';
 
-  constructor({ base, token, tenant = null }) {
+export class AdminApi {
+  #base; #session; #tenant;
+
+  /** @param session from edgeSession() -- the admin plane takes the edge's cookie, not a bearer. */
+  constructor({ base, session, tenant = null }) {
     this.#base = base.replace(/\/$/, '');
-    this.#token = token;
+    this.#session = session;
     this.#tenant = tenant;
   }
 
@@ -24,14 +27,14 @@ export class AdminApi {
    *   nothing and every tenant-scoped endpoint then behaves as if none was selected.
    */
   forTenant(identifier) {
-    return new AdminApi({ base: this.#base, token: this.#token, tenant: identifier });
+    return new AdminApi({ base: this.#base, session: this.#session, tenant: identifier });
   }
 
   async request(method, path, { body, headers = {}, raw = false, expect } = {}) {
     const init = {
       method,
       headers: {
-        authorization: `Bearer ${this.#token}`,
+        ...sessionHeaders(this.#session),
         ...(this.#tenant ? { 'X-Dcms-Tenant': this.#tenant } : {}),
         ...headers,
       },

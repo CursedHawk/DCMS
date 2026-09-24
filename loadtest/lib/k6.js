@@ -101,3 +101,33 @@ export function thresholds(extra = {}) {
     ...extra,
   };
 }
+
+/**
+ * The admin plane's credential: the edge session run.sh minted (lib/mint-session.mjs), as
+ * {cookie, csrf, origin}. Parsed once per VU at init.
+ *
+ * Not a bearer token. The edge strips a client's Authorization header on the admin host's
+ * /api and attaches the session's own (ADR 0014), and it refuses a non-GET that lacks the
+ * session's CSRF token or a same-origin Origin. These are the headers the console sends.
+ */
+const SESSION = __ENV.ADMIN_SESSION ? JSON.parse(__ENV.ADMIN_SESSION) : null;
+
+export function requireSession() {
+  if (!SESSION) {
+    throw new Error('ADMIN_SESSION is empty. run.sh mints one for this scenario; running k6 by hand '
+      + 'needs: -e ADMIN_SESSION="$(node loadtest/lib/mint-session.mjs --env <env>)"');
+  }
+}
+
+/** Headers for one admin-api request as the console would send it, scoped to a tenant. */
+export function adminHeaders(tenant) {
+  return {
+    Cookie: SESSION.cookie,
+    'X-Dcms-Csrf': SESSION.csrf,
+    Origin: SESSION.origin,
+    'X-Dcms-Tenant': tenant.slug,
+  };
+}
+
+/** For a scenario whose admin traffic is optional (mixed): run it only with a session. */
+export const hasSession = SESSION !== null;
