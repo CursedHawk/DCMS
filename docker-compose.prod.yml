@@ -24,7 +24,8 @@ x-prod-env: &prod-env
   ASPNETCORE_ENVIRONMENT: "Production"
   DOTNET_ENVIRONMENT: "Production"
   DCMS_REFUSE_DEV_VAULT: "true"
-  ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=${POSTGRES_PASSWORD}"
+  # No ConnectionStrings__Postgres (ADR 0015 phase 5). Only the migrate jobs below hold the
+  # owner; every service names its own role. ComposeOwnerConnectionTests holds it there.
   ConnectionStrings__Redis: "redis:6379,password=${REDIS_PASSWORD}"
   Nats__Url: "nats://app:${NATS_APP_PASSWORD}@nats:4222"
   Storage__Endpoint: "minio:9000"
@@ -216,6 +217,7 @@ services:
       # none, so an empty one here means the deploy did not run and the role would
       # otherwise be converged to a password published in this repository.
       APP_DB_PASSWORD: "${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
+      IDENTITY_DB_PASSWORD: "${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
       GRAFANA_DB_PASSWORD: "${GRAFANA_DB_PASSWORD}"
       RLS_DB_PASSWORD: "${RLS_DB_PASSWORD:-}"
 
@@ -225,10 +227,12 @@ services:
   migrate:
     environment:
       <<: *prod-env
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=${POSTGRES_PASSWORD}"
 
   identity-migrate:
     environment:
       <<: *prod-env
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=${POSTGRES_PASSWORD}"
       # The issuer is the AUTH host, not the admin console's. Every resource server validates
       # `iss` against this, so changing it invalidates tokens minted before the change -- one
       # forced re-login, and unavoidable when authentication moves.
@@ -239,6 +243,10 @@ services:
   identity:
     environment:
       <<: *prod-env
+      # ADR 0015 phase 5: its own role, dcms_identity (infra/postgres/init/07-identity-role.sh),
+      # with DML on identity and dataprotection and an INSERT on the audit outbox. Not dcms_app,
+      # which would put password hashes and tokens in reach of every tenant-facing service.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_identity;Password=${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
       # The console is served from its own host but signs in against THIS issuer, so its
       # discovery, token and userinfo calls are cross-origin and need naming here. It went in
       # on content-api by mistake first: the console's sign-in failed at the very first fetch

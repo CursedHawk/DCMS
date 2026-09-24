@@ -219,6 +219,8 @@ if [ "$ENVIRONMENT" != "local" ]; then
   # change and not also a "first invent a password" step -- the kind that silently never
   # happens. postgres-bootstrap converges the role to whatever is here on every deploy.
   ensure_env_secret APP_DB_PASSWORD
+  # identity's own runtime role (ADR 0015 phase 5), for the same reason.
+  ensure_env_secret IDENTITY_DB_PASSWORD
 fi
 
 # `config` fully resolves the overlay set and every substitution. If the files

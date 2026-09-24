@@ -226,5 +226,18 @@ public static class AuditSchemaConfigurator
         {
             logger.LogDebug(ex, "Audit grants to dcms_rls skipped (role absent).");
         }
+
+        // identity's runtime role writes its audit records here and nowhere else in this schema
+        // (ADR 0015 phase 5). postgres-bootstrap grants it too, but on a fresh cluster it runs
+        // before this table exists, so the grant belongs to the job that creates it.
+        const string identityGrantSql = "GRANT SELECT, INSERT ON audit.audit_outbox TO dcms_identity;";
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(identityGrantSql, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "Audit outbox grant to dcms_identity skipped (role absent).");
+        }
     }
 }

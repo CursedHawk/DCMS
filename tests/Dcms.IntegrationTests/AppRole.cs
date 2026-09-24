@@ -1,9 +1,10 @@
 namespace Dcms.IntegrationTests;
 
 /// <summary>
-/// ADR 0015's runtime role, <c>dcms_app</c> (<c>NOBYPASSRLS</c>), for fixtures that boot a
-/// service the way it runs after phase 4. Call <see cref="GrantAsync"/> after admin-api has
-/// migrated as the owner, as the migrate job does; it is <c>06-app-role.sh</c>'s part.
+/// ADR 0015's runtime roles, for fixtures that boot a service the way it runs in a deploy:
+/// <c>dcms_app</c> (<c>NOBYPASSRLS</c>) for the services that read tenant data, and
+/// <c>dcms_identity</c> for identity. Grant after the owner has migrated, as the migrate jobs do;
+/// this is the part <c>06-app-role.sh</c> and <c>07-identity-role.sh</c> play.
 /// </summary>
 public static class AppRole
 {
@@ -48,10 +49,38 @@ public static class AppRole
             GRANT EXECUTE ON FUNCTION audit.drop_sealed_partition(date) TO dcms_app;
             """);
 
+        await ExecuteAsync(ownerConnectionString, sql.ToString());
+    }
+
+    private const string IdentityPassword = "dcms-identity-test";
+
+    /// <summary>identity's own runtime role, <c>dcms_identity</c> (ADR 0015 phase 5).</summary>
+    public static string IdentityConnectionString(string ownerConnectionString) =>
+        new Npgsql.NpgsqlConnectionStringBuilder(ownerConnectionString)
+        {
+            Username = "dcms_identity",
+            Password = IdentityPassword,
+        }.ConnectionString;
+
+    /// <summary>Kept in step with infra/postgres/init/07-identity-role.sh.</summary>
+    public static Task GrantIdentityAsync(string ownerConnectionString) => ExecuteAsync(ownerConnectionString, $$"""
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dcms_identity') THEN
+                CREATE ROLE dcms_identity LOGIN PASSWORD '{{IdentityPassword}}' NOSUPERUSER NOBYPASSRLS;
+            END IF;
+        END $$;
+        GRANT USAGE ON SCHEMA identity, dataprotection, audit TO dcms_identity;
+        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA identity, dataprotection TO dcms_identity;
+        GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA identity, dataprotection TO dcms_identity;
+        GRANT SELECT, INSERT ON audit.audit_outbox TO dcms_identity;
+        """);
+
+    private static async Task ExecuteAsync(string ownerConnectionString, string sql)
+    {
         await using var connection = new Npgsql.NpgsqlConnection(ownerConnectionString);
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
-        command.CommandText = sql.ToString();
+        command.CommandText = sql;
         await command.ExecuteNonQueryAsync();
     }
 }

@@ -32,7 +32,11 @@ x-otel-env: &otel-env
 
 x-service-env: &service-env
   <<: *otel-env
-  ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev"
+  # No ConnectionStrings__Postgres here (ADR 0015 phase 5): the table owner is not a default
+  # anything inherits. Each service names its role -- dcms_app, dcms_identity, or one of the
+  # least-privilege roles -- and only the migrate jobs, plus admin-api and identity in this dev
+  # file because here they migrate at startup, name the owner. ComposeOwnerConnectionTests
+  # holds it there.
   ConnectionStrings__Redis: "redis:6379"
   Nats__Url: "nats://nats:4222"
   Storage__Endpoint: "minio:9000"
@@ -276,6 +280,8 @@ services:
           - dcms-identity
     environment:
       <<: *service-env
+      # The owner, in dev only: here it migrates at startup. Production overrides this.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev"
       Identity__Issuer: "http://dcms-identity:8080/"
       Identity__AllowInsecureHttp: "true"
       Identity__Spa__RedirectUris: "http://localhost:5173/auth/callback;http://localhost:5000/auth/callback"
@@ -327,6 +333,7 @@ services:
       SITEBUILDER_DB_PASSWORD: "dcms-sitebuilder-dev"
       EDGE_DB_PASSWORD: "dcms-edge-dev"
       APP_DB_PASSWORD: "dcms-app-dev"
+      IDENTITY_DB_PASSWORD: "dcms-identity-dev"
       GRAFANA_DB_PASSWORD: "dcms-grafana-dev"
       RLS_DB_PASSWORD: "dcms-rls-dev"
 
@@ -358,6 +365,8 @@ services:
         condition: service_started
     environment:
       <<: *service-env
+      # The owner: this job runs the DDL. See x-service-env.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev"
       # The job migrates regardless of these; they are set so the job's configuration
       # matches the services' and a Vault lookup failure surfaces here, in a job whose
       # exit code stops the deploy, rather than later in a rolling service.
@@ -378,6 +387,8 @@ services:
         condition: service_started
     environment:
       <<: *service-env
+      # The owner: this job runs the DDL. See x-service-env.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev"
       Identity__Issuer: "http://dcms-identity:8080/"
       Identity__AllowInsecureHttp: "true"
       Identity__Spa__RedirectUris: "http://localhost:5173/auth/callback;http://localhost:5000/auth/callback"
@@ -428,6 +439,8 @@ services:
     mem_limit: "${ADMIN_API_MEM_LIMIT:-768m}"
     environment:
       <<: *service-env
+      # The owner, in dev only: here it migrates at startup. Production overrides this.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev"
       Auth__Authority: "http://dcms-identity:8080/"
       Auth__Audience: "dcms-admin-api"
       ServiceClient__TokenEndpoint: "http://dcms-identity:8080/connect/token"

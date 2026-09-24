@@ -291,7 +291,7 @@ TS, reaches the hub through site-host's `/hub` proxy).
   cross-tenant work). Defense-in-depth on top of the EF query filters. Services on the
   owner connection are unaffected; `dcms_rls` (read-only, no BYPASSRLS) is what the
   isolation test uses, and `dcms_app` (DML, no BYPASSRLS) is the runtime role the
-  services move onto in ADR 0015 phase 4 — every service that reads tenant data runs as it now (admin-api only in production; in dev it migrates at startup and stays the owner). **A service on
+  services move onto in ADR 0015 phase 4 — every service that reads tenant data runs as it now (admin-api only in production; in dev it migrates at startup and stays the owner). identity runs as `dcms_identity`. Only the migrate jobs connect as the owner, `dcms`. **A service on
   `dcms_app` that shows blank pages or unprocessed jobs has lost its tenant, not its
   data:** move it back by deleting its `ConnectionStrings__Postgres` and `Rls__Enforce`
   lines in `docker-compose.yml` and `docker-compose.prod.yml`, and push. Gate with

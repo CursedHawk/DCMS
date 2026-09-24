@@ -11,9 +11,7 @@
 # That split is deliberate beyond least privilege: a service that cannot ALTER a table
 # cannot accidentally run one at startup against a half-rolled cluster.
 #
-# NOT YET IN USE. Phase 1 of ADR 0015 creates the role and the grants; the services move
-# onto it one at a time in phase 4, by changing one connection string each. Until then this
-# is a role nothing logs in as, which is exactly what makes phase 1 safe to ship.
+# admin-api, content-api, site-host, media-worker and ai-gateway run as it (ADR 0015 phase 4).
 #
 # Re-applied on every deploy by the postgres-bootstrap job, so it is written idempotently.
 set -e

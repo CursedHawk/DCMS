@@ -1,6 +1,6 @@
 # ADR 0015: The database enforces tenant isolation, not just the ORM
 
-**Status:** accepted (2026-09-22) · **Supersedes the deferral in [ADR 0005](0005-rls-defense-in-depth.md)**
+**Status:** accepted (2026-09-22) · implemented (2026-09-24) · **Supersedes the deferral in [ADR 0005](0005-rls-defense-in-depth.md)**
 
 ## Context
 
@@ -294,7 +294,28 @@ shippable, reversible, and leaves the platform working.
    hold the owner connection, identity is the only one left, and its tables carry no tenant.
 
 5. **Remove the owner connection from the service environment** once every service is
-   across, leaving `dcms` to the migration jobs alone.
+   across, leaving `dcms` to the migration jobs alone. ✅ *Landed.*
+
+   The owner string is out of both shared compose anchors, so no service inherits it. The
+   migrate jobs name it, and so do admin-api and identity in the dev file only, because
+   there they migrate at startup. `ComposeOwnerConnectionTests` reads the compose files and
+   fails if anything else holds it, including an anchor, which is the shape this replaced.
+
+   identity was the last service on it, and it did not go to `dcms_app`. Its schema holds
+   password hashes and OpenIddict tokens, and `dcms_app` is the role every tenant-facing
+   service shares. It gets `dcms_identity` (`07-identity-role.sh`): DML on `identity` and
+   `dataprotection`, and SELECT, INSERT on `audit.audit_outbox`. The migrate job repeats the
+   outbox grant, because on a fresh cluster the table does not exist when bootstrap runs.
+   Its fixture now migrates as the owner and runs the service as `dcms_identity`. Both of
+   its grants turned out to be invisible to the existing tests. An audit write that fails
+   does not fail the request, and the cookie tests bring their own key ring. So
+   `IdentityRuntimeRoleTests` checks each: an issued token reaches the outbox, and the key
+   ring round-trips. Each fails with its grant withheld.
+
+   Also found: `06-app-role.sh` granted on `dataprotection` and `platform`, which
+   `00-schemas.sql` never created. vps1 had them from earlier migrations, but on a fresh
+   cluster bootstrap runs first, so the first deploy to a new host would have stopped
+   there. Both are now created up front.
 
 The soak between phases is not ceremony. ADR 0014 staged the same way and the soak is
 what caught the edge refusing every WebSocket handshake — a failure no test in the
@@ -313,8 +334,7 @@ repository would have produced.
 - `IgnoreQueryFilters()` stops being sufficient on its own. After phase 3 it means
   "this query is not filtered by EF", not "this query sees everything" — which is a
   distinction the codebase has to keep straight, and the sweep test is what keeps it.
-- The audit's ARCH-01 closes with phase 5, not before. Until then this ADR is the plan
-  and the phases are the status.
+- The audit's ARCH-01 closed with phase 5.
 
 ## Alternatives considered
 

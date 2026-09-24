@@ -19,6 +19,10 @@ CREATE SCHEMA IF NOT EXISTS notifications;
 -- them: a certificate belongs to a hostname, and which tenant owns that hostname is already
 -- recorded (and already tenant-filtered) in tenancy.domains.
 CREATE SCHEMA IF NOT EXISTS edge;
+-- Created by EF migrations too, but the role scripts (06, 07) grant on them and run before
+-- any migration on a fresh cluster; without these the first deploy to a new host fails there.
+CREATE SCHEMA IF NOT EXISTS dataprotection;
+CREATE SCHEMA IF NOT EXISTS platform;
 
 -- Read-only reporting views for Grafana. Owned by the superuser, exposed to dcms_grafana
 -- and to nobody else; see infra/postgres/init/03-observability-role.sh.

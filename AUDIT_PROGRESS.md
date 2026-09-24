@@ -3,7 +3,7 @@
 ## Overall Status
 
 * Started: 2026-09-17
-* Last updated: 2026-09-22 (session 1 + open-point verification pass + remediation passes 1-6; the deferred set is now ARCH-01 alone)
+* Last updated: 2026-09-24 (session 1 + open-point verification pass + remediation passes 1-6; ARCH-01 closed by ADR 0015, so nothing is deferred)
 * Audited commit: `22816b6` (master)
 * Overall completion estimate: 100% (all map areas have a status; depth varies — see report §Audit Coverage)
 * Projects/components identified: 78 (from REPOSITORY_MAP.md §15)
@@ -205,13 +205,13 @@ Legend: **[fixed]** = remediated in the working tree (not committed/deployed); *
 * MISS-01 — No way to remove a workspace member (MEDIUM, VERIFIED) **[fixed]**
 * DEP-01 — 21 high npm transitive advisories (MEDIUM) **[fixed]** — react-router in the tenant template; 13 HIGH admin-only transitives pinned via `pnpm-workspace.yaml` overrides; and the three that needed a major taken as majors (vitest 3→4, `@scalar/api-reference-react` 0.7→0.9 which brings `@unhead/vue` 2 and drops ts-deepmerge, plus undici/@ai-sdk/provider-utils overrides for what 0.9 pulled in). `pnpm audit`: no known vulnerabilities, from 37
 * DEAD-01 — Inert plugin custom-endpoint interface + unwired edge.routes overlay (LOW) **[fixed]** — both dead surfaces removed; `edge.routes` table dropped (`DropEdgeRoutesOverlay` migration)
-* ARCH-01 — RLS not forced; EF query filters are the sole runtime tenant guard (INFORMATIONAL) **[in progress — ADR 0015]** — it was always an ADR-level change rather than a bug, and it now has one: `docs/adr/0015-forced-rls.md` takes the services off the owner connection in five staged deploys. Phases 1 (the `dcms_app` role, the `platform_scope` policy, isolation tests against that role), 2 (the GUC interceptor, behind `Rls:Enforce`, off everywhere) and 3 (every `IgnoreQueryFilters()` site and background entry point decided, `RlsScope.Tenant`/`Platform`, proven by the AdminApi suite passing as `dcms_app` under `DCMS_TEST_RLS_ENFORCE=1`) are landed and inert; phase 4 is complete: audit partition DDL goes through owner-defined `SECURITY DEFINER` functions, the audit log's readers are scoped, and every service that reads tenant data (admin-api, content-api, site-host, media-worker, ai-gateway) now runs as `dcms_app` with enforcement on. The finding closes at phase 5
+* ARCH-01 — RLS not forced; EF query filters are the sole runtime tenant guard (INFORMATIONAL) **[fixed — ADR 0015]** — the services no longer connect as the table owner. Every service that reads tenant data runs as `dcms_app` (`NOBYPASSRLS`) with `TenantGucInterceptor` telling the database whose request it is; identity runs as its own `dcms_identity`; only the migrate jobs hold `dcms`, which `ComposeOwnerConnectionTests` holds in place. Cross-tenant work is explicit (`RlsScope.Platform`) and per-event work acts as its tenant (`RlsScope.Tenant`), guarded by `RlsScopeCoverageTests`; audit partition DDL runs through owner-defined `SECURITY DEFINER` functions. Evidence is runs, not greps: the AdminApi collection runs as `dcms_app` by default, and the media-worker, ai-gateway, site-host, content-api and identity fixtures run their services under their production roles, each with its scopes mutation-checked. Five deploys, each soaked.
 * SEC-15 — RLS policy on `audit.audit_events` did not cover its monthly partitions, which `dcms_rls` holds a default-privilege SELECT on (MEDIUM, VERIFIED, found in remediation pass 5) **[fixed]** — partitions protected with their parents and at creation; `ApplyAsync` now verifies against `pg_class`/`pg_policy` instead of logging an array length
 
 ## Remediation Status
 
-Six remediation passes fixed every actionable finding. One remains open (ARCH-01), architectural,
-and is now staged as ADR 0015 rather than deferred indefinitely.
+Six remediation passes fixed every actionable finding. The one architectural finding, ARCH-01,
+is closed by ADR 0015.
 
 Verification on this build-only box: whole-solution `dotnet build` clean, 0 warnings;
 **358 unit tests**; the integration suite under filters (`~Rls` 5, `~Audit` 59, `~Tenancy` 4);
@@ -249,6 +249,6 @@ review found in the live-preview API proxy.
   service refuses to start when Vault is unreachable or sealed, and vps1 auto-unseals. The four
   services sharing that ring are all-or-nothing, which `KeyRingWrappingWiringTests` now asserts
   against the source rather than a hand-written list.
-* **In progress (1):** ARCH-01's forced RLS — an ADR-level decision rather than a defect, and now ADR 0015, staged over five deploys with phases 1–3 landed and phase 4 under way (phase 4 complete: every tenant-reading service moved; phase 5, removing the owner connection from service environments, remains). SEC-10's localStorage→BFF migration is **done** (ADR 0014): designed, staged over five deploys, soaked on vps1 between the cutover and the fallback removal. The soak earned its place — it caught the edge refusing every WebSocket handshake, because a handshake over HTTP/2 is an extended CONNECT rather than a GET.
+* **Closed by ADR (1):** ARCH-01's forced RLS — an ADR-level decision rather than a defect, delivered as ADR 0015 over five staged, soaked deploys. SEC-10's localStorage→BFF migration is **done** (ADR 0014): designed, staged over five deploys, soaked on vps1 between the cutover and the fallback removal. The soak earned its place — it caught the edge refusing every WebSocket handshake, because a handshake over HTTP/2 is an extended CONNECT rather than a GET.
 * **New dependency:** `HtmlSanitizer` 9.2.1039 (Ganss/AngleSharp), pinned in `Directory.Packages.props`, referenced by `Dcms.Shared.Security` — the only package added.
 * **Regression tests added:** `/internal` edge 404 (SEC-03, `EdgeHttpPlaneTests`); escalation-subset rule (SEC-06, `TenancyIsolationTests`); lock + password change revoke live tokens/authorizations and rotate the stamp (SEC-05, `SessionRevocationTests`); a push that lands mid-build gets exactly one catch-up build, none when the head is unchanged or one is in flight (BUG-01, `ReleaseCatchUpTests`); exact-byte range delivery against MinIO (PERF-01, `HlsServingTests`). RLS coverage and partition protection, with the catalogue as the oracle (SEC-15, `RlsCoverageTests`). SEC-05 and BUG-01 are mutation-checked (each fails with its fix removed), as are both SEC-15 policy tests (each drops a policy and asserts the named failure); the PERF-01 test failed on a real SDK bug before its fix landed.
