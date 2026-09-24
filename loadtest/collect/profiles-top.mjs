@@ -6,10 +6,15 @@
 //
 // Self time, not total: the total of `Main` is 100 % and says nothing. The function where the
 // CPU was actually spent is the one worth reading -- then open the flamegraph in Grafana
-// (Explore -> Profiles) for the path that led there.
+// (Explore -> Profiles) for the path that led there. Idle waits are split out, below.
 
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+
+// Frames where a thread is waiting rather than working: the thread pool spinning before it parks,
+// blocking waits. They dominate an idle service's self time and say nothing about the workload, so
+// they are totalled separately and kept out of the ranking.
+const IDLE = /LowLevelLifoSemaphore\.(Wait|WaitForSignal)|WaitHandle\.WaitOne|Monitor\.Wait|Thread\.Sleep|SpinWait|epoll_wait/;
 
 const [dir, topArg] = process.argv.slice(2);
 if (!dir) { console.error('usage: profiles-top.mjs <run-dir> [top-n]'); process.exit(2); }
@@ -33,10 +38,12 @@ for (const file of (await readdir(profiles)).filter((f) => f.endsWith('.json')).
       }
     }
   }
-  // process_cpu ticks are nanoseconds of CPU.
-  out.push(`== ${service}: ${(fb.numTicks / 1e9).toFixed(1)} CPU-s in window`);
-  for (const [name, ticks] of [...self].sort((a, b) => b[1] - a[1]).slice(0, TOP)) {
-    out.push(`${(100 * ticks / fb.numTicks).toFixed(1).padStart(5)} %  ${(ticks / 1e9).toFixed(2).padStart(7)} s  ${name}`);
+  // process_cpu ticks are nanoseconds of CPU. Percentages are of the BUSY time.
+  const idle = [...self].filter(([n]) => IDLE.test(n)).reduce((sum, [, t]) => sum + t, 0);
+  const busy = fb.numTicks - idle;
+  out.push(`== ${service}: ${(busy / 1e9).toFixed(1)} busy CPU-s in window (+${(idle / 1e9).toFixed(1)} s idle-waiting)`);
+  for (const [name, ticks] of [...self].filter(([n]) => !IDLE.test(n)).sort((a, b) => b[1] - a[1]).slice(0, TOP)) {
+    out.push(`${(100 * ticks / Math.max(busy, 1)).toFixed(1).padStart(5)} %  ${(ticks / 1e9).toFixed(2).padStart(7)} s  ${name}`);
   }
   out.push('');
 }
