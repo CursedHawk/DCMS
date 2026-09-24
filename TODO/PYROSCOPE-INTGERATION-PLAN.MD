@@ -87,7 +87,7 @@ Verified locally (2026-09-24) before shipping:
 - Grafana has basic auth off and a `Secure` session cookie: to hit its API in a test, POST
   `/login` and send `grafana_session` as an explicit `Cookie:` header.
 
-## Phase 2 — profiler in every image — 🟡 9 of 10 shipped, edge left
+## Phase 2 — profiler in every image — ✅ all 10
 
 Shape (identical in every Dockerfile — copy it from `src/Services/Dcms.EmailWorker/Dockerfile`):
 - A `pyroscope` stage on the sdk image downloads the pinned 1.5.1 tarball, checks its sha256
@@ -109,7 +109,13 @@ Shape (identical in every Dockerfile — copy it from `src/Services/Dcms.EmailWo
       site-host. platform-api is the tightest (106 of 256 MiB at baseline, so ~120 expected).
 - [x] `migrate` / `identity-migrate`: `CORECLR_ENABLE_PROFILING: "0"` — they reuse the
       admin-api / identity images and would otherwise land in those services' profiles.
-- [ ] **edge** (sole ingress), after the eight are confirmed.
+- [x] The eight confirmed on vps1 (2026-09-24 13:43 UTC, release `edda61a`): all healthy,
+      all nine in Pyroscope `LabelValues`. platform-api 114 of 256 MiB right after restart.
+      Warm-state RSS vs baseline still to re-measure (the restart reset every process).
+- [x] **edge** (sole ingress), shipped after the eight.
+- The first attempt (`72eb85c`) never deployed: edge's image build hit an Ubuntu mirror
+  mid-sync in its unchanged `apt-get` line; the next (`215d32e`) failed on MinIO's images
+  going 401 on quay.io — fixed by mirroring them into our registry (`edda61a`).
 - Watch: admin-api spawns `git` and site-builder the `docker` CLI; both inherit `LD_PRELOAD`.
   The ApiWrapper is meant to be preloaded process-wide and the docker CLI is static Go, but
   the conflict-resolve merge path in admin-api is the one to try after this deploy.
@@ -122,7 +128,7 @@ Shape (identical in every Dockerfile — copy it from `src/Services/Dcms.EmailWo
 Not verified locally: VPSM's disk was at 100 % (GitLab + registry live there), so no image
 builds on this box — vps1 via the pipeline is the test, which is what the canary is for.
 
-## Phase 3 — span profiles (trace → profile) — 🟡 shipped, confirm on vps1
+## Phase 3 — span profiles (trace → profile) — ✅
 
 - [x] `Pyroscope.OpenTelemetry` 0.5.1 (needs OpenTelemetry 1.16.0 — exactly ours) in
       `Directory.Packages.props` + `Dcms.Shared.Hosting`; the managed `Pyroscope` package is
@@ -131,8 +137,8 @@ builds on this box — vps1 via the pipeline is the test, which is what the cana
 - [x] `AddProcessor(new PyroscopeSpanProcessor())` in `AddDcmsServiceDefaults`, only when
       `CORECLR_ENABLE_PROFILING == "1"` — the same variable that is the kill switch, so turning
       the profiler off also detaches the processor.
-- [ ] On vps1: a Tempo span of a profiled service carries `pyroscope.profile.id` and its
-      "Profiles for this span" link opens a flame graph.
+- [x] On vps1: TraceQL `{ span.pyroscope.profile.id != nil }` returns admin-api and
+      platform-api traces minutes after the rollout.
 - Only traces the Alloy tail sampler keeps get a link. Fine.
 
 ## Phase 4 — verification + docs — ✅
