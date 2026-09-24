@@ -59,7 +59,7 @@ APP_SERVICES=(
 
 # Configuration arrives as a bind-mounted file. These must be force-recreated
 # after the tree is synced -- see lesson 3 above.
-CONFIG_MOUNTED_SERVICES=(alloy prometheus loki tempo grafana nats vault)
+CONFIG_MOUNTED_SERVICES=(alloy prometheus loki tempo pyroscope grafana nats vault)
 
 # Health-gated after a roll. The workers expose /health/live but carry no
 # inbound traffic, so a slow start is not an outage; they are still checked.
@@ -227,6 +227,16 @@ fi
 # disagree or a required variable is unset, this is where it surfaces -- before
 # anything is torn down.
 compose config --quiet || die "compose configuration is invalid; nothing was changed"
+
+# A named volume with `o: bind` fails to mount if its host directory is missing, and that
+# used to be a hand-run mkdir in infra/observability/README.md -- a runbook step, so the
+# first deploy after adding a store would have failed on it. Create any that are missing,
+# owned by the deploy user. Existing directories are left alone: Docker populates an EMPTY
+# named volume from the image, ownership included, which is what makes each store writable
+# by its own uid; nothing here may chown one that already holds data.
+while read -r bind_dir; do
+  [ -d "$bind_dir" ] || { mkdir -p "$bind_dir" && echo "  created volume directory $bind_dir"; }
+done < <(compose config 2>/dev/null | awk '$1 == "device:" { print $2 }')
 
 # DCMS_ENV / DCMS_HOST become Prometheus external_labels, stamped onto every series
 # this host stores and every alert it fires. dev and prod run identical stacks from

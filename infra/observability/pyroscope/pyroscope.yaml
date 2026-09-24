@@ -1,0 +1,37 @@
+# Pyroscope — continuous profiling store. Single binary, local filesystem, one tenant.
+# Plan and reasoning: TODO/PYROSCOPE-INTGERATION-PLAN.MD.
+#
+# Services push straight here (PYROSCOPE_SERVER_ADDRESS), not through Alloy: Alloy is already
+# near its memory limit, and profiles need nothing from it — no sampling, no relabelling.
+#
+# No auth and no published port. Grafana reaches it on the compose network, and Grafana is
+# behind the edge's operator sign-in; that is the only way in.
+
+# v2 only. v1-v2-dual (the default) exists to keep reading v1 data, and there is none here.
+architecture_storage: v2
+
+# Everything under /data, the pyroscope-data volume (the image's workdir is /, so the
+# defaults already resolve to /data/v2/...). Spelled out so the volume mount and the paths
+# cannot drift apart silently.
+storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/v2/shared
+metastore:
+  data_dir: /data/v2/metastore/data
+  raft:
+    dir: /data/v2/metastore/raft
+
+limits:
+  # Same 7 days as Tempo: a profile is mostly read next to the trace or the spike that sent
+  # someone looking, and the trace is gone after 7 d anyway.
+  retention_period: 7d
+  max_query_lookback: 7d
+
+# It would otherwise profile itself into its own store, which is disk spent on the one
+# process nobody is debugging.
+self_profiling:
+  disable_push: true
+
+analytics:
+  reporting_enabled: false

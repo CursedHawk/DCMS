@@ -436,6 +436,10 @@ volumes:
   tempo-data:
     driver: local
     driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/tempo }
+  # 7 d retention (pyroscope.yaml); budget 2 GB, half of Tempo's for the same window.
+  pyroscope-data:
+    driver: local
+    driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/pyroscope }
   grafana-data:
     driver: local
     driver_opts: { type: none, o: bind, device: /home/cursedhawk/dcms-data/grafana }

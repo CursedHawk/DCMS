@@ -66,6 +66,15 @@ datasources:
         tags:
           - key: service.name
             value: service
+      # Span profiles: a span that carries pyroscope.profile.id (PyroscopeSpanProcessor, CPU
+      # only) opens the flame graph of exactly that span. Without the id it falls back to the
+      # service's CPU profile over the span's time range.
+      tracesToProfiles:
+        datasourceUid: dcms-pyroscope
+        profileTypeId: "process_cpu:cpu:nanoseconds:cpu:nanoseconds"
+        tags:
+          - key: service.name
+            value: service_name
       serviceMap:
         datasourceUid: dcms-prometheus
       nodeGraph:
@@ -74,6 +83,14 @@ datasources:
         hide: false
       lokiSearch:
         datasourceUid: dcms-loki
+
+  # Continuous profiles from the in-process .NET profiler. Browse them in
+  # Explore → Profiles (the Profiles Drilldown app ships with Grafana).
+  - name: Pyroscope
+    type: grafana-pyroscope-datasource
+    uid: dcms-pyroscope
+    access: proxy
+    url: http://pyroscope:4040
 
   # The reporting plane. Metrics cannot answer "what is tenant X doing" without unbounded
   # cardinality; Postgres can, and the data is already there.

@@ -32,6 +32,7 @@ container that overran.
 | `prometheus` | `prom/prometheus:v3.7.3` | 512m | none |
 | `loki` | `grafana/loki:3.6.0` | 384m | none |
 | `tempo` | `grafana/tempo:2.10.0` | 384m | none |
+| `pyroscope` | `grafana/pyroscope:2.3.1` | 384m | none |
 | `alloy` | `grafana/alloy:v1.19.1` | 512m | none |
 | `nats-exporter` | `natsio/prometheus-nats-exporter` | 64m | none |
 | `docker-socket-proxy-ro` | `tecnativa/docker-socket-proxy` | 64m | none |
@@ -114,14 +115,18 @@ stack.
 
 ### 3. Bind-mount directories
 
+**Automated.** `scripts/deploy.sh` creates every missing `device:` directory of the resolved
+compose config before anything starts, so a new store needs no hand-run `mkdir`. It never
+touches a directory that already exists. The equivalent by hand:
+
 ```sh
-mkdir -p ~/dcms-data/{grafana,prometheus,loki,tempo,alloy}
+mkdir -p ~/dcms-data/{grafana,prometheus,loki,tempo,pyroscope,alloy}
 ```
 
 **Do not chown these to the deploy user.** They are *named volumes with `o: bind`*, not
 plain bind mounts, and Docker populates an empty named volume from the image — directory
 ownership included. Each store's data dir ends up owned by that image's own uid (prometheus
-65534, tempo 10001, grafana 472, alloy 473), and that uid is the one that can write it.
+65534, tempo 10001, pyroscope 10001, grafana 472, alloy 473), and that uid is the one that can write it.
 Which is why none of these services carries a `user:` override, unlike `vault` and
 `forgejo`, whose plain bind mounts Docker neither populates nor chowns. It matches
 `postgres` (999) and `redis` (999), already image-uid-owned under `~/dcms-data`.

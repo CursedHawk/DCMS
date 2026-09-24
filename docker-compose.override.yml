@@ -120,6 +120,10 @@ services:
     ports:
       - "3200:3200"
 
+  pyroscope:
+    ports:
+      - "4040:4040"
+
   alloy:
     ports:
       # Alloy's own UI, which shows every component's state and is the fastest way to see

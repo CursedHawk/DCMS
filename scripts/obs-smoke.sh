@@ -43,7 +43,7 @@ echo "== containers"
 # back. A container that has restarted at all AND is only seconds old is looping. A freshly
 # deployed one cannot trip it: compose recreates the container, which resets RestartCount
 # to zero, so a new container is young with no restarts.
-for s in grafana prometheus loki tempo alloy; do
+for s in grafana prometheus loki tempo pyroscope alloy; do
     state=$($COMPOSE ps --format '{{.State}}' "$s" 2>/dev/null | head -1)
     if [ "$state" != "running" ]; then
         fail "$s is '${state:-absent}'"
@@ -213,6 +213,18 @@ elif [ "$count" -lt 4 ]; then
 else
     ok "tempo has spans from $(( (count - 2) / 2 )) service(s)"
 fi
+
+echo
+echo "== profiles"
+# Readiness only, for now: no service pushes profiles until the profiler is in the images
+# (TODO/PYROSCOPE-INTGERATION-PLAN.MD phase 2), and that phase adds the per-service check.
+# A freshly started pyroscope reports 503 for ~45 s (metastore 15 s, then segment writer
+# 30 s), so a FAIL in the first minute after a deploy is expected — re-run before digging.
+case "$(fetch 'http://pyroscope:4040/ready')" in
+    ready*) ok "pyroscope ready" ;;
+    '') fail "pyroscope unreachable or not ready" ;;
+    *) fail "pyroscope not ready" ;;
+esac
 
 echo
 echo "== grafana"

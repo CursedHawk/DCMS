@@ -1135,6 +1135,20 @@ services:
       - ./infra/observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
       - tempo-data:/var/tempo
 
+  # Continuous profiling. Services push to it directly (PYROSCOPE_SERVER_ADDRESS in
+  # x-otel-env), not through Alloy — see infra/observability/pyroscope/pyroscope.yaml.
+  # 17 MiB idle when measured locally; 384m is the same ceiling Tempo and Loki get.
+  # The image runs as 10001 and declares /data, so an empty bind-backed named volume is
+  # populated with the right owner — no `user:` override and no chown, same as Tempo.
+  pyroscope:
+    image: grafana/pyroscope:2.3.1
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 384m
+    volumes:
+      - ./infra/observability/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro
+      - pyroscope-data:/data
+
   grafana:
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
@@ -1232,6 +1246,8 @@ services:
         condition: service_started
       tempo:
         condition: service_started
+      pyroscope:
+        condition: service_started
 
   # NATS monitoring JSON translated to Prometheus. Needs no credentials and no NATS
   # restart, which is why it is here rather than waiting on nats-surveyor: it carries the
@@ -1294,6 +1310,7 @@ volumes:
   prometheus-data:
   loki-data:
   tempo-data:
+  pyroscope-data:
   grafana-data:
   # Deliberately NOT bind-mounted under dcms-data in the vps overlay, unlike every other
   # volume here: it holds one file, rewritten every five minutes, and losing it costs one
