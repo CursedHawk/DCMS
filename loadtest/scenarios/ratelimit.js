@@ -1,20 +1,20 @@
-// Measures content-api's per-IP rate limiter, deliberately, as its own scenario.
+// Measures the per-IP rate limiters, deliberately, as its own scenario.
 //
-// This exists because of a trap. The limiter is a global fixed window keyed on client IP
-// (src/Shared/Dcms.Shared.Hosting/DcmsHostingExtensions.cs:206), default 600 requests per
-// 60 seconds, and a load test is by definition one IP. At the default, any delivery run
-// above ~10 req/s stops measuring the platform and starts measuring the limiter -- so the
-// harness raises RateLimiting__PermitLimit for a measurement run.
+// This exists because of a trap. Two fixed-window limiters are keyed on client IP -- the edge
+// (1200 / 60 s across every host, src/Services/Dcms.Edge/Protection/EdgeRateLimiting.cs) and
+// content-api's own (600 / 60 s, AddDcmsRateLimiting) -- and a load test is by definition one
+// IP. Any delivery run above ~10 req/s stops measuring the platform and starts measuring them.
+// A measurement campaign therefore exempts the generator's address in the platform console
+// (Operations -> Rate limits), which both limiters honour.
 //
-// Raising a security control for convenience is exactly how one gets quietly left off.
-// So this scenario reasserts it: it drives a known rate and reports where 429s begin, and
-// it is meant to be run AFTER a campaign, against the limit the environment will actually
-// keep. It has no latency threshold -- being refused is the correct behaviour here, and
-// the number of interest is the request count at which refusal starts.
+// An exemption left behind is exactly how a DoS control gets quietly switched off. So this
+// scenario reasserts the limit: run it once WITH the exemption (a refusal share near zero says
+// the exemption works) and once AFTER removing it (refusals must come back). It has no latency
+// threshold -- being refused is the correct behaviour here.
 //
-//   ./loadtest/run.sh --env vps1 --scenario ratelimit --vus 20 --duration 90s
+//   ./loadtest/run.sh --env vps1 --scenario ratelimit --vus 20 --duration 90s --via vps1
 //
-// Note the limiter is in-process, so the effective ceiling is PermitLimit x replica count.
+// Note content-api's limiter is in-process, so its ceiling is PermitLimit x replica count.
 
 import http from 'k6/http';
 import { check } from 'k6';
@@ -61,8 +61,9 @@ export function handleSummary(data) {
   const share = a + r > 0 ? ((r / (a + r)) * 100).toFixed(1) : '0.0';
   return {
     stdout: `\nrate limiter: ${a} admitted, ${r} refused (${share}% of ${a + r})\n`
-      + `A refusal share near zero at a rate above the configured limit means the limiter\n`
-      + `is not enforcing -- check RateLimiting__PermitLimit was restored after the campaign.\n\n`,
+      + `A refusal share near zero at a rate above the limit means this address is exempt\n`
+      + `(expected during a campaign) or the limiter is not enforcing -- remove the exemption\n`
+      + `in the platform console and run this again: refusals must come back.\n\n`,
     // run.sh bind-mounts the run directory at /out. Defining handleSummary makes k6
     // ignore --summary-export, so the file has to be written here or the bundle loses
     // its summary entirely.
