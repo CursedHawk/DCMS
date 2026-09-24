@@ -34,6 +34,12 @@ compactor:
   compaction:
     block_retention: 168h
     compacted_block_retention: 1h
+    # Bounded so merging cannot outgrow 384m. After the 2026-09-24 load test left 40-50 MB
+    # blocks, every start went straight into compacting them and was OOM-killed within two
+    # seconds -- the same merge, retried on every restart. Blocks already this size are left
+    # alone; a merge holds at most this many traces in memory at once (default 1000).
+    max_block_bytes: 30000000
+    v2_prefetch_traces_count: 100
 
 metrics_generator:
   registry:
