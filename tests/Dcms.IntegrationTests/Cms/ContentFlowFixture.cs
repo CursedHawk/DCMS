@@ -75,9 +75,16 @@ public sealed class ContentFlowFixture : IAsyncLifetime
         // Force admin host start (migrations) before content reads.
         using (Admin.CreateClient()) { }
 
+        // ADR 0015 phase 4: content-api runs as it does in a deploy, on dcms_app (NOBYPASSRLS)
+        // with the tenant GUC interceptor on. admin-api above stays the owner, as the migrate
+        // job is.
+        await AppRole.GrantAsync(_postgres.GetConnectionString());
+
         Content = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
             ApplySettings(b);
+            b.UseSetting("ConnectionStrings:Postgres", AppRole.ConnectionString(_postgres.GetConnectionString()));
+            b.UseSetting("Rls:Enforce", "true");
             b.ConfigureTestServices(services =>
             {
                 // There is no identity server in this fixture, and minting real OIDC tokens

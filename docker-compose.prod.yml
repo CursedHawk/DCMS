@@ -297,6 +297,11 @@ services:
   content-api:
     environment:
       <<: *prod-env
+      # ADR 0015 phase 4, fourth: on dcms_app, NOBYPASSRLS. Public requests carry the tenant
+      # (X-Dcms-Tenant, set by site-host's proxy); the chat hub, bot and search indexer act as
+      # their connection's or event's tenant. Moved back by deleting these two lines.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
+      Rls__Enforce: "true"
       Auth__Authority: "http://identity:8080/"
       Auth__RequireHttpsMetadata: "true"
       # No Cors__AllowedOrigins here any more: content-api has no default CORS policy. Every

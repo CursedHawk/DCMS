@@ -262,7 +262,21 @@ shippable, reversible, and leaves the platform working.
    the existing tests only looked at the current month. The runtime-role test now drops the
    partition three months ahead and has `dcms_app` recreate it with both policies.
 
-   Still to move: content-api, then admin-api. Each gets its enforced run before its compose lines change: site-host and
+   *content-api, fourth.* Every public route takes its tenant from `X-Dcms-Tenant`. site-host's
+   proxy sets it from the domain, including for media, whose handler has no tenant parameter
+   and leans on the EF filter. So the request paths needed nothing. Off-request, the chat
+   hub, the bot responder and the search indexer were scoped in phase 3. `ContentFlowFixture`
+   now always runs content-api as `dcms_app` with enforcement on. The role setup the three
+   fixtures share lives in `AppRole`. `ContentApiUnderRlsTests` adds the paths nothing
+   covered, and each reads back what it wrote, because a status code would not catch an
+   empty result: a visitor registers and then logs in, a form submission appears in
+   admin-api, and a published post is indexed and found. The indexer check failed with its
+   scope removed. With the interceptor off, 8 of the fixture's 23 tests failed, which is
+   what shows the fixture enforcing. The chat hub has no test (there is no SignalR client in
+   the test project), so its scoping is verified by reading only.
+
+   Still to move: admin-api, which also runs the audit maintenance and every cross-tenant
+   worker. Its evidence is the `DCMS_TEST_RLS_ENFORCE` collection run. Each gets its enforced run before its compose lines change: site-host and
    content-api need an enforced fixture of their own, and admin-api's is the
    `DCMS_TEST_RLS_ENFORCE` collection.
 

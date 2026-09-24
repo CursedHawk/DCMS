@@ -449,6 +449,11 @@ services:
     mem_limit: "${CONTENT_API_MEM_LIMIT:-640m}"
     environment:
       <<: *service-env
+      # ADR 0015 phase 4, fourth: on dcms_app, NOBYPASSRLS. Public requests carry the tenant
+      # (X-Dcms-Tenant, set by site-host's proxy); the chat hub, bot and search indexer act as
+      # their connection's or event's tenant. Moved back by deleting these two lines.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=dcms-app-dev"
+      Rls__Enforce: "true"
       # The public delivery plane's per-IP rate limit, settable per host.
       #
       # The default is unchanged (600 requests / 60 s, AddDcmsRateLimiting in

@@ -87,8 +87,8 @@ public sealed class AdminApiFixture : IAsyncLifetime
             {
                 using var _ = migrate.CreateClient();
             }
-            await GrantAppRoleAsync();
-            Factory = Create(AppRoleConnectionString, migrate: false, enforce: true, minioEndpoint);
+            await AppRole.GrantAsync(_postgres.GetConnectionString());
+            Factory = Create(AppRole.ConnectionString(_postgres.GetConnectionString()), migrate: false, enforce: true, minioEndpoint);
         }
         else
         {
@@ -105,52 +105,6 @@ public sealed class AdminApiFixture : IAsyncLifetime
     /// only EF's -- which is the evidence the IgnoreQueryFilters() sweep is judged by.
     /// </summary>
     public static bool RlsEnforced => Environment.GetEnvironmentVariable("DCMS_TEST_RLS_ENFORCE") == "1";
-
-    private const string AppRolePassword = "dcms-app-test";
-
-    private string AppRoleConnectionString => new Npgsql.NpgsqlConnectionStringBuilder(_postgres.GetConnectionString())
-    {
-        Username = "dcms_app",
-        Password = AppRolePassword,
-    }.ConnectionString;
-
-    /// <summary>What infra/postgres/init/06-app-role.sh does in a deploy, against every table the
-    /// owner boot just created.</summary>
-    private async Task GrantAppRoleAsync()
-    {
-        // Kept in step with SCHEMAS in infra/postgres/init/06-app-role.sh.
-        const string schemas = "tenancy plugins cms media sites search analytics chat visitors ai forms audit social notifications dataprotection edge platform";
-        // Behind the audit maintenance lock, as SitePublishFixture does: the owner boot's audit
-        // worker may still be in its first pass, and a GRANT racing its DDL fails with "tuple
-        // concurrently updated". The lock is the connection's, released as it closes.
-        var sql = new System.Text.StringBuilder($$"""
-            SELECT pg_advisory_lock({{Dcms.Shared.Data.PostgresAdvisoryLock.AuditMaintenanceLockKey}});
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dcms_app') THEN
-                    CREATE ROLE dcms_app LOGIN PASSWORD '{{AppRolePassword}}' NOSUPERUSER NOBYPASSRLS;
-                END IF;
-            END $$;
-            """);
-        foreach (var schema in schemas.Split(' '))
-        {
-            sql.AppendLine($"""
-                GRANT USAGE ON SCHEMA "{schema}" TO dcms_app;
-                GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "{schema}" TO dcms_app;
-                GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "{schema}" TO dcms_app;
-                """);
-        }
-        // The migrate boot made these before the role existed, so it could not grant them; in a
-        // deploy postgres-bootstrap runs first and AuditSchemaConfigurator grants them itself.
-        sql.AppendLine("""
-            GRANT EXECUTE ON FUNCTION audit.ensure_partitions(int) TO dcms_app;
-            GRANT EXECUTE ON FUNCTION audit.drop_sealed_partition(date) TO dcms_app;
-            """);
-        await using var connection = new Npgsql.NpgsqlConnection(_postgres.GetConnectionString());
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = sql.ToString();
-        await command.ExecuteNonQueryAsync();
-    }
 
     private WebApplicationFactory<AdminApiApp::Program> Create(string postgres, bool migrate, bool enforce, string minioEndpoint)
         => new WebApplicationFactory<AdminApiApp::Program>().WithWebHostBuilder(builder =>
