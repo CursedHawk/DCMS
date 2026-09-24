@@ -30,7 +30,8 @@ fetch() { $COMPOSE exec -T prometheus wget -qO- --timeout=10 "$1" 2>/dev/null; }
 # site-builder and email-worker before it, it opts out of the *service-env compose anchor
 # for least privilege, which is how a service ends up exporting nothing while the global
 # counts stay green. It is the public ingress, so it is the worst one to lose sight of.
-SERVICES="identity admin-api content-api ai-gateway media-worker site-builder site-host email-worker edge"
+# platform-api is the same case and was simply never added when the console split created it.
+SERVICES="identity admin-api content-api ai-gateway media-worker site-builder site-host email-worker edge platform-api"
 
 echo "== containers"
 #
@@ -216,8 +217,6 @@ fi
 
 echo
 echo "== profiles"
-# Readiness only, for now: no service pushes profiles until the profiler is in the images
-# (TODO/PYROSCOPE-INTGERATION-PLAN.MD phase 2), and that phase adds the per-service check.
 # A freshly started pyroscope reports 503 for ~45 s (metastore 15 s, then segment writer
 # 30 s), so a FAIL in the first minute after a deploy is expected — re-run before digging.
 case "$(fetch 'http://pyroscope:4040/ready')" in
@@ -225,6 +224,22 @@ case "$(fetch 'http://pyroscope:4040/ready')" in
     '') fail "pyroscope unreachable or not ready" ;;
     *) fail "pyroscope not ready" ;;
 esac
+
+# Per service, for the same reason as the log and metric loops above: a profiler that fails
+# to load only logs it and carries on, so a global "some profiles exist" stays green while
+# a service is dark. Last hour, because every service pushes every ~10 s while it runs.
+now=$(date +%s)
+known=$($COMPOSE exec -T prometheus wget -qO- --timeout=10 \
+    --header 'content-type: application/json' \
+    --post-data "{\"name\":\"service_name\",\"start\":$(( (now - 3600) * 1000 )),\"end\":$(( now * 1000 ))}" \
+    http://pyroscope:4040/querier.v1.QuerierService/LabelValues 2>/dev/null)
+for s in $SERVICES; do
+    case "$known" in
+        *"\"$s\""*) ok "$s profiled" ;;
+        '') fail "pyroscope query failed" ; break ;;
+        *) fail "$s has no profiles in the last hour — is its image missing the profiler, or CORECLR_ENABLE_PROFILING=0?" ;;
+    esac
+done
 
 echo
 echo "== grafana"

@@ -6,7 +6,8 @@ in [`docs/adr/0008-observability.md`](../../docs/adr/0008-observability.md);
 this file is what you follow to deploy it and what you read when it misbehaves.
 
 ```
- 8 .NET services ──OTLP:4317──┐
+ 10 .NET services ── CLR profiler ─────────────────► Pyroscope  7 d   ~2 GB ──► Grafana
+ 10 .NET services ──OTLP:4317─┐
  docker container stdout ─────┤
  host / cAdvisor / postgres ──┤──► Alloy ──┬──► Tempo       7 d   ~4 GB
  redis / minio ───────────────┤            ├──► Loki       30 d   ~8 GB
@@ -379,14 +380,15 @@ kept is `obs-disk-check.sh`'s question and the alerts'.
 | Prometheus | 30 d | 8 GB | `--storage.tsdb.retention.time=30d --storage.tsdb.retention.size=8GB` |
 | Loki | 30 d; **90 d** for audit/security streams | ~8 GB | `retention_period` + `retention_stream` + compactor with `retention_enabled` |
 | Tempo | 7 d | ~4 GB | `block_retention: 168h` |
+| Pyroscope | 7 d | ~2 GB, **time only — no size cap** | `limits.retention_period: 7d` in `pyroscope/pyroscope.yaml` |
 | Grafana SQLite | — | ~100 MB | — |
 | Docker json logs | 3 × 50 MB per container | ~3 GB worst case | the `x-logging` anchor in `docker-compose.yml` |
 
-≈ 20 GB of the 40 GB free. Check it after 48 hours and extrapolate before
+≈ 22 GB of the 40 GB free. Check it after 48 hours and extrapolate before
 declaring the settings correct:
 
 ```sh
-du -sh ~/dcms-data/{prometheus,loki,tempo,grafana}
+du -sh ~/dcms-data/{prometheus,loki,tempo,pyroscope,grafana}
 ```
 
 Three things that grew without bound and no longer do:

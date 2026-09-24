@@ -309,3 +309,23 @@ gap is direct SQL only, and it is documented rather than implied.
 - **Postgres still has no automated backup on vps1.** Out of scope here, but the
   `ops/52-retention-and-disk.json` dashboard and the disk alert make its absence
   visible, and `infra/observability/README.md` records it as an open gap.
+
+## Amendment (2026-09-24): continuous profiling with Pyroscope
+
+The fourth signal. Detail and measurements: `TODO/PYROSCOPE-INTGERATION-PLAN.MD`.
+
+- **In-process CLR profiler, pushed straight to Pyroscope — not through Alloy, and not
+  Alloy's eBPF profiler.** Alloy already runs near its limit and profiles need nothing from
+  it. eBPF would need a privileged Alloy with the host PID namespace — undoing the
+  socket-proxy isolation above — and gives CPU only, with weaker .NET symbols.
+- **The profiler lives in each image, and has to.** A CLR profiler is loaded by the runtime
+  at process start from `CORECLR_*` variables; nothing a service does at startup can load
+  it. The `Pyroscope` NuGet package is only a thin managed API over that native library —
+  here it adds the span-profile link (`pyroscope.profile.id` on spans, CPU only), nothing
+  else. Both versions are pinned together.
+- **Kill switch is `CORECLR_ENABLE_PROFILING=0`** in a service's environment; it also
+  detaches the span processor. The migrate jobs use it.
+- **No tenant label on profiles**, for the cardinality rule above. **7 d retention, time
+  only** — Pyroscope has no size cap, so its disk use is watched, not bounded.
+- Measured cost on the canary: +13 MiB RSS (71 → 84 MiB), CPU within noise. Allocation and
+  live-heap profiling stay off until measured.

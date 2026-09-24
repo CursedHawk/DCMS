@@ -19,7 +19,7 @@ Kept here so an interrupted session can be picked up without re-deriving anythin
   or through `*service-env`. A variable added to `x-otel-env` reaches every service. Do
   **not** put it in `x-service-env`: that is the trap that once left two services with no
   telemetry at all (see the comment on the anchor).
-- All runtime images are `mcr.microsoft.com/dotnet/aspnet:10.0` (Debian) → the **glibc**
+- All runtime images are `mcr.microsoft.com/dotnet/aspnet:10.0` (Ubuntu noble) → the **glibc**
   profiler build.
 - `pyroscope/pyroscope-dotnet` on Docker Hub is stale (0.14.x). The current profiler is
   **1.5.1**, shipped as the GitHub release asset `pyroscope.1.5.1-glibc-x86_64.tar.gz`
@@ -135,14 +135,16 @@ builds on this box — vps1 via the pipeline is the test, which is what the cana
       "Profiles for this span" link opens a flame graph.
 - Only traces the Alloy tail sampler keeps get a link. Fine.
 
-## Phase 4 — verification + docs — ⬜
+## Phase 4 — verification + docs — ✅
 
-- [ ] `obs-smoke.sh`: assert **each of the 10** `service_name`s has profiles — a global
-      count would hide one missing service.
+- [x] `obs-smoke.sh`: asserts **each of the 10** `service_name`s has profiles in the last
+      hour (`QuerierService/LabelValues` from the prometheus container). Also added
+      platform-api to its `SERVICES` list — it had never been there, so its logs and metrics
+      were unchecked too.
 - Dropped: a unit test for the phase-3 gate. It is one env comparison, and the managed API
   guards itself anyway (`IsNativeInteropAvailable`).
-- [ ] `infra/observability/README.md`: service/budget table, diagram.
-- [ ] ADR 0008 amendment (or ADR 0016).
+- [x] `infra/observability/README.md`: service table, diagram, retention table (time-only cap).
+- [x] ADR 0008 amendment.
 
 ---
 

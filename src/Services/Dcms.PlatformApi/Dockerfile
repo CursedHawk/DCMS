@@ -6,7 +6,7 @@ RUN dotnet publish src/Services/Dcms.PlatformApi/Dcms.PlatformApi.csproj -c Rele
 
 # Pyroscope .NET profiler (TODO/PYROSCOPE-INTGERATION-PLAN.MD). The release ships the native
 # library with debug info -- 181 MB; stripped it is 13 MB, and only the stripped copy reaches
-# the runtime image. glibc x86_64, matching the Debian aspnet base and vps1.
+# the runtime image. glibc x86_64, matching the aspnet base (Ubuntu noble) and vps1.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS pyroscope
 ARG PYROSCOPE_DOTNET_VERSION=1.5.1
 ARG PYROSCOPE_DOTNET_SHA256=06bc3888e45d53cecefc3263db957833b1c0cb082f9129d1b1e5f63c84b88d18
