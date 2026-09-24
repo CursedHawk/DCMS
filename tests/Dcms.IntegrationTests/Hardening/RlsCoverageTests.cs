@@ -28,7 +28,7 @@ public sealed class RlsCoverageTests(AdminApiFixture fixture)
     {
         var ct = TestContext.Current.CancellationToken;
         // As the owner, never the app's own connection: these read the catalogue and then drop
-        // and restore policies, which is DDL -- and under DCMS_TEST_RLS_ENFORCE the app is
+        // and restore policies, which is DDL -- and by default the app is
         // dcms_app, which may not.
         await using var db = OwnerContext();
 
@@ -47,7 +47,7 @@ public sealed class RlsCoverageTests(AdminApiFixture fixture)
     {
         var ct = TestContext.Current.CancellationToken;
         // As the owner, never the app's own connection: these read the catalogue and then drop
-        // and restore policies, which is DDL -- and under DCMS_TEST_RLS_ENFORCE the app is
+        // and restore policies, which is DDL -- and by default the app is
         // dcms_app, which may not.
         await using var db = OwnerContext();
 
@@ -84,7 +84,7 @@ public sealed class RlsCoverageTests(AdminApiFixture fixture)
     {
         var ct = TestContext.Current.CancellationToken;
         // As the owner, never the app's own connection: these read the catalogue and then drop
-        // and restore policies, which is DDL -- and under DCMS_TEST_RLS_ENFORCE the app is
+        // and restore policies, which is DDL -- and by default the app is
         // dcms_app, which may not.
         await using var db = OwnerContext();
 

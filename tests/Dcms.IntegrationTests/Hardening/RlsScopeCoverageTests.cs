@@ -16,7 +16,7 @@ namespace Dcms.IntegrationTests.Hardening;
 ///
 /// <para>Coarse, per file, and meant to be: it checks that the decision was made, not that it
 /// was right. Whether it was right is what the enforcing run of the integration suite
-/// (<c>DCMS_TEST_RLS_ENFORCE=1</c>) answers, path by path.</para>
+/// (the default; <c>DCMS_TEST_RLS_ENFORCE=0</c> turns it off) answers, path by path.</para>
 /// </summary>
 public sealed partial class RlsScopeCoverageTests
 {

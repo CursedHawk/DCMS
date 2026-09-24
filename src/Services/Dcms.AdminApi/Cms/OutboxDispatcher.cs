@@ -10,6 +10,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Cms;
 
+// rls: none needed. cms.content_outbox is exempt from RLS by design (RlsConfigurator.ExemptTables):
+// it is drained across tenants, and each event it publishes carries its own tenant.
 /// <summary>
 /// Relays content_outbox rows to NATS at-least-once, then stamps SentAt. Polls
 /// every 2s; resilient to NATS/DB being unavailable. Consumers are idempotent.

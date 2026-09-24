@@ -160,7 +160,7 @@ shippable, reversible, and leaves the platform working.
    tenant provisioning are three of them, and they were found by running the suite under
    enforcement.
 
-   *The evidence is a run, not a grep.* `DCMS_TEST_RLS_ENFORCE=1` boots the AdminApi
+   *The evidence is a run, not a grep.* `DCMS_TEST_RLS_ENFORCE=1` (the default since phase 4) boots the AdminApi
    collection the way a phase-4 service runs: it migrates as the owner, then connects as
    `dcms_app` with the interceptor on. The first run failed 55 tests. The last failed
    none. `RlsScopeCoverageTests` is the standing guard. It is per file, like the audit
@@ -275,10 +275,23 @@ shippable, reversible, and leaves the platform working.
    what shows the fixture enforcing. The chat hub has no test (there is no SignalR client in
    the test project), so its scoping is verified by reading only.
 
-   Still to move: admin-api, which also runs the audit maintenance and every cross-tenant
-   worker. Its evidence is the `DCMS_TEST_RLS_ENFORCE` collection run. Each gets its enforced run before its compose lines change: site-host and
-   content-api need an enforced fixture of their own, and admin-api's is the
-   `DCMS_TEST_RLS_ENFORCE` collection.
+   *admin-api, last.* Two questions were left, and neither was about tenant scoping, which
+   the AdminApi collection had been answering as `dcms_app` since phase 3.
+   - *Does it need more than DML at runtime?* All of its DDL (migrations, policies, the
+     reporting views, the platform role's password) runs in `DcmsMigrationRunner`, behind
+     `Tenancy:Migrate`, which production has had off since the migrate job took over. The
+     rest is the audit functions above. No runtime path reads a schema outside
+     `dcms_app`'s grants.
+   - *Did every worker decide?* Of its hosted services, those reading tenant tables use
+     `RlsScope`. Three touch only unpoliced tables (the CMS and audit outboxes and the edge
+     tables) and now say so. The rest do not touch the database.
+
+   Only the production overlay moves it. In the dev compose file admin-api still migrates at
+   startup, so there it stays the owner. The AdminApi collection now runs enforced by default
+   (`DCMS_TEST_RLS_ENFORCE=0` for the owner mode), because that is how it runs in a deploy.
+
+   With that, every service that reads tenant data runs as `dcms_app`. Of the services that
+   hold the owner connection, identity is the only one left, and its tables carry no tenant.
 
 5. **Remove the owner connection from the service environment** once every service is
    across, leaving `dcms` to the migration jobs alone.

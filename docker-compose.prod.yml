@@ -293,6 +293,14 @@ services:
       # startup -- it reads no database and it is what catches a tenant table added
       # without a policy.
       Tenancy__Migrate: "false"
+      # ADR 0015 phase 4, last: on dcms_app, NOBYPASSRLS. Requests act as their tenant; the
+      # cross-tenant workers enter RlsScope.Platform, per-event work RlsScope.Tenant; audit
+      # partition upkeep goes through the owner's SECURITY DEFINER functions. The migrate job
+      # above keeps the owner connection. Only here, not in docker-compose.yml: in dev,
+      # admin-api migrates at startup and has to be the owner. Moved back by deleting these
+      # two lines.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
+      Rls__Enforce: "true"
 
   content-api:
     environment:

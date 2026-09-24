@@ -99,12 +99,14 @@ public sealed class AdminApiFixture : IAsyncLifetime
     }
 
     /// <summary>
-    /// ADR 0015. Set <c>DCMS_TEST_RLS_ENFORCE=1</c> to run this collection the way a service runs
-    /// after phase 4: connected as <c>dcms_app</c>, <c>NOBYPASSRLS</c>, with the tenant GUC
-    /// interceptor on. Every test then proves its path works under the database's isolation, not
-    /// only EF's -- which is the evidence the IgnoreQueryFilters() sweep is judged by.
+    /// ADR 0015. By default this collection runs the way admin-api runs in a deploy since phase 4:
+    /// connected as <c>dcms_app</c>, <c>NOBYPASSRLS</c>, with the tenant GUC interceptor on. Every
+    /// test then proves its path works under the database's isolation, not only EF's.
+    ///
+    /// <para>Set <c>DCMS_TEST_RLS_ENFORCE=0</c> for the owner connection instead, which is what the
+    /// dev compose file still runs, because admin-api migrates at startup there.</para>
     /// </summary>
-    public static bool RlsEnforced => Environment.GetEnvironmentVariable("DCMS_TEST_RLS_ENFORCE") == "1";
+    public static bool RlsEnforced => Environment.GetEnvironmentVariable("DCMS_TEST_RLS_ENFORCE") != "0";
 
     private WebApplicationFactory<AdminApiApp::Program> Create(string postgres, bool migrate, bool enforce, string minioEndpoint)
         => new WebApplicationFactory<AdminApiApp::Program>().WithWebHostBuilder(builder =>

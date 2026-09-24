@@ -29,6 +29,7 @@ public static class PlatformNotificationKinds
     public const string CertificateExpired = "certificate.expired";
 }
 
+// rls: none needed. The edge tables carry no tenant, and platform notifications belong to no tenant.
 /// <summary>
 /// Turns what happened to the platform's own certificates into something an operator is told,
 /// rather than something they have to go and look at.

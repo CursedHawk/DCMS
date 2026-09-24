@@ -7,6 +7,8 @@ using NATS.Client.JetStream.Models;
 
 namespace Dcms.AdminApi.Audit;
 
+// rls: none needed. It writes audit.audit_outbox, which is exempt; the chain writer that drains it
+// runs under RlsScope.Platform.
 /// <summary>
 /// Brings in the records that could not be written where they were made.
 ///
