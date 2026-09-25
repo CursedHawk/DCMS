@@ -143,7 +143,7 @@ baas-dcms/
 
 | Area | Technology | Version | Evidence |
 | --- | --- | --- | --- |
-| Backend runtime | .NET / ASP.NET Core (Minimal APIs) | net10.0, SDK 10.0.100 | `Directory.Build.props`, `global.json` |
+| Backend runtime | .NET / ASP.NET Core (Minimal APIs) | net10.0, SDK 10.0.100 (images: SDK 10.0.401 / ASP.NET 10.0.12 mirrored to our registry, `mirror/dotnet-*`) | `Directory.Build.props`, `global.json` |
 | C# | LangVersion `latest` (C# 14 with SDK 10), nullable, warnings-as-errors | — | `Directory.Build.props` |
 | Frontend | React | ^19 (toolchain pins 19.2.7) | `apps/*/package.json` |
 | Frontend build | Vite + TypeScript (`tsc -b && vite build`), Tailwind v4 (`@tailwindcss/vite`) | vite/ts versions in lockfile | `apps/admin/package.json` |

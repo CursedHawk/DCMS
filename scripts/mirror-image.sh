@@ -10,7 +10,9 @@
 #   ./scripts/mirror-image.sh quay.io/minio/mc:latest mc:RELEASE.2025-08-13T08-35-41Z
 #
 # The source may already be local (`docker save` from a host that still has it cached, then
-# `docker load`) -- that is how the MinIO images were rescued. Otherwise it is pulled.
+# `docker load`) -- that is how the MinIO images were rescued. Otherwise it is copied registry to
+# registry with `buildx imagetools create`, which never lands in the local image store (VPSM has
+# no disk for a 1 GB SDK) -- linux/amd64 only, the one platform the runners and hosts run.
 # Tag with the upstream VERSION, never `latest`: the tag is the only record of what it is.
 # Needs `docker login registry-gitlab.highgeek.eu` with a token that can write the registry.
 set -eu
@@ -21,7 +23,10 @@ dst=registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/$2
 tag=${2##*:}
 [ "$tag" != "$2" ] && [ "$tag" != latest ] || { echo "tag $2 with the upstream version, not latest" >&2; exit 2; }
 
-docker image inspect "$src" >/dev/null 2>&1 || docker pull "$src"
-docker tag "$src" "$dst"
-docker push "$dst"
+if docker image inspect "$src" >/dev/null 2>&1; then
+    docker tag "$src" "$dst"
+    docker push "$dst"
+else
+    docker buildx imagetools create --platform linux/amd64 --tag "$dst" "$src"
+fi
 echo "mirrored: $dst"
