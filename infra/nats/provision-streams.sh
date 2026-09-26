@@ -202,6 +202,10 @@ retire_consumer() {
 # site-host moved to an ephemeral ordered consumer so every replica sees every
 # site.published, rather than one replica seeing each.
 retire_consumer SITES site-host-cache
+# ...and its twin on SITES_EVENTS, where site.published moved: found by the 2026-09-26 load
+# test as a permanent 147-message "backlog" in pipeline_jetstream_pending (bound 2026-08-26,
+# nothing pulling since). limits retention, so it pinned no data -- it only lied on dashboards.
+retire_consumer SITES_EVENTS site-host-cache
 
 # The pre-split publish subject. `site-builder` still binds site.publish.requested so that a
 # message written by an admin-api from before the queue split is still built during the

@@ -246,7 +246,7 @@ services:
       # ADR 0015 phase 5: its own role, dcms_identity (infra/postgres/init/07-identity-role.sh),
       # with DML on identity and dataprotection and an INSERT on the audit outbox. Not dcms_app,
       # which would put password hashes and tokens in reach of every tenant-facing service.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_identity;Password=${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_identity;Password=${IDENTITY_DB_PASSWORD:?set IDENTITY_DB_PASSWORD in .env (scripts/deploy.sh generates it)};Maximum Pool Size=10"
       # The console is served from its own host but signs in against THIS issuer, so its
       # discovery, token and userinfo calls are cross-origin and need naming here. It went in
       # on content-api by mistake first: the console's sign-in failed at the very first fetch
@@ -307,7 +307,7 @@ services:
       # above keeps the owner connection. Only here, not in docker-compose.yml: in dev,
       # admin-api migrates at startup and has to be the owner. Moved back by deleting these
       # two lines.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)};Maximum Pool Size=20"
       Rls__Enforce: "true"
 
   content-api:
@@ -316,7 +316,7 @@ services:
       # ADR 0015 phase 4, fourth: on dcms_app, NOBYPASSRLS. Public requests carry the tenant
       # (X-Dcms-Tenant, set by site-host's proxy); the chat hub, bot and search indexer act as
       # their connection's or event's tenant. Moved back by deleting these two lines.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)};Maximum Pool Size=25"
       Rls__Enforce: "true"
       Auth__Authority: "http://identity:8080/"
       Auth__RequireHttpsMetadata: "true"
@@ -344,7 +344,7 @@ services:
       # ADR 0015 phase 4: the first service off the owner connection. dcms_app is NOBYPASSRLS,
       # so the database confines every job to its tenant (MediaConsumerBase enters
       # RlsScope.Tenant). Moved back by deleting these two lines.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)};Maximum Pool Size=6"
       Rls__Enforce: "true"
 
   # Like the site-builder, email-worker deliberately does NOT inherit *prod-env: the
@@ -384,7 +384,7 @@ services:
       # Harmless while Vault holds only placeholders; invisible once it holds real secrets.
       VAULT_ADDR: "http://vault:8200"
       DOTNET_ENVIRONMENT: "Production"
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_sitebuilder;Password=${SITEBUILDER_DB_PASSWORD:-dcms-sitebuilder-dev}"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_sitebuilder;Password=${SITEBUILDER_DB_PASSWORD:-dcms-sitebuilder-dev};Maximum Pool Size=3"
       ConnectionStrings__Redis: "redis:6379,password=${REDIS_PASSWORD}"
       Nats__Url: "nats://app:${NATS_APP_PASSWORD}@nats:4222"
       Storage__Endpoint: "minio:9000"
@@ -446,7 +446,7 @@ services:
       # ADR 0015 phase 4, third: on dcms_app, NOBYPASSRLS. DomainResolver reads the hostname
       # platform-wide and the site as the domain's tenant; the invalidators act as the event's
       # tenant. Moved back by deleting these two lines.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)};Maximum Pool Size=10"
       Rls__Enforce: "true"
       Services__ContentApi: "http://content-api:8080"
 
@@ -467,7 +467,7 @@ services:
       DCMS_REFUSE_DEV_VAULT: "true"
       VAULT_ADDR: "http://vault:8200"
       VAULT_TOKEN: "${VAULT_TOKEN:-}"
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_edge;Password=${EDGE_DB_PASSWORD:-dcms-edge-dev}"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_edge;Password=${EDGE_DB_PASSWORD:-dcms-edge-dev};Maximum Pool Size=5"
       ConnectionStrings__Redis: "redis:6379,password=${REDIS_PASSWORD}"
       Nats__Url: "nats://app:${NATS_APP_PASSWORD}@nats:4222"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy:4317"
@@ -535,7 +535,7 @@ services:
       # ADR 0015 phase 4, second: on dcms_app, NOBYPASSRLS. The tenant comes in each request
       # body, and AiProviderResolver declares it (RlsScope.Tenant). Moved back by deleting
       # these two lines.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)}"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)};Maximum Pool Size=4"
       Rls__Enforce: "true"
       Auth__Authority: "http://identity:8080/"
       Auth__Audience: "dcms-ai-gateway"

@@ -127,10 +127,10 @@ public static class TenancyEndpoints
         // operator suspending a tenant is not working inside it, and requiring the header would
         // mean the console had to switch context to a tenant it is about to shut off.
         app.MapPost("/api/admin/tenants/{tenantId:guid}/suspend", async (
-            Guid tenantId, ConsoleCaller console, TenancyDbContext db, IAuditRecorder audit,
+            Guid tenantId, ConsoleCaller console, TenancyDbContext db, TenantStore store, IAuditRecorder audit,
             IEventPublisher events, ILoggerFactory loggerFactory, CancellationToken ct) =>
                 await SetTenantStatusAsync(
-                    tenantId, TenantStatus.Suspended, console, db, audit, events,
+                    tenantId, TenantStatus.Suspended, console, db, store, audit, events,
                     loggerFactory.CreateLogger("TenantLifecycle"), ct))
             .RequireAuthorization()
             .WithAudit(AuditActions.PlatformTenantSuspended, "tenant")
@@ -140,10 +140,10 @@ public static class TenancyEndpoints
                 + "the write here, so the console asks rather than reaching into tenancy itself.");
 
         app.MapPost("/api/admin/tenants/{tenantId:guid}/resume", async (
-            Guid tenantId, ConsoleCaller console, TenancyDbContext db, IAuditRecorder audit,
+            Guid tenantId, ConsoleCaller console, TenancyDbContext db, TenantStore store, IAuditRecorder audit,
             IEventPublisher events, ILoggerFactory loggerFactory, CancellationToken ct) =>
                 await SetTenantStatusAsync(
-                    tenantId, TenantStatus.Active, console, db, audit, events,
+                    tenantId, TenantStatus.Active, console, db, store, audit, events,
                     loggerFactory.CreateLogger("TenantLifecycle"), ct))
             .RequireAuthorization()
             .WithAudit(AuditActions.PlatformTenantResumed, "tenant")
@@ -667,6 +667,7 @@ public static class TenancyEndpoints
         TenantStatus status,
         ConsoleCaller console,
         TenancyDbContext db,
+        TenantStore store,
         IAuditRecorder audit,
         IEventPublisher events,
         ILogger logger,
@@ -710,6 +711,9 @@ public static class TenancyEndpoints
             .With("status", status.ToString());
 
         await db.SaveChangesAsync(ct);
+        // TenantStore caches resolution for 30 s; TenantMembershipMiddleware, which enforces the
+        // suspension on this plane, reads through it -- so this process drops its copy now.
+        store.Evict(tenant);
 
         // Best-effort, and deliberately not allowed to fail the request.
         //

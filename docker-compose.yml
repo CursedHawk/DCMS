@@ -293,7 +293,7 @@ services:
     environment:
       <<: *service-env
       # The owner, in dev only: here it migrates at startup. Production overrides this.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev;Maximum Pool Size=10"
       Identity__Issuer: "http://dcms-identity:8080/"
       Identity__AllowInsecureHttp: "true"
       Identity__Spa__RedirectUris: "http://localhost:5173/auth/callback;http://localhost:5000/auth/callback"
@@ -458,7 +458,7 @@ services:
     environment:
       <<: *service-env
       # The owner, in dev only: here it migrates at startup. Production overrides this.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev;Maximum Pool Size=20"
       Auth__Authority: "http://dcms-identity:8080/"
       Auth__Audience: "dcms-admin-api"
       ServiceClient__TokenEndpoint: "http://dcms-identity:8080/connect/token"
@@ -483,7 +483,17 @@ services:
       # ADR 0015 phase 4, fourth: on dcms_app, NOBYPASSRLS. Public requests carry the tenant
       # (X-Dcms-Tenant, set by site-host's proxy); the chat hub, bot and search indexer act as
       # their connection's or event's tenant. Moved back by deleting these two lines.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=dcms-app-dev"
+      #
+      # Maximum Pool Size, on every service's string: Npgsql's default is 100 PER SERVICE against
+      # one Postgres with max_connections=100. Under load (2026-09-26) content-api and admin-api
+      # grew their pools until Postgres refused them ("53300: remaining connection slots are
+      # reserved"), throughput fell from ~380 to ~160 req/s and 10 % of requests 500'd. A cap
+      # makes requests wait for a connection instead, and keeps a 4-core Postgres from running
+      # more backends than it has cores for. Budget, summing under the 97 non-superuser slots:
+      # content-api 25, admin-api 20, identity 10, site-host 10, media-worker 6, edge 5,
+      # ai-gateway 4, site-builder 3 = 83, leaving room for platform-api (its string is in
+      # Vault), Grafana, the exporter and the migrate jobs. Change a cap, re-check the sum.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=dcms-app-dev;Maximum Pool Size=25"
       Rls__Enforce: "true"
       # The public delivery plane's per-IP rate limit, settable per host.
       #
@@ -520,7 +530,7 @@ services:
       # ADR 0015 phase 4: the first service off the owner connection. dcms_app is NOBYPASSRLS,
       # so the database confines every job to its tenant (MediaConsumerBase enters
       # RlsScope.Tenant). Moved back by deleting these two lines.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=dcms-app-dev"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=dcms-app-dev;Maximum Pool Size=6"
       Rls__Enforce: "true"
 
   # The only container that speaks SMTP. Drains the EMAIL work queue — identity and
@@ -557,7 +567,7 @@ services:
       # are an OTLP endpoint and a protocol name, not credentials, and without them this
       # service exports no metrics, traces or logs whatsoever.
       <<: *otel-env
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_sitebuilder;Password=dcms-sitebuilder-dev"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_sitebuilder;Password=dcms-sitebuilder-dev;Maximum Pool Size=3"
       ConnectionStrings__Redis: "redis:6379"
       Nats__Url: "nats://nats:4222"
       Storage__Endpoint: "minio:9000"
@@ -598,7 +608,7 @@ services:
       # ADR 0015 phase 4, third: on dcms_app, NOBYPASSRLS. DomainResolver reads the hostname
       # platform-wide and the site as the domain's tenant; the invalidators act as the event's
       # tenant. Moved back by deleting these two lines.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=dcms-app-dev"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=dcms-app-dev;Maximum Pool Size=10"
       Rls__Enforce: "true"
 
   # The platform's public ingress: TLS termination, ACME, routing, and the single sign-in
@@ -652,7 +662,7 @@ services:
       # The scoped role from infra/postgres/init/05-edge-role.sh, not the dcms owner. The edge
       # reads and writes the `edge` schema and nothing else -- notably NOT tenancy.domains,
       # which it asks site-host about over HTTP instead.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_edge;Password=dcms-edge-dev"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_edge;Password=dcms-edge-dev;Maximum Pool Size=5"
       VAULT_ADDR: "http://vault:8200"
       VAULT_TOKEN: "dcms-dev-root"
       # The hostnames DCMS owns. Defaults rather than literals because dev and production run
@@ -775,7 +785,7 @@ services:
       # ADR 0015 phase 4, second: on dcms_app, NOBYPASSRLS. The tenant comes in each request
       # body, and AiProviderResolver declares it (RlsScope.Tenant). Moved back by deleting
       # these two lines.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=dcms-app-dev"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=dcms-app-dev;Maximum Pool Size=4"
       Rls__Enforce: "true"
 
   # Truncates a DCMS container's Docker json log file, and nothing else.

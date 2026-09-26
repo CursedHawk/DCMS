@@ -27,6 +27,7 @@ public static class TenancyServiceCollectionExtensions
                 .UseDcmsAuditInterceptors(sp));
 
         services.AddScoped<ITenantContext, FinbuckleTenantContext>();
+        services.AddMemoryCache();
         services.AddScoped<TenantStore>();
         return services;
     }
