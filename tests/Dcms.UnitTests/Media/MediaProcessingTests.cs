@@ -3,6 +3,7 @@ using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Media;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Png;
+using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.Metadata.Profiles.Exif;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -71,6 +72,17 @@ public class MediaProcessingTests
             v.Data.Should().NotBeEmpty();
             v.Width.Should().BeLessThanOrEqualTo(1000);
         });
+    }
+
+    [Fact]
+    public void Webp_ladder_encodes_lossy()
+    {
+        // Left to ImageSharp's default, a PNG source came out LOSSLESS: Quality was ignored, the
+        // renditions were near PNG-sized, and the encode was most of media-worker's CPU.
+        var variants = new WebpLadderGenerator().Generate(CreatePng(700, 500));
+
+        variants.Should().AllSatisfy(v =>
+            Image.Identify(v.Data).Metadata.GetWebpMetadata().FileFormat.Should().Be(WebpFileFormatType.Lossy));
     }
 
     [Theory]

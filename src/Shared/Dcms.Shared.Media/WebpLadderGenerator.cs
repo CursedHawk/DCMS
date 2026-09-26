@@ -49,7 +49,9 @@ public sealed class WebpLadderGenerator
         }));
 
         using var output = new MemoryStream();
-        clone.Save(output, new WebpEncoder { Quality = 80 });
+        // FileFormat must be explicit: unset, ImageSharp takes it from the source's metadata, which
+        // for a PNG means lossless -- Quality ignored, near-PNG-sized output, most of the CPU.
+        clone.Save(output, new WebpEncoder { FileFormat = WebpFileFormatType.Lossy, Quality = 80 });
         return new GeneratedVariant(kind, output.ToArray(), "image/webp", clone.Width, clone.Height);
     }
 }
