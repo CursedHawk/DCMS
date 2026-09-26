@@ -149,6 +149,13 @@ the connection's real address, stands aside, and tells content-api and site-host
 within seconds, and nothing is lowered for anyone else. Remove it when the run is over. The
 sign-in limit (30/min) still applies to an exempt address.
 
+From a script, `seed/exempt.mjs` does the same through the same API:
+
+```sh
+node loadtest/seed/exempt.mjs --env vps1 add 51.195.116.123 "load test"
+node loadtest/seed/exempt.mjs --env vps1 remove 51.195.116.123
+```
+
 Verify both states with the `ratelimit` scenario: exempt, it should see no 429s; after
 removing the exemption, it must see them again:
 
@@ -158,6 +165,25 @@ removing the exemption, it must see them again:
 
 A DoS control relaxed for convenience and never restored is the one nobody checks again.
 That scenario exists so this one cannot happen quietly.
+
+---
+
+## Finding the limits: `stress.sh`
+
+A single plateau says how a surface behaves at one load. To find where it stops, run a staircase:
+
+```sh
+./loadtest/stress.sh --env vps1 --scenario delivery --steps "10 25 50 100 200 400" --duration 2m -- --via vps1
+```
+
+One `run.sh` bundle per step, one summary line per step (req/s, error %, p95, every tagged p95,
+and the generator's own load average), appended to `runs/stress-<scenario>-<env>.tsv`. It stops
+at the first step past `--max-fail` (5 %) or `--max-p95` (5000 ms). Raise both to see what
+happens *past* the knee: whether throughput holds or collapses is the more important answer.
+
+**Staircases grow the fixtures.** `publish` creates posts and `media` uploads images, and
+nothing deletes them, so an `admin` step late in a campaign measures bigger tenants than one
+early in it. Re-seed (teardown, then provision) before a like-for-like comparison.
 
 ---
 
@@ -265,7 +291,8 @@ the bundle is reproducible and the reasoning is not. Each finding as `file:line`
 measurement that proves it, and the fix. A finding without a number is a guess; a number
 without a file is not actionable.
 
-Findings so far: [`findings/2026-09-02-vps1.md`](findings/2026-09-02-vps1.md).
+Findings so far: [`2026-09-02`](findings/2026-09-02-vps1.md), [`2026-09-24`](findings/2026-09-24-vps1.md),
+[`2026-09-26` stress/limits](findings/2026-09-26-vps1-stress.md).
 
 ---
 
@@ -276,14 +303,14 @@ should be treated as established until a bundle says so.
 
 | # | Suspect | Where | Scenario |
 |---|---|---|---|
-| 1 | Hosted-site serving is uncached and buffers whole artifacts into a `byte[]`; no ETag, no 304, and a page-route miss costs up to three sequential MinIO round trips | `Dcms.SiteHost/SiteHostEndpoints.cs:19` | `sitehost` |
+| 1 | Hosted-site serving is uncached and buffers whole artifacts into a `byte[]`; no ETag, no 304, and a page-route miss costs up to three sequential MinIO round trips (**confirmed 2026-09-26**: MinIO is the sitehost ceiling; streamed now, still uncached) | `Dcms.SiteHost/SiteHostEndpoints.cs:19` | `sitehost` |
 | 2 | The per-IP limiter dominates any single-source run; being in-process, its real ceiling is `PermitLimit × replicas` | `Dcms.Shared.Hosting/DcmsHostingExtensions.cs:206` | `ratelimit` |
 | 3 | Domain resolution is a per-replica 5-minute memory cache whose `InvalidateAll` is a no-op | `Dcms.SiteHost/DomainResolver.cs:17` | `sitehost` |
 | 4 | Media and site builds contend for the same four cores | `MediaConsumerBase.cs:32`, `SitePublishConsumer.cs:71`, `SandboxOptions.cs` | `media`, `sitebuild` |
 | 5 | A publish bumps the instance generation counter, invalidating every cached list at once — a stampede onto Postgres under read load | `ContentApi/Delivery/ContentCacheInvalidator.cs` | `mixed`, `publish` |
 | 6 | Publish throughput is floored by the outbox poller's interval | `AdminApi/Cms/OutboxDispatcher.cs` | `publish` |
-| 7 | `GET /api/admin/content` is unpaged — it projects and serializes every row for an instance (**confirmed by inspection**; the cost at scale is not) | `AdminApi/Cms/ContentEndpoints.cs:29` | `admin` |
-| 8 | Postgres connection saturation across 8 services × pool | — | `mixed` |
+| 7 | `GET /api/admin/content` is unpaged — it projects and serializes every row for an instance (**confirmed at scale 2026-09-26**: ~140 req/s once a tenant has ~6,400 items) | `AdminApi/Cms/ContentEndpoints.cs:29` | `admin` |
+| 8 | Postgres connection saturation across 8 services × pool (**confirmed and fixed 2026-09-26**: pool caps in compose) | — | `mixed` |
 
 ---
 
