@@ -309,7 +309,7 @@ should be treated as established until a bundle says so.
 | 4 | Media and site builds contend for the same four cores | `MediaConsumerBase.cs:32`, `SitePublishConsumer.cs:71`, `SandboxOptions.cs` | `media`, `sitebuild` |
 | 5 | A publish bumps the instance generation counter, invalidating every cached list at once — a stampede onto Postgres under read load | `ContentApi/Delivery/ContentCacheInvalidator.cs` | `mixed`, `publish` |
 | 6 | Publish throughput is floored by the outbox poller's interval | `AdminApi/Cms/OutboxDispatcher.cs` | `publish` |
-| 7 | `GET /api/admin/content` is unpaged — it projects and serializes every row for an instance (**confirmed at scale 2026-09-26**: ~140 req/s once a tenant has ~6,400 items) | `AdminApi/Cms/ContentEndpoints.cs:29` | `admin` |
+| 7 | `GET /api/admin/content` is unpaged — it projects and serializes every row for an instance (**confirmed and fixed 2026-09-26**: unpaged, it OOM-crashed admin-api at 6,400 items; now paged, and `/page` is index-backed) | `AdminApi/Cms/ContentEndpoints.cs:29` | `admin` |
 | 8 | Postgres connection saturation across 8 services × pool (**confirmed and fixed 2026-09-26**: pool caps in compose) | — | `mixed` |
 
 ---
