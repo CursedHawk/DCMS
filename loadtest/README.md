@@ -211,7 +211,8 @@ runs/<timestamp>-<scenario>-<env>/
   traces/*.json            the slowest traces in the window, fetched whole
   profiles/<service>.json  Pyroscope CPU flamegraph per service for the window
   profiles/top.txt         per service, the functions with the most self CPU time
-  logs/errors.json         warning and error log lines
+  logs/error-counts.json   error lines per service over the window (no line limit)
+  logs/errors.json         the error lines themselves, alloy's excluded (it floods them under overload)
   pg_stat_statements.txt   top 40 statements by total execution time
   compose-ps.txt, docker-stats.txt, host.txt
 ```

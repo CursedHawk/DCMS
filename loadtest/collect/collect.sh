@@ -151,7 +151,14 @@ echo
 echo "== loki (warnings and errors)"
 # ---------------------------------------------------------------------------
 # Loki wants nanoseconds. Labels are what alloy's docker scrape sets: source/service/container.
-LOGQL='{source="docker"} |~ "(?i)(error|fatal|exception|timeout|refused|denied)"'
+ERRORS='|~ "(?i)(error|fatal|exception|timeout|refused|denied)"'
+# Counts per service first: the one view no line limit can distort.
+COUNTS="sum by (service) (count_over_time({source=\"docker\"} $ERRORS [$((END - START))s]))"
+fetch "http://loki:3100/loki/api/v1/query?query=$(urlencode "$COUNTS")&time=$END" > "$OUT/logs/error-counts.json"
+# Lines, WITHOUT alloy. Under overload alloy logs every rejected span batch -- 34,236 lines in
+# four minutes on 2026-09-26 -- and those filled the 2000-line limit, so the bundle held not
+# one of admin-api's 6,418 connection errors. Alloy's own count is still in error-counts.json.
+LOGQL="{source=\"docker\", service!=\"alloy\"} $ERRORS"
 logs="$(fetch "http://loki:3100/loki/api/v1/query_range?query=$(urlencode "$LOGQL")&start=${START}000000000&end=${END}000000000&limit=2000&direction=backward")"
 printf '%s' "$logs" > "$OUT/logs/errors.json"
 [ -n "$logs" ] && ok "log query returned $(printf '%s' "$logs" | grep -o '"values"' | wc -l) streams" \
