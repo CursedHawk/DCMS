@@ -52,6 +52,12 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options, ITenantContext
             e.Property(c => c.Slug).HasMaxLength(256).IsRequired();
             e.Property(c => c.Status).HasConversion<string>().HasMaxLength(32);
             e.HasIndex(c => new { c.TenantId, c.PluginInstanceId, c.ContentType, c.Slug }).IsUnique();
+            // The console's collection list pages by (UpdatedAt, Id) descending
+            // (ContentListQueries.PageAsync). Without this, every page sorted the whole
+            // collection: 537 ms mean per page at 6,400 items in the 2026-09-26 load test.
+            e.HasIndex(c => new { c.TenantId, c.PluginInstanceId, c.ContentType, c.UpdatedAt, c.Id })
+                .IsDescending(false, false, false, true, true)
+                .HasDatabaseName("ix_content_items_collection_recent");
             e.HasMany(c => c.Versions).WithOne().HasForeignKey(v => v.ItemId);
             e.HasQueryFilter(c => c.TenantId == CurrentTenantId);
         });

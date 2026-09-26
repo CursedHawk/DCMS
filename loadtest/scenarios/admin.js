@@ -1,11 +1,17 @@
 // The admin plane: authenticated admin-api reads, the surface an operator actually waits on.
 //
-// Every request here is a LIST endpoint, because that is where the suspicion is. Several
-// of them page nothing at all -- GET /api/admin/content builds its projection over every
-// row for an instance and serializes the lot (src/Services/Dcms.AdminApi/Cms/
-// ContentEndpoints.cs:29), and the media and audit lists are worth checking for the same
-// shape. A list endpoint that is fine at 50 rows and quadratic at 5,000 looks identical
-// on an empty dev tenant, so the fixture estate exists to make the difference visible.
+// Every request here is a LIST endpoint, because that is where the suspicion is. A list
+// endpoint that is fine at 50 rows and quadratic at 5,000 looks identical on an empty dev
+// tenant, so the fixture estate exists to make the difference visible.
+//
+// Content is TWO routes, tagged apart, because they are two different costs:
+//   content  GET /api/admin/content/page -- what the console's collection list calls: one
+//            page, filtered and titled on the server (ContentListEndpoints.cs).
+//   picker   GET /api/admin/content?includeDraft=true -- every item of a type WITH its
+//            draft, deliberately unpaged: reference pickers, the builder preview and the
+//            assistant need all of it. Linear in the collection by design.
+// Until 2026-09-26 this scenario called only the second and labelled it "content", so the
+// admin numbers measured a picker, not the list an operator waits on.
 //
 // Tagged per endpoint rather than lumped together: "admin-api is slow" is not actionable
 // and "GET /api/admin/audit is slow" is.
@@ -43,13 +49,17 @@ export default function () {
   const instances = http.get(`${BASE}/api/admin/plugins/instances`, { headers, tags: { endpoint: 'instances' } });
   check(instances, { 'instances 200': (r) => r.status === 200 });
 
-  // The unpaged one. instanceId is required, so this needs the fixture's instance id --
-  // which the seeder recorded precisely so this request could be made.
+  // instanceId is required, so these need the fixture's instance id -- which the seeder
+  // recorded precisely so these requests could be made.
   if (tenant.instanceId) {
-    const content = http.get(
-      `${BASE}/api/admin/content?instanceId=${tenant.instanceId}&contentType=${tenant.contentType}`,
-      { headers, tags: { endpoint: 'content' } });
+    const q = `instanceId=${tenant.instanceId}&contentType=${tenant.contentType}`;
+    const content = http.get(`${BASE}/api/admin/content/page?${q}`, { headers, tags: { endpoint: 'content' } });
     check(content, { 'content 200': (r) => r.status === 200 });
+    // One picker per four iterations: an editor opens one far less often than a list.
+    if (__ITER % 4 === 0) {
+      const picker = http.get(`${BASE}/api/admin/content?${q}&includeDraft=true`, { headers, tags: { endpoint: 'picker' } });
+      check(picker, { 'picker 200': (r) => r.status === 200 });
+    }
   }
 
   const media = http.get(`${BASE}/api/admin/media`, { headers, tags: { endpoint: 'media' } });

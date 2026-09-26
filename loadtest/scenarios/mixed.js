@@ -84,7 +84,7 @@ export function operator() {
   if (!hasSession) return;
   const tenant = pickTenant(__ITER);
   const headers = adminHeaders(tenant);
-  check(http.get(`${BASE}/api/admin/content?instanceId=${tenant.instanceId}&contentType=${tenant.contentType}`,
+  check(http.get(`${BASE}/api/admin/content/page?instanceId=${tenant.instanceId}&contentType=${tenant.contentType}`,
     { headers, tags: { surface: 'admin', endpoint: 'content' } }), { 'content 200': (r) => r.status === 200 });
   check(http.get(`${BASE}/api/admin/media`, { headers, tags: { surface: 'admin', endpoint: 'media' } }),
     { 'media 200': (r) => r.status === 200 });

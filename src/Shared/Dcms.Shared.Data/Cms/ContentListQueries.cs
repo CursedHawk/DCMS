@@ -158,6 +158,8 @@ public static class ContentListQueries
             LEFT JOIN cms.content_versions v
                    ON v."Id" = COALESCE(i."CurrentDraftVersionId", i."PublishedVersionId")
             """;
+        // Only a search reads the title, so only a search needs the version row to FIND the page.
+        var findJoin = string.IsNullOrWhiteSpace(search) ? string.Empty : VersionJoin;
 
         var keyset = after is null
             ? string.Empty
@@ -168,15 +170,27 @@ public static class ContentListQueries
             parameters.Add(("@cursorId", cursor.Id));
         }
 
+        // Find the page's ids first, then dress only those rows. In one SELECT, Postgres
+        // evaluated the title (a regexp over the draft JSON) and the pending-schedule subquery
+        // for EVERY item in the collection before sorting and taking 50: 537 ms mean per page at
+        // 6,400 items (2026-09-26 load test). Now the inner query walks
+        // ix_content_items_collection_recent and the cost follows the page, not the collection.
         var sql = $"""
+            WITH page AS (
+                SELECT i."Id"
+                FROM cms.content_items i
+                {findJoin}
+                {where}
+                  {keyset}
+                ORDER BY i."UpdatedAt" DESC, i."Id" DESC
+                LIMIT {take + 1}
+            )
             SELECT i."Id", i."ContentType", i."Slug", {title} AS title, i."Status",
                    i."UpdatedAt", i."PublishedAt", {PendingSchedule} AS scheduled_at
-            FROM cms.content_items i
+            FROM page p
+            JOIN cms.content_items i ON i."Id" = p."Id"
             {VersionJoin}
-            {where}
-              {keyset}
             ORDER BY i."UpdatedAt" DESC, i."Id" DESC
-            LIMIT {take + 1}
             """;
 
         var rows = await QueryAsync(db, sql, parameters, reader => new ContentRow(
@@ -197,7 +211,7 @@ public static class ContentListQueries
         var countSql = $"""
             SELECT count(*)::int
             FROM cms.content_items i
-            {VersionJoin}
+            {findJoin}
             {where}
             """;
 
