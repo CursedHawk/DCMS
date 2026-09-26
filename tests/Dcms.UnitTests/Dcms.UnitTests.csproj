@@ -40,6 +40,9 @@
          browser's agent loop then fails to parse — which is invisible until somebody's turn
          hangs. -->
     <ProjectReference Include="..\..\src\Services\Dcms.AiGateway\Dcms.AiGateway.csproj" />
+    <!-- site-host's artifact cache: what a page view costs in MinIO calls, and the bounds that
+         keep buffering on a request path from becoming a memory DoS. -->
+    <ProjectReference Include="..\..\src\Services\Dcms.SiteHost\Dcms.SiteHost.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Messaging\Dcms.Shared.Messaging.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Hosting\Dcms.Shared.Hosting.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Telemetry\Dcms.Shared.Telemetry.csproj" />

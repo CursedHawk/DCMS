@@ -13,7 +13,7 @@ public static class SiteHostEndpoints
     public static IEndpointRouteBuilder MapSiteHost(this IEndpointRouteBuilder app)
     {
         app.MapGet("/{**path}", async (
-            string? path, HttpContext http, DomainResolver resolver,
+            string? path, HttpContext http, DomainResolver resolver, SiteArtifactCache cache,
             IObjectStorage storage, IOptions<StorageOptions> storageOptions, CancellationToken ct) =>
         {
             var route = await resolver.ResolveAsync(http.Request.Host.Value ?? string.Empty, ct);
@@ -21,44 +21,7 @@ public static class SiteHostEndpoints
             {
                 return Results.NotFound("No site is published for this domain.");
             }
-
-            var candidates = CandidatesFor(path);
-            var fileName = candidates[0];
-            var bucket = storageOptions.Value.SitesBucket;
-            // A request for a concrete asset (it carries an extension) must resolve
-            // to that asset or 404 — never the SPA index.html, which would be served
-            // with the asset's content-type (e.g. a missing .js → HTML parsed as JS).
-            var isAsset = !string.IsNullOrWhiteSpace(path) && Path.HasExtension(path);
-
-            // Resolve which candidate exists with a HEAD, then stream that one. Probing used to
-            // download each candidate in full and copy it again into a byte[] — 2× the file in
-            // memory per request, for a file we might then discard (PERF-01).
-            string? resolvedKey = null;
-            foreach (var candidate in candidates)
-            {
-                var candidateKey = $"{route.ArtifactPrefix}/{candidate}";
-                if (await storage.StatAsync(bucket, candidateKey, ct) is not null)
-                {
-                    resolvedKey = candidateKey;
-                    break;
-                }
-            }
-            if (resolvedKey is null && !isAsset)
-            {
-                var indexKey = $"{route.ArtifactPrefix}/index.html";
-                if (await storage.StatAsync(bucket, indexKey, ct) is not null)
-                {
-                    resolvedKey = indexKey;
-                }
-            }
-            if (resolvedKey is null)
-            {
-                return Results.NotFound();
-            }
-
-            var contentType = StaticSiteFiles.ContentTypeFor(fileName);
-            http.Response.Headers.CacheControl = "public, max-age=60";
-            return await ObjectStreaming.WriteObjectAsync(http, storage, bucket, resolvedKey, contentType, ct);
+            return await ServeAsync(http, path, route.ArtifactPrefix, cache, storage, storageOptions.Value.SitesBucket, ct);
         });
 
         return app;
@@ -78,6 +41,40 @@ public static class SiteHostEndpoints
     /// Mirrors StaticSiteAssembler.FileNameFor — a change to one belongs in both,
     /// or the host asks for a file name the build never wrote.
     /// </summary>
+    /// <summary>
+    /// Serves one path of a resolved build. Small files come from <see cref="SiteArtifactCache"/>;
+    /// large ones, and any Range request, stream from storage as before -- still skipping the
+    /// candidate lookups, since the cache already knows which object the path is.
+    /// </summary>
+    internal static async Task<IResult> ServeAsync(
+        HttpContext http, string? path, string artifactPrefix, SiteArtifactCache cache,
+        IObjectStorage storage, string bucket, CancellationToken ct)
+    {
+        var candidates = CandidatesFor(path);
+        var isAsset = !string.IsNullOrWhiteSpace(path) && Path.HasExtension(path);
+        var entry = await cache.GetAsync(storage, bucket, artifactPrefix, path ?? string.Empty, candidates, indexFallback: !isAsset, ct);
+        if (entry.Key is null)
+        {
+            return Results.NotFound();
+        }
+
+        var contentType = StaticSiteFiles.ContentTypeFor(candidates[0]);
+        http.Response.Headers.CacheControl = "public, max-age=60";
+        if (entry.Body is not { } body || !string.IsNullOrEmpty(http.Request.Headers.Range))
+        {
+            return await ObjectStreaming.WriteObjectAsync(http, storage, bucket, entry.Key, contentType, ct);
+        }
+
+        http.Response.Headers.AcceptRanges = "bytes";
+        http.Response.ContentType = contentType;
+        http.Response.ContentLength = body.Length;
+        if (!HttpMethods.IsHead(http.Request.Method))
+        {
+            await http.Response.Body.WriteAsync(body, ct);
+        }
+        return Results.Empty;
+    }
+
     internal static IReadOnlyList<string> CandidatesFor(string? path)
     {
         if (string.IsNullOrWhiteSpace(path) || path == "/")

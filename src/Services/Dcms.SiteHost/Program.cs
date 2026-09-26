@@ -24,6 +24,7 @@ builder.Services.AddDcmsAuditData(builder.Configuration);
 builder.Services.AddDcmsRlsEnforcement(builder.Configuration);
 builder.Services.AddNullTenantContext();
 builder.Services.AddSingleton<DomainResolver>();
+builder.Services.AddSingleton<SiteArtifactCache>();
 builder.Services.AddHostedService<SiteCacheInvalidator>();
 // Suspension has to reach the delivery plane promptly, not at the next cache TTL.
 builder.Services.AddHostedService<TenantStatusInvalidator>();
