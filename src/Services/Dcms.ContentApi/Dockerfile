@@ -1,4 +1,4 @@
-﻿FROM registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-sdk:10.0.401 AS build
+﻿FROM registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-sdk:10.0 AS build
 WORKDIR /src
 COPY Directory.Build.props Directory.Packages.props global.json ./
 COPY src/ src/
@@ -7,7 +7,7 @@ RUN dotnet publish src/Services/Dcms.ContentApi/Dcms.ContentApi.csproj -c Releas
 # Pyroscope .NET profiler (TODO/PYROSCOPE-INTGERATION-PLAN.MD). The release ships the native
 # library with debug info -- 181 MB; stripped it is 13 MB, and only the stripped copy reaches
 # the runtime image. glibc x86_64, matching the aspnet base (Ubuntu noble) and vps1.
-FROM registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-sdk:10.0.401 AS pyroscope
+FROM registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-sdk:10.0 AS pyroscope
 ARG PYROSCOPE_DOTNET_VERSION=1.5.1
 ARG PYROSCOPE_DOTNET_SHA256=06bc3888e45d53cecefc3263db957833b1c0cb082f9129d1b1e5f63c84b88d18
 RUN apt-get update && apt-get install -y --no-install-recommends binutils && apt-get clean \
@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends binutils && apt
     && mkdir /pyroscope && tar -xzf /tmp/pyroscope.tar.gz -C /pyroscope \
     && strip --strip-unneeded /pyroscope/Pyroscope.Profiler.Native.so
 
-FROM registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-aspnet:10.0.12 AS runtime
+FROM registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-aspnet:10.0 AS runtime
 # curl backs the compose healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends curl && apt-get clean
 # Loaded into the CLR at startup; pushes to PYROSCOPE_SERVER_ADDRESS (x-otel-env in compose).

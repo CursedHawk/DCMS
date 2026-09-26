@@ -49,7 +49,7 @@ variables:
 
 dotnet:
   stage: build
-  image: registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-sdk:10.0.401
+  image: registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-sdk:10.0
   script:
     - dotnet build Dcms.sln -c Release
     - dotnet test Dcms.sln -c Release --no-build --logger "junit;LogFilePath=./TestResults/{assembly}.xml" || dotnet test Dcms.sln -c Release --no-build
@@ -58,6 +58,10 @@ dotnet:
     reports:
       junit: "**/TestResults/*.xml"
     expire_in: 1 week
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
 
 frontend:
   stage: build
@@ -69,12 +73,16 @@ frontend:
   script:
     - pnpm install --frozen-lockfile
     - pnpm -r build
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
 
 # Integration tests need Docker-in-Docker (Testcontainers); enabled on runners
 # that support it.
 integration:
   stage: test
-  image: registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-sdk:10.0.401
+  image: registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-sdk:10.0
   services:
     - docker:27-dind
   variables:
@@ -87,8 +95,48 @@ integration:
     - export DOCKER_AUTH_CONFIG="{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 -w0)\"}}}"
     - dotnet test tests/Dcms.IntegrationTests -c Release
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# ---------------------------------------------------------------------------
+# base-image mirror refresh -- the ONLY job in a scheduled pipeline (every other job has a
+# `schedule -> never` rule; without it a schedule on master would build and deploy).
+#
+# The Dockerfiles build FROM mirror/dotnet-{sdk,aspnet}:10.0, so a .NET patch release must
+# reach that tag or every image keeps the old runtime. Weekly (Build -> Pipeline schedules)
+# this copies what mcr's 10.0 points at to mirror/dotnet-*:<exact version> -- the record --
+# and moves mirror/dotnet-*:10.0 onto it. The next push to master rebuilds on it. If mcr is
+# down, this job fails and builds carry on from the copy we already have.
+# ---------------------------------------------------------------------------
+mirror-base-images:
+  stage: build
+  image: docker:27-cli
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - |
+      set -e
+      for pair in sdk:DOTNET_SDK_VERSION aspnet:ASPNET_VERSION; do
+        name=${pair%%:*}; var=${pair#*:}
+        src=mcr.microsoft.com/dotnet/$name:10.0
+        # Pin by digest first, so the version read and the bits copied cannot disagree if mcr
+        # moves the tag mid-job.
+        digest=$(docker buildx imagetools inspect "$src" --format '{{json .Manifest}}' | grep -m1 -o 'sha256:[0-9a-f]*')
+        ver=$(docker buildx imagetools inspect "$src@$digest" --format '{{json (index .Image "linux/amd64").Config.Env}}' \
+              | grep -o "\"$var=[^\"]*" | cut -d= -f2)
+        [ -n "$ver" ] || { echo "no $var in $src@$digest"; exit 1; }
+        sh scripts/mirror-image.sh "$src@$digest" "dotnet-$name:$ver"
+        sh scripts/mirror-image.sh "$CI_REGISTRY_IMAGE/mirror/dotnet-$name:$ver" "dotnet-$name:10.0"
+      done
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
 
 # ---------------------------------------------------------------------------
 # images
@@ -156,6 +204,8 @@ integration:
   # behind the resource group and delay the one that matters.
   interruptible: true
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
 build-image:
@@ -315,6 +365,8 @@ deploy:dev:
     url: https://admin.dev.highgeek.eu
     deployment_tier: development
   rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
 deploy:prod:
