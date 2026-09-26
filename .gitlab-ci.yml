@@ -112,9 +112,11 @@ integration:
 # ---------------------------------------------------------------------------
 mirror-base-images:
   stage: build
-  image: docker:27-cli
+  # 29, not the 27 the image jobs use: 27's buildx has no `imagetools create --platform`, and
+  # without it the copy takes every architecture mcr publishes (~3x the registry disk).
+  image: docker:29-cli
   services:
-    - docker:27-dind
+    - docker:29-dind
   variables:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
