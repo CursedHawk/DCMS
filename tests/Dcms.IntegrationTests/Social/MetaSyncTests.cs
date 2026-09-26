@@ -278,7 +278,7 @@ public class MetaSyncTests(AdminApiFixture fixture)
             $"/api/admin/content?instanceId={t.InstanceId}&contentType={InstagramPlugin.PostType}",
             t.Owner, t.Slug), ct);
         res.EnsureSuccessStatusCode();
-        return (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).EnumerateArray().ToList();
+        return (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("items").EnumerateArray().ToList();
     }
 
     private async Task<DateTimeOffset> PublishedAtAsync(

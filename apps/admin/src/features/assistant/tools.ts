@@ -71,13 +71,14 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
   {
     name: 'list_content',
     description:
-      'List content items in this workspace. Returns id, title, content type and whether each is published.',
+      'List content items in this workspace, newest first, one page at a time. Returns `items` (id, content type, slug, status) and `nextCursor`: pass it back as `cursor` for the next page; null means there are no more.',
     permission: Perm.ContentRead,
     input_schema: {
       type: 'object',
       properties: {
         instanceId: { type: 'string', description: 'Plugin instance id to list from.' },
         contentType: { type: 'string', description: 'Content type name, e.g. "article".' },
+        cursor: { type: 'string', description: 'The nextCursor of the previous page, to continue.' },
       },
       additionalProperties: false,
     },
@@ -85,8 +86,11 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
       const query = new URLSearchParams();
       const instance = str(input, 'instanceId');
       const type = str(input, 'contentType');
+      const cursor = str(input, 'cursor');
       if (instance) query.set('instanceId', instance);
       if (type) query.set('contentType', type);
+      if (cursor) query.set('cursor', cursor);
+      query.set('limit', '50');
       return JSON.stringify(await api.get(`/admin/content?${query}`));
     },
   },

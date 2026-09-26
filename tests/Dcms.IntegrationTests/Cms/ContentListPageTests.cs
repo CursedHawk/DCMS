@@ -179,6 +179,46 @@ public class ContentListPageTests(ContentFlowFixture fixture)
     }
 
     /// <summary>
+    /// The picker route (items WITH drafts) is paged too: unpaged, concurrent pickers on a
+    /// 6,400-item tenant held every draft in memory and crashed admin-api. Its callers that need
+    /// everything follow the cursor, so the walk must still reach every item once, drafts and all.
+    /// </summary>
+    [DockerFact]
+    public async Task The_picker_route_pages_with_drafts_and_the_cursor_reaches_every_item()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t = await CollectionAsync(ct);
+        for (var i = 0; i < 5; i++)
+        {
+            await CreateAsync(t, $"crew-{i}", new { title = $"Crew {i}", body = "<p>x</p>" }, ct);
+        }
+
+        var seen = new List<string>();
+        string? cursor = null;
+        var pages = 0;
+        do
+        {
+            var url = $"/api/admin/content?instanceId={t.InstanceId}&contentType=post&includeDraft=true&limit=2"
+                      + (cursor is null ? "" : $"&cursor={Uri.EscapeDataString(cursor)}");
+            var res = await fixture.Admin.CreateClient().SendAsync(Req(HttpMethod.Get, url, t.Owner, t.Slug), ct);
+            res.IsSuccessStatusCode.Should().BeTrue(await res.Content.ReadAsStringAsync(ct));
+            var page = await res.Content.ReadFromJsonAsync<JsonElement>(ct);
+
+            foreach (var item in page.GetProperty("items").EnumerateArray())
+            {
+                item.GetProperty("draft").GetProperty("title").GetString().Should().StartWith("Crew ");
+                seen.Add(item.GetProperty("slug").GetString()!);
+            }
+            cursor = page.GetProperty("nextCursor").GetString();
+            pages++;
+        }
+        while (cursor is not null && pages < 10);
+
+        seen.Should().HaveCount(5).And.OnlyHaveUniqueItems();
+        pages.Should().Be(3, "five items at two a page");
+    }
+
+    /// <summary>
     /// The rail's counts. It used to fetch every item of every instance in the rail — for all
     /// of them at once, open or not — and count in the browser.
     /// </summary>

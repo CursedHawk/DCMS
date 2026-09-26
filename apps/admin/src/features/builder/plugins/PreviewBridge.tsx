@@ -9,7 +9,7 @@ import { COMPONENT_ATTR, decodePlaceholder, nameFromComponentType } from '@dcms/
 import { useQueryClient } from '@tanstack/react-query';
 import type { Component, Editor } from 'grapesjs';
 import { useEffect, useRef } from 'react';
-import { api } from '../../../lib/api';
+import { fetchContentWithDraft } from '../../content/api';
 import { usePluginInstances, type PluginInstance } from '../../plugins/api';
 import { CHROME_ATTR, CHROME_EVENT } from '../panels/chrome';
 import { rewriteMediaUrls, resolveMedia } from '../panels/media';
@@ -223,10 +223,7 @@ async function paint(
     const rows = await queryClient.fetchQuery({
       queryKey: ['content', instance.id, contentType, 'with-draft'],
       staleTime: STALE_MS,
-      queryFn: () =>
-        api.get<ContentRow[]>(
-          `/admin/content?instanceId=${instance.id}&contentType=${encodeURIComponent(contentType)}&includeDraft=true`,
-        ),
+      queryFn: () => fetchContentWithDraft(instance.id, contentType) as Promise<ContentRow[]>,
     });
 
     return draw(itemsFor(rows, binding));

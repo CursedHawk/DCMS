@@ -53,6 +53,34 @@ export function useContentCounts(instanceId: string | undefined) {
   });
 }
 
+/** One page of `GET /api/admin/content`. */
+export interface ContentItemPage {
+  items: ContentItem[];
+  /** Opaque; hand it back to continue. Null on the last page. */
+  nextCursor: string | null;
+}
+
+/**
+ * EVERY item of one content type, with its draft, fetched a page at a time.
+ *
+ * <p>The server pages this route so no single request holds a whole collection's drafts in
+ * memory -- unpaged, concurrent pickers on a 6,400-item tenant crashed admin-api. The callers
+ * here genuinely need all of it (a picker, the builder's collection preview), so they follow
+ * the cursor to the end rather than being silently truncated to the first page.</p>
+ */
+export async function fetchContentWithDraft(instanceId: string, contentType: string): Promise<ContentItem[]> {
+  const all: ContentItem[] = [];
+  let cursor: string | null = null;
+  do {
+    const params = new URLSearchParams({ instanceId, contentType, includeDraft: 'true', limit: '200' });
+    if (cursor) params.set('cursor', cursor);
+    const page: ContentItemPage = await api.get<ContentItemPage>(`/admin/content?${params.toString()}`);
+    all.push(...page.items);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return all;
+}
+
 /**
  * Items of one content type in an instance, with their draft data — used by
  * editors that reference other content (e.g. picking crew members for a gig).
@@ -61,10 +89,7 @@ export function useContentItemsOfType(instanceId: string | undefined, contentTyp
   return useQuery({
     queryKey: ['content', instanceId, contentType, 'with-draft'],
     enabled: !!instanceId && !!contentType,
-    queryFn: () =>
-      api.get<ContentItem[]>(
-        `/admin/content?instanceId=${instanceId}&contentType=${encodeURIComponent(contentType!)}&includeDraft=true`,
-      ),
+    queryFn: () => fetchContentWithDraft(instanceId!, contentType!),
   });
 }
 

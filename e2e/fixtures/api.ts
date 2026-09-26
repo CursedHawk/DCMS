@@ -254,7 +254,7 @@ export function adminApi(
     })
     .on('GET', '/api/admin/content/counts', { post: data.CONTENT_ROWS.length })
     .on('GET', '/api/admin/content/tags', [{ tag: 'launch', count: 1 }])
-    .on('GET', '/api/admin/content', [])
+    .on('GET', '/api/admin/content', { items: [], nextCursor: null })
 
     .on('GET', '/api/admin/tenant', data.WORKSPACE)
     // The SuperAdmin-only cross-tenant list, which is a different route from `/me/tenants`.

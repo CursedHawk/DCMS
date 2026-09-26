@@ -11,11 +11,15 @@ namespace Dcms.AdminApi.Cms;
 /// The console's collection list: one page, filtered on the server, with a title but no drafts.
 ///
 /// <para><b>Why a second endpoint rather than parameters on the first.</b>
-/// <c>GET /api/admin/content</c> exists to hand an editor every item of another content type
-/// <i>with its authored fields</i> — that is how a gig lists roster members by name — and it is
-/// legitimately unpaginated, because a roster is small and the caller needs all of it. Adding a
-/// default page size there would silently truncate those pickers; adding an optional one would
-/// give one route two response shapes. This route has one job and one shape.</para>
+/// <c>GET /api/admin/content</c> exists to hand an editor the items of another content type
+/// <i>with their authored fields</i> — that is how a gig lists roster members by name. This route
+/// has a different job (titles, filters, a count) and its own shape.</para>
+///
+/// <para>That route was unpaginated on the theory that "a roster is small". The 2026-09-26 load
+/// test disproved it at 6,400 items: every call held every draft in memory at once, and
+/// concurrent pickers crashed admin-api with <c>OutOfMemoryException</c> — for every tenant.
+/// It is now paged too, with one shape (<c>{ items, nextCursor }</c>, never optional), and its
+/// callers that need all of it fetch page by page, so nothing is silently truncated.</para>
 ///
 /// <para><b>The title is computed here</b> rather than in the browser, and that is the whole
 /// reason the list can stop downloading drafts. The field is the content type's first textual
@@ -204,7 +208,7 @@ public static class ContentListEndpoints
     /// was given; a malformed one starts from the beginning rather than failing, because a stale
     /// bookmark should show the first page and not an error.
     /// </summary>
-    private static ContentListQueries.Cursor? ParseCursor(string? cursor)
+    internal static ContentListQueries.Cursor? ParseCursor(string? cursor)
     {
         if (string.IsNullOrWhiteSpace(cursor))
         {
@@ -220,6 +224,6 @@ public static class ContentListEndpoints
             : null;
     }
 
-    private static string FormatCursor(ContentListQueries.Cursor cursor) =>
+    internal static string FormatCursor(ContentListQueries.Cursor cursor) =>
         $"{cursor.UpdatedAt:O}|{cursor.Id}";
 }

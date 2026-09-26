@@ -22,22 +22,39 @@ namespace Dcms.AdminApi.Cms;
 /// </summary>
 public static class ContentEndpoints
 {
+    // Drafts ride along on the picker route, so its page is smaller than the list's maximum.
+    private const int DefaultPickerPageSize = 100;
+
     public static IEndpointRouteBuilder MapContentEndpoints(this IEndpointRouteBuilder app)
     {
         // includeDraft lets an editor pick items of another content type by their
         // authored fields (e.g. a gig's line-up listing crew members by name),
         // without a round trip per item.
+        //
+        // Paged, newest first, on the same (UpdatedAt, Id) keyset and cursor as the console's
+        // list (ContentListEndpoints), so ix_content_items_collection_recent serves both. It
+        // was unpaged until the 2026-09-26 load test: at 6,400 items each call held every
+        // draft in memory, and concurrent pickers crashed admin-api (OutOfMemoryException).
+        // Callers that need every item follow nextCursor; the page bounds the memory.
         app.MapGet("/api/admin/content", async (
-            Guid instanceId, string? contentType, bool? includeDraft, CmsDbContext db, CancellationToken ct) =>
+            Guid instanceId, string? contentType, bool? includeDraft, string? cursor, int? limit,
+            CmsDbContext db, CancellationToken ct) =>
         {
+            var take = Math.Clamp(limit ?? DefaultPickerPageSize, 1, ContentListQueries.MaxPageSize);
             var query = db.ContentItems.Where(c => c.PluginInstanceId == instanceId);
             if (!string.IsNullOrWhiteSpace(contentType))
             {
                 query = query.Where(c => c.ContentType == contentType);
             }
+            if (ContentListEndpoints.ParseCursor(cursor) is { } after)
+            {
+                query = query.Where(c => EF.Functions.LessThan(
+                    ValueTuple.Create(c.UpdatedAt, c.Id), ValueTuple.Create(after.UpdatedAt, after.Id)));
+            }
 
             var rows = await query
-                .OrderByDescending(c => c.UpdatedAt)
+                .OrderByDescending(c => c.UpdatedAt).ThenByDescending(c => c.Id)
+                .Take(take + 1)
                 .Select(c => new
                 {
                     id = c.Id,
@@ -52,6 +69,12 @@ public static class ContentEndpoints
                 })
                 .ToListAsync(ct);
 
+            var hasMore = rows.Count > take;
+            if (hasMore)
+            {
+                rows.RemoveAt(rows.Count - 1);
+            }
+
             // A queued publish is not a ContentStatus — the enum is Draft/Published/
             // Archived and a scheduled item is genuinely still a draft. It is reported
             // alongside the real status so the list can show (and filter on) "waiting
@@ -63,17 +86,23 @@ public static class ContentEndpoints
                 .Select(g => new { ItemId = g.Key, PublishAt = g.Min(sp => sp.PublishAt) })
                 .ToDictionaryAsync(x => x.ItemId, x => x.PublishAt, ct);
 
-            return Results.Ok(rows.Select(r => new
+            return Results.Ok(new
             {
-                r.id,
-                r.contentType,
-                r.slug,
-                r.status,
-                r.updatedAt,
-                r.publishedAt,
-                scheduledPublishAt = pending.TryGetValue(r.id, out var at) ? at : (DateTimeOffset?)null,
-                draft = r.draftJson is null ? (JsonElement?)null : JsonDocument.Parse(r.draftJson).RootElement,
-            }));
+                items = rows.Select(r => new
+                {
+                    r.id,
+                    r.contentType,
+                    r.slug,
+                    r.status,
+                    r.updatedAt,
+                    r.publishedAt,
+                    scheduledPublishAt = pending.TryGetValue(r.id, out var at) ? at : (DateTimeOffset?)null,
+                    draft = r.draftJson is null ? (JsonElement?)null : JsonDocument.Parse(r.draftJson).RootElement,
+                }),
+                nextCursor = hasMore
+                    ? ContentListEndpoints.FormatCursor(new ContentListQueries.Cursor(rows[^1].updatedAt, rows[^1].id))
+                    : null,
+            });
         }).RequirePermission(PlatformPermissions.ContentRead);
 
         app.MapGet("/api/admin/content/{id:guid}", async (Guid id, CmsDbContext db, CancellationToken ct) =>
