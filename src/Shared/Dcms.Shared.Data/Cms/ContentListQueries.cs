@@ -160,6 +160,20 @@ public static class ContentListQueries
             """;
         // Only a search reads the title, so only a search needs the version row to FIND the page.
         var findJoin = string.IsNullOrWhiteSpace(search) ? string.Empty : VersionJoin;
+        // Dressing the page needs each row's own version, by primary key. As a plain join the
+        // planner hash-joined against a sequential scan of content_versions -- every tenant's
+        // versions, several per item -- to title 51 rows. Two scalar subqueries, one per id
+        // column, are per-row primary-key lookups. What does NOT work under RLS: any form that
+        // compares "Id" to COALESCE(draft, published) -- the planner will not push that
+        // expression below the policy's security barrier, so it can never be an index condition
+        // and every row became a sequential scan (measured: 200 ms for 51 rows at 6,400 items).
+        const string PageVersionJoin = """
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(
+                    (SELECT d."DataJson" FROM cms.content_versions d WHERE d."Id" = i."CurrentDraftVersionId"),
+                    (SELECT p."DataJson" FROM cms.content_versions p WHERE p."Id" = i."PublishedVersionId")) AS "DataJson"
+            ) v ON true
+            """;
 
         var keyset = after is null
             ? string.Empty
@@ -189,7 +203,7 @@ public static class ContentListQueries
                    i."UpdatedAt", i."PublishedAt", {PendingSchedule} AS scheduled_at
             FROM page p
             JOIN cms.content_items i ON i."Id" = p."Id"
-            {VersionJoin}
+            {PageVersionJoin}
             ORDER BY i."UpdatedAt" DESC, i."Id" DESC
             """;
 
