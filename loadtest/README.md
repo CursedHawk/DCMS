@@ -303,7 +303,7 @@ should be treated as established until a bundle says so.
 
 | # | Suspect | Where | Scenario |
 |---|---|---|---|
-| 1 | Hosted-site serving is uncached and buffers whole artifacts into a `byte[]`; no ETag, no 304, and a page-route miss costs up to three sequential MinIO round trips (**confirmed 2026-09-26**: MinIO is the sitehost ceiling; streamed now, still uncached) | `Dcms.SiteHost/SiteHostEndpoints.cs:19` | `sitehost` |
+| 1 | Hosted-site serving is uncached and buffers whole artifacts into a `byte[]`; no ETag, no 304, and a page-route miss costs up to three sequential MinIO round trips (**confirmed and fixed 2026-09-26**: `SiteArtifactCache`, 310 → 540 req/s) | `Dcms.SiteHost/SiteHostEndpoints.cs:19` | `sitehost` |
 | 2 | The per-IP limiter dominates any single-source run; being in-process, its real ceiling is `PermitLimit × replicas` | `Dcms.Shared.Hosting/DcmsHostingExtensions.cs:206` | `ratelimit` |
 | 3 | Domain resolution is a per-replica 5-minute memory cache whose `InvalidateAll` is a no-op | `Dcms.SiteHost/DomainResolver.cs:17` | `sitehost` |
 | 4 | Media and site builds contend for the same four cores | `MediaConsumerBase.cs:32`, `SitePublishConsumer.cs:71`, `SandboxOptions.cs` | `media`, `sitebuild` |
