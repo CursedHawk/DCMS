@@ -260,6 +260,7 @@ public sealed class TenantDeleter(
     VisitorsDbContext visitors,
     SocialDbContext social,
     NotificationsDbContext notifications,
+    TenantStore store,
     SiteDeleter siteDeleter,
     SiteGitService git,
     IObjectStorage storage,
@@ -373,6 +374,10 @@ public sealed class TenantDeleter(
             ("tenancy.Invitations", () => tenancy.Invitations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.Domains", () => tenancy.Domains.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.Tenants", () => tenancy.Tenants.Where(t => t.Id == key).ExecuteDeleteAsync(ct)));
+        // Resolution is cached for 30 s (TenantStore). Without this the deleted tenant keeps
+        // resolving here -- and a new tenant created under the same slug meanwhile resolves to
+        // the dead one, so its writes land under a TenantId nothing can read back.
+        store.Evict(tenant);
 
         // --- External systems (best effort) ---
         var objects = 0;

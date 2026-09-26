@@ -53,6 +53,28 @@ public class TenantResolutionCacheTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task A_slug_deleted_and_recreated_resolves_to_the_new_tenant()
+    {
+        // What the load-test teardown + reseed does: without the evictions the second tenant
+        // resolved to the purged first one for 30 s, and its owner was refused.
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var slug = "cache-d-" + Guid.NewGuid().ToString("N")[..8];
+
+        await CreateTenantAsync(client, slug, first, ct);
+        (await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", first, tenantSlug: slug), ct))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.SendAsync(Req(HttpMethod.Delete, "/api/admin/tenant", first, tenantSlug: slug), ct))
+            .EnsureSuccessStatusCode();
+
+        await CreateTenantAsync(client, slug, second, ct);
+        (await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", second, tenantSlug: slug), ct))
+            .StatusCode.Should().Be(HttpStatusCode.OK, "the purge and the create both evict the slug");
+    }
+
+    [DockerFact]
     public async Task A_tenant_asked_for_before_it_existed_resolves_once_created()
     {
         var ct = TestContext.Current.CancellationToken;

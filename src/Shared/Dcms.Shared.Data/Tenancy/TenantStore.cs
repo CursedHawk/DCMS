@@ -12,9 +12,10 @@ namespace Dcms.Shared.Data.Tenancy;
 /// Resolution runs on every tenant-scoped request, so hits are cached for
 /// <see cref="Ttl"/>: uncached it was one query, connection checkout, RLS set_config and
 /// DISCARD ALL per request -- ~680k lookups found by the 2026-09-26 load test. Only hits:
-/// a tenant created a moment ago must resolve at once. The cost is that a suspension
-/// reaches this process up to 30 s late, well inside the five minutes site-host's route
-/// cache already allows it (TenancyEndpoints.SetTenantStatusAsync).
+/// a tenant created a moment ago must resolve at once. admin-api, which suspends, resumes,
+/// creates and deletes tenants, calls <see cref="Evict"/> at each, so its own next request
+/// sees the change; other processes see it within 30 s -- well inside the five minutes
+/// site-host's route cache already allows a suspension (TenancyEndpoints.SetTenantStatusAsync).
 /// </para>
 /// </summary>
 public sealed class TenantStore(TenancyDbContext db, IMemoryCache cache) : IMultiTenantStore<Tenant>

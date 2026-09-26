@@ -13,7 +13,7 @@ namespace Dcms.AdminApi.Tenancy;
 /// the tenant.created and membership.changed events. All rows are stamped with
 /// the new tenant id explicitly since there is no ambient tenant yet.
 /// </summary>
-public sealed class TenantProvisioning(TenancyDbContext db, IEventPublisher events, AuditScope audit)
+public sealed class TenantProvisioning(TenancyDbContext db, TenantStore store, IEventPublisher events, AuditScope audit)
 {
     public const string OwnerRole = "Owner";
     public const string MemberRoleName = "Member";
@@ -72,6 +72,8 @@ public sealed class TenantProvisioning(TenancyDbContext db, IEventPublisher even
         {
             await db.SaveChangesAsync(ct);
         }
+        // A tenant deleted under this slug in the last 30 s may still be cached (TenantStore).
+        store.Evict(tenant);
 
         await events.PublishAsync(Subjects.TenantCreated,
             new TenantCreated(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, slug, tenant.Name!), ct);
