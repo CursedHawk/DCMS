@@ -1,25 +1,9 @@
 namespace Dcms.PluginSdk.Abstractions;
 
-/// <summary>
-/// Published-content reads scoped to the current plugin instance. Backed by
-/// Redis with generation-counter invalidation (implemented in PluginSdk.Runtime).
-/// </summary>
-public interface IContentStore
-{
-    Task<ContentItemDto?> GetBySlugAsync(string contentType, string slug, CancellationToken ct = default);
-    Task<PagedResult<ContentItemDto>> QueryAsync(string contentType, ContentQuery query, CancellationToken ct = default);
-}
-
 /// <summary>Resolves a media asset id to its variant URLs (webp ladder, HLS master, download).</summary>
 public interface IMediaResolver
 {
     Task<MediaAssetDto?> ResolveAsync(Guid assetId, CancellationToken ct = default);
-}
-
-/// <summary>Resolves ContentRef fields across instances of other plugins (published content only).</summary>
-public interface IInterPluginResolver
-{
-    Task<ContentItemDto?> ResolveAsync(ContentRef reference, CancellationToken ct = default);
 }
 
 /// <summary>

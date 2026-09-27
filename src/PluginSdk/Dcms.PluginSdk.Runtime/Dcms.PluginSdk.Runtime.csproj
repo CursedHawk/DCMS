@@ -12,6 +12,11 @@
     <ProjectReference Include="..\..\Shared\Dcms.Shared.Security\Dcms.Shared.Security.csproj" />
     <ProjectReference Include="..\..\Shared\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
     <ProjectReference Include="..\..\Shared\Dcms.Shared.Telemetry\Dcms.Shared.Telemetry.csproj" />
+    <ProjectReference Include="..\..\Shared\Dcms.Shared.Storage\Dcms.Shared.Storage.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Dcms.PluginSdk.Tests" />
   </ItemGroup>
 
 </Project>

@@ -318,6 +318,9 @@ public sealed class TenantDeleter(
             ("cms.Outbox", () => cms.Outbox.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("cms.ScheduledPublishes", () => cms.ScheduledPublishes.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("cms.ContentItems", () => cms.ContentItems.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            // Plugin documents and Transit-encrypted plugin credentials (dcms.storage / dcms.secrets).
+            ("cms.PluginData", () => cms.PluginData.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("cms.PluginSecrets", () => cms.PluginSecrets.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("cms.PluginInstances", () => cms.PluginInstances.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         await SweepAsync(media, manifest, ct,

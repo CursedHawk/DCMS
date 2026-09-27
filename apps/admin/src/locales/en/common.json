@@ -1259,6 +1259,10 @@
         "title": "Plugin {{state}}",
         "body": "The {{plugin}} plugin was {{state}} for this workspace."
       },
+      "plugin_message": {
+        "title": "{{title}}",
+        "body": "{{body}}"
+      },
       "form_submitted": {
         "title": "New form submission",
         "body": "Someone submitted the {{form}} form."

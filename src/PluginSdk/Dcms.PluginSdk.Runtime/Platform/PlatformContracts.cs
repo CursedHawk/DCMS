@@ -24,6 +24,11 @@ public static class PlatformContracts
     public static PluginRegistryBuilder AddPlatformContracts(this PluginRegistryBuilder builder, PluginPlane plane)
     {
         builder.AddPlatformContract<IPluginStorage, PluginStorage>();
+        builder.AddPlatformContract<IPluginBlobs, PluginBlobs>();
+        builder.AddPlatformContract<IPluginCache, PluginCache>();
+        builder.AddPlatformContract<IPluginEmail, PluginEmail>();
+        builder.AddPlatformContract<IPluginNotifications, PluginNotifications>();
+        builder.AddPlatformContract<IPluginContent, PluginContent>();
 
         if (plane == PluginPlane.Admin)
         {

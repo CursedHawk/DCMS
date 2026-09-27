@@ -1,0 +1,159 @@
+using System.Text.Json;
+using Dcms.PluginSdk.Abstractions.Contracts;
+
+namespace Dcms.PluginSdk.Abstractions.Platform;
+
+// ---------------------------------------------------------------------------------------------
+// dcms.blobs@1
+// ---------------------------------------------------------------------------------------------
+
+/// <summary>A key relative to the calling plugin's own blob area. No leading '/', no '..'.</summary>
+public sealed record BlobKey(string Key);
+
+public sealed record BlobPut(string Key, string ContentType, byte[] Content);
+
+public sealed record BlobContent(string Key, string ContentType, byte[] Content);
+
+public sealed record BlobPrefix(string Prefix = "");
+
+public sealed record BlobList(IReadOnlyList<string> Keys);
+
+/// <summary>
+/// Private files for the calling plugin: object storage under the tenant's own prefix, so a
+/// tenant purge takes them with everything else. Whole-object and capped (10 MiB) — these are
+/// exports, caches and imports, not a second media library; user-visible files belong in media.
+/// </summary>
+[DcmsContract("dcms.blobs", 1, Description = "Private file storage for the calling plugin.")]
+public interface IPluginBlobs
+{
+    [Operation(OpRisk.Safe)]
+    Task PutAsync(BlobPut input, CancellationToken ct);
+
+    [Operation(OpRisk.Read)]
+    Task<BlobContent?> GetAsync(BlobKey input, CancellationToken ct);
+
+    [Operation(OpRisk.Safe)]
+    Task<DeleteResult> DeleteAsync(BlobKey input, CancellationToken ct);
+
+    [Operation(OpRisk.Read)]
+    Task<BlobList> ListAsync(BlobPrefix input, CancellationToken ct);
+}
+
+// ---------------------------------------------------------------------------------------------
+// dcms.cache@1
+// ---------------------------------------------------------------------------------------------
+
+public sealed record CacheKey(string Key);
+
+/// <param name="TtlSeconds">Defaults to one hour; capped at 30 days.</param>
+public sealed record CacheSet(string Key, JsonElement Value, int? TtlSeconds = null);
+
+public sealed record CacheEntry(JsonElement? Value);
+
+/// <summary>A counter over a fixed window, e.g. a rate limit: <c>Increment("sends", 1, 3600)</c>.</summary>
+public sealed record CacheIncrement(string Key, long By = 1, int WindowSeconds = 3600);
+
+public sealed record CacheCounter(long Value);
+
+/// <summary>Shared cache (Redis) under the calling plugin's own tenant-scoped key prefix.</summary>
+[DcmsContract("dcms.cache", 1, Description = "Tenant- and plugin-scoped cache and counters.")]
+public interface IPluginCache
+{
+    [Operation(OpRisk.Read)]
+    Task<CacheEntry> GetAsync(CacheKey input, CancellationToken ct);
+
+    [Operation(OpRisk.Safe)]
+    Task SetAsync(CacheSet input, CancellationToken ct);
+
+    [Operation(OpRisk.Safe)]
+    Task RemoveAsync(CacheKey input, CancellationToken ct);
+
+    [Operation(OpRisk.Safe)]
+    Task<CacheCounter> IncrementAsync(CacheIncrement input, CancellationToken ct);
+}
+
+// ---------------------------------------------------------------------------------------------
+// dcms.email@1
+// ---------------------------------------------------------------------------------------------
+
+/// <param name="DedupeKey">Natural id of the occurrence (a submission id); a redelivery with the same key sends once.</param>
+public sealed record EmailSend(
+    IReadOnlyList<string> To,
+    string Subject,
+    string HtmlBody,
+    string? ReplyTo = null,
+    string? DedupeKey = null);
+
+public sealed record EmailQueued(int Recipients);
+
+/// <summary>
+/// Transactional email through the platform queue (email-worker owns SMTP and retries). The
+/// plugin renders the message; the platform stamps tenant and purpose and rate-limits per
+/// tenant and plugin.
+/// </summary>
+[DcmsContract("dcms.email", 1, Description = "Queue transactional email.")]
+public interface IPluginEmail
+{
+    /// <exception cref="ContractLimitException">The tenant's hourly allowance for this plugin is spent.</exception>
+    [Operation(OpRisk.Safe)]
+    Task<EmailQueued> SendAsync(EmailSend input, CancellationToken ct);
+}
+
+// ---------------------------------------------------------------------------------------------
+// dcms.notifications@1
+// ---------------------------------------------------------------------------------------------
+
+public enum NotificationSeverity
+{
+    Info,
+    Warning,
+    Error,
+}
+
+/// <param name="RequiredPermission">
+/// Who hears about it: members holding this key. Use the permission that already gates what
+/// the notification is about, so it can never reveal something its recipient could not open.
+/// </param>
+/// <param name="DedupeKey">Identifies the underlying occurrence, not this call; namespaced per plugin by the platform.</param>
+/// <param name="LinkPath">Admin SPA path the notification opens, e.g. <c>/forms</c>.</param>
+public sealed record NotificationRaise(
+    string Title,
+    string Body,
+    string RequiredPermission,
+    string DedupeKey,
+    NotificationSeverity Severity = NotificationSeverity.Info,
+    string? LinkPath = null);
+
+/// <summary>In-app notifications (the admin bell) for the tenant's members.</summary>
+[DcmsContract("dcms.notifications", 1, Description = "Raise an in-app notification for tenant members.")]
+public interface IPluginNotifications
+{
+    [Operation(OpRisk.Safe)]
+    Task RaiseAsync(NotificationRaise input, CancellationToken ct);
+}
+
+// ---------------------------------------------------------------------------------------------
+// dcms.content@1
+// ---------------------------------------------------------------------------------------------
+
+/// <param name="InstanceId">Any instance in the tenant; defaults to the caller's own.</param>
+public sealed record ContentLookup(string ContentType, string Slug, Guid? InstanceId = null);
+
+public sealed record ContentListRequest(string ContentType, int Page = 1, int PageSize = 20, Guid? InstanceId = null);
+
+/// <summary>
+/// Published content of any plugin instance in the tenant — the same data the public delivery
+/// API serves, through the same cache. Drafts are never visible here.
+/// </summary>
+[DcmsContract("dcms.content", 1, Description = "Read published content and resolve content references.")]
+public interface IPluginContent
+{
+    [Operation(OpRisk.Read)]
+    Task<ContentItemDto?> GetBySlugAsync(ContentLookup input, CancellationToken ct);
+
+    [Operation(OpRisk.Read)]
+    Task<PagedResult<ContentItemDto>> ListAsync(ContentListRequest input, CancellationToken ct);
+
+    [Operation(OpRisk.Read)]
+    Task<ContentItemDto?> ResolveAsync(ContentRef input, CancellationToken ct);
+}

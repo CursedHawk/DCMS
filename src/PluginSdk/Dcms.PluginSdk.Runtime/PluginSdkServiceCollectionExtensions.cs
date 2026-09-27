@@ -81,6 +81,7 @@ public static class PluginSdkServiceCollectionExtensions
     private static void AddPluginContexts(IServiceCollection services)
     {
         services.TryAddScoped<IPluginInstanceStore, CmsPluginInstanceStore>();
+        services.TryAddScoped<Platform.PublishedContentReader>();
         services.AddScoped<PluginContextFactory>();
         services.AddScoped<PluginContextAccessor>();
         services.AddScoped<IPluginContext, AmbientPluginContext>();

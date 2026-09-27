@@ -1284,6 +1284,10 @@
         "title": "Plugin změněn",
         "body": "Plugin {{plugin}} byl v tomto pracovním prostoru změněn ({{state}})."
       },
+      "plugin_message": {
+        "title": "{{title}}",
+        "body": "{{body}}"
+      },
       "form_submitted": {
         "title": "Nové odeslání formuláře",
         "body": "Někdo odeslal formulář {{form}}."

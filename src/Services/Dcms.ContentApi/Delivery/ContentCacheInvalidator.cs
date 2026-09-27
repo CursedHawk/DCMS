@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Runtime.Platform;
 using Dcms.Shared.Caching;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;

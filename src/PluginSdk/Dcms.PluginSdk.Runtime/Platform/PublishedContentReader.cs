@@ -4,7 +4,7 @@ using Dcms.Shared.Caching;
 using Dcms.Shared.Data.Cms;
 using Microsoft.EntityFrameworkCore;
 
-namespace Dcms.ContentApi.Delivery;
+namespace Dcms.PluginSdk.Runtime.Platform;
 
 /// <summary>
 /// Serves published content for the delivery API. Reads through Redis: item keys
@@ -31,7 +31,7 @@ public sealed class PublishedContentReader(CmsDbContext db, ICacheService cache)
             return cached.Missing ? null : cached.ToDto();
         }
 
-        var row = await QueryPublished(instanceId, contentType)
+        var row = await QueryPublished(tenantId, instanceId, contentType)
             .FirstOrDefaultAsync(x => x.Item.Slug == slug, ct);
 
         var item = row is null ? null : Map(row);
@@ -59,7 +59,7 @@ public sealed class PublishedContentReader(CmsDbContext db, ICacheService cache)
             return cached.ToResult();
         }
 
-        var query = QueryPublished(instanceId, contentType);
+        var query = QueryPublished(tenantId, instanceId, contentType);
         if (onlyIds is not null)
         {
             var ids = onlyIds as IList<Guid> ?? onlyIds.ToList();
@@ -80,9 +80,12 @@ public sealed class PublishedContentReader(CmsDbContext db, ICacheService cache)
         return result;
     }
 
-    private IQueryable<ItemWithVersion> QueryPublished(Guid instanceId, string contentType) =>
+    // The explicit tenant predicate backs up the query filter: the tenant also keys the cache,
+    // so a read must never be able to pair one tenant's key with another tenant's row.
+    private IQueryable<ItemWithVersion> QueryPublished(Guid tenantId, Guid instanceId, string contentType) =>
         from item in db.ContentItems.AsNoTracking()
-        where item.PluginInstanceId == instanceId
+        where item.TenantId == tenantId
+              && item.PluginInstanceId == instanceId
               && item.ContentType == contentType
               && item.Status == ContentStatus.Published
               && item.PublishedVersionId != null
