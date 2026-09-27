@@ -60,6 +60,9 @@ public static class PostgresAdvisoryLock
     /// </summary>
     public const long AiConversationRetentionLockKey = 0x44434D530000000A;
 
+    /// <summary>The plugin job scheduler: one replica enqueues each interval job per tenant.</summary>
+    public const long PluginSchedulerLockKey = 0x44434D530000000B;
+
     /// <summary>
     /// Blocks until the lock is held. Deliberately blocking rather than
     /// <c>pg_try_advisory_lock</c>: a second instance arriving mid-migration should wait and then

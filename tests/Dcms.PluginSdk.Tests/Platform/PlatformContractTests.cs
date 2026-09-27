@@ -132,7 +132,7 @@ public class PlatformContractTests
         var raised = (NotificationRaiseRequested)evt;
         raised.TenantId.Should().Be(Tenant);
         raised.DedupeKey.Should().Be("plugin:forms:lead-42");
-        raised.Kind.Should().Be("plugin.forms");
+        raised.Kind.Should().Be("plugin.message");
         raised.TitleKey.Should().Be("notifications.kinds.plugin_message.title");
         JsonDocument.Parse(raised.ParamsJson).RootElement.GetProperty("title").GetString().Should().Be("New lead");
     }

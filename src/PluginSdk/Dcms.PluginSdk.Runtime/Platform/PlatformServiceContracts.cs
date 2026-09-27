@@ -206,7 +206,8 @@ public sealed class PluginNotifications(IPluginContext caller, IEventPublisher e
             EventId: Guid.NewGuid(),
             OccurredAt: DateTimeOffset.UtcNow,
             TenantId: caller.TenantId,
-            Kind: $"plugin.{caller.PluginId}",
+            // NotificationKinds.PluginMessage in admin-api; the plugin id is in the params.
+            Kind: "plugin.message",
             Severity: input.Severity.ToString(),
             RequiredPermission: input.RequiredPermission,
             TitleKey: "notifications.kinds.plugin_message.title",

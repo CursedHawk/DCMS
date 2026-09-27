@@ -1,5 +1,6 @@
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Data.Audit;
+using Dcms.Shared.Data.Rls;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.Shared.Data.Cms;
@@ -16,7 +17,10 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options, ITenantContext
     public const string PluginsSchema = "plugins";
     public const string CmsSchema = "cms";
 
-    private Guid CurrentTenantId => tenantContext.TenantId ?? Guid.Empty;
+    // An enclosing RlsScope.Tenant wins, exactly as it does for the app.tenant_id GUC
+    // (TenantGucInterceptor), so a job or event handler acting for a tenant with no request
+    // behind it gets that tenant's rows from the query filter and from RLS alike.
+    private Guid CurrentTenantId => RlsScope.TenantOverride ?? tenantContext.TenantId ?? Guid.Empty;
 
     public DbSet<PluginInstance> PluginInstances => Set<PluginInstance>();
     public DbSet<PluginDatum> PluginData => Set<PluginDatum>();

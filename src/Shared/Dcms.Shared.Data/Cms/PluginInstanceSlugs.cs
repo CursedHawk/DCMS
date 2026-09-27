@@ -30,6 +30,9 @@ public static class PluginInstanceSlugs
             ["media"] = "/api/media/…",
             ["openapi"] = "/api/openapi",
             ["tags"] = "/api/tags",
+            // admin-api's own routes beside plugin admin routes (/api/admin/plugins/{slug}/…).
+            ["catalog"] = "/api/admin/plugins/catalog",
+            ["instances"] = "/api/admin/plugins/instances/…",
             // Built-in members of the generated site client.
             ["call"] = "api.call() on the generated site client",
             ["content"] = "api.content() on the generated site client",

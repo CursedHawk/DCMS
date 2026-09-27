@@ -39,6 +39,13 @@ public static class NotificationKinds
     public const string SocialTokenExpiring = "social.token.expiring";
 
     /// <summary>
+    /// Raised by a plugin through <c>dcms.notifications@1</c>. Plugins have no entries in the
+    /// SPA's locale bundles, so they supply the prose and this kind's keys just render it
+    /// (<c>{{title}}</c> / <c>{{body}}</c>); the plugin id rides in the params.
+    /// </summary>
+    public const string PluginMessage = "plugin.message";
+
+    /// <summary>
     /// The i18n key for a kind's title.
     ///
     /// <para><b>The dots in a kind are replaced with underscores, and that is load-bearing.</b>

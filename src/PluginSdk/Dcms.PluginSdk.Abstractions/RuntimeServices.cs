@@ -15,15 +15,8 @@ public interface ISearchContributor
     SearchDocument? Project(ContentItemDto item, PluginInstanceContext instance);
 }
 
-/// <summary>Marker for plugin-published NATS events.</summary>
+/// <summary>Marker for event records published under a contract (see <c>[ContractEvent]</c>).</summary>
 public interface IPluginEvent;
-
-/// <summary>Publish typed events to NATS from plugin code.</summary>
-public interface IPluginEventBus
-{
-    ValueTask PublishAsync<T>(T @event, CancellationToken ct = default)
-        where T : IPluginEvent;
-}
 
 /// <summary>
 /// Read-only manifest catalog. Referenced by admin-api (config forms,

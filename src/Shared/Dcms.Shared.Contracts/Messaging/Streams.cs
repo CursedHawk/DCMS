@@ -23,6 +23,12 @@ public static class Streams
     /// else asks it to write.
     /// </summary>
     public const string Notify = "NOTIFY";
+
+    /// <summary>Events plugins publish under their contracts; fan-out to subscribing plugins.</summary>
+    public const string PluginEvents = "PLUGIN_EVENTS";
+
+    /// <summary>Plugin background jobs (work queue): enqueued by plugins and the interval scheduler.</summary>
+    public const string PluginJobs = "PLUGIN_JOBS";
 }
 
 public static class Subjects
@@ -182,4 +188,20 @@ public static class Subjects
     // is the SignalR hub's job, and a second copy on the bus would be a second thing to keep
     // consistent with the table that is already the system of record.
     public const string NotifyRaise = "notify.raise";
+
+    // PLUGIN_EVENTS / PLUGIN_JOBS
+    //
+    // "plugins." rather than "plugin.": TENANCY already owns plugin.instance.>, and JetStream
+    // refuses two streams whose subjects overlap. Event names are dotted (visitor.registered),
+    // so an event subject is plugins.events.{publisher}.{event tokens...}.
+    public const string PluginEventsAll = "plugins.events.>";
+    public const string PluginJobsAll = "plugins.jobs.>";
+
+    public static string PluginEvent(string publisherPluginId, string eventName) =>
+        $"plugins.events.{publisherPluginId}.{eventName}";
+
+    /// <summary>Every publisher's copy of one event name: what a subscriber's durable filters on.</summary>
+    public static string PluginEventAnyPublisher(string eventName) => $"plugins.events.*.{eventName}";
+
+    public static string PluginJob(string pluginId, string jobName) => $"plugins.jobs.{pluginId}.{jobName}";
 }

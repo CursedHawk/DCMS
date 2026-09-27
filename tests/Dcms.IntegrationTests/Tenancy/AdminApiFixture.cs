@@ -74,6 +74,10 @@ public sealed class AdminApiFixture : IAsyncLifetime
             // Media ingest publishes a processing request; without the stream every mirrored
             // image logs a publish failure.
             await js.CreateStreamAsync(new StreamConfig("MEDIA", ["media.process.>"]));
+            // admin-api hosts the plugin workers; without their streams the job consumer loops
+            // on "stream not found" for the life of the fixture.
+            await js.CreateStreamAsync(new StreamConfig("PLUGIN_EVENTS", ["plugins.events.>"]));
+            await js.CreateStreamAsync(new StreamConfig("PLUGIN_JOBS", ["plugins.jobs.>"]) { Retention = StreamConfigRetention.Workqueue });
         }
 
         MetaStub = await MetaStubServer.StartAsync();

@@ -119,6 +119,12 @@ public static class ContractDescriptorBuilder
         }
         var name = eventType.GetCustomAttribute<ContractEventAttribute>()?.Name
             ?? throw Invalid(contract, $"event '{eventType.Name}' is not marked [ContractEvent]");
+        // The name becomes NATS subject tokens (plugins.events.{publisher}.{name}), so it must be
+        // the same dotted kebab-case as a contract name: no wildcards, spaces or empty tokens.
+        if (!ContractIds.IsValid($"{name}@1"))
+        {
+            throw Invalid(contract, $"event name '{name}' must be dotted kebab-case");
+        }
         return new EventDescriptor(name, Json.GetJsonSchemaAsNode(eventType, SchemaOptions)) { EventType = eventType };
     }
 

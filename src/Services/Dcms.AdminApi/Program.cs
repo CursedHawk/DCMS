@@ -14,6 +14,8 @@ using Dcms.AdminApi.Plugins;
 using Dcms.AdminApi.Tenancy;
 using Dcms.Plugins.All;
 using Dcms.PluginSdk.Runtime;
+using Dcms.PluginSdk.Runtime.Hosting;
+using Dcms.PluginSdk.Runtime.Platform;
 using Dcms.Shared.Caching;
 using Dcms.AdminApi.Sites;
 using Dcms.AdminApi.Social;
@@ -118,8 +120,10 @@ builder.Services.AddScoped<ConsoleCaller>();
 builder.Services.AddScoped<TenantProvisioning>();
 builder.Services.AddHostedService<TenancyMigrator>();
 
-// Plugin catalog (manifests only — no plugin runtime services) + config validation.
-builder.Services.AddDcmsPluginCatalog(plugins => plugins.AddAll());
+// Plugins, hosted in full (docs/adr/0016): their admin-plane routes, event handlers and jobs
+// run here, the only place dcms.secrets@1 can decrypt. Also the catalog and config validation.
+builder.Services.AddDcmsPlugins(plugins => plugins.AddAll().AddPlatformContracts(PluginPlane.Admin));
+builder.Services.AddDcmsPluginWorkers();
 builder.Services.AddSingleton<PluginConfigValidator>();
 
 // Permission evaluation: dynamic policy + tenancy-backed, Redis-cached resolver.
@@ -397,6 +401,9 @@ app.MapDomainCertificateEndpoints();
 app.MapManagedCertificateEndpoints();
 app.MapRateLimitExemptionEndpoints();
 app.MapPluginEndpoints();
+// Plugins' own admin routes, /api/admin/plugins/{slug}/..., for authenticated tenant members
+// (UseTenantMembership above has already confirmed membership of X-Dcms-Tenant).
+app.MapDcmsPluginAdminEndpoints().RequireAuthorization();
 app.MapNavigationEndpoints();
 app.MapMarketplaceEndpoints();
 app.MapContentEndpoints();

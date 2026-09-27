@@ -178,6 +178,11 @@ ensure_stream EMAIL        "email.>"                                 work
 # only one consumer per subject filter, which would make admin-api's ingest the only
 # thing that could ever read this.
 ensure_stream NOTIFY       "notify.>"                                limits
+# Plugin contracts (docs/adr/0016). "plugins." not "plugin.": TENANCY owns plugin.instance.>,
+# and overlapping subjects between streams are refused. Events fan out to one durable per
+# subscribing plugin (limits); jobs are a work queue drained by admin-api.
+ensure_stream PLUGIN_EVENTS "plugins.events.>"                        limits
+ensure_stream PLUGIN_JOBS  "plugins.jobs.>"                           work
 ensure_audit_stream
 
 # ---------------------------------------------------------------------------
