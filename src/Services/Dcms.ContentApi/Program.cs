@@ -5,6 +5,7 @@ using Dcms.ContentApi.Forms;
 using Dcms.ContentApi.Plugins;
 using Dcms.ContentApi.Social;
 using Dcms.PluginSdk.Runtime;
+using Dcms.PluginSdk.Runtime.Platform;
 using Dcms.Plugins.All;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Caching;
@@ -181,7 +182,7 @@ builder.Services.AddHttpClient(Dcms.ContentApi.Social.StoryDeliveryEndpoints.Htt
 });
 builder.Services.AddSingleton<ChatBotResponder>();
 
-builder.Services.AddDcmsPlugins(plugins => plugins.AddAll());
+builder.Services.AddDcmsPlugins(plugins => plugins.AddAll().AddPlatformContracts(PluginPlane.Site));
 builder.Services.AddScoped<PublishedContentReader>();
 builder.Services.AddScoped<IMediaResolver, Dcms.ContentApi.Delivery.MediaResolver>();
 builder.Services.AddHostedService<ContentCacheInvalidator>();

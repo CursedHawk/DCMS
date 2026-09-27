@@ -19,6 +19,8 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options, ITenantContext
     private Guid CurrentTenantId => tenantContext.TenantId ?? Guid.Empty;
 
     public DbSet<PluginInstance> PluginInstances => Set<PluginInstance>();
+    public DbSet<PluginDatum> PluginData => Set<PluginDatum>();
+    public DbSet<PluginSecret> PluginSecrets => Set<PluginSecret>();
     public DbSet<ContentItem> ContentItems => Set<ContentItem>();
     public DbSet<ContentVersion> ContentVersions => Set<ContentVersion>();
     public DbSet<ContentOutboxMessage> Outbox => Set<ContentOutboxMessage>();
@@ -42,6 +44,33 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options, ITenantContext
             e.HasIndex(p => new { p.TenantId, p.Slug }).IsUnique();
             e.HasIndex(p => new { p.TenantId, p.PluginId });
             e.HasQueryFilter(p => p.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<PluginDatum>(e =>
+        {
+            e.ToTable("plugin_data", PluginsSchema);
+            e.HasKey(d => d.Id);
+            e.Property(d => d.PluginId).HasMaxLength(64).IsRequired();
+            e.Property(d => d.Collection).HasMaxLength(64).IsRequired();
+            e.Property(d => d.Key).HasMaxLength(256).IsRequired();
+            e.Property(d => d.DataJson).HasColumnType("jsonb");
+            e.Property(d => d.Version).IsConcurrencyToken();
+            // NULLS NOT DISTINCT: plugin-wide documents (no instance) are unique per key too.
+            e.HasIndex(d => new { d.TenantId, d.PluginId, d.InstanceId, d.Collection, d.Key })
+                .IsUnique()
+                .AreNullsDistinct(false);
+            e.HasIndex(d => d.DataJson).HasMethod("gin").HasOperators("jsonb_path_ops");
+            e.HasQueryFilter(d => d.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<PluginSecret>(e =>
+        {
+            e.ToTable("plugin_secrets", PluginsSchema);
+            e.HasKey(s => s.Id);
+            e.Property(s => s.PluginId).HasMaxLength(64).IsRequired();
+            e.Property(s => s.Name).HasMaxLength(128).IsRequired();
+            e.HasIndex(s => new { s.TenantId, s.InstanceId, s.Name }).IsUnique();
+            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
         });
 
         builder.Entity<ContentItem>(e =>

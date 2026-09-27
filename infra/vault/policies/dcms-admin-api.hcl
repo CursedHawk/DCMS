@@ -57,6 +57,17 @@ path "transit/decrypt/dcms-social-tokens" {
   capabilities = ["update"]
 }
 
+# Plugin instance credentials (plugins.plugin_secrets). Both directions, for the Meta reason
+# above: the plugin code that spends a credential runs here, on jobs and admin routes. content-api
+# hosts the same plugins on the public plane and is granted neither direction, on purpose.
+path "transit/encrypt/dcms-plugin-secrets" {
+  capabilities = ["update"]
+}
+
+path "transit/decrypt/dcms-plugin-secrets" {
+  capabilities = ["update"]
+}
+
 # Uploaded TLS private keys (edge.certificates, Source = Custom). admin-api is where a tenant
 # uploads their own certificate, so it needs encrypt.
 #

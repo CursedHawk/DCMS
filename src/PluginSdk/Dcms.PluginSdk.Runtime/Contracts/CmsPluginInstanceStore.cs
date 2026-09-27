@@ -1,20 +1,23 @@
 using System.Text.Json;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Data.Cms;
+using Dcms.Shared.Data.Rls;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.PluginSdk.Runtime.Contracts;
 
 /// <summary>
-/// <see cref="IPluginInstanceStore"/> over <c>plugins.plugin_instances</c>. The explicit tenant
-/// predicate sits on top of the context's query filter and RLS, so a caller that passes the
-/// wrong tenant gets nothing rather than someone else's instances.
+/// <see cref="IPluginInstanceStore"/> over <c>plugins.plugin_instances</c>. Scoped by the tenant it
+/// is given, in both the predicate and the RLS GUC, rather than by the ambient request tenant —
+/// which a job or event handler does not have.
 /// </summary>
 public sealed class CmsPluginInstanceStore(CmsDbContext db) : IPluginInstanceStore
 {
     public async Task<IReadOnlyList<PluginInstanceContext>> ListEnabledAsync(Guid tenantId, CancellationToken ct)
     {
-        var rows = await db.PluginInstances.AsNoTracking()
+        // Explicit tenant, not the ambient one: jobs and event handlers run with no request.
+        using var rls = RlsScope.Tenant(tenantId);
+        var rows = await db.PluginInstances.IgnoreQueryFilters().AsNoTracking()
             .Where(p => p.TenantId == tenantId && p.Enabled)
             .OrderBy(p => p.CreatedAt)
             .ToListAsync(ct);

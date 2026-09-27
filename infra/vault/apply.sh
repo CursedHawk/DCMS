@@ -317,6 +317,15 @@ echo "  transit key dcms-dataprotection present"
 vault write -f transit/keys/dcms-social-tokens >/dev/null
 echo "  transit key dcms-social-tokens present"
 
+# Plugin instance credentials (plugins.plugin_secrets, the dcms.secrets@1 platform contract).
+# Separate from dcms-social-tokens for the same containment reason, and granted -- both
+# directions -- to admin-api only: plugin code that needs a credential runs there (admin routes,
+# jobs, event handlers). content-api hosts the same plugins but gets neither direction, so a
+# plugin route on the public plane can never turn a stored credential back into plaintext.
+# Never recreate it: every stored plugin secret would become unreadable.
+vault write -f transit/keys/dcms-plugin-secrets >/dev/null
+echo "  transit key dcms-plugin-secrets present"
+
 # TLS private keys and the ACME account key, held by the edge. A separate key again, and for the
 # sharpest version of the same reason: the edge is the process an anonymous request from the
 # internet reaches first, and a shared key would make a compromise there decrypt every tenant's
