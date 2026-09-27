@@ -2,18 +2,35 @@ using Dcms.PluginSdk.Abstractions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Runtime.Contracts;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Dcms.PluginSdk.Runtime;
 
 public sealed class PluginRegistryBuilder
 {
     internal List<IPlugin> Plugins { get; } = [];
+    internal List<ContractProvision> PlatformContracts { get; } = [];
 
     public PluginRegistryBuilder Add<TPlugin>()
         where TPlugin : IPlugin, new()
     {
         Plugins.Add(new TPlugin());
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a platform (<c>dcms.*</c>) contract this host implements. The implementation is
+    /// constructed per resolution with the <i>calling</i> plugin's <see cref="IPluginContext"/>,
+    /// so it can stamp that plugin's tenant and id onto everything it touches.
+    /// </summary>
+    public PluginRegistryBuilder AddPlatformContract<TContract, TImplementation>()
+        where TContract : class
+        where TImplementation : class, TContract
+    {
+        PlatformContracts.Add(ContractProvision.Of<TContract, TImplementation>());
         return this;
     }
 }
@@ -27,6 +44,7 @@ public static class PluginSdkServiceCollectionExtensions
         services.AddSingleton<IPluginCatalog>(registry);
         services.AddSingleton<PluginRouteTable>();
         services.AddSingleton<OpenApiAssembler>();
+        AddPluginContexts(services);
 
         foreach (var plugin in registry.Plugins)
         {
@@ -57,16 +75,24 @@ public static class PluginSdkServiceCollectionExtensions
     {
         var builder = new PluginRegistryBuilder();
         configure(builder);
-        return new PluginRegistry(builder.Plugins);
+        return new PluginRegistry(builder.Plugins, builder.PlatformContracts);
+    }
+
+    private static void AddPluginContexts(IServiceCollection services)
+    {
+        services.TryAddScoped<IPluginInstanceStore, CmsPluginInstanceStore>();
+        services.AddScoped<PluginContextFactory>();
+        services.AddScoped<PluginContextAccessor>();
+        services.AddScoped<IPluginContext, AmbientPluginContext>();
     }
 
     /// <summary>
-    /// Phase 1 placeholder: exposes the registered manifests at /api/_plugins.
-    /// Phase 4 replaces this with per-instance route mounting driven by the
-    /// plugins.plugin_instances table.
+    /// Mounts every plugin's site-plane routes (<see cref="PluginEndpoints"/>) and the manifest
+    /// listing at /api/_plugins.
     /// </summary>
     public static IEndpointRouteBuilder MapDcmsPlugins(this IEndpointRouteBuilder app)
     {
+        app.MapDcmsPluginSiteEndpoints();
         app.MapGet("/api/_plugins", (PluginRegistry registry) =>
             Results.Ok(registry.Manifests.Select(m => new
             {

@@ -145,6 +145,9 @@ public static class AuditActions
     public const string PluginInstanceUpdated = "plugin.instance.updated";
     public const string PluginInstanceActioned = "plugin.instance.actioned";
 
+    /// <summary>A plugin called a writing (Safe or Dangerous) operation on another contract.</summary>
+    public const string PluginContractInvoked = "plugin.contract.invoked";
+
     // ---- forms ----
     public const string FormSubmitted = "form.submitted";
     public const string FormSubmissionRead = "form.submission.read";

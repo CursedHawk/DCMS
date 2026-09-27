@@ -1,3 +1,5 @@
+using Dcms.PluginSdk.Abstractions.Contracts;
+
 namespace Dcms.PluginSdk.Abstractions;
 
 public sealed record PluginManifest(
@@ -39,7 +41,18 @@ public sealed record PluginManifest(
     /// A menu entry this plugin's enabled instances contribute, or null for a plugin with no
     /// page of its own — most of them, which surface through Content and the builder palette.
     /// </summary>
-    PluginNavDeclaration? Nav = null)
+    PluginNavDeclaration? Nav = null,
+
+    /*
+     * Contracts (docs/adr/0016-plugin-contracts.md). What this plugin offers other plugins and
+     * the platform surfaces, what it needs from them, which of their events it handles, and
+     * which background jobs it runs. `Consumes` is the plugin's grant list: the runtime refuses
+     * a contract that is not declared here.
+     */
+    IReadOnlyList<ContractProvision>? Provides = null,
+    IReadOnlyList<ContractRequirement>? Consumes = null,
+    IReadOnlyList<EventSubscription>? Subscribes = null,
+    IReadOnlyList<JobDeclaration>? Jobs = null)
 {
     public static PluginManifest Create(
         string id,
@@ -55,7 +68,11 @@ public sealed record PluginManifest(
         string? summary = null,
         string? iconName = null,
         IReadOnlyList<string>? tags = null,
-        PluginNavDeclaration? nav = null)
+        PluginNavDeclaration? nav = null,
+        IReadOnlyList<ContractProvision>? provides = null,
+        IReadOnlyList<ContractRequirement>? consumes = null,
+        IReadOnlyList<EventSubscription>? subscribes = null,
+        IReadOnlyList<JobDeclaration>? jobs = null)
         => new(
             id,
             name,
@@ -71,7 +88,11 @@ public sealed record PluginManifest(
             summary,
             iconName,
             tags ?? [],
-            nav);
+            nav,
+            provides ?? [],
+            consumes ?? [],
+            subscribes ?? [],
+            jobs ?? []);
 }
 
 /// <summary>

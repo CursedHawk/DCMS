@@ -1,4 +1,5 @@
 using Dcms.PluginSdk.Abstractions;
+using Microsoft.AspNetCore.Builder;
 
 namespace Dcms.PluginSdk.Runtime;
 
@@ -50,6 +51,15 @@ internal sealed class RecordingEndpointBuilder : IPluginEndpointBuilder
     }
 
     public void MapContentGetBySlug(string contentType) => GetOrAdd(contentType).GetBySlug = true;
+
+    // Bespoke routes are mounted by PluginEndpoints against the real route builder; recording
+    // only cares about content-route declarations, so these hand back an inert builder.
+    public RouteHandlerBuilder MapGet(string pattern, Delegate handler) => Inert();
+    public RouteHandlerBuilder MapPost(string pattern, Delegate handler) => Inert();
+    public RouteHandlerBuilder MapPut(string pattern, Delegate handler) => Inert();
+    public RouteHandlerBuilder MapDelete(string pattern, Delegate handler) => Inert();
+
+    private static RouteHandlerBuilder Inert() => new(Array.Empty<IEndpointConventionBuilder>());
 
     private ContentRouteInfo GetOrAdd(string contentType)
     {

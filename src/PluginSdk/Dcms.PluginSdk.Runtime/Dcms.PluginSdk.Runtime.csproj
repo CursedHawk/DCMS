@@ -10,6 +10,8 @@
     <ProjectReference Include="..\..\Shared\Dcms.Shared.Contracts\Dcms.Shared.Contracts.csproj" />
     <ProjectReference Include="..\..\Shared\Dcms.Shared.Messaging\Dcms.Shared.Messaging.csproj" />
     <ProjectReference Include="..\..\Shared\Dcms.Shared.Security\Dcms.Shared.Security.csproj" />
+    <ProjectReference Include="..\..\Shared\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
+    <ProjectReference Include="..\..\Shared\Dcms.Shared.Telemetry\Dcms.Shared.Telemetry.csproj" />
   </ItemGroup>
 
 </Project>
