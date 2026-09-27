@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Dcms.IntegrationTests.Tenancy;
+using Dcms.Shared.Audit;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.IntegrationTests.Audit;
 
@@ -179,10 +181,67 @@ public class AuditReadPlaneTests(AdminApiFixture fixture)
         res.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
-    private static async Task<JsonElement> ReadLogAsync(HttpClient client, string slug, CancellationToken ct)
+    /// <summary>
+    /// The list reads two branches -- the tenant's own rows, and platform rows about its
+    /// members -- each walked and limited separately before they are merged. Paging two at a
+    /// time across both must still return every row once, newest first.
+    /// </summary>
+    [DockerFact]
+    public async Task Paging_merges_member_platform_records_in_order_without_gaps_or_repeats()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var owner = Guid.NewGuid();
+        var slug = await NewTenantAsync(client, owner, ct);
+
+        using (var scope = fixture.Factory.Services.CreateScope())
+        {
+            var audit = scope.ServiceProvider.GetRequiredService<IAuditRecorder>();
+            for (var i = 0; i < 3; i++)
+            {
+                audit.Declare("test.platform").Platform().About(owner);
+            }
+            await audit.FlushAsync(ct);
+        }
+
+        JsonElement[] all = [];
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (DateTime.UtcNow < deadline)
+        {
+            all = [.. (await ReadLogAsync(client, slug, ct, "?limit=200")).GetProperty("items").EnumerateArray()];
+            if (all.Count(i => i.GetProperty("platformScope").GetBoolean()) >= 3 && all.Any(i => !i.GetProperty("platformScope").GetBoolean()))
+            {
+                break;
+            }
+            await Task.Delay(200, ct);
+        }
+        all.Count(i => i.GetProperty("platformScope").GetBoolean()).Should().Be(3);
+
+        var paged = new List<JsonElement>();
+        var query = "?limit=2";
+        while (true)
+        {
+            var page = await ReadLogAsync(client, slug, ct, query);
+            paged.AddRange(page.GetProperty("items").EnumerateArray());
+            if (!page.GetProperty("hasMore").GetBoolean())
+            {
+                break;
+            }
+            var cursor = page.GetProperty("nextCursor");
+            query = $"?limit=2&beforeOccurredAt={Uri.EscapeDataString(cursor.GetProperty("occurredAt").GetString()!)}"
+                + $"&beforeSeq={cursor.GetProperty("seq").GetInt64()}";
+        }
+
+        paged.Select(i => i.GetProperty("id").GetGuid())
+            .Should().Equal(all.Select(i => i.GetProperty("id").GetGuid()));
+        paged.Select(i => (i.GetProperty("occurredAt").GetDateTimeOffset(), i.GetProperty("seq").GetInt64()))
+            .Should().BeInDescendingOrder();
+    }
+
+    private static async Task<JsonElement> ReadLogAsync(HttpClient client, string slug, CancellationToken ct, string query = "")
     {
         var res = await client.SendAsync(
-            Req(HttpMethod.Get, "/api/admin/audit", SuperAdmin, "SuperAdmin", slug), ct);
+            Req(HttpMethod.Get, "/api/admin/audit" + query, SuperAdmin, "SuperAdmin", slug), ct);
         res.StatusCode.Should().Be(HttpStatusCode.OK);
         return await res.Content.ReadFromJsonAsync<JsonElement>(ct);
     }

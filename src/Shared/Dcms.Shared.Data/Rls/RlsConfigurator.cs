@@ -167,8 +167,36 @@ public static class RlsConfigurator
             "or to ExemptTables with a comment saying why a cross-tenant scan needs it unfiltered.");
     }
 
+    /// <summary>
+    /// The <c>platform_scope</c> test, as a function rather than inline in each policy, so the
+    /// planner can estimate it.
+    ///
+    /// <para>Inline, <c>current_setting('app.scope', true) = 'platform'</c> names no column, so
+    /// Postgres gives it the 0.5 % default for an equality it has no statistics for -- and in
+    /// platform scope the other arm, <c>"TenantId" = NULL</c>, estimates at zero. Every
+    /// platform-scope read was therefore planned for 0.5 % of the rows it really returns: the
+    /// audit list expected 74 of a tenant's 14,785 rows, so it fetched all of them and sorted
+    /// rather than walking the index and stopping at one page (25 ms, growing with the tenant's
+    /// history, against 0.6 ms). An opaque boolean function gets the 33 % default instead,
+    /// which is enough to keep an ordered index walk the cheaper plan.</para>
+    ///
+    /// <para>plpgsql so that it is never inlined back into the expression it replaces. It costs
+    /// ~0.7 µs per row the policy has to test; tenant-scoped reads short-circuit on the first
+    /// arm and never call it. No <c>SET search_path</c> (that would add a GUC save and restore
+    /// per row): every name in the body is qualified instead.</para>
+    /// </summary>
+    public const string PlatformScopeFunctionSql = """
+        CREATE OR REPLACE FUNCTION public.dcms_platform_scope() RETURNS boolean
+            LANGUAGE plpgsql STABLE PARALLEL SAFE AS $fn$
+        BEGIN
+            RETURN pg_catalog.current_setting('app.scope', true) OPERATOR(pg_catalog.=) 'platform';
+        END $fn$;
+        """;
+
     public static async Task ApplyAsync(DbContext context, ILogger logger, CancellationToken ct = default)
     {
+        await context.Database.ExecuteSqlRawAsync(PlatformScopeFunctionSql, ct);
+
         foreach (var (schema, table) in TenantTables)
         {
             await ProtectAsync(context, schema, table, logger, ct);
@@ -205,7 +233,8 @@ public static class RlsConfigurator
         // EF filter stops widening anything, and the paths that legitimately cross tenants —
         // the outbox dispatchers, the publish worker, SuperAdmin listings, tenant resolution
         // itself — need a way to say so. Saying it as a GUC keeps the decision at the call
-        // site that knows, rather than at the registration that does not.
+        // site that knows, rather than at the registration that does not. It calls
+        // dcms_platform_scope() rather than testing the GUC inline; see PlatformScopeFunctionSql.
         var policySql = $"""
             ALTER TABLE {qualified} ENABLE ROW LEVEL SECURITY;
             DROP POLICY IF EXISTS tenant_isolation ON {qualified};
@@ -214,8 +243,8 @@ public static class RlsConfigurator
                 WITH CHECK ("TenantId" = nullif(current_setting('app.tenant_id', true), '')::uuid);
             DROP POLICY IF EXISTS platform_scope ON {qualified};
             CREATE POLICY platform_scope ON {qualified}
-                USING (current_setting('app.scope', true) = 'platform')
-                WITH CHECK (current_setting('app.scope', true) = 'platform');
+                USING (public.dcms_platform_scope())
+                WITH CHECK (public.dcms_platform_scope());
             """;
         try
         {

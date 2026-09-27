@@ -73,6 +73,10 @@ public static class AuditSchemaConfigurator
     /// </summary>
     private static async Task CreateMaintenanceFunctionsAsync(DbContext context, CancellationToken ct)
     {
+        // Before RlsConfigurator runs, and whether or not it does: a partition made below gets
+        // a platform_scope policy that calls this function.
+        await context.Database.ExecuteSqlRawAsync(RlsConfigurator.PlatformScopeFunctionSql, ct);
+
         // ponytail: an anchor's HMAC cannot be checked in SQL, so a forged anchor row satisfies
         // drop_sealed_partition. Verification against the Vault key still exposes the forgery,
         // but the month is gone. Moving drops into the migrate job closes that, at the cost of
@@ -108,8 +112,8 @@ public static class AuditSchemaConfigurator
                         EXECUTE format('DROP POLICY IF EXISTS platform_scope ON audit.%I', part);
                         EXECUTE format(
                             'CREATE POLICY platform_scope ON audit.%I '
-                            'USING (current_setting(''app.scope'', true) = ''platform'') '
-                            'WITH CHECK (current_setting(''app.scope'', true) = ''platform'')', part);
+                            'USING (public.dcms_platform_scope()) '
+                            'WITH CHECK (public.dcms_platform_scope())', part);
                         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dcms_rls') THEN
                             EXECUTE format('GRANT SELECT ON audit.%I TO dcms_rls', part);
                         END IF;

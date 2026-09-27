@@ -78,29 +78,26 @@ public static class AuditEndpoints
 
             // No tenant header is required in platform scope, which is the point: an operator
             // reading the platform's log is not working inside any tenant.
-            var visible = platformScope
-                ? db.Events.AsNoTracking().Where(e => e.TenantId == Guid.Empty)
+            IReadOnlyList<IQueryable<AuditEventRow>> visible = platformScope
+                ? [db.Events.AsNoTracking().Where(e => e.TenantId == Guid.Empty)]
                 : await VisibleAsync(db, tenancy, tenantId!.Value, ct);
 
-            var query = ApplyFilters(
-                visible,
-                new AuditFilter(action, category, outcome, resourceType, resourceId, actorId, from, to));
-
-            // Keyset, not offset: the log only grows, and an offset page walks further into the
-            // table on every request while new rows shift the window under the reader.
-            if (beforeOccurredAt is not null)
+            var filter = new AuditFilter(action, category, outcome, resourceType, resourceId, actorId, from, to);
+            var rows = await Newest(visible, q =>
             {
-                var cursorSeq = beforeSeq ?? long.MaxValue;
-                query = query.Where(e =>
-                    e.OccurredAt < beforeOccurredAt
-                    || (e.OccurredAt == beforeOccurredAt && e.Seq < cursorSeq));
-            }
-
-            var rows = await query
-                .OrderByDescending(e => e.OccurredAt)
-                .ThenByDescending(e => e.Seq)
-                .Take(take + 1)
-                .ToListAsync(ct);
+                q = ApplyFilters(q, filter);
+                // Keyset, not offset: the log only grows, and an offset page walks further into
+                // the table on every request while new rows shift the window under the reader.
+                // The redundant `<=` is the half an index can use; the OR alone is only a filter,
+                // so every later page would walk down from the newest row again.
+                if (beforeOccurredAt is not null)
+                {
+                    var cursorSeq = beforeSeq ?? long.MaxValue;
+                    q = q.Where(e => e.OccurredAt <= beforeOccurredAt
+                        && (e.OccurredAt < beforeOccurredAt || e.Seq < cursorSeq));
+                }
+                return q;
+            }, take + 1).ToListAsync(ct);
 
             var hasMore = rows.Count > take;
             if (hasMore)
@@ -166,7 +163,9 @@ public static class AuditEndpoints
             using var rls = RlsScope.Platform(); // see VisibleAsync
             var visible = await VisibleAsync(db, tenancy, tenantId, ct);
             var row = await visible
-                .FirstOrDefaultAsync(e => e.Id == id, ct);
+                .Select(q => q.Where(e => e.Id == id))
+                .Aggregate(Queryable.Concat)
+                .FirstOrDefaultAsync(ct);
 
             return row is null ? Results.NotFound() : Results.Ok(Project(row, tenantId));
         }).RequirePermission(PlatformPermissions.AuditRead);
@@ -213,10 +212,7 @@ public static class AuditEndpoints
             await audit.FlushAsync(ct);
 
             using var rls = RlsScope.Platform(); // see VisibleAsync
-            var rows = await ApplyFilters(await VisibleAsync(db, tenancy, tenantId, ct), filter)
-                .OrderByDescending(e => e.OccurredAt)
-                .ThenByDescending(e => e.Seq)
-                .Take(take)
+            var rows = await Newest(await VisibleAsync(db, tenancy, tenantId, ct), q => ApplyFilters(q, filter), take)
                 .ToListAsync(ct);
 
             http.Response.ContentType = "application/x-ndjson";
@@ -250,8 +246,13 @@ public static class AuditEndpoints
     /// rows are no tenant's, so the request's own tenant would hide them, and the platform list
     /// reads nothing else. The predicate below is the whole of the visibility rule, and it is
     /// explicit on every query.</para>
+    ///
+    /// <para>Returned as separate branches, one per half of that rule, never as one
+    /// <c>OR</c>: an <c>OR</c> across two indexes cannot be read in time order, so Postgres
+    /// fetched every row the tenant ever had and sorted them to return fifty. Each branch
+    /// alone walks its index newest-first and stops; see <see cref="Newest"/>.</para>
     /// </summary>
-    private static async Task<IQueryable<AuditEventRow>> VisibleAsync(
+    private static async Task<IReadOnlyList<IQueryable<AuditEventRow>>> VisibleAsync(
         AuditDbContext db, TenancyDbContext tenancy, Guid tenantId, CancellationToken ct)
     {
         // Materialised, and it has to be. The membership rows belong to TenancyDbContext and
@@ -268,11 +269,38 @@ public static class AuditEndpoints
             .Select(m => m.UserId)
             .ToListAsync(ct);
 
-        return db.Events
-            .AsNoTracking()
-            .Where(e => e.TenantId == tenantId
-                || (e.TenantId == Guid.Empty && e.SubjectUserId != null && memberIds.Contains(e.SubjectUserId.Value)));
+        var own = db.Events.AsNoTracking().Where(e => e.TenantId == tenantId);
+        if (memberIds.Count == 0)
+        {
+            return [own];
+        }
+        // ponytail: this branch sorts every platform record about the members (sign-ins, account
+        // changes) rather than walking an index, since the ANY spans members. Fine while that is
+        // hundreds of rows; a LATERAL walk of IX_audit_events_subject_time per member if it grows.
+        return
+        [
+            own,
+            db.Events.AsNoTracking().Where(e =>
+                e.TenantId == Guid.Empty && e.SubjectUserId != null && memberIds.Contains(e.SubjectUserId.Value)),
+        ];
     }
+
+    /// <summary>
+    /// The newest <paramref name="take"/> rows across the branches, each narrowed by
+    /// <paramref name="narrow"/>. Every branch is ordered and limited on its own before the
+    /// <c>UNION ALL</c>, so each can stop after one page instead of handing the whole
+    /// visible set to a sort.
+    /// </summary>
+    private static IQueryable<AuditEventRow> Newest(
+        IReadOnlyList<IQueryable<AuditEventRow>> branches,
+        Func<IQueryable<AuditEventRow>, IQueryable<AuditEventRow>> narrow,
+        int take) =>
+        branches
+            .Select(q => narrow(q).OrderByDescending(e => e.OccurredAt).ThenByDescending(e => e.Seq).Take(take))
+            .Aggregate(Queryable.Concat)
+            .OrderByDescending(e => e.OccurredAt)
+            .ThenByDescending(e => e.Seq)
+            .Take(take);
 
     /// <summary>
     /// What the list and the export both narrow by. Shared so the two cannot drift: an export

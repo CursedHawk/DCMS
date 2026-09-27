@@ -105,6 +105,40 @@ public sealed class RlsCoverageTests(AdminApiFixture fixture)
     }
 
     /// <summary>
+    /// The inline <c>current_setting(...) = 'platform'</c> is estimated at 0.5 %, which planned
+    /// every platform-scope read for a sliver of its rows -- the audit list sorted a tenant's
+    /// whole history to return one page. Both copies of the policy SQL (ProtectAsync, and
+    /// ensure_partitions for a month made at runtime) must call the function instead.
+    /// </summary>
+    [DockerFact]
+    public async Task Every_platform_scope_policy_calls_the_estimable_function()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = OwnerContext();
+        // Makes months that migration never touched, so they carry ensure_partitions' copy.
+        await ExecAsync(db, "SELECT audit.ensure_partitions(8)", ct);
+
+        await using var conn = new NpgsqlConnection(fixture.PostgresConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT p.polrelid::regclass::text
+            FROM pg_policy p
+            WHERE p.polname = 'platform_scope'
+              AND (pg_get_expr(p.polqual, p.polrelid) <> 'dcms_platform_scope()'
+                   OR pg_get_expr(p.polwithcheck, p.polrelid) <> 'dcms_platform_scope()')
+            """;
+        var inline = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            inline.Add(reader.GetString(0));
+        }
+
+        inline.Should().BeEmpty("see RlsConfigurator.PlatformScopeFunctionSql");
+    }
+
+    /// <summary>
     /// The other direction: a table that carries a TenantId in the database but appears in
     /// neither list. <c>AssertCoverage</c> catches this at startup from the EF model; this
     /// catches it from the schema, which is where a hand-written migration would put one.
