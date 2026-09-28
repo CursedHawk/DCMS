@@ -1263,6 +1263,10 @@
         "title": "{{title}}",
         "body": "{{body}}"
       },
+      "plugin_forms_submitted": {
+        "title": "New form submission",
+        "body": "Someone submitted the {{form}} form."
+      },
       "form_submitted": {
         "title": "New form submission",
         "body": "Someone submitted the {{form}} form."

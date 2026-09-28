@@ -1,6 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Dcms.Plugins.VisitorAuth.Contracts;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.Shared.Security;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Forms;
@@ -10,13 +14,24 @@ namespace Dcms.Plugins.Forms;
 /// instance config rather than as content types, because a submission is a write
 /// from the public site, not published content.
 ///
-/// The endpoint itself lives in content-api (FormSubmissionEndpoints) — the plugin
-/// SDK does not mount custom plugin routes — so this plugin contributes the
-/// manifest and a per-form OpenAPI fragment describing the POST body.
+/// The plugin owns its submit route (<see cref="FormSubmissionEndpoints"/>) and reaches
+/// email, admin notifications and events through platform contracts. It provides
+/// <c>forms.submissions@1</c> and publishes <c>form.submitted</c>, so another plugin (a
+/// newsletter, a CRM sync) can act on a submission without knowing how Forms stores one.
 /// </summary>
 public sealed class FormsPlugin : IPlugin
 {
     public const string PluginId = "forms";
+
+    /// <summary>
+    /// CORS policy for submissions from an externally hosted tenant site: any origin, no
+    /// credentials — a submission carries no cookie or token for a hostile origin to ride on.
+    /// Registered by content-api.
+    /// </summary>
+    public const string SubmitCorsPolicy = "forms-submit";
+
+    /// <summary>Who may read submissions: the platform's content-read, as the admin inbox requires.</summary>
+    public const string SubmissionsReadPermission = PlatformPermissions.ContentRead;
 
     private const string ConfigSchema = """
         {
@@ -46,7 +61,13 @@ public sealed class FormsPlugin : IPlugin
                         "label": { "type": "string" },
                         "type": { "type": "string", "enum": ["text", "email", "date", "number", "textarea", "checkbox"], "default": "text" },
                         "required": { "type": "boolean", "default": false },
-                        "maxLength": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 2000 }
+                        "maxLength": { "type": "integer", "minimum": 1, "maximum": 10000, "default": 2000 },
+                        "prefill": {
+                          "type": "string",
+                          "title": "Prefill from visitor",
+                          "description": "Fill this field from the signed-in visitor when left empty: visitor.email, visitor.displayName or visitor.<attribute> (attributes VisitorAuth shares with plugins).",
+                          "pattern": "^visitor\\.[a-zA-Z][a-zA-Z0-9]*$"
+                        }
                       },
                       "required": ["name"],
                       "additionalProperties": false
@@ -104,12 +125,20 @@ public sealed class FormsPlugin : IPlugin
         ],
         category: "Engagement",
         summary: "Contact and signup forms, with submissions in an inbox.",
-        iconName: "Inbox");
+        iconName: "Inbox",
+        provides: [ContractProvision.Of<IFormSubmissions, FormSubmissions>()],
+        consumes:
+        [
+            ContractRequirement.Of<IPluginEmail>(),
+            ContractRequirement.Of<IPluginNotifications>(),
+            ContractRequirement.Of<IPluginEvents>(),
+            // Links a submission to the signed-in visitor and prefills fields when present.
+            ContractRequirement.Of<IVisitorIdentity>(optional: true),
+        ]);
 
     public void ConfigureServices(IServiceCollection services) { }
 
-    // No content types and no custom routes: submissions are served by content-api.
-    public void MapEndpoints(IPluginEndpointBuilder endpoints) { }
+    public void MapEndpoints(IPluginEndpointBuilder endpoints) => FormSubmissionEndpoints.Map(endpoints);
 
     public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
     {
@@ -182,7 +211,8 @@ public sealed class FormsPlugin : IPlugin
                         GetString(field, "label"),
                         GetString(field, "type") ?? "text",
                         field.TryGetProperty("required", out var req) && req.ValueKind == JsonValueKind.True,
-                        field.TryGetProperty("maxLength", out var max) && max.TryGetInt32(out var maxLen) ? maxLen : 2000));
+                        field.TryGetProperty("maxLength", out var max) && max.TryGetInt32(out var maxLen) ? maxLen : 2000,
+                        GetString(field, "prefill")));
                 }
             }
 
@@ -315,4 +345,5 @@ public sealed record FormFieldDefinition(
     string? Label,
     string Type,
     bool Required,
-    int MaxLength);
+    int MaxLength,
+    string? Prefill = null);

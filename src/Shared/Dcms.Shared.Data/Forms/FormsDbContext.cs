@@ -1,5 +1,6 @@
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Data.Audit;
+using Dcms.Shared.Data.Rls;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
@@ -32,6 +33,9 @@ public sealed class FormSubmission : TenantEntity, ISandboxScoped
 
     /// <summary>Set when an operator has dealt with the submission in the admin.</summary>
     public DateTimeOffset? HandledAt { get; set; }
+
+    /// <summary>The signed-in site visitor who submitted it, when there was one (VisitorAuth).</summary>
+    public Guid? VisitorId { get; set; }
 }
 
 /// <summary>Owns the "forms" schema. Written by content-api, read by admin-api.</summary>
@@ -41,7 +45,9 @@ public class FormsDbContext(
 {
     public const string Schema = "forms";
 
-    private Guid CurrentTenantId => tenantContext.TenantId ?? Guid.Empty;
+    // An enclosing RlsScope.Tenant wins, as for CmsDbContext: forms.submissions@1 is read by
+    // plugin event handlers and jobs with no request behind them.
+    private Guid CurrentTenantId => RlsScope.TenantOverride ?? tenantContext.TenantId ?? Guid.Empty;
     private bool CurrentSandbox => sandboxContext.IsSandbox;
 
     public DbSet<FormSubmission> Submissions => Set<FormSubmission>();

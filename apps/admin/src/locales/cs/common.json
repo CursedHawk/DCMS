@@ -1288,6 +1288,10 @@
         "title": "{{title}}",
         "body": "{{body}}"
       },
+      "plugin_forms_submitted": {
+        "title": "Nové odeslání formuláře",
+        "body": "Někdo odeslal formulář {{form}}."
+      },
       "form_submitted": {
         "title": "Nové odeslání formuláře",
         "body": "Někdo odeslal formulář {{form}}."

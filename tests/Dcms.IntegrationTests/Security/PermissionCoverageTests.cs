@@ -232,10 +232,6 @@ public sealed class ContentApiPermissionCoverageTests : PermissionCoverageTestsB
         "ANY /hub/chat/negotiate",
         "POST /api/collect",
         "POST /api/{slug}/collect",
-        "POST /api/{slug}/forms/{formName}",
-        "POST /api/{slug}/login",
-        "POST /api/{slug}/refresh",
-        "POST /api/{slug}/register",
     ];
 }
 

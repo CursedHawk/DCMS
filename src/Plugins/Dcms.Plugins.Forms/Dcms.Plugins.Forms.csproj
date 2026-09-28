@@ -6,6 +6,12 @@
 
   <ItemGroup>
     <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+    <!-- First-party: owns the existing forms schema. -->
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Security\Dcms.Shared.Security.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Telemetry\Dcms.Shared.Telemetry.csproj" />
+    <!-- For the visitors.identity@1 contract types (an optional consume). -->
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.VisitorAuth\Dcms.Plugins.VisitorAuth.csproj" />
   </ItemGroup>
 
 </Project>

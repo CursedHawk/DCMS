@@ -133,7 +133,7 @@ public sealed class PluginCache(IPluginContext caller, ICacheService cache) : IP
 public sealed class PluginEmail(IPluginContext caller, IEmailQueue queue, ICacheService cache) : IPluginEmail
 {
     /// <summary>Recipient-messages per tenant, per plugin, per hour.</summary>
-    public const int HourlyLimit = 200;
+    public const int HourlyLimit = 1000;
     private const int MaxRecipients = 50;
 
     public async Task<EmailQueued> SendAsync(EmailSend input, CancellationToken ct)
@@ -202,19 +202,37 @@ public sealed class PluginNotifications(IPluginContext caller, IEventPublisher e
             throw new ContractValidationException("LinkPath must be an admin path starting with a single '/'.");
         }
 
+        if (input.Kind is { } name && (name.Length > 64 || !PluginRegistry.IsKebabCase(name) || name.Length == 0))
+        {
+            throw new ContractValidationException("Kind must be kebab-case, at most 64 characters.");
+        }
+
+        // A plugin may only claim kinds under its own id, so it can never render as (or be
+        // mistaken for) a platform notification such as a failed build.
+        // NotificationKinds.PluginMessage in admin-api renders the unlocalised case.
+        var kind = input.Kind is { } own ? $"plugin.{caller.PluginId}.{own}" : "plugin.message";
+        var slug = kind.Replace('.', '_');
+        var values = new Dictionary<string, string>(input.Params ?? new Dictionary<string, string>())
+        {
+            ["title"] = input.Title,
+            ["body"] = input.Body,
+            ["plugin"] = caller.PluginId,
+        };
+
         return events.PublishAsync(Subjects.NotifyRaise, new NotificationRaiseRequested(
             EventId: Guid.NewGuid(),
             OccurredAt: DateTimeOffset.UtcNow,
             TenantId: caller.TenantId,
-            // NotificationKinds.PluginMessage in admin-api; the plugin id is in the params.
-            Kind: "plugin.message",
+            Kind: kind,
             Severity: input.Severity.ToString(),
             RequiredPermission: input.RequiredPermission,
-            TitleKey: "notifications.kinds.plugin_message.title",
-            BodyKey: "notifications.kinds.plugin_message.body",
-            ParamsJson: JsonSerializer.Serialize(new { title = input.Title, body = input.Body, plugin = caller.PluginId }),
+            TitleKey: $"notifications.kinds.{slug}.title",
+            BodyKey: $"notifications.kinds.{slug}.body",
+            ParamsJson: JsonSerializer.Serialize(values),
             DedupeKey: $"plugin:{caller.PluginId}:{input.DedupeKey}",
-            LinkPath: input.LinkPath), ct).AsTask();
+            LinkPath: input.LinkPath,
+            ResourceType: input.ResourceType,
+            ResourceId: input.ResourceId), ct).AsTask();
     }
 }
 

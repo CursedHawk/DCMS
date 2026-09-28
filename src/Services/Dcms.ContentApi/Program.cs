@@ -1,7 +1,6 @@
 using Dcms.ContentApi.Branding;
 using Dcms.ContentApi.Chat;
 using Dcms.ContentApi.Delivery;
-using Dcms.ContentApi.Forms;
 using Dcms.ContentApi.Plugins;
 using Dcms.ContentApi.Social;
 using Dcms.PluginSdk.Runtime;
@@ -145,7 +144,7 @@ builder.Services.AddCors(options =>
         .WithMethods("POST"));
     // Form submissions carry no cookie or token, so the same any-origin,
     // no-credentials shape applies: externally hosted tenant sites can post.
-    options.AddPolicy(FormSubmissionEndpoints.SubmitCorsPolicy, policy => policy
+    options.AddPolicy(Dcms.Plugins.Forms.FormsPlugin.SubmitCorsPolicy, policy => policy
         .AllowAnyOrigin()
         .AllowAnyHeader()
         .WithMethods("POST"));
@@ -214,7 +213,6 @@ app.MapDcmsDefaultEndpoints();
 app.MapDcmsPlugins();
 app.MapSearchDelivery();
 app.MapAnalyticsIngest();
-app.MapFormSubmissions();
 app.MapBranding();
 app.MapPluginConfig();
 app.MapChatDelivery();

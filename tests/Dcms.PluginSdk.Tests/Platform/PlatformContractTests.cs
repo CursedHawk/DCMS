@@ -87,7 +87,7 @@ public class PlatformContractTests
         sent.DedupeKey.Should().Be("plugin:forms:sub-1");
 
         var many = Enumerable.Range(0, 50).Select(i => $"r{i}@x.test").ToList();
-        for (var i = 0; i < 3; i++)
+        for (var i = 0; i < 19; i++)
         {
             await email.SendAsync(new EmailSend(many, "Bulk", "<p/>"), ct);
         }

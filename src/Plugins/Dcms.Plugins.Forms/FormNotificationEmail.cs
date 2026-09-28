@@ -1,7 +1,7 @@
 using System.Net;
-using Dcms.Shared.Messaging.Email;
+using Dcms.PluginSdk.Abstractions.Platform;
 
-namespace Dcms.ContentApi.Forms;
+namespace Dcms.Plugins.Forms;
 
 /// <summary>One notification email to send, fully rendered from the submission.</summary>
 /// <param name="Recipients">Addresses from the form's notify config.</param>
@@ -20,21 +20,17 @@ public sealed record FormNotificationMessage(
     string? ReplyTo);
 
 /// <summary>
-/// Turns a submission notification into a queued email. Rendering happens here, on
-/// the producer side, because only content-api knows what a submission looks like —
-/// email-worker just delivers whatever body it is handed.
+/// Turns a submission notification into an email for <c>dcms.email@1</c>. Rendering happens
+/// here, on the producer side, because only the Forms plugin knows what a submission looks
+/// like — email-worker just delivers whatever body it is handed.
 /// </summary>
 public static class FormNotificationEmail
 {
-    public const string Purpose = "form-notification";
-
-    public static EmailMessage ToEmail(this FormNotificationMessage message) => new(
-        Recipients: message.Recipients,
+    public static EmailSend ToEmail(this FormNotificationMessage message) => new(
+        To: message.Recipients,
         Subject: message.Subject,
         HtmlBody: RenderBody(message),
         ReplyTo: message.ReplyTo,
-        Purpose: Purpose,
-        TenantId: message.TenantId,
         DedupeKey: $"form-submission:{message.SubmissionId}");
 
     private static string RenderBody(FormNotificationMessage message)

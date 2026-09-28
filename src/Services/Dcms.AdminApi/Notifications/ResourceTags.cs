@@ -60,6 +60,7 @@ public static class ResourceTags
         NotificationKinds.DomainVerified => Domains,
         NotificationKinds.PluginInstanceChanged => Plugins,
         NotificationKinds.FormSubmitted => Forms,
+        NotificationKinds.FormsSubmitted => Forms,
         NotificationKinds.ChatConversationStarted => Chat,
         // A Meta token nearing expiry changes no list anyone is looking at; the notification
         // itself is the entire point.

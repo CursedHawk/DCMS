@@ -7,6 +7,7 @@ using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Visitors;
+using Dcms.Shared.Security;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -56,7 +57,8 @@ internal static class VisitorAuthEndpoints
             }
 
             return Results.Ok(await IssueAsync(db, tokens, context.TenantId, account, ct));
-        }).WithAudit(AuditActions.VisitorRegistered, "visitor", AuditCategory.Auth);
+        }).WithAudit(AuditActions.VisitorRegistered, "visitor", AuditCategory.Auth)
+          .PermissionExempt("Anonymous by design: a site visitor creating their own account.");
 
         endpoints.MapPost("/login", async (
             AuthRequest body, IPluginContext context, VisitorsDbContext db, VisitorTokenService tokens, CancellationToken ct) =>
@@ -69,7 +71,8 @@ internal static class VisitorAuthEndpoints
                 return Results.Unauthorized();
             }
             return Results.Ok(await IssueAsync(db, tokens, context.TenantId, account, ct));
-        }).WithAudit(AuditActions.VisitorLoggedIn, "visitor", AuditCategory.Auth);
+        }).WithAudit(AuditActions.VisitorLoggedIn, "visitor", AuditCategory.Auth)
+          .PermissionExempt("Anonymous by design: the password check is the gate.");
 
         endpoints.MapPost("/refresh", async (
             RefreshRequest body, IPluginContext context, VisitorsDbContext db, VisitorTokenService tokens, CancellationToken ct) =>
@@ -88,7 +91,8 @@ internal static class VisitorAuthEndpoints
             }
             stored.RevokedAt = DateTimeOffset.UtcNow; // rotate
             return Results.Ok(await IssueAsync(db, tokens, context.TenantId, account, ct));
-        }).AuditExempt("Token refresh. High volume, low signal — the sign-in it renews is already recorded, and the visitor plane refreshes every 15 minutes.");
+        }).PermissionExempt("Gated by possession of an unexpired, unrevoked refresh token.")
+          .AuditExempt("Token refresh. High volume, low signal — the sign-in it renews is already recorded, and the visitor plane refreshes every 15 minutes.");
 
         endpoints.MapGet("/me", async (ClaimsPrincipal user, VisitorsDbContext db, CancellationToken ct) =>
         {
@@ -148,7 +152,9 @@ internal static class VisitorAuthEndpoints
                 await VisitorProfiles.PublishUpdatedAsync(context, account.Id, changed, logger, ct);
             }
             return Results.Ok(OwnProfile(account, context));
-        }).RequireVisitor().WithAudit(AuditActions.VisitorProfileUpdated, "visitor", AuditCategory.TenantState);
+        }).RequireVisitor()
+          .PermissionExempt("Self-scoped: RequireVisitor, and the handler only ever loads the caller's own account.")
+          .WithAudit(AuditActions.VisitorProfileUpdated, "visitor", AuditCategory.TenantState);
     }
 
     private static object OwnProfile(VisitorAccount account, IPluginContext context) => new

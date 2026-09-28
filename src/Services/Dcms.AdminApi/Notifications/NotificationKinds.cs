@@ -46,6 +46,13 @@ public static class NotificationKinds
     public const string PluginMessage = "plugin.message";
 
     /// <summary>
+    /// A form submission, raised by the Forms plugin since it owns its code (docs/adr/0016).
+    /// Supersedes <see cref="FormSubmitted"/>, which stays catalogued for the rows already stored.
+    /// Plugin kinds are always <c>plugin.{pluginId}.{name}</c>.
+    /// </summary>
+    public const string FormsSubmitted = "plugin.forms.submitted";
+
+    /// <summary>
     /// The i18n key for a kind's title.
     ///
     /// <para><b>The dots in a kind are replaced with underscores, and that is load-bearing.</b>

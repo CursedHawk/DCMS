@@ -116,13 +116,24 @@ public enum NotificationSeverity
 /// </param>
 /// <param name="DedupeKey">Identifies the underlying occurrence, not this call; namespaced per plugin by the platform.</param>
 /// <param name="LinkPath">Admin SPA path the notification opens, e.g. <c>/forms</c>.</param>
+/// <param name="Kind">
+/// Optional, for a notification the admin SPA has translations for: the kind becomes
+/// <c>plugin.{pluginId}.{Kind}</c> and renders through its own locale keys, with
+/// <see cref="Params"/> (plus <c>title</c> and <c>body</c>) as interpolation values. Without it
+/// the notification renders <see cref="Title"/> and <see cref="Body"/> as given.
+/// </param>
+/// <param name="ResourceType">What the notification is about, for the SPA's live refresh.</param>
 public sealed record NotificationRaise(
     string Title,
     string Body,
     string RequiredPermission,
     string DedupeKey,
     NotificationSeverity Severity = NotificationSeverity.Info,
-    string? LinkPath = null);
+    string? LinkPath = null,
+    string? Kind = null,
+    IReadOnlyDictionary<string, string>? Params = null,
+    string? ResourceType = null,
+    Guid? ResourceId = null);
 
 /// <summary>In-app notifications (the admin bell) for the tenant's members.</summary>
 [DcmsContract("dcms.notifications", 1, Description = "Raise an in-app notification for tenant members.")]
