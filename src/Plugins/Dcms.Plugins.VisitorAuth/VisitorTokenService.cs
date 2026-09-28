@@ -4,7 +4,7 @@ using System.Text;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
-namespace Dcms.ContentApi.Visitors;
+namespace Dcms.Plugins.VisitorAuth;
 
 public sealed class VisitorTokenOptions
 {

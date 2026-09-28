@@ -54,6 +54,15 @@ public class PublicConfigTests
         // Adding a plugin here is a deliberate act: the keys become world-readable
         // on every published tenant site.
         exposing.Should().BeEquivalentTo(
-            ["branding", "carousel", "events", "facebook", "instagram", "roster"]);
+            ["branding", "carousel", "events", "facebook", "instagram", "roster", "visitor-auth"]);
+    }
+
+    [Fact]
+    public void Visitor_auth_exposes_attribute_definitions_only()
+    {
+        // The site renders the profile form from the definitions. Attribute *values* live on
+        // the visitor's account and are never part of instance config.
+        new Dcms.Plugins.VisitorAuth.VisitorAuthPlugin().Manifest.PublicConfigKeys
+            .Should().BeEquivalentTo(["attributes"]);
     }
 }

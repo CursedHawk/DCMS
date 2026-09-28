@@ -118,7 +118,12 @@ public sealed class PluginRegistry : IPluginCatalog
                 throw new InvalidOperationException(
                     $"Plugin '{manifest.Id}' declares consuming '{requirement.ContractId}' more than once.");
             }
-            if (!requirement.Optional && !_contracts.ContainsKey(requirement.ContractId))
+            // A platform (dcms.*) contract is part of the SDK and every host registers it, so a
+            // registry built without them (the manifest catalog, a test) still accepts a plugin
+            // that needs one -- but only one the SDK actually defines, so a typo still fails.
+            var satisfied = _contracts.ContainsKey(requirement.ContractId)
+                || (ContractIds.IsPlatform(requirement.ContractId) && PlatformContractIds.Contains(requirement.ContractId));
+            if (!requirement.Optional && !satisfied)
             {
                 throw new InvalidOperationException(
                     $"Plugin '{manifest.Id}' requires contract '{requirement.ContractId}', which nothing provides.");
@@ -243,6 +248,14 @@ public sealed class PluginRegistry : IPluginCatalog
                 $"Plugin '{manifest.Id}' declares content type '{duplicateType.Key}' more than once.");
         }
     }
+
+    /// <summary>Every <c>dcms.*</c> contract the SDK defines (in the Abstractions assembly).</summary>
+    public static readonly IReadOnlySet<string> PlatformContractIds = typeof(IPlugin).Assembly.GetTypes()
+        .Where(t => t.IsInterface)
+        .Select(t => t.GetCustomAttributes(typeof(DcmsContractAttribute), false).FirstOrDefault() as DcmsContractAttribute)
+        .Where(a => a is not null && ContractIds.IsPlatform(a.Id))
+        .Select(a => a!.Id)
+        .ToHashSet(StringComparer.Ordinal);
 
     public static bool IsKebabCase(string value)
         => value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')

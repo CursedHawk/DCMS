@@ -182,6 +182,7 @@ public static class AuditActions
     // ---- visitors (site end-users, a separate identity plane from platform users) ----
     public const string VisitorRegistered = "visitor.registered";
     public const string VisitorLoggedIn = "visitor.login.succeeded";
+    public const string VisitorProfileUpdated = "visitor.profile.updated";
 
     // ---- analytics / chat ----
     public const string AnalyticsPurged = "analytics.purged";

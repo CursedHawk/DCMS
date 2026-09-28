@@ -12,7 +12,7 @@ using Dcms.Shared.Caching;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Hosting;
-using Dcms.ContentApi.Visitors;
+using Dcms.Plugins.VisitorAuth;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.DataProtection;
@@ -76,8 +76,6 @@ builder.Services.AddDcmsChatData(builder.Configuration);
 builder.Services.AddDcmsVaultTransit();
 builder.Services.AddDcmsDataProtection(builder.Configuration);
 
-builder.Services.Configure<VisitorTokenOptions>(builder.Configuration.GetSection(VisitorTokenOptions.SectionName));
-
 // Prod safety, same shape as admin-api's webhook-secret guards. Visitor:SigningKey is a
 // manual `vault kv put` in the deploy guide — infra/vault/init.sh only writes a placeholder
 // to secret/dcms/content-api — so the way this goes wrong is a step being skipped, not a bad
@@ -99,8 +97,6 @@ if (builder.Environment.IsProduction())
             + "value (openssl rand -base64 32) at secret/dcms/content-api.");
     }
 }
-builder.Services.AddSingleton(sp =>
-    new VisitorTokenService(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<VisitorTokenOptions>>().Value));
 builder.Services.AddDcmsTenantResolutionByHeader();
 
 // Preview sandbox: the admin-api preview proxy sets X-Dcms-Sandbox so a site
@@ -221,7 +217,6 @@ app.MapAnalyticsIngest();
 app.MapFormSubmissions();
 app.MapBranding();
 app.MapPluginConfig();
-app.MapVisitorAuth();
 app.MapChatDelivery();
 // Before the generic content delivery for readability; ASP.NET routing decides on segment
 // literalness rather than registration order, so `instagram-story` wins either way.

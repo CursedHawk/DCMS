@@ -1,4 +1,4 @@
-using Dcms.ContentApi.Visitors;
+using Dcms.Plugins.VisitorAuth;
 
 namespace Dcms.IntegrationTests.Visitors;
 

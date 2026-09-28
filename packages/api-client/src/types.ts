@@ -101,6 +101,29 @@ export interface VisitorProfile {
   displayName?: string | null;
 }
 
+/** One profile attribute the site defines (VisitorAuth instance config). */
+export interface VisitorAttributeDefinition {
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'boolean' | 'date' | 'select';
+  /** Who besides the visitor and the site's admins may read the value. */
+  visibility: 'private' | 'plugins' | 'public';
+  visitorEditable: boolean;
+  options?: string[] | null;
+}
+
+/** The signed-in visitor's own profile: every attribute, private ones included. */
+export interface VisitorOwnProfile extends VisitorProfile {
+  attributes: Record<string, unknown>;
+  definitions: VisitorAttributeDefinition[];
+}
+
+/** A profile change. An attribute set to `null` is cleared; only visitor-editable ones are accepted. */
+export interface VisitorProfileUpdate {
+  displayName?: string;
+  attributes?: Record<string, unknown>;
+}
+
 export interface VisitorRegistration {
   email: string;
   password: string;

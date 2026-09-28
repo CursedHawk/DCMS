@@ -27,6 +27,8 @@ import type {
   TenantClientOptions,
   VisitorCredentials,
   VisitorProfile,
+  VisitorOwnProfile,
+  VisitorProfileUpdate,
   VisitorRegistration,
   VisitorTokens,
 } from './types';
@@ -89,6 +91,9 @@ export interface VisitorAuthApi {
   login(body: VisitorCredentials): Promise<VisitorTokens>;
   refresh(refreshToken: string): Promise<VisitorTokens>;
   me(): Promise<VisitorProfile>;
+  /** The signed-in visitor's full profile and the attribute definitions to render it with. */
+  getProfile(): Promise<VisitorOwnProfile>;
+  updateProfile(update: VisitorProfileUpdate): Promise<VisitorOwnProfile>;
 }
 
 export interface ContentResolver<T = Record<string, unknown>> {
@@ -199,6 +204,9 @@ export function createHttpCore(options: TenantClientOptions = {}): HttpCore {
         login: (body: VisitorCredentials) => jsonPost<VisitorTokens>(`/api/${slug}/login`, body),
         refresh: (refreshToken: string) => jsonPost<VisitorTokens>(`/api/${slug}/refresh`, { refreshToken }),
         me: () => request<VisitorProfile>(`/api/${slug}/me`),
+        getProfile: () => request<VisitorOwnProfile>(`/api/${slug}/me/profile`),
+        updateProfile: (update: VisitorProfileUpdate) =>
+          call<VisitorOwnProfile>('PUT', `/api/${slug}/me/profile`, { body: update }),
       };
     },
     chatHistory(slug: string, conversationId: string): Promise<ChatMessage[]> {

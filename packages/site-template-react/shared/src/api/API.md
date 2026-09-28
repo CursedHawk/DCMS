@@ -63,7 +63,7 @@ Site search.
 
 Member accounts.
 
-- `api.members.auth.register(body) / .login(body) / .refresh(token) / .me()` → `VisitorTokens / VisitorProfile` — Visitor accounts. Pass `visitorToken` to createTenantClient for `me()`. (POST /api/members/register|login|refresh, GET /api/members/me)
+- `api.members.auth.register(body) / .login(body) / .refresh(token) / .me() / .getProfile() / .updateProfile(update)` → `VisitorTokens / VisitorProfile / VisitorOwnProfile` — Visitor accounts and profiles. Pass `visitorToken` to createTenantClient for `me()` and the profile calls. (POST /api/members/register|login|refresh, GET /api/members/me, GET|PUT /api/members/me/profile)
 
 ### News (`news`)
 

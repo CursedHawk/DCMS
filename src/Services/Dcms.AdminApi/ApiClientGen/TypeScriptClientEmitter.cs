@@ -181,9 +181,10 @@ public static class TypeScriptClientEmitter
                     break;
                 case "visitor-auth":
                     Add(section, new Leaf([s, "auth"], $"http.visitorAuth({slug})",
-                        $"api.{Member(s)}.auth.register(body) / .login(body) / .refresh(token) / .me()", "VisitorTokens / VisitorProfile",
-                        $"POST /api/{s}/register|login|refresh, GET /api/{s}/me",
-                        "Visitor accounts. Pass `visitorToken` to createTenantClient for `me()`."));
+                        $"api.{Member(s)}.auth.register(body) / .login(body) / .refresh(token) / .me() / .getProfile() / .updateProfile(update)",
+                        "VisitorTokens / VisitorProfile / VisitorOwnProfile",
+                        $"POST /api/{s}/register|login|refresh, GET /api/{s}/me, GET|PUT /api/{s}/me/profile",
+                        "Visitor accounts and profiles. Pass `visitorToken` to createTenantClient for `me()` and the profile calls."));
                     break;
                 case "live-chat":
                     runtimeTypes.Add("ChatMessage");

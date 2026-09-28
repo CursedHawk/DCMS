@@ -1,6 +1,7 @@
 using Dcms.Shared.Audit.Redaction;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Data.Audit;
+using Dcms.Shared.Data.Rls;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
@@ -23,6 +24,12 @@ public sealed class VisitorAccount : TenantEntity, ISandboxScoped
 
     /// <summary>True for accounts created from a site preview's sandbox.</summary>
     public bool IsSandbox { get; set; }
+
+    /// <summary>
+    /// Profile attribute values as a JSON object, keyed by the attribute definitions in the
+    /// VisitorAuth instance config. Validated against those definitions on every write.
+    /// </summary>
+    public string AttributesJson { get; set; } = "{}";
 }
 
 // Rotated every few minutes by every signed-in visitor: high volume, no signal. The sign-in itself is recorded.
@@ -43,7 +50,9 @@ public class VisitorsDbContext(
 {
     public const string Schema = "visitors";
 
-    private Guid CurrentTenantId => tenantContext.TenantId ?? Guid.Empty;
+    // An enclosing RlsScope.Tenant wins, as for CmsDbContext and the RLS GUC: plugin event
+    // handlers and jobs read visitor profiles with no request behind them.
+    private Guid CurrentTenantId => RlsScope.TenantOverride ?? tenantContext.TenantId ?? Guid.Empty;
     private bool CurrentSandbox => sandboxContext.IsSandbox;
 
     public DbSet<VisitorAccount> Accounts => Set<VisitorAccount>();
@@ -63,6 +72,7 @@ public class VisitorsDbContext(
             e.HasKey(a => a.Id);
             e.Property(a => a.Email).HasMaxLength(256).IsRequired();
             e.Property(a => a.DisplayName).HasMaxLength(256);
+            e.Property(a => a.AttributesJson).HasColumnType("jsonb").HasDefaultValueSql("'{}'::jsonb");
             e.HasIndex(a => new { a.TenantId, a.IsSandbox, a.Email }).IsUnique();
             e.HasQueryFilter(a => a.TenantId == CurrentTenantId && a.IsSandbox == CurrentSandbox);
         });
