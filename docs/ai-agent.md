@@ -175,6 +175,26 @@ preference, that one is a decision to let publishing happen with nobody watching
 | Skills | `read_skill` |
 | Tenant | content, media, plugins, analytics — the console assistant's registry, reused |
 
+### Plugin contract tools
+
+The console assistant also offers every plugin **contract operation** exposed to AI
+([ADR 0016](adr/0016-plugin-contracts.md)), built at run time from
+`GET /api/admin/contracts?plane=ai` by `features/assistant/contractTools.ts`:
+
+- One tool per operation per providing instance — `members_profiles_get` for VisitorAuth's
+  `visitors.profiles@1` `Get` on the `members` instance — with the contract's JSON Schema as
+  `input_schema` and the instance's own description in the tool description.
+- Only instances the tenant opted in (the plugin's *Let the AI assistant use this plugin*
+  switch, `plugin_instances.AiToolsEnabled`, off by default) and only operations the member's
+  permissions reach appear at all. They carry no client-side `permission`: the server already
+  filtered, and re-checks exposure, opt-in and permission on every call.
+- `OpRisk` maps onto the mode table unchanged: Read runs, Safe and Dangerous follow `decide()`.
+- Operations marked `ReturnsExternalText` (form submissions, visitor profiles) have their
+  results fenced with the same untrusted-data wrapper as the IDE's preview tools.
+
+A plugin offers a tool by exposing an operation to `Ai`; there is no separate tool API. The
+public site chatbot does not use contract tools yet — its gateway path is text-only.
+
 ### What the site tells the agent
 
 Two files do more for a run than any prompt text, because they are specific to the site:
