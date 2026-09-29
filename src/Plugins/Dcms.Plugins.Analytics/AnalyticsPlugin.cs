@@ -1,24 +1,68 @@
 ﻿using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.Plugins.Analytics.Api;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Dcms.Plugins.Analytics;
 
+/// <summary>
+/// Website analytics. Owns the whole path: the public beacon (site plane), the ingest consumer
+/// that writes events and rollups, and the dashboard (admin plane). Other plugins record their
+/// own events through <see cref="IAnalytics"/>.
+/// </summary>
 public sealed class AnalyticsPlugin : IPlugin
 {
-    // Tenant-identifying header. Hardcoded here so the plugin stays free of a
-    // dependency on the shared tenancy layer; mirrors X-Dcms-Tenant.
+    public const string PluginId = "analytics";
+
+    // Tenant-identifying header, documented for externally hosted sites; mirrors X-Dcms-Tenant.
     private const string TenantHeader = "X-Dcms-Tenant";
 
     public PluginManifest Manifest { get; } = PluginManifest.Create(
-        id: "analytics",
+        id: PluginId,
         name: "Analytics",
         description: "Website analytics collection, rollups and dashboards.",
         allowMultipleInstances: false,
+        provides: [ContractProvision.Of<IAnalytics, AnalyticsTracking>()],
         category: "Insight",
         summary: "Page views, sessions and campaign attribution.",
         iconName: "TrendingUp");
 
+    public void ConfigureServices(IServiceCollection services, PluginHost host)
+    {
+        if (host.IsSite)
+        {
+            // Country comes from the edge; register a GeoIP-database implementation in its
+            // place if the deployment has no country-stamping proxy.
+            services.TryAddSingleton<IGeoIpResolver, HeaderGeoIpResolver>();
+            services.AddCors(o => o.AddPolicy(AnalyticsIngestEndpoints.CollectCorsPolicy, policy => policy
+                .AllowAnyOrigin()
+                .AllowAnyHeader()
+                .WithMethods("GET", "POST")));
+        }
+        else
+        {
+            services.AddHostedService<AnalyticsConsumer>();
+        }
+    }
 
+    public void MapEndpoints(IPluginEndpointBuilder endpoints) => AnalyticsIngestEndpoints.MapInstanceRoutes(endpoints);
+
+    // Tenant-wide rather than per instance (analytics is single-instance and its data is the
+    // tenant's), so these keep their established addresses.
+    public void MapHostEndpoints(IEndpointRouteBuilder app, PluginHost host)
+    {
+        if (host.IsSite)
+        {
+            AnalyticsIngestEndpoints.MapHostRoutes(app);
+        }
+        else
+        {
+            AnalyticsDashboardEndpoints.MapHostRoutes(app);
+        }
+    }
 
     // Document the anonymous ingest beacon so externally hosted sites (not served
     // on a DCMS domain) can record analytics and have it in the OpenAPI spec.

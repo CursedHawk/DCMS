@@ -2,19 +2,22 @@ using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Analytics;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using EventEntity = Dcms.Shared.Data.Analytics.AnalyticsEvent;
 using Dcms.Shared.Data.Rls;
 
-namespace Dcms.AdminApi.Analytics;
+namespace Dcms.Plugins.Analytics;
 
 /// <summary>
 /// Persists analytics event batches and maintains per-day rollups. Resilient to
 /// NATS being unavailable; idempotency is best-effort (raw events are append-only,
 /// rollups are incremented — acceptable for analytics).
 /// </summary>
-public sealed class AnalyticsConsumer(
+internal sealed class AnalyticsConsumer(
     INatsJSContext jetStream,
     IServiceProvider services,
     ILogger<AnalyticsConsumer> logger) : BackgroundService

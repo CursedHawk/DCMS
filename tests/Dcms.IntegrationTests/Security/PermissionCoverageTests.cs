@@ -230,8 +230,6 @@ public sealed class ContentApiPermissionCoverageTests : PermissionCoverageTestsB
         "ANY /health/live",
         "ANY /hub/chat",
         "ANY /hub/chat/negotiate",
-        "POST /api/collect",
-        "POST /api/{slug}/collect",
     ];
 }
 

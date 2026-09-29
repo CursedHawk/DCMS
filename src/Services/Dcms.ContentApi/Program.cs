@@ -50,9 +50,6 @@ builder.Services.AddDcmsFormsData(builder.Configuration);
 // Optional per-form email notifications. Rendered here, delivered by email-worker
 // off the EMAIL work queue — content-api never touches SMTP.
 builder.Services.AddDcmsEmailQueue();
-// Country for analytics comes from the edge; swap this registration for a GeoIP
-// database implementation if the deployment has no country-stamping proxy.
-builder.Services.AddSingleton<Dcms.ContentApi.Delivery.IGeoIpResolver, Dcms.ContentApi.Delivery.HeaderGeoIpResolver>();
 builder.Services.AddDcmsSearchData(builder.Configuration);
 builder.Services.AddDcmsVisitorsData(builder.Configuration);
 builder.Services.AddDcmsChatData(builder.Configuration);
@@ -132,22 +129,10 @@ builder.Services.AddDcmsRateLimiting(builder.Configuration);
 // Removing it rather than leaving it harmless. A credentialed policy is the surface that
 // turns a cookie into a cross-origin capability, and content-api is the internet-facing
 // service; keeping one that nothing uses means the next person to add a cookie here inherits
-// it without deciding to. The three policies below are the cross-origin surface, all
-// anonymous and all named at the endpoint that wants them.
+// it without deciding to. The cross-origin surface is the plugins' anonymous policies, each
+// registered by the plugin that owns the endpoint (analytics beacon, form submit), plus the one below.
 builder.Services.AddCors(options =>
 {
-    // Anonymous analytics beacon: any origin may POST events (no credentials),
-    // so externally hosted sites can use the documented collect API.
-    options.AddPolicy(AnalyticsIngestEndpoints.CollectCorsPolicy, policy => policy
-        .AllowAnyOrigin()
-        .AllowAnyHeader()
-        .WithMethods("POST"));
-    // Form submissions carry no cookie or token, so the same any-origin,
-    // no-credentials shape applies: externally hosted tenant sites can post.
-    options.AddPolicy(Dcms.Plugins.Forms.FormsPlugin.SubmitCorsPolicy, policy => policy
-        .AllowAnyOrigin()
-        .AllowAnyHeader()
-        .WithMethods("POST"));
     // Public branding read: any origin may GET (no credentials), so externally
     // hosted tenant sites can fetch their branding.
     options.AddPolicy(BrandingEndpoints.ReadCorsPolicy, policy => policy
@@ -211,7 +196,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapDcmsDefaultEndpoints();
 app.MapDcmsPlugins();
-app.MapAnalyticsIngest();
 app.MapBranding();
 app.MapPluginConfig();
 app.MapChatDelivery();

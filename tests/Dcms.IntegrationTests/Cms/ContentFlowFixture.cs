@@ -55,6 +55,7 @@ public sealed class ContentFlowFixture : IAsyncLifetime
             var js = nats.CreateJetStreamContext();
             await js.CreateStreamAsync(new StreamConfig("TENANCY", ["tenant.>", "plugin.instance.>", "membership.>"]));
             await js.CreateStreamAsync(new StreamConfig("CMS", ["content.>"]));
+            await js.CreateStreamAsync(new StreamConfig("ANALYTICS", ["analytics.>"]));
             // Plugin events (visitor.registered, form.submitted) and the admin-api job consumer.
             await js.CreateStreamAsync(new StreamConfig("PLUGIN_EVENTS", ["plugins.events.>"]));
             await js.CreateStreamAsync(new StreamConfig("PLUGIN_JOBS", ["plugins.jobs.>"]) { Retention = StreamConfigRetention.Workqueue });

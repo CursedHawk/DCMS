@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
@@ -6,6 +6,14 @@
 
   <ItemGroup>
     <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Analytics.Api\Dcms.Plugins.Analytics.Api.csproj" />
+    <!-- First-party: owns the analytics schema's rows (the schema itself is migrated by the
+         platform) and the ANALYTICS ingest stream. -->
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Messaging\Dcms.Shared.Messaging.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Caching\Dcms.Shared.Caching.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Security\Dcms.Shared.Security.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Audit\Dcms.Shared.Audit.csproj" />
   </ItemGroup>
 
 </Project>

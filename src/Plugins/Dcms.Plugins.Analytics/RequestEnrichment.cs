@@ -1,6 +1,8 @@
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 
-namespace Dcms.ContentApi.Delivery;
+namespace Dcms.Plugins.Analytics;
 
 /// <summary>
 /// The dimensions an analytics event carries that the browser cannot be trusted to

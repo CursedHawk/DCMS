@@ -136,7 +136,6 @@ builder.Services.AddSingleton<IDnsTxtLookup, DnsTxtLookup>();
 builder.Services.AddHostedService<MembershipChangedConsumer>();
 builder.Services.AddHostedService<OutboxDispatcher>();
 builder.Services.AddHostedService<ScheduledPublishWorker>();
-builder.Services.AddHostedService<AnalyticsConsumer>();
 // analytics.events had no retention at all: every pageview from every tenant site accumulated
 // forever on a host with 40 GB free. The daily rollups next to it already hold the aggregate.
 builder.Services.AddHostedService<AnalyticsRetentionWorker>();
@@ -438,7 +437,6 @@ app.MapMetaStoriesEndpoints();
 app.MapAiGenerationEndpoints();
 app.MapAiAgentEndpoints();
 app.MapAiConversationEndpoints();
-app.MapAnalyticsDashboard();
 app.MapChatConsole();
 app.MapOpenApiPreview();
 app.MapApiClientDownload();

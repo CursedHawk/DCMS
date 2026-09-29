@@ -3,9 +3,12 @@ using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Analytics;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 
-namespace Dcms.AdminApi.Analytics;
+namespace Dcms.Plugins.Analytics;
 
 /// <summary>
 /// Analytics dashboard and maintenance for the current tenant.
@@ -21,12 +24,12 @@ namespace Dcms.AdminApi.Analytics;
 /// </summary>
 // rls: request tenant. Every query here is the request's own tenant (tenant.TenantId), which
 // is what the interceptor tells the database.
-public static class AnalyticsDashboardEndpoints
+internal static class AnalyticsDashboardEndpoints
 {
     /// <summary>How many rows each breakdown returns. Enough to be useful, bounded.</summary>
     private const int TopN = 20;
 
-    public static IEndpointRouteBuilder MapAnalyticsDashboard(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapHostRoutes(IEndpointRouteBuilder app)
     {
         app.MapGet("/api/admin/analytics", async (
             int? days, DateTimeOffset? from, DateTimeOffset? to, string? type, string? path,

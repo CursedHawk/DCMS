@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.Plugins.VisitorAuth.Api;
@@ -136,6 +137,19 @@ public sealed class FormsPlugin : IPlugin
             ContractRequirement.Of<IVisitorIdentity>(optional: true),
         ]);
 
+
+    public void ConfigureServices(IServiceCollection services, PluginHost host)
+    {
+        if (host.IsSite)
+        {
+            // Submissions carry no cookie or token, so any origin may post: externally hosted
+            // tenant sites can use the forms.
+            services.AddCors(o => o.AddPolicy(SubmitCorsPolicy, policy => policy
+                .AllowAnyOrigin()
+                .AllowAnyHeader()
+                .WithMethods("POST")));
+        }
+    }
 
     public void MapEndpoints(IPluginEndpointBuilder endpoints) => FormSubmissionEndpoints.Map(endpoints);
 
