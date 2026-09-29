@@ -60,7 +60,7 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options, ITenantContext
             e.Property(d => d.DataJson).HasColumnType("jsonb");
             e.Property(d => d.Version).IsConcurrencyToken();
             // NULLS NOT DISTINCT: plugin-wide documents (no instance) are unique per key too.
-            e.HasIndex(d => new { d.TenantId, d.PluginId, d.InstanceId, d.Collection, d.Key })
+            e.HasIndex(d => new { d.TenantId, d.IsSandbox, d.PluginId, d.InstanceId, d.Collection, d.Key })
                 .IsUnique()
                 .AreNullsDistinct(false);
             e.HasIndex(d => d.DataJson).HasMethod("gin").HasOperators("jsonb_path_ops");

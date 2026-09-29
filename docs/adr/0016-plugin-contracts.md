@@ -127,8 +127,10 @@ exposing operations to `Ai`; there is no separate tool API.
   from constructing a platform implementation with a forged context or referencing
   `Dcms.Shared.Data` directly. Enforcement of `Consumes` guards against mistakes, not malice.
   A third-party plugin must run out of process.
-- **Plugin data is not sandbox-scoped.** `plugin_data`/`plugin_secrets` have no `IsSandbox`,
-  so a plugin writing storage from a site preview writes live data. Tracked as a follow-up.
+- **Plugin data is sandbox-scoped** (fixed after the review): `plugin_data` carries `IsSandbox`,
+  `dcms.storage` reads and writes the preview's own documents under `X-Dcms-Sandbox`, and the
+  preview reset clears them. `plugin_secrets` needs no flag — it is unreachable from the public
+  plane, where previews run.
 - **Owners hold every plugin permission.** The Owner role is seeded with platform *and*
   plugin permissions (`OwnerPermissionBackfill.OwnerPermissions`), and the startup backfill
   adds any missing ones to existing tenants — including when a plugin later gains a permission.

@@ -39,10 +39,30 @@ public sealed class PluginDataTests(AdminApiFixture fixture)
 
     private static JsonElement Json(object value) => JsonSerializer.SerializeToElement(value);
 
-    private async Task<T> WithStorage<T>(Ctx ctx, Func<IPluginStorage, Task<T>> act)
+    private sealed record Sandbox(bool IsSandbox) : ISandboxContext;
+
+    private async Task<T> WithStorage<T>(Ctx ctx, Func<IPluginStorage, Task<T>> act, bool sandbox = false)
     {
         using var scope = fixture.Factory.Services.CreateScope();
-        return await act(new PluginStorage(ctx, scope.ServiceProvider.GetRequiredService<CmsDbContext>()));
+        return await act(new PluginStorage(ctx, scope.ServiceProvider.GetRequiredService<CmsDbContext>(), new Sandbox(sandbox)));
+    }
+
+    [DockerFact]
+    public async Task A_preview_reads_and_writes_its_own_documents_never_live_ones()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var ctx = For(Guid.NewGuid(), "forms", Guid.NewGuid());
+
+        await WithStorage(ctx, s => s.PutAsync(new PutDocument("c", "k", Json(new { v = "live" })), ct));
+        (await WithStorage(ctx, s => s.GetAsync(new DocumentAddress("c", "k"), ct), sandbox: true))
+            .Should().BeNull("a preview does not see live documents");
+
+        await WithStorage(ctx, s => s.PutAsync(new PutDocument("c", "k", Json(new { v = "preview" })), ct), sandbox: true);
+
+        (await WithStorage(ctx, s => s.GetAsync(new DocumentAddress("c", "k"), ct)))!
+            .Data.GetProperty("v").GetString().Should().Be("live", "a preview write never overwrites live data");
+        (await WithStorage(ctx, s => s.GetAsync(new DocumentAddress("c", "k"), ct), sandbox: true))!
+            .Data.GetProperty("v").GetString().Should().Be("preview");
     }
 
     [DockerFact]

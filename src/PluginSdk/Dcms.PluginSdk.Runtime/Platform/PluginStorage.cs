@@ -3,6 +3,7 @@ using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Rls;
+using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.PluginSdk.Runtime.Platform;
@@ -10,9 +11,10 @@ namespace Dcms.PluginSdk.Runtime.Platform;
 /// <summary>
 /// <see cref="IPluginStorage"/> over <c>plugins.plugin_data</c>. Tenant and plugin id come from
 /// the caller's <see cref="IPluginContext"/> and are never read from input, so there is no
-/// argument a plugin can pass to reach another plugin's or tenant's documents.
+/// argument a plugin can pass to reach another plugin's or tenant's documents. A site preview
+/// (<see cref="ISandboxContext"/>) reads and writes its own separate set.
 /// </summary>
-public sealed class PluginStorage(IPluginContext caller, CmsDbContext db) : IPluginStorage
+public sealed class PluginStorage(IPluginContext caller, CmsDbContext db, ISandboxContext sandbox) : IPluginStorage
 {
     public const int MaxDocumentBytes = 256 * 1024;
     public const int MaxPageSize = 100;
@@ -54,6 +56,7 @@ public sealed class PluginStorage(IPluginContext caller, CmsDbContext db) : IPlu
                 TenantId = caller.TenantId,
                 PluginId = caller.PluginId,
                 InstanceId = instanceId,
+                IsSandbox = sandbox.IsSandbox,
                 Collection = input.Collection,
                 Key = input.Key,
                 DataJson = json,
@@ -129,7 +132,8 @@ public sealed class PluginStorage(IPluginContext caller, CmsDbContext db) : IPlu
 
     private IQueryable<PluginDatum> Mine(Guid? instanceId) =>
         db.PluginData.IgnoreQueryFilters().Where(d =>
-            d.TenantId == caller.TenantId && d.PluginId == caller.PluginId && d.InstanceId == instanceId);
+            d.TenantId == caller.TenantId && d.IsSandbox == sandbox.IsSandbox
+            && d.PluginId == caller.PluginId && d.InstanceId == instanceId);
 
     private Guid? InstanceFor(bool instanceScoped)
     {

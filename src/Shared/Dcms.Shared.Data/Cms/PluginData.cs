@@ -1,4 +1,5 @@
 using Dcms.Shared.Audit.Redaction;
+using Dcms.Shared.Data.Sandbox;
 
 namespace Dcms.Shared.Data.Cms;
 
@@ -12,9 +13,15 @@ namespace Dcms.Shared.Data.Cms;
 /// tenant. Not entity-audited: the contract proxy already records every write as a call.</para>
 /// </summary>
 [AuditIgnore]
-public sealed class PluginDatum : TenantEntity
+public sealed class PluginDatum : TenantEntity, ISandboxScoped
 {
     public string PluginId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Written from a site preview (<c>X-Dcms-Sandbox</c>). Preview documents are a separate
+    /// store: a plugin exercised in a preview must never read or overwrite live data.
+    /// </summary>
+    public bool IsSandbox { get; set; }
 
     /// <summary>The owning instance, or null for plugin-wide data.</summary>
     public Guid? InstanceId { get; set; }

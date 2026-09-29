@@ -1,3 +1,4 @@
+using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Chat;
@@ -40,12 +41,12 @@ public static class SitePreviewEndpoints
                        + "against the sandbox tenant; recording it here too would double every "
                        + "preview interaction.");
 
-        // Wipe the tenant's preview sandbox (forms / visitors / chat). Destructive, so it
+        // Wipe the tenant's preview sandbox (forms / visitors / chat / plugin documents). Destructive, so it
         // takes site:edit like every other site endpoint — a bare RequireAuthorization() here
         // let any authenticated account, member or not, delete another tenant's sandbox rows.
         app.MapPost("/api/admin/sites/{siteId:guid}/preview/sandbox/reset", async (
             Guid siteId, SitesDbContext sites, FormsDbContext forms,
-            VisitorsDbContext visitors, ChatDbContext chat,
+            VisitorsDbContext visitors, ChatDbContext chat, CmsDbContext cms,
             ITenantContext tenant, IAuditRecorder audit, AuditScope scope, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
@@ -58,7 +59,7 @@ public static class SitePreviewEndpoints
                 return Results.NotFound();
             }
 
-            // Five statements, one act. The per-table breakdown is what a tenant asking
+            // Six statements, one act. The per-table breakdown is what a tenant asking
             // "what did reset actually remove?" wants, so it is recorded here rather than
             // left to five records that never mention the sandbox.
             using var _ = scope.SuppressBulkCapture();
@@ -76,7 +77,11 @@ public static class SitePreviewEndpoints
             var accounts = await visitors.Accounts.IgnoreQueryFilters()
                 .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
 
-            var deleted = submissions + messages + conversations + tokens + accounts;
+            // Documents plugins wrote through dcms.storage@1 while running in a preview.
+            var pluginData = await cms.PluginData.IgnoreQueryFilters()
+                .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
+
+            var deleted = submissions + messages + conversations + tokens + accounts + pluginData;
 
             audit.Declared?
                 .With("deleted", deleted)
@@ -87,6 +92,7 @@ public static class SitePreviewEndpoints
                     ["chat.conversations"] = conversations,
                     ["visitors.refresh_tokens"] = tokens,
                     ["visitors.accounts"] = accounts,
+                    ["plugins.plugin_data"] = pluginData,
                 });
 
             return Results.Ok(new { deleted });
