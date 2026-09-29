@@ -63,6 +63,10 @@ export interface PluginManifest {
   dependencies: { pluginId: string; optional: boolean }[];
   publicConfigKeys: string[];
   contentTypes: ContentTypeDef[];
+  /** Contract ids this plugin offers other plugins, e.g. `visitors.profiles@1`. */
+  provides?: string[];
+  /** Contracts this plugin uses. `bindingConfigKey` names the config field choosing the provider. */
+  consumes?: { contractId: string; optional: boolean; bindingConfigKey?: string | null }[];
 }
 
 export interface PluginInstance {

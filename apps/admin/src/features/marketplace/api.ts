@@ -20,6 +20,10 @@ export interface MarketplaceItem {
   permissions: MarketplacePermission[];
   contentTypes: string[];
   dependencies: { pluginId: string; optional: boolean }[];
+  /** Contract ids this plugin offers other plugins. */
+  provides?: string[];
+  /** Contracts this plugin uses; platform ones (`dcms.*`) are always available. */
+  consumes?: { contractId: string; optional: boolean }[];
   addsNavEntry: boolean;
   instanceCount: number;
   enabledCount: number;

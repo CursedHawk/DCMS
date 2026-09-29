@@ -212,6 +212,12 @@
     "certVerifyFirst": "Nejdřív doménu ověřte, pak může získat certifikát."
   },
   "plugins": {
+    "binding": {
+      "unset": "Žádný",
+      "none": "Kontrakt {{contract}} zatím neposkytuje žádný zapnutý plugin. Přidejte ho, abyste ho zde mohli propojit.",
+      "disabled": "vypnuto",
+      "missing": "{{slug}} (již není k dispozici)"
+    },
     "title": "Pluginy",
     "subtitle": "Instalujte pluginy a spravujte jejich instance.",
     "catalog": "Katalog",
@@ -1330,6 +1336,8 @@
     "addsMenuEntry": "Přidá položku do bočního menu",
     "noMenuEntry": "Bez položky v menu",
     "requires": "Vyžaduje",
+    "provides": "Nabízí ostatním pluginům",
+    "uses": "Používá",
     "optional": "volitelné",
     "add": "Přidat do workspace",
     "manage": "Spravovat"

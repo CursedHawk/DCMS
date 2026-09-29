@@ -34,6 +34,7 @@ import {
 import { SchemaForm } from '../../components/SchemaForm';
 import { MediaPicker } from '../media/MediaPicker';
 import { MetaConnectionWidget } from './MetaConnectionWidget';
+import { ContractBindingWidget } from './ContractBindingWidget';
 import { api } from '../../lib/api';
 import {
   type PluginInstance,
@@ -65,6 +66,8 @@ const configWidgets: RegistryWidgetsType = {
   // `"format": "meta-connection"` -- the Instagram/Facebook plugins' connectionId.
   // A connection is the product of an OAuth round trip, so it cannot be typed in.
   'meta-connection': MetaConnectionWidget,
+  // `"x-dcms-contract-binding"` -- which instance of another plugin this one uses.
+  'contract-binding': ContractBindingWidget,
 };
 
 export function PluginsPage() {
@@ -81,7 +84,8 @@ export function PluginsPage() {
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       api.post(`/admin/plugins/instances/${id}/${enabled ? 'enable' : 'disable'}`),
     onSuccess: async () => qc.invalidateQueries({ queryKey: ['plugin-instances'] }),
-    onError: () => toast.error(t('errors.generic')),
+    // A 409 names the plugins this one needs, or the ones that need it.
+    onError: (e) => toastApiError(e, t),
   });
 
   const manifestById = new Map((catalog.data ?? []).map((m) => [m.id, m]));

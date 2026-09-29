@@ -211,6 +211,12 @@
     "certVerifyFirst": "Verify the domain before it can get a certificate."
   },
   "plugins": {
+    "binding": {
+      "unset": "None",
+      "none": "No enabled plugin provides {{contract}} yet. Add one to link it here.",
+      "disabled": "disabled",
+      "missing": "{{slug}} (no longer available)"
+    },
     "title": "Plugins",
     "subtitle": "Install plugins and manage their instances.",
     "catalog": "Catalog",
@@ -1305,6 +1311,8 @@
     "addsMenuEntry": "Adds an entry to your sidebar",
     "noMenuEntry": "No sidebar entry",
     "requires": "Requires",
+    "provides": "Offers to other plugins",
+    "uses": "Uses",
     "optional": "optional",
     "add": "Add to workspace",
     "manage": "Manage"

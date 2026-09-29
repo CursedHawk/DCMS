@@ -156,7 +156,8 @@ public static class PluginInstanceEndpoints
                 {
                     return Results.Conflict(new
                     {
-                        error = "Other plugins require this one. Disable them first.",
+                        error = "Other plugins require this one; disable them first: "
+                                + string.Join(", ", dependents.Select(d => $"{d.Slug} ({d.PluginId})").Distinct()) + ".",
                         dependents = dependents.Select(d => new { d.PluginId, d.Slug, d.ContractId }),
                     });
                 }
@@ -182,7 +183,8 @@ public static class PluginInstanceEndpoints
 
     private static IResult MissingConflict(IReadOnlyList<MissingProvider> missing) => Results.Conflict(new
     {
-        error = "This plugin requires others that are not enabled. Enable them first.",
+        error = "This plugin requires plugins that are not enabled here; enable them first: "
+                + string.Join(", ", missing.Select(m => m.ProviderPluginId).Distinct()) + ".",
         missing = missing.Select(m => new { m.ContractId, m.ProviderPluginId }),
     });
 

@@ -243,6 +243,24 @@ function PluginDetail({ item }: { item: MarketplaceItem }) {
           <dd className="text-foreground">
             {item.addsNavEntry ? t('marketplace.addsMenuEntry') : t('marketplace.noMenuEntry')}
           </dd>
+          {item.provides && item.provides.length > 0 ? (
+            <>
+              <dt>{t('marketplace.provides')}</dt>
+              <dd className="font-mono text-xs text-foreground" data-testid="marketplace-provides">
+                {item.provides.join(', ')}
+              </dd>
+            </>
+          ) : null}
+          {item.consumes && item.consumes.length > 0 ? (
+            <>
+              <dt>{t('marketplace.uses')}</dt>
+              <dd className="font-mono text-xs text-foreground" data-testid="marketplace-consumes">
+                {item.consumes
+                  .map((c) => (c.optional ? `${c.contractId} (${t('marketplace.optional')})` : c.contractId))
+                  .join(', ')}
+              </dd>
+            </>
+          ) : null}
           {item.dependencies.length > 0 ? (
             <>
               <dt>{t('marketplace.requires')}</dt>
