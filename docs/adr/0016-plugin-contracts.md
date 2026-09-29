@@ -116,10 +116,11 @@ exposing operations to `Ai`; there is no separate tool API.
   documented way to get it, and the manifest is a truthful statement of what it can reach.
 - Out-of-process plugins later need no new concepts: the same descriptors, the same
   dispatcher with a signed service token, platform contracts as their only state.
-- Deferred, with the reason recorded: tools for the **site chatbot** (its gateway path is
-  text-only for service tokens); a **visitor-gated builder block** (builder sites have no
-  sign-in blocks yet); **outbound webhooks** and an **egress allow-list** (only needed for
-  third-party plugins).
+- The **site chatbot** gets contract tools through a fourth plane, `SiteAi`: read-only
+  operations exposed to both Site and Ai, no permissions, opted-in instances only, a bounded
+  server-side loop over ai-gateway's `/v1/messages`.
+- Deferred, with the reason recorded: **outbound webhooks** and an **egress allow-list** (only
+  needed for third-party plugins).
 
 ### Known limitations (from the security review)
 

@@ -2,6 +2,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Dcms.PluginSdk.Runtime;
+using Dcms.PluginSdk.Runtime.Ai;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
 using Dcms.PluginSdk.Abstractions;
@@ -41,6 +44,8 @@ public sealed class ChatBotResponder(
     private const int HistoryLimit = 12;
     private const int MaxContextDocs = 5;
     private const int MaxDocChars = 700;
+    private const int MaxToolRounds = 3;
+    private const int MaxToolResultChars = 4000;
 
     private static PluginInstanceContext ToContext(PluginInstance instance) => new(
         instance.Id, instance.TenantId, instance.PluginId, instance.Slug, instance.Name, instance.Description,
@@ -111,7 +116,12 @@ public sealed class ChatBotResponder(
             : null;
 
         var tokens = sp.GetRequiredService<IServiceTokenProvider>();
-        var reply = await CompleteAsync(tokens, tenantId, config, context, history.Select(h => (h.Sender, h.Body)), ct);
+        var turns = history.Select(h => (h.Sender, h.Body)).ToList();
+        // Plugin tools only when the tenant opted some in; otherwise the plain completion as before.
+        var tools = await ContractToolLoop.SiteAiToolsAsync(sp.GetRequiredService<ContractDispatcher>(), tenantId, ct);
+        var reply = tools.Count > 0
+            ? await CompleteWithToolsAsync(sp, tokens, tenantId, config, context, turns, tools, ct)
+            : await CompleteAsync(tokens, tenantId, config, context, turns, ct);
         if (string.IsNullOrWhiteSpace(reply))
         {
             return;
@@ -196,6 +206,108 @@ public sealed class ChatBotResponder(
         IServiceTokenProvider tokens, Guid tenantId, BotConfig config, string? context,
         IEnumerable<(ChatSender Sender, string Body)> history, CancellationToken ct)
     {
+        var system = SystemPrompt(config, context);
+
+        var transcript = new StringBuilder();
+        foreach (var (sender, body) in history)
+        {
+            transcript.Append(sender == ChatSender.Visitor ? "Visitor: " : "Assistant: ").AppendLine(body);
+        }
+        transcript.Append("Assistant:");
+
+        var envelope = new
+        {
+            tenantId,
+            prompt = transcript.ToString(),
+            system,
+            maxTokens = 800,
+        };
+
+        var token = await tokens.GetTokenAsync(AiScope, ct);
+        var client = httpClientFactory.CreateClient("ai-gateway");
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat")
+        {
+            Content = JsonContent.Create(envelope),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await client.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            logger.LogWarning("ai-gateway /v1/chat returned {Status} for tenant {TenantId}",
+                (int)response.StatusCode, tenantId);
+            return null;
+        }
+        var payload = await response.Content.ReadFromJsonAsync<ChatCompletion>(ct);
+        return payload?.Text;
+    }
+
+    /// <summary>
+    /// The same answer, but with the plugin contract operations the tenant opted in to AI as tools
+    /// (docs/adr/0016): read-only, exposed to both Site and Ai, run through the dispatcher's SiteAi
+    /// plane as an anonymous caller. At most <see cref="MaxToolRounds"/> rounds, then it must answer.
+    /// </summary>
+    private async Task<string?> CompleteWithToolsAsync(
+        IServiceProvider sp, IServiceTokenProvider tokens, Guid tenantId, BotConfig config, string? context,
+        IEnumerable<(ChatSender Sender, string Body)> history, IReadOnlyList<AiTool> tools, CancellationToken ct)
+    {
+        var dispatcher = sp.GetRequiredService<ContractDispatcher>();
+        var token = await tokens.GetTokenAsync(AiScope, ct);
+        var reply = await ContractToolLoop.RunAsync(
+            httpClientFactory.CreateClient("ai-gateway"), token, tenantId,
+            SystemPrompt(config, context) + "\nUse the tools when they can answer the visitor's question from this website's data.",
+            Conversation(history), tools,
+            async (tool, input) =>
+            {
+                var outcome = await dispatcher.ExecuteAsync(
+                    tenantId, tool.ContractId, tool.Operation, tool.Instance,
+                    input is null ? null : JsonSerializer.SerializeToElement(input),
+                    ContractPlane.SiteAi, PluginActor.Anonymous, _ => Task.FromResult(false), ct);
+                var text = outcome.Succeeded
+                    ? JsonSerializer.Serialize(outcome.Value, ContractDescriptorBuilder.Json)
+                    : $"The tool failed ({outcome.Status}): {outcome.Error}";
+                if (text.Length > MaxToolResultChars)
+                {
+                    text = text[..MaxToolResultChars] + "… (truncated)";
+                }
+                return tool.ReturnsExternalText
+                    ? ContractToolLoop.MarkUntrusted(text, $"{tool.Name}: text written by site visitors")
+                    : text;
+            },
+            MaxToolRounds, maxTokens: 800, ct);
+
+        if (reply is null)
+        {
+            logger.LogWarning("ai-gateway /v1/messages refused the chatbot's tool run for tenant {TenantId}", tenantId);
+        }
+        return reply;
+    }
+
+    /// <summary>History as Messages turns: visitor → user, bot/agent → assistant, consecutive turns merged, starting with the visitor.</summary>
+    private static JsonArray Conversation(IEnumerable<(ChatSender Sender, string Body)> history)
+    {
+        var turns = new List<(string Role, string Text)>();
+        foreach (var (sender, body) in history)
+        {
+            var role = sender == ChatSender.Visitor ? "user" : "assistant";
+            if (turns.Count == 0 && role == "assistant")
+            {
+                continue;
+            }
+            if (turns.Count > 0 && turns[^1].Role == role)
+            {
+                turns[^1] = (role, turns[^1].Text + "\n\n" + body);
+            }
+            else
+            {
+                turns.Add((role, body));
+            }
+        }
+        return new JsonArray(turns.Select(t => (JsonNode)new JsonObject { ["role"] = t.Role, ["content"] = t.Text }).ToArray());
+    }
+
+    private static string SystemPrompt(BotConfig config, string? context)
+    {
         var system = new StringBuilder();
         system.Append("You are ").Append(config.BotName)
             .AppendLine(", a helpful assistant embedded on a website, chatting with a visitor.");
@@ -219,38 +331,7 @@ public sealed class ChatBotResponder(
             system.AppendLine("If you don't know the answer, say so plainly and offer to connect a team member.");
         }
 
-        var transcript = new StringBuilder();
-        foreach (var (sender, body) in history)
-        {
-            transcript.Append(sender == ChatSender.Visitor ? "Visitor: " : "Assistant: ").AppendLine(body);
-        }
-        transcript.Append("Assistant:");
-
-        var envelope = new
-        {
-            tenantId,
-            prompt = transcript.ToString(),
-            system = system.ToString(),
-            maxTokens = 800,
-        };
-
-        var token = await tokens.GetTokenAsync(AiScope, ct);
-        var client = httpClientFactory.CreateClient("ai-gateway");
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/chat")
-        {
-            Content = JsonContent.Create(envelope),
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-
-        using var response = await client.SendAsync(request, ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            logger.LogWarning("ai-gateway /v1/chat returned {Status} for tenant {TenantId}",
-                (int)response.StatusCode, tenantId);
-            return null;
-        }
-        var payload = await response.Content.ReadFromJsonAsync<ChatCompletion>(ct);
-        return payload?.Text;
+        return system.ToString();
     }
 
     private sealed record ChatCompletion(string Provider, string Model, string Text);

@@ -192,8 +192,14 @@ The console assistant also offers every plugin **contract operation** exposed to
 - Operations marked `ReturnsExternalText` (form submissions, visitor profiles) have their
   results fenced with the same untrusted-data wrapper as the IDE's preview tools.
 
-A plugin offers a tool by exposing an operation to `Ai`; there is no separate tool API. The
-public site chatbot does not use contract tools yet — its gateway path is text-only.
+A plugin offers a tool by exposing an operation to `Ai`; there is no separate tool API.
+
+The **public site chatbot** uses them too, more narrowly: only operations exposed to *both*
+Site and Ai, **read-only**, needing no permission, on opted-in instances — the dispatcher's
+`SiteAi` plane, since whoever types into the widget is steering. It runs a bounded loop (three
+tool rounds, then it must answer) server-side over ai-gateway's `/v1/messages`
+(`PluginSdk.Runtime/Ai/ContractToolLoop.cs`), fences visitor-written results as untrusted, and
+falls back to the plain completion when the tenant has opted nothing in.
 
 ### What the site tells the agent
 

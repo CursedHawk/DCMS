@@ -19,6 +19,19 @@ public enum ContractPlane
 
     /// <summary>An AI agent acting for a member (admin-api); <see cref="OpExposure.Ai"/> ops.</summary>
     Ai,
+
+    /// <summary>
+    /// The public site's AI chatbot, talking to an anonymous visitor: operations exposed to both
+    /// Site and Ai, <b>read-only</b>, on instances the tenant opted in to AI, never one that needs
+    /// a permission. The narrowest plane there is, because whoever types into the widget is steering.
+    /// </summary>
+    SiteAi,
+}
+
+/// <summary>What an invocation produced, independent of HTTP: a status, and a value or an error.</summary>
+public sealed record ContractOutcome(int Status, object? Value = null, string? Error = null)
+{
+    public bool Succeeded => Status is >= 200 and < 300;
 }
 
 /// <summary>One operation as the catalog describes it to a caller who may use it.</summary>
@@ -74,7 +87,7 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
             var descriptor = contract.Descriptor;
             var instances = descriptor.IsPlatform
                 ? []
-                : enabled.Where(i => i.PluginId == descriptor.ProviderPluginId && (plane != ContractPlane.Ai || i.AiToolsEnabled))
+                : enabled.Where(i => i.PluginId == descriptor.ProviderPluginId && (!IsAi(plane) || i.AiToolsEnabled))
                     .Select(i => new CatalogInstance(i.InstanceId, i.Slug, i.Name, i.Description)).ToList();
             if (!descriptor.IsPlatform && instances.Count == 0)
             {
@@ -82,7 +95,7 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
             }
             // Platform contracts are reachable from outside only where the platform says so,
             // never the site plane: they act "as the caller", and a site request is no plugin.
-            if (descriptor.IsPlatform && plane == ContractPlane.Site)
+            if (descriptor.IsPlatform && IsPublic(plane))
             {
                 continue;
             }
@@ -119,17 +132,40 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
         Func<string, Task<bool>> hasPermission,
         CancellationToken ct)
     {
+        var outcome = await ExecuteAsync(tenantId, contractId, operation, instance, input, plane, actor, hasPermission, ct);
+        return outcome.Status switch
+        {
+            StatusCodes.Status200OK => Results.Json(outcome.Value, ContractDescriptorBuilder.Json),
+            StatusCodes.Status204NoContent => Results.NoContent(),
+            StatusCodes.Status404NotFound => Results.NotFound(),
+            StatusCodes.Status403Forbidden => Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Forbidden", detail: outcome.Error),
+            StatusCodes.Status429TooManyRequests => Results.Json(new { error = outcome.Error }, statusCode: StatusCodes.Status429TooManyRequests),
+            _ => Results.Json(new { error = outcome.Error }, statusCode: outcome.Status),
+        };
+    }
+
+    /// <summary>The dispatch itself, for callers that are not an HTTP endpoint (the site chatbot).</summary>
+    public async Task<ContractOutcome> ExecuteAsync(
+        Guid tenantId,
+        string contractId,
+        string operation,
+        string? instance,
+        JsonElement? input,
+        ContractPlane plane,
+        PluginActor actor,
+        Func<string, Task<bool>> hasPermission,
+        CancellationToken ct)
+    {
         if (registry.FindContract(contractId) is not { } contract
             || contract.Descriptor.FindOperation(operation) is not { } op
             || !IsExposed(op, plane)
-            || (contract.Descriptor.IsPlatform && plane == ContractPlane.Site))
+            || (contract.Descriptor.IsPlatform && IsPublic(plane)))
         {
-            return Results.NotFound();
+            return new ContractOutcome(StatusCodes.Status404NotFound);
         }
-        if (op.Permission is { } permission && (plane == ContractPlane.Site || !await hasPermission(permission)))
+        if (op.Permission is { } permission && (IsPublic(plane) || !await hasPermission(permission)))
         {
-            return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Forbidden",
-                detail: $"This operation requires the '{permission}' permission.");
+            return new ContractOutcome(StatusCodes.Status403Forbidden, Error: $"This operation requires the '{permission}' permission.");
         }
 
         IPluginContext context;
@@ -143,7 +179,7 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
             var enabled = await factory.EnabledInstancesAsync(tenantId, ct);
             // On the AI plane only instances the tenant opted in to AI agents exist at all.
             var candidates = enabled
-                .Where(i => i.PluginId == contract.Descriptor.ProviderPluginId && (plane != ContractPlane.Ai || i.AiToolsEnabled))
+                .Where(i => i.PluginId == contract.Descriptor.ProviderPluginId && (!IsAi(plane) || i.AiToolsEnabled))
                 .ToList();
             var provider = instance is { Length: > 0 }
                 ? candidates.FirstOrDefault(i => i.Slug == instance || i.InstanceId.ToString() == instance)
@@ -151,8 +187,8 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
             if (provider is null)
             {
                 return candidates.Count > 1 && instance is null
-                    ? Results.BadRequest(new { error = "Several instances provide this contract; name one with ?instance=." })
-                    : Results.NotFound();
+                    ? new ContractOutcome(StatusCodes.Status400BadRequest, Error: "Several instances provide this contract; name one with ?instance=.")
+                    : new ContractOutcome(StatusCodes.Status404NotFound);
             }
             context = await factory.CreateAsync(tenantId, provider.PluginId, provider, actor, ct);
         }
@@ -167,7 +203,7 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
             }
             catch (JsonException e)
             {
-                return Results.BadRequest(new { error = $"Invalid input: {e.Message}" });
+                return new ContractOutcome(StatusCodes.Status400BadRequest, Error: $"Invalid input: {e.Message}");
             }
         }
 
@@ -182,18 +218,18 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
             await task;
             if (op.OutputType is null)
             {
-                return Results.NoContent();
+                return new ContractOutcome(StatusCodes.Status204NoContent);
             }
             var value = task.GetType().GetProperty(nameof(Task<object>.Result))!.GetValue(task);
-            return Results.Json(value, ContractDescriptorBuilder.Json);
+            return new ContractOutcome(StatusCodes.Status200OK, value);
         }
         catch (Exception e) when (Unwrap(e) is var inner && inner is ContractValidationException or ContractConflictException or ContractLimitException)
         {
             return inner switch
             {
-                ContractConflictException => Results.Conflict(new { error = inner.Message }),
-                ContractLimitException => Results.Json(new { error = inner.Message }, statusCode: StatusCodes.Status429TooManyRequests),
-                _ => Results.BadRequest(new { error = inner.Message }),
+                ContractConflictException => new ContractOutcome(StatusCodes.Status409Conflict, Error: inner.Message),
+                ContractLimitException => new ContractOutcome(StatusCodes.Status429TooManyRequests, Error: inner.Message),
+                _ => new ContractOutcome(StatusCodes.Status400BadRequest, Error: inner.Message),
             };
         }
     }
@@ -203,14 +239,22 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
     {
         ContractPlane.Site => "site",
         ContractPlane.Admin => "admin",
+        ContractPlane.SiteAi => "site-ai",
         _ => "ai",
     };
+
+    /// <summary>Planes an anonymous member of the public reaches: no permissions, no platform contracts.</summary>
+    private static bool IsPublic(ContractPlane plane) => plane is ContractPlane.Site or ContractPlane.SiteAi;
+
+    /// <summary>Planes that only see instances the tenant opted in to AI.</summary>
+    private static bool IsAi(ContractPlane plane) => plane is ContractPlane.Ai or ContractPlane.SiteAi;
 
     public static bool IsExposed(OperationDescriptor op, ContractPlane plane) => plane switch
     {
         ContractPlane.Site => op.Expose.HasFlag(OpExposure.Site),
         ContractPlane.Admin => op.Expose.HasFlag(OpExposure.Admin),
         ContractPlane.Ai => op.Expose.HasFlag(OpExposure.Ai),
+        ContractPlane.SiteAi => op.Expose.HasFlag(OpExposure.Site) && op.Expose.HasFlag(OpExposure.Ai) && op.Risk == OpRisk.Read,
         _ => false,
     };
 
