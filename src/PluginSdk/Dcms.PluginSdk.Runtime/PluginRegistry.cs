@@ -216,7 +216,9 @@ public sealed class PluginRegistry : IPluginCatalog
                 throw new InvalidOperationException(
                     $"Plugin '{manifest.Id}' subscribes to '{subscription.EventName}', which no contract declares.");
             }
-            if (!consumed.Contains(found.Contract.Id))
+            // A provider may handle its own events (work moved off the request path) without
+            // declaring it consumes itself.
+            if (!consumed.Contains(found.Contract.Id) && FindContract(found.Contract.Id)?.ProvidedBy(manifest.Id) is null)
             {
                 throw new InvalidOperationException(
                     $"Plugin '{manifest.Id}' subscribes to '{subscription.EventName}' but does not consume {found.Contract.Id}.");

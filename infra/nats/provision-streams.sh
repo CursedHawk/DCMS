@@ -171,7 +171,8 @@ ensure_stream MEDIA_EVENTS "media.processed,media.failed"            limits
 ensure_stream SITES        "site.publish.>"                          work
 ensure_stream SITES_EVENTS "site.published,site.build.failed"        limits
 ensure_stream ANALYTICS    "analytics.>"                             limits
-ensure_stream CHAT         "chat.>"                                  limits
+# CHAT (chat.>) is no longer provisioned: chat messages are the LiveChat plugin's own events
+# on PLUGIN_EVENTS. A stream left on an existing server holds nothing new and ages out.
 ensure_stream EMAIL        "email.>"                                 work
 # Inbound notification requests from services that cannot write the notifications
 # schema. limits retention, not work: a work queue removes a message on ack and permits

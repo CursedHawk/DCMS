@@ -15,9 +15,11 @@ using Dcms.Shared.Security;
 using Dcms.Shared.Telemetry;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Dcms.Shared.Data.Rls;
 
-namespace Dcms.ContentApi.Chat;
+namespace Dcms.Plugins.LiveChat;
 
 /// <summary>
 /// Generates the AI assistant's replies for the visitor chat. Triggered fire-and-forget
@@ -149,6 +151,11 @@ public sealed class ChatBotResponder(
         await chat.SaveChangesAsync(ct);
 
         metrics.ChatMessage(tenantId, ChatSender.Bot.ToString());
+        if (!conversation.IsSandbox)
+        {
+            await ChatHub.PublishAsync(sp, tenantId, logger,
+                new Api.ChatMessageReceived(conversationId, message.Id, ChatSender.Bot.ToString()));
+        }
 
         var dto = new
         {

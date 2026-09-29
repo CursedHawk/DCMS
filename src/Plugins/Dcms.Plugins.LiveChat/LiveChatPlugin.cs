@@ -1,7 +1,13 @@
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.Plugins.LiveChat.Api;
+using Dcms.Shared.Audit.Http;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 
 namespace Dcms.Plugins.LiveChat;
 
@@ -13,9 +19,9 @@ namespace Dcms.Plugins.LiveChat;
 /// that conversation (see <c>humanHandoff</c>).
 ///
 /// The plugin id stays <c>live-chat</c> for backward compatibility with existing
-/// installs; only the display name and behaviour change. The realtime hub, the
-/// bot responder and the delivery endpoints all live in content-api — this class
-/// contributes the manifest (name + config schema) the admin renders.
+/// installs. The plugin owns the whole of it: the realtime hub, the bot responder and the
+/// history replay on the site plane; the agent console and the new-conversation notice on
+/// the admin plane; and <see cref="ILiveChat"/> for everyone else.
 /// </summary>
 public sealed class LiveChatPlugin : IPlugin
 {
@@ -78,16 +84,48 @@ public sealed class LiveChatPlugin : IPlugin
         category: "Engagement",
         summary: "Live chat between site visitors and your team.",
         iconName: "MessagesSquare",
-        // Grounds the bot's answers in the tenant's published content.
-        consumes: [ContractRequirement.Of<IPluginSearch>()]);
+        provides: [ContractProvision.Of<ILiveChat, LiveChatConversations>()],
+        consumes:
+        [
+            // Grounds the bot's answers in the tenant's published content.
+            ContractRequirement.Of<IPluginSearch>(),
+            ContractRequirement.Of<IPluginEvents>(),
+            ContractRequirement.Of<IPluginNotifications>(),
+        ],
+        subscribes: [EventSubscription.Of<ChatConversationStarted, NotifyAgentsOfNewConversation>()]);
 
     public void ConfigureServices(IServiceCollection services, PluginHost host)
     {
-        // The bot responder and hub are owned by content-api's host.
+        if (!host.IsSite)
+        {
+            return;
+        }
+        // SignalR with a Redis backplane so message fan-out crosses replicas.
+        var signalR = services.AddSignalR();
+        var redis = host.Configuration.GetConnectionString("Redis");
+        if (!string.IsNullOrWhiteSpace(redis))
+        {
+            signalR.AddStackExchangeRedis(redis + ",abortConnect=false",
+                options => options.Configuration.ChannelPrefix = RedisChannel.Literal("dcms-chat"));
+        }
+        services.AddSingleton<ChatBotResponder>();
     }
 
-    public void MapEndpoints(IPluginEndpointBuilder endpoints)
+    /// <summary>History replay when the widget (re)opens: <c>/api/{slug}/chat/conversations/{id}/messages</c>.</summary>
+    public void MapEndpoints(IPluginEndpointBuilder endpoints) => ChatHistoryEndpoints.Map(endpoints);
+
+    public void MapHostEndpoints(IEndpointRouteBuilder app, PluginHost host)
     {
-        // Delivery (history replay) + the realtime hub are mapped by content-api.
+        if (host.IsSite)
+        {
+            // Tenant-wide: the connection names its tenant in the query string.
+            app.MapHub<ChatHub>("/hub/chat")
+                .AuditExempt("SignalR transport endpoint, not an action. Chat messages are recorded by the "
+                           + "hub methods that write them, where the conversation and author are known.");
+        }
+        else
+        {
+            ChatConsoleEndpoints.Map(app);
+        }
     }
 }

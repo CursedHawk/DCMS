@@ -1,22 +1,28 @@
 using System.Security.Claims;
-using Dcms.Shared.Contracts.Events;
-using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Security;
-using Dcms.Shared.Messaging;
 using Dcms.Shared.Telemetry;
+using Dcms.PluginSdk.Abstractions;
+using Dcms.Plugins.LiveChat.Api;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.PluginSdk.Runtime.Contracts;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
-namespace Dcms.ContentApi.Chat;
+namespace Dcms.Plugins.LiveChat;
 
 /// <summary>
 /// Live-chat hub shared by website visitors and tenant agents. Cross-replica
 /// fan-out is handled by the Redis backplane; the per-conversation and per-tenant
-/// SignalR groups partition delivery. A <c>chat.message.posted</c> NATS event is
-/// also emitted for admin-api's out-of-band fan-out (notifications/unread counts).
+/// SignalR groups partition delivery. Every message is also published as the plugin's
+/// <c>live-chat.message.received</c> event (and a visitor's first as
+/// <c>live-chat.conversation.started</c>) for anything off the realtime path — the admin's
+/// new-conversation notice, and any other plugin that listens.
 ///
 /// Tenant is resolved from the <c>?tenant={slug}</c> query string at connect time
 /// (the SignalR WebSocket transport can't carry custom headers), so DB access uses
@@ -24,7 +30,6 @@ namespace Dcms.ContentApi.Chat;
 /// </summary>
 public sealed class ChatHub(
     IServiceProvider services,
-    IEventPublisher events,
     ChatBotResponder botResponder,
     DcmsMetrics metrics,
     ILogger<ChatHub> logger) : Hub
@@ -261,6 +266,9 @@ public sealed class ChatHub(
             throw new HubException("Conversation is not available.");
         }
 
+        var firstFromVisitor = sender == ChatSender.Visitor && !await db.Messages.IgnoreQueryFilters()
+            .AnyAsync(m => m.TenantId == tenantId && m.ConversationId == conversationId && m.Sender == ChatSender.Visitor);
+
         var now = DateTimeOffset.UtcNow;
         var message = new ChatMessage
         {
@@ -305,15 +313,33 @@ public sealed class ChatHub(
             botResponder.Trigger(tenantId, conversationId, body);
         }
 
+        if (!conversation.IsSandbox)
+        {
+            await PublishAsync(scope.ServiceProvider, tenantId, logger,
+                firstFromVisitor ? new ChatConversationStarted(conversationId, conversation.VisitorName) : null,
+                new ChatMessageReceived(conversationId, message.Id, sender.ToString()));
+        }
+    }
+
+    /// <summary>
+    /// Publishes the plugin's events after a message is stored. Best effort: realtime delivery
+    /// already happened, and a bus problem must never cost a chat line. Previews (sandbox
+    /// conversations) are test data and publish nothing — the callers check.
+    /// </summary>
+    internal static async Task PublishAsync(IServiceProvider scope, Guid tenantId, ILogger logger, params IPluginEvent?[] events)
+    {
         try
         {
-            await events.PublishAsync(Subjects.ChatMessagePosted, new ChatMessagePosted(
-                Guid.NewGuid(), now, tenantId, conversationId, message.Id, sender.ToString()));
+            var plugin = await scope.GetRequiredService<PluginContextFactory>()
+                .CreateAsync(tenantId, LiveChatPlugin.PluginId, null, PluginActor.Anonymous, CancellationToken.None);
+            foreach (var e in events.OfType<IPluginEvent>())
+            {
+                await plugin.PublishAsync(e, CancellationToken.None);
+            }
         }
         catch (Exception ex)
         {
-            // Realtime delivery already succeeded; the NATS fan-out is best-effort.
-            logger.LogWarning(ex, "chat.message.posted publish failed (delivery already sent).");
+            logger.LogWarning(ex, "Publishing live-chat events failed (delivery already sent).");
         }
     }
 }

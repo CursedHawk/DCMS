@@ -1,4 +1,3 @@
-using Dcms.ContentApi.Chat;
 using Dcms.ContentApi.Delivery;
 using Dcms.ContentApi.Plugins;
 using Dcms.ContentApi.Social;
@@ -27,7 +26,6 @@ using Dcms.Shared.Vault;
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
-using StackExchange.Redis;
 using Dcms.Shared.Data.Rls;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -108,15 +106,6 @@ builder.Services.AddScoped<Dcms.Shared.Kernel.Abstractions.ISandboxContext, Dcms
 // in a URL. Visitors are unaffected: the site chat widget has never sent a token at all.
 builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
 
-// Live chat: SignalR with a Redis backplane so message fan-out crosses replicas.
-var signalR = builder.Services.AddSignalR();
-var redisConnection = builder.Configuration.GetConnectionString("Redis");
-if (!string.IsNullOrWhiteSpace(redisConnection))
-{
-    signalR.AddStackExchangeRedis(redisConnection + ",abortConnect=false",
-        options => options.Configuration.ChannelPrefix = RedisChannel.Literal("dcms-chat"));
-}
-
 builder.Services.AddDcmsRateLimiting(builder.Configuration);
 
 // No default policy, deliberately. There used to be one -- an origin list that allowed
@@ -151,7 +140,6 @@ builder.Services.AddHttpClient(Dcms.ContentApi.Social.StoryDeliveryEndpoints.Htt
     // A story fetch sits on a page request. Better a missing story strip than a hung page.
     client.Timeout = TimeSpan.FromSeconds(10);
 });
-builder.Services.AddSingleton<ChatBotResponder>();
 
 builder.AddDcmsPlugins(PluginPlane.Site, plugins => plugins.AddAll());
 builder.Services.AddHostedService<ContentCacheInvalidator>();
@@ -187,7 +175,6 @@ app.UseAuthorization();
 app.MapDcmsDefaultEndpoints();
 app.MapDcmsPlugins();
 app.MapPluginConfig();
-app.MapChatDelivery();
 // Before the generic content delivery for readability; ASP.NET routing decides on segment
 // literalness rather than registration order, so `instagram-story` wins either way.
 app.MapStoryDelivery();
@@ -195,9 +182,6 @@ app.MapContentDelivery();
 app.MapTagDelivery();
 app.MapMediaDelivery();
 app.MapOpenApi();
-app.MapHub<ChatHub>("/hub/chat")
-    .AuditExempt("SignalR transport endpoint, not an action. Chat messages are recorded by the "
-               + "hub methods that write them, where the conversation and author are known.");
 app.MapGet("/", () => Results.Ok(new { service = "content-api" }));
 app.Run();
 

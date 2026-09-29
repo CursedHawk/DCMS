@@ -1306,6 +1306,10 @@
         "title": "Nové odeslání formuláře",
         "body": "Někdo odeslal formulář {{form}}."
       },
+      "plugin_live-chat_conversation-started": {
+        "title": "Nová konverzace",
+        "body": "Návštěvník zahájil konverzaci a čeká na operátora."
+      },
       "chat_conversation_started": {
         "title": "Nová konverzace",
         "body": "Návštěvník zahájil konverzaci a čeká na operátora."

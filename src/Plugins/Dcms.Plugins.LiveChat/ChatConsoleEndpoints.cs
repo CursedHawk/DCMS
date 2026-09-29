@@ -1,18 +1,21 @@
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Security;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 
-namespace Dcms.AdminApi.Chat;
+namespace Dcms.Plugins.LiveChat;
 
 /// <summary>
-/// Agent console REST surface. Realtime send/receive is over content-api's
+/// Agent console REST surface (admin plane). Realtime send/receive is over the site plane's
 /// SignalR hub; these endpoints back the conversation list and history panes.
 /// Tenant is the ambient (header-resolved) tenant, so ChatDbContext's query
 /// filter scopes every read automatically.
 /// </summary>
-public static class ChatConsoleEndpoints
+internal static class ChatConsoleEndpoints
 {
-    public static IEndpointRouteBuilder MapChatConsole(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app)
     {
         app.MapGet("/api/admin/chat/conversations", async (
             string? status, ChatDbContext db, CancellationToken ct) =>

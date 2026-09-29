@@ -43,6 +43,7 @@ public static class PluginContextExtensions
     public static Task PublishAsync<TEvent>(this IPluginContext context, TEvent @event, CancellationToken ct)
         where TEvent : IPluginEvent =>
         context.Contracts.Get<IPluginEvents>().PublishAsync(
-            new EventPublish(ContractIds.EventName(typeof(TEvent)), JsonSerializer.SerializeToElement(@event, JsonSerializerOptions.Web)),
+            // The runtime type, so an event held as IPluginEvent still publishes under its own name.
+            new EventPublish(ContractIds.EventName(@event.GetType()), JsonSerializer.SerializeToElement(@event, @event.GetType(), JsonSerializerOptions.Web)),
             ct);
 }

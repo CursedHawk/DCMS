@@ -53,6 +53,13 @@ public static class NotificationKinds
     public const string FormsSubmitted = "plugin.forms.submitted";
 
     /// <summary>
+    /// A visitor opened a chat conversation, raised by the LiveChat plugin's own subscription to
+    /// <c>live-chat.conversation.started</c>. Supersedes <see cref="ChatConversationStarted"/>,
+    /// which stays catalogued for the rows already stored.
+    /// </summary>
+    public const string LiveChatConversationStarted = "plugin.live-chat.conversation-started";
+
+    /// <summary>
     /// The i18n key for a kind's title.
     ///
     /// <para><b>The dots in a kind are replaced with underscores, and that is load-bearing.</b>

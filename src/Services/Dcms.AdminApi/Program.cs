@@ -4,7 +4,6 @@ using Dcms.AdminApi.ApiClientGen;
 using Dcms.AdminApi.Analytics;
 using Dcms.AdminApi.Audit;
 using Dcms.AdminApi.Observability;
-using Dcms.AdminApi.Chat;
 using Dcms.AdminApi.Cms;
 using Dcms.AdminApi.Media;
 using Dcms.AdminApi.Notifications;
@@ -138,7 +137,6 @@ builder.Services.AddHostedService<ScheduledPublishWorker>();
 // analytics.events had no retention at all: every pageview from every tenant site accumulated
 // forever on a host with 40 GB free. The daily rollups next to it already hold the aggregate.
 builder.Services.AddHostedService<AnalyticsRetentionWorker>();
-builder.Services.AddHostedService<ChatFanoutConsumer>();
 
 // In-app notifications. Each consumer turns one already-published subject into a
 // notification, so the producing services are untouched. All are shared durables: the work
@@ -435,7 +433,6 @@ app.MapMetaStoriesEndpoints();
 app.MapAiGenerationEndpoints();
 app.MapAiAgentEndpoints();
 app.MapAiConversationEndpoints();
-app.MapChatConsole();
 app.MapOpenApiPreview();
 app.MapApiClientDownload();
 app.MapSiteScaffoldEndpoints();

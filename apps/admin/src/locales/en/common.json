@@ -1281,6 +1281,10 @@
         "title": "New form submission",
         "body": "Someone submitted the {{form}} form."
       },
+      "plugin_live-chat_conversation-started": {
+        "title": "New chat conversation",
+        "body": "A visitor started a conversation and is waiting for an agent."
+      },
       "chat_conversation_started": {
         "title": "New chat conversation",
         "body": "A visitor started a conversation and is waiting for an agent."

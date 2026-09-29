@@ -13,7 +13,6 @@ public static class Streams
     public const string Sites = "SITES";
     public const string SitesEvents = "SITES_EVENTS";
     public const string Analytics = "ANALYTICS";
-    public const string Chat = "CHAT";
     public const string Email = "EMAIL";
     public const string Audit = "AUDIT";
 
@@ -151,9 +150,6 @@ public static class Subjects
 
     // ANALYTICS
     public const string AnalyticsEvents = "analytics.events";
-
-    // CHAT
-    public const string ChatMessagePosted = "chat.message.posted";
 
     // EMAIL (work queue)
     public const string EmailSend = "email.send";
