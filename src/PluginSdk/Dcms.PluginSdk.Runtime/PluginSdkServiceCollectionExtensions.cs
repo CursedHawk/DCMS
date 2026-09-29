@@ -84,6 +84,7 @@ public static class PluginSdkServiceCollectionExtensions
         services.TryAddScoped<Platform.PublishedContentReader>();
         services.AddScoped<PluginContextFactory>();
         services.AddScoped<PluginContextAccessor>();
+        services.AddScoped<ContractDispatcher>();
         services.AddScoped<IPluginContext, AmbientPluginContext>();
     }
 
@@ -94,6 +95,7 @@ public static class PluginSdkServiceCollectionExtensions
     public static IEndpointRouteBuilder MapDcmsPlugins(this IEndpointRouteBuilder app)
     {
         app.MapDcmsPluginSiteEndpoints();
+        app.MapDcmsContractSiteEndpoints();
         app.MapGet("/api/_plugins", (PluginRegistry registry) =>
             Results.Ok(registry.Manifests.Select(m => new
             {

@@ -102,6 +102,14 @@ public static class ContractDescriptorBuilder
             ? new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }
             : Json.GetJsonSchemaAsNode(inputType, SchemaOptions);
         var output = outputType is null ? null : Json.GetJsonSchemaAsNode(outputType, SchemaOptions);
+        // The exporter sees the type, not the method: Task<Profile?> and Task<Profile> both reach
+        // it as Profile. Read the return's nullability here so "may be null" reaches the schema,
+        // and through it the generated client's types.
+        if (output is JsonObject outputObject && outputType is { IsValueType: false } && ReturnsNullable(method)
+            && outputObject["type"] is JsonValue single)
+        {
+            outputObject["type"] = new JsonArray(single.GetValue<string>(), "null");
+        }
 
         return new OperationDescriptor(name, op.Risk, op.Permission, op.Expose, op.ReturnsExternalText, op.Description, input, output)
         {
@@ -109,6 +117,14 @@ public static class ContractDescriptorBuilder
             InputType = inputType,
             OutputType = outputType,
         };
+    }
+
+    private static bool ReturnsNullable(MethodInfo method)
+    {
+        // A fresh context per call: NullabilityInfoContext caches in a plain Dictionary and is
+        // not safe to share between threads (registries are built concurrently in tests).
+        var info = new NullabilityInfoContext().Create(method.ReturnParameter);
+        return info.GenericTypeArguments is [{ ReadState: NullabilityState.Nullable }];
     }
 
     private static EventDescriptor BuildEvent(Type contract, Type eventType)

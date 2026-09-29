@@ -191,7 +191,9 @@ public sealed record SearchResults(IReadOnlyList<SearchHit> Items, long? Total);
 [DcmsContract("dcms.search", 1, Description = "Full-text search over the tenant's published content.")]
 public interface IPluginSearch
 {
-    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Ai,
+    // Not Site: platform contracts are not reachable from the public plane; sites search
+    // through the Search plugin's own route.
+    [Operation(OpRisk.Read, Expose = OpExposure.Ai,
         Description = "Published content matching a query, best match first.")]
     Task<SearchResults> SearchAsync(SearchRequest input, CancellationToken ct);
 }

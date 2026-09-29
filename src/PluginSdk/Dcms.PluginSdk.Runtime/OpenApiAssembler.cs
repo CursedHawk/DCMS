@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
 
 namespace Dcms.PluginSdk.Runtime;
 
@@ -63,6 +64,8 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
             {
                 schemas[name] = schema.DeepClone();
             }
+
+            AddContractOperations(plugin, instance, fragment, tags, paths);
         }
 
         if (tagging)
@@ -105,6 +108,67 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
             ["paths"] = paths,
             ["components"] = new JsonObject { ["schemas"] = schemas },
         };
+    }
+
+    /// <summary>
+    /// The instance's site-exposed contract operations, at
+    /// <c>/api/{slug}/_contracts/{contractId}/{operation}</c> (served by the contract dispatcher),
+    /// so a site's generated client can call them like any other route of the instance.
+    /// </summary>
+    private void AddContractOperations(IPlugin plugin, PluginInstanceContext instance, OpenApiFragment fragment, JsonArray tags, JsonObject paths)
+    {
+        var contracts = (plugin.Manifest.Provides ?? [])
+            .Select(p => registry.FindContract(p.Contract)?.Descriptor)
+            .OfType<ContractDescriptor>()
+            .ToList();
+        var tag = fragment.TagName.Length > 0 ? fragment.TagName : instance.Name;
+        var added = false;
+        foreach (var contract in contracts)
+        {
+            foreach (var op in contract.Operations.Where(o => o.Expose.HasFlag(OpExposure.Site)))
+            {
+                var operation = new JsonObject
+                {
+                    ["tags"] = new JsonArray { tag },
+                    ["operationId"] = $"{instance.Slug}_{contract.Name.Replace('.', '_').Replace('-', '_')}_{op.Name}",
+                    ["summary"] = op.Description ?? $"{contract.Id} {op.Name}",
+                    ["description"] = $"{instance.Description}\n\n{op.Description}\n\nContract: {contract.Id} ({contract.Description})",
+                    // api.{slug}.{contract short name}.{operation}: visitors.identity@1 GetCurrent
+                    // on "members" becomes api.members.identity.getCurrent().
+                    ["x-dcms-client"] = new JsonArray(ClientName(contract.Name), ClientName(op.Name)),
+                    ["x-dcms-contract"] = contract.Id,
+                };
+                if (op.InputType is not null)
+                {
+                    operation["requestBody"] = new JsonObject
+                    {
+                        ["required"] = true,
+                        ["content"] = new JsonObject { ["application/json"] = new JsonObject { ["schema"] = op.InputSchema.DeepClone() } },
+                    };
+                }
+                var response = new JsonObject { ["description"] = "Success" };
+                if (op.OutputSchema is { } output)
+                {
+                    response["content"] = new JsonObject { ["application/json"] = new JsonObject { ["schema"] = output.DeepClone() } };
+                }
+                operation["responses"] = new JsonObject { [op.OutputSchema is null ? "204" : "200"] = response };
+                paths[$"/api/{instance.Slug}/_contracts/{contract.Id}/{op.Name}"] = new JsonObject { ["post"] = operation };
+                added = true;
+            }
+        }
+        if (added && fragment.TagName.Length == 0)
+        {
+            tags.Add(new JsonObject { ["name"] = tag, ["description"] = instance.Description });
+        }
+    }
+
+    /// <summary>The last dotted segment of a name, camel-cased: "visitors.identity" → "identity", "GetCurrent" → "getCurrent".</summary>
+    private static string ClientName(string name)
+    {
+        var last = name.Split('.')[^1];
+        var parts = last.Split('-', StringSplitOptions.RemoveEmptyEntries);
+        var joined = string.Concat(parts.Select((p, i) => i == 0 ? p : char.ToUpperInvariant(p[0]) + p[1..]));
+        return char.ToLowerInvariant(joined[0]) + joined[1..];
     }
 
     /// <summary>The OpenAPI tag the cross-collection tag index is grouped under.</summary>

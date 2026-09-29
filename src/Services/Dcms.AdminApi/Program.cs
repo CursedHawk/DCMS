@@ -14,6 +14,7 @@ using Dcms.AdminApi.Plugins;
 using Dcms.AdminApi.Tenancy;
 using Dcms.Plugins.All;
 using Dcms.PluginSdk.Runtime;
+using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.PluginSdk.Runtime.Hosting;
 using Dcms.PluginSdk.Runtime.Platform;
 using Dcms.Shared.Caching;
@@ -404,6 +405,8 @@ app.MapPluginEndpoints();
 // Plugins' own admin routes, /api/admin/plugins/{slug}/..., for authenticated tenant members
 // (UseTenantMembership above has already confirmed membership of X-Dcms-Tenant).
 app.MapDcmsPluginAdminEndpoints().RequireAuthorization();
+// Contract operations for members and AI agents (docs/adr/0016).
+app.MapDcmsContractAdminEndpoints();
 app.MapNavigationEndpoints();
 app.MapMarketplaceEndpoints();
 app.MapContentEndpoints();

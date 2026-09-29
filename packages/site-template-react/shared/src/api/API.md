@@ -64,6 +64,8 @@ Site search.
 Member accounts.
 
 - `api.members.auth.register(body) / .login(body) / .refresh(token) / .me() / .getProfile() / .updateProfile(update)` → `VisitorTokens / VisitorProfile / VisitorOwnProfile` — Visitor accounts and profiles. Pass `visitorToken` to createTenantClient for `me()` and the profile calls. (POST /api/members/register|login|refresh, GET /api/members/me, GET|PUT /api/members/me/profile)
+- `api.members.identity.getCurrent()` → `{ visitor: { id: string; email: string; displayName: string | null; attributes: Record<string, unknown>; createdAt: string } | null }` — The signed-in visitor, with the attributes visible to plugins; null when nobody is signed in. (POST /api/members/_contracts/visitors.identity@1/GetCurrent)
+- `api.members.profiles.getPublic(body)` → `{ id: string; displayName: string | null; attributes: Record<string, unknown> } | null` — A visitor's public profile: display name and public attributes only. (POST /api/members/_contracts/visitors.profiles@1/GetPublic)
 
 ### News (`news`)
 

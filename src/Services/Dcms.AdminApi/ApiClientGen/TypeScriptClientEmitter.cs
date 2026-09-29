@@ -132,6 +132,9 @@ public static class TypeScriptClientEmitter
                 if (CapabilityPlugins.Contains(instance.PluginId))
                 {
                     AddCapability(section, instance);
+                    // Capability plugins keep their hand-written runtime helpers, but contract
+                    // operations they provide are ordinary described routes like any other.
+                    AddOperations(section, instance, onlyContracts: true);
                     continue;
                 }
 
@@ -202,12 +205,16 @@ public static class TypeScriptClientEmitter
             }
         }
 
-        private void AddOperations(Section section, GeneratedInstance instance)
+        private void AddOperations(Section section, GeneratedInstance instance, bool onlyContracts = false)
         {
             var prefix = $"/api/{instance.Slug}";
             foreach (var (key, node) in paths.OrderBy(p => p.Key, StringComparer.Ordinal))
             {
                 if (node is not JsonObject item || !(key == prefix || key.StartsWith(prefix + "/", StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+                if (onlyContracts && !key.StartsWith(prefix + "/_contracts/", StringComparison.Ordinal))
                 {
                     continue;
                 }

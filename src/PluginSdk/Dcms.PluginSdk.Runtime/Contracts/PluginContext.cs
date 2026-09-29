@@ -134,12 +134,8 @@ internal sealed class PluginContext(
         return ContractProxy.Create((T)target, descriptor, pluginId, services);
     }
 
-    /// <summary>Builds a provider from DI, handing it <paramref name="context"/> when its constructor asks for one.</summary>
     private object Construct(Type implementation, IPluginContext context) =>
-        implementation.GetConstructors()
-            .Any(c => c.GetParameters().Any(p => p.ParameterType == typeof(IPluginContext)))
-            ? ActivatorUtilities.CreateInstance(services, implementation, context)
-            : ActivatorUtilities.CreateInstance(services, implementation);
+        ContractActivator.Create(services, implementation, context);
 
     private PluginInstanceContext? FindProviderInstance(
         ContractDescriptor descriptor, ContractRequirement requirement, Guid? explicitId)
@@ -173,4 +169,15 @@ internal sealed class PluginContext(
         && value.GetString() is { Length: > 0 } bound
             ? bound
             : null;
+}
+
+/// <summary>Builds contract providers. They are never registered in DI, so nothing can reach one around the proxy.</summary>
+internal static class ContractActivator
+{
+    /// <summary>Resolves the provider's dependencies from DI, handing it <paramref name="context"/> when its constructor asks for one.</summary>
+    public static object Create(IServiceProvider services, Type implementation, IPluginContext context) =>
+        implementation.GetConstructors()
+            .Any(c => c.GetParameters().Any(p => p.ParameterType == typeof(IPluginContext)))
+            ? ActivatorUtilities.CreateInstance(services, implementation, context)
+            : ActivatorUtilities.CreateInstance(services, implementation);
 }

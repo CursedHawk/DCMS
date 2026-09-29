@@ -84,6 +84,13 @@ export interface HttpCore {
   call<T>(method: string, path: string, options?: CallOptions): Promise<T>;
   /** Escape hatch for endpoints not covered by a helper. */
   request<T>(path: string, init?: RequestInit): Promise<T>;
+  /**
+   * Invokes a contract operation an instance provides (for example
+   * `invokeContract('members', 'visitors.identity@1', 'GetCurrent')`). The generated
+   * client names each one (`api.members.identity.getCurrent()`); this reaches any of them
+   * by name, and sends the visitor token when one is configured.
+   */
+  invokeContract<T>(slug: string, contractId: string, operation: string, input?: unknown): Promise<T>;
 }
 
 export interface VisitorAuthApi {
@@ -197,6 +204,11 @@ export function createHttpCore(options: TenantClientOptions = {}): HttpCore {
     async collect(event: AnalyticsEvent, slug?: string): Promise<void> {
       const path = slug ? `/api/${slug}/collect` : '/api/collect';
       await jsonPost<void>(path, event);
+    },
+    invokeContract<T>(slug: string, contractId: string, operation: string, input?: unknown): Promise<T> {
+      return call<T>('POST', `/api/${slug}/_contracts/${encodeURIComponent(contractId)}/${encodeURIComponent(operation)}`, {
+        body: input ?? {},
+      });
     },
     visitorAuth(slug: string): VisitorAuthApi {
       return {

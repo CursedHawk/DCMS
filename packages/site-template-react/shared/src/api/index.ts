@@ -45,6 +45,12 @@ export function createTenantClient(options: TenantClientOptions = {}) {
     },
     "members": {
       auth: http.visitorAuth("members"),
+      "identity": {
+        getCurrent: (): Promise<{ visitor: { id: string; email: string; displayName: string | null; attributes: Record<string, unknown>; createdAt: string } | null }> => http.call<{ visitor: { id: string; email: string; displayName: string | null; attributes: Record<string, unknown>; createdAt: string } | null }>("POST", `/api/members/_contracts/visitors.identity@1/GetCurrent`),
+      },
+      "profiles": {
+        getPublic: (body: { visitorId: string }): Promise<{ id: string; displayName: string | null; attributes: Record<string, unknown> } | null> => http.call<{ id: string; displayName: string | null; attributes: Record<string, unknown> } | null>("POST", `/api/members/_contracts/visitors.profiles@1/GetPublic`, { body }),
+      },
     },
     "news": {
       "post": {
