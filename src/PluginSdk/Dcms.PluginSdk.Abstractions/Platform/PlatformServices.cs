@@ -168,3 +168,30 @@ public interface IPluginContent
     [Operation(OpRisk.Read)]
     Task<ContentItemDto?> ResolveAsync(ContentRef input, CancellationToken ct);
 }
+
+// ---------------------------------------------------------------------------------------------
+// dcms.search@1
+// ---------------------------------------------------------------------------------------------
+
+/// <param name="Limit">At most 50.</param>
+/// <param name="BodyChars">How much of each document's text to return; 0 for none, at most 2000.</param>
+/// <param name="IncludeTotal">Also count every match (one more query).</param>
+public sealed record SearchRequest(string Query, int Limit = 10, int BodyChars = 0, bool IncludeTotal = false);
+
+public sealed record SearchHit(string Title, string Url, string ContentType, string? Body);
+
+public sealed record SearchResults(IReadOnlyList<SearchHit> Items, long? Total);
+
+/// <summary>
+/// Full-text search over the tenant's published, searchable content. The index is maintained
+/// by the platform for every tenant (whether or not the Search plugin is installed), which is
+/// why this is a platform contract: the chatbot grounds its answers in it, and the Search
+/// plugin serves it to the public site.
+/// </summary>
+[DcmsContract("dcms.search", 1, Description = "Full-text search over the tenant's published content.")]
+public interface IPluginSearch
+{
+    [Operation(OpRisk.Read, Expose = OpExposure.Site | OpExposure.Ai,
+        Description = "Published content matching a query, best match first.")]
+    Task<SearchResults> SearchAsync(SearchRequest input, CancellationToken ct);
+}

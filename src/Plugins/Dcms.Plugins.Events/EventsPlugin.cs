@@ -1,4 +1,5 @@
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Events;
@@ -30,7 +31,8 @@ public sealed class EventsPlugin : IPlugin
             "rosterSlug": {
               "type": "string",
               "title": "Roster instance",
-              "description": "Slug of the Roster instance holding performer profiles. Leave empty to keep line-ups as plain names."
+              "description": "Slug of the Roster instance holding performer profiles. Leave empty to keep line-ups as plain names.",
+              "x-dcms-contract-binding": "roster.members@1"
             }
           },
           "additionalProperties": false
@@ -48,6 +50,8 @@ public sealed class EventsPlugin : IPlugin
         publicConfigKeys: ["title", "gigsPerPage", "timeZone", "rosterSlug"],
         // Optional: without a roster, gigs still list their line-up by name.
         dependencies: [new PluginDependency("roster", Optional: true)],
+        // rosterSlug is the binding: it names which Roster instance, when there are several.
+        consumes: [new ContractRequirement("roster.members@1", Optional: true, BindingConfigKey: "rosterSlug")],
         permissions:
         [
             new PermissionDefinition("read", "View events"),

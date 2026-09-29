@@ -6,13 +6,24 @@ namespace Dcms.AdminApi.Plugins;
 /// <summary>Validates a plugin instance's config JSON against the manifest's JSON Schema.</summary>
 public sealed class PluginConfigValidator
 {
+    /// <summary>
+    /// The default dialect, but tolerating unknown keywords. Manifests annotate their schemas for
+    /// the admin form -- <c>x-dcms-contract-binding</c> marks a provider picker -- and those
+    /// annotations have no validation meaning; without this every create and update of such a
+    /// plugin failed to even build the schema. Every standard keyword is still enforced.
+    /// </summary>
+    private static readonly BuildOptions Build = new()
+    {
+        Dialect = Dialect.Default.With([], allowUnknownKeywords: true),
+    };
+
     public (bool Valid, IReadOnlyList<string> Errors) Validate(string configJsonSchema, string configJson)
     {
         JsonSchema schema;
         JsonDocument config;
         try
         {
-            schema = JsonSchema.FromText(string.IsNullOrWhiteSpace(configJsonSchema) ? "{}" : configJsonSchema);
+            schema = JsonSchema.FromText(string.IsNullOrWhiteSpace(configJsonSchema) ? "{}" : configJsonSchema, Build);
             config = JsonDocument.Parse(string.IsNullOrWhiteSpace(configJson) ? "{}" : configJson);
         }
         catch (JsonException ex)

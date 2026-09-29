@@ -149,11 +149,12 @@ internal sealed class PluginContext(
         {
             return candidates.FirstOrDefault(i => i.InstanceId == id);
         }
-        if (requirement.BindingConfigKey is { } key && BoundInstanceId(key) is { } bound)
+        if (requirement.BindingConfigKey is { } key && BindingValue(key) is { } bound)
         {
-            // A binding that names a disabled or deleted instance resolves to nothing rather than
-            // silently falling through to some other instance.
-            return candidates.FirstOrDefault(i => i.InstanceId == bound);
+            // An instance id or a slug. A binding that names a disabled or deleted instance
+            // resolves to nothing rather than silently falling through to some other instance.
+            return candidates.FirstOrDefault(i =>
+                Guid.TryParse(bound, out var id) ? i.InstanceId == id : string.Equals(i.Slug, bound, StringComparison.Ordinal));
         }
         return candidates.Count switch
         {
@@ -165,11 +166,11 @@ internal sealed class PluginContext(
         };
     }
 
-    private Guid? BoundInstanceId(string configKey) =>
+    private string? BindingValue(string configKey) =>
         instance?.Config.RootElement is { ValueKind: JsonValueKind.Object } root
         && root.TryGetProperty(configKey, out var value)
         && value.ValueKind == JsonValueKind.String
-        && Guid.TryParse(value.GetString(), out var id)
-            ? id
+        && value.GetString() is { Length: > 0 } bound
+            ? bound
             : null;
 }

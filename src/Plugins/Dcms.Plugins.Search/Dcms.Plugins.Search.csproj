@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Telemetry\Dcms.Shared.Telemetry.csproj" />
   </ItemGroup>
 
 </Project>

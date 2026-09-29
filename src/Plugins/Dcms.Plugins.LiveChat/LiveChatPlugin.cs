@@ -1,4 +1,6 @@
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.LiveChat;
@@ -75,7 +77,9 @@ public sealed class LiveChatPlugin : IPlugin
         ],
         category: "Engagement",
         summary: "Live chat between site visitors and your team.",
-        iconName: "MessagesSquare");
+        iconName: "MessagesSquare",
+        // Grounds the bot's answers in the tenant's published content.
+        consumes: [ContractRequirement.Of<IPluginSearch>()]);
 
     public void ConfigureServices(IServiceCollection services)
     {

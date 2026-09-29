@@ -1,3 +1,5 @@
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Runtime;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.PluginSdk.Abstractions;
@@ -43,7 +45,7 @@ public static class PluginInstanceEndpoints
         }).RequirePermission(PlatformPermissions.PluginsManage);
 
         app.MapPost("/api/admin/plugins/instances", async (
-            CreateInstanceRequest body, IPluginCatalog catalog, PluginConfigValidator validator,
+            CreateInstanceRequest body, IPluginCatalog catalog, PluginRegistry registry, PluginConfigValidator validator,
             CmsDbContext db, ITenantContext tenant, IEventPublisher events, DcmsMetrics metrics,
             CancellationToken ct) =>
         {
@@ -64,6 +66,12 @@ public static class PluginInstanceEndpoints
                 await db.PluginInstances.AnyAsync(p => p.PluginId == body.PluginId, ct))
             {
                 return Results.Conflict(new { error = "This plugin allows only a single instance." });
+            }
+
+            // A new instance is enabled, so it must not need a contract nothing here provides.
+            if (await MissingAsync(registry, db, manifest.Id, ct) is { Count: > 0 } missing)
+            {
+                return MissingConflict(missing);
             }
 
             var config = body.Config ?? "{}";
@@ -119,7 +127,8 @@ public static class PluginInstanceEndpoints
         }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceUpdated, "plugin_instance");
 
         app.MapPost("/api/admin/plugins/instances/{id:guid}/{action}", async (
-            Guid id, string action, CmsDbContext db, IEventPublisher events, DcmsMetrics metrics, CancellationToken ct) =>
+            Guid id, string action, CmsDbContext db, PluginRegistry registry, IEventPublisher events, DcmsMetrics metrics,
+            CancellationToken ct) =>
         {
             if (action is not ("enable" or "disable"))
             {
@@ -129,6 +138,28 @@ public static class PluginInstanceEndpoints
             if (instance is null)
             {
                 return Results.NotFound();
+            }
+            if (action == "enable" && !instance.Enabled
+                && await MissingAsync(registry, db, instance.PluginId, ct) is { Count: > 0 } missing)
+            {
+                return MissingConflict(missing);
+            }
+            if (action == "disable" && instance.Enabled)
+            {
+                var remaining = await db.PluginInstances.AsNoTracking()
+                    .Where(p => p.Enabled && p.Id != instance.Id)
+                    .Select(p => new { p.PluginId, p.Slug })
+                    .ToListAsync(ct);
+                var dependents = PluginDependencies.Dependents(
+                    registry, instance.PluginId, remaining.Select(r => (r.PluginId, r.Slug)).ToList());
+                if (dependents.Count > 0)
+                {
+                    return Results.Conflict(new
+                    {
+                        error = "Other plugins require this one. Disable them first.",
+                        dependents = dependents.Select(d => new { d.PluginId, d.Slug, d.ContractId }),
+                    });
+                }
             }
             instance.Enabled = action == "enable";
             instance.UpdatedAt = DateTimeOffset.UtcNow;
@@ -140,6 +171,20 @@ public static class PluginInstanceEndpoints
 
         return app;
     }
+
+    private static async Task<IReadOnlyList<MissingProvider>> MissingAsync(
+        PluginRegistry registry, CmsDbContext db, string pluginId, CancellationToken ct)
+    {
+        var enabled = await db.PluginInstances.AsNoTracking()
+            .Where(p => p.Enabled).Select(p => p.PluginId).Distinct().ToListAsync(ct);
+        return PluginDependencies.Missing(registry, pluginId, enabled);
+    }
+
+    private static IResult MissingConflict(IReadOnlyList<MissingProvider> missing) => Results.Conflict(new
+    {
+        error = "This plugin requires others that are not enabled. Enable them first.",
+        missing = missing.Select(m => new { m.ContractId, m.ProviderPluginId }),
+    });
 
     /// <summary>
     /// The single place a plugin instance change leaves this service, which is why the counter
@@ -165,6 +210,9 @@ public static class PluginInstanceEndpoints
         configJsonSchema = m.ConfigJsonSchema,
         permissions = m.Permissions.Select(p => new { p.Action, p.DisplayName }),
         dependencies = m.Dependencies.Select(d => new { d.PluginId, d.Optional }),
+        // Contracts (docs/adr/0016): what this plugin offers and what it needs.
+        provides = (m.Provides ?? []).Select(p => ContractIds.Of(p.Contract)),
+        consumes = (m.Consumes ?? []).Select(c => new { c.ContractId, c.Optional, c.BindingConfigKey }),
         publicConfigKeys = m.PublicConfigKeys,
         contentTypes = m.ContentTypes.Select(t => new
         {

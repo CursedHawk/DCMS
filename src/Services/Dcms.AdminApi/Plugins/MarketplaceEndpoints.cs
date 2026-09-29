@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Security;
@@ -69,6 +70,8 @@ public static class MarketplaceEndpoints
                             }),
                         contentTypes = m.ContentTypes.Select(t => t.Name),
                         dependencies = m.Dependencies.Select(d => new { d.PluginId, d.Optional }),
+                        provides = (m.Provides ?? []).Select(p => ContractIds.Of(p.Contract)),
+                        consumes = (m.Consumes ?? []).Select(c => new { c.ContractId, c.Optional }),
                         addsNavEntry = m.Nav is not null,
                         instanceCount = counts?.total ?? 0,
                         enabledCount = counts?.enabled ?? 0,

@@ -211,7 +211,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapDcmsDefaultEndpoints();
 app.MapDcmsPlugins();
-app.MapSearchDelivery();
 app.MapAnalyticsIngest();
 app.MapBranding();
 app.MapPluginConfig();

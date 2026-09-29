@@ -4,7 +4,10 @@ using System.Text;
 using System.Text.Json;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
-using Dcms.Shared.Data.Search;
+using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Shared.Security;
 using Dcms.Shared.Telemetry;
 using Microsoft.AspNetCore.SignalR;
@@ -38,6 +41,10 @@ public sealed class ChatBotResponder(
     private const int HistoryLimit = 12;
     private const int MaxContextDocs = 5;
     private const int MaxDocChars = 700;
+
+    private static PluginInstanceContext ToContext(PluginInstance instance) => new(
+        instance.Id, instance.TenantId, instance.PluginId, instance.Slug, instance.Name, instance.Description,
+        JsonDocument.Parse(string.IsNullOrWhiteSpace(instance.ConfigJson) ? "{}" : instance.ConfigJson));
 
     /// <summary>Fire-and-forget entry point; never throws into the caller (the hub).</summary>
     public void Trigger(Guid tenantId, Guid conversationId, string visitorMessage)
@@ -100,7 +107,7 @@ public sealed class ChatBotResponder(
         history.Reverse();
 
         var context = config.Grounding
-            ? await RetrieveContextAsync(sp, tenantId, visitorMessage, ct)
+            ? await RetrieveContextAsync(sp, tenantId, ToContext(instance), visitorMessage, ct)
             : null;
 
         var tokens = sp.GetRequiredService<IServiceTokenProvider>();
@@ -151,39 +158,36 @@ public sealed class ChatBotResponder(
         }, ct);
     }
 
-    /// <summary>Top matching published-content snippets for the visitor's message.</summary>
+    /// <summary>
+    /// Top matching published-content snippets for the visitor's message, through
+    /// <c>dcms.search@1</c> as the live-chat plugin -- the same tenant-scoped index the site's
+    /// search serves, and the same grant any other plugin would need.
+    /// </summary>
     private static async Task<string?> RetrieveContextAsync(
-        IServiceProvider sp, Guid tenantId, string query, CancellationToken ct)
+        IServiceProvider sp, Guid tenantId, PluginInstanceContext instance, string query, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
             return null;
         }
-        var search = sp.GetRequiredService<SearchDbContext>();
-        // EF.Functions.* must stay inside the LINQ expression (it throws if invoked
-        // directly), so the tsquery is rebuilt inline rather than hoisted to a local.
-        var docs = await search.Documents.IgnoreQueryFilters().AsNoTracking()
-            .Where(d => d.TenantId == tenantId
-                        && d.SearchVector.Matches(EF.Functions.WebSearchToTsQuery("simple", query)))
-            .OrderByDescending(d => d.SearchVector.Rank(EF.Functions.WebSearchToTsQuery("simple", query)))
-            .Take(MaxContextDocs)
-            .Select(d => new { d.Title, d.Body, d.Url })
-            .ToListAsync(ct);
-        if (docs.Count == 0)
+        var plugin = await sp.GetRequiredService<PluginContextFactory>()
+            .CreateAsync(tenantId, PluginId, instance, PluginActor.System, ct);
+        var results = await plugin.Contracts.Get<IPluginSearch>()
+            .SearchAsync(new SearchRequest(query, MaxContextDocs, MaxDocChars), ct);
+        if (results.Items.Count == 0)
         {
             return null;
         }
 
         var sb = new StringBuilder();
-        foreach (var d in docs)
+        foreach (var d in results.Items)
         {
-            var body = d.Body.Length > MaxDocChars ? d.Body[..MaxDocChars] + "…" : d.Body;
             sb.Append("## ").AppendLine(d.Title);
             if (!string.IsNullOrWhiteSpace(d.Url))
             {
                 sb.Append("URL: ").AppendLine(d.Url);
             }
-            sb.AppendLine(body).AppendLine();
+            sb.AppendLine(d.Body).AppendLine();
         }
         return sb.ToString();
     }

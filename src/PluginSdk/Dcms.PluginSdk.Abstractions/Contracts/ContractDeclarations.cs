@@ -20,8 +20,8 @@ public sealed record ContractProvision(Type Contract, Type Implementation)
 /// <param name="Optional">The plugin works without a provider; <see cref="IPluginContracts.TryGet{T}"/> returns null.</param>
 /// <param name="BindingConfigKey">
 /// For a provider with several instances: the consumer's config key holding the chosen provider
-/// instance id. Its JSON Schema property carries <c>"x-dcms-contract-binding": "&lt;contractId&gt;"</c>
-/// so the admin form renders a picker.
+/// instance — its id, or its slug (which a public site can use too). Its JSON Schema property
+/// carries <c>"x-dcms-contract-binding": "&lt;contractId&gt;"</c> so the admin form renders a picker.
 /// </param>
 public sealed record ContractRequirement(string ContractId, bool Optional = false, string? BindingConfigKey = null)
 {
