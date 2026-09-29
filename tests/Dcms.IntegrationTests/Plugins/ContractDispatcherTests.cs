@@ -3,6 +3,8 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Dcms.IntegrationTests.Cms;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.IntegrationTests.Plugins;
 
@@ -125,6 +127,35 @@ public sealed class ContractDispatcherTests(ContentFlowFixture fixture)
         var allowed = await admin.SendAsync(AdminReq(HttpMethod.Post, "/api/admin/contracts/visitors.profiles@1/ListAttributeDefinitions?plane=ai",
             SuperAdmin, tenant, "SuperAdmin", new { }), ct);
         allowed.StatusCode.Should().Be(HttpStatusCode.OK, await allowed.Content.ReadAsStringAsync(ct));
+    }
+
+    [DockerFact]
+    public async Task A_write_through_the_dispatcher_is_audited_as_a_contract_call()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (tenant, _, _) = await SiteAsync(ct);
+        var content = fixture.Content.CreateClient();
+        var token = await RegisterAsync(content, tenant, "gil@site.test", ct);
+        var visitorId = (await (await content.SendAsync(Req(HttpMethod.Get, tenant, "/api/members/me", token: token), ct))
+            .Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetGuid();
+
+        var admin = fixture.Admin.CreateClient();
+        var res = await admin.SendAsync(AdminReq(HttpMethod.Post, "/api/admin/contracts/visitors.profiles@1/SetAttributes?plane=admin",
+            SuperAdmin, tenant, "SuperAdmin", new { visitorId, attributes = new Dictionary<string, object>() }), ct);
+        res.StatusCode.Should().Be(HttpStatusCode.OK, await res.Content.ReadAsStringAsync(ct));
+
+        // The route is AuditExempt (per-route records would say nothing); the proxy's record of
+        // the Safe operation is what must reach the chain.
+        var found = false;
+        for (var i = 0; i < 40 && !found; i++)
+        {
+            using var scope = fixture.Admin.Services.CreateScope();
+            var audit = scope.ServiceProvider.GetRequiredService<Dcms.Shared.Data.Audit.AuditDbContext>();
+            using var rls = Dcms.Shared.Data.Rls.RlsScope.Platform();
+            found = await audit.Events.AsNoTracking().AnyAsync(e => e.Action == "plugin.contract.invoked", ct);
+            if (!found) await Task.Delay(250, ct);
+        }
+        found.Should().BeTrue("a Safe contract operation is recorded as plugin.contract.invoked");
     }
 
     // ---- helpers ----
