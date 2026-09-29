@@ -20,6 +20,7 @@ public static class PlatformContracts
         builder.AddPlatformContract<IPluginEmail, PluginEmail>();
         builder.AddPlatformContract<IPluginNotifications, PluginNotifications>();
         builder.AddPlatformContract<IPluginContent, PluginContent>();
+        builder.AddPlatformContract<IPluginMedia, PluginMedia>();
         builder.AddPlatformContract<IPluginSearch, PluginSearch>();
         builder.AddPlatformContract<IPluginAi, PluginAi>();
         builder.AddPlatformContract<IPluginEvents, PluginEvents>();

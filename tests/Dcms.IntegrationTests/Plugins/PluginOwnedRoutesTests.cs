@@ -10,7 +10,7 @@ namespace Dcms.IntegrationTests.Plugins;
 /// consumer and dashboard (admin-api), and analytics.tracking@1 for everyone else.
 /// </summary>
 [Collection(ContentFlowCollection.Name)]
-public sealed class AnalyticsPluginTests(ContentFlowFixture fixture)
+public sealed class PluginOwnedRoutesTests(ContentFlowFixture fixture)
 {
     private static readonly Guid SuperAdmin = Guid.NewGuid();
 
@@ -58,6 +58,33 @@ public sealed class AnalyticsPluginTests(ContentFlowFixture fixture)
         body.GetProperty("pageviews").GetInt64().Should().Be(2);
         body.GetProperty("topPages").EnumerateArray().Select(p => p.GetProperty("path").GetString())
             .Should().Contain("/pricing?utm_source=news");
+    }
+
+    [DockerFact]
+    public async Task Branding_and_form_review_are_served_by_their_plugins()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var owner = Guid.NewGuid();
+        var tenant = "owned-" + Guid.NewGuid().ToString("N")[..8];
+        var admin = fixture.Admin.CreateClient();
+        (await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/tenants", SuperAdmin, "", "SuperAdmin",
+            new { slug = tenant, name = tenant, ownerUserId = owner, ownerEmail = $"{owner:N}@dcms.test" }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+        (await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", owner, tenant, body: new
+        {
+            pluginId = "branding", slug = "brand", name = "Brand",
+            config = """{"public":{"name":"Acme","logo":"not-a-guid"},"private":{"items":[{"key":"crm","value":"secret"}]}}""",
+        }), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var req = new HttpRequestMessage(HttpMethod.Get, "/api/brand/branding");
+        req.Headers.Add("X-Dcms-Tenant", tenant);
+        var res = await fixture.Content.CreateClient().SendAsync(req, ct);
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        var text = await res.Content.ReadAsStringAsync(ct);
+        text.Should().Contain("\"name\":\"Acme\"").And.Contain("\"logoUrl\":null").And.NotContain("secret");
+
+        (await admin.SendAsync(Req(HttpMethod.Get, "/api/admin/forms", owner, tenant), ct))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private static HttpRequestMessage Site(string tenant, string url, object body)

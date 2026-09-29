@@ -144,6 +144,24 @@ public interface IPluginNotifications
 }
 
 // ---------------------------------------------------------------------------------------------
+// dcms.media@1
+// ---------------------------------------------------------------------------------------------
+
+public sealed record MediaLookup(Guid AssetId);
+
+/// <summary>
+/// The tenant's media library, read-only: a stored asset id (a MediaRef field, a logo in
+/// config) to its servable variant URLs — <c>original</c>, and the processed ladder once ready.
+/// </summary>
+[DcmsContract("dcms.media", 1, Description = "Resolve the tenant's media assets to servable URLs.")]
+public interface IPluginMedia
+{
+    /// <summary>Null when the asset does not exist in this tenant.</summary>
+    [Operation(OpRisk.Read)]
+    Task<MediaAssetDto?> ResolveAsync(MediaLookup input, CancellationToken ct);
+}
+
+// ---------------------------------------------------------------------------------------------
 // dcms.content@1
 // ---------------------------------------------------------------------------------------------
 

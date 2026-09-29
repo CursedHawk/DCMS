@@ -1,6 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.Plugins.Branding.Api;
+using Dcms.Shared.Security;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Branding;
 
@@ -141,14 +148,32 @@ public sealed class BrandingPlugin : IPlugin
             new PermissionDefinition("read", "View branding"),
             new PermissionDefinition("write", "Configure branding"),
         ],
+        provides: [ContractProvision.Of<IBranding, BrandingIdentity>()],
+        consumes: [ContractRequirement.Of<IPluginMedia>()],
         category: "Presentation",
         summary: "Logo, colours and typography for the published site.",
         iconName: "Palette");
 
+    /// <summary>Any origin may GET (no credentials), so externally hosted tenant sites can fetch their branding.</summary>
+    public const string ReadCorsPolicy = "branding-read";
 
-    // No content types and no custom routes: the delivery endpoint is served by
-    // content-api (BrandingEndpoints), which reads the same config this documents.
-    public void MapEndpoints(IPluginEndpointBuilder endpoints) { }
+    public void ConfigureServices(IServiceCollection services, PluginHost host)
+    {
+        if (host.IsSite)
+        {
+            services.AddCors(o => o.AddPolicy(ReadCorsPolicy, policy => policy
+                .AllowAnyOrigin()
+                .AllowAnyHeader()
+                .WithMethods("GET")));
+        }
+    }
+
+    // GET /api/{slug}/branding: exactly the shape the fragment below documents.
+    public void MapEndpoints(IPluginEndpointBuilder endpoints) =>
+        endpoints.MapGet("/branding", async (IPluginContext context, CancellationToken ct) =>
+                Results.Ok(await new BrandingIdentity(context).GetAsync(ct)))
+            .RequireCors(ReadCorsPolicy)
+            .PermissionExempt("Public by design: the site's own name, logo and colours; the private section is never served.");
 
     public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
     {
@@ -265,7 +290,7 @@ public sealed class BrandingPlugin : IPlugin
 /// <summary>
 /// Branding resolved from an instance. The logo/favicon fields hold media asset
 /// ids (uploaded through the standard media pipeline and stored in tenant media);
-/// the delivery endpoint resolves them to servable URLs via <c>IMediaResolver</c>.
+/// <see cref="BrandingIdentity"/> resolves them to servable URLs through <c>dcms.media@1</c>.
 /// <see cref="Items"/> is the public section (served on GET /branding);
 /// <see cref="PrivateItems"/> is the tenant-private section and must never be
 /// written to a public response.

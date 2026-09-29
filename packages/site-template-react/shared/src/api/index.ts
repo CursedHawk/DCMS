@@ -29,6 +29,9 @@ export function createTenantClient(options: TenantClientOptions = {}) {
       list: (params?: { contentType?: string; field?: string }): Promise<TagIndex> => http.listTags(params),
     },
     "brand": {
+      "identity": {
+        get: (): Promise<{ name: string | null; tagline: string | null; logoUrl: string | null; logoDarkUrl: string | null; faviconUrl: string | null; primaryColor: string | null; secondaryColor: string | null; items: Record<string, string> }> => http.call<{ name: string | null; tagline: string | null; logoUrl: string | null; logoDarkUrl: string | null; faviconUrl: string | null; primaryColor: string | null; secondaryColor: string | null; items: Record<string, string> }>("POST", `/api/brand/_contracts/branding.identity@1/Get`),
+      },
       "branding": {
         get: (): Promise<BrandBranding> => http.call<BrandBranding>("GET", `/api/brand/branding`),
       },

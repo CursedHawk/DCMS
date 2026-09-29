@@ -45,6 +45,7 @@ Available on every tenant.
 
 Public branding for the site header.
 
+- `api.brand.identity.get()` → `{ name: string | null; tagline: string | null; logoUrl: string | null; logoDarkUrl: string | null; faviconUrl: string | null; primaryColor: string | null; secondaryColor: string | null; items: Record<string, string> }` — The public branding: name, tagline, logo, favicon, colours and public items. (POST /api/brand/_contracts/branding.identity@1/Get)
 - `api.brand.branding.get()` → `BrandBranding` — Get public branding (GET /api/brand/branding)
 
 ### Enquiries (`enquiries`)

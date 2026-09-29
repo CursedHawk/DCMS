@@ -8,6 +8,7 @@ using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Messaging.Email;
 using Dcms.Shared.Storage;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace Dcms.PluginSdk.Runtime.Platform;
@@ -257,4 +258,35 @@ public sealed class PluginContent(IPluginContext caller, PublishedContentReader 
     private Guid InstanceFor(Guid? requested) =>
         requested ?? caller.Instance?.InstanceId
         ?? throw new ContractValidationException("No instance in this context; pass InstanceId.");
+}
+
+/// <summary>
+/// <see cref="IPluginMedia"/> over <c>media.assets</c>. The caller's tenant is an explicit
+/// predicate as well as the ambient scope, so a job or event handler reads its own tenant's
+/// library exactly as a request does.
+/// </summary>
+public sealed class PluginMedia(IPluginContext caller, Dcms.Shared.Data.Media.MediaDbContext db) : IPluginMedia
+{
+    public async Task<MediaAssetDto?> ResolveAsync(MediaLookup input, CancellationToken ct)
+    {
+        using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(caller.TenantId);
+        var asset = await db.Assets.AsNoTracking()
+            .Include(a => a.Variants)
+            .FirstOrDefaultAsync(a => a.TenantId == caller.TenantId && a.Id == input.AssetId, ct);
+        if (asset is null)
+        {
+            return null;
+        }
+
+        var urls = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["original"] = $"/api/media/{asset.Id}/original",
+        };
+        foreach (var variant in asset.Variants)
+        {
+            urls[variant.Kind] = $"/api/media/{asset.Id}/{variant.Kind}";
+        }
+        return new MediaAssetDto(
+            asset.Id, (Dcms.PluginSdk.Abstractions.MediaCategory)(int)asset.Category, asset.FileName, asset.ContentType, asset.Status.ToString(), urls);
+    }
 }

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -148,6 +149,14 @@ public sealed class FormsPlugin : IPlugin
                 .AllowAnyOrigin()
                 .AllowAnyHeader()
                 .WithMethods("POST")));
+        }
+    }
+
+    public void MapHostEndpoints(IEndpointRouteBuilder app, PluginHost host)
+    {
+        if (host.IsAdmin)
+        {
+            FormReviewEndpoints.Map(app);
         }
     }
 

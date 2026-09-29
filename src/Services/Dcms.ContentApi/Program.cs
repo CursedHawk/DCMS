@@ -1,4 +1,3 @@
-using Dcms.ContentApi.Branding;
 using Dcms.ContentApi.Chat;
 using Dcms.ContentApi.Delivery;
 using Dcms.ContentApi.Plugins;
@@ -130,16 +129,8 @@ builder.Services.AddDcmsRateLimiting(builder.Configuration);
 // turns a cookie into a cross-origin capability, and content-api is the internet-facing
 // service; keeping one that nothing uses means the next person to add a cookie here inherits
 // it without deciding to. The cross-origin surface is the plugins' anonymous policies, each
-// registered by the plugin that owns the endpoint (analytics beacon, form submit), plus the one below.
-builder.Services.AddCors(options =>
-{
-    // Public branding read: any origin may GET (no credentials), so externally
-    // hosted tenant sites can fetch their branding.
-    options.AddPolicy(BrandingEndpoints.ReadCorsPolicy, policy => policy
-        .AllowAnyOrigin()
-        .AllowAnyHeader()
-        .WithMethods("GET"));
-});
+// registered by the plugin that owns the endpoint (analytics beacon, form submit, branding read).
+builder.Services.AddCors();
 
 // Outbound client-credentials token provider + ai-gateway client, used by the AI
 // Chatbot to generate visitor replies. Reuses the shared dcms.ai service client.
@@ -163,7 +154,6 @@ builder.Services.AddHttpClient(Dcms.ContentApi.Social.StoryDeliveryEndpoints.Htt
 builder.Services.AddSingleton<ChatBotResponder>();
 
 builder.AddDcmsPlugins(PluginPlane.Site, plugins => plugins.AddAll());
-builder.Services.AddScoped<IMediaResolver, Dcms.ContentApi.Delivery.MediaResolver>();
 builder.Services.AddHostedService<ContentCacheInvalidator>();
 builder.Services.AddHostedService<SearchIndexer>();
 
@@ -196,7 +186,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapDcmsDefaultEndpoints();
 app.MapDcmsPlugins();
-app.MapBranding();
 app.MapPluginConfig();
 app.MapChatDelivery();
 // Before the generic content delivery for readability; ASP.NET routing decides on segment

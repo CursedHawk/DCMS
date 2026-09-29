@@ -14,7 +14,7 @@ public class MediaDbContext(DbContextOptions<MediaDbContext> options, ITenantCon
 {
     public const string Schema = "media";
 
-    private Guid CurrentTenantId => tenantContext.TenantId ?? Guid.Empty;
+    private Guid CurrentTenantId => Rls.RlsScope.TenantOverride ?? tenantContext.TenantId ?? Guid.Empty;
 
     public DbSet<MediaAsset> Assets => Set<MediaAsset>();
     public DbSet<MediaVariant> Variants => Set<MediaVariant>();

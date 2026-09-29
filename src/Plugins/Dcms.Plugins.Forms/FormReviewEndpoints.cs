@@ -1,22 +1,25 @@
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using System.Text.Json;
-using Dcms.Plugins.Forms;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Security;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 
-namespace Dcms.AdminApi.Forms;
+namespace Dcms.Plugins.Forms;
 
 /// <summary>
-/// Review surface for visitor form submissions (written by content-api). Gated on
+/// The admin review surface for visitor submissions (mapped on the admin plane; the site plane
+/// writes them, <see cref="FormSubmissionEndpoints"/>). Tenant-wide, so not under an instance slug. Gated on
 /// content:read / content:write rather than a new permission key so existing
 /// tenant roles can reach it without a re-seed.
 /// </summary>
-public static class FormSubmissionEndpoints
+internal static class FormReviewEndpoints
 {
-    public static IEndpointRouteBuilder MapFormSubmissionEndpoints(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app)
     {
         // The forms an operator can review: every Forms plugin instance with the
         // forms declared in its config, so the admin can render real labels and
