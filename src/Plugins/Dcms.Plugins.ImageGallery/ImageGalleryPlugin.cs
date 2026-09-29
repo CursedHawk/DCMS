@@ -1,3 +1,6 @@
+using Dcms.Plugins.ImageGallery.Api;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions;
 
 namespace Dcms.Plugins.ImageGallery;
@@ -43,8 +46,12 @@ public sealed class ImageGalleryPlugin : IPlugin
                         new ContentReferenceTarget(null, null, MediaCategory.Image)),
                 ],
                 Searchable: true,
-                SlugField: "title"),
+                SlugField: "title",
+                Published: typeof(GalleryPublished),
+                Unpublished: typeof(GalleryUnpublished)),
         ],
+        provides: [ContractProvision.Of<IImageGalleries, ImageGalleriesSource>()],
+        consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Media",
         summary: "Image galleries served as webp variants, originals preserved.",
         iconName: "Images");

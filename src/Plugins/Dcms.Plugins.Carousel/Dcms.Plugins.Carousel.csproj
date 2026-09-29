@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Carousel.Api\Dcms.Plugins.Carousel.Api.csproj" />
   </ItemGroup>
 
 </Project>

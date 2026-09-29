@@ -1,5 +1,5 @@
 using System.Text.Json.Nodes;
-using Dcms.Plugins.VisitorAuth.Contracts;
+using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
@@ -17,8 +17,8 @@ namespace Dcms.Plugins.VisitorAuth;
 public sealed class VisitorAuthPlugin : IPlugin
 {
     public const string PluginId = "visitor-auth";
-    public const string ReadPermission = "plugin:visitor-auth:read";
-    public const string ManagePermission = "plugin:visitor-auth:manage";
+    public const string ReadPermission = VisitorPermissions.Read;
+    public const string ManagePermission = VisitorPermissions.Manage;
 
     public PluginManifest Manifest { get; } = PluginManifest.Create(
         id: PluginId,

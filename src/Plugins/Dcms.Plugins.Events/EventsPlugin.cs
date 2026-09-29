@@ -1,3 +1,6 @@
+using Dcms.Plugins.Roster.Api;
+using Dcms.Plugins.Events.Api;
+using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 
@@ -31,7 +34,7 @@ public sealed class EventsPlugin : IPlugin
               "type": "string",
               "title": "Roster instance",
               "description": "Slug of the Roster instance holding performer profiles. Leave empty to keep line-ups as plain names.",
-              "x-dcms-contract-binding": "roster.members@1"
+              "x-dcms-contract-binding": "roster.members@2"
             }
           },
           "additionalProperties": false
@@ -47,9 +50,6 @@ public sealed class EventsPlugin : IPlugin
         // A site needs rosterSlug to turn a line-up entry into a profile link, and
         // the rest is presentation. None of it is a credential.
         publicConfigKeys: ["title", "gigsPerPage", "timeZone", "rosterSlug"],
-        // Optional: without a roster, gigs still list their line-up by name.
-        // rosterSlug is the binding: it names which Roster instance, when there are several.
-        consumes: [new ContractRequirement("roster.members@1", Optional: true, BindingConfigKey: "rosterSlug")],
         permissions:
         [
             new PermissionDefinition("read", "View events"),
@@ -81,7 +81,17 @@ public sealed class EventsPlugin : IPlugin
                         new ContentReferenceTarget("roster", "member", null)),
                 ],
                 Searchable: true,
-                SlugField: "title"),
+                SlugField: "title",
+                Published: typeof(GigPublished),
+                Unpublished: typeof(GigUnpublished)),
+        ],
+        provides: [ContractProvision.Of<IGigs, GigsSource>()],
+        // Optional: without a roster, gigs still list their line-up by name.
+        // rosterSlug is the binding: it names which Roster instance, when there are several.
+        consumes:
+        [
+            ContractRequirement.Of<IPluginContent>(),
+            ContractRequirement.Of<IRosterMembers>(optional: true, bindingConfigKey: "rosterSlug"),
         ],
         category: "Content",
         summary: "Events with dates, venues and line-ups.",

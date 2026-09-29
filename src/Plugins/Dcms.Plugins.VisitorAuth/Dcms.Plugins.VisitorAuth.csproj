@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.VisitorAuth.Api\Dcms.Plugins.VisitorAuth.Api.csproj" />
     <!-- First-party: owns the existing visitors schema and the audit trail of sign-ins. A
          third-party plugin would keep its state in dcms.storage@1 instead. -->
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />

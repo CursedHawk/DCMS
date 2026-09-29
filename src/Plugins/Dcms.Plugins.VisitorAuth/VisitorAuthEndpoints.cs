@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
-using Dcms.Plugins.VisitorAuth.Contracts;
+using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;

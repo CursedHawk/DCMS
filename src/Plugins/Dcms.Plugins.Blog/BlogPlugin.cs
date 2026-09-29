@@ -1,3 +1,6 @@
+using Dcms.Plugins.Blog.Api;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions;
 
 namespace Dcms.Plugins.Blog;
@@ -45,8 +48,12 @@ public sealed class BlogPlugin : IPlugin
                     new ContentFieldDefinition("tags", ContentFieldType.Tags, Required: false, "Tags"),
                 ],
                 Searchable: true,
-                SlugField: "title"),
+                SlugField: "title",
+                Published: typeof(BlogPostPublished),
+                Unpublished: typeof(BlogPostUnpublished)),
         ],
+        provides: [ContractProvision.Of<IBlogPosts, BlogPostsSource>()],
+        consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Content",
         summary: "A dated blog with categories and an archive.",
         iconName: "Rss");

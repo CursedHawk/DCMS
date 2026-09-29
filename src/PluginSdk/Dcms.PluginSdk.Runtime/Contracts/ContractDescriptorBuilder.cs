@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.Json.Nodes;
 using System.Text.Json.Schema;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -16,6 +17,11 @@ public static class ContractDescriptorBuilder
 {
     /// <summary>The wire format every plane speaks: camelCase web defaults.</summary>
     public static readonly JsonSerializerOptions Json = JsonSerializerOptions.Web;
+
+    // The web defaults also *read* numbers written as strings, which the exporter faithfully
+    // describes as "string or integer" — and every client generated from it then types a page
+    // number as a string. Schemas describe what we write: plain numbers.
+    private static readonly JsonSerializerOptions SchemaSource = new(Json) { NumberHandling = JsonNumberHandling.Strict };
 
     private static readonly JsonSchemaExporterOptions SchemaOptions = new() { TreatNullObliviousAsNonNullable = true };
 
@@ -95,8 +101,8 @@ public static class ContractDescriptorBuilder
         var name = method.Name.EndsWith("Async", StringComparison.Ordinal) ? method.Name[..^5] : method.Name;
         var input = inputType is null
             ? new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }
-            : Json.GetJsonSchemaAsNode(inputType, SchemaOptions);
-        var output = outputType is null ? null : Json.GetJsonSchemaAsNode(outputType, SchemaOptions);
+            : SchemaSource.GetJsonSchemaAsNode(inputType, SchemaOptions);
+        var output = outputType is null ? null : SchemaSource.GetJsonSchemaAsNode(outputType, SchemaOptions);
         // The exporter sees the type, not the method: Task<Profile?> and Task<Profile> both reach
         // it as Profile. Read the return's nullability here so "may be null" reaches the schema,
         // and through it the generated client's types.
@@ -136,7 +142,7 @@ public static class ContractDescriptorBuilder
         {
             throw Invalid(contract, $"event name '{name}' must be dotted kebab-case");
         }
-        return new EventDescriptor(name, Json.GetJsonSchemaAsNode(eventType, SchemaOptions)) { EventType = eventType };
+        return new EventDescriptor(name, SchemaSource.GetJsonSchemaAsNode(eventType, SchemaOptions)) { EventType = eventType };
     }
 
     private static HookDescriptor BuildHook(Type contract, Type hookType)
@@ -151,7 +157,7 @@ public static class ContractDescriptorBuilder
         {
             throw Invalid(contract, $"hook name '{name}' must be dotted kebab-case");
         }
-        return new HookDescriptor(name, Json.GetJsonSchemaAsNode(hookType, SchemaOptions)) { HookType = hookType };
+        return new HookDescriptor(name, SchemaSource.GetJsonSchemaAsNode(hookType, SchemaOptions)) { HookType = hookType };
     }
 
     private static InvalidOperationException Invalid(Type contract, string problem) =>

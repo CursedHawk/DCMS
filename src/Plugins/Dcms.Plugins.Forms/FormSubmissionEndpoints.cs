@@ -1,5 +1,6 @@
 using System.Text.Json;
-using Dcms.Plugins.VisitorAuth.Contracts;
+using Dcms.Plugins.VisitorAuth.Api;
+using Dcms.Plugins.Forms.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
@@ -58,14 +59,17 @@ internal static class FormSubmissionEndpoints
 
             // Persist only the declared fields, so an inflated body can't be used to store
             // arbitrary data against the tenant.
-            var payload = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-            foreach (var field in definition.Fields)
+            var payload = DeclaredFields(definition, submitted);
+
+            // Other plugins' say before it is stored (spam filters, enrichment). What they hand
+            // back is filtered to the declared fields again: a hook cannot smuggle data in.
+            var hook = await context.Hooks.RunAsync(
+                new FormSubmitting(instance.InstanceId, definition.Name, payload, visitor?.Id), ct);
+            if (hook.Cancelled)
             {
-                if (submitted.TryGetValue(field.Name, out var value) && value.ValueKind != JsonValueKind.Null)
-                {
-                    payload[field.Name] = value;
-                }
+                return Results.BadRequest(new { error = hook.Reason ?? "This submission was refused." });
             }
+            payload = DeclaredFields(definition, hook.Value.Data);
 
             var submission = new FormSubmission
             {
@@ -129,6 +133,20 @@ internal static class FormSubmissionEndpoints
 
         await BestEffort(logger, "publish form.submitted", submission.Id, () =>
             context.PublishAsync(new FormSubmitted(submission.Id, instance.InstanceId, definition.Name, submission.VisitorId), ct));
+    }
+
+    private static Dictionary<string, JsonElement> DeclaredFields(
+        FormDefinition definition, IReadOnlyDictionary<string, JsonElement> values)
+    {
+        var payload = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var field in definition.Fields)
+        {
+            if (values.TryGetValue(field.Name, out var value) && value.ValueKind != JsonValueKind.Null)
+            {
+                payload[field.Name] = value;
+            }
+        }
+        return payload;
     }
 
     private static async Task BestEffort(ILogger logger, string what, Guid submissionId, Func<Task> action)

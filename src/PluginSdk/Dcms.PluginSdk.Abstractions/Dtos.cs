@@ -13,13 +13,6 @@ public sealed record ContentItemDto(
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, long TotalCount);
 
-public sealed record ContentQuery(
-    int Page = 1,
-    int PageSize = 20,
-    string? OrderBy = null,
-    bool Descending = false,
-    IReadOnlyDictionary<string, string>? Filters = null);
-
 /// <summary>Reference to a published content item in another plugin instance.</summary>
 public sealed record ContentRef(Guid InstanceId, string ContentType, Guid ItemId);
 

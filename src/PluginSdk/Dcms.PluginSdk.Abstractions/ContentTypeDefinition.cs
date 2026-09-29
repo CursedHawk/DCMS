@@ -5,7 +5,11 @@ public sealed record ContentTypeDefinition(
     IReadOnlyList<ContentFieldDefinition> Fields,
     bool Searchable,                    // contributes to sitewide search
     string? SlugField,
-    CustomFieldsDefinition? CustomFields = null);
+    CustomFieldsDefinition? CustomFields = null,
+    // Lifecycle events the platform raises for this type (records deriving from
+    // Contracts.ContentChanged, declared on a contract the plugin provides).
+    Type? Published = null,
+    Type? Unpublished = null);
 
 /// <summary>
 /// Declares that a content type carries fields the tenant admin defines, not the

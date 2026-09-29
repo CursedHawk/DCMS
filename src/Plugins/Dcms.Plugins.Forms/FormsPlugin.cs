@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Dcms.Plugins.VisitorAuth.Contracts;
+using Dcms.Plugins.VisitorAuth.Api;
+using Dcms.Plugins.Forms.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
@@ -30,7 +31,7 @@ public sealed class FormsPlugin : IPlugin
     public const string SubmitCorsPolicy = "forms-submit";
 
     /// <summary>Who may read submissions: the platform's content-read, as the admin inbox requires.</summary>
-    public const string SubmissionsReadPermission = PlatformPermissions.ContentRead;
+    public const string SubmissionsReadPermission = FormsPermissions.SubmissionsRead;
 
     private const string ConfigSchema = """
         {

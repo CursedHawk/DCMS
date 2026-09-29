@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Visitors;
@@ -7,7 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace Dcms.Plugins.VisitorAuth.Contracts;
+namespace Dcms.Plugins.VisitorAuth;
 
 /// <summary>
 /// Reads the visitor token of the current request. Outside a request (a job, an event handler)

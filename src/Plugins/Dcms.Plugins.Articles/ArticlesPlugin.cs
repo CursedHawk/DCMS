@@ -1,3 +1,6 @@
+using Dcms.Plugins.Articles.Api;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions;
 
 namespace Dcms.Plugins.Articles;
@@ -46,8 +49,12 @@ public sealed class ArticlesPlugin : IPlugin
                     new ContentFieldDefinition("tags", ContentFieldType.Tags, Required: false, "Tags"),
                 ],
                 Searchable: true,
-                SlugField: "title"),
+                SlugField: "title",
+                Published: typeof(ArticlePublished),
+                Unpublished: typeof(ArticleUnpublished)),
         ],
+        provides: [ContractProvision.Of<IArticles, ArticlesSource>()],
+        consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Content",
         summary: "Long-form articles with authors, tags and scheduled publishing.",
         iconName: "Newspaper");

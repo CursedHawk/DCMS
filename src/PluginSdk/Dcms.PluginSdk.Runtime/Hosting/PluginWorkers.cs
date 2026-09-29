@@ -33,6 +33,8 @@ public static class PluginWorkerServiceCollectionExtensions
         services.AddHostedService<PluginEventConsumer>();
         services.AddHostedService<PluginJobConsumer>();
         services.AddHostedService<PluginJobScheduler>();
+        services.AddSingleton<ContentEventBridge>();
+        services.AddHostedService(sp => sp.GetRequiredService<ContentEventBridge>());
         return services;
     }
 }

@@ -1,3 +1,4 @@
+using Dcms.Plugins.Roster.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
@@ -93,12 +94,14 @@ public sealed class RosterPlugin : IPlugin
                 ],
                 Searchable: true,
                 SlugField: "name",
-                CustomFields: new CustomFieldsDefinition(ValuesField: "custom", ConfigKey: "fields")),
+                CustomFields: new CustomFieldsDefinition(ValuesField: "custom", ConfigKey: "fields"),
+                Published: typeof(RosterMemberPublished),
+                Unpublished: typeof(RosterMemberUnpublished)),
         ],
         category: "Content",
         summary: "People and line-ups that other plugins can reference.",
         iconName: "Users",
-        provides: [ContractProvision.Of<IRosterMembers, RosterMembers>()],
+        provides: [ContractProvision.Of<IRosterMembers, RosterMembersSource>()],
         consumes: [ContractRequirement.Of<IPluginContent>()]);
 
 

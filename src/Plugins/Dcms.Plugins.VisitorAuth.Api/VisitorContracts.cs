@@ -2,7 +2,14 @@ using System.Text.Json;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 
-namespace Dcms.Plugins.VisitorAuth.Contracts;
+namespace Dcms.Plugins.VisitorAuth.Api;
+
+/// <summary>Permission keys the visitor contracts' external operations require.</summary>
+public static class VisitorPermissions
+{
+    public const string Read = "plugin:visitor-auth:read";
+    public const string Manage = "plugin:visitor-auth:manage";
+}
 
 /// <summary>
 /// A visitor as other plugins see them. <see cref="Attributes"/> holds only values whose
@@ -49,7 +56,7 @@ public interface IVisitorIdentity
     Events = [typeof(VisitorRegistered), typeof(VisitorProfileUpdated)])]
 public interface IVisitorProfiles
 {
-    [Operation(OpRisk.Read, Permission = VisitorAuthPlugin.ReadPermission, Expose = OpExposure.Admin | OpExposure.Ai,
+    [Operation(OpRisk.Read, Permission = VisitorPermissions.Read, Expose = OpExposure.Admin | OpExposure.Ai,
         ReturnsExternalText = true, Description = "A visitor's profile: email, display name and attributes shared with plugins.")]
     Task<VisitorProfile?> GetAsync(VisitorRef input, CancellationToken ct);
 
@@ -61,7 +68,47 @@ public interface IVisitorProfiles
         Description = "The profile attributes this site defines, with their types and visibility.")]
     Task<AttributeDefinitionList> ListAttributeDefinitionsAsync(CancellationToken ct);
 
-    [Operation(OpRisk.Safe, Permission = VisitorAuthPlugin.ManagePermission, Expose = OpExposure.Admin,
+    [Operation(OpRisk.Safe, Permission = VisitorPermissions.Manage, Expose = OpExposure.Admin,
         Description = "Set or clear attributes shared with plugins on a visitor's profile.")]
     Task<VisitorProfile> SetAttributesAsync(SetVisitorAttributes input, CancellationToken ct);
 }
+
+/// <summary>
+/// Who may see an attribute's value, beyond the visitor it belongs to and the tenant's admins.
+/// Ordered: each level includes the audiences of the ones before it.
+/// </summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(CamelCaseEnumConverter<AttributeVisibility>))]
+public enum AttributeVisibility
+{
+    /// <summary>The visitor and admins only. Never handed to another plugin.</summary>
+    Private,
+
+    /// <summary>Also other plugins, server-side, through <c>visitors.profiles@1</c>.</summary>
+    Plugins,
+
+    /// <summary>Also anyone: shown on the visitor's public profile (an author card, a roster entry).</summary>
+    Public,
+}
+
+[System.Text.Json.Serialization.JsonConverter(typeof(CamelCaseEnumConverter<AttributeType>))]
+public enum AttributeType
+{
+    Text,
+    Number,
+    Boolean,
+    Date,
+    Select,
+}
+
+/// <summary>One profile attribute, defined by the tenant in the VisitorAuth instance config.</summary>
+public sealed record AttributeDefinition(
+    string Key,
+    string Label,
+    AttributeType Type = AttributeType.Text,
+    AttributeVisibility Visibility = AttributeVisibility.Private,
+    bool VisitorEditable = true,
+    IReadOnlyList<string>? Options = null);
+
+/// <summary>Enums on the wire as the lowercase names the config schema uses ("plugins", "select").</summary>
+public sealed class CamelCaseEnumConverter<T>() : System.Text.Json.Serialization.JsonStringEnumConverter<T>(JsonNamingPolicy.CamelCase)
+    where T : struct, Enum;

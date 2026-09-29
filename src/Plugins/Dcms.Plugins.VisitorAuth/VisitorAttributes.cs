@@ -2,48 +2,9 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.Plugins.VisitorAuth.Api;
 
 namespace Dcms.Plugins.VisitorAuth;
-
-/// <summary>Enums on the wire as the lowercase names the config schema uses ("plugins", "select").</summary>
-public sealed class CamelCaseEnumConverter<T>() : System.Text.Json.Serialization.JsonStringEnumConverter<T>(JsonNamingPolicy.CamelCase)
-    where T : struct, Enum;
-
-/// <summary>
-/// Who may see an attribute's value, beyond the visitor it belongs to and the tenant's admins.
-/// Ordered: each level includes the audiences of the ones before it.
-/// </summary>
-[System.Text.Json.Serialization.JsonConverter(typeof(CamelCaseEnumConverter<AttributeVisibility>))]
-public enum AttributeVisibility
-{
-    /// <summary>The visitor and admins only. Never handed to another plugin.</summary>
-    Private,
-
-    /// <summary>Also other plugins, server-side, through <c>visitors.profiles@1</c>.</summary>
-    Plugins,
-
-    /// <summary>Also anyone: shown on the visitor's public profile (an author card, a roster entry).</summary>
-    Public,
-}
-
-[System.Text.Json.Serialization.JsonConverter(typeof(CamelCaseEnumConverter<AttributeType>))]
-public enum AttributeType
-{
-    Text,
-    Number,
-    Boolean,
-    Date,
-    Select,
-}
-
-/// <summary>One profile attribute, defined by the tenant in the VisitorAuth instance config.</summary>
-public sealed record AttributeDefinition(
-    string Key,
-    string Label,
-    AttributeType Type = AttributeType.Text,
-    AttributeVisibility Visibility = AttributeVisibility.Private,
-    bool VisitorEditable = true,
-    IReadOnlyList<string>? Options = null);
 
 /// <summary>Reading and validating attribute definitions and values.</summary>
 public static class VisitorAttributes

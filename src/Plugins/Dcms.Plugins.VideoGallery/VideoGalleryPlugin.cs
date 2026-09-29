@@ -1,3 +1,6 @@
+using Dcms.Plugins.VideoGallery.Api;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions;
 
 namespace Dcms.Plugins.VideoGallery;
@@ -39,8 +42,12 @@ public sealed class VideoGalleryPlugin : IPlugin
                         new ContentReferenceTarget(null, null, MediaCategory.Video)),
                 ],
                 Searchable: true,
-                SlugField: "title"),
+                SlugField: "title",
+                Published: typeof(GalleryVideoPublished),
+                Unpublished: typeof(GalleryVideoUnpublished)),
         ],
+        provides: [ContractProvision.Of<IGalleryVideos, GalleryVideosSource>()],
+        consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Media",
         summary: "Video collections with posters and captions.",
         iconName: "Video");

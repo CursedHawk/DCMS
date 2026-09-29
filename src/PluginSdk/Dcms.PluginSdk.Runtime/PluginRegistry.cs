@@ -53,6 +53,7 @@ public sealed class PluginRegistry : IPluginCatalog
         foreach (var plugin in _plugins.Values)
         {
             ValidateConsumers(plugin.Manifest);
+            ValidateContentEvents(plugin.Manifest);
         }
         ValidateNoRequiredCycle();
 
@@ -152,6 +153,31 @@ public sealed class PluginRegistry : IPluginCatalog
             {
                 throw new InvalidOperationException(
                     $"Hook '{h.Name}' is declared by both {_hooks[h.Name].Contract.Id} and {descriptor.Id}.");
+            }
+        }
+    }
+
+    /// <summary>A content type's lifecycle events must be ContentChanged records the plugin publishes.</summary>
+    private void ValidateContentEvents(PluginManifest manifest)
+    {
+        foreach (var type in manifest.ContentTypes)
+        {
+            foreach (var eventType in new[] { type.Published, type.Unpublished }.OfType<Type>())
+            {
+                if (!typeof(ContentChanged).IsAssignableFrom(eventType)
+                    || eventType.GetConstructor([typeof(Guid), typeof(Guid), typeof(string), typeof(string)]) is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Plugin '{manifest.Id}' content type '{type.Name}': {eventType.Name} must be a ContentChanged record " +
+                        "with the (InstanceId, ItemId, ContentType, Slug) constructor.");
+                }
+                var name = ContractIds.EventName(eventType);
+                if (FindEvent(name) is not { } found
+                    || FindContract(found.Contract.Id)?.ProvidedBy(manifest.Id) is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Plugin '{manifest.Id}' content type '{type.Name}' raises '{name}', which no contract it provides declares.");
+                }
             }
         }
     }

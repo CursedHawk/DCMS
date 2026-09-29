@@ -40,6 +40,9 @@ public sealed class ContentFlowFixture : IAsyncLifetime
     /// </summary>
     public string ServiceScope { get; set; } = "dcms.social";
 
+    /// <summary>The fixture's NATS server, for tests that read a stream directly.</summary>
+    public string NatsUrl => _nats.GetConnectionString();
+
     /// <summary>Raw Postgres connection string, as the owner — for seeding rows a test needs directly.</summary>
     public string PostgresConnectionString => _postgres.GetConnectionString();
 

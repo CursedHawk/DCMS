@@ -1,3 +1,6 @@
+using Dcms.Plugins.FileDownloads.Api;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions;
 
 namespace Dcms.Plugins.FileDownloads;
@@ -40,8 +43,12 @@ public sealed class FileDownloadsPlugin : IPlugin
                     new ContentFieldDefinition("category", ContentFieldType.Text, Required: false, "Category"),
                 ],
                 Searchable: true,
-                SlugField: "title"),
+                SlugField: "title",
+                Published: typeof(DownloadFilePublished),
+                Unpublished: typeof(DownloadFileUnpublished)),
         ],
+        provides: [ContractProvision.Of<IDownloadFiles, DownloadFilesSource>()],
+        consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Media",
         summary: "Downloadable files with counts and access rules.",
         iconName: "Download");

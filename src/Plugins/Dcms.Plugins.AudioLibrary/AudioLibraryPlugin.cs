@@ -1,3 +1,6 @@
+using Dcms.Plugins.AudioLibrary.Api;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions;
 
 namespace Dcms.Plugins.AudioLibrary;
@@ -38,8 +41,12 @@ public sealed class AudioLibraryPlugin : IPlugin
                         new ContentReferenceTarget(null, null, MediaCategory.Audio)),
                 ],
                 Searchable: true,
-                SlugField: "title"),
+                SlugField: "title",
+                Published: typeof(AudioTrackPublished),
+                Unpublished: typeof(AudioTrackUnpublished)),
         ],
+        provides: [ContractProvision.Of<IAudioTracks, AudioTracksSource>()],
+        consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Media",
         summary: "Audio tracks with artwork and transcoded variants.",
         iconName: "Music");

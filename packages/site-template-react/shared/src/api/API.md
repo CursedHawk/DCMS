@@ -71,6 +71,8 @@ Member accounts.
 
 Company announcements and product updates.
 
+- `api.news.posts.get(body)` → `{ id: string; instanceId: string; slug: string; publishedAt: string; data: { title: string; excerpt: string | null; body: string; coverImage: string | null; tags: string[] | null } } | null` — One published post by slug. (POST /api/news/_contracts/blog.posts@1/Get)
+- `api.news.posts.list(body)` → `{ items: ({ id: string; instanceId: string; slug: string; publishedAt: string; data: { title: string; excerpt: string | null; body: string; coverImage: string | null; tags: string[] | null } })[]; page: number; pageSize: number; totalCount: number }` — Published posts, newest first. (POST /api/news/_contracts/blog.posts@1/List)
 - `api.news.post.list({ page?, pageSize?, tag? })` → `PagedResult<NewsPost>` — List post items (GET /api/news/post)
 - `api.news.post.get(slug)` → `ContentItem<NewsPost>` — Get a post by slug (GET /api/news/post/{slug})
 

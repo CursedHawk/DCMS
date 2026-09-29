@@ -1,3 +1,6 @@
+using Dcms.Plugins.VideoStreaming.Api;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions;
 
 namespace Dcms.Plugins.VideoStreaming;
@@ -40,8 +43,12 @@ public sealed class VideoStreamingPlugin : IPlugin
                         new ContentReferenceTarget(null, null, MediaCategory.Image)),
                 ],
                 Searchable: true,
-                SlugField: "title"),
+                SlugField: "title",
+                Published: typeof(VideoStreamPublished),
+                Unpublished: typeof(VideoStreamUnpublished)),
         ],
+        provides: [ContractProvision.Of<IVideoStreams, VideoStreamsSource>()],
+        consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Media",
         summary: "HLS streaming for long-form video.",
         iconName: "MonitorPlay");

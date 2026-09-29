@@ -53,6 +53,10 @@ export function createTenantClient(options: TenantClientOptions = {}) {
       },
     },
     "news": {
+      "posts": {
+        get: (body: { slug: string }): Promise<{ id: string; instanceId: string; slug: string; publishedAt: string; data: { title: string; excerpt: string | null; body: string; coverImage: string | null; tags: string[] | null } } | null> => http.call<{ id: string; instanceId: string; slug: string; publishedAt: string; data: { title: string; excerpt: string | null; body: string; coverImage: string | null; tags: string[] | null } } | null>("POST", `/api/news/_contracts/blog.posts@1/Get`, { body }),
+        list: (body: { page?: number; pageSize?: number }): Promise<{ items: ({ id: string; instanceId: string; slug: string; publishedAt: string; data: { title: string; excerpt: string | null; body: string; coverImage: string | null; tags: string[] | null } })[]; page: number; pageSize: number; totalCount: number }> => http.call<{ items: ({ id: string; instanceId: string; slug: string; publishedAt: string; data: { title: string; excerpt: string | null; body: string; coverImage: string | null; tags: string[] | null } })[]; page: number; pageSize: number; totalCount: number }>("POST", `/api/news/_contracts/blog.posts@1/List`, { body }),
+      },
       "post": {
         list: (params?: ListParams): Promise<PagedResult<NewsPost>> => http.listContent<NewsPost>("news", "post", params),
         get: (slug: string): Promise<ContentItem<NewsPost>> => http.getContent<NewsPost>("news", "post", slug),

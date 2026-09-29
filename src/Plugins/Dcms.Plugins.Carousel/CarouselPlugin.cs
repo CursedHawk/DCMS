@@ -1,3 +1,6 @@
+using Dcms.Plugins.Carousel.Api;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions;
 
 namespace Dcms.Plugins.Carousel;
@@ -44,8 +47,12 @@ public sealed class CarouselPlugin : IPlugin
                     new ContentFieldDefinition("order", ContentFieldType.Number, Required: false, "Display order"),
                 ],
                 Searchable: false,
-                SlugField: "title"),
+                SlugField: "title",
+                Published: typeof(CarouselSlidePublished),
+                Unpublished: typeof(CarouselSlideUnpublished)),
         ],
+        provides: [ContractProvision.Of<ICarouselSlides, CarouselSlidesSource>()],
+        consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Presentation",
         summary: "Rotating banners for a page hero.",
         iconName: "GalleryHorizontalEnd");

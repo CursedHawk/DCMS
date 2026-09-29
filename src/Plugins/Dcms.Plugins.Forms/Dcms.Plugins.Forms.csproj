@@ -6,12 +6,13 @@
 
   <ItemGroup>
     <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Forms.Api\Dcms.Plugins.Forms.Api.csproj" />
     <!-- First-party: owns the existing forms schema. -->
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Security\Dcms.Shared.Security.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Telemetry\Dcms.Shared.Telemetry.csproj" />
-    <!-- For the visitors.identity@1 contract types (an optional consume). -->
-    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.VisitorAuth\Dcms.Plugins.VisitorAuth.csproj" />
+    <!-- visitors.identity@1 (an optional consume): the API assembly, never the plugin itself. -->
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.VisitorAuth.Api\Dcms.Plugins.VisitorAuth.Api.csproj" />
   </ItemGroup>
 
 </Project>
