@@ -73,28 +73,28 @@ public sealed class ContractDispatcherTests(ContentFlowFixture fixture)
         var token = await RegisterAsync(content, tenant, "fay@site.test", ct);
         var me = await (await content.SendAsync(Req(HttpMethod.Get, tenant, "/api/members/me", token: token), ct)).Content.ReadFromJsonAsync<JsonElement>(ct);
         var visitorId = me.GetProperty("id").GetGuid();
-
         var admin = fixture.Admin.CreateClient();
 
-        // Plugin permissions are granted through roles; the Owner role is seeded with platform
-        // permissions only, so the owner is refused until a role grants plugin:visitor-auth:read.
-        var refused = await admin.SendAsync(AdminReq(HttpMethod.Post, "/api/admin/contracts/visitors.profiles@1/Get?plane=admin", owner, tenant,
-            body: new { visitorId }), ct);
-        refused.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-
-        var res = await admin.SendAsync(AdminReq(HttpMethod.Post, "/api/admin/contracts/visitors.profiles@1/Get?plane=admin", SuperAdmin, tenant, "SuperAdmin",
+        // The Owner role holds every plugin permission (plugin:visitor-auth:read among them).
+        var res = await admin.SendAsync(AdminReq(HttpMethod.Post, "/api/admin/contracts/visitors.profiles@1/Get?plane=admin", owner, tenant,
             body: new { visitorId }), ct);
         res.StatusCode.Should().Be(HttpStatusCode.OK, await res.Content.ReadAsStringAsync(ct));
         (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("email").GetString().Should().Be("fay@site.test");
 
-        var opsOf = async (Guid sub, string roles) =>
-            (await (await admin.SendAsync(AdminReq(HttpMethod.Get, "/api/admin/contracts?plane=admin", sub, tenant, roles), ct))
+        // A member whose role lacks it is refused, and is not even shown the operation.
+        var member = await AddMemberAsync(admin, owner, tenant, ["site:edit"], ct);
+        var refused = await admin.SendAsync(AdminReq(HttpMethod.Post, "/api/admin/contracts/visitors.profiles@1/Get?plane=admin", member, tenant,
+            body: new { visitorId }), ct);
+        refused.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var opsOf = async (Guid sub) =>
+            (await (await admin.SendAsync(AdminReq(HttpMethod.Get, "/api/admin/contracts?plane=admin", sub, tenant), ct))
                 .Content.ReadFromJsonAsync<JsonElement>(ct))
             .EnumerateArray()
             .SelectMany(c => c.GetProperty("operations").EnumerateArray().Select(o => $"{c.GetProperty("id").GetString()} {o.GetProperty("name").GetString()}"))
             .ToList();
-        (await opsOf(SuperAdmin, "SuperAdmin")).Should().Contain("visitors.profiles@1 Get");
-        (await opsOf(owner, "")).Should().NotContain("visitors.profiles@1 Get", "an operation the caller cannot use is left out, not listed disabled");
+        (await opsOf(owner)).Should().Contain("visitors.profiles@1 Get");
+        (await opsOf(member)).Should().NotContain("visitors.profiles@1 Get", "an operation the caller cannot use is left out, not listed disabled");
 
         var anonymous = await admin.SendAsync(new HttpRequestMessage(HttpMethod.Get, "/api/admin/contracts?plane=admin")
         {
@@ -159,6 +159,46 @@ public sealed class ContractDispatcherTests(ContentFlowFixture fixture)
     }
 
     // ---- helpers ----
+
+    /// <summary>A member holding a role with exactly <paramref name="permissions"/>. Seeded directly (an invitation round trip is another test's job).</summary>
+    private async Task<Guid> AddMemberAsync(HttpClient admin, Guid owner, string tenant, string[] permissions, CancellationToken ct)
+    {
+        var roleRes = await admin.SendAsync(AdminReq(HttpMethod.Post, "/api/admin/roles", owner, tenant,
+            body: new { name = "Limited " + Guid.NewGuid().ToString("N")[..6], permissions }), ct);
+        roleRes.StatusCode.Should().Be(HttpStatusCode.Created);
+        var roleId = (await roleRes.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetGuid();
+        var tenantId = await TenantIdAsync(tenant, ct);
+
+        var member = Guid.NewGuid();
+        var membershipId = Guid.NewGuid();
+        await using var conn = new Npgsql.NpgsqlConnection(fixture.PostgresConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO tenancy.tenant_memberships ("Id", "TenantId", "UserId", "Email", "CreatedAt")
+            VALUES (@mid, @tid, @uid, @email, now());
+            INSERT INTO tenancy.member_roles ("Id", "TenantId", "MembershipId", "TenantRoleId")
+            VALUES (@mrid, @tid, @mid, @rid);
+            """;
+        cmd.Parameters.AddWithValue("mid", membershipId);
+        cmd.Parameters.AddWithValue("tid", tenantId);
+        cmd.Parameters.AddWithValue("uid", member);
+        cmd.Parameters.AddWithValue("email", $"{member:N}@dcms.test");
+        cmd.Parameters.AddWithValue("mrid", Guid.NewGuid());
+        cmd.Parameters.AddWithValue("rid", roleId);
+        await cmd.ExecuteNonQueryAsync(ct);
+        return member;
+    }
+
+    private async Task<Guid> TenantIdAsync(string slug, CancellationToken ct)
+    {
+        await using var conn = new Npgsql.NpgsqlConnection(fixture.PostgresConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT \"Id\" FROM tenancy.tenants WHERE \"Identifier\" = @s";
+        cmd.Parameters.AddWithValue("s", slug);
+        return Guid.Parse((string)(await cmd.ExecuteScalarAsync(ct))!);
+    }
 
     private async Task<(string Slug, Guid Owner, Guid InstanceId)> SiteAsync(CancellationToken ct)
     {

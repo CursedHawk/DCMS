@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Security;
@@ -7,8 +8,9 @@ using Dcms.Shared.Data.Rls;
 namespace Dcms.AdminApi.Tenancy;
 
 /// <summary>
-/// Grants every platform permission to each tenant's system Owner role, for permissions that
-/// did not exist when the role was created.
+/// Grants every platform and plugin permission to each tenant's system Owner role, for
+/// permissions that did not exist when the role was created (a new platform key, a new plugin,
+/// or a plugin gaining a permission).
 ///
 /// <para>Owner means "everything" — <c>TenantProvisioning</c> seeds the role from
 /// <see cref="PlatformPermissions.All"/> — but only at the moment the tenant is created. A
@@ -23,8 +25,24 @@ namespace Dcms.AdminApi.Tenancy;
 /// </summary>
 public static class OwnerPermissionBackfill
 {
+    /// <summary>
+    /// What "everything" means for the Owner role: every platform permission, and every
+    /// permission a plugin in this build declares (<c>plugin:{id}:{action}</c>). The one
+    /// definition both tenant provisioning and this backfill use, so they cannot disagree.
+    ///
+    /// <para>Plugin keys are included whether or not the tenant has the plugin installed: the
+    /// grant is inert until an instance exists, and granting at install time instead would be
+    /// a second path that a plugin added later would have to remember.</para>
+    /// </summary>
+    public static IReadOnlyList<string> OwnerPermissions(IPluginCatalog catalog) =>
+        PlatformPermissions.All
+            .Concat(catalog.Manifests.SelectMany(m => m.Permissions.Select(p => PlatformPermissions.ForPlugin(m.Id, p.Action))))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
     public static async Task ApplyAsync(
         TenancyDbContext db,
+        IPluginCatalog catalog,
         IAuditRecorder audit,
         ILogger logger,
         CancellationToken ct)
@@ -48,7 +66,7 @@ public static class OwnerPermissionBackfill
 
         foreach (var role in ownerRoles)
         {
-            var missing = PlatformPermissions.All
+            var missing = OwnerPermissions(catalog)
                 .Except(role.Held, StringComparer.Ordinal)
                 .ToList();
 

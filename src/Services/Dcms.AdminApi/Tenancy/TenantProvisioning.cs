@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
@@ -13,7 +14,8 @@ namespace Dcms.AdminApi.Tenancy;
 /// the tenant.created and membership.changed events. All rows are stamped with
 /// the new tenant id explicitly since there is no ambient tenant yet.
 /// </summary>
-public sealed class TenantProvisioning(TenancyDbContext db, TenantStore store, IEventPublisher events, AuditScope audit)
+public sealed class TenantProvisioning(
+    TenancyDbContext db, TenantStore store, IEventPublisher events, AuditScope audit, IPluginCatalog plugins)
 {
     public const string OwnerRole = "Owner";
     public const string MemberRoleName = "Member";
@@ -43,8 +45,8 @@ public sealed class TenantProvisioning(TenancyDbContext db, TenantStore store, I
         // the row is already written.
         audit.TenantId = tenantId;
 
-        // Owner: every platform permission. Member: a read-only starter set.
-        var ownerRole = NewRole(tenantId, OwnerRole, PlatformPermissions.All);
+        // Owner: every platform and plugin permission. Member: a read-only starter set.
+        var ownerRole = NewRole(tenantId, OwnerRole, OwnerPermissionBackfill.OwnerPermissions(plugins));
         var memberRole = NewRole(tenantId, MemberRoleName,
             [PlatformPermissions.MediaRead, PlatformPermissions.AnalyticsRead]);
         db.TenantRoles.AddRange(ownerRole, memberRole);

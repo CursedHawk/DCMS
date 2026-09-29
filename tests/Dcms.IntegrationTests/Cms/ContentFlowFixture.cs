@@ -40,6 +40,9 @@ public sealed class ContentFlowFixture : IAsyncLifetime
     /// </summary>
     public string ServiceScope { get; set; } = "dcms.social";
 
+    /// <summary>Raw Postgres connection string, as the owner — for seeding rows a test needs directly.</summary>
+    public string PostgresConnectionString => _postgres.GetConnectionString();
+
     public async ValueTask InitializeAsync()
     {
         await Task.WhenAll(_postgres.StartAsync(), _redis.StartAsync(), _nats.StartAsync());

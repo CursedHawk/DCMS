@@ -129,6 +129,7 @@ exposing operations to `Ai`; there is no separate tool API.
   A third-party plugin must run out of process.
 - **Plugin data is not sandbox-scoped.** `plugin_data`/`plugin_secrets` have no `IsSandbox`,
   so a plugin writing storage from a site preview writes live data. Tracked as a follow-up.
-- **Plugin permissions are role-granted.** The Owner role is seeded with platform permissions
-  only; `plugin:{id}:{action}` keys (e.g. `plugin:visitor-auth:read`) are granted through the
-  role editor, as before this change.
+- **Owners hold every plugin permission.** The Owner role is seeded with platform *and*
+  plugin permissions (`OwnerPermissionBackfill.OwnerPermissions`), and the startup backfill
+  adds any missing ones to existing tenants — including when a plugin later gains a permission.
+  Other roles get `plugin:{id}:{action}` keys through the role editor.

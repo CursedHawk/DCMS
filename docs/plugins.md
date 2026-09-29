@@ -102,6 +102,8 @@ Rules the registry enforces at startup:
     generated client (`api.{slug}.{contract}.{op}()`). An operation with a `Permission` is
     never served on this plane.
   - `Admin` — members, at `POST /api/admin/contracts/{id}/{op}`, subject to `Permission`.
+    Owners hold every plugin's permissions automatically (seeded at tenant creation and
+    backfilled at startup); other roles are granted them in the role editor.
   - `Ai` — the admin assistant, as a tool, once the tenant opts the instance in.
 - `ReturnsExternalText` marks results containing text written by people with no access
   (visitors). AI surfaces fence it as untrusted data.

@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Data.Ai;
@@ -132,6 +133,7 @@ public static class DcmsMigrationRunner
         // Last: it records what it grants, so the audit outbox has to exist first.
         await OwnerPermissionBackfill.ApplyAsync(
             scoped.GetRequiredService<TenancyDbContext>(),
+            scoped.GetRequiredService<IPluginCatalog>(),
             scoped.GetRequiredService<IAuditRecorder>(),
             logger,
             ct);
