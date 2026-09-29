@@ -31,6 +31,18 @@ public static class PluginEndpoints
         return root;
     }
 
+    /// <summary>Each plugin's <see cref="IPlugin.MapHostEndpoints"/>: routes outside any instance prefix.</summary>
+    public static IEndpointRouteBuilder MapDcmsPluginHostEndpoints(this IEndpointRouteBuilder app)
+    {
+        var registry = app.ServiceProvider.GetRequiredService<PluginRegistry>();
+        var host = app.ServiceProvider.GetRequiredService<PluginHost>();
+        foreach (var plugin in registry.Plugins)
+        {
+            plugin.MapHostEndpoints(app, host);
+        }
+        return app;
+    }
+
     private static IEndpointRouteBuilder Map(IEndpointRouteBuilder app, string prefix, bool admin)
     {
         var registry = app.ServiceProvider.GetRequiredService<PluginRegistry>();

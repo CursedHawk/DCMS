@@ -12,12 +12,12 @@ public class ContractRegistryTests
     [Fact]
     public void Descriptor_is_transport_neutral_json()
     {
-        var descriptor = ContractDescriptorBuilder.Build(typeof(IGreeter), "greeter");
+        var descriptor = ContractDescriptorBuilder.Build(typeof(IGreeter));
 
         var json = JsonSerializer.Serialize(descriptor, ContractDescriptorBuilder.Json);
 
         json.Should().Be(
-            """{"id":"test.greeter@1","name":"test.greeter","major":1,"description":"Greets people.","providerPluginId":"greeter","operations":[{"name":"Greet","risk":0,"permission":null,"expose":5,"returnsExternalText":false,"description":"Greets someone by name.","inputSchema":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]},"outputSchema":{"type":"object","properties":{"message":{"type":"string"},"servedBy":{"type":"string"}},"required":["message","servedBy"]}},{"name":"SetGreeting","risk":1,"permission":"plugin:greeter:write","expose":2,"returnsExternalText":false,"description":null,"inputSchema":{"type":"object","properties":{"template":{"type":"string"}},"required":["template"]},"outputSchema":null}],"events":[{"name":"test.greeted","schema":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}}]}""");
+            """{"id":"test.greeter@1","name":"test.greeter","major":1,"description":"Greets people.","operations":[{"name":"Greet","risk":0,"permission":null,"expose":5,"returnsExternalText":false,"description":"Greets someone by name.","inputSchema":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]},"outputSchema":{"type":"object","properties":{"message":{"type":"string"},"servedBy":{"type":"string"}},"required":["message","servedBy"]}},{"name":"SetGreeting","risk":1,"permission":"plugin:greeter:write","expose":2,"returnsExternalText":false,"description":null,"inputSchema":{"type":"object","properties":{"template":{"type":"string"}},"required":["template"]},"outputSchema":null}],"events":[{"name":"test.greeted","schema":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}}],"clrType":"Dcms.PluginSdk.Tests.Contracts.IGreeter","assembly":"Dcms.PluginSdk.Tests"}""");
     }
 
     [Fact]
@@ -27,8 +27,7 @@ public class ContractRegistryTests
 
         var contract = registry.FindContract("test.greeter@1");
         contract.Should().NotBeNull();
-        contract!.Descriptor.ProviderPluginId.Should().Be("greeter");
-        contract.Implementation.Should().Be<Greeter>();
+        contract!.Providers.Should().Equal(new ContractProvider("greeter", typeof(Greeter)));
         registry.FindEvent("test.greeted")!.Value.Contract.Id.Should().Be("test.greeter@1");
     }
 
@@ -84,13 +83,10 @@ public class ContractRegistryTests
     }
 
     [Fact]
-    public void Contract_provided_twice_fails_startup()
+    public void Contract_provided_twice_by_one_plugin_fails_startup()
     {
         var act = () => new PluginRegistry(
-        [
-            new TestPlugin("a", provides: [GreeterProvision]),
-            new TestPlugin("b", provides: [GreeterProvision]),
-        ]);
+            [new TestPlugin("a", provides: [GreeterProvision, ContractProvision.Of<IGreeter, LoudGreeter>()])]);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*test.greeter@1*provided twice*");
     }

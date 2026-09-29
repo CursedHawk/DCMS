@@ -1,5 +1,4 @@
 using Dcms.PluginSdk.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.FileDownloads;
 
@@ -46,15 +45,4 @@ public sealed class FileDownloadsPlugin : IPlugin
         category: "Media",
         summary: "Downloadable files with counts and access rules.",
         iconName: "Download");
-
-    public void ConfigureServices(IServiceCollection services) { }
-
-    public void MapEndpoints(IPluginEndpointBuilder endpoints)
-    {
-        endpoints.MapContentList("file");
-        endpoints.MapContentGetBySlug("file");
-    }
-
-    public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
-        => ContentApiFragment.ForListAndGet(instance, "file", Manifest);
 }

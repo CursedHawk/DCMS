@@ -48,11 +48,12 @@ public sealed record CatalogOperation(
 public sealed record CatalogContract(
     string Id,
     string? Description,
-    string? ProviderPluginId,
+    // The plugins implementing it (empty for a platform contract).
+    IReadOnlyList<string> Providers,
     IReadOnlyList<CatalogInstance> Instances,
     IReadOnlyList<CatalogOperation> Operations);
 
-public sealed record CatalogInstance(Guid Id, string Slug, string Name, string Description);
+public sealed record CatalogInstance(Guid Id, string Slug, string Name, string Description, string PluginId);
 
 /// <summary>
 /// The one path by which anything outside the plugin runtime — a site's JavaScript, the admin
@@ -87,8 +88,8 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
             var descriptor = contract.Descriptor;
             var instances = descriptor.IsPlatform
                 ? []
-                : enabled.Where(i => i.PluginId == descriptor.ProviderPluginId && (!IsAi(plane) || i.AiToolsEnabled))
-                    .Select(i => new CatalogInstance(i.InstanceId, i.Slug, i.Name, i.Description)).ToList();
+                : enabled.Where(i => contract.ProvidedBy(i.PluginId) is not null && (!IsAi(plane) || i.AiToolsEnabled))
+                    .Select(i => new CatalogInstance(i.InstanceId, i.Slug, i.Name, i.Description, i.PluginId)).ToList();
             if (!descriptor.IsPlatform && instances.Count == 0)
             {
                 continue;
@@ -114,7 +115,7 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
             }
             if (operations.Count > 0)
             {
-                result.Add(new CatalogContract(descriptor.Id, descriptor.Description, descriptor.ProviderPluginId, instances, operations));
+                result.Add(new CatalogContract(descriptor.Id, descriptor.Description, contract.ProviderPluginIds.ToList(), instances, operations));
             }
         }
         return result;
@@ -169,17 +170,20 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
         }
 
         IPluginContext context;
+        Type implementation;
+        string? providerPluginId = null;
         if (contract.Descriptor.IsPlatform)
         {
             var enabled = await factory.EnabledInstancesAsync(tenantId, ct);
             context = new PluginContext(tenantId, PlatformCaller(plane), null, actor, enabled, registry, services);
+            implementation = contract.PlatformImplementation;
         }
         else
         {
             var enabled = await factory.EnabledInstancesAsync(tenantId, ct);
             // On the AI plane only instances the tenant opted in to AI agents exist at all.
             var candidates = enabled
-                .Where(i => i.PluginId == contract.Descriptor.ProviderPluginId && (!IsAi(plane) || i.AiToolsEnabled))
+                .Where(i => contract.ProvidedBy(i.PluginId) is not null && (!IsAi(plane) || i.AiToolsEnabled))
                 .ToList();
             var provider = instance is { Length: > 0 }
                 ? candidates.FirstOrDefault(i => i.Slug == instance || i.InstanceId.ToString() == instance)
@@ -191,6 +195,8 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
                     : new ContractOutcome(StatusCodes.Status404NotFound);
             }
             context = await factory.CreateAsync(tenantId, provider.PluginId, provider, actor, ct);
+            implementation = contract.ProvidedBy(provider.PluginId)!.Implementation;
+            providerPluginId = provider.PluginId;
         }
 
         object? argument = null;
@@ -207,10 +213,10 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
             }
         }
 
-        var target = ContractActivator.Create(services, contract.Implementation, context);
+        var target = ContractActivator.Create(services, implementation, context);
         var proxy = typeof(ContractProxy).GetMethod(nameof(ContractProxy.Create))!
             .MakeGenericMethod(contract.Descriptor.ContractType)
-            .Invoke(null, [target, contract.Descriptor, PlatformCaller(plane), services])!;
+            .Invoke(null, [target, contract.Descriptor, PlatformCaller(plane), providerPluginId, services])!;
 
         try
         {

@@ -47,7 +47,7 @@ public sealed class VisitorAuthPlugin : IPlugin
         ],
         consumes: [ContractRequirement.Of<IPluginEvents>()]);
 
-    public void ConfigureServices(IServiceCollection services)
+    public void ConfigureServices(IServiceCollection services, PluginHost host)
     {
         services.AddHttpContextAccessor();
         services.AddOptions<VisitorTokenOptions>().BindConfiguration(VisitorTokenOptions.SectionName);
@@ -64,7 +64,4 @@ public sealed class VisitorAuthPlugin : IPlugin
     }
 
     public void MapEndpoints(IPluginEndpointBuilder endpoints) => VisitorAuthEndpoints.Map(endpoints);
-
-    public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
-        => OpenApiFragment.Empty;
 }

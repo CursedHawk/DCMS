@@ -17,7 +17,7 @@ public sealed class PluginEvents(IPluginContext caller, PluginRegistry registry,
 {
     public Task PublishAsync(EventPublish input, CancellationToken ct)
     {
-        if (registry.FindEvent(input.Name) is not { } found || found.Contract.ProviderPluginId != caller.PluginId)
+        if (registry.FindEvent(input.Name) is not { } found || registry.FindContract(found.Contract.Id)?.ProvidedBy(caller.PluginId) is null)
         {
             throw new ContractValidationException(
                 $"Plugin '{caller.PluginId}' does not provide a contract declaring event '{input.Name}'.");

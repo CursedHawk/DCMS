@@ -33,7 +33,7 @@ export interface CatalogOperation {
 export interface CatalogContract {
   id: string;
   description?: string | null;
-  providerPluginId?: string | null;
+  providers?: string[];
   instances: { id: string; slug: string; name: string; description: string }[];
   operations: CatalogOperation[];
 }

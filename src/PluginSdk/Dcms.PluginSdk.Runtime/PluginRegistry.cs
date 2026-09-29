@@ -80,19 +80,43 @@ public sealed class PluginRegistry : IPluginCatalog
 
     private void AddContract(ContractProvision provision, string? providerPluginId)
     {
-        var descriptor = ContractDescriptorBuilder.Build(provision.Contract, providerPluginId);
         var impl = provision.Implementation;
+        var descriptor = ContractDescriptorBuilder.Build(provision.Contract);
+        var id = descriptor.Id;
+        if (ContractIds.IsPlatform(id) != (providerPluginId is null))
+        {
+            throw new InvalidOperationException(providerPluginId is null
+                ? $"'{id}' is registered as a platform contract but is not in the dcms.* namespace."
+                : $"'{id}' is reserved for the platform; plugin '{providerPluginId}' cannot provide it.");
+        }
         if (!impl.IsClass || impl.IsAbstract || !provision.Contract.IsAssignableFrom(impl))
         {
-            throw new InvalidOperationException(
-                $"'{impl.FullName}' must be a concrete class implementing {descriptor.Id}.");
+            throw new InvalidOperationException($"'{impl.FullName}' must be a concrete class implementing {id}.");
         }
-        if (!_contracts.TryAdd(descriptor.Id, new RegisteredContract(descriptor, impl)))
+
+        // Contracts are open: several plugins may implement one (payment gateways, map
+        // providers), and consumers pick an instance or take them all. What must hold is that
+        // they all mean the same interface -- two assemblies each declaring "x@1" would describe
+        // different shapes under one id -- and that the platform's own contracts stay the
+        // platform's alone.
+        if (_contracts.TryGetValue(id, out var existing))
         {
-            var existing = _contracts[descriptor.Id].Descriptor.ProviderPluginId ?? "the platform";
-            throw new InvalidOperationException(
-                $"Contract '{descriptor.Id}' is provided twice ({existing} and {providerPluginId ?? "the platform"}).");
+            if (existing.Descriptor.ContractType != provision.Contract)
+            {
+                throw new InvalidOperationException(
+                    $"Contract '{id}' is declared by two different interfaces ({existing.Descriptor.ContractType.FullName} and {provision.Contract.FullName}); " +
+                    "implementers must reference the one declaring assembly.");
+            }
+            if (existing.Descriptor.IsPlatform || existing.ProvidedBy(providerPluginId!) is not null)
+            {
+                throw new InvalidOperationException(
+                    $"Contract '{id}' is provided twice by {providerPluginId ?? "the platform"}.");
+            }
+            existing.Providers.Add(new ContractProvider(providerPluginId, impl));
+            return;
         }
+
+        _contracts[id] = new RegisteredContract(descriptor, [new ContractProvider(providerPluginId, impl)]);
         foreach (var e in descriptor.Events)
         {
             if (!_events.TryAdd(e.Name, (e, descriptor)))
@@ -186,8 +210,7 @@ public sealed class PluginRegistry : IPluginCatalog
         {
             edges[plugin.Manifest.Id] = (plugin.Manifest.Consumes ?? [])
                 .Where(r => !r.Optional)
-                .Select(r => _contracts.GetValueOrDefault(r.ContractId)?.Descriptor.ProviderPluginId)
-                .OfType<string>()
+                .SelectMany(r => _contracts.GetValueOrDefault(r.ContractId)?.ProviderPluginIds ?? [])
                 .Where(p => p != plugin.Manifest.Id)
                 .Distinct()
                 .ToList();
@@ -263,5 +286,18 @@ public sealed class PluginRegistry : IPluginCatalog
            && !value.EndsWith('-');
 }
 
-/// <summary>A contract known to this host and the class that implements it.</summary>
-public sealed record RegisteredContract(ContractDescriptor Descriptor, Type Implementation);
+/// <summary>A class implementing a contract; <see cref="PluginId"/> is null for the platform.</summary>
+public sealed record ContractProvider(string? PluginId, Type Implementation);
+
+/// <summary>A contract known to this host and every plugin (or the platform) implementing it.</summary>
+public sealed record RegisteredContract(ContractDescriptor Descriptor, List<ContractProvider> Providers)
+{
+    public IEnumerable<string> ProviderPluginIds => Providers.Select(p => p.PluginId).OfType<string>();
+
+    public ContractProvider? ProvidedBy(string pluginId) => Providers.FirstOrDefault(p => p.PluginId == pluginId);
+
+    /// <summary>The host's implementation of a platform contract.</summary>
+    public Type PlatformImplementation => Descriptor.IsPlatform
+        ? Providers[0].Implementation
+        : throw new InvalidOperationException($"{Descriptor.Id} is not a platform contract.");
+}

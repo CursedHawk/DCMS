@@ -1,5 +1,4 @@
 using Dcms.PluginSdk.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.ImageGallery;
 
@@ -49,15 +48,4 @@ public sealed class ImageGalleryPlugin : IPlugin
         category: "Media",
         summary: "Image galleries served as webp variants, originals preserved.",
         iconName: "Images");
-
-    public void ConfigureServices(IServiceCollection services) { }
-
-    public void MapEndpoints(IPluginEndpointBuilder endpoints)
-    {
-        endpoints.MapContentList("gallery");
-        endpoints.MapContentGetBySlug("gallery");
-    }
-
-    public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
-        => ContentApiFragment.ForListAndGet(instance, "gallery", Manifest);
 }

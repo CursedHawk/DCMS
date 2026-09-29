@@ -128,7 +128,7 @@ public class EventsAndJobsTests
     [Fact]
     public void Event_names_become_subject_tokens_so_they_must_be_kebab()
     {
-        var act = () => ContractDescriptorBuilder.Build(typeof(IBadEventContract), "x");
+        var act = () => ContractDescriptorBuilder.Build(typeof(IBadEventContract));
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*event name 'bad event'*");
     }

@@ -18,7 +18,7 @@ public class PluginDependencyTests
     public void Enabling_a_consumer_without_its_required_provider_is_refused()
     {
         PluginDependencies.Missing(Registry, "needs", ["wants"])
-            .Should().Equal(new MissingProvider("test.greeter@1", "greeter"));
+            .Should().BeEquivalentTo([new MissingProvider("test.greeter@1", ["greeter"])]);
         PluginDependencies.Missing(Registry, "needs", ["greeter"]).Should().BeEmpty();
         PluginDependencies.Missing(Registry, "wants", []).Should().BeEmpty("an optional consumer degrades instead");
     }

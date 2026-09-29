@@ -123,7 +123,7 @@ builder.Services.AddHostedService<TenancyMigrator>();
 
 // Plugins, hosted in full (docs/adr/0016): their admin-plane routes, event handlers and jobs
 // run here, the only place dcms.secrets@1 can decrypt. Also the catalog and config validation.
-builder.Services.AddDcmsPlugins(plugins => plugins.AddAll().AddPlatformContracts(PluginPlane.Admin));
+builder.AddDcmsPlugins(Dcms.PluginSdk.Abstractions.PluginPlane.Admin, plugins => plugins.AddAll());
 builder.Services.AddDcmsPluginWorkers();
 builder.Services.AddSingleton<PluginConfigValidator>();
 
@@ -405,6 +405,7 @@ app.MapPluginEndpoints();
 // Plugins' own admin routes, /api/admin/plugins/{slug}/..., for authenticated tenant members
 // (UseTenantMembership above has already confirmed membership of X-Dcms-Tenant).
 app.MapDcmsPluginAdminEndpoints().RequireAuthorization();
+app.MapDcmsPluginHostEndpoints();
 // Contract operations for members and AI agents (docs/adr/0016).
 app.MapDcmsContractAdminEndpoints();
 app.MapNavigationEndpoints();

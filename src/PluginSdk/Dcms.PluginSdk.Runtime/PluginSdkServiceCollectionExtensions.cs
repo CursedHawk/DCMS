@@ -6,18 +6,26 @@ using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Runtime.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Dcms.PluginSdk.Runtime.Platform;
 
 namespace Dcms.PluginSdk.Runtime;
 
-public sealed class PluginRegistryBuilder
+public sealed class PluginRegistryBuilder(PluginHost host)
 {
     internal List<IPlugin> Plugins { get; } = [];
     internal List<ContractProvision> PlatformContracts { get; } = [];
 
+    /// <summary>The host the registry is being built for.</summary>
+    public PluginHost Host { get; } = host;
+
     public PluginRegistryBuilder Add<TPlugin>()
         where TPlugin : IPlugin, new()
+        => Add(new TPlugin());
+
+    public PluginRegistryBuilder Add(IPlugin plugin)
     {
-        Plugins.Add(new TPlugin());
+        Plugins.Add(plugin);
         return this;
     }
 
@@ -37,9 +45,31 @@ public sealed class PluginRegistryBuilder
 
 public static class PluginSdkServiceCollectionExtensions
 {
-    public static IServiceCollection AddDcmsPlugins(this IServiceCollection services, Action<PluginRegistryBuilder> configure)
+    /// <summary>
+    /// Hosts plugins in a service: the registry built for <paramref name="plane"/> with that
+    /// plane's platform contracts, every plugin's services, and the contract runtime.
+    /// </summary>
+    public static IHostApplicationBuilder AddDcmsPlugins(
+        this IHostApplicationBuilder builder, PluginPlane plane, Action<PluginRegistryBuilder> configure)
     {
-        var registry = BuildRegistry(configure);
+        var host = new PluginHost(plane, builder.Configuration, builder.Environment.EnvironmentName);
+        builder.Services.AddDcmsPlugins(host, plugins =>
+        {
+            configure(plugins);
+            plugins.AddPlatformContracts(plane);
+        });
+        return builder;
+    }
+
+    /// <summary>Registry without platform contracts, for tests and tools.</summary>
+    public static IServiceCollection AddDcmsPlugins(this IServiceCollection services, Action<PluginRegistryBuilder> configure)
+        => services.AddDcmsPlugins(PluginHost.Empty(), configure);
+
+    public static IServiceCollection AddDcmsPlugins(
+        this IServiceCollection services, PluginHost host, Action<PluginRegistryBuilder> configure)
+    {
+        var registry = BuildRegistry(host, configure);
+        services.AddSingleton(host);
         services.AddSingleton(registry);
         services.AddSingleton<IPluginCatalog>(registry);
         services.AddSingleton<PluginRouteTable>();
@@ -48,34 +78,24 @@ public static class PluginSdkServiceCollectionExtensions
 
         foreach (var plugin in registry.Plugins)
         {
-            plugin.ConfigureServices(services);
+            plugin.ConfigureServices(services, host);
         }
 
         return services;
     }
 
-    /// <summary>
-    /// Registers only the plugin manifest catalog (no ConfigureServices, no
-    /// endpoints). Used by admin-api to drive config forms and the permission
-    /// catalog without hosting plugin runtime services.
-    /// </summary>
-    public static IServiceCollection AddDcmsPluginCatalog(this IServiceCollection services, Action<PluginRegistryBuilder> configure)
+    private static PluginRegistry BuildRegistry(PluginHost host, Action<PluginRegistryBuilder> configure)
     {
-        var registry = BuildRegistry(configure);
-        services.AddSingleton(registry);
-        services.AddSingleton<IPluginCatalog>(registry);
-        // The assembler only reads manifests + builds fragments (pure functions),
-        // so it is safe to offer here without hosting plugin runtime services —
-        // admin-api uses it to render the per-tenant OpenAPI preview.
-        services.AddSingleton<OpenApiAssembler>();
-        return services;
-    }
-
-    private static PluginRegistry BuildRegistry(Action<PluginRegistryBuilder> configure)
-    {
-        var builder = new PluginRegistryBuilder();
+        var builder = new PluginRegistryBuilder(host);
         configure(builder);
-        return new PluginRegistry(builder.Plugins, builder.PlatformContracts);
+
+        // The operator's off switch (Plugins:Disabled), the equivalent of removing a jar: the
+        // plugin is not registered at all, so anything that requires its contracts fails startup
+        // with a message naming both rather than failing later on a request.
+        var disabled = host.Configuration.GetSection("Plugins:Disabled").GetChildren()
+            .Select(c => c.Value).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        return new PluginRegistry(
+            builder.Plugins.Where(p => !disabled.Contains(p.Manifest.Id)), builder.PlatformContracts);
     }
 
     private static void AddPluginContexts(IServiceCollection services)
@@ -95,6 +115,7 @@ public static class PluginSdkServiceCollectionExtensions
     public static IEndpointRouteBuilder MapDcmsPlugins(this IEndpointRouteBuilder app)
     {
         app.MapDcmsPluginSiteEndpoints();
+        app.MapDcmsPluginHostEndpoints();
         app.MapDcmsContractSiteEndpoints();
         app.MapGet("/api/_plugins", (PluginRegistry registry) =>
             Results.Ok(registry.Manifests.Select(m => new

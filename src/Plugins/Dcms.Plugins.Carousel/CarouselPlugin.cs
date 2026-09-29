@@ -1,5 +1,4 @@
 using Dcms.PluginSdk.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Carousel;
 
@@ -50,15 +49,4 @@ public sealed class CarouselPlugin : IPlugin
         category: "Presentation",
         summary: "Rotating banners for a page hero.",
         iconName: "GalleryHorizontalEnd");
-
-    public void ConfigureServices(IServiceCollection services) { }
-
-    public void MapEndpoints(IPluginEndpointBuilder endpoints)
-    {
-        endpoints.MapContentList("slide");
-        endpoints.MapContentGetBySlug("slide");
-    }
-
-    public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
-        => ContentApiFragment.ForListAndGet(instance, "slide", Manifest);
 }

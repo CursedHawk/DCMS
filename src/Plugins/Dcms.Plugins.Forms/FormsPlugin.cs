@@ -5,7 +5,6 @@ using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Shared.Security;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Forms;
 
@@ -136,7 +135,6 @@ public sealed class FormsPlugin : IPlugin
             ContractRequirement.Of<IVisitorIdentity>(optional: true),
         ]);
 
-    public void ConfigureServices(IServiceCollection services) { }
 
     public void MapEndpoints(IPluginEndpointBuilder endpoints) => FormSubmissionEndpoints.Map(endpoints);
 

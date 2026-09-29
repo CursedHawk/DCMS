@@ -23,9 +23,11 @@ public class ContractProxy : DispatchProxy
     private object _target = null!;
     private ContractDescriptor _descriptor = null!;
     private string _callerPluginId = null!;
+    private string _providerPluginId = null!;
     private IServiceProvider _services = null!;
 
-    public static T Create<T>(T target, ContractDescriptor descriptor, string callerPluginId, IServiceProvider services)
+    /// <param name="providerPluginId">The plugin behind this proxy; null for the platform.</param>
+    public static T Create<T>(T target, ContractDescriptor descriptor, string callerPluginId, string? providerPluginId, IServiceProvider services)
         where T : class
     {
         var proxy = DispatchProxy.Create<T, ContractProxy>();
@@ -33,6 +35,7 @@ public class ContractProxy : DispatchProxy
         p._target = target;
         p._descriptor = descriptor;
         p._callerPluginId = callerPluginId;
+        p._providerPluginId = providerPluginId ?? "platform";
         p._services = services;
         return proxy;
     }
@@ -48,7 +51,7 @@ public class ContractProxy : DispatchProxy
         activity?.SetTag("dcms.contract", _descriptor.Id);
         activity?.SetTag("dcms.contract.operation", op.Name);
         activity?.SetTag("dcms.plugin.caller", _callerPluginId);
-        activity?.SetTag("dcms.plugin.provider", _descriptor.ProviderPluginId ?? "platform");
+        activity?.SetTag("dcms.plugin.provider", _providerPluginId);
 
         AuditEntry? audit = null;
         if (op.Risk != OpRisk.Read)
@@ -58,6 +61,7 @@ public class ContractProxy : DispatchProxy
                 .For("contract", _descriptor.Id, op.Name)
                 .With("operation", op.Name)
                 .With("caller", _callerPluginId)
+                .With("provider", _providerPluginId)
                 .With("risk", op.Risk.ToString());
         }
 

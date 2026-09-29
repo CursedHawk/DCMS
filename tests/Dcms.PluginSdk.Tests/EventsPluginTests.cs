@@ -22,16 +22,6 @@ public class EventsPluginTests
     }
 
     [Fact]
-    public void Depends_on_the_roster_plugin_optionally()
-    {
-        // Optional is the contract that lets a line-up degrade to plain names.
-        var manifest = new EventsPlugin().Manifest;
-
-        manifest.Dependencies.Should().ContainSingle()
-            .Which.Should().BeEquivalentTo(new PluginDependency("roster", Optional: true));
-    }
-
-    [Fact]
     public void Declares_list_and_get_routes_for_gigs()
     {
         var routes = new PluginRouteTable(new PluginRegistry([new EventsPlugin()]));

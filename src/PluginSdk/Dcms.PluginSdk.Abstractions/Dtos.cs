@@ -31,8 +31,3 @@ public sealed record MediaAssetDto(
     string Status,
     IReadOnlyDictionary<string, string> VariantUrls);
 
-public sealed record SearchDocument(
-    Guid ContentItemId,
-    string Title,
-    string Body,
-    string Url);

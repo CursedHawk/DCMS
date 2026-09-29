@@ -10,7 +10,7 @@ const catalog: CatalogContract[] = [
   {
     id: 'visitors.profiles@1',
     description: 'Visitor profiles',
-    providerPluginId: 'visitor-auth',
+    providers: ['visitor-auth'],
     instances: [{ id: 'i1', slug: 'members', name: 'Members', description: 'Site accounts' }],
     operations: [
       {

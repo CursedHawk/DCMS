@@ -11,7 +11,6 @@ public sealed record PluginManifest(
     string ConfigJsonSchema,            // JSON Schema driving the admin config form
     IReadOnlyList<PermissionDefinition> Permissions,
     IReadOnlyList<ContentTypeDefinition> ContentTypes,
-    IReadOnlyList<PluginDependency> Dependencies,
     // Config keys a public site may read via GET /api/{slug}/_config. This is an
     // allow-list rather than a flag on purpose: instance config is tenant-private
     // by default, so adding a credential to a plugin's schema later cannot make
@@ -62,7 +61,6 @@ public sealed record PluginManifest(
         string configJsonSchema = "{}",
         IReadOnlyList<PermissionDefinition>? permissions = null,
         IReadOnlyList<ContentTypeDefinition>? contentTypes = null,
-        IReadOnlyList<PluginDependency>? dependencies = null,
         IReadOnlyList<string>? publicConfigKeys = null,
         string? category = null,
         string? summary = null,
@@ -82,7 +80,6 @@ public sealed record PluginManifest(
             configJsonSchema,
             permissions ?? [],
             contentTypes ?? [],
-            dependencies ?? [],
             publicConfigKeys ?? [],
             category,
             summary,
@@ -116,6 +113,3 @@ public sealed record PluginNavDeclaration(
 
 /// <summary>Effective permission key: plugin:{pluginId}:{Action}.</summary>
 public sealed record PermissionDefinition(string Action, string DisplayName);
-
-/// <summary>Declares a dependency on another plugin (e.g. Articles → ImageGallery).</summary>
-public sealed record PluginDependency(string PluginId, bool Optional);

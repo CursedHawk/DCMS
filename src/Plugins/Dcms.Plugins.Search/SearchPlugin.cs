@@ -24,7 +24,7 @@ public sealed class SearchPlugin : IPlugin
         iconName: "Search",
         consumes: [ContractRequirement.Of<IPluginSearch>()]);
 
-    public void ConfigureServices(IServiceCollection services)
+    public void ConfigureServices(IServiceCollection services, PluginHost host)
     {
     }
 
@@ -49,7 +49,4 @@ public sealed class SearchPlugin : IPlugin
             });
         });
     }
-
-    public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
-        => OpenApiFragment.Empty;
 }

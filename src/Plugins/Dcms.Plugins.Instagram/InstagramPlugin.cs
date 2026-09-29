@@ -2,7 +2,6 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.Plugins.Meta.Core;
 using Dcms.PluginSdk.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Instagram;
 
@@ -51,7 +50,6 @@ public sealed class InstagramPlugin : IPlugin
         summary: "Mirrors an Instagram feed into your content.",
         iconName: "Instagram");
 
-    public void ConfigureServices(IServiceCollection services) { }
 
     public void MapEndpoints(IPluginEndpointBuilder endpoints)
     {

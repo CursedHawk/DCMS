@@ -1,7 +1,6 @@
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Roster;
 
@@ -102,7 +101,6 @@ public sealed class RosterPlugin : IPlugin
         provides: [ContractProvision.Of<IRosterMembers, RosterMembers>()],
         consumes: [ContractRequirement.Of<IPluginContent>()]);
 
-    public void ConfigureServices(IServiceCollection services) { }
 
     public void MapEndpoints(IPluginEndpointBuilder endpoints)
     {

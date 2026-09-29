@@ -15,14 +15,19 @@ public sealed record ContractDescriptor(
     string Name,
     int Major,
     string? Description,
-    // Providing plugin id; null for a platform (dcms.*) contract.
-    string? ProviderPluginId,
     IReadOnlyList<OperationDescriptor> Operations,
     IReadOnlyList<EventDescriptor> Events)
 {
     [JsonIgnore] public Type ContractType { get; init; } = null!;
 
-    [JsonIgnore] public bool IsPlatform => ProviderPluginId is null;
+    /// <summary>A <c>dcms.*</c> contract, implemented by the host for every plugin.</summary>
+    [JsonIgnore] public bool IsPlatform => ContractIds.IsPlatform(Id);
+
+    /// <summary>The .NET interface, for C# consumers: what to reference and resolve.</summary>
+    public string ClrType => ContractType.FullName ?? ContractType.Name;
+
+    /// <summary>The assembly (and NuGet package) the interface ships in.</summary>
+    public string Assembly => ContractType.Assembly.GetName().Name ?? string.Empty;
 
     public OperationDescriptor? FindOperation(string name) =>
         Operations.FirstOrDefault(o => string.Equals(o.Name, name, StringComparison.Ordinal));

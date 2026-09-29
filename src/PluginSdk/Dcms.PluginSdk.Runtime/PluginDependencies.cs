@@ -1,7 +1,7 @@
 namespace Dcms.PluginSdk.Runtime;
 
-/// <summary>A required contract whose provider plugin has no enabled instance.</summary>
-public sealed record MissingProvider(string ContractId, string ProviderPluginId);
+/// <summary>A required contract none of whose provider plugins has an enabled instance.</summary>
+public sealed record MissingProvider(string ContractId, IReadOnlyList<string> ProviderPluginIds);
 
 /// <summary>An enabled instance that requires a contract the change would leave unprovided.</summary>
 public sealed record DependentInstance(string PluginId, string Slug, string ContractId);
@@ -18,35 +18,39 @@ public static class PluginDependencies
         PluginRegistry registry, string pluginId, IEnumerable<string> enabledPluginIds)
     {
         var enabled = enabledPluginIds.ToHashSet(StringComparer.Ordinal);
-        return RequiredProviders(registry, pluginId)
-            .Where(r => r.ProviderPluginId != pluginId && !enabled.Contains(r.ProviderPluginId))
+        return Required(registry, pluginId)
+            .Where(r => !r.Providers.Any(p => p == pluginId || enabled.Contains(p)))
+            .Select(r => new MissingProvider(r.ContractId, r.Providers))
             .ToList();
     }
 
     /// <summary>
-    /// The enabled instances that would lose a required contract if every instance of
-    /// <paramref name="providerPluginId"/> outside <paramref name="remainingEnabled"/> went away.
+    /// The enabled instances that would lose a required contract once the tenant's enabled
+    /// instances are <paramref name="remainingEnabled"/> — a contract counts as lost only when
+    /// no remaining instance of <i>any</i> of its providers is left.
     /// </summary>
     /// <param name="remainingEnabled">The tenant's enabled instances after the change.</param>
     public static IReadOnlyList<DependentInstance> Dependents(
         PluginRegistry registry, string providerPluginId, IReadOnlyCollection<(string PluginId, string Slug)> remainingEnabled)
     {
-        if (remainingEnabled.Any(i => i.PluginId == providerPluginId))
-        {
-            return []; // another instance still provides it
-        }
+        var remaining = remainingEnabled.Select(i => i.PluginId).ToHashSet(StringComparer.Ordinal);
         return remainingEnabled
-            .SelectMany(i => RequiredProviders(registry, i.PluginId)
-                .Where(r => r.ProviderPluginId == providerPluginId && i.PluginId != providerPluginId)
+            .SelectMany(i => Required(registry, i.PluginId)
+                .Where(r => r.Providers.Contains(providerPluginId)
+                            && !r.Providers.Contains(i.PluginId)
+                            && !r.Providers.Any(remaining.Contains))
                 .Select(r => new DependentInstance(i.PluginId, i.Slug, r.ContractId)))
             .ToList();
     }
 
-    private static IEnumerable<MissingProvider> RequiredProviders(PluginRegistry registry, string pluginId) =>
+    /// <summary>Also what the marketplace shows as a plugin's dependencies.</summary>
+    public static IEnumerable<(string ContractId, IReadOnlyList<string> Providers, bool Optional)> Of(
+        PluginRegistry registry, string pluginId) =>
         (registry.Find(pluginId)?.Consumes ?? [])
-            .Where(r => !r.Optional)
-            .Select(r => registry.FindContract(r.ContractId)?.Descriptor.ProviderPluginId is { } provider
-                ? new MissingProvider(r.ContractId, provider)
-                : null)
-            .OfType<MissingProvider>();
+            .Select(r => (r.ContractId,
+                (IReadOnlyList<string>)(registry.FindContract(r.ContractId)?.ProviderPluginIds.ToList() ?? []), r.Optional))
+            .Where(r => r.Item2.Count > 0);
+
+    private static IEnumerable<(string ContractId, IReadOnlyList<string> Providers)> Required(PluginRegistry registry, string pluginId) =>
+        Of(registry, pluginId).Where(r => !r.Optional).Select(r => (r.ContractId, r.Providers));
 }

@@ -1,6 +1,5 @@
 ﻿using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Analytics;
 
@@ -19,15 +18,7 @@ public sealed class AnalyticsPlugin : IPlugin
         summary: "Page views, sessions and campaign attribution.",
         iconName: "TrendingUp");
 
-    public void ConfigureServices(IServiceCollection services)
-    {
-        // Plugin services arrive in later phases.
-    }
 
-    public void MapEndpoints(IPluginEndpointBuilder endpoints)
-    {
-        // Delivery endpoints arrive in later phases.
-    }
 
     // Document the anonymous ingest beacon so externally hosted sites (not served
     // on a DCMS domain) can record analytics and have it in the OpenAPI spec.

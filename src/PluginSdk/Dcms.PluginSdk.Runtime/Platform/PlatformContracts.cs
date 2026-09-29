@@ -1,17 +1,8 @@
+using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
 
 namespace Dcms.PluginSdk.Runtime.Platform;
-
-/// <summary>Which host is building the registry; a few platform contracts differ between them.</summary>
-public enum PluginPlane
-{
-    /// <summary>content-api: public, internet-facing.</summary>
-    Site,
-
-    /// <summary>admin-api: authenticated members, jobs and event handlers.</summary>
-    Admin,
-}
 
 public static class PlatformContracts
 {

@@ -1,5 +1,6 @@
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Runtime;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
@@ -30,7 +31,7 @@ public static class MarketplaceEndpoints
     public static IEndpointRouteBuilder MapMarketplaceEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/admin/marketplace", async (
-            IPluginCatalog catalog, CmsDbContext db, CancellationToken ct) =>
+            IPluginCatalog catalog, Dcms.PluginSdk.Runtime.PluginRegistry registry, CmsDbContext db, CancellationToken ct) =>
         {
             var instances = await db.PluginInstances
                 .Select(p => new { p.PluginId, p.Enabled })
@@ -69,7 +70,10 @@ public static class MarketplaceEndpoints
                                 p.DisplayName,
                             }),
                         contentTypes = m.ContentTypes.Select(t => t.Name),
-                        dependencies = m.Dependencies.Select(d => new { d.PluginId, d.Optional }),
+                        // Derived from Consumes: the plugins that provide what this one needs.
+                        dependencies = PluginDependencies.Of(registry, m.Id)
+                            .SelectMany(d => d.Providers.Select(p => new { pluginId = p, optional = d.Optional }))
+                            .DistinctBy(d => d.pluginId),
                         provides = (m.Provides ?? []).Select(p => ContractIds.Of(p.Contract)),
                         consumes = (m.Consumes ?? []).Select(c => new { c.ContractId, c.Optional }),
                         addsNavEntry = m.Nav is not null,

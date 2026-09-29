@@ -1,6 +1,5 @@
 using Dcms.Plugins.Meta.Core;
 using Dcms.PluginSdk.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Facebook;
 
@@ -37,7 +36,6 @@ public sealed class FacebookPlugin : IPlugin
         summary: "Mirrors a Facebook page feed into your content.",
         iconName: "Facebook");
 
-    public void ConfigureServices(IServiceCollection services) { }
 
     public void MapEndpoints(IPluginEndpointBuilder endpoints)
     {

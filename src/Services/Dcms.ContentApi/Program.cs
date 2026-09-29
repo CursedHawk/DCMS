@@ -177,7 +177,7 @@ builder.Services.AddHttpClient(Dcms.ContentApi.Social.StoryDeliveryEndpoints.Htt
 });
 builder.Services.AddSingleton<ChatBotResponder>();
 
-builder.Services.AddDcmsPlugins(plugins => plugins.AddAll().AddPlatformContracts(PluginPlane.Site));
+builder.AddDcmsPlugins(PluginPlane.Site, plugins => plugins.AddAll());
 builder.Services.AddScoped<IMediaResolver, Dcms.ContentApi.Delivery.MediaResolver>();
 builder.Services.AddHostedService<ContentCacheInvalidator>();
 builder.Services.AddHostedService<SearchIndexer>();

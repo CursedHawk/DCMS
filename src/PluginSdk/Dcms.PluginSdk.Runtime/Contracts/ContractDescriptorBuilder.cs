@@ -19,7 +19,7 @@ public static class ContractDescriptorBuilder
 
     private static readonly JsonSchemaExporterOptions SchemaOptions = new() { TreatNullObliviousAsNonNullable = true };
 
-    public static ContractDescriptor Build(Type contract, string? providerPluginId)
+    public static ContractDescriptor Build(Type contract)
     {
         if (!contract.IsInterface)
         {
@@ -31,12 +31,6 @@ public static class ContractDescriptorBuilder
         if (!ContractIds.IsValid(id))
         {
             throw Invalid(contract, $"has invalid id '{id}' (expected dotted kebab-case name '@' major >= 1)");
-        }
-        if (ContractIds.IsPlatform(id) != (providerPluginId is null))
-        {
-            throw Invalid(contract, providerPluginId is null
-                ? $"is registered as a platform contract but '{id}' is not in the dcms.* namespace"
-                : $"'{id}' is reserved for the platform; plugin '{providerPluginId}' cannot provide it");
         }
         if (contract.GetProperties().Length > 0 || contract.GetEvents().Length > 0)
         {
@@ -56,7 +50,7 @@ public static class ContractDescriptorBuilder
 
         var events = attribute.Events.Select(t => BuildEvent(contract, t)).ToList();
 
-        return new ContractDescriptor(id, attribute.Name, attribute.Major, attribute.Description, providerPluginId, operations, events)
+        return new ContractDescriptor(id, attribute.Name, attribute.Major, attribute.Description, operations, events)
         {
             ContractType = contract,
         };

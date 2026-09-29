@@ -102,7 +102,7 @@ public class ContractToolLoopTests
     [Fact]
     public void The_site_chatbot_plane_serves_read_only_site_and_ai_operations()
     {
-        var descriptor = Runtime.Contracts.ContractDescriptorBuilder.Build(typeof(IGreeter), "greeter");
+        var descriptor = Runtime.Contracts.ContractDescriptorBuilder.Build(typeof(IGreeter));
 
         // Greet: Read, Site|Ai. SetGreeting: Safe, Admin.
         ContractDispatcher.IsExposed(descriptor.FindOperation("Greet")!, ContractPlane.SiteAi).Should().BeTrue();

@@ -90,6 +90,13 @@ public interface IPluginContracts
 
     /// <summary>As <see cref="Get{T}"/>, but null when no enabled provider instance exists.</summary>
     T? TryGet<T>(Guid? providerInstanceId = null) where T : class;
+
+    /// <summary>
+    /// Every enabled provider instance of an open contract, across all the plugins implementing
+    /// it — an extension point: a sitemap built from every <c>ISitemapSource</c>, a checkout
+    /// offering every <c>IPaymentGateway</c>. Empty when none is enabled.
+    /// </summary>
+    IReadOnlyList<T> GetAll<T>() where T : class;
 }
 
 public interface IPluginEventHandler<in TEvent> where TEvent : IPluginEvent

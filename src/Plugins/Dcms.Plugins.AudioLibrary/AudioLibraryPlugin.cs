@@ -1,5 +1,4 @@
 using Dcms.PluginSdk.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.AudioLibrary;
 
@@ -44,15 +43,4 @@ public sealed class AudioLibraryPlugin : IPlugin
         category: "Media",
         summary: "Audio tracks with artwork and transcoded variants.",
         iconName: "Music");
-
-    public void ConfigureServices(IServiceCollection services) { }
-
-    public void MapEndpoints(IPluginEndpointBuilder endpoints)
-    {
-        endpoints.MapContentList("track");
-        endpoints.MapContentGetBySlug("track");
-    }
-
-    public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
-        => ContentApiFragment.ForListAndGet(instance, "track", Manifest);
 }

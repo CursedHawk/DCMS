@@ -186,8 +186,8 @@ public static class PluginInstanceEndpoints
     private static IResult MissingConflict(IReadOnlyList<MissingProvider> missing) => Results.Conflict(new
     {
         error = "This plugin requires plugins that are not enabled here; enable them first: "
-                + string.Join(", ", missing.Select(m => m.ProviderPluginId).Distinct()) + ".",
-        missing = missing.Select(m => new { m.ContractId, m.ProviderPluginId }),
+                + string.Join(", ", missing.Select(m => string.Join(" or ", m.ProviderPluginIds)).Distinct()) + ".",
+        missing = missing.Select(m => new { m.ContractId, m.ProviderPluginIds }),
     });
 
     /// <summary>
@@ -213,7 +213,6 @@ public static class PluginInstanceEndpoints
         allowMultipleInstances = m.AllowMultipleInstances,
         configJsonSchema = m.ConfigJsonSchema,
         permissions = m.Permissions.Select(p => new { p.Action, p.DisplayName }),
-        dependencies = m.Dependencies.Select(d => new { d.PluginId, d.Optional }),
         // Contracts (docs/adr/0016): what this plugin offers and what it needs.
         provides = (m.Provides ?? []).Select(p => ContractIds.Of(p.Contract)),
         consumes = (m.Consumes ?? []).Select(c => new { c.ContractId, c.Optional, c.BindingConfigKey }),

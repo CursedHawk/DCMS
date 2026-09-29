@@ -12,6 +12,16 @@ namespace Dcms.PluginSdk.Abstractions;
 /// </summary>
 public static class ContentApiFragment
 {
+    /// <summary>List + get for each named content type (default: all the manifest declares), merged under one tag.</summary>
+    public static OpenApiFragment ForContentTypes(
+        PluginInstanceContext instance, PluginManifest manifest, IEnumerable<string>? contentTypes = null)
+    {
+        var fragments = (contentTypes ?? manifest.ContentTypes.Select(c => c.Name))
+            .Select(t => ForListAndGet(instance, t, manifest))
+            .ToList();
+        return fragments.Count == 0 ? OpenApiFragment.Empty : OpenApiFragment.Merge(fragments);
+    }
+
     public static OpenApiFragment ForListAndGet(PluginInstanceContext instance, string contentType, PluginManifest manifest)
     {
         string Describe(string op) => $"{instance.Description}\n\n{op}\n\nPlugin: {manifest.Name} v{manifest.Version}";

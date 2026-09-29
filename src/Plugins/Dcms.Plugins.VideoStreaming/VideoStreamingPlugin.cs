@@ -1,5 +1,4 @@
 using Dcms.PluginSdk.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.VideoStreaming;
 
@@ -46,15 +45,4 @@ public sealed class VideoStreamingPlugin : IPlugin
         category: "Media",
         summary: "HLS streaming for long-form video.",
         iconName: "MonitorPlay");
-
-    public void ConfigureServices(IServiceCollection services) { }
-
-    public void MapEndpoints(IPluginEndpointBuilder endpoints)
-    {
-        endpoints.MapContentList("stream");
-        endpoints.MapContentGetBySlug("stream");
-    }
-
-    public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
-        => ContentApiFragment.ForListAndGet(instance, "stream", Manifest);
 }

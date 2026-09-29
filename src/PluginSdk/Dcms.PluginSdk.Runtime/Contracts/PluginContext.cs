@@ -99,48 +99,70 @@ internal sealed class PluginContext(
     public T? TryGet<T>(Guid? providerInstanceId = null) where T : class =>
         Resolve<T>(providerInstanceId, required: false);
 
+    public IReadOnlyList<T> GetAll<T>() where T : class
+    {
+        var (registered, _) = Declared<T>();
+        if (registered.Descriptor.IsPlatform)
+        {
+            return [Platform<T>(registered)];
+        }
+        return Candidates(registered).Select(i => Provide<T>(registered, i)).ToList();
+    }
+
     private T? Resolve<T>(Guid? providerInstanceId, bool required) where T : class
+    {
+        var (registered, requirement) = Declared<T>();
+        var descriptor = registered.Descriptor;
+        if (descriptor.IsPlatform)
+        {
+            return Platform<T>(registered);
+        }
+
+        var provider = FindProviderInstance(registered, requirement, providerInstanceId);
+        if (provider is null)
+        {
+            return required
+                ? throw new InvalidOperationException(
+                    $"No enabled instance of {string.Join(" or ", registered.ProviderPluginIds.Select(p => $"'{p}'"))} provides {descriptor.Id} for this tenant.")
+                : null;
+        }
+        return Provide<T>(registered, provider);
+    }
+
+    /// <summary>The contract, and the caller's declaration of it — without which nothing resolves.</summary>
+    private (RegisteredContract Registered, ContractRequirement Requirement) Declared<T>()
     {
         var registered = registry.FindContract(typeof(T))
             ?? throw new InvalidOperationException($"'{typeof(T).FullName}' is not a contract registered in this host.");
-        var descriptor = registered.Descriptor;
-
-        var requirement = registry.Find(pluginId)!.Consumes?.FirstOrDefault(r => r.ContractId == descriptor.Id)
+        var requirement = registry.Find(pluginId)!.Consumes?.FirstOrDefault(r => r.ContractId == registered.Descriptor.Id)
             ?? throw new InvalidOperationException(
-                $"Plugin '{pluginId}' does not declare consuming {descriptor.Id}; add it to the manifest's Consumes.");
+                $"Plugin '{pluginId}' does not declare consuming {registered.Descriptor.Id}; add it to the manifest's Consumes.");
+        return (registered, requirement);
+    }
 
-        object target;
-        if (descriptor.IsPlatform)
-        {
-            // A platform contract acts for the caller: its implementation stamps the caller's
-            // tenant and plugin id onto everything it touches.
-            target = Construct(registered.Implementation, this);
-        }
-        else
-        {
-            var provider = FindProviderInstance(descriptor, requirement, providerInstanceId);
-            if (provider is null)
-            {
-                return required
-                    ? throw new InvalidOperationException(
-                        $"No enabled instance of '{descriptor.ProviderPluginId}' provides {descriptor.Id} for this tenant.")
-                    : null;
-            }
-            var providerContext = new PluginContext(
-                tenantId, descriptor.ProviderPluginId!, provider, actor, enabled, registry, services);
-            target = Construct(registered.Implementation, providerContext);
-        }
+    // A platform contract acts for the caller: its implementation stamps the caller's tenant and
+    // plugin id onto everything it touches.
+    private T Platform<T>(RegisteredContract registered) where T : class =>
+        ContractProxy.Create((T)Construct(registered.PlatformImplementation, this), registered.Descriptor, pluginId, null, services);
 
-        return ContractProxy.Create((T)target, descriptor, pluginId, services);
+    // A plugin provider runs as itself, serving the chosen instance.
+    private T Provide<T>(RegisteredContract registered, PluginInstanceContext provider) where T : class
+    {
+        var implementation = registered.ProvidedBy(provider.PluginId)!.Implementation;
+        var providerContext = new PluginContext(tenantId, provider.PluginId, provider, actor, enabled, registry, services);
+        return ContractProxy.Create((T)Construct(implementation, providerContext), registered.Descriptor, pluginId, provider.PluginId, services);
     }
 
     private object Construct(Type implementation, IPluginContext context) =>
         ContractActivator.Create(services, implementation, context);
 
+    private List<PluginInstanceContext> Candidates(RegisteredContract registered) =>
+        enabled.Where(i => registered.ProvidedBy(i.PluginId) is not null).ToList();
+
     private PluginInstanceContext? FindProviderInstance(
-        ContractDescriptor descriptor, ContractRequirement requirement, Guid? explicitId)
+        RegisteredContract registered, ContractRequirement requirement, Guid? explicitId)
     {
-        var candidates = enabled.Where(i => i.PluginId == descriptor.ProviderPluginId).ToList();
+        var candidates = Candidates(registered);
         if (explicitId is { } id)
         {
             return candidates.FirstOrDefault(i => i.InstanceId == id);
@@ -157,8 +179,8 @@ internal sealed class PluginContext(
             0 => null,
             1 => candidates[0],
             _ => throw new InvalidOperationException(
-                $"Several instances of '{descriptor.ProviderPluginId}' provide {descriptor.Id}; " +
-                $"plugin '{pluginId}' must bind one (BindingConfigKey) or pass an instance id."),
+                $"Several instances provide {registered.Descriptor.Id}; " +
+                $"plugin '{pluginId}' must bind one (BindingConfigKey), pass an instance id, or use GetAll."),
         };
     }
 

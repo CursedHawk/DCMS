@@ -1,6 +1,5 @@
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Events;
 
@@ -49,7 +48,6 @@ public sealed class EventsPlugin : IPlugin
         // the rest is presentation. None of it is a credential.
         publicConfigKeys: ["title", "gigsPerPage", "timeZone", "rosterSlug"],
         // Optional: without a roster, gigs still list their line-up by name.
-        dependencies: [new PluginDependency("roster", Optional: true)],
         // rosterSlug is the binding: it names which Roster instance, when there are several.
         consumes: [new ContractRequirement("roster.members@1", Optional: true, BindingConfigKey: "rosterSlug")],
         permissions:
@@ -89,7 +87,6 @@ public sealed class EventsPlugin : IPlugin
         summary: "Events with dates, venues and line-ups.",
         iconName: "CalendarDays");
 
-    public void ConfigureServices(IServiceCollection services) { }
 
     public void MapEndpoints(IPluginEndpointBuilder endpoints)
     {

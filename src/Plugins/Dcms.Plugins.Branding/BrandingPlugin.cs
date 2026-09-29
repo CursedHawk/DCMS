@@ -1,7 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Branding;
 
@@ -146,7 +145,6 @@ public sealed class BrandingPlugin : IPlugin
         summary: "Logo, colours and typography for the published site.",
         iconName: "Palette");
 
-    public void ConfigureServices(IServiceCollection services) { }
 
     // No content types and no custom routes: the delivery endpoint is served by
     // content-api (BrandingEndpoints), which reads the same config this documents.

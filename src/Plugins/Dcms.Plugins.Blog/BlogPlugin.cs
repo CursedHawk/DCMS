@@ -1,5 +1,4 @@
 using Dcms.PluginSdk.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Blog;
 
@@ -51,15 +50,4 @@ public sealed class BlogPlugin : IPlugin
         category: "Content",
         summary: "A dated blog with categories and an archive.",
         iconName: "Rss");
-
-    public void ConfigureServices(IServiceCollection services) { }
-
-    public void MapEndpoints(IPluginEndpointBuilder endpoints)
-    {
-        endpoints.MapContentList("post");
-        endpoints.MapContentGetBySlug("post");
-    }
-
-    public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
-        => ContentApiFragment.ForListAndGet(instance, "post", Manifest);
 }

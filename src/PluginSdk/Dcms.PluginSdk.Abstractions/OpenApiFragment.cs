@@ -16,6 +16,21 @@ public sealed record OpenApiFragment(
     IReadOnlyDictionary<string, JsonNode> Schemas)
 {
     public static readonly OpenApiFragment Empty = new(string.Empty, string.Empty, [], new Dictionary<string, JsonNode>());
+
+    /// <summary>Concatenates paths and schemas; the tag is the first fragment's.</summary>
+    public static OpenApiFragment Merge(IReadOnlyList<OpenApiFragment> fragments)
+    {
+        var schemas = new Dictionary<string, JsonNode>();
+        foreach (var fragment in fragments)
+        {
+            foreach (var (key, value) in fragment.Schemas)
+            {
+                schemas[key] = value;
+            }
+        }
+        return new OpenApiFragment(
+            fragments[0].TagName, fragments[0].TagDescription, fragments.SelectMany(f => f.Paths).ToList(), schemas);
+    }
 }
 
 /// <param name="ResponseSchema">Success-response body schema. When null the success response carries no body.</param>

@@ -81,16 +81,28 @@ public sealed class TestPlugin(
 {
     public PluginManifest Manifest { get; } = PluginManifest.Create(
         id, id, $"{id} test plugin", allowMultipleInstances: multi, provides: provides, consumes: consumes);
+}
 
-    public void ConfigureServices(IServiceCollection services)
-    {
-    }
+/// <summary>A second implementation of <see cref="IGreeter"/>, from another plugin: contracts are open.</summary>
+public sealed class LoudGreeter(IPluginContext context) : IGreeter
+{
+    public Task<GreetResult> GreetAsync(GreetInput input, CancellationToken ct) =>
+        Task.FromResult(new GreetResult($"HELLO, {input.Name.ToUpperInvariant()}", context.Instance?.Slug ?? "-"));
 
-    public void MapEndpoints(IPluginEndpointBuilder endpoints)
-    {
-    }
+    public Task SetGreetingAsync(SetGreetingInput input, CancellationToken ct) => Task.CompletedTask;
+}
 
-    public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance) => OpenApiFragment.Empty;
+/// <summary>Claims the id test.greeter@1 with a different interface — must be refused.</summary>
+[DcmsContract("test.greeter", 1)]
+public interface IImpostorGreeter
+{
+    [Operation(OpRisk.Read)]
+    Task<GreetResult> GreetAsync(GreetInput input, CancellationToken ct);
+}
+
+public sealed class ImpostorGreeter : IImpostorGreeter
+{
+    public Task<GreetResult> GreetAsync(GreetInput input, CancellationToken ct) => throw new NotSupportedException();
 }
 
 public sealed class FakeInstanceStore(params PluginInstanceContext[] instances) : IPluginInstanceStore

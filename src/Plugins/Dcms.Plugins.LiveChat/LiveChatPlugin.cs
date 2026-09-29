@@ -81,7 +81,7 @@ public sealed class LiveChatPlugin : IPlugin
         // Grounds the bot's answers in the tenant's published content.
         consumes: [ContractRequirement.Of<IPluginSearch>()]);
 
-    public void ConfigureServices(IServiceCollection services)
+    public void ConfigureServices(IServiceCollection services, PluginHost host)
     {
         // The bot responder and hub are owned by content-api's host.
     }
@@ -90,7 +90,4 @@ public sealed class LiveChatPlugin : IPlugin
     {
         // Delivery (history replay) + the realtime hub are mapped by content-api.
     }
-
-    public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
-        => OpenApiFragment.Empty;
 }

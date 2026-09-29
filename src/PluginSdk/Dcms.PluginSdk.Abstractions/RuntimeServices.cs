@@ -6,15 +6,6 @@ public interface IMediaResolver
     Task<MediaAssetDto?> ResolveAsync(Guid assetId, CancellationToken ct = default);
 }
 
-/// <summary>
-/// Projects a published content item into the sitewide search index. Return
-/// null to exclude the item. Called by the search indexer on content.published.
-/// </summary>
-public interface ISearchContributor
-{
-    SearchDocument? Project(ContentItemDto item, PluginInstanceContext instance);
-}
-
 /// <summary>Marker for event records published under a contract (see <c>[ContractEvent]</c>).</summary>
 public interface IPluginEvent;
 
