@@ -51,7 +51,9 @@ public sealed record PluginManifest(
     IReadOnlyList<ContractProvision>? Provides = null,
     IReadOnlyList<ContractRequirement>? Consumes = null,
     IReadOnlyList<EventSubscription>? Subscribes = null,
-    IReadOnlyList<JobDeclaration>? Jobs = null)
+    IReadOnlyList<JobDeclaration>? Jobs = null,
+    /// <summary>Hooks of consumed contracts this plugin intercepts.</summary>
+    IReadOnlyList<HookSubscription>? Intercepts = null)
 {
     public static PluginManifest Create(
         string id,
@@ -70,7 +72,8 @@ public sealed record PluginManifest(
         IReadOnlyList<ContractProvision>? provides = null,
         IReadOnlyList<ContractRequirement>? consumes = null,
         IReadOnlyList<EventSubscription>? subscribes = null,
-        IReadOnlyList<JobDeclaration>? jobs = null)
+        IReadOnlyList<JobDeclaration>? jobs = null,
+        IReadOnlyList<HookSubscription>? intercepts = null)
         => new(
             id,
             name,
@@ -89,7 +92,8 @@ public sealed record PluginManifest(
             provides ?? [],
             consumes ?? [],
             subscribes ?? [],
-            jobs ?? []);
+            jobs ?? [],
+            intercepts ?? []);
 }
 
 /// <summary>

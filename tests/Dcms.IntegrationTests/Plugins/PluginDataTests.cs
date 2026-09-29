@@ -30,6 +30,7 @@ public sealed class PluginDataTests(AdminApiFixture fixture)
     {
         public PluginActor Actor => PluginActor.System;
         public IPluginContracts Contracts => throw new NotSupportedException();
+public IPluginHooks Hooks => throw new NotSupportedException();
     }
 
     private static Ctx For(Guid tenant, string plugin, Guid? instance = null) =>

@@ -51,6 +51,7 @@ public class EventsAndJobsTests
         public Guid TenantId => Tenant;
         public PluginActor Actor => PluginActor.System;
         public IPluginContracts Contracts => throw new NotSupportedException();
+public IPluginHooks Hooks => throw new NotSupportedException();
     }
 
     private sealed class Bus : IEventPublisher

@@ -49,8 +49,9 @@ public static class ContractDescriptorBuilder
         }
 
         var events = attribute.Events.Select(t => BuildEvent(contract, t)).ToList();
+        var hooks = attribute.Hooks.Select(t => BuildHook(contract, t)).ToList();
 
-        return new ContractDescriptor(id, attribute.Name, attribute.Major, attribute.Description, operations, events)
+        return new ContractDescriptor(id, attribute.Name, attribute.Major, attribute.Description, operations, events, hooks)
         {
             ContractType = contract,
         };
@@ -136,6 +137,21 @@ public static class ContractDescriptorBuilder
             throw Invalid(contract, $"event name '{name}' must be dotted kebab-case");
         }
         return new EventDescriptor(name, Json.GetJsonSchemaAsNode(eventType, SchemaOptions)) { EventType = eventType };
+    }
+
+    private static HookDescriptor BuildHook(Type contract, Type hookType)
+    {
+        if (!typeof(IPluginHook).IsAssignableFrom(hookType))
+        {
+            throw Invalid(contract, $"hook '{hookType.Name}' must implement IPluginHook");
+        }
+        var name = hookType.GetCustomAttribute<ContractHookAttribute>()?.Name
+            ?? throw Invalid(contract, $"hook '{hookType.Name}' is not marked [ContractHook]");
+        if (!ContractIds.IsValid($"{name}@1"))
+        {
+            throw Invalid(contract, $"hook name '{name}' must be dotted kebab-case");
+        }
+        return new HookDescriptor(name, Json.GetJsonSchemaAsNode(hookType, SchemaOptions)) { HookType = hookType };
     }
 
     private static InvalidOperationException Invalid(Type contract, string problem) =>

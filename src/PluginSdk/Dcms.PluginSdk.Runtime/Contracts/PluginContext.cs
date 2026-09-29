@@ -76,6 +76,7 @@ internal sealed class AmbientPluginContext(PluginContextAccessor accessor) : IPl
     public PluginInstanceContext? Instance => Current.Instance;
     public PluginActor Actor => Current.Actor;
     public IPluginContracts Contracts => Current.Contracts;
+    public IPluginHooks Hooks => Current.Hooks;
 }
 
 internal sealed class PluginContext(
@@ -92,6 +93,7 @@ internal sealed class PluginContext(
     public PluginInstanceContext? Instance => instance;
     public PluginActor Actor => actor;
     public IPluginContracts Contracts => this;
+    public IPluginHooks Hooks => new PluginHookRunner(tenantId, pluginId, actor, enabled, registry, services);
 
     public T Get<T>(Guid? providerInstanceId = null) where T : class =>
         Resolve<T>(providerInstanceId, required: true)!;

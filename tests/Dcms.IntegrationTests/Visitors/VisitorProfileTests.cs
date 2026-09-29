@@ -113,6 +113,7 @@ public sealed class VisitorProfileTests(ContentFlowFixture fixture)
         public PluginInstanceContext? Instance => new(Guid.NewGuid(), TenantId, PluginId, "members", "Members", "", Config);
         public PluginActor Actor => PluginActor.System;
         public IPluginContracts Contracts => throw new NotSupportedException("no events in this test");
+public IPluginHooks Hooks => throw new NotSupportedException();
     }
 
     private async Task<(string Slug, Guid TenantId)> SiteWithVisitorAuthAsync(CancellationToken ct)

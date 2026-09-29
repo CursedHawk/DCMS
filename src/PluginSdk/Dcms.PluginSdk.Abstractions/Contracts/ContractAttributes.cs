@@ -55,6 +55,9 @@ public sealed class DcmsContractAttribute(string name, int major) : Attribute
 
     /// <summary>Event records (each marked <see cref="ContractEventAttribute"/>) this contract's provider publishes.</summary>
     public Type[] Events { get; set; } = [];
+
+    /// <summary>Hook records (each marked <see cref="ContractHookAttribute"/>) this contract's provider runs.</summary>
+    public Type[] Hooks { get; set; } = [];
 }
 
 /// <summary>
@@ -117,6 +120,11 @@ public static class ContractIds
         contract.GetCustomAttributes(typeof(DcmsContractAttribute), false).FirstOrDefault() is DcmsContractAttribute a
             ? a.Id
             : throw new InvalidOperationException($"'{contract.FullName}' is not marked [DcmsContract].");
+
+    public static string HookName(Type hookType) =>
+        hookType.GetCustomAttributes(typeof(ContractHookAttribute), false).FirstOrDefault() is ContractHookAttribute a
+            ? a.Name
+            : throw new InvalidOperationException($"'{hookType.FullName}' is not marked [ContractHook].");
 
     public static string EventName(Type eventType) =>
         eventType.GetCustomAttributes(typeof(ContractEventAttribute), false).FirstOrDefault() is ContractEventAttribute a

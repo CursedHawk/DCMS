@@ -16,7 +16,8 @@ public sealed record ContractDescriptor(
     int Major,
     string? Description,
     IReadOnlyList<OperationDescriptor> Operations,
-    IReadOnlyList<EventDescriptor> Events)
+    IReadOnlyList<EventDescriptor> Events,
+    IReadOnlyList<HookDescriptor> Hooks)
 {
     [JsonIgnore] public Type ContractType { get; init; } = null!;
 
@@ -56,4 +57,9 @@ public sealed record OperationDescriptor(
 public sealed record EventDescriptor(string Name, JsonNode Schema)
 {
     [JsonIgnore] public Type EventType { get; init; } = null!;
+}
+
+public sealed record HookDescriptor(string Name, JsonNode Schema)
+{
+    [JsonIgnore] public Type HookType { get; init; } = null!;
 }

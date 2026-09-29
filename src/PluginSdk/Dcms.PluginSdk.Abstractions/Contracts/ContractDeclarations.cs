@@ -76,6 +76,9 @@ public interface IPluginContext
     PluginActor Actor { get; }
 
     IPluginContracts Contracts { get; }
+
+    /// <summary>Runs hooks declared by contracts this plugin provides.</summary>
+    IPluginHooks Hooks { get; }
 }
 
 public interface IPluginContracts

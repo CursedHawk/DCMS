@@ -15,6 +15,8 @@ public sealed class PluginRegistry : IPluginCatalog
     private readonly Dictionary<string, IPlugin> _plugins;
     private readonly Dictionary<string, RegisteredContract> _contracts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (EventDescriptor Event, ContractDescriptor Contract)> _events = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (HookDescriptor Hook, ContractDescriptor Contract)> _hooks = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<(string PluginId, HookSubscription Subscription)>> _interceptors = new(StringComparer.Ordinal);
 
     public PluginRegistry(IEnumerable<IPlugin> plugins)
         : this(plugins, [])
@@ -53,6 +55,17 @@ public sealed class PluginRegistry : IPluginCatalog
             ValidateConsumers(plugin.Manifest);
         }
         ValidateNoRequiredCycle();
+
+        foreach (var group in _plugins.Values
+                     .SelectMany(p => (p.Manifest.Intercepts ?? []).Select(s => (p.Manifest.Id, s)))
+                     .GroupBy(x => x.s.HookName))
+        {
+            // Highest priority first; ties broken by plugin id so the order never depends on
+            // registration order.
+            _interceptors[group.Key] = group
+                .OrderByDescending(x => x.s.Priority).ThenBy(x => x.Id, StringComparer.Ordinal)
+                .Select(x => (x.Id, x.s)).ToList();
+        }
     }
 
     public IReadOnlyCollection<IPlugin> Plugins => _plugins.Values;
@@ -73,6 +86,14 @@ public sealed class PluginRegistry : IPluginCatalog
 
     public RegisteredContract? FindContract(Type contractType)
         => _contracts.Values.FirstOrDefault(c => c.Descriptor.ContractType == contractType);
+
+    /// <summary>The hook with this name and the contract declaring it.</summary>
+    public (HookDescriptor Hook, ContractDescriptor Contract)? FindHook(string hookName)
+        => _hooks.TryGetValue(hookName, out var found) ? found : null;
+
+    /// <summary>Who intercepts a hook, in the order they run.</summary>
+    public IReadOnlyList<(string PluginId, HookSubscription Subscription)> InterceptorsOf(string hookName)
+        => _interceptors.GetValueOrDefault(hookName) ?? [];
 
     /// <summary>The event with this name and the contract it is published under.</summary>
     public (EventDescriptor Event, ContractDescriptor Contract)? FindEvent(string eventName)
@@ -123,6 +144,14 @@ public sealed class PluginRegistry : IPluginCatalog
             {
                 throw new InvalidOperationException(
                     $"Event '{e.Name}' is declared by both {_events[e.Name].Contract.Id} and {descriptor.Id}.");
+            }
+        }
+        foreach (var h in descriptor.Hooks)
+        {
+            if (!_hooks.TryAdd(h.Name, (h, descriptor)))
+            {
+                throw new InvalidOperationException(
+                    $"Hook '{h.Name}' is declared by both {_hooks[h.Name].Contract.Id} and {descriptor.Id}.");
             }
         }
     }
@@ -176,6 +205,31 @@ public sealed class PluginRegistry : IPluginCatalog
             {
                 throw new InvalidOperationException(
                     $"'{subscription.Handler.FullName}' does not implement IPluginEventHandler<{subscription.EventType.Name}>.");
+            }
+        }
+
+        foreach (var interception in manifest.Intercepts ?? [])
+        {
+            if (FindHook(interception.HookName) is not { } found)
+            {
+                throw new InvalidOperationException(
+                    $"Plugin '{manifest.Id}' intercepts '{interception.HookName}', which no contract declares.");
+            }
+            if (!consumed.Contains(found.Contract.Id))
+            {
+                throw new InvalidOperationException(
+                    $"Plugin '{manifest.Id}' intercepts '{interception.HookName}' but does not consume {found.Contract.Id}.");
+            }
+            if (found.Hook.HookType != interception.HookType)
+            {
+                throw new InvalidOperationException(
+                    $"Plugin '{manifest.Id}' intercepts '{interception.HookName}' with type {interception.HookType.Name}, but the contract declares {found.Hook.HookType.Name}.");
+            }
+            var handlerInterface = typeof(IPluginHookHandler<>).MakeGenericType(interception.HookType);
+            if (!handlerInterface.IsAssignableFrom(interception.Handler))
+            {
+                throw new InvalidOperationException(
+                    $"'{interception.Handler.FullName}' does not implement IPluginHookHandler<{interception.HookType.Name}>.");
             }
         }
 

@@ -21,6 +21,7 @@ public class PluginAiTests
         public PluginInstanceContext? Instance => null;
         public PluginActor Actor => PluginActor.System;
         public IPluginContracts Contracts => throw new NotSupportedException();
+public IPluginHooks Hooks => throw new NotSupportedException();
     }
 
     private sealed class Tokens : IServiceTokenProvider
