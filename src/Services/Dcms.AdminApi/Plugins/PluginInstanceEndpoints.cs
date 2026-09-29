@@ -35,6 +35,7 @@ public static class PluginInstanceEndpoints
                     name = p.Name,
                     description = p.Description,
                     enabled = p.Enabled,
+                    aiToolsEnabled = p.AiToolsEnabled,
                     // The config drives more than its own edit form: a content type
                     // with admin-defined fields keeps their definitions here, and
                     // Events resolves its Roster instance through rosterSlug.
@@ -120,6 +121,7 @@ public static class PluginInstanceEndpoints
             }
             instance.Name = body.Name ?? instance.Name;
             instance.Description = body.Description ?? instance.Description;
+            instance.AiToolsEnabled = body.AiToolsEnabled ?? instance.AiToolsEnabled;
             instance.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
             await PublishChange(events, metrics, instance, PluginInstanceChangeKind.Updated, ct);
@@ -246,5 +248,5 @@ public static class PluginInstanceEndpoints
     };
 
     private sealed record CreateInstanceRequest(string PluginId, string Slug, string? Name, string? Description, string? Config);
-    private sealed record UpdateInstanceRequest(string? Name, string? Description, string? Config);
+    private sealed record UpdateInstanceRequest(string? Name, string? Description, string? Config, bool? AiToolsEnabled = null);
 }

@@ -211,6 +211,10 @@
     "certVerifyFirst": "Verify the domain before it can get a certificate."
   },
   "plugins": {
+    "aiTools": {
+      "label": "Let the AI assistant use this plugin",
+      "hint": "The assistant can call what this plugin offers — only what each member's own permissions allow, and writes still ask for approval."
+    },
     "binding": {
       "unset": "None",
       "none": "No enabled plugin provides {{contract}} yet. Add one to link it here.",

@@ -212,6 +212,10 @@
     "certVerifyFirst": "Nejdřív doménu ověřte, pak může získat certifikát."
   },
   "plugins": {
+    "aiTools": {
+      "label": "Povolit AI asistentovi používat tento plugin",
+      "hint": "Asistent může volat, co tento plugin nabízí — jen to, co dovolují oprávnění daného člena, a zápisy stále vyžadují schválení."
+    },
     "binding": {
       "unset": "Žádný",
       "none": "Kontrakt {{contract}} zatím neposkytuje žádný zapnutý plugin. Přidejte ho, abyste ho zde mohli propojit.",

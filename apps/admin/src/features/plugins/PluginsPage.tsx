@@ -390,6 +390,9 @@ function ConfigDialog({
   const { t } = useTranslation();
   const [name, setName] = useState(instance.name);
   const [description, setDescription] = useState(instance.description ?? '');
+  const [aiTools, setAiTools] = useState(instance.aiToolsEnabled ?? false);
+  // Only a plugin that offers contracts has anything an AI agent could use.
+  const offersContracts = (manifest?.provides?.length ?? 0) > 0;
   // Seeded from what is stored: the form posts the whole config back, so starting
   // empty would wipe it on save.
   const [config, setConfig] = useState<unknown>(() => parseInstanceConfig(instance.config));
@@ -402,6 +405,7 @@ function ConfigDialog({
         name: name.trim(),
         description: description.trim() || undefined,
         config: JSON.stringify(config ?? {}),
+        aiToolsEnabled: aiTools,
       }),
     onSuccess: () => {
       toast.success(t('common.saved'));
@@ -433,6 +437,15 @@ function ConfigDialog({
             />
             <p className="text-xs text-muted-foreground">{t('plugins.descriptionHint')}</p>
           </div>
+          {offersContracts ? (
+            <div className="flex items-start justify-between gap-4 rounded-md border p-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="plugin-ai-tools">{t('plugins.aiTools.label')}</Label>
+                <p className="text-xs text-muted-foreground">{t('plugins.aiTools.hint')}</p>
+              </div>
+              <Switch id="plugin-ai-tools" checked={aiTools} onCheckedChange={setAiTools} />
+            </div>
+          ) : null}
           {Object.keys(schema).length > 0 ? (
             <div>
               <Label className="mb-2 block">{t('plugins.configuration')}</Label>

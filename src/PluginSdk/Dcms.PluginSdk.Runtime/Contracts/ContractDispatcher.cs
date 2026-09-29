@@ -74,7 +74,7 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
             var descriptor = contract.Descriptor;
             var instances = descriptor.IsPlatform
                 ? []
-                : enabled.Where(i => i.PluginId == descriptor.ProviderPluginId)
+                : enabled.Where(i => i.PluginId == descriptor.ProviderPluginId && (plane != ContractPlane.Ai || i.AiToolsEnabled))
                     .Select(i => new CatalogInstance(i.InstanceId, i.Slug, i.Name, i.Description)).ToList();
             if (!descriptor.IsPlatform && instances.Count == 0)
             {
@@ -141,7 +141,10 @@ public sealed class ContractDispatcher(PluginRegistry registry, PluginContextFac
         else
         {
             var enabled = await factory.EnabledInstancesAsync(tenantId, ct);
-            var candidates = enabled.Where(i => i.PluginId == contract.Descriptor.ProviderPluginId).ToList();
+            // On the AI plane only instances the tenant opted in to AI agents exist at all.
+            var candidates = enabled
+                .Where(i => i.PluginId == contract.Descriptor.ProviderPluginId && (plane != ContractPlane.Ai || i.AiToolsEnabled))
+                .ToList();
             var provider = instance is { Length: > 0 }
                 ? candidates.FirstOrDefault(i => i.Slug == instance || i.InstanceId.ToString() == instance)
                 : candidates.Count == 1 ? candidates[0] : null;

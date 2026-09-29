@@ -101,6 +101,32 @@ public sealed class ContractDispatcherTests(ContentFlowFixture fixture)
         anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    [DockerFact]
+    public async Task Ai_plane_reaches_only_instances_the_tenant_opted_in()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (tenant, _, instanceId) = await SiteAsync(ct);
+        var admin = fixture.Admin.CreateClient();
+
+        async Task<List<string?>> AiContracts() =>
+            (await (await admin.SendAsync(AdminReq(HttpMethod.Get, "/api/admin/contracts?plane=ai", SuperAdmin, tenant, "SuperAdmin"), ct))
+                .Content.ReadFromJsonAsync<JsonElement>(ct))
+            .EnumerateArray().Select(c => c.GetProperty("id").GetString()).ToList();
+
+        (await AiContracts()).Should().NotContain("visitors.profiles@1", "AI tools are off until the tenant opts the instance in");
+        var refused = await admin.SendAsync(AdminReq(HttpMethod.Post, "/api/admin/contracts/visitors.profiles@1/ListAttributeDefinitions?plane=ai",
+            SuperAdmin, tenant, "SuperAdmin", new { }), ct);
+        refused.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        (await admin.SendAsync(AdminReq(HttpMethod.Put, $"/api/admin/plugins/instances/{instanceId}", SuperAdmin, tenant, "SuperAdmin",
+            new { aiToolsEnabled = true }), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        (await AiContracts()).Should().Contain("visitors.profiles@1");
+        var allowed = await admin.SendAsync(AdminReq(HttpMethod.Post, "/api/admin/contracts/visitors.profiles@1/ListAttributeDefinitions?plane=ai",
+            SuperAdmin, tenant, "SuperAdmin", new { }), ct);
+        allowed.StatusCode.Should().Be(HttpStatusCode.OK, await allowed.Content.ReadAsStringAsync(ct));
+    }
+
     // ---- helpers ----
 
     private async Task<(string Slug, Guid Owner, Guid InstanceId)> SiteAsync(CancellationToken ct)

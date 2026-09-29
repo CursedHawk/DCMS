@@ -76,6 +76,8 @@ export interface PluginInstance {
   name: string;
   description: string;
   enabled: boolean;
+  /** The tenant lets AI agents use the contract operations this instance provides. */
+  aiToolsEnabled?: boolean;
   /** Instance configuration as a JSON string, shaped by the manifest schema. */
   config: string;
 }

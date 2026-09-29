@@ -14,4 +14,6 @@ public sealed record PluginInstanceContext(
     string Slug,
     string Name,
     string Description,
-    JsonDocument Config);
+    JsonDocument Config,
+    // The tenant opted this instance's contract operations in to AI agents.
+    bool AiToolsEnabled = false);

@@ -197,3 +197,25 @@ public interface IPluginSearch
         Description = "Published content matching a query, best match first.")]
     Task<SearchResults> SearchAsync(SearchRequest input, CancellationToken ct);
 }
+
+// ---------------------------------------------------------------------------------------------
+// dcms.ai@1
+// ---------------------------------------------------------------------------------------------
+
+/// <param name="MaxTokens">At most 4000.</param>
+public sealed record AiCompletionRequest(string Prompt, string? System = null, int MaxTokens = 800);
+
+/// <summary>Null <see cref="Text"/> when the tenant has no AI provider configured or the call failed.</summary>
+public sealed record AiCompletion(string? Text);
+
+/// <summary>
+/// A text completion from the tenant's own AI provider, through ai-gateway: the tenant's
+/// credentials, quota and audit, exactly as for the site chatbot. The plugin never sees a key.
+/// </summary>
+[DcmsContract("dcms.ai", 1, Description = "Text completions from the tenant's AI provider, within its quota.")]
+public interface IPluginAi
+{
+    /// <exception cref="ContractLimitException">The tenant's AI quota is spent.</exception>
+    [Operation(OpRisk.Safe, Description = "Complete a prompt with the tenant's AI provider.")]
+    Task<AiCompletion> CompleteAsync(AiCompletionRequest input, CancellationToken ct);
+}

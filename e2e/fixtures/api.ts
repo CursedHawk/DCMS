@@ -233,6 +233,8 @@ export function adminApi(
 
     .on('GET', '/api/admin/plugins/instances', data.PLUGIN_INSTANCES)
     .on('GET', '/api/admin/plugins/catalog', data.PLUGIN_CATALOG)
+    // The assistant's plugin contract tools (plane=ai): none unless a spec says otherwise.
+    .on('GET', '/api/admin/contracts', [])
     .on('GET', '/api/admin/marketplace', data.MARKETPLACE)
     .on('POST', '/api/admin/plugins/instances', ({ body }) => ({
       id: 'cccccccc-0000-0000-0000-00000000000f',

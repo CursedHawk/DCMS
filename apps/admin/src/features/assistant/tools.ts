@@ -513,8 +513,13 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
  * not make. Everything that survives both is offered; whether a call then stops for approval is
  * `decide`'s business, not this list's.</p>
  */
-export function toolsFor(me: MyPermissions | undefined, mode: AiMode = 'read'): AssistantTool[] {
-  return ASSISTANT_TOOLS.filter(
+export function toolsFor(
+  me: MyPermissions | undefined,
+  mode: AiMode = 'read',
+  /** Plugin contract tools (`contractTools.ts`), already permission-filtered by the server. */
+  extra: readonly AssistantTool[] = [],
+): AssistantTool[] {
+  return [...ASSISTANT_TOOLS, ...extra].filter(
     (tool) =>
       decide(mode, tool.risk ?? 'read') !== 'unavailable' &&
       (!tool.permission || can(me, tool.permission)),

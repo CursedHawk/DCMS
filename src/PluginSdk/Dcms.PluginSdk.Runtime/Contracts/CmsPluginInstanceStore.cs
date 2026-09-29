@@ -23,7 +23,7 @@ public sealed class CmsPluginInstanceStore(CmsDbContext db) : IPluginInstanceSto
             .ToListAsync(ct);
 
         return rows.Select(p => new PluginInstanceContext(
-                p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description, ParseConfig(p.ConfigJson)))
+                p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description, ParseConfig(p.ConfigJson), p.AiToolsEnabled))
             .ToList();
     }
 

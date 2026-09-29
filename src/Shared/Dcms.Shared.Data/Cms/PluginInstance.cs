@@ -17,6 +17,13 @@ public sealed class PluginInstance : TenantEntity
     public string ConfigJson { get; set; } = "{}";
 
     public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Whether AI agents (the admin assistant) may use the contract operations this instance
+    /// provides. Off by default: a tenant opts each plugin in, and a member's permissions still
+    /// decide which of its operations they can reach.
+    /// </summary>
+    public bool AiToolsEnabled { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

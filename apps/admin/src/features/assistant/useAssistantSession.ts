@@ -29,6 +29,8 @@ import {
   userStep,
 } from './steps';
 import { canWrite, findTool, toolDefinitions, toolsFor, type AssistantTool } from './tools';
+import { markUntrusted } from '../agent/runtime';
+import { useContractTools } from './contractTools';
 
 /*
  * Shorter than the IDE agent's 25. That one is writing code across many files and genuinely
@@ -144,7 +146,8 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
   const writable = canWrite(me);
   // A role that lost content:write between page loads must not keep a remembered write mode.
   const effectiveMode: AiMode = writable ? mode : 'read';
-  const available = toolsFor(me, effectiveMode);
+  const contractTools = useContractTools();
+  const available = toolsFor(me, effectiveMode, contractTools);
 
   const push = (step: Step) => setSteps((current) => [...current, step]);
 
@@ -296,7 +299,7 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
 
       const files = attachments.map((a) => a.name);
       const prompt = question + describeAttachments(attachments);
-      const tools = toolsFor(me, effectiveMode);
+      const tools = toolsFor(me, effectiveMode, contractTools);
 
       push(userStep(question, files));
       history.current.push({ role: 'user', content: prompt });
@@ -407,7 +410,13 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
                   void queryClient.invalidateQueries({ queryKey: [key] });
                 }
                 patchStep(card.id, { status: 'ok', result: content, endedAt: Date.now() });
-                results.push({ type: 'tool_result', tool_use_id: call.id, content });
+                // Output carrying text from people with no access (form submissions, visitor
+                // profiles) is fenced for the model, as the IDE runtime does.
+                results.push({
+                  type: 'tool_result',
+                  tool_use_id: call.id,
+                  content: markUntrusted(content, tool.untrustedSource),
+                });
               } catch (error) {
                 const message = error instanceof Error ? error.message : 'The call failed.';
                 patchStep(card.id, { status: 'error', error: message, endedAt: Date.now() });
@@ -443,6 +452,7 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
       effectiveMode,
       me,
       onConversationChange,
+      contractTools,
       page,
       patchStep,
       persist,
