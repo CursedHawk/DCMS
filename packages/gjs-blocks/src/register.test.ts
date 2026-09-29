@@ -54,7 +54,7 @@ beforeEach(() => {
       parserCss: (input) => cssMemo.get(input) ?? [],
       optionsHtml: { allowScripts: false, allowUnsafeAttr: false },
     },
-    plugins: [(e) => dcmsCore(e, { enabledPluginIds: ['forms'] })],
+    plugins: [(e) => dcmsCore(e, { enabledPluginIds: ['forms', 'visitor-auth'] })],
   });
 });
 

@@ -43,7 +43,7 @@ function makeEditor(parser: object): Editor {
     storageManager: false,
     panels: { defaults: [] },
     parser: parser as never,
-    plugins: [(e) => dcmsCore(e, { enabledPluginIds: ['forms'] })],
+    plugins: [(e) => dcmsCore(e, { enabledPluginIds: ['forms', 'visitor-auth'] })],
   });
 }
 

@@ -1100,6 +1100,278 @@
     }
   }
 
+  // --- Forms and visitor accounts ----------------------------------------
+  //
+  // Mirrors packages/gjs-blocks/src/specs/forms.ts and visitors.ts; the attribute names
+  // are checked by runtimeParity.test.ts.
+  //
+  // A `.dcms-form` posts to its Forms instance (`data-instance` + `data-form`, on the
+  // form or an ancestor), or — with `data-dcms-visitor="login|register"` — to its
+  // VisitorAuth instance, which answers with tokens kept in this browser's storage.
+  //
+  // A gated section (`data-dcms-visitor-gate="signed-in|signed-out"`) is shown only in
+  // that state. It is presentation, not access control: its content is in the page's
+  // HTML for anyone who looks. Anything a visitor must not see without an account
+  // belongs behind an API that checks their token.
+
+  var VISITOR_FORM_ATTR = 'data-dcms-visitor';
+  var VISITOR_GATE_ATTR = 'data-dcms-visitor-gate';
+  var VISITOR_NAME_ATTR = 'data-dcms-visitor-name';
+  var VISITOR_LOGOUT_ATTR = 'data-dcms-visitor-logout';
+  var VISITOR_KEY = 'dcms.visitor.';
+
+  function attrUp(el, name) {
+    for (var node = el; node && node.getAttribute; node = node.parentElement) {
+      var value = node.getAttribute(name);
+      if (value) return value;
+    }
+    return null;
+  }
+
+  function readTokens(slug) {
+    try {
+      return parseJSON(localStorage.getItem(VISITOR_KEY + slug), null);
+    } catch (e) {
+      return null; // storage refused (private mode, blocked site data): signed out
+    }
+  }
+
+  function writeTokens(slug, tokens) {
+    try {
+      if (tokens) {
+        localStorage.setItem(VISITOR_KEY + slug, JSON.stringify(tokens));
+        // Remembered so a page with only a Forms block still knows whose submission it is.
+        localStorage.setItem(VISITOR_KEY + '_last', slug);
+      } else {
+        localStorage.removeItem(VISITOR_KEY + slug);
+      }
+    } catch (e) {
+      /* the visitor stays signed in for this page only */
+    }
+  }
+
+  function postJSON(url, body, token) {
+    var headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+    if (token) headers.Authorization = 'Bearer ' + token;
+    return fetch(url, { method: 'POST', headers: headers, body: JSON.stringify(body || {}), credentials: 'same-origin' });
+  }
+
+  // A request as the signed-in visitor. An expired access token is renewed once with the
+  // refresh token (which rotates) before giving up and signing the visitor out.
+  function visitorFetch(slug, url, init) {
+    var tokens = readTokens(slug);
+    function attempt(access) {
+      var options = init || {};
+      var headers = options.headers || {};
+      headers.Accept = 'application/json';
+      if (access) headers.Authorization = 'Bearer ' + access;
+      return fetch(url, { method: options.method || 'GET', headers: headers, body: options.body, credentials: 'same-origin' });
+    }
+    return attempt(tokens && tokens.accessToken).then(function (res) {
+      if (res.status !== 401 || !tokens || !tokens.refreshToken) return res;
+      return postJSON('/api/' + encodeURIComponent(slug) + '/refresh', { refreshToken: tokens.refreshToken }).then(function (r) {
+        if (!r.ok) {
+          writeTokens(slug, null);
+          return res;
+        }
+        return r.json().then(function (fresh) {
+          writeTokens(slug, fresh);
+          return attempt(fresh.accessToken);
+        });
+      });
+    });
+  }
+
+  function formValues(form) {
+    var values = {};
+    var fields = form.elements || [];
+    for (var i = 0; i < fields.length; i++) {
+      var field = fields[i];
+      if (!field.name || field.disabled || field.type === 'submit' || field.type === 'button') continue;
+      if (field.type === 'checkbox') values[field.name] = !!field.checked;
+      else if (field.type === 'radio') {
+        if (field.checked) values[field.name] = field.value;
+      } else if (field.type === 'number') values[field.name] = field.value === '' ? null : Number(field.value);
+      else values[field.name] = field.value === '' ? null : field.value;
+    }
+    return values;
+  }
+
+  function formStatus(form, message, isError) {
+    var status = form.querySelector('.dcms-form-status');
+    if (!status) {
+      status = document.createElement('p');
+      status.className = 'dcms-form-status';
+      status.setAttribute('role', 'status');
+      form.appendChild(status);
+    }
+    status.textContent = message;
+    status.setAttribute('data-state', isError ? 'error' : 'ok');
+  }
+
+  function errorOf(res) {
+    return res.json().then(
+      function (body) {
+        return (body && (body.error || body.title)) || 'Something went wrong. Please try again.';
+      },
+      function () {
+        return 'Something went wrong. Please try again.';
+      }
+    );
+  }
+
+  function submitForm(form) {
+    var slug = attrUp(form, 'data-instance');
+    if (!slug) return;
+    var kind = form.getAttribute(VISITOR_FORM_ATTR);
+    var name = attrUp(form, 'data-form');
+    var visitorForm = kind === 'login' || kind === 'register';
+    if (!visitorForm && !name) return;
+
+    var url = visitorForm
+      ? '/api/' + encodeURIComponent(slug) + '/' + kind
+      : '/api/' + encodeURIComponent(slug) + '/forms/' + encodeURIComponent(name);
+    var button = form.querySelector('[type="submit"]');
+    if (button) button.disabled = true;
+
+    // A signed-in visitor's Forms submission carries their token, so the Forms plugin can
+    // link it to their account and prefill what they left out.
+    var visitorSlug = visitorForm ? null : firstVisitorSlug();
+    var token = visitorSlug && readTokens(visitorSlug) ? readTokens(visitorSlug).accessToken : null;
+
+    postJSON(url, formValues(form), token)
+      .then(function (res) {
+        if (!res.ok) {
+          return errorOf(res).then(function (message) {
+            formStatus(form, res.status === 401 ? 'Wrong email or password.' : message, true);
+          });
+        }
+        var done = function () {
+          var redirect = attrUp(form, 'data-redirect');
+          if (redirect) {
+            location.href = redirect;
+            return;
+          }
+          form.reset();
+          formStatus(form, attrUp(form, 'data-success') || 'Thank you.', false);
+          if (visitorForm) applyVisitorGates(document);
+        };
+        if (!visitorForm) return done();
+        return res.json().then(function (tokens) {
+          writeTokens(slug, tokens);
+          done();
+        });
+      })
+      .catch(function () {
+        formStatus(form, 'Could not reach the site. Check your connection and try again.', true);
+      })
+      .then(function () {
+        if (button) button.disabled = false;
+      });
+  }
+
+  function bindForms() {
+    // Delegated, so forms rendered later (a hydrated component) are covered too.
+    document.addEventListener('submit', function (e) {
+      var form = e.target;
+      if (!form || !form.classList || !form.classList.contains('dcms-form')) return;
+      if (!attrUp(form, 'data-instance')) return;
+      e.preventDefault();
+      submitForm(form);
+    });
+    document.addEventListener('click', function (e) {
+      var el = e.target && e.target.closest ? e.target.closest('[' + VISITOR_LOGOUT_ATTR + ']') : null;
+      if (!el) return;
+      e.preventDefault();
+      var slug = attrUp(el, 'data-instance') || firstVisitorSlug();
+      if (slug) writeTokens(slug, null);
+      applyVisitorGates(document);
+    });
+  }
+
+  function firstVisitorSlug() {
+    var el = document.querySelector('[' + VISITOR_GATE_ATTR + '][data-instance],[' + VISITOR_FORM_ATTR + '][data-instance]');
+    if (el) return el.getAttribute('data-instance');
+    try {
+      return localStorage.getItem(VISITOR_KEY + '_last');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Who is signed in, per instance, asked once per page (and again after a sign-in or out).
+  var visitorCache = {};
+
+  function currentVisitor(slug, fresh) {
+    if (!fresh && visitorCache[slug]) return visitorCache[slug];
+    var tokens = readTokens(slug);
+    visitorCache[slug] = !tokens
+      ? Promise.resolve(null)
+      : visitorFetch(slug, '/api/' + encodeURIComponent(slug) + '/me').then(
+          function (res) {
+            return res.ok ? res.json() : null;
+          },
+          function () {
+            return null;
+          }
+        );
+    return visitorCache[slug];
+  }
+
+  function applyVisitorGates(root) {
+    var gates = root.querySelectorAll('[' + VISITOR_GATE_ATTR + ']');
+    var bySlug = {};
+    for (var i = 0; i < gates.length; i++) {
+      var slug = attrUp(gates[i], 'data-instance');
+      if (!slug) continue;
+      // Hidden until the answer is in, so a signed-out visitor never sees a flash of the
+      // members' version (or a member the "please sign in" one).
+      gates[i].hidden = true;
+      (bySlug[slug] = bySlug[slug] || []).push(gates[i]);
+    }
+    Object.keys(bySlug).forEach(function (slug) {
+      currentVisitor(slug, true).then(function (visitor) {
+        var list = bySlug[slug];
+        for (var j = 0; j < list.length; j++) {
+          var want = list[j].getAttribute(VISITOR_GATE_ATTR);
+          list[j].hidden = want === 'signed-out' ? !!visitor : !visitor;
+          var names = list[j].querySelectorAll('[' + VISITOR_NAME_ATTR + ']');
+          for (var k = 0; k < names.length && visitor; k++) {
+            names[k].textContent = visitor.displayName || visitor.email || '';
+          }
+        }
+      });
+    });
+  }
+
+  // The page's own API for custom code: contract operations and the visitor's session.
+  function exposeApi() {
+    window.dcms = window.dcms || {};
+    window.dcms.contracts = {
+      invoke: function (slug, contractId, operation, input) {
+        return visitorFetch(slug, '/api/' + encodeURIComponent(slug) + '/_contracts/' +
+          encodeURIComponent(contractId) + '/' + encodeURIComponent(operation), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(input || {}),
+        }).then(function (res) {
+          if (res.status === 204) return null;
+          if (!res.ok) return errorOf(res).then(function (m) { throw new Error(m); });
+          return res.json();
+        });
+      },
+    };
+    window.dcms.visitor = {
+      current: function (slug) {
+        return currentVisitor(slug || firstVisitorSlug(), false);
+      },
+      signOut: function (slug) {
+        writeTokens(slug || firstVisitorSlug(), null);
+        applyVisitorGates(document);
+      },
+    };
+  }
+
   // --- Page-aware navigation ----------------------------------------------
   //
   // Mirrors packages/gjs-blocks/src/nav.ts. A breadcrumb bar or a menu lives in
@@ -1203,6 +1475,9 @@
   function run() {
     startAnalytics();
     applyNav(document, location.pathname || '/');
+    exposeApi();
+    bindForms();
+    applyVisitorGates(document);
     var nodes = document.querySelectorAll('[data-dcms-component]');
     for (var i = 0; i < nodes.length; i++) hydrate(nodes[i]);
   }

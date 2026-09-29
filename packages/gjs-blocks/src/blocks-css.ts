@@ -986,6 +986,9 @@ a.dcms-card-link { text-decoration: none; color: inherit; display: block; }
 /* --- Forms ----------------------------------------------------- */
 
 .dcms-form { display: flex; flex-direction: column; gap: var(--dcms-space-md); max-width: 32rem; }
+/* Written by the published page's runtime after a submit (hydrate.js). */
+.dcms-form-status { margin: 0; font-size: var(--dcms-text-sm); color: var(--dcms-color-text); }
+.dcms-form-status[data-state="error"] { color: var(--dcms-color-danger); }
 .dcms-field { display: flex; flex-direction: column; gap: 0.35rem; }
 .dcms-field > span { font-size: var(--dcms-text-sm); font-weight: 600; color: var(--dcms-color-heading); }
 .dcms-field input,

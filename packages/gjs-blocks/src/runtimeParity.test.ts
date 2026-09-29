@@ -9,6 +9,14 @@ import { HOME_LABEL_ATTR, NAV_ATTR, normalize } from './nav';
 import { PREVIEW_LAYOUTS, previewHtml, type PreviewItem } from './preview';
 import { renderTemplate } from './render';
 import { navigationSpecs } from './specs';
+import {
+  VISITOR_FORM_ATTR,
+  VISITOR_GATE_ATTR,
+  VISITOR_LOGOUT_ATTR,
+  VISITOR_NAME_ATTR,
+  visitorSpecs,
+} from './specs/visitors';
+import { formSpecs } from './specs/forms';
 
 /**
  * The canvas and the published page must draw the same thing.
@@ -331,5 +339,22 @@ describe('shared regions', () => {
 
   it('are wrapped in the class the builder styles them by', () => {
     expect(assembler).toContain('dcms-region');
+  });
+
+  it('submit forms and sign visitors in through the attributes the blocks write', () => {
+    // A form block is inert markup until the runtime binds it; an attribute the block writes
+    // and the runtime does not read is a form that silently posts nowhere.
+    for (const attr of [VISITOR_FORM_ATTR, VISITOR_GATE_ATTR, VISITOR_NAME_ATTR, VISITOR_LOGOUT_ATTR]) {
+      expect(runtime, `hydrate.js does not read ${attr}`).toContain(`'${attr}'`);
+    }
+    for (const spec of [...formSpecs, ...visitorSpecs]) {
+      for (const trait of spec.traits) {
+        if (trait.name.startsWith('data-') && trait.name !== VISITOR_GATE_ATTR) {
+          expect(runtime, `hydrate.js ignores ${spec.type}'s ${trait.name}`).toContain(`'${trait.name}'`);
+        }
+      }
+    }
+    expect(runtime).toContain("'dcms-form-status'");
+    expect(BLOCKS_CSS).toContain('.dcms-form-status');
   });
 });

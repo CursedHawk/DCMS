@@ -206,6 +206,34 @@ What is fetched travels in the binding query: `pageSize` and `page` for a list,
 is deliberately no sort or filter control — the delivery API accepts neither, and
 a setting the server cannot honour is worse than no setting.
 
+### Forms and visitor accounts
+
+A **Form** block posts, on the published page, to its Forms instance
+(`data-instance` + `data-form`): `hydrate.js` sends the fields as JSON and writes the
+result into a `.dcms-form-status` line (or follows `data-redirect`). With the **Visitor
+Authentication** plugin enabled the palette also offers:
+
+| Block | What it does |
+| --- | --- |
+| Sign-in form | `data-dcms-visitor="login"` — signs the visitor in; tokens stay in the browser (`localStorage`, renewed with the refresh token) |
+| Registration form | `data-dcms-visitor="register"` — creates the account and signs in |
+| Members-only section | `data-dcms-visitor-gate="signed-in"` or `"signed-out"` — shown only in that state; `[data-dcms-visitor-name]` inside it is filled with the visitor's name, `[data-dcms-visitor-logout]` signs out |
+
+A Forms submission made by a signed-in visitor carries their token, so the Forms
+plugin links it to their account and can prefill fields.
+
+> A members-only section is **presentation, not access control**: its content is in
+> the page's HTML for anyone who views the source. Anything a visitor must not see
+> without an account belongs behind an API that checks their token (a plugin route
+> with `RequireVisitor()`, or a contract operation).
+
+Custom code on the page reaches the same session through `window.dcms`:
+`dcms.visitor.current(slug?)`, `dcms.visitor.signOut(slug?)`, and
+`dcms.contracts.invoke(slug, contractId, operation, input)` for any Site-exposed plugin
+contract operation ([ADR 0016](adr/0016-plugin-contracts.md)). In the canvas every
+section is shown, so both states can be edited; `runtimeParity.test.ts` checks the
+runtime reads every attribute these blocks write.
+
 ## Components the tenant builds
 
 The generated blocks can only ever guess at what a tenant's content looks like:
