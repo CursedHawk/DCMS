@@ -29,17 +29,17 @@ public sealed record PluginManifest(
      * entry, which is the correct default for one that has no page of its own.
      */
 
-    /// <summary>Groups the plugin in the marketplace. Free text; unknown values sort into "Other".</summary>
+    // <summary>Groups the plugin in the marketplace. Free text; unknown values sort into "Other".</summary>
     string? Category = null,
-    /// <summary>One line for a marketplace card, where <see cref="Description"/> is a paragraph.</summary>
+    // <summary>One line for a marketplace card, where <see cref="Description"/> is a paragraph.</summary>
     string? Summary = null,
-    /// <summary>A lucide icon name, resolved by the SPA. An unknown name falls back to the plugin glyph.</summary>
+    // <summary>A lucide icon name, resolved by the SPA. An unknown name falls back to the plugin glyph.</summary>
     string? IconName = null,
     IReadOnlyList<string>? Tags = null,
-    /// <summary>
-    /// A menu entry this plugin's enabled instances contribute, or null for a plugin with no
-    /// page of its own — most of them, which surface through Content and the builder palette.
-    /// </summary>
+    // <summary>
+    // A menu entry this plugin's enabled instances contribute, or null for a plugin with no
+    // page of its own — most of them, which surface through Content and the builder palette.
+    // </summary>
     PluginNavDeclaration? Nav = null,
 
     /*
@@ -52,22 +52,22 @@ public sealed record PluginManifest(
     IReadOnlyList<ContractRequirement>? Consumes = null,
     IReadOnlyList<EventSubscription>? Subscribes = null,
     IReadOnlyList<JobDeclaration>? Jobs = null,
-    /// <summary>Hooks of consumed contracts this plugin intercepts.</summary>
+    // <summary>Hooks of consumed contracts this plugin intercepts.</summary>
     IReadOnlyList<HookSubscription>? Intercepts = null,
-    /// <summary>
-    /// Members this plugin's instances get in the generated TypeScript site client that are
-    /// served by a runtime helper of <c>@dcms/api-client</c> rather than by described operations.
-    /// </summary>
+    // <summary>
+    // Members this plugin's instances get in the generated TypeScript site client that are
+    // served by a runtime helper of <c>@dcms/api-client</c> rather than by described operations.
+    // </summary>
     IReadOnlyList<ClientBinding>? ClientBindings = null,
-    /// <summary>
-    /// Instance slugs this plugin's own routes make unusable, because a host route of its
-    /// (<c>/api/analytics/status</c>) would shadow <c>/api/{slug}/…</c> for that slug.
-    /// </summary>
+    // <summary>
+    // Instance slugs this plugin's own routes make unusable, because a host route of its
+    // (<c>/api/analytics/status</c>) would shadow <c>/api/{slug}/…</c> for that slug.
+    // </summary>
     IReadOnlyList<string>? ReservedSlugs = null,
-    /// <summary>
-    /// The plugin records what site visitors do (analytics, a tracking pixel). A published
-    /// site asks for consent only when an enabled plugin says so.
-    /// </summary>
+    // <summary>
+    // The plugin records what site visitors do (analytics, a tracking pixel). A published
+    // site asks for consent only when an enabled plugin says so.
+    // </summary>
     bool TracksVisitors = false)
 {
     public static PluginManifest Create(
@@ -133,7 +133,7 @@ public sealed record PluginNavDeclaration(
     string RouteTemplate,
     string Permission,
     string? IconName = null,
-    /// <summary>Which sidebar group it joins. Unknown values fall into the plugin section.</summary>
+    // Which sidebar group it joins. Unknown values fall into the plugin section.
     string Group = "plugins");
 
 /// <summary>

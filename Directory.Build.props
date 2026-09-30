@@ -16,4 +16,38 @@
     <DcmsSrcRoot>$(MSBuildThisFileDirectory)src\</DcmsSrcRoot>
   </PropertyGroup>
 
+  <!--
+    The plugin SDK as NuGet packages (docs/plugins.md, "Building a plugin outside this repo"):
+    the abstractions, the kernel types they expose, and every plugin's .Api — what an outside
+    plugin compiles against. Nothing else in the repo packs.
+
+    DcmsSdkMajor is the compatibility line. It is the assembly version's major, and the plugin
+    loader refuses a plugin built against another one; the assembly version stays at major.0.0.0
+    so an installed plugin binds across minor and patch releases. CI stamps the patch with the
+    pipeline number.
+  -->
+  <PropertyGroup>
+    <DcmsSdkMajor>1</DcmsSdkMajor>
+    <DcmsSdkMinor>0</DcmsSdkMinor>
+    <DcmsBuildNumber Condition="'$(DcmsBuildNumber)' == ''">0</DcmsBuildNumber>
+    <DcmsPackageSuffix Condition="'$(CI)' != 'true'">-dev</DcmsPackageSuffix>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Dcms.PluginSdk.Abstractions'
+                            Or '$(MSBuildProjectName)' == 'Dcms.Shared.Kernel'
+                            Or ($(MSBuildProjectName.StartsWith('Dcms.Plugins.')) And $(MSBuildProjectName.EndsWith('.Api')))">
+    <IsPackable>true</IsPackable>
+    <Version>$(DcmsSdkMajor).$(DcmsSdkMinor).$(DcmsBuildNumber)$(DcmsPackageSuffix)</Version>
+    <AssemblyVersion>$(DcmsSdkMajor).0.0.0</AssemblyVersion>
+    <FileVersion>$(DcmsSdkMajor).$(DcmsSdkMinor).$(DcmsBuildNumber).0</FileVersion>
+    <Authors>DCMS</Authors>
+    <Description>DCMS plugin SDK: $(MSBuildProjectName). Reference it to build a plugin, or to integrate with the plugin it describes.</Description>
+    <PackageTags>dcms;plugin;sdk</PackageTags>
+    <RepositoryUrl>https://gitlab.highgeek.eu/cursedhawk/baas-dcms</RepositoryUrl>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- XML docs ship with the packages; a missing comment is not an error here. -->
+    <NoWarn>$(NoWarn);CS1591;CS1573</NoWarn>
+  </PropertyGroup>
+
 </Project>

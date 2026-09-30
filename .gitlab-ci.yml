@@ -101,6 +101,28 @@ integration:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
 # ---------------------------------------------------------------------------
+# Plugin SDK packages -> this project's package registry. Only when something an outside
+# plugin compiles against changed: the registry lives inside the GitLab container on a box
+# with little disk, and an unchanged SDK republished every pipeline is pure growth.
+# ---------------------------------------------------------------------------
+
+plugin-sdk-packages:
+  stage: images
+  image: registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/dotnet-sdk:10.0
+  script:
+    - scripts/ci/pack-plugin-sdk.sh
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      changes:
+        - src/Shared/Dcms.Shared.Kernel/**/*
+        - src/PluginSdk/Dcms.PluginSdk.Abstractions/**/*
+        - src/Plugins/*.Api/**/*
+        - Directory.Build.props
+        - scripts/ci/pack-plugin-sdk.sh
+
+# ---------------------------------------------------------------------------
 # base-image mirror refresh -- the ONLY job in a scheduled pipeline (every other job has a
 # `schedule -> never` rule; without it a schedule on master would build and deploy).
 #
