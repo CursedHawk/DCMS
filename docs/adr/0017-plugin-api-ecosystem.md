@@ -63,7 +63,7 @@ plugins' opinion about an operation the provider owns. Forms runs `forms.submitt
 ### Platform services grew where plugins needed them
 
 `dcms.media@1` resolves media and imports a remote file through the upload pipeline (admin
-plane only, https only). Platform contracts are first-registration-wins so a host supplies its
+plane only, https to public addresses only — every connection is checked, so redirects and DNS tricks cannot reach the internal network). Platform contracts are first-registration-wins so a host supplies its
 own implementation (admin-api's import). The Meta mirror, sync and reauth notices moved onto
 `dcms.media`, `PluginHandlerRunner` and `dcms.notifications`; chat notifications became the
 LiveChat plugin's subscription to its own event.

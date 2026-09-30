@@ -124,8 +124,11 @@ builder.AddDcmsPlugins(Dcms.PluginSdk.Abstractions.PluginPlane.Admin, plugins =>
     .AddAll()
     // The admin plane's media contract can import files; the site plane's cannot.
     .AddPlatformContract<Dcms.PluginSdk.Abstractions.Platform.IPluginMedia, Dcms.AdminApi.Media.AdminPluginMedia>());
+// Plugin imports fetch URLs that came from outside: public addresses only (PublicEgress).
 builder.Services.AddHttpClient(Dcms.AdminApi.Media.AdminPluginMedia.HttpClientName, client =>
-    client.Timeout = TimeSpan.FromMinutes(2));
+        client.Timeout = TimeSpan.FromMinutes(2))
+    .ConfigurePrimaryHttpMessageHandler(sp => Dcms.AdminApi.Media.PublicEgress.Handler(
+        allowPrivate: sp.GetRequiredService<IConfiguration>().GetValue("Media:ImportAllowLocal", false)));
 builder.Services.AddDcmsPluginWorkers();
 builder.Services.AddSingleton<PluginConfigValidator>();
 

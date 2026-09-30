@@ -24,13 +24,16 @@ public sealed class AdminPluginMedia(
 
     public override async Task<MediaImportResult> ImportAsync(MediaImport input, CancellationToken ct)
     {
-        // https only: a plugin passing on a URL from an external API must not be able to point
-        // the platform at plain-http services on the internal network. Tests serve their stub
-        // CDN over http and switch this off.
-        if (input.Url.Scheme != Uri.UriSchemeHttps
-            && !(configuration.GetValue("Media:ImportAllowHttp", false) && input.Url.Scheme == Uri.UriSchemeHttp))
+        // https to a public address only. The URL typically comes from a third-party API, so it
+        // must not be able to point the platform at the internal network: the scheme is checked
+        // here, and every connection's address (redirects included) by the client's PublicEgress
+        // handler. Tests, whose stub CDN is plain http on loopback, set Media:ImportAllowLocal.
+        var allowLocal = configuration.GetValue("Media:ImportAllowLocal", false);
+        if (!input.Url.IsAbsoluteUri
+            || !(input.Url.Scheme == Uri.UriSchemeHttps || (allowLocal && input.Url.Scheme == Uri.UriSchemeHttp))
+            || input.Url.UserInfo.Length > 0)
         {
-            throw new ContractValidationException("Only https URLs can be imported.");
+            throw new ContractValidationException("Only https URLs without credentials can be imported.");
         }
 
         byte[] bytes;

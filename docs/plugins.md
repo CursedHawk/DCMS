@@ -245,7 +245,7 @@ plugin id are stamped from its context and never taken from input.
 | `dcms.storage@1` | Private JSON documents by collection/key, per instance or plugin-wide; optimistic versions; containment queries. Spares you a table, migration and RLS entry. |
 | `dcms.secrets@1` | Credentials per instance, Vault-Transit-encrypted. **Admin plane only** — spend them from an admin route, job or event handler. |
 | `dcms.blobs@1` | Private files (≤10 MiB) under the tenant's prefix. User-visible files belong in media. |
-| `dcms.media@1` | Resolve a media asset id to its URLs; **import** a file from an https URL into the tenant's library through the upload pipeline (admin plane only). |
+| `dcms.media@1` | Resolve a media asset id to its URLs; **import** a file from a public https URL (internal addresses refused, redirects included) into the tenant's library through the upload pipeline (admin plane only). |
 | `dcms.cache@1` | Redis get/set/increment under the plugin's own prefix. |
 | `dcms.email@1` | Transactional email via the queue; ≤50 recipients per call, 1000 per tenant+plugin per hour. |
 | `dcms.notifications@1` | Admin-bell notifications, by permission. Pass `Kind` for a localised kind `plugin.{id}.{kind}` (add it to `NotificationKinds` and both locales). |

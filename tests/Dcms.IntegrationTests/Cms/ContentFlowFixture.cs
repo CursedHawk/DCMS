@@ -74,7 +74,7 @@ public sealed class ContentFlowFixture : IAsyncLifetime
             b.UseSetting("Social:Meta:AppSecret", "test-fb-secret");
             b.UseSetting("Social:RedirectUri", "https://admin.test/api/admin/social/callback");
             b.UseSetting("Social:OverrideBaseUrl", MetaStub.BaseUrl);
-            b.UseSetting("Media:ImportAllowHttp", "true");
+            b.UseSetting("Media:ImportAllowLocal", "true");
             b.UseSetting("Social:SyncEnabled", "false");
             b.ConfigureTestServices(services =>
             {
