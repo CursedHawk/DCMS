@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -5,7 +6,9 @@ using System.Text.Json.Nodes;
 namespace Dcms.AdminApi.ApiClientGen;
 
 /// <summary>A tenant plugin instance the generated client should resolve.</summary>
-public sealed record GeneratedInstance(string Slug, string PluginId, string Name, string Description = "");
+/// <param name="Bindings">The plugin's <see cref="ClientBinding"/>s (from its manifest).</param>
+public sealed record GeneratedInstance(
+    string Slug, string PluginId, string Name, string Description = "", IReadOnlyList<ClientBinding>? Bindings = null);
 
 /// <summary>
 /// Emits the per-tenant TypeScript layer of a site's API client — <c>types.ts</c>,
@@ -23,8 +26,8 @@ public sealed record GeneratedInstance(string Slug, string PluginId, string Name
 ///
 /// <para>Four plugins still get hand-written helpers — search, visitor-auth, live-chat and
 /// analytics — because their endpoints are not in the document at all (their fragments are
-/// empty) or have a richer runtime type than the document can express. Those are keyed by plugin
-/// id in <see cref="CapabilityPlugins"/>, and are the only place a plugin id appears here.</para>
+/// empty) or have a richer runtime type than the document can express. Each such plugin declares
+/// those members in its manifest (<see cref="ClientBinding"/>); no plugin id appears here.</para>
 ///
 /// <para>Also emitted: <c>collections</c> and <c>forms</c>, metadata a page can be written against
 /// without knowing the tenant's slugs — which is what lets one starter template render real content
@@ -34,10 +37,6 @@ public sealed record GeneratedInstance(string Slug, string PluginId, string Name
 public static class TypeScriptClientEmitter
 {
     public const string DefaultRuntimeModule = "@dcms/api-client";
-
-    /// <summary>Plugins served by a runtime helper rather than by their OpenAPI operations.</summary>
-    internal static readonly IReadOnlySet<string> CapabilityPlugins =
-        new HashSet<string>(StringComparer.Ordinal) { "search", "visitor-auth", "live-chat", "analytics" };
 
     /// <summary>
     /// Top-level client members an instance slug must not shadow. New instances cannot take these
@@ -129,7 +128,7 @@ public static class TypeScriptClientEmitter
                     continue;
                 }
 
-                if (CapabilityPlugins.Contains(instance.PluginId))
+                if (instance.Bindings is { Count: > 0 })
                 {
                     AddCapability(section, instance);
                     // Capability plugins keep their hand-written runtime helpers, but contract
@@ -169,39 +168,23 @@ public static class TypeScriptClientEmitter
             return true;
         }
 
+        /// <summary>The members a plugin declared it serves through runtime helpers (its manifest's ClientBindings).</summary>
         private void AddCapability(Section section, GeneratedInstance instance)
         {
-            var slug = Lit(instance.Slug);
             var s = instance.Slug;
-            switch (instance.PluginId)
+            string Fill(string template) => template
+                .Replace("{slugLiteral}", Lit(s), StringComparison.Ordinal)
+                .Replace("{member}", Member(s), StringComparison.Ordinal)
+                .Replace("{slug}", s, StringComparison.Ordinal);
+
+            foreach (var binding in instance.Bindings ?? [])
             {
-                case "search":
-                    runtimeTypes.Add("SearchParams");
-                    runtimeTypes.Add("SearchResult");
-                    Add(section, new Leaf([s, "search"], $"(params: SearchParams): Promise<SearchResult> => http.search({slug}, params)",
-                        $"api.{Member(s)}.search({{ q, limit? }})", "SearchResult", $"GET /api/{s}/search",
-                        "Full-text search across searchable content."));
-                    break;
-                case "visitor-auth":
-                    Add(section, new Leaf([s, "auth"], $"http.visitorAuth({slug})",
-                        $"api.{Member(s)}.auth.register(body) / .login(body) / .refresh(token) / .me() / .getProfile() / .updateProfile(update)",
-                        "VisitorTokens / VisitorProfile / VisitorOwnProfile",
-                        $"POST /api/{s}/register|login|refresh, GET /api/{s}/me, GET|PUT /api/{s}/me/profile",
-                        "Visitor accounts and profiles. Pass `visitorToken` to createTenantClient for `me()` and the profile calls."));
-                    break;
-                case "live-chat":
-                    runtimeTypes.Add("ChatMessage");
-                    Add(section, new Leaf([s, "chat", "history"],
-                        $"(conversationId: string): Promise<ChatMessage[]> => http.chatHistory({slug}, conversationId)",
-                        $"api.{Member(s)}.chat.history(conversationId)", "ChatMessage[]",
-                        $"GET /api/{s}/chat/conversations/{{id}}/messages", "Messages of one chat conversation."));
-                    break;
-                case "analytics":
-                    runtimeTypes.Add("AnalyticsEvent");
-                    Add(section, new Leaf([s, "collect"], $"(event: AnalyticsEvent): Promise<void> => http.collect(event, {slug})",
-                        $"api.{Member(s)}.collect(event)", "void", $"POST /api/{s}/collect",
-                        "Record an analytics event. Prefer src/dcms: it handles consent."));
-                    break;
+                foreach (var type in binding.RuntimeTypes ?? [])
+                {
+                    runtimeTypes.Add(type);
+                }
+                Add(section, new Leaf([s, .. binding.Path], Fill(binding.Expression), Fill(binding.Usage),
+                    binding.Returns, Fill(binding.Route), binding.Description));
             }
         }
 
@@ -299,7 +282,7 @@ public static class TypeScriptClientEmitter
                 args.Add($"body: {TsType(bodySchema)}");
                 usageArgs.Add("body");
                 options.Add("body");
-                if (instance.PluginId == "forms" && segments is ["forms", var formName])
+                if ((op["x-dcms-form"] as JsonValue)?.GetValue<string>() is { } formName)
                 {
                     AddForm(instance, formName, path, bodySchema);
                 }

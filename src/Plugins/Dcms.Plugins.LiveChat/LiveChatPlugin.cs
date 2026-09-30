@@ -81,6 +81,13 @@ public sealed class LiveChatPlugin : IPlugin
             new PermissionDefinition("read", "View chat conversations"),
             new PermissionDefinition("write", "Reply as an agent and configure the assistant"),
         ],
+        clientBindings:
+        [
+            new ClientBinding(["chat", "history"],
+                "(conversationId: string): Promise<ChatMessage[]> => http.chatHistory({slugLiteral}, conversationId)",
+                "api.{member}.chat.history(conversationId)", "ChatMessage[]",
+                "GET /api/{slug}/chat/conversations/{id}/messages", "Messages of one chat conversation.", ["ChatMessage"]),
+        ],
         category: "Engagement",
         summary: "Live chat between site visitors and your team.",
         iconName: "MessagesSquare",

@@ -26,6 +26,17 @@ public sealed class AnalyticsPlugin : IPlugin
         description: "Website analytics collection, rollups and dashboards.",
         allowMultipleInstances: false,
         provides: [ContractProvision.Of<IAnalytics, AnalyticsTracking>()],
+        clientBindings:
+        [
+            new ClientBinding(["collect"],
+                "(event: AnalyticsEvent): Promise<void> => http.collect(event, {slugLiteral})",
+                "api.{member}.collect(event)", "void", "POST /api/{slug}/collect",
+                "Record an analytics event. Prefer src/dcms: it handles consent.", ["AnalyticsEvent"]),
+        ],
+        // Its host routes (/api/analytics/status, /api/collect) would shadow instances of these slugs.
+        reservedSlugs: ["analytics", "collect"],
+        // Page views are visitor tracking: published sites ask for consent while this is enabled.
+        tracksVisitors: true,
         category: "Insight",
         summary: "Page views, sessions and campaign attribution.",
         iconName: "TrendingUp");

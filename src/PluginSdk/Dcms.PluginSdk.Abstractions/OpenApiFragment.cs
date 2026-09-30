@@ -53,4 +53,6 @@ public sealed record OpenApiPathFragment(
     JsonNode? RequestBodySchema = null,
     IReadOnlyList<JsonNode>? Parameters = null,
     string SuccessStatus = "200",
-    IReadOnlyList<string>? ClientPath = null);
+    IReadOnlyList<string>? ClientPath = null,
+    // Vendor extensions copied onto the operation as given; keys must start with "x-".
+    IReadOnlyDictionary<string, JsonNode>? Extensions = null);

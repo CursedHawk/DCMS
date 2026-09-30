@@ -19,6 +19,13 @@ public sealed class SearchPlugin : IPlugin
         name: "Sitewide Search",
         description: "Full-text search across all searchable plugin content of the tenant.",
         allowMultipleInstances: false,
+        clientBindings:
+        [
+            new ClientBinding(["search"],
+                "(params: SearchParams): Promise<SearchResult> => http.search({slugLiteral}, params)",
+                "api.{member}.search({ q, limit? })", "SearchResult", "GET /api/{slug}/search",
+                "Full-text search across searchable content.", ["SearchParams", "SearchResult"]),
+        ],
         category: "Engagement",
         summary: "Full-text search across published content.",
         iconName: "Search",

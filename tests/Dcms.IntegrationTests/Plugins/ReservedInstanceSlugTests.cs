@@ -49,8 +49,11 @@ public sealed class ReservedInstanceSlugTests : IDisposable
             .ToList();
 
         literals.Should().NotBeEmpty("the route table should have been read");
-        literals.Should().OnlyContain(s => PluginInstanceSlugs.Reserved.ContainsKey(s),
-            "a literal route under /api/ shadows an instance of that slug; add it to PluginInstanceSlugs.Reserved");
+        // A plugin's own host route reserves its slug in its manifest instead.
+        var byPlugins = _content.Services.GetRequiredService<Dcms.PluginSdk.Runtime.PluginRegistry>().Manifests
+            .SelectMany(m => m.ReservedSlugs ?? []).ToHashSet(StringComparer.Ordinal);
+        literals.Should().OnlyContain(s => PluginInstanceSlugs.Reserved.ContainsKey(s) || byPlugins.Contains(s),
+            "a literal route under /api/ shadows an instance of that slug; reserve it (PluginInstanceSlugs.Reserved, or the plugin's ReservedSlugs)");
     }
 
     [Fact]
@@ -67,7 +70,6 @@ public sealed class ReservedInstanceSlugTests : IDisposable
     [InlineData("tags")]
     [InlineData("media")]
     [InlineData("content")]
-    [InlineData("analytics")]
     public void A_reserved_slug_is_refused_with_what_owns_it(string slug)
         => PluginInstanceSlugs.Problem(slug).Should().Contain("reserved").And.Contain(slug);
 

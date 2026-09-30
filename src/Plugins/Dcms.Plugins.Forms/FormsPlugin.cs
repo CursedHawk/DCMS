@@ -182,7 +182,9 @@ public sealed class FormsPlugin : IPlugin
                 ResponseSchema: SubmissionResultSchema(),
                 RequestBodySchema: Ref(bodySchemaName),
                 SuccessStatus: "202",
-                ClientPath: ["forms", form.Name, "submit"]));
+                ClientPath: ["forms", form.Name, "submit"],
+                // Marks a form for the generated client's `forms` metadata export.
+                Extensions: new Dictionary<string, JsonNode> { ["x-dcms-form"] = form.Name }));
         }
 
         schemas[$"{instance.Slug}_submission_result"] = SubmissionResultObject();

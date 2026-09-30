@@ -59,6 +59,10 @@ public static class PluginInstanceEndpoints
             {
                 return Results.BadRequest(new { error = slugProblem });
             }
+            if (catalog.Manifests.FirstOrDefault(m => m.ReservedSlugs?.Contains(body.Slug) == true) is { } owner)
+            {
+                return Results.BadRequest(new { error = $"slug '{body.Slug}' is reserved: the {owner.Name} plugin's routes use it." });
+            }
             if (await db.PluginInstances.AnyAsync(p => p.Slug == body.Slug, ct))
             {
                 return Results.Conflict(new { error = "slug already in use." });

@@ -24,9 +24,8 @@ public static class PluginInstanceSlugs
     public static readonly IReadOnlyDictionary<string, string> Reserved =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            // content-api's own routes under /api/.
-            ["analytics"] = "/api/analytics/…",
-            ["collect"] = "/api/collect",
+            // content-api's own routes under /api/. Plugins' host routes reserve their own slugs
+            // (PluginManifest.ReservedSlugs: analytics, collect).
             ["media"] = "/api/media/…",
             ["openapi"] = "/api/openapi",
             ["tags"] = "/api/tags",

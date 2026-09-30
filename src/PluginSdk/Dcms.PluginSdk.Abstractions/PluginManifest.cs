@@ -53,7 +53,22 @@ public sealed record PluginManifest(
     IReadOnlyList<EventSubscription>? Subscribes = null,
     IReadOnlyList<JobDeclaration>? Jobs = null,
     /// <summary>Hooks of consumed contracts this plugin intercepts.</summary>
-    IReadOnlyList<HookSubscription>? Intercepts = null)
+    IReadOnlyList<HookSubscription>? Intercepts = null,
+    /// <summary>
+    /// Members this plugin's instances get in the generated TypeScript site client that are
+    /// served by a runtime helper of <c>@dcms/api-client</c> rather than by described operations.
+    /// </summary>
+    IReadOnlyList<ClientBinding>? ClientBindings = null,
+    /// <summary>
+    /// Instance slugs this plugin's own routes make unusable, because a host route of its
+    /// (<c>/api/analytics/status</c>) would shadow <c>/api/{slug}/…</c> for that slug.
+    /// </summary>
+    IReadOnlyList<string>? ReservedSlugs = null,
+    /// <summary>
+    /// The plugin records what site visitors do (analytics, a tracking pixel). A published
+    /// site asks for consent only when an enabled plugin says so.
+    /// </summary>
+    bool TracksVisitors = false)
 {
     public static PluginManifest Create(
         string id,
@@ -73,7 +88,10 @@ public sealed record PluginManifest(
         IReadOnlyList<ContractRequirement>? consumes = null,
         IReadOnlyList<EventSubscription>? subscribes = null,
         IReadOnlyList<JobDeclaration>? jobs = null,
-        IReadOnlyList<HookSubscription>? intercepts = null)
+        IReadOnlyList<HookSubscription>? intercepts = null,
+        IReadOnlyList<ClientBinding>? clientBindings = null,
+        IReadOnlyList<string>? reservedSlugs = null,
+        bool tracksVisitors = false)
         => new(
             id,
             name,
@@ -93,7 +111,10 @@ public sealed record PluginManifest(
             consumes ?? [],
             subscribes ?? [],
             jobs ?? [],
-            intercepts ?? []);
+            intercepts ?? [],
+            clientBindings ?? [],
+            reservedSlugs ?? [],
+            tracksVisitors);
 }
 
 /// <summary>
@@ -114,6 +135,23 @@ public sealed record PluginNavDeclaration(
     string? IconName = null,
     /// <summary>Which sidebar group it joins. Unknown values fall into the plugin section.</summary>
     string Group = "plugins");
+
+/// <summary>
+/// One member of an instance in the generated TypeScript site client, backed by a runtime helper.
+/// Templates may use <c>{slug}</c> (the raw slug), <c>{slugLiteral}</c> (it as a TypeScript string
+/// literal) and <c>{member}</c> (it as written after a dot).
+/// </summary>
+/// <param name="Path">Below the instance member, e.g. <c>["search"]</c> gives <c>api.{slug}.search</c>.</param>
+/// <param name="Expression">The member's TypeScript value.</param>
+/// <param name="RuntimeTypes">Types the expression uses that the runtime module exports.</param>
+public sealed record ClientBinding(
+    IReadOnlyList<string> Path,
+    string Expression,
+    string Usage,
+    string Returns,
+    string Route,
+    string Description,
+    IReadOnlyList<string>? RuntimeTypes = null);
 
 /// <summary>Effective permission key: plugin:{pluginId}:{Action}.</summary>
 public sealed record PermissionDefinition(string Action, string DisplayName);

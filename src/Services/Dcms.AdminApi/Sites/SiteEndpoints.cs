@@ -22,8 +22,18 @@ namespace Dcms.AdminApi.Sites;
 
 public static class SiteEndpoints
 {
+    /// <summary>
+    /// Plugins that record what visitors do (<c>PluginManifest.TracksVisitors</c>), snapshotted
+    /// when the routes are mapped: the registry is fixed for the life of the process. Null until
+    /// then, which the consent check treats as "ask".
+    /// </summary>
+    private static IReadOnlyList<string>? _visitorTrackingPlugins;
+
     public static IEndpointRouteBuilder MapSiteEndpoints(this IEndpointRouteBuilder app)
     {
+        _visitorTrackingPlugins = app.ServiceProvider.GetRequiredService<Dcms.PluginSdk.Abstractions.IPluginCatalog>()
+            .Manifests.Where(m => m.TracksVisitors).Select(m => m.Id).ToList();
+
         app.MapGet("/api/admin/sites", async (SitesDbContext db, CancellationToken ct) =>
         {
             var sites = await db.Sites
@@ -1296,8 +1306,12 @@ public static class SiteEndpoints
     {
         try
         {
+            if (_visitorTrackingPlugins is not { } tracking)
+            {
+                return true;
+            }
             return await cms.PluginInstances.IgnoreQueryFilters().AsNoTracking()
-                .AnyAsync(p => p.TenantId == tenantId && p.PluginId == "analytics" && p.Enabled, ct);
+                .AnyAsync(p => p.TenantId == tenantId && tracking.Contains(p.PluginId) && p.Enabled, ct);
         }
         catch
         {

@@ -38,7 +38,8 @@ public sealed class TenantApiResolver(
     ITenantContext tenant,
     CmsDbContext db,
     TenancyDbContext tenancy,
-    OpenApiAssembler assembler)
+    OpenApiAssembler assembler,
+    Dcms.PluginSdk.Abstractions.IPluginCatalog catalog)
 {
     public async Task<TenantApiSnapshot?> ResolveAsync(CancellationToken ct)
     {
@@ -78,7 +79,7 @@ public sealed class TenantApiResolver(
 
         return new TenantApiSnapshot(
             document,
-            instances.Select(p => new GeneratedInstance(p.Slug, p.PluginId, p.Name, p.Description)).ToList(),
+            instances.Select(p => new GeneratedInstance(p.Slug, p.PluginId, p.Name, p.Description, catalog.Find(p.PluginId)?.ClientBindings)).ToList(),
             servers,
             tenantSlug,
             inputKey);

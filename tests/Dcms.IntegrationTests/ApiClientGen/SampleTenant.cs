@@ -74,7 +74,7 @@ internal static class SampleTenant
         JsonObject document = new OpenApiAssembler(registry).Build("acme", contexts, ["https://acme.example"], tagging);
         return new TenantApiSnapshot(
             document,
-            instances.Select(i => new GeneratedInstance(i.Slug, i.PluginId, i.Name, i.Description)).ToList(),
+            instances.Select(i => new GeneratedInstance(i.Slug, i.PluginId, i.Name, i.Description, registry.Find(i.PluginId)?.ClientBindings)).ToList(),
             ["https://acme.example"],
             "acme",
             "sample");

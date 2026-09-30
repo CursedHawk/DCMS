@@ -62,9 +62,12 @@ public static class ResourceTags
         NotificationKinds.FormSubmitted => Forms,
         NotificationKinds.FormsSubmitted => Forms,
         NotificationKinds.ChatConversationStarted => Chat,
+        NotificationKinds.LiveChatConversationStarted => Chat,
         // A Meta token nearing expiry changes no list anyone is looking at; the notification
         // itself is the entire point.
         NotificationKinds.SocialTokenExpiring => null,
+        NotificationKinds.InstagramTokenExpiring => null,
+        NotificationKinds.FacebookTokenExpiring => null,
         // A plugin's own message; which screen it concerns is the plugin's business, not ours.
         NotificationKinds.PluginMessage => null,
         _ => null,

@@ -213,6 +213,13 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
         {
             operation["x-dcms-client"] = new JsonArray(clientPath.Select(s => (JsonNode)s).ToArray());
         }
+        foreach (var (key, value) in path.Extensions ?? new Dictionary<string, JsonNode>())
+        {
+            if (key.StartsWith("x-", StringComparison.Ordinal))
+            {
+                operation[key] = value.DeepClone();
+            }
+        }
 
         var parameters = new JsonArray();
         if (path.Parameters is { Count: > 0 })

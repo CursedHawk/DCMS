@@ -24,6 +24,8 @@ public sealed record PluginHost(PluginPlane Plane, IConfiguration Configuration,
 
     public bool IsAdmin => Plane == PluginPlane.Admin;
 
+    public bool IsProduction => string.Equals(EnvironmentName, "Production", StringComparison.OrdinalIgnoreCase);
+
     public bool IsDevelopment => string.Equals(EnvironmentName, "Development", StringComparison.OrdinalIgnoreCase);
 
     public IConfigurationSection SettingsFor(string pluginId) => Configuration.GetSection($"Plugins:{pluginId}");

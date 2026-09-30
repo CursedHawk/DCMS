@@ -37,6 +37,14 @@ public sealed class VisitorAuthPlugin : IPlugin
         ],
         // The site renders the profile form from the definitions; values are never in config.
         publicConfigKeys: [VisitorAttributes.ConfigKey],
+        clientBindings:
+        [
+            new ClientBinding(["auth"], "http.visitorAuth({slugLiteral})",
+                "api.{member}.auth.register(body) / .login(body) / .refresh(token) / .me() / .getProfile() / .updateProfile(update)",
+                "VisitorTokens / VisitorProfile / VisitorOwnProfile",
+                "POST /api/{slug}/register|login|refresh, GET /api/{slug}/me, GET|PUT /api/{slug}/me/profile",
+                "Visitor accounts and profiles. Pass `visitorToken` to createTenantClient for `me()` and the profile calls."),
+        ],
         category: "Engagement",
         summary: "Accounts, profiles and gated content for site visitors.",
         iconName: "KeyRound",
@@ -49,6 +57,26 @@ public sealed class VisitorAuthPlugin : IPlugin
 
     public void ConfigureServices(IServiceCollection services, PluginHost host)
     {
+        // Prod safety on the plane that mints visitor tokens. Visitor:SigningKey is a manual
+        // `vault kv put` in the deploy guide — infra/vault/init.sh only writes a placeholder to
+        // secret/dcms/content-api — so the way this goes wrong is a step being skipped, not a bad
+        // value being chosen. The whole tenant binding in a visitor token is its audience, and the
+        // tenant id is not a secret, so an unconfigured key means every visitor session on every
+        // tenant is forgeable by anyone who has read this repository. Fail loudly instead.
+        if (host.IsSite && host.IsProduction)
+        {
+            var key = host.Configuration[$"{VisitorTokenOptions.SectionName}:SigningKey"]?.Trim() ?? string.Empty;
+            if (key.Length == 0
+                || key == VisitorTokenOptions.DevelopmentSigningKey
+                || System.Text.Encoding.UTF8.GetByteCount(key) < VisitorTokenOptions.MinimumKeyBytes)
+            {
+                throw new InvalidOperationException(
+                    "Refusing to start: Visitor__SigningKey is unset, the development default, or shorter "
+                    + $"than {VisitorTokenOptions.MinimumKeyBytes} bytes in Production. Set a strong, unique "
+                    + "value (openssl rand -base64 32) at secret/dcms/content-api.");
+            }
+        }
+
         services.AddHttpContextAccessor();
         services.AddOptions<VisitorTokenOptions>().BindConfiguration(VisitorTokenOptions.SectionName);
         services.AddSingleton(sp => new VisitorTokenService(sp.GetRequiredService<IOptions<VisitorTokenOptions>>().Value));
