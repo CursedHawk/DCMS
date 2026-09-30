@@ -129,6 +129,7 @@ public static class PluginSdkServiceCollectionExtensions
         services.AddScoped<PluginContextFactory>();
         services.AddScoped<PluginContextAccessor>();
         services.AddScoped<ContractDispatcher>();
+        services.TryAddSingleton<PluginConfigValidator>();
         services.AddScoped<IPluginContext, AmbientPluginContext>();
     }
 

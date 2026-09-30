@@ -1,6 +1,8 @@
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Data;
 using Dcms.PluginSdk.Runtime.Contracts;
+using Dcms.Shared.Security;
 
 namespace Dcms.PluginSdk.Runtime;
 
@@ -285,6 +287,33 @@ public sealed class PluginRegistry : IPluginCatalog
             {
                 throw new InvalidOperationException(
                     $"Plugin '{manifest.Id}' job '{job.Name}' runs more often than once a minute.");
+            }
+        }
+
+        var dataSetIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var set in manifest.DataSets ?? [])
+        {
+            // Kebab-case keeps plugin ids apart from the platform's, which are contract ids ("dcms.storage").
+            if (string.IsNullOrWhiteSpace(set.Id) || !IsKebabCase(set.Id) || !dataSetIds.Add(set.Id))
+            {
+                throw new InvalidOperationException(
+                    $"Plugin '{manifest.Id}' data set id '{set.Id}' must be unique kebab-case.");
+            }
+            if (!typeof(IPluginDataSet).IsAssignableFrom(set.Implementation)
+                || set.Implementation.IsAbstract || set.Implementation.IsInterface)
+            {
+                throw new InvalidOperationException(
+                    $"'{set.Implementation.FullName}' must be a concrete class implementing IPluginDataSet.");
+            }
+            foreach (var permission in new[] { set.ReadPermission, set.WritePermission }.OfType<string>())
+            {
+                // Its own, or a platform one (Forms reviews submissions under content:read).
+                if (!PlatformPermissions.All.Contains(permission)
+                    && manifest.Permissions.All(p => $"plugin:{manifest.Id}:{p.Action}" != permission))
+                {
+                    throw new InvalidOperationException(
+                        $"Plugin '{manifest.Id}' data set '{set.Id}' names permission '{permission}', which neither the plugin nor the platform declares.");
+                }
             }
         }
     }

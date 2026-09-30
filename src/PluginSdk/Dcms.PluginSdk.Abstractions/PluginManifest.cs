@@ -1,4 +1,5 @@
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Data;
 
 namespace Dcms.PluginSdk.Abstractions;
 
@@ -68,7 +69,12 @@ public sealed record PluginManifest(
     // The plugin records what site visitors do (analytics, a tracking pixel). A published
     // site asks for consent only when an enabled plugin says so.
     // </summary>
-    bool TracksVisitors = false)
+    bool TracksVisitors = false,
+    // <summary>
+    // Tables of this plugin's data the admin console shows and edits on the plugin's page. The
+    // platform adds its own for data the plugin keeps in dcms.storage and dcms.blobs.
+    // </summary>
+    IReadOnlyList<DataSetDeclaration>? DataSets = null)
 {
     public static PluginManifest Create(
         string id,
@@ -91,7 +97,8 @@ public sealed record PluginManifest(
         IReadOnlyList<HookSubscription>? intercepts = null,
         IReadOnlyList<ClientBinding>? clientBindings = null,
         IReadOnlyList<string>? reservedSlugs = null,
-        bool tracksVisitors = false)
+        bool tracksVisitors = false,
+        IReadOnlyList<DataSetDeclaration>? dataSets = null)
         => new(
             id,
             name,
@@ -114,7 +121,8 @@ public sealed record PluginManifest(
             intercepts ?? [],
             clientBindings ?? [],
             reservedSlugs ?? [],
-            tracksVisitors);
+            tracksVisitors,
+            dataSets ?? []);
 }
 
 /// <summary>

@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="JsonSchema.Net" />
   </ItemGroup>
 
   <ItemGroup>
@@ -17,6 +18,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Dcms.PluginSdk.Tests" />
+    <InternalsVisibleTo Include="Dcms.IntegrationTests" />
   </ItemGroup>
 
 </Project>

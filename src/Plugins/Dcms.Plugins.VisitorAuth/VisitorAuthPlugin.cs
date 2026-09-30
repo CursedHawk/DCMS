@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Data;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection;
@@ -53,7 +54,13 @@ public sealed class VisitorAuthPlugin : IPlugin
             ContractProvision.Of<IVisitorIdentity, VisitorIdentity>(),
             ContractProvision.Of<IVisitorProfiles, VisitorProfiles>(),
         ],
-        consumes: [ContractRequirement.Of<IPluginEvents>()]);
+        consumes: [ContractRequirement.Of<IPluginEvents>()],
+        dataSets:
+        [
+            DataSetDeclaration.Of<VisitorsDataSet>("visitors", "Visitors",
+                "Accounts registered on the site, with their profiles.",
+                readPermission: ReadPermission, writePermission: ManagePermission, iconName: "Users"),
+        ]);
 
     public void ConfigureServices(IServiceCollection services, PluginHost host)
     {

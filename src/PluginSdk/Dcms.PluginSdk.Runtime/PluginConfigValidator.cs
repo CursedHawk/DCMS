@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Json.Schema;
 
-namespace Dcms.AdminApi.Plugins;
+namespace Dcms.PluginSdk.Runtime;
 
 /// <summary>Validates a plugin instance's config JSON against the manifest's JSON Schema.</summary>
 public sealed class PluginConfigValidator

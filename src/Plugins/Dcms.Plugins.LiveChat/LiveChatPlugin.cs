@@ -1,8 +1,10 @@
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Data;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Plugins.LiveChat.Api;
 using Dcms.Shared.Audit.Http;
+using Dcms.Shared.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
@@ -99,7 +101,15 @@ public sealed class LiveChatPlugin : IPlugin
             ContractRequirement.Of<IPluginEvents>(),
             ContractRequirement.Of<IPluginNotifications>(),
         ],
-        subscribes: [EventSubscription.Of<ChatConversationStarted, NotifyAgentsOfNewConversation>()]);
+        subscribes: [EventSubscription.Of<ChatConversationStarted, NotifyAgentsOfNewConversation>()],
+        dataSets:
+        [
+            // The chat console's gates, so its reviewers see the same history here.
+            DataSetDeclaration.Of<ConversationsDataSet>("conversations", "Conversations",
+                "Every chat with its transcript.",
+                readPermission: PlatformPermissions.ChatRead, writePermission: PlatformPermissions.ChatManage,
+                iconName: "MessagesSquare"),
+        ]);
 
     public void ConfigureServices(IServiceCollection services, PluginHost host)
     {

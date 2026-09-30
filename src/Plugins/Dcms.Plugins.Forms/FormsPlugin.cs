@@ -6,6 +6,7 @@ using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.Plugins.Forms.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Data;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Shared.Security;
 
@@ -136,6 +137,14 @@ public sealed class FormsPlugin : IPlugin
             ContractRequirement.Of<IPluginEvents>(),
             // Links a submission to the signed-in visitor and prefills fields when present.
             ContractRequirement.Of<IVisitorIdentity>(optional: true),
+        ],
+        dataSets:
+        [
+            // The same gates as the Forms inbox, so roles that review submissions there can here.
+            DataSetDeclaration.Of<SubmissionsDataSet>("submissions", "Submissions",
+                "What visitors sent through this instance's forms.",
+                readPermission: FormsPermissions.SubmissionsRead, writePermission: PlatformPermissions.ContentWrite,
+                iconName: "Inbox"),
         ]);
 
 

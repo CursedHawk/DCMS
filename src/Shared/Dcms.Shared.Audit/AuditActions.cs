@@ -148,6 +148,12 @@ public static class AuditActions
     /// <summary>A plugin called a writing (Safe or Dangerous) operation on another contract.</summary>
     public const string PluginContractInvoked = "plugin.contract.invoked";
 
+    /// <summary>A member changed a row of a plugin's data set in the console. Resource: the instance.</summary>
+    public const string PluginDataCreated = "plugin.data.created";
+    public const string PluginDataUpdated = "plugin.data.updated";
+    public const string PluginDataDeleted = "plugin.data.deleted";
+    public const string PluginDataActioned = "plugin.data.actioned";
+
     // ---- forms ----
     public const string FormSubmitted = "form.submitted";
     public const string FormSubmissionRead = "form.submission.read";

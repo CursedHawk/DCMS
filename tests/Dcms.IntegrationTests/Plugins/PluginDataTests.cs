@@ -67,6 +67,42 @@ public IPluginHooks Hooks => throw new NotSupportedException();
     }
 
     [DockerFact]
+    public async Task The_stored_data_set_shows_this_instance_and_plugin_wide_documents_only()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var tenant = Guid.NewGuid();
+        var mine = For(tenant, "forms", Guid.NewGuid());
+        await WithStorage(mine, s => s.PutAsync(new PutDocument("drafts", "mine", Json(new { n = 1 })), ct));
+        await WithStorage(mine, s => s.PutAsync(new PutDocument("settings", "wide", Json(new { n = 2 }), InstanceScoped: false), ct));
+        await WithStorage(For(tenant, "forms", Guid.NewGuid()), s => s.PutAsync(new PutDocument("drafts", "other-instance", Json(new { })), ct));
+        await WithStorage(For(tenant, "events", mine.Instance!.InstanceId), s => s.PutAsync(new PutDocument("drafts", "other-plugin", Json(new { })), ct));
+
+        async Task<T> WithSet<T>(Func<Dcms.PluginSdk.Abstractions.Data.IPluginDataSet, Task<T>> act)
+        {
+            using var scope = fixture.Factory.Services.CreateScope();
+            return await act(new Dcms.PluginSdk.Runtime.Data.StoredDocumentsDataSet(
+                mine, scope.ServiceProvider.GetRequiredService<CmsDbContext>(), new Sandbox(false)));
+        }
+        Dcms.PluginSdk.Abstractions.Data.DataQuery Query(params (string, string)[] filters) =>
+            new(null, null, false, filters.ToDictionary(f => f.Item1, f => f.Item2), 1, 25);
+
+        var page = await WithSet(d => d.ListAsync(Query(), ct));
+        page.Rows.Select(r => r.Values["key"]!.GetValue<string>()).Should().BeEquivalentTo(["mine", "wide"]);
+        (await WithSet(d => d.ListAsync(Query(("scope", "plugin")), ct))).Total.Should().Be(1);
+        (await WithSet(d => d.DescribeAsync(ct))).Filters![0].Options.Select(o => o.Value).Should().BeEquivalentTo(["drafts", "settings"]);
+
+        var key = page.Rows.Single(r => r.Values["key"]!.GetValue<string>() == "mine").Key;
+        var bad = () => WithSet(d => d.UpdateAsync(key, new System.Text.Json.Nodes.JsonObject { ["data"] = "{nope" }, ct));
+        await bad.Should().ThrowAsync<ContractValidationException>();
+        var updated = await WithSet(d => d.UpdateAsync(key, new System.Text.Json.Nodes.JsonObject { ["data"] = """{"n":5}""" }, ct));
+        updated!.Values["version"]!.GetValue<int>().Should().Be(2);
+        (await WithStorage(mine, s => s.GetAsync(new DocumentAddress("drafts", "mine"), ct)))!.Data.GetProperty("n").GetInt32().Should().Be(5);
+
+        (await WithSet(d => d.DeleteAsync(key, ct))).Should().BeTrue();
+        (await WithSet(d => d.GetAsync(key, ct))).Should().BeNull();
+    }
+
+    [DockerFact]
     public async Task Documents_round_trip_with_optimistic_versions()
     {
         var ct = TestContext.Current.CancellationToken;

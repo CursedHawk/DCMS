@@ -13,6 +13,7 @@ using Dcms.AdminApi.Tenancy;
 using Dcms.Plugins.All;
 using Dcms.PluginSdk.Runtime;
 using Dcms.PluginSdk.Runtime.Contracts;
+using Dcms.PluginSdk.Runtime.Data;
 using Dcms.PluginSdk.Runtime.Hosting;
 using Dcms.PluginSdk.Runtime.Platform;
 using Dcms.Shared.Caching;
@@ -130,7 +131,6 @@ builder.Services.AddHttpClient(Dcms.AdminApi.Media.AdminPluginMedia.HttpClientNa
     .ConfigurePrimaryHttpMessageHandler(sp => Dcms.AdminApi.Media.PublicEgress.Handler(
         allowPrivate: sp.GetRequiredService<IConfiguration>().GetValue("Media:ImportAllowLocal", false)));
 builder.Services.AddDcmsPluginWorkers();
-builder.Services.AddSingleton<PluginConfigValidator>();
 
 // Permission evaluation: dynamic policy + tenancy-backed, Redis-cached resolver.
 builder.Services.AddDcmsPermissionAuthorization();
@@ -363,6 +363,8 @@ app.MapDcmsPluginAdminEndpoints().RequireAuthorization();
 app.MapDcmsPluginHostEndpoints();
 // Contract operations for members and AI agents (docs/adr/0016).
 app.MapDcmsContractAdminEndpoints();
+// Plugins' data sets for the console's plugin pages (docs/adr/0018).
+app.MapDcmsPluginDataEndpoints();
 app.MapNavigationEndpoints();
 app.MapMarketplaceEndpoints();
 app.MapContentEndpoints();

@@ -2,7 +2,6 @@
 
   <ItemGroup>
     <PackageReference Include="DnsClient" />
-    <PackageReference Include="JsonSchema.Net" />
     <!-- SignalR backplane for the notification hub, so a consumer on one replica reaches a
          browser connected to another. Version is pinned centrally in Directory.Packages.props. -->
     <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />

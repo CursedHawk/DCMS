@@ -45,6 +45,7 @@ public static class PluginReference
         JsonNode Config,
         IReadOnlyList<string> PublicConfigKeys,
         IReadOnlyList<object> Permissions,
+        IReadOnlyList<object> DataSets,
         string CSharp);
 
     public static Reference? Build(PluginRegistry registry, string pluginId)
@@ -96,6 +97,12 @@ public static class PluginReference
             config,
             manifest.PublicConfigKeys,
             manifest.Permissions.Select(p => (object)new { key = $"plugin:{manifest.Id}:{p.Action}", p.DisplayName }).ToList(),
+            Data.PluginDataSets.Of(manifest).Select(d => (object)new
+            {
+                d.Id, d.Title, d.Description,
+                readPermission = d.ReadPermission ?? Shared.Security.PlatformPermissions.PluginsManage,
+                writePermission = d.WritePermission ?? Shared.Security.PlatformPermissions.PluginsManage,
+            }).ToList(),
             CSharp(manifest, provides, registry));
     }
 
