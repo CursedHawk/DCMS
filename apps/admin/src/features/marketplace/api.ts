@@ -99,12 +99,15 @@ export interface PluginReference {
   config: unknown;
   publicConfigKeys: string[];
   permissions: { key: string; displayName: string }[];
+  /** Tables of the plugin's data shown on each instance's page. */
+  dataSets?: { id: string; title: string; description: string | null; readPermission: string; writePermission: string }[];
   cSharp: string;
 }
 
 export function usePluginReference(pluginId: string) {
   return useQuery({
     queryKey: ['plugin-reference', pluginId],
+    enabled: pluginId.length > 0,
     staleTime: 5 * 60_000,
     queryFn: () => api.get<PluginReference>(`/admin/marketplace/${encodeURIComponent(pluginId)}/reference`),
   });

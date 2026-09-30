@@ -237,6 +237,24 @@ export function adminApi(
     .on('GET', '/api/admin/contracts', [])
     .on('GET', '/api/admin/marketplace', data.MARKETPLACE)
     .on('GET', '/api/admin/marketplace/:id/reference', data.PLUGIN_REFERENCE)
+    // A plugin instance's data sets (docs/adr/0018).
+    .on('GET', '/api/admin/plugins/:slug/_data', data.PLUGIN_DATA_SETS)
+    .on('GET', '/api/admin/plugins/:slug/_data/:set', ({ query }) => {
+      const search = (query.get('search') ?? '').toLowerCase();
+      const rows = data.PLUGIN_DATA_ROWS.filter((r) => !search || r.values.email.includes(search));
+      return { rows, total: rows.length, page: 1, pageSize: 25 };
+    })
+    .on('GET', '/api/admin/plugins/:slug/_data/:set/row', ({ query }) =>
+      data.PLUGIN_DATA_ROWS.find((r) => r.key === query.get('key')),
+    )
+    .on('PUT', '/api/admin/plugins/:slug/_data/:set/row', ({ query, body }) => ({
+      ...data.PLUGIN_DATA_ROWS.find((r) => r.key === query.get('key')),
+      values: { ...data.PLUGIN_DATA_ROWS.find((r) => r.key === query.get('key'))?.values, ...(body as object) },
+    }))
+    .on('POST', '/api/admin/plugins/:slug/_data/:set/actions/:action', ({ body }) => ({
+      affected: (body as { keys: string[] }).keys.length,
+      message: null,
+    }))
     .on('POST', '/api/admin/plugins/instances', ({ body }) => ({
       id: 'cccccccc-0000-0000-0000-00000000000f',
       pluginId: (body as { pluginId: string }).pluginId,

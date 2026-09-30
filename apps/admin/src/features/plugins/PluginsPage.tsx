@@ -1,9 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, FileText, Plug, Search, Settings2 } from 'lucide-react';
 import { useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import type { RegistryWidgetsType, WidgetProps } from '@rjsf/utils';
 import {
   Badge,
   Button,
@@ -32,43 +32,14 @@ import {
   toastApiError,
 } from '@dcms/ui';
 import { SchemaForm } from '../../components/SchemaForm';
-import { MediaPicker } from '../media/MediaPicker';
-import { MetaConnectionWidget } from './MetaConnectionWidget';
-import { ContractBindingWidget } from './ContractBindingWidget';
+import { configWidgets } from './configWidgets';
 import { api } from '../../lib/api';
 import {
-  type PluginInstance,
   type PluginManifest,
   parseConfigSchema,
-  parseInstanceConfig,
   usePluginCatalog,
   usePluginInstances,
 } from './api';
-
-/**
- * RJSF widget for schema fields declared with `"format": "media"` (e.g. the
- * Branding plugin's logo/favicon). Renders the shared media picker so an admin can
- * upload a new image — processed through the standard media pipeline and stored in
- * tenant media — or pick an existing asset; the field stores the media asset id.
- */
-function MediaFieldWidget({ value, onChange }: WidgetProps) {
-  return (
-    <MediaPicker
-      value={(value as string) || undefined}
-      onChange={(id) => onChange(id ?? undefined)}
-      category="Image"
-    />
-  );
-}
-
-const configWidgets: RegistryWidgetsType = {
-  media: MediaFieldWidget,
-  // `"format": "meta-connection"` -- the Instagram/Facebook plugins' connectionId.
-  // A connection is the product of an OAuth round trip, so it cannot be typed in.
-  'meta-connection': MetaConnectionWidget,
-  // `"x-dcms-contract-binding"` -- which instance of another plugin this one uses.
-  'contract-binding': ContractBindingWidget,
-};
 
 export function PluginsPage() {
   const { t } = useTranslation();
@@ -77,7 +48,6 @@ export function PluginsPage() {
   const instances = usePluginInstances();
 
   const [installing, setInstalling] = useState<PluginManifest | null>(null);
-  const [editing, setEditing] = useState<PluginInstance | null>(null);
   const [query, setQuery] = useState('');
 
   const toggle = useMutation({
@@ -153,7 +123,14 @@ export function PluginsPage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            <p className="truncate font-medium">{inst.name}</p>
+                            <Link
+                              to={'/plugins/$slug' as string}
+                              params={{ slug: inst.slug } as never}
+                              className="truncate font-medium hover:underline"
+                              data-testid="plugin-instance-link"
+                            >
+                              {inst.name}
+                            </Link>
                             <Badge tone={inst.enabled ? 'success' : 'secondary'}>
                               {inst.enabled ? t('plugins.enabled') : t('plugins.disabled')}
                             </Badge>
@@ -166,14 +143,16 @@ export function PluginsPage() {
                             <p className="truncate text-xs text-muted-foreground">{inst.description}</p>
                           ) : null}
                         </div>
-                        <Button
-                          size="icon"
-                          variant="ghost"
+                        <Link
+                          to={'/plugins/$slug' as string}
+                          params={{ slug: inst.slug } as never}
+                          search={{ tab: 'settings' } as never}
                           title={t('plugins.configuration')}
-                          onClick={() => setEditing(inst)}
+                          aria-label={t('plugins.configuration')}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           <Settings2 className="h-4 w-4" />
-                        </Button>
+                        </Link>
                         <Switch
                           checked={inst.enabled}
                           onCheckedChange={(v) => toggle.mutate({ id: inst.id, enabled: v })}
@@ -264,17 +243,6 @@ export function PluginsPage() {
         />
       ) : null}
 
-      {editing ? (
-        <ConfigDialog
-          instance={editing}
-          manifest={manifestById.get(editing.pluginId)}
-          onClose={() => setEditing(null)}
-          onDone={async () => {
-            setEditing(null);
-            await qc.invalidateQueries({ queryKey: ['plugin-instances'] });
-          }}
-        />
-      ) : null}
     </Page>
   );
 }
@@ -369,107 +337,6 @@ function InstallDialog({
             onClick={() => create.mutate()}
           >
             {t('plugins.install')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ConfigDialog({
-  instance,
-  manifest,
-  onClose,
-  onDone,
-}: {
-  instance: PluginInstance;
-  manifest?: PluginManifest;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const { t } = useTranslation();
-  const [name, setName] = useState(instance.name);
-  const [description, setDescription] = useState(instance.description ?? '');
-  const [aiTools, setAiTools] = useState(instance.aiToolsEnabled ?? false);
-  // Only a plugin that offers contracts has anything an AI agent could use.
-  const offersContracts = (manifest?.provides?.length ?? 0) > 0;
-  // Seeded from what is stored: the form posts the whole config back, so starting
-  // empty would wipe it on save.
-  const [config, setConfig] = useState<unknown>(() => parseInstanceConfig(instance.config));
-  const schema = manifest ? parseConfigSchema(manifest.configJsonSchema) : {};
-  const descriptionRequired = manifest?.allowMultipleInstances ?? false;
-
-  const save = useMutation({
-    mutationFn: () =>
-      api.put(`/admin/plugins/instances/${instance.id}`, {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        config: JSON.stringify(config ?? {}),
-        aiToolsEnabled: aiTools,
-      }),
-    onSuccess: () => {
-      toast.success(t('common.saved'));
-      onDone();
-    },
-    onError: (e) => toastApiError(e, t),
-  });
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent wide>
-        <DialogHeader>
-          <DialogTitle>{instance.name}</DialogTitle>
-        </DialogHeader>
-        <DialogBody className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>{t('common.name')}</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>
-              {t('plugins.description')}
-              {descriptionRequired ? <span className="ml-1 text-destructive">*</span> : null}
-            </Label>
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={t('plugins.descriptionPlaceholder')}
-            />
-            <p className="text-xs text-muted-foreground">{t('plugins.descriptionHint')}</p>
-          </div>
-          {offersContracts ? (
-            <div className="flex items-start justify-between gap-4 rounded-md border p-3">
-              <div className="space-y-0.5">
-                <Label htmlFor="plugin-ai-tools">{t('plugins.aiTools.label')}</Label>
-                <p className="text-xs text-muted-foreground">{t('plugins.aiTools.hint')}</p>
-              </div>
-              <Switch id="plugin-ai-tools" checked={aiTools} onCheckedChange={setAiTools} />
-            </div>
-          ) : null}
-          {Object.keys(schema).length > 0 ? (
-            <div>
-              <Label className="mb-2 block">{t('plugins.configuration')}</Label>
-              <SchemaForm
-                schema={schema}
-                formData={config}
-                onChange={setConfig}
-                widgets={configWidgets}
-                // The Meta widget's Sync-now button needs the instance it belongs to,
-                // which is a fact about this dialog rather than about the field.
-                formContext={{ instanceId: instance.id }}
-              />
-            </div>
-          ) : null}
-        </DialogBody>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            {t('actions.cancel')}
-          </Button>
-          <Button
-            disabled={(descriptionRequired && !description.trim()) || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            {t('actions.save')}
           </Button>
         </DialogFooter>
       </DialogContent>

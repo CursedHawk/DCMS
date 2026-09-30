@@ -96,6 +96,29 @@ export const PLUGIN_CATALOG = [
   },
 ];
 
+/** The Press room instance's data sets (GET /api/admin/plugins/press-room/_data). */
+export const PLUGIN_DATA_SETS = [
+  {
+    id: 'subscribers', title: 'Subscribers', description: 'People who asked for new posts by email.',
+    icon: 'Users', platform: false, canWrite: true,
+    columns: [
+      { key: 'email', label: 'Email', kind: 'email', sortable: true, primary: true },
+      { key: 'name', label: 'Name', kind: 'text', sortable: true, primary: false },
+      { key: 'confirmed', label: 'Confirmed', kind: 'boolean', sortable: false, primary: false },
+    ],
+    itemSchema: { type: 'object', properties: { name: { type: 'string', title: 'Name' } } },
+    filters: [{ key: 'confirmed', label: 'Status', options: [{ value: 'yes', label: 'Confirmed' }, { value: 'no', label: 'Pending' }] }],
+    actions: [{ id: 'confirm', label: 'Confirm', risk: 'safe', bulk: true, description: null, inputSchema: null }],
+    searchable: true, canCreate: false, canUpdate: true, canDelete: true, canDownload: false,
+    defaultSort: 'email', defaultDescending: false,
+  },
+];
+
+export const PLUGIN_DATA_ROWS = [
+  { key: 's1', title: null, values: { email: 'ada@example.test', name: 'Ada', confirmed: true } },
+  { key: 's2', title: null, values: { email: 'max@example.test', name: 'Max', confirmed: false } },
+];
+
 export const MARKETPLACE = {
   items: [
     {

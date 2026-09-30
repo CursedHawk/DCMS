@@ -107,6 +107,8 @@ export const LEGACY_SETTINGS_PATHS: Readonly<Record<string, string>> = {
 export const ROUTE_GUARDS: Readonly<Record<string, RouteGuard>> = {
   '/tenants': { superAdmin: true },
   '/plugins': { perm: Perm.PluginsManage },
+  // Each data set checks its own permission on top; the page itself is plugin management.
+  '/plugins/$slug': { perm: Perm.PluginsManage },
   '/marketplace': { perm: Perm.PluginsManage },
   '/content': { perm: Perm.ContentRead },
   '/media': { perm: Perm.MediaRead },

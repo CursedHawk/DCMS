@@ -1489,6 +1489,96 @@
     "output": "Výstup",
     "instance": "Instance",
     "run": "Spustit",
-    "runWrite": "Spustit (zapisuje)"
+    "runWrite": "Spustit (zapisuje)",
+    "dataSets": "Data v administraci",
+    "dataSetGates": "Čtení: {{read}}. Změny: {{write}}."
+  },
+  "pluginPage": {
+    "notFound": "Na této adrese není žádný plugin",
+    "notFoundHint": "V tomto prostoru není pod /{{slug}} nic nainstalováno. Mohl být odebrán nebo přejmenován.",
+    "tabs": {
+      "overview": "Přehled",
+      "data": "Data",
+      "settings": "Nastavení",
+      "integration": "Integrace",
+      "activity": "Aktivita"
+    },
+    "version": "Verze {{version}}",
+    "source": {
+      "builtin": "Vestavěný",
+      "installed": "Nainstaloval provozovatel"
+    },
+    "enabledLabel": "Plugin zapnut",
+    "wiring": {
+      "label": "Jak je plugin propojen s ostatními",
+      "offers": "Nabízí",
+      "uses": "Používá",
+      "usedBy": "Používají ho",
+      "listens": "Reaguje na",
+      "platform": "platforma",
+      "missing": "žádný zapnutý plugin to neposkytuje",
+      "optionalMissing": "nepropojeno (volitelné)"
+    },
+    "overview": {
+      "data": "Data",
+      "content": "Obsah",
+      "fields_one": "{{count}} pole",
+      "fields_few": "{{count}} pole",
+      "fields_other": "{{count}} polí",
+      "openContent": "Otevřít v Obsahu",
+      "background": "Běží na pozadí",
+      "onDemand": "při spuštění",
+      "rows_one": "{{count}} řádek",
+      "rows_few": "{{count}} řádky",
+      "rows_other": "{{count}} řádků",
+      "browse": "Procházet"
+    },
+    "facts": {
+      "plugin": "Plugin",
+      "siteApi": "API webu",
+      "instances": "Instance",
+      "permissions": "Přidaná oprávnění",
+      "ai": "AI asistent",
+      "aiOn": "Smí plugin používat",
+      "aiOff": "Nesmí"
+    },
+    "data": {
+      "search": "Hledat: {{title}}",
+      "clearFilters": "Zrušit filtry",
+      "new": "Nový",
+      "anyFilter": "{{label}}: vše",
+      "loadFailed": "Data se nepodařilo načíst. Zkuste to znovu nebo ověřte, že je plugin stále zapnutý.",
+      "empty": "Zatím nic: {{title}}",
+      "range": "{{from}}–{{to}} z {{total}}",
+      "previous": "Předchozí stránka",
+      "next": "Další stránka",
+      "deleted": "Smazáno",
+      "download": "Stáhnout",
+      "deleteTitle": "Smazat {{name}}?",
+      "deleteHint": "Tímto se položka trvale odstraní. Nelze ji obnovit.",
+      "newTitle": "Nový záznam: {{title}}",
+      "create": "Vytvořit",
+      "actionDone_one": "{{action}}: změněn {{count}} řádek",
+      "actionDone_few": "{{action}}: změněny {{count}} řádky",
+      "actionDone_other": "{{action}}: změněno {{count}} řádků",
+      "actionOn_one": "Provede se pro vybraný řádek.",
+      "actionOn_few": "Provede se pro {{count}} vybrané řádky.",
+      "actionOn_other": "Provede se pro {{count}} vybraných řádků.",
+      "invalidJson": "Zatím to není platný JSON.",
+      "disabled": "Plugin je vypnutý",
+      "disabledHint": "Zapněte ho, abyste mohli procházet a upravovat jeho data. Během vypnutí se nic nesmazalo.",
+      "none": "Není co procházet",
+      "noneHint": "Tento plugin neukládá vlastní data.",
+      "noneContentHint": "Obsah tohoto pluginu se upravuje v sekci Obsah; odkazy najdete na kartě Přehled."
+    },
+    "integration": {
+      "site": "Na vašem webu",
+      "fullDocs": "Úplná reference API",
+      "siteHint": "Cesty, které tato instance poskytuje vašim webům, podle API dokumentu, proti kterému se weby staví.",
+      "siteDisabled": "Instance je vypnutá, takže do zapnutí neposkytuje žádné cesty.",
+      "noRoutes": "Tato instance neposkytuje žádné vlastní cesty.",
+      "developers": "Pro vývojáře",
+      "developersHint": "Co plugin nabízí ostatním pluginům, včetně balíčků a kódu v C#, jak ho použít ve vlastním pluginu."
+    }
   }
 }

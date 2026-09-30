@@ -57,6 +57,9 @@ const WorkspacePage = page(() => import('./features/workspace/WorkspacePage'), '
 const PluginReferencePage = lazy(() =>
   import('./features/marketplace/PluginReferencePage').then((m) => ({ default: m.PluginReferencePage })),
 );
+const PluginInstancePage = lazy(() =>
+  import('./features/plugins/PluginInstancePage').then((m) => ({ default: m.PluginInstancePage })),
+);
 const SiteWorkspace = lazy(() =>
   import('./features/sites/SiteWorkspace').then((m) => ({ default: m.SiteWorkspace })),
 );
@@ -121,6 +124,19 @@ const pluginReferenceRoute = createRoute({
     return (
       <RequirePermission perm={ROUTE_GUARDS['/marketplace'].perm}>
         <PluginReferencePage pluginId={pluginId as string} />
+      </RequirePermission>
+    );
+  },
+});
+/** One plugin instance: its wiring, data, settings, integration and history. */
+const pluginInstanceRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/plugins/$slug',
+  component: function PluginInstance() {
+    const { slug } = useParams({ strict: false });
+    return (
+      <RequirePermission perm={ROUTE_GUARDS['/plugins/$slug'].perm}>
+        <PluginInstancePage slug={slug as string} />
       </RequirePermission>
     );
   },
@@ -231,6 +247,7 @@ export const routeTree = rootRoute.addChildren([
     indexRoute,
     tenantsRoute,
     pluginsRoute,
+    pluginInstanceRoute,
     contentRoute,
     marketplaceRoute,
     pluginReferenceRoute,

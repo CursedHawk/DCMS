@@ -10,7 +10,7 @@ import type { RJSFSchema, UiSchema } from '@rjsf/utils';
  * and each one was previously a second edit in a second file that was easy to miss.
  * A format with no matching widget simply renders as a plain input.
  */
-const WIDGET_FORMATS = ['media', 'meta-connection'] as const;
+const WIDGET_FORMATS = ['media', 'meta-connection', 'json'] as const;
 
 /** Schema annotation marking a field that binds a contract provider: `"x-dcms-contract-binding": "roster.members@1"`. */
 export const CONTRACT_BINDING_KEY = 'x-dcms-contract-binding';

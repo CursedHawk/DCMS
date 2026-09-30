@@ -31,6 +31,7 @@ import {
   useAdminContractCatalog,
   usePluginReference,
   type AdminCatalogContract,
+  type PluginReference,
   type ReferenceContract,
   type ReferenceOperation,
 } from './api';
@@ -45,7 +46,6 @@ import {
 export function PluginReferencePage({ pluginId }: { pluginId: string }) {
   const { t } = useTranslation();
   const reference = usePluginReference(pluginId);
-  const catalog = useAdminContractCatalog();
 
   if (reference.isLoading) {
     return (
@@ -63,9 +63,6 @@ export function PluginReferencePage({ pluginId }: { pluginId: string }) {
       </Page>
     );
   }
-
-  const events = r.provides.flatMap((c) => c.events.map((e) => ({ ...e, contract: c.id })));
-  const hooks = r.provides.flatMap((c) => c.hooks.map((h) => ({ ...h, contract: c.id })));
 
   return (
     <Page>
@@ -87,180 +84,195 @@ export function PluginReferencePage({ pluginId }: { pluginId: string }) {
         }
       />
 
-      <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview">{t('pluginReference.tabs.overview')}</TabsTrigger>
-          <TabsTrigger value="contracts">
-            {t('pluginReference.tabs.contracts')} ({r.provides.length})
-          </TabsTrigger>
-          <TabsTrigger value="events">
-            {t('pluginReference.tabs.events')} ({events.length + hooks.length})
-          </TabsTrigger>
-          <TabsTrigger value="data">{t('pluginReference.tabs.data')}</TabsTrigger>
-          <TabsTrigger value="config">{t('pluginReference.tabs.config')}</TabsTrigger>
-        </TabsList>
+      <PluginReferenceTabs reference={r} />
+    </Page>
+  );
+}
 
-        <TabsContent value="overview" className="space-y-4">
+/**
+ * The reference itself, without the page around it: the marketplace page shows it under its
+ * own header, and a plugin instance's page shows it as its Integration tab.
+ */
+export function PluginReferenceTabs({ reference: r }: { reference: PluginReference }) {
+  const { t } = useTranslation();
+  const catalog = useAdminContractCatalog();
+  const events = r.provides.flatMap((c) => c.events.map((e) => ({ ...e, contract: c.id })));
+  const hooks = r.provides.flatMap((c) => c.hooks.map((h) => ({ ...h, contract: c.id })));
+
+  return (
+    <Tabs defaultValue="overview">
+      <TabsList>
+        <TabsTrigger value="overview">{t('pluginReference.tabs.overview')}</TabsTrigger>
+        <TabsTrigger value="contracts">
+          {t('pluginReference.tabs.contracts')} ({r.provides.length})
+        </TabsTrigger>
+        <TabsTrigger value="events">
+          {t('pluginReference.tabs.events')} ({events.length + hooks.length})
+        </TabsTrigger>
+        <TabsTrigger value="data">{t('pluginReference.tabs.data')}</TabsTrigger>
+        <TabsTrigger value="config">{t('pluginReference.tabs.config')}</TabsTrigger>
+      </TabsList>
+  
+      <TabsContent value="overview" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('pluginReference.packages')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            {r.packages.map((p) => (
+              <div key={p.id} className="flex flex-wrap items-baseline gap-2">
+                <code className="rounded bg-muted px-1.5 py-0.5">{p.id}</code>
+                <span className="text-muted-foreground">{p.purpose}</span>
+              </div>
+            ))}
+            <p className="text-muted-foreground">{t('pluginReference.sdkMajor', { major: r.sdkMajor })}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle>{t('pluginReference.csharp')}</CardTitle>
+            <CopyButton value={r.cSharp} />
+          </CardHeader>
+          <CardContent>
+            <pre className="overflow-x-auto rounded bg-muted p-3 text-xs" data-testid="plugin-reference-csharp">
+              {r.cSharp}
+            </pre>
+          </CardContent>
+        </Card>
+        {r.consumes.length > 0 ? (
           <Card>
             <CardHeader>
-              <CardTitle>{t('pluginReference.packages')}</CardTitle>
+              <CardTitle>{t('pluginReference.uses')}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {r.packages.map((p) => (
-                <div key={p.id} className="flex flex-wrap items-baseline gap-2">
-                  <code className="rounded bg-muted px-1.5 py-0.5">{p.id}</code>
-                  <span className="text-muted-foreground">{p.purpose}</span>
+            <CardContent className="space-y-1 text-sm">
+              {r.consumes.map((c) => (
+                <div key={c.contractId} className="flex flex-wrap items-baseline gap-2">
+                  <code>{c.contractId}</code>
+                  {c.optional ? <Badge tone="secondary">{t('marketplace.optional')}</Badge> : null}
+                  {c.providers.length > 0 ? (
+                    <span className="text-muted-foreground">
+                      {t('pluginReference.providedBy', { plugins: c.providers.join(', ') })}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">{t('pluginReference.platform')}</span>
+                  )}
                 </div>
               ))}
-              <p className="text-muted-foreground">{t('pluginReference.sdkMajor', { major: r.sdkMajor })}</p>
             </CardContent>
           </Card>
+        ) : null}
+      </TabsContent>
+  
+      <TabsContent value="contracts" className="space-y-4">
+        {r.provides.length === 0 ? (
+          <EmptyState title={t('pluginReference.noContracts')} />
+        ) : (
+          r.provides.map((contract) => (
+            <ContractCard
+              key={contract.id}
+              contract={contract}
+              catalog={catalog.data?.find((c) => c.id === contract.id)}
+            />
+          ))
+        )}
+      </TabsContent>
+  
+      <TabsContent value="events" className="space-y-4">
+        {events.length + hooks.length === 0 ? (
+          <EmptyState title={t('pluginReference.noEvents')} />
+        ) : null}
+        {events.map((e) => (
+          <SchemaCard key={e.name} title={e.name} subtitle={`${e.clrType} · ${e.contract}`} schema={e.schema} badge={t('pluginReference.event')} />
+        ))}
+        {hooks.map((h) => (
+          <SchemaCard key={h.name} title={h.name} subtitle={`${h.clrType} · ${h.contract}`} schema={h.schema} badge={t('pluginReference.hook')} />
+        ))}
+        {r.subscribes.length > 0 || r.intercepts.length > 0 ? (
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <CardTitle>{t('pluginReference.csharp')}</CardTitle>
-              <CopyButton value={r.cSharp} />
+            <CardHeader>
+              <CardTitle>{t('pluginReference.listensTo')}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <pre className="overflow-x-auto rounded bg-muted p-3 text-xs" data-testid="plugin-reference-csharp">
-                {r.cSharp}
-              </pre>
+            <CardContent className="space-y-1 text-sm">
+              {r.subscribes.map((e) => (
+                <div key={e}>
+                  <Badge tone="secondary">{t('pluginReference.event')}</Badge> <code>{e}</code>
+                </div>
+              ))}
+              {r.intercepts.map((h) => (
+                <div key={h.hook}>
+                  <Badge tone="secondary">{t('pluginReference.hook')}</Badge> <code>{h.hook}</code>{' '}
+                  <span className="text-muted-foreground">{t('pluginReference.priority', { priority: h.priority })}</span>
+                </div>
+              ))}
             </CardContent>
           </Card>
-          {r.consumes.length > 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('pluginReference.uses')}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
-                {r.consumes.map((c) => (
-                  <div key={c.contractId} className="flex flex-wrap items-baseline gap-2">
-                    <code>{c.contractId}</code>
-                    {c.optional ? <Badge tone="secondary">{t('marketplace.optional')}</Badge> : null}
-                    {c.providers.length > 0 ? (
-                      <span className="text-muted-foreground">
-                        {t('pluginReference.providedBy', { plugins: c.providers.join(', ') })}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">{t('pluginReference.platform')}</span>
-                    )}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
-        </TabsContent>
-
-        <TabsContent value="contracts" className="space-y-4">
-          {r.provides.length === 0 ? (
-            <EmptyState title={t('pluginReference.noContracts')} />
-          ) : (
-            r.provides.map((contract) => (
-              <ContractCard
-                key={contract.id}
-                contract={contract}
-                catalog={catalog.data?.find((c) => c.id === contract.id)}
-              />
-            ))
-          )}
-        </TabsContent>
-
-        <TabsContent value="events" className="space-y-4">
-          {events.length + hooks.length === 0 ? (
-            <EmptyState title={t('pluginReference.noEvents')} />
-          ) : null}
-          {events.map((e) => (
-            <SchemaCard key={e.name} title={e.name} subtitle={`${e.clrType} · ${e.contract}`} schema={e.schema} badge={t('pluginReference.event')} />
-          ))}
-          {hooks.map((h) => (
-            <SchemaCard key={h.name} title={h.name} subtitle={`${h.clrType} · ${h.contract}`} schema={h.schema} badge={t('pluginReference.hook')} />
-          ))}
-          {r.subscribes.length > 0 || r.intercepts.length > 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('pluginReference.listensTo')}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
-                {r.subscribes.map((e) => (
-                  <div key={e}>
-                    <Badge tone="secondary">{t('pluginReference.event')}</Badge> <code>{e}</code>
-                  </div>
-                ))}
-                {r.intercepts.map((h) => (
-                  <div key={h.hook}>
-                    <Badge tone="secondary">{t('pluginReference.hook')}</Badge> <code>{h.hook}</code>{' '}
-                    <span className="text-muted-foreground">{t('pluginReference.priority', { priority: h.priority })}</span>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
-        </TabsContent>
-
-        <TabsContent value="data" className="space-y-4">
-          {r.contentTypes.length === 0 ? <EmptyState title={t('pluginReference.noContentTypes')} /> : null}
-          {r.contentTypes.map((type) => (
-            <Card key={type.name}>
-              <CardHeader>
-                <CardTitle className="font-mono text-base">{type.name}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <table className="w-full text-left">
-                  <tbody>
-                    {type.fields.map((f) => (
-                      <tr key={f.name} className="border-b last:border-0">
-                        <td className="py-1 pr-3 font-mono">{f.name}{f.required ? ' *' : ''}</td>
-                        <td className="py-1 pr-3 text-muted-foreground">{f.type}</td>
-                        <td className="py-1 text-muted-foreground">{f.description}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {type.publishedEvent ? (
-                  <p className="text-muted-foreground">
-                    {t('pluginReference.lifecycle', { published: type.publishedEvent, unpublished: type.unpublishedEvent ?? '—' })}
-                  </p>
-                ) : null}
-              </CardContent>
-            </Card>
-          ))}
-          {r.jobs.length > 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('pluginReference.jobs')}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
-                {r.jobs.map((j) => (
-                  <div key={j.name}>
-                    <code>{j.name}</code>{' '}
-                    {j.intervalMinutes ? (
-                      <span className="text-muted-foreground">{t('pluginReference.every', { minutes: j.intervalMinutes })}</span>
-                    ) : null}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
-        </TabsContent>
-
-        <TabsContent value="config" className="space-y-4">
-          <SchemaCard title={t('pluginReference.configSchema')} schema={r.config} />
-          {r.permissions.length > 0 ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>{t('marketplace.permissionsTitle')}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1 text-sm">
-                {r.permissions.map((p) => (
-                  <div key={p.key}>
-                    {p.displayName} <code className="text-muted-foreground">{p.key}</code>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
-        </TabsContent>
-      </Tabs>
-    </Page>
+        ) : null}
+      </TabsContent>
+  
+      <TabsContent value="data" className="space-y-4">
+        {r.contentTypes.length === 0 ? <EmptyState title={t('pluginReference.noContentTypes')} /> : null}
+        {r.contentTypes.map((type) => (
+          <Card key={type.name}>
+            <CardHeader>
+              <CardTitle className="font-mono text-base">{type.name}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <table className="w-full text-left">
+                <tbody>
+                  {type.fields.map((f) => (
+                    <tr key={f.name} className="border-b last:border-0">
+                      <td className="py-1 pr-3 font-mono">{f.name}{f.required ? ' *' : ''}</td>
+                      <td className="py-1 pr-3 text-muted-foreground">{f.type}</td>
+                      <td className="py-1 text-muted-foreground">{f.description}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {type.publishedEvent ? (
+                <p className="text-muted-foreground">
+                  {t('pluginReference.lifecycle', { published: type.publishedEvent, unpublished: type.unpublishedEvent ?? '—' })}
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+        ))}
+        {r.jobs.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('pluginReference.jobs')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1 text-sm">
+              {r.jobs.map((j) => (
+                <div key={j.name}>
+                  <code>{j.name}</code>{' '}
+                  {j.intervalMinutes ? (
+                    <span className="text-muted-foreground">{t('pluginReference.every', { minutes: j.intervalMinutes })}</span>
+                  ) : null}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        ) : null}
+      </TabsContent>
+  
+      <TabsContent value="config" className="space-y-4">
+        <SchemaCard title={t('pluginReference.configSchema')} schema={r.config} />
+        {r.permissions.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>{t('marketplace.permissionsTitle')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1 text-sm">
+              {r.permissions.map((p) => (
+                <div key={p.key}>
+                  {p.displayName} <code className="text-muted-foreground">{p.key}</code>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        ) : null}
+      </TabsContent>
+    </Tabs>
   );
 }
 

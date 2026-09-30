@@ -14,6 +14,8 @@ export interface Column<T> {
    * reader expects in both directions.
    */
   sortValue?: (row: T) => string | number | null;
+  /** Sortable by the server: with `onSortChange`, the header toggles the sort and the rows are left as given. */
+  sortable?: boolean;
   align?: 'left' | 'right';
   /** Fixes the column width. Anything else shares what is left. */
   width?: string;
@@ -68,6 +70,8 @@ export function DataTable<T>({
   rowClassName,
   selection,
   defaultSort,
+  sort: controlledSort,
+  onSortChange,
   labels: partialLabels,
   caption,
   className,
@@ -86,19 +90,31 @@ export function DataTable<T>({
     onChange: (next: Set<string>) => void;
   };
   defaultSort?: { columnId: string; direction?: Direction };
+  /**
+   * Server-side sorting, for a list the server pages: the table shows and toggles `sort` and
+   * reports it through `onSortChange`, but never reorders the rows itself — a page of a sorted
+   * list re-sorted in the browser is a different, wrong order.
+   */
+  sort?: { columnId: string; direction: Direction } | null;
+  onSortChange?: (sort: { columnId: string; direction: Direction } | null) => void;
   labels?: Partial<DataTableLabels>;
   /** Describes the table for screen readers. Visually hidden. */
   caption?: string;
   className?: string;
 }) {
   const labels = { ...DEFAULTS, ...partialLabels };
-  const [sort, setSort] = useState<{ columnId: string; direction: Direction } | null>(
+  const [internalSort, setInternalSort] = useState<{ columnId: string; direction: Direction } | null>(
     defaultSort ? { columnId: defaultSort.columnId, direction: defaultSort.direction ?? 'asc' } : null,
   );
+  const controlled = onSortChange !== undefined;
+  const sort = controlled ? (controlledSort ?? null) : internalSort;
+  const setSort = (
+    next: (current: typeof sort) => typeof sort,
+  ) => (controlled ? onSortChange(next(sort)) : setInternalSort(next));
 
   const sorted = useMemo(() => {
     if (!rows) return undefined;
-    if (!sort) return rows;
+    if (!sort || controlled) return rows;
     const column = columns.find((c) => c.id === sort.columnId);
     if (!column?.sortValue) return rows;
     const factor = sort.direction === 'asc' ? 1 : -1;
@@ -112,7 +128,7 @@ export function DataTable<T>({
       if (typeof left === 'number' && typeof right === 'number') return (left - right) * factor;
       return String(left).localeCompare(String(right)) * factor;
     });
-  }, [rows, columns, sort]);
+  }, [rows, columns, sort, controlled]);
 
   const toggleSort = (columnId: string) =>
     setSort((current) =>
@@ -179,7 +195,7 @@ export function DataTable<T>({
                       column.align === 'right' ? 'text-right' : 'text-left',
                     )}
                   >
-                    {column.sortValue ? (
+                    {column.sortValue || (controlled && column.sortable) ? (
                       <button
                         type="button"
                         onClick={() => toggleSort(column.id)}

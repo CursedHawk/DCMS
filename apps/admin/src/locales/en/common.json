@@ -1461,6 +1461,92 @@
     "output": "Output",
     "instance": "Instance",
     "run": "Run",
-    "runWrite": "Run (writes)"
+    "runWrite": "Run (writes)",
+    "dataSets": "Data in the admin",
+    "dataSetGates": "Read: {{read}}. Change: {{write}}."
+  },
+  "pluginPage": {
+    "notFound": "No plugin at this address",
+    "notFoundHint": "Nothing is installed under /{{slug}} in this workspace. It may have been removed or renamed.",
+    "tabs": {
+      "overview": "Overview",
+      "data": "Data",
+      "settings": "Settings",
+      "integration": "Integration",
+      "activity": "Activity"
+    },
+    "version": "Version {{version}}",
+    "source": {
+      "builtin": "Built in",
+      "installed": "Installed by your operator"
+    },
+    "enabledLabel": "Plugin enabled",
+    "wiring": {
+      "label": "How this plugin connects to others",
+      "offers": "Offers",
+      "uses": "Uses",
+      "usedBy": "Used by",
+      "listens": "Reacts to",
+      "platform": "platform",
+      "missing": "nothing enabled provides it",
+      "optionalMissing": "not connected (optional)"
+    },
+    "overview": {
+      "data": "Data",
+      "content": "Content",
+      "fields_one": "{{count}} field",
+      "fields_other": "{{count}} fields",
+      "openContent": "Open in Content",
+      "background": "Runs in the background",
+      "onDemand": "when triggered",
+      "rows_one": "{{count}} row",
+      "rows_other": "{{count}} rows",
+      "browse": "Browse"
+    },
+    "facts": {
+      "plugin": "Plugin",
+      "siteApi": "Site API",
+      "instances": "Instances",
+      "permissions": "Permissions it adds",
+      "ai": "AI assistant",
+      "aiOn": "May use this plugin",
+      "aiOff": "Not allowed"
+    },
+    "data": {
+      "search": "Search {{title}}",
+      "clearFilters": "Clear filters",
+      "new": "New",
+      "anyFilter": "{{label}}: any",
+      "loadFailed": "This data could not be loaded. Try again, or check that the plugin is still enabled.",
+      "empty": "No {{title}} yet",
+      "range": "{{from}}–{{to}} of {{total}}",
+      "previous": "Previous page",
+      "next": "Next page",
+      "deleted": "Deleted",
+      "download": "Download",
+      "deleteTitle": "Delete {{name}}?",
+      "deleteHint": "This removes it for good. It cannot be restored.",
+      "newTitle": "New in {{title}}",
+      "create": "Create",
+      "actionDone_one": "{{action}}: {{count}} row changed",
+      "actionDone_other": "{{action}}: {{count}} rows changed",
+      "actionOn_one": "Runs on the selected row.",
+      "actionOn_other": "Runs on {{count}} selected rows.",
+      "invalidJson": "Not valid JSON yet.",
+      "disabled": "This plugin is switched off",
+      "disabledHint": "Enable it to browse and edit its data. Nothing was deleted while it was off.",
+      "none": "No data to browse here",
+      "noneHint": "This plugin keeps no data of its own.",
+      "noneContentHint": "This plugin's content is edited in Content; see the Overview tab for links."
+    },
+    "integration": {
+      "site": "On your website",
+      "fullDocs": "Full API reference",
+      "siteHint": "Routes this instance serves to your sites, from the API document your sites are built against.",
+      "siteDisabled": "This instance is switched off, so it serves no routes until you enable it.",
+      "noRoutes": "This instance serves no routes of its own.",
+      "developers": "For developers",
+      "developersHint": "What this plugin offers other plugins, with the packages and C# to use it from your own plugin."
+    }
   }
 }

@@ -47,6 +47,19 @@ describe('DataTable', () => {
   });
 
   describe('sorting', () => {
+    it('leaves the order to the server when sorting is controlled', async () => {
+      const onSortChange = vi.fn();
+      const serverColumns: Column<Row>[] = [
+        { id: 'name', header: 'Name', cell: (r) => r.name, sortable: true, primary: true },
+        { id: 'status', header: 'Status', cell: (r) => r.status },
+      ];
+      render(<Table columns={serverColumns} sort={{ columnId: 'name', direction: 'asc' }} onSortChange={onSortChange} />);
+      expect(names()).toEqual(['banner.png', 'Avatar.jpg', 'clip.mp4']);
+      await user.click(within(grid()).getByRole('button', { name: /sort by name/i }));
+      expect(onSortChange).toHaveBeenCalledWith({ columnId: 'name', direction: 'desc' });
+      expect(within(grid()).queryByRole('button', { name: /sort by status/i })).toBeNull();
+    });
+
     it('does not sort until asked', () => {
       render(<Table />);
       expect(names()).toEqual(['banner.png', 'Avatar.jpg', 'clip.mp4']);
