@@ -274,10 +274,10 @@ only if they are members of that tenant (checked against the `tenancy` schema â€
 see ADR 0004). Visitor methods: `StartConversation`, `JoinConversation`,
 `SendMessage`; agent methods: `JoinConversation`, `SendAgentMessage`,
 `CloseConversation`. Client events: `ReceiveMessage`, `ConversationStarted`,
-`ConversationActivity`, `ConversationClosed`. Every message also publishes
-`chat.message.posted` to the NATS **CHAT** stream; admin-api's
-`ChatFanoutConsumer` is the durable out-of-band fan-out point (offline-agent
-notifications â€” documented extension). The agent console (admin SPA `/chat`)
+`ConversationActivity`, `ConversationClosed`. Every message is also the LiveChat
+plugin's `live-chat.message.received` event (a visitor's first, `live-chat.conversation.started`)
+on **PLUGIN_EVENTS**; the plugin's own subscription raises the agents' notification, and any
+other plugin can subscribe (ADR 0017). The agent console (admin SPA `/chat`)
 lists/loads conversations from admin-api (`GET /api/admin/chat/conversations[/{id}/messages]`,
 `chat:read`) and connects to the hub for realtime. The visitor widget is the
 embeddable `createChatWidget({ tenant })` from `@dcms/site-components` (vanilla

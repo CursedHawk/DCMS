@@ -266,7 +266,8 @@ There is **no CLI tool project**. Operational CLIs are shell (`scripts/`, `infra
 **admin-api** (`Program.cs`):
 - Migration: `TenancyMigrator`, which migrates at startup unless disabled (the deploy uses the `--migrate-only` job).
 - Tenancy and content: `MembershipChangedConsumer`, `OutboxDispatcher` (cms outbox → NATS), `ScheduledPublishWorker` (DB polling).
-- Analytics and chat: `AnalyticsConsumer`, `AnalyticsRetentionWorker`, `ChatFanoutConsumer`.
+- Analytics: `AnalyticsRetentionWorker` (cross-tenant retention; the ingest consumer is the Analytics plugin's).
+- Plugins (ADR 0016/0017): `PluginEventConsumer`, `PluginJobConsumer`, `PluginJobScheduler`, `ContentEventBridge`; plugin-owned workers (`AnalyticsConsumer`, `MetaSyncWorker`, `MetaTokenRefreshWorker`) are registered by their plugins.
 - Notification consumers: `SitePublishedNotificationConsumer`, `SiteBuildFailedNotificationConsumer`, `MediaProcessedNotificationConsumer`, `MediaFailedNotificationConsumer`, `ContentPublishedNotificationConsumer`, `ContentUnpublishedNotificationConsumer`, `DomainVerifiedNotificationConsumer`, `PluginInstanceNotificationConsumer`, `NotificationIngestConsumer`.
 - Retention and expiry: `InvitationExpiryWorker`, `NotificationRetentionWorker`, `AiConversationRetentionWorker`, `CertificateNotificationWorker`.
 - Audit: `AuditChainWriter`, `AuditIngestConsumer`, `AuditMaintenanceWorker`, `AuditLogProjector`.
@@ -409,9 +410,9 @@ Tenant resolution: `X-Dcms-Tenant` header (slug). site-host overwrites it from t
 | GET `/api/tags` | Anon | `Delivery/TagDeliveryEndpoints.cs` |
 | GET `/api/media/{assetId}/{variant}`, `/api/media/{assetId}/hls/{**file}` | Anon (capability = asset GUID) | `Delivery/MediaDeliveryEndpoints.cs` |
 | GET `/api/openapi.json`, `/api/openapi.yaml`, `/api/openapi` (Scalar HTML) | Anon | `Delivery/OpenApiEndpoints.cs` |
-| POST `/api/{slug}/collect`, POST `/api/collect`, GET `/api/analytics/status` | Anon, CORS any-origin | `Delivery/AnalyticsIngestEndpoints.cs` → NATS `analytics.events` |
+| POST `/api/{slug}/collect`, POST `/api/collect`, GET `/api/analytics/status` | Anon, CORS any-origin | Analytics plugin `AnalyticsIngestEndpoints.cs` → NATS `analytics.events` |
 | POST `/api/{slug}/forms/{formName}` | Anon, CORS any-origin (A) | `Forms/FormSubmissionEndpoints.cs` → email queue + `notify.raise` |
-| GET `/api/{slug}/branding` | Anon, CORS any-origin GET | `Branding/BrandingEndpoints.cs` |
+| GET `/api/{slug}/branding` | Anon, CORS any-origin GET | Branding plugin (`branding.identity@1`) |
 | GET `/api/{slug}/_config` (manifest `PublicConfigKeys` allow-list) | Anon | `Plugins/PluginConfigEndpoints.cs` |
 | POST `/api/{slug}/register`, `/login`, `/refresh`; GET `/api/{slug}/me` | Anon / visitor JWT (HS256, audience `dcms.site:{tenantId}`, 15 min access, 30-day refresh) | `Visitors/VisitorAuthEndpoints.cs`, `VisitorTokenService.cs` |
 | GET `/api/{slug}/chat/conversations/{cid}/messages` | Anon (capability = conversation GUID; verify) | `Chat/ChatEndpoints.cs` |
@@ -477,8 +478,9 @@ OpenIddict discovery/JWKS endpoints are provided by the library (`/.well-known/o
 | MEDIA_EVENTS | `media.processed` / `media.failed` | media-worker | admin-api notifications |
 | SITES (work queue) | `site.publish.requested.{staticfiles,staticprerender,reactapp}` (+ legacy `site.publish.requested`) | admin-api `SiteEndpoints` (publish, webhook, rebuild) | site-builder lanes |
 | SITES_EVENTS | `site.published` / `site.build.failed` | site-builder | admin-api notifications + `SiteLiveUpdates`; site-host `SiteCacheInvalidator` |
-| ANALYTICS | `analytics.events` | content-api collect | admin-api `AnalyticsConsumer` |
-| CHAT | `chat.message.posted` | content-api `ChatHub` | admin-api `ChatFanoutConsumer` |
+| ANALYTICS | `analytics.events` | Analytics plugin (site beacon, `analytics.tracking@1`) | Analytics plugin `AnalyticsConsumer` (admin plane) |
+| PLUGIN_EVENTS | `plugins.events.{publisher}.{event}` (e.g. `live-chat.conversation.started`, `blog.post.published`) | plugins via `dcms.events@1`; `ContentEventBridge` | subscribing plugins (admin-api `PluginEventConsumer`) |
+| PLUGIN_JOBS (work queue) | `plugins.jobs.{plugin}.{job}` | `dcms.jobs@1`, `PluginJobScheduler` | admin-api `PluginJobConsumer` |
 | EMAIL (work queue) | `email.send` | `NatsEmailQueue` (identity, admin-api, content-api) | email-worker |
 | AUDIT | `audit.submitted` | `NatsAuditSink` (platform-api, site-builder, email-worker) | admin-api `AuditIngestConsumer` |
 | AUDIT | `audit.recorded` | admin-api `AuditChainWriter` | admin-api `AuditLogProjector` |
@@ -1152,18 +1154,17 @@ Legend: `[ ] Not reviewed` · `[ ] Reviewed` · `[ ] Deep review required`. Ever
 - [ ] Not reviewed ⚑ Deep review required — `Dcms.AdminApi/Sites/Git/*` (ForgejoClient, SiteGitService + LocalMerge, RepoAccessReconciler, webhook)
 - [ ] Not reviewed ⚑ Deep review required — `Dcms.AdminApi/Ai/*` (messages proxy, credentials, conversations, generation, prompt builder, retention)
 - [ ] Not reviewed ⚑ Deep review required — `Dcms.AdminApi/ApiClientGen/*` (TypeScript emitter, package builder, templates, scaffold endpoints)
-- [ ] Not reviewed ⚑ Deep review required — `Dcms.AdminApi/Social/*` (OAuth callback, token refresh, feed sync, media mirror, stories)
+- [ ] Not reviewed ⚑ Deep review required — `Dcms.Plugins.Meta.Core/Social/*` (OAuth callback, token refresh, feed sync, media mirror, stories)
 - [ ] Not reviewed — `Dcms.AdminApi/Cms/*` (content endpoints, list endpoints, outbox dispatcher, scheduled publish)
 - [ ] Not reviewed — `Dcms.AdminApi/Media/*` (upload endpoint, ingest service, extensions)
 - [ ] Not reviewed — `Dcms.AdminApi/Plugins/*` (instances, config validator, marketplace, navigation)
-- [ ] Not reviewed — `Dcms.AdminApi/Forms/FormSubmissionEndpoints.cs`
-- [ ] Not reviewed — `Dcms.AdminApi/Analytics/*` (consumer, dashboard, prune, retention)
+- [ ] Not reviewed — `Dcms.AdminApi/Analytics/*` (prune, retention) and `Dcms.Plugins.Analytics` (ingest, consumer, dashboard)
 - [ ] Not reviewed ⚑ Deep review required — `Dcms.AdminApi/Audit/*` (chain writer, ingest consumer, projector, maintenance, endpoints/export)
 - [ ] Not reviewed — `Dcms.AdminApi/Notifications/*` (hub, publishers, consumers, retention, invitation expiry, certificate notifications, platform notifications)
-- [ ] Not reviewed — `Dcms.AdminApi/Chat/*`
+- [ ] Not reviewed — `Dcms.Plugins.LiveChat` (hub, assistant, console, events)
 - [ ] Not reviewed ⚑ Deep review required — `Dcms.AdminApi/Observability/AlertEndpoints.cs`
 - [ ] Not reviewed — `Dcms.AdminApi/Openapi/OpenApiPreviewEndpoints.cs`
-- [ ] Not reviewed ⚑ Deep review required — `src/Services/Dcms.ContentApi` (Program, Delivery/*, Visitors/*, Forms/*, Chat/* incl. ChatHub + ChatBotResponder, Branding, Plugins/_config, Social/StoryDelivery, SandboxHeaderContext)
+- [ ] Not reviewed ⚑ Deep review required — `src/Services/Dcms.ContentApi` (Program, Delivery/*, Plugins/_config, SandboxHeaderContext; plugin code lives in src/Plugins)
 - [ ] Not reviewed ⚑ Deep review required — `src/Services/Dcms.Identity` (Program, Endpoints/{Account, AccountApi, Authorization, PlatformUser}, Seeding, OpenIddictCertificates, Forgejo/*, Data, Domain)
 - [ ] Not reviewed ⚑ Deep review required — `src/Services/Dcms.PlatformApi` (Authz, Delegation, Purge, Observability clients, Reporting/ObservabilityQuery, Stores, Realtime)
 - [ ] Not reviewed ⚑ Deep review required — `src/Services/Dcms.Edge` (Program, Auth/*, Certificates/* incl. Dns/*, Protection/*, Routing/*, Transforms/*, EdgeHttpPlane, EdgeOptions)

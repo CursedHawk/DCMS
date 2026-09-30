@@ -23,3 +23,4 @@ as their implementation phase lands.
 - [0014](0014-admin-console-bff.md) — The admin console authenticates by session cookie at the edge, not by a token in `localStorage`
 - [0015](0015-forced-rls.md) — The database enforces tenant isolation, not just the ORM (supersedes 0005's deferral; implemented)
 - [0016](0016-plugin-contracts.md) — Plugins own their code and meet through versioned contracts
+- [0017](0017-plugin-api-ecosystem.md) — Every plugin is an API: `.Api` packages, open contracts, hooks, installed plugins

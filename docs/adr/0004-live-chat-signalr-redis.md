@@ -1,6 +1,7 @@
 # ADR 0004: Live chat via SignalR with a Redis backplane in content-api
 
-**Status:** accepted (2026-06-15) · **Phase:** 12
+**Status:** accepted (2026-06-15) · **Phase:** 12 · the hub now lives in the LiveChat plugin and
+`chat.message.posted` was replaced by plugin events ([ADR 0017](0017-plugin-api-ecosystem.md))
 
 ## Context
 

@@ -1,6 +1,7 @@
 # ADR 0016: Plugins own their code and meet through versioned contracts
 
-**Status:** accepted · implemented (2026-09-29)
+**Status:** accepted · implemented (2026-09-29) · extended by [ADR 0017](0017-plugin-api-ecosystem.md)
+(every plugin migrated, `.Api` packages, open contracts, hooks, installed plugins)
 
 ## Context
 
