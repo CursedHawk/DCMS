@@ -1,3 +1,4 @@
+using Dcms.Shared.Security;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Propagation;
 

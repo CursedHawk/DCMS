@@ -34,11 +34,19 @@ public sealed class PluginRegistryBuilder(PluginHost host)
     /// constructed per resolution with the <i>calling</i> plugin's <see cref="IPluginContext"/>,
     /// so it can stamp that plugin's tenant and id onto everything it touches.
     /// </summary>
+    /// <remarks>
+    /// The first registration of a contract wins. A host that implements one differently — the
+    /// admin plane's <c>dcms.media@1</c> can import files, the site plane's cannot — registers
+    /// its own in the configure callback, before the defaults are added.
+    /// </remarks>
     public PluginRegistryBuilder AddPlatformContract<TContract, TImplementation>()
         where TContract : class
         where TImplementation : class, TContract
     {
-        PlatformContracts.Add(ContractProvision.Of<TContract, TImplementation>());
+        if (!PlatformContracts.Any(p => p.Contract == typeof(TContract)))
+        {
+            PlatformContracts.Add(ContractProvision.Of<TContract, TImplementation>());
+        }
         return this;
     }
 }

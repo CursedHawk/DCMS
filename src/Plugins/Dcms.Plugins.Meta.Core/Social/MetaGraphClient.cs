@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Options;
 
-namespace Dcms.AdminApi.Social;
+namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>One post, reel or story, normalised across the two providers.</summary>
 public sealed record MetaFeedItem(

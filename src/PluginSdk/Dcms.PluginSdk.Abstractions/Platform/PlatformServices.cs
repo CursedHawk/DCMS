@@ -149,16 +149,31 @@ public interface IPluginNotifications
 
 public sealed record MediaLookup(Guid AssetId);
 
+/// <param name="Url">An https URL to fetch.</param>
+/// <param name="FileName">The name the asset is filed under.</param>
+public sealed record MediaImport(Uri Url, string FileName, Guid? FolderId = null);
+
+/// <summary>The new asset, or why the file was refused (too large, unrecognised type, unreachable).</summary>
+public sealed record MediaImportResult(Guid? AssetId, string? Error);
+
 /// <summary>
-/// The tenant's media library, read-only: a stored asset id (a MediaRef field, a logo in
+/// The tenant's media library: a stored asset id (a MediaRef field, a logo in
 /// config) to its servable variant URLs — <c>original</c>, and the processed ladder once ready.
 /// </summary>
-[DcmsContract("dcms.media", 1, Description = "Resolve the tenant's media assets to servable URLs.")]
+[DcmsContract("dcms.media", 1, Description = "Resolve the tenant's media assets to servable URLs, and import files into the library.")]
 public interface IPluginMedia
 {
     /// <summary>Null when the asset does not exist in this tenant.</summary>
     [Operation(OpRisk.Read)]
     Task<MediaAssetDto?> ResolveAsync(MediaLookup input, CancellationToken ct);
+
+    /// <summary>
+    /// Downloads a file into the tenant's library through the same pipeline as an upload —
+    /// type sniffing, sanitising, the size limit, the processing queue. Admin plane only (jobs,
+    /// event handlers, admin routes): the public plane refuses it.
+    /// </summary>
+    [Operation(OpRisk.Safe)]
+    Task<MediaImportResult> ImportAsync(MediaImport input, CancellationToken ct);
 }
 
 // ---------------------------------------------------------------------------------------------

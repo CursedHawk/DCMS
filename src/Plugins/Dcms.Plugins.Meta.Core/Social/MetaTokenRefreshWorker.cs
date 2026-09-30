@@ -2,9 +2,9 @@ using System.Net;
 using System.Text;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Data;
-using Dcms.AdminApi.Notifications;
 using Dcms.Shared.Security;
-using Dcms.Shared.Data.Notifications;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.PluginSdk.Runtime.Hosting;
 using Dcms.Shared.Data.Social;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Messaging.Email;
@@ -12,7 +12,7 @@ using Dcms.Shared.Vault;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
-namespace Dcms.AdminApi.Social;
+namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
 /// Extends long-lived Meta tokens before they die, and tells somebody when one cannot be saved.
@@ -171,31 +171,51 @@ public sealed class MetaTokenRefreshWorker(
     }
 
     /// <summary>
-    /// The in-app half of the reauth notice. The email above reaches only the one admin who
+    /// The in-app half of the reauth notice. The email below reaches only the one admin who
     /// connected the account, and only if they still have a mailbox anyone reads; the bell
-    /// reaches everyone who could actually fix it. RaiseAsync swallows its own failures.
+    /// reaches everyone who could actually fix it.
+    ///
+    /// <para>Raised through <c>dcms.notifications@1</c> as the feed plugin the tenant uses — an
+    /// Instagram login is Instagram's, a Page may feed either — so it reads
+    /// <c>plugin.instagram.token-expiring</c> or <c>plugin.facebook.token-expiring</c>.</para>
     /// </summary>
     private async Task RaiseNotificationAsync(MetaConnection connection, CancellationToken ct)
     {
-        using var scope = services.CreateScope();
-        var publisher = scope.ServiceProvider.GetRequiredService<INotificationPublisher>();
-
-        await publisher.RaiseAsync(new NotificationRequest(
-            TenantId: connection.TenantId,
-            Kind: NotificationKinds.SocialTokenExpiring,
-            Severity: NotificationSeverity.Warning,
-            RequiredPermission: PlatformPermissions.PluginsManage,
-            TitleKey: NotificationKinds.TitleKey(NotificationKinds.SocialTokenExpiring),
-            BodyKey: NotificationKinds.BodyKey(NotificationKinds.SocialTokenExpiring),
-            // Per connection per day: the refresh pass runs repeatedly and would otherwise
-            // re-raise this on every sweep until somebody reauthorises. Same shape as the
-            // email's own DedupeKey.
-            DedupeKey: $"social.token.expiring:{connection.Id:N}:{DateTimeOffset.UtcNow:yyyyMMdd}",
-            Params: new { provider = connection.AccountName },
-            LinkPath: "/plugins",
-            ResourceType: "meta_connection",
-            ResourceId: connection.Id), ct);
+        var runner = services.GetRequiredService<PluginHandlerRunner>();
+        string[] candidates = connection.Provider == MetaProvider.InstagramLogin
+            ? [MetaPlugins.InstagramId]
+            : [MetaPlugins.FacebookId, MetaPlugins.InstagramId];
+        try
+        {
+            foreach (var pluginId in candidates)
+            {
+                var raised = await runner.RunAsync(connection.TenantId, pluginId, instanceId: null, (plugin, _) =>
+                    plugin.Contracts.Get<IPluginNotifications>().RaiseAsync(new NotificationRaise(
+                        Title: "Reconnect required",
+                        Body: $"The connection to {connection.AccountName} expires soon and needs reauthorising.",
+                        RequiredPermission: PlatformPermissions.PluginsManage,
+                        // Per connection per day: the refresh pass runs repeatedly and would
+                        // otherwise re-raise this on every sweep until somebody reauthorises.
+                        DedupeKey: $"token-expiring:{connection.Id:N}:{DateTimeOffset.UtcNow:yyyyMMdd}",
+                        Severity: NotificationSeverity.Warning,
+                        LinkPath: "/plugins",
+                        Kind: TokenExpiringKind,
+                        Params: new Dictionary<string, string> { ["provider"] = connection.AccountName },
+                        ResourceType: "meta_connection",
+                        ResourceId: connection.Id), ct), ct);
+                if (raised)
+                {
+                    return; // the first feed plugin the tenant has enabled raises it
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not raise the reauth notification for connection {ConnectionId}.", connection.Id);
+        }
     }
+
+    public const string TokenExpiringKind = "token-expiring";
 
     /// <summary>
     /// Emails the admin who connected the account. Best-effort by design: the connection is

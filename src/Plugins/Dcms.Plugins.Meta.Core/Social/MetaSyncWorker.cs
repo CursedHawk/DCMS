@@ -1,12 +1,12 @@
-using Dcms.Plugins.Facebook;
-using Dcms.Plugins.Instagram;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.PluginSdk.Runtime.Hosting;
 using Dcms.Shared.Data;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Social;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
-namespace Dcms.AdminApi.Social;
+namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
 /// Keeps every enabled Instagram and Facebook feed up to date.
@@ -25,8 +25,6 @@ public sealed class MetaSyncWorker(
     IConfiguration configuration,
     ILogger<MetaSyncWorker> logger) : BackgroundService
 {
-    private static readonly string[] FeedPlugins = [InstagramPlugin.PluginId, FacebookPlugin.PluginId];
-
     /// <summary>How often to look for due instances; each instance's own interval gates it.</summary>
     private TimeSpan PollInterval =>
         TimeSpan.FromSeconds(configuration.GetValue("Social:PollSeconds", 60));
@@ -85,26 +83,29 @@ public sealed class MetaSyncWorker(
 
         using var scope = services.CreateScope();
         var cms = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
-        var social = scope.ServiceProvider.GetRequiredService<SocialDbContext>();
-        var sync = scope.ServiceProvider.GetRequiredService<MetaFeedSyncService>();
+        var runner = scope.ServiceProvider.GetRequiredService<PluginHandlerRunner>();
 
         // Cross-tenant by design, so the tenant query filters have to be off: this job runs on
         // a timer with no request behind it and therefore no ambient tenant. Platform scope for
         // the scan; SyncOneAsync narrows to each instance's tenant (ADR 0015).
         using var rls = RlsScope.Platform();
         var instances = await cms.PluginInstances.IgnoreQueryFilters()
-            .Where(p => p.Enabled && FeedPlugins.Contains(p.PluginId))
+            .Where(p => p.Enabled && MetaPlugins.FeedPluginIds.Contains(p.PluginId))
             .ToListAsync(ct);
 
         foreach (var instance in instances)
         {
             if (ct.IsCancellationRequested) break;
-            await SyncOneAsync(instance, social, sync, ct);
+            // Each instance runs as its own plugin — the feed plugin's dcms.media@1 imports the
+            // mirrored files — in a scope of its own, with the instance's tenant ambient.
+            await runner.RunAsync(instance.TenantId, instance.PluginId, instance.Id, (plugin, sp) =>
+                SyncOneAsync(instance, sp.GetRequiredService<SocialDbContext>(),
+                    sp.GetRequiredService<MetaFeedSyncService>(), plugin.Contracts.Get<IPluginMedia>(), ct), ct);
         }
     }
 
     private async Task SyncOneAsync(
-        PluginInstance instance, SocialDbContext social, MetaFeedSyncService sync, CancellationToken ct)
+        PluginInstance instance, SocialDbContext social, MetaFeedSyncService sync, IPluginMedia media, CancellationToken ct)
         {
             using var rls = RlsScope.Tenant(instance.TenantId);
             var settings = MetaFeedSettings.Read(instance.ConfigJson);
@@ -133,7 +134,7 @@ public sealed class MetaSyncWorker(
 
         if (state.NextAttemptAt > DateTimeOffset.UtcNow) return;
 
-        var outcome = await sync.SyncInstanceAsync(instance, ct);
+        var outcome = await sync.SyncInstanceAsync(instance, media, ct);
 
         state.ConnectionId = settings.ConnectionId;
         state.LastSyncAt = DateTimeOffset.UtcNow;

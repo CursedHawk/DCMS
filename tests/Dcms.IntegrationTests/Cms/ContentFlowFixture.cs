@@ -74,6 +74,7 @@ public sealed class ContentFlowFixture : IAsyncLifetime
             b.UseSetting("Social:Meta:AppSecret", "test-fb-secret");
             b.UseSetting("Social:RedirectUri", "https://admin.test/api/admin/social/callback");
             b.UseSetting("Social:OverrideBaseUrl", MetaStub.BaseUrl);
+            b.UseSetting("Media:ImportAllowHttp", "true");
             b.UseSetting("Social:SyncEnabled", "false");
             b.ConfigureTestServices(services =>
             {
@@ -105,7 +106,7 @@ public sealed class ContentFlowFixture : IAsyncLifetime
                 // Point content-api's admin-api client at the in-memory admin host, translating
                 // the bearer into the test scheme's headers. The scope travels for real, so
                 // ServicePrincipalGuard is genuinely in the path rather than bypassed.
-                services.AddHttpClient(Dcms.ContentApi.Social.StoryDeliveryEndpoints.HttpClientName)
+                services.AddHttpClient(Dcms.Plugins.Meta.Core.StoryDeliveryEndpoints.HttpClientName)
                     .ConfigurePrimaryHttpMessageHandler(() => new ServicePrincipalHandler(this))
                     .ConfigureHttpClient(client => client.BaseAddress = new Uri("http://admin.test"));
             });

@@ -1,24 +1,8 @@
 using Dcms.Shared.Audit;
+using Dcms.Shared.Security;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Dcms.AdminApi.Tenancy;
-
-/// <summary>
-/// Marks an endpoint another DCMS service is allowed to call with a client-credentials token.
-///
-/// <para>Rare and deliberate, like <see cref="AllowNonMemberTenantAttribute"/>: the bar is
-/// "this endpoint exists to serve another service, and holds nothing a user's own permissions
-/// would otherwise gate".</para>
-/// </summary>
-[AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]
-public sealed class AllowServicePrincipalAttribute(string scope, string reason) : Attribute
-{
-    /// <summary>The OAuth scope the calling service must hold. Checked, not merely documented.</summary>
-    public string Scope { get; } = scope;
-
-    /// <summary>Why a service may call this. Recorded here so the exemption has to be argued for.</summary>
-    public string Reason { get; } = reason;
-}
 
 /// <summary>
 /// Refuses a service token everywhere it was not explicitly invited.
@@ -103,15 +87,4 @@ public static class ServicePrincipalGuardExtensions
     /// </summary>
     public static IApplicationBuilder UseServicePrincipalGuard(this IApplicationBuilder app) =>
         app.UseMiddleware<ServicePrincipalGuard>();
-
-    /// <summary>
-    /// Lets another DCMS service call this endpoint with a client-credentials token carrying
-    /// <paramref name="scope"/>. See <see cref="AllowServicePrincipalAttribute"/>.
-    /// </summary>
-    public static TBuilder AllowServicePrincipal<TBuilder>(this TBuilder builder, string scope, string reason)
-        where TBuilder : IEndpointConventionBuilder
-    {
-        builder.WithMetadata(new AllowServicePrincipalAttribute(scope, reason));
-        return builder;
-    }
 }

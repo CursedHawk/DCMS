@@ -2,28 +2,33 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.Plugins.Meta.Core;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.Plugins.Instagram.Api;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Instagram;
 
 /// <summary>
 /// A tenant's Instagram feed, served from their own site.
 ///
-/// <para>Posts and reels are mirrored into DCMS content by a background sync in admin-api, so
+/// <para>Posts and reels are mirrored into DCMS content by a background sync (Meta.Core), so
 /// they are ordinary published items: cached, searchable, droppable onto a page in the builder
 /// and documented in the tenant's OpenAPI spec, with no delivery code of their own.</para>
 ///
 /// <para>Stories are the exception. They expire after 24 hours, which makes syncing them into
-/// content a poor fit, so they are fetched live by a dedicated content-api endpoint — one that
+/// content a poor fit, so they are fetched live by a dedicated site route — one that
 /// deliberately answers on the same <c>/api/{slug}/instagram-story</c> path and in the same
 /// paged shape as a real content type, so the generated builder block and the site runtime
 /// cannot tell the difference.</para>
 /// </summary>
 public sealed class InstagramPlugin : IPlugin
 {
-    public const string PluginId = "instagram";
-    public const string PostType = "instagram-post";
-    public const string ReelType = "instagram-reel";
-    public const string StoryType = "instagram-story";
+    public const string PluginId = MetaPlugins.InstagramId;
+    public const string PostType = MetaPlugins.InstagramPost;
+    public const string ReelType = MetaPlugins.InstagramReel;
+    public const string StoryType = MetaPlugins.InstagramStory;
 
     public PluginManifest Manifest { get; } = PluginManifest.Create(
         id: PluginId,
@@ -41,11 +46,29 @@ public sealed class InstagramPlugin : IPlugin
         ],
         contentTypes:
         [
-            MetaFeedContentTypes.Build(PostType, "post"),
-            MetaFeedContentTypes.Build(ReelType, "reel"),
+            MetaFeedContentTypes.Build(PostType, "post") with
+            {
+                Published = typeof(InstagramPostPublished), Unpublished = typeof(InstagramPostUnpublished),
+            },
+            MetaFeedContentTypes.Build(ReelType, "reel") with
+            {
+                Published = typeof(InstagramReelPublished), Unpublished = typeof(InstagramReelUnpublished),
+            },
             MetaFeedContentTypes.Build(StoryType, "story"),
         ],
         publicConfigKeys: MetaFeedConfig.PublicKeys(includeStories: true),
+        provides:
+        [
+            ContractProvision.Of<IInstagramPosts, InstagramPostsSource>(),
+            ContractProvision.Of<IInstagramReels, InstagramReelsSource>(),
+        ],
+        consumes:
+        [
+            ContractRequirement.Of<IPluginContent>(),
+            // The sync mirrors Meta's files through it; reauth notices go through the bell.
+            ContractRequirement.Of<IPluginMedia>(),
+            ContractRequirement.Of<IPluginNotifications>(),
+        ],
         category: "Integrations",
         summary: "Mirrors an Instagram feed into your content.",
         iconName: "Instagram");
@@ -58,12 +81,17 @@ public sealed class InstagramPlugin : IPlugin
         endpoints.MapContentList(ReelType);
         endpoints.MapContentGetBySlug(ReelType);
 
-        // Stories are deliberately NOT declared here. They are served by a live endpoint in
-        // content-api, and a literal route segment already outranks the generic
+        // Stories are deliberately NOT declared as a content route. They are fetched live
+        // (StoryDeliveryEndpoints), and a literal route segment already outranks the generic
         // /api/{slug}/{contentType} handler — but leaving the declaration out means that even
         // if that precedence ever changed, the generic handler would 404 rather than quietly
         // return an empty list from a table nothing writes to.
+        StoryDeliveryEndpoints.Map(endpoints);
     }
+
+    public void ConfigureServices(IServiceCollection services, PluginHost host) => MetaSocial.AddServices(services, host);
+
+    public void MapHostEndpoints(IEndpointRouteBuilder app, PluginHost host) => MetaSocial.MapHostEndpoints(app, host);
 
     public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
     {
@@ -88,13 +116,5 @@ public sealed class InstagramPlugin : IPlugin
         return new OpenApiFragment(posts.TagName, posts.TagDescription, paths, schemas);
     }
 
-    /// <summary>
-    /// Reads the stories toggle out of instance config, tolerating an absent or malformed
-    /// value. Absence means off: an instance that has never been configured must not start
-    /// advertising a live Meta call in its public API document.
-    /// </summary>
-    public static bool StoriesEnabled(JsonDocument config) =>
-        config.RootElement.ValueKind == JsonValueKind.Object
-        && config.RootElement.TryGetProperty(MetaFeedConfig.ShowStoriesKey, out var value)
-        && value.ValueKind == JsonValueKind.True;
+    public static bool StoriesEnabled(JsonDocument config) => MetaPlugins.StoriesEnabled(config);
 }

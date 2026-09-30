@@ -1314,6 +1314,14 @@
         "title": "Nová konverzace",
         "body": "Návštěvník zahájil konverzaci a čeká na operátora."
       },
+      "plugin_instagram_token-expiring": {
+        "title": "Vyžadováno opětovné připojení",
+        "body": "Připojení ke službě {{provider}} brzy vyprší a je třeba je znovu autorizovat."
+      },
+      "plugin_facebook_token-expiring": {
+        "title": "Vyžadováno opětovné připojení",
+        "body": "Připojení ke službě {{provider}} brzy vyprší a je třeba je znovu autorizovat."
+      },
       "social_token_expiring": {
         "title": "Vyžadováno opětovné připojení",
         "body": "Připojení ke službě {{provider}} brzy vyprší a je třeba je znovu autorizovat."

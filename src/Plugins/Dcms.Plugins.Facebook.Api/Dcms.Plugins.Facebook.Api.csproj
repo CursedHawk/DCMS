@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Facebook plugin's public API: its contracts, events and data records. Reference this, not
+    the plugin, to integrate with it (project reference, or the NuGet package of the same name).
+    Depends on the plugin SDK abstractions only.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

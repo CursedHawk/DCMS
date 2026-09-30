@@ -1,8 +1,6 @@
-using Dcms.Plugins.Facebook;
-using Dcms.Plugins.Instagram;
 using Dcms.Shared.Data.Social;
 
-namespace Dcms.AdminApi.Social;
+namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
 /// Pulls exactly as much of an account as the instance's caps allow, and not one page more.
@@ -37,14 +35,14 @@ public sealed class MetaFeedFetcher(MetaGraphClient graph, ILogger<MetaFeedFetch
         CancellationToken ct)
     {
         var wanted = new Dictionary<string, int>(StringComparer.Ordinal);
-        if (pluginId == InstagramPlugin.PluginId)
+        if (pluginId == MetaPlugins.InstagramId)
         {
-            wanted[InstagramPlugin.PostType] = settings.MaxPosts;
-            wanted[InstagramPlugin.ReelType] = settings.MaxReels;
+            wanted[MetaPlugins.InstagramPost] = settings.MaxPosts;
+            wanted[MetaPlugins.InstagramReel] = settings.MaxReels;
         }
         else
         {
-            wanted[FacebookPlugin.PostType] = settings.MaxPosts;
+            wanted[MetaPlugins.FacebookPost] = settings.MaxPosts;
         }
 
         var collected = new List<MetaFeedItem>();
@@ -62,7 +60,7 @@ public sealed class MetaFeedFetcher(MetaGraphClient graph, ILogger<MetaFeedFetch
             var remaining = wanted.Sum(w => Math.Max(0, w.Value - counts[w.Key]));
             var limit = Math.Clamp(remaining, 1, MaxPageSize);
 
-            var page = connection.Provider == MetaProvider.Facebook && pluginId == FacebookPlugin.PluginId
+            var page = connection.Provider == MetaProvider.Facebook && pluginId == MetaPlugins.FacebookId
                 ? await graph.GetFacebookPostsAsync(connection.ExternalAccountId, accessToken, cursor, limit, ct)
                 : await graph.GetInstagramMediaAsync(
                     connection.ExternalAccountId, accessToken,
@@ -104,7 +102,7 @@ public sealed class MetaFeedFetcher(MetaGraphClient graph, ILogger<MetaFeedFetch
 
     /// <summary>Which content type an item belongs to, given the plugin that asked for it.</summary>
     public static string TypeOf(MetaFeedItem item, string pluginId) =>
-        pluginId == InstagramPlugin.PluginId
-            ? item.IsReel ? InstagramPlugin.ReelType : InstagramPlugin.PostType
-            : FacebookPlugin.PostType;
+        pluginId == MetaPlugins.InstagramId
+            ? item.IsReel ? MetaPlugins.InstagramReel : MetaPlugins.InstagramPost
+            : MetaPlugins.FacebookPost;
 }

@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using Dcms.AdminApi.Tenancy;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Cms;
@@ -12,7 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Dcms.Shared.Data.Rls;
 
-namespace Dcms.AdminApi.Social;
+namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
 /// Connecting a tenant's Meta account: start consent, take the callback, list and revoke.
@@ -30,13 +29,13 @@ public static class MetaOAuthEndpoints
     /// <summary>Named limiter for the anonymous callback; registered in Program.cs.</summary>
     public const string CallbackRateLimitPolicy = "meta-oauth-callback";
 
-    public static IEndpointRouteBuilder MapMetaOAuthEndpoints(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app)
     {
         // ---------- start consent ----------
 
         app.MapGet("/api/admin/social/{provider}/connect", async (
             string provider, Guid? instanceId, SocialDbContext db, ITenantContext tenant,
-            CurrentUser me, MetaOAuthClient oauth, IOptions<MetaSocialOptions> options,
+            ICurrentActor me, MetaOAuthClient oauth, IOptions<MetaSocialOptions> options,
             CancellationToken ct) =>
         {
             if (!TryParseProvider(provider, out var metaProvider))
@@ -62,7 +61,7 @@ public static class MetaOAuthEndpoints
                 StateHash = Sha256Hex(stateToken),
                 Provider = metaProvider,
                 PluginInstanceId = instanceId,
-                InitiatedBy = me.RequireUserId(),
+                InitiatedBy = me.Id ?? throw new InvalidOperationException("No authenticated user."),
                 ReturnPath = options.Value.ReturnPath,
                 CreatedAt = DateTimeOffset.UtcNow,
                 ExpiresAt = DateTimeOffset.UtcNow.Add(StateLifetime),
@@ -248,7 +247,7 @@ public static class MetaOAuthEndpoints
 
         app.MapPost("/api/admin/social/instances/{instanceId:guid}/sync", async (
             Guid instanceId, CmsDbContext cms, MetaFeedSyncService sync,
-            ITenantContext tenant, CancellationToken ct) =>
+            ITenantContext tenant, IServiceProvider services, CancellationToken ct) =>
         {
             var instance = await cms.PluginInstances.FirstOrDefaultAsync(
                 p => p.Id == instanceId && p.TenantId == tenant.TenantId, ct);
@@ -257,7 +256,7 @@ public static class MetaOAuthEndpoints
 
             // Deliberately the same code path the timer uses. A separate, simplified manual
             // sync is how the two drift until only one of them mirrors media.
-            var outcome = await sync.SyncInstanceAsync(instance, ct);
+            var outcome = await sync.SyncInstanceAsync(instance, await MetaSocial.MediaForAsync(services, instance, ct), ct);
 
             return outcome.Ok
                 ? Results.Ok(new

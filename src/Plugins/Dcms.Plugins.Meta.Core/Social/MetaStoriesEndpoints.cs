@@ -1,6 +1,5 @@
+using Dcms.Shared.Security;
 using System.Text;
-using Dcms.AdminApi.Tenancy;
-using Dcms.Plugins.Instagram;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Cms;
@@ -9,7 +8,7 @@ using Dcms.Shared.Vault;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
-namespace Dcms.AdminApi.Social;
+namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
 /// The one Meta call that is not synced: an account's live stories, read on demand.
@@ -47,7 +46,7 @@ public static class MetaStoriesEndpoints
 
     public sealed record StoriesRequest(Guid TenantId, Guid InstanceId);
 
-    public static IEndpointRouteBuilder MapMetaStoriesEndpoints(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder Map(IEndpointRouteBuilder app)
     {
         app.MapPost(Route, async (
             StoriesRequest body, CmsDbContext cms, SocialDbContext social,
@@ -64,7 +63,7 @@ public static class MetaStoriesEndpoints
                 .FirstOrDefaultAsync(
                     p => p.Id == body.InstanceId && p.TenantId == body.TenantId && p.Enabled, ct);
 
-            if (instance is null || instance.PluginId != InstagramPlugin.PluginId)
+            if (instance is null || instance.PluginId != MetaPlugins.InstagramId)
             {
                 return Results.NotFound();
             }

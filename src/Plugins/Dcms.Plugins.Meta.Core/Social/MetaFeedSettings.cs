@@ -1,7 +1,6 @@
 using System.Text.Json;
-using Dcms.Plugins.Meta.Core;
 
-namespace Dcms.AdminApi.Social;
+namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
 /// One plugin instance's sync settings, read out of its raw config JSON.

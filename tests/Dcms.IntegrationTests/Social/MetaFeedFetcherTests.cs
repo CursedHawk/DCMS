@@ -1,5 +1,5 @@
 extern alias AdminApiApp;
-using AdminApiApp::Dcms.AdminApi.Social;
+using Dcms.Plugins.Meta.Core;
 using Dcms.Plugins.Facebook;
 using Dcms.Plugins.Instagram;
 using Dcms.Shared.Data.Social;

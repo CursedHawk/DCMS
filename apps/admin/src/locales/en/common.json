@@ -1289,6 +1289,14 @@
         "title": "New chat conversation",
         "body": "A visitor started a conversation and is waiting for an agent."
       },
+      "plugin_instagram_token-expiring": {
+        "title": "Reconnect required",
+        "body": "The connection to {{provider}} expires soon and needs reauthorising."
+      },
+      "plugin_facebook_token-expiring": {
+        "title": "Reconnect required",
+        "body": "The connection to {{provider}} expires soon and needs reauthorising."
+      },
       "social_token_expiring": {
         "title": "Reconnect required",
         "body": "The connection to {{provider}} expires soon and needs reauthorising."

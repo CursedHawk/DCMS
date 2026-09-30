@@ -1,5 +1,10 @@
 using Dcms.Plugins.Meta.Core;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.Plugins.Facebook.Api;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.Facebook;
 
@@ -13,8 +18,8 @@ namespace Dcms.Plugins.Facebook;
 /// </summary>
 public sealed class FacebookPlugin : IPlugin
 {
-    public const string PluginId = "facebook";
-    public const string PostType = "facebook-post";
+    public const string PluginId = MetaPlugins.FacebookId;
+    public const string PostType = MetaPlugins.FacebookPost;
 
     public PluginManifest Manifest { get; } = PluginManifest.Create(
         id: PluginId,
@@ -30,19 +35,27 @@ public sealed class FacebookPlugin : IPlugin
             new PermissionDefinition("connect", "Connect a Facebook Page"),
             new PermissionDefinition("sync", "Trigger a Facebook sync"),
         ],
-        contentTypes: [MetaFeedContentTypes.Build(PostType, "post")],
+        contentTypes:
+        [
+            MetaFeedContentTypes.Build(PostType, "post") with
+            {
+                Published = typeof(FacebookPostPublished), Unpublished = typeof(FacebookPostUnpublished),
+            },
+        ],
+        provides: [ContractProvision.Of<IFacebookPosts, FacebookPostsSource>()],
+        consumes:
+        [
+            ContractRequirement.Of<IPluginContent>(),
+            ContractRequirement.Of<IPluginMedia>(),
+            ContractRequirement.Of<IPluginNotifications>(),
+        ],
         publicConfigKeys: MetaFeedConfig.PublicKeys(includeStories: false),
         category: "Integrations",
         summary: "Mirrors a Facebook page feed into your content.",
         iconName: "Facebook");
 
 
-    public void MapEndpoints(IPluginEndpointBuilder endpoints)
-    {
-        endpoints.MapContentList(PostType);
-        endpoints.MapContentGetBySlug(PostType);
-    }
+    public void ConfigureServices(IServiceCollection services, PluginHost host) => MetaSocial.AddServices(services, host);
 
-    public OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
-        => ContentApiFragment.ForListAndGet(instance, PostType, Manifest);
+    public void MapHostEndpoints(IEndpointRouteBuilder app, PluginHost host) => MetaSocial.MapHostEndpoints(app, host);
 }

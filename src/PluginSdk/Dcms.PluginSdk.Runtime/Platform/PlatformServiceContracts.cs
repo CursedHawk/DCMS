@@ -261,12 +261,19 @@ public sealed class PluginContent(IPluginContext caller, PublishedContentReader 
 }
 
 /// <summary>
-/// <see cref="IPluginMedia"/> over <c>media.assets</c>. The caller's tenant is an explicit
+/// <see cref="IPluginMedia"/> over <c>media.assets</c>, as the public plane has it: resolving
+/// only. The admin plane registers an implementation that can also import. The caller's tenant is an explicit
 /// predicate as well as the ambient scope, so a job or event handler reads its own tenant's
 /// library exactly as a request does.
 /// </summary>
-public sealed class PluginMedia(IPluginContext caller, Dcms.Shared.Data.Media.MediaDbContext db) : IPluginMedia
+public class PluginMedia(IPluginContext caller, Dcms.Shared.Data.Media.MediaDbContext db) : IPluginMedia
 {
+    /// <summary>The calling plugin; its tenant is the one every read and write belongs to.</summary>
+    protected IPluginContext Caller => caller;
+
+    public virtual Task<MediaImportResult> ImportAsync(MediaImport input, CancellationToken ct) =>
+        throw new InvalidOperationException("dcms.media@1 imports only on the admin plane (a job, event handler or admin route).");
+
     public async Task<MediaAssetDto?> ResolveAsync(MediaLookup input, CancellationToken ct)
     {
         using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(caller.TenantId);

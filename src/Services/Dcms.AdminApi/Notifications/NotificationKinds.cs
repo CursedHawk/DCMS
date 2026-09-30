@@ -60,6 +60,15 @@ public static class NotificationKinds
     public const string LiveChatConversationStarted = "plugin.live-chat.conversation-started";
 
     /// <summary>
+    /// A Meta connection can no longer be renewed, raised by whichever feed plugin the tenant
+    /// uses. Supersedes <see cref="SocialTokenExpiring"/>, kept for the rows already stored.
+    /// </summary>
+    public const string InstagramTokenExpiring = "plugin.instagram.token-expiring";
+
+    /// <inheritdoc cref="InstagramTokenExpiring"/>
+    public const string FacebookTokenExpiring = "plugin.facebook.token-expiring";
+
+    /// <summary>
     /// The i18n key for a kind's title.
     ///
     /// <para><b>The dots in a kind are replaced with underscores, and that is load-bearing.</b>

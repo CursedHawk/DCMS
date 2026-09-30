@@ -1,6 +1,6 @@
 using Dcms.Shared.Data.Social;
 
-namespace Dcms.AdminApi.Social;
+namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
 /// The permissions each login path asks Meta for, and what each one buys.

@@ -129,6 +129,8 @@ public sealed class AdminApiFixture : IAsyncLifetime
             builder.UseSetting("Social:Instagram:AppSecret", "test-ig-secret");
             builder.UseSetting("Social:RedirectUri", "https://admin.test/api/admin/social/callback");
             builder.UseSetting("Social:OverrideBaseUrl", MetaStub.BaseUrl);
+            // The stub serves its CDN over plain http; imports are https-only otherwise.
+            builder.UseSetting("Media:ImportAllowHttp", "true");
             // The background sync is driven explicitly by tests through the sync-now endpoint,
             // so a timer firing underneath them would only add nondeterminism.
             builder.UseSetting("Social:SyncEnabled", "false");

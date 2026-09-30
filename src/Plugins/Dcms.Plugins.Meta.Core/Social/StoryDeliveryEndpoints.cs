@@ -1,4 +1,3 @@
-using Dcms.PluginSdk.Runtime.Platform;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -7,12 +6,15 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Caching;
-using Dcms.Shared.Data.Cms;
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
-namespace Dcms.ContentApi.Social;
+namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
 /// Live Instagram stories on the public delivery API.
@@ -45,36 +47,28 @@ public static class StoryDeliveryEndpoints
 
     private static readonly TimeSpan DefaultTtl = TimeSpan.FromMinutes(5);
 
-    public static IEndpointRouteBuilder MapStoryDelivery(this IEndpointRouteBuilder app)
+    /// <summary>
+    /// <c>GET /api/{slug}/instagram-story</c> on an Instagram instance. A literal segment, so it
+    /// outranks the generic <c>/api/{slug}/{contentType}</c> delivery route.
+    /// </summary>
+    public static void Map(IPluginEndpointBuilder endpoints)
     {
-        app.MapGet($"/api/{{slug}}/{ContentType}", async (
-            string slug, int? page, int? pageSize,
-            ITenantContext tenant, CmsDbContext db, ICacheService cache,
+        endpoints.MapGet($"/{ContentType}", async (
+            int? page, int? pageSize, IPluginContext context, ICacheService cache,
             IServiceTokenProvider tokens, IHttpClientFactory httpFactory,
             IConfiguration configuration, ILoggerFactory loggers, CancellationToken ct) =>
         {
-            if (tenant.TenantId is not { } tenantId) return Results.NotFound();
-
-            var instance = await db.PluginInstances.AsNoTracking()
-                .FirstOrDefaultAsync(p => p.Slug == slug && p.Enabled, ct);
-
-            if (instance is null || instance.PluginId != "instagram") return Results.NotFound();
-
-            var logger = loggers.CreateLogger("Dcms.ContentApi.Social.Stories");
-            var key = CacheKey(tenantId, instance.Id);
+            var tenantId = context.TenantId;
+            var instanceId = context.Instance!.InstanceId;
+            var logger = loggers.CreateLogger("Dcms.Plugins.Meta.Core.Stories");
+            var key = CacheKey(tenantId, instanceId);
 
             var json = await cache.GetAsync<string>(key, ct);
             if (json is null)
             {
-                // Cached even when it comes back empty. A tenant with stories switched off, or
-                // an account that simply has none today, is the common case — and it is the one
-                // that would otherwise call admin-api and Meta on every single page view.
-                json = await FetchAsync(tokens, httpFactory, tenantId, instance.Id, logger, ct);
+                json = await FetchAsync(tokens, httpFactory, tenantId, instanceId, logger, ct);
                 if (json is null)
                 {
-                    // Upstream is unhappy. Serve an empty feed rather than failing the request:
-                    // a story strip is decoration, and a 500 here would take the page with it.
-                    // Deliberately not cached, so the next request retries.
                     return Results.Ok(Empty(page, pageSize));
                 }
 
@@ -87,13 +81,11 @@ public static class StoryDeliveryEndpoints
 
             var items = stories
                 .Skip((current - 1) * size).Take(size)
-                .Select(node => ToDto(instance.Id, node!.AsObject()))
+                .Select(node => ToDto(instanceId, node!.AsObject()))
                 .ToList();
 
             return Results.Ok(new PagedResult<ContentItemDto>(items, current, size, stories.Count));
-        });
-
-        return app;
+        }).PermissionExempt("Public by design: the same stories the account shows everyone on Instagram.");
     }
 
     public static string CacheKey(Guid tenantId, Guid instanceId) =>
@@ -122,7 +114,7 @@ public static class StoryDeliveryEndpoints
             var token = await tokens.GetTokenAsync(SocialScope, ct);
 
             var client = httpFactory.CreateClient(HttpClientName);
-            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/internal/social/stories")
+            using var request = new HttpRequestMessage(HttpMethod.Post, MetaStoriesEndpoints.Route)
             {
                 Content = JsonContent.Create(new { tenantId, instanceId }),
             };

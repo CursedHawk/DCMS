@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 using Dcms.Shared.Data.Social;
 using Microsoft.Extensions.Options;
 
-namespace Dcms.AdminApi.Social;
+namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
 /// The OAuth half of the Meta integration: build the consent URL, exchange the code, and

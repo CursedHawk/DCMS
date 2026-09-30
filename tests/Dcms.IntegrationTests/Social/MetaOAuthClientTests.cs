@@ -1,5 +1,5 @@
 extern alias AdminApiApp;
-using AdminApiApp::Dcms.AdminApi.Social;
+using Dcms.Plugins.Meta.Core;
 using Dcms.Shared.Data.Social;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;

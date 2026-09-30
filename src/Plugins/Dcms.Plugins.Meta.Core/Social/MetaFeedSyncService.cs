@@ -1,8 +1,7 @@
+using Dcms.PluginSdk.Abstractions.Platform;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Dcms.Plugins.Facebook;
-using Dcms.Plugins.Instagram;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
@@ -13,7 +12,7 @@ using Dcms.Shared.Vault;
 using Microsoft.EntityFrameworkCore;
 using Dcms.Shared.Data.Rls;
 
-namespace Dcms.AdminApi.Social;
+namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
 /// Syncs one plugin instance: fetch within the caps, mirror the media, upsert the content,
@@ -38,7 +37,8 @@ public sealed class MetaFeedSyncService(
         public bool Ok => Error is null;
     }
 
-    public async Task<SyncOutcome> SyncInstanceAsync(PluginInstance instance, CancellationToken ct)
+    /// <param name="media">The feed plugin's <c>dcms.media@1</c>, which the mirror imports through.</param>
+    public async Task<SyncOutcome> SyncInstanceAsync(PluginInstance instance, IPluginMedia media, CancellationToken ct)
     {
         // One instance, one tenant, whether a timer or the sync-now button asked (ADR 0015). The
         // media lookup in TrimAsync names no tenant; this is what keeps it inside this one.
@@ -95,7 +95,7 @@ public sealed class MetaFeedSyncService(
         foreach (var item in harvest.Items)
         {
             var contentType = MetaFeedFetcher.TypeOf(item, instance.PluginId);
-            var data = await BuildDataAsync(instance, connection, item, settings, ct);
+            var data = await BuildDataAsync(media, instance, connection, item, settings, ct);
 
             if (await UpsertAsync(instance, contentType, item.ExternalId, data, item.PostedAt, ct)) created++;
             else updated++;
@@ -137,27 +137,27 @@ public sealed class MetaFeedSyncService(
 
     /// <summary>Builds the item payload, mirroring media unless the instance opted out.</summary>
     private async Task<JsonObject> BuildDataAsync(
-        PluginInstance instance, MetaConnection connection, MetaFeedItem item,
+        IPluginMedia media, PluginInstance instance, MetaConnection connection, MetaFeedItem item,
         MetaFeedSettings settings, CancellationToken ct)
     {
         var isVideo = string.Equals(item.MediaType, "VIDEO", StringComparison.OrdinalIgnoreCase);
         var mirrorThis = !isVideo || settings.MirrorVideo;
 
         Guid? assetId = mirrorThis
-            ? await mirror.MirrorAsync(instance.TenantId, connection.Id, item.ExternalId, item.MediaUrl, ct)
+            ? await mirror.MirrorAsync(media, instance.TenantId, connection.Id, item.ExternalId, item.MediaUrl, ct)
             : null;
 
         // A reel's poster frame is a small image and is mirrored even when the video is not,
         // so a feed with video mirroring off still renders as pictures rather than blanks.
         Guid? thumbnailId = item.ThumbnailUrl is { Length: > 0 }
-            ? await mirror.MirrorAsync(instance.TenantId, connection.Id, $"{item.ExternalId}:thumb", item.ThumbnailUrl, ct)
+            ? await mirror.MirrorAsync(media, instance.TenantId, connection.Id, $"{item.ExternalId}:thumb", item.ThumbnailUrl, ct)
             : null;
 
         var children = new JsonArray();
         foreach (var child in item.Children)
         {
             var childAsset = await mirror.MirrorAsync(
-                instance.TenantId, connection.Id, $"{item.ExternalId}:{child.ExternalId}", child.MediaUrl, ct);
+                media, instance.TenantId, connection.Id, $"{item.ExternalId}:{child.ExternalId}", child.MediaUrl, ct);
 
             children.Add(new JsonObject
             {
@@ -296,13 +296,13 @@ public sealed class MetaFeedSyncService(
     private async Task<int> TrimAsync(
         PluginInstance instance, MetaFeedSettings settings, CancellationToken ct)
     {
-        var caps = instance.PluginId == InstagramPlugin.PluginId
+        var caps = instance.PluginId == MetaPlugins.InstagramId
             ? new Dictionary<string, int>
             {
-                [InstagramPlugin.PostType] = settings.MaxPosts,
-                [InstagramPlugin.ReelType] = settings.MaxReels,
+                [MetaPlugins.InstagramPost] = settings.MaxPosts,
+                [MetaPlugins.InstagramReel] = settings.MaxReels,
             }
-            : new Dictionary<string, int> { [FacebookPlugin.PostType] = settings.MaxPosts };
+            : new Dictionary<string, int> { [MetaPlugins.FacebookPost] = settings.MaxPosts };
 
         var trimmed = 0;
 

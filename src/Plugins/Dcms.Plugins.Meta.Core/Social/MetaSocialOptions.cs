@@ -1,6 +1,6 @@
 using Dcms.Shared.Data.Social;
 
-namespace Dcms.AdminApi.Social;
+namespace Dcms.Plugins.Meta.Core;
 
 /// <summary>
 /// Platform-level Meta app configuration, bound from the <c>Social</c> section
