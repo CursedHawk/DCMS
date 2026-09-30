@@ -77,3 +77,7 @@ loadtest/fixtures/
 # Python bytecode (the log-janitor sidecar).
 __pycache__/
 *.py[cod]
+
+# Operator-installed plugins are deployment state, not source (plugins/README.md).
+plugins/*
+!plugins/README.md

@@ -41,4 +41,17 @@
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.VisitorAuth\Dcms.Plugins.VisitorAuth.csproj" />
   </ItemGroup>
 
+  <!-- The sample external plugin, installed the way an operator would: its build output in a
+       folder of its own, loaded by PluginLoader rather than referenced. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\samples\Dcms.Plugins.Sample.Greeter\Dcms.Plugins.Sample.Greeter.csproj"
+                      ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+  <Target Name="InstallSamplePlugin" AfterTargets="Build">
+    <ItemGroup>
+      <SamplePluginFiles Include="..\..\samples\Dcms.Plugins.Sample.Greeter\bin\$(Configuration)\$(TargetFramework)\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SamplePluginFiles)" DestinationFolder="$(OutDir)installed-plugins\Dcms.Plugins.Sample.Greeter" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

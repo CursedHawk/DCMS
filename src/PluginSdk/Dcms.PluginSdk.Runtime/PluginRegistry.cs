@@ -23,8 +23,13 @@ public sealed class PluginRegistry : IPluginCatalog
     {
     }
 
-    public PluginRegistry(IEnumerable<IPlugin> plugins, IEnumerable<ContractProvision> platformContracts)
+    private readonly IReadOnlySet<string> _installed;
+
+    /// <param name="installed">Ids of plugins loaded from the plugin directory rather than compiled in.</param>
+    public PluginRegistry(
+        IEnumerable<IPlugin> plugins, IEnumerable<ContractProvision> platformContracts, IReadOnlySet<string>? installed = null)
     {
+        _installed = installed ?? new HashSet<string>();
         _plugins = new Dictionary<string, IPlugin>(StringComparer.Ordinal);
 
         foreach (var plugin in plugins)
@@ -70,6 +75,9 @@ public sealed class PluginRegistry : IPluginCatalog
     }
 
     public IReadOnlyCollection<IPlugin> Plugins => _plugins.Values;
+
+    /// <summary>"installed" for an operator-installed plugin, "builtin" for one compiled in.</summary>
+    public string SourceOf(string pluginId) => _installed.Contains(pluginId) ? "installed" : "builtin";
 
     public IReadOnlyList<PluginManifest> Manifests => _plugins.Values.Select(p => p.Manifest).ToList();
 

@@ -10,10 +10,10 @@ namespace Dcms.AdminApi.Plugins;
 /// <summary>
 /// The plugin marketplace.
 ///
-/// <para><b>What this is not.</b> Plugins are compiled into <c>Dcms.Plugins.All</c> and there is
-/// no runtime assembly loading, so "marketplace" here means discovery and enablement of what
-/// ships in the binary — not installing third-party code. That would need signing, trust and
-/// tenant isolation in content-api, and is a larger project than the console it would serve.</para>
+/// <para><b>What this is not.</b> Tenants do not install code. The plugins listed are the ones this
+/// deployment runs: compiled in (<c>Dcms.Plugins.All</c>, <c>source: "builtin"</c>) or installed by
+/// the operator into the plugin directory (<c>source: "installed"</c>). "Marketplace" means
+/// discovery and enablement of those.</para>
 ///
 /// <para><b>Why it is a separate endpoint from the catalog</b>, which already returns manifests.
 /// The catalog is a technical document: JSON Schemas, field definitions, dependency ids — it
@@ -23,8 +23,7 @@ namespace Dcms.AdminApi.Plugins;
 /// Schemas.</para>
 ///
 /// <para>The shape is deliberately registry-flavoured — <c>source</c>, <c>version</c>, a flat
-/// item list — so that a remote registry can back it later without the SPA changing. Today
-/// every item reports <c>source: "builtin"</c>.</para>
+/// item list — so that a remote registry can back it later without the SPA changing.</para>
 /// </summary>
 public static class MarketplaceEndpoints
 {
@@ -80,7 +79,7 @@ public static class MarketplaceEndpoints
                         instanceCount = counts?.total ?? 0,
                         enabledCount = counts?.enabled ?? 0,
                         installed = (counts?.total ?? 0) > 0,
-                        source = "builtin",
+                        source = registry.SourceOf(m.Id),
                     };
                 });
 

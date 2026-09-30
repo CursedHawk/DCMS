@@ -15,6 +15,7 @@ public sealed class PluginRegistryBuilder(PluginHost host)
 {
     internal List<IPlugin> Plugins { get; } = [];
     internal List<ContractProvision> PlatformContracts { get; } = [];
+    internal HashSet<string> Installed { get; } = new(StringComparer.Ordinal);
 
     /// <summary>The host the registry is being built for.</summary>
     public PluginHost Host { get; } = host;
@@ -27,6 +28,13 @@ public sealed class PluginRegistryBuilder(PluginHost host)
     {
         Plugins.Add(plugin);
         return this;
+    }
+
+    /// <summary>A plugin loaded from the operator's plugin directory rather than compiled in.</summary>
+    public PluginRegistryBuilder AddInstalled(IPlugin plugin)
+    {
+        Installed.Add(plugin.Manifest.Id);
+        return Add(plugin);
     }
 
     /// <summary>
@@ -64,6 +72,14 @@ public static class PluginSdkServiceCollectionExtensions
         builder.Services.AddDcmsPlugins(host, plugins =>
         {
             configure(plugins);
+            // Operator-installed plugins, beside the compiled-in set (Hosting/PluginLoader).
+            if (builder.Configuration["Plugins:Directory"] is { Length: > 0 } directory)
+            {
+                foreach (var plugin in Hosting.PluginLoader.LoadFrom(directory))
+                {
+                    plugins.AddInstalled(plugin);
+                }
+            }
             plugins.AddPlatformContracts(plane);
         });
         return builder;
@@ -103,7 +119,7 @@ public static class PluginSdkServiceCollectionExtensions
         var disabled = host.Configuration.GetSection("Plugins:Disabled").GetChildren()
             .Select(c => c.Value).OfType<string>().ToHashSet(StringComparer.Ordinal);
         return new PluginRegistry(
-            builder.Plugins.Where(p => !disabled.Contains(p.Manifest.Id)), builder.PlatformContracts);
+            builder.Plugins.Where(p => !disabled.Contains(p.Manifest.Id)), builder.PlatformContracts, builder.Installed);
     }
 
     private static void AddPluginContexts(IServiceCollection services)

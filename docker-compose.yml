@@ -455,8 +455,13 @@ services:
     # that a single runaway is killed at its own limit instead of taking the host -- it is not
     # a promise that all sixteen can peak at once.
     mem_limit: "${ADMIN_API_MEM_LIMIT:-768m}"
+    # Operator-installed plugins (PluginLoader): one published plugin per subfolder of
+    # ./plugins. Both plugin hosts load the same set; read-only, the hosts never write here.
+    volumes:
+      - ./plugins:/app/plugins:ro
     environment:
       <<: *service-env
+      Plugins__Directory: "/app/plugins"
       # The owner, in dev only: here it migrates at startup. Production overrides this.
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev;Maximum Pool Size=35"
       Auth__Authority: "http://dcms-identity:8080/"
@@ -478,8 +483,13 @@ services:
     # See admin-api. This is the anonymous delivery plane -- the one PERF-01 was actually
     # about -- so it is the one a ceiling matters most on.
     mem_limit: "${CONTENT_API_MEM_LIMIT:-640m}"
+    # Operator-installed plugins (PluginLoader): one published plugin per subfolder of
+    # ./plugins. Both plugin hosts load the same set; read-only, the hosts never write here.
+    volumes:
+      - ./plugins:/app/plugins:ro
     environment:
       <<: *service-env
+      Plugins__Directory: "/app/plugins"
       # ADR 0015 phase 4, fourth: on dcms_app, NOBYPASSRLS. Public requests carry the tenant
       # (X-Dcms-Tenant, set by site-host's proxy); the chat hub, bot and search indexer act as
       # their connection's or event's tenant. Moved back by deleting these two lines.
