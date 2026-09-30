@@ -1356,7 +1356,8 @@
     "uses": "Používá",
     "optional": "volitelné",
     "add": "Přidat do workspace",
-    "manage": "Spravovat"
+    "manage": "Spravovat",
+    "reference": "Referenční příručka API"
   },
   "tour": {
     "next": "Další",
@@ -1452,5 +1453,42 @@
     "aiHint": "Model a API klíče",
     "auditHint": "Co se tu dělo",
     "apiHint": "Endpointy, které tento prostor nabízí"
+  },
+  "pluginReference": {
+    "back": "Tržiště",
+    "title": "{{name}}: referenční příručka API",
+    "notFound": "Takový plugin neexistuje.",
+    "tabs": {
+      "overview": "Přehled",
+      "contracts": "Kontrakty",
+      "events": "Události a háčky",
+      "data": "Data",
+      "config": "Konfigurace"
+    },
+    "packages": "Balíčky",
+    "sdkMajor": "Sestaveno proti plugin SDK {{major}}.x.",
+    "csharp": "Použití z C#",
+    "uses": "Používá",
+    "providedBy": "poskytuje {{plugins}}",
+    "platform": "platforma",
+    "noContracts": "Tento plugin nenabízí žádné kontrakty.",
+    "noEvents": "Tento plugin nepublikuje události ani nespouští háčky.",
+    "event": "událost",
+    "hook": "háček",
+    "listensTo": "Naslouchá",
+    "priority": "priorita {{priority}}",
+    "noContentTypes": "Tento plugin neuchovává obsah.",
+    "lifecycle": "Vyvolává {{published}} a {{unpublished}}.",
+    "jobs": "Úlohy na pozadí",
+    "every": "každých {{minutes}} min",
+    "configSchema": "Konfigurace instance (JSON Schema)",
+    "alsoProvidedBy": "implementuje {{plugins}}",
+    "hide": "Skrýt",
+    "details": "Podrobnosti",
+    "input": "Vstup",
+    "output": "Výstup",
+    "instance": "Instance",
+    "run": "Spustit",
+    "runWrite": "Spustit (zapisuje)"
   }
 }

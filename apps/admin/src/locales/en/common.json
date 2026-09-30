@@ -1331,7 +1331,8 @@
     "uses": "Uses",
     "optional": "optional",
     "add": "Add to workspace",
-    "manage": "Manage"
+    "manage": "Manage",
+    "reference": "API reference"
   },
   "tour": {
     "next": "Next",
@@ -1424,5 +1425,42 @@
     "aiHint": "Model and API keys",
     "auditHint": "What has been done here",
     "apiHint": "The endpoints this workspace exposes"
+  },
+  "pluginReference": {
+    "back": "Marketplace",
+    "title": "{{name}}: API reference",
+    "notFound": "No such plugin.",
+    "tabs": {
+      "overview": "Overview",
+      "contracts": "Contracts",
+      "events": "Events & hooks",
+      "data": "Data",
+      "config": "Configuration"
+    },
+    "packages": "Packages",
+    "sdkMajor": "Built against plugin SDK {{major}}.x.",
+    "csharp": "Use it from C#",
+    "uses": "Uses",
+    "providedBy": "provided by {{plugins}}",
+    "platform": "platform",
+    "noContracts": "This plugin offers no contracts.",
+    "noEvents": "This plugin publishes no events and runs no hooks.",
+    "event": "event",
+    "hook": "hook",
+    "listensTo": "Listens to",
+    "priority": "priority {{priority}}",
+    "noContentTypes": "This plugin keeps no content.",
+    "lifecycle": "Raises {{published}} and {{unpublished}}.",
+    "jobs": "Background jobs",
+    "every": "every {{minutes}} min",
+    "configSchema": "Instance configuration (JSON Schema)",
+    "alsoProvidedBy": "implemented by {{plugins}}",
+    "hide": "Hide",
+    "details": "Details",
+    "input": "Input",
+    "output": "Output",
+    "instance": "Instance",
+    "run": "Run",
+    "runWrite": "Run (writes)"
   }
 }

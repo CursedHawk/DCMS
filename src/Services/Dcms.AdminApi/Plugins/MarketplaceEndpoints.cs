@@ -86,6 +86,14 @@ public static class MarketplaceEndpoints
             return Results.Ok(new { items });
         }).RequirePermission(PlatformPermissions.PluginsManage);
 
+        // The developer reference: what a plugin offers other code and how to call it. Built
+        // from the running registry, so it cannot drift from what the plugin actually does.
+        app.MapGet("/api/admin/marketplace/{pluginId}/reference", (string pluginId, PluginRegistry registry) =>
+            PluginReference.Build(registry, pluginId) is { } reference
+                ? Results.Json(reference, Dcms.PluginSdk.Runtime.Contracts.ContractDescriptorBuilder.Json)
+                : Results.NotFound())
+            .RequirePermission(PlatformPermissions.PluginsManage);
+
         return app;
     }
 }

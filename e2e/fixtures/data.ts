@@ -244,3 +244,31 @@ export const PLATFORM_AUDIT = {
   hasMore: false,
   nextCursor: null,
 };
+
+/** GET /api/admin/marketplace/:id/reference — a plugin's developer reference. */
+export const PLUGIN_REFERENCE = {
+  id: 'forms', name: 'Forms', version: '1.0.0', description: 'Visitor forms and their submissions.',
+  source: 'builtin', sdkMajor: 1,
+  packages: [
+    { id: 'Dcms.PluginSdk.Abstractions', purpose: 'The plugin SDK: every plugin builds against it.' },
+    { id: 'Dcms.Plugins.Forms.Api', purpose: 'Reference this to call the plugin, handle its events or intercept its hooks.' },
+  ],
+  provides: [{
+    id: 'forms.submissions@1', description: 'Stored submissions of a Forms instance.',
+    clrType: 'Dcms.Plugins.Forms.Api.IFormSubmissions', assembly: 'Dcms.Plugins.Forms.Api', providers: ['forms'],
+    operations: [{
+      name: 'List', method: 'ListAsync', risk: 'read', permission: 'content:read',
+      exposed: ['plugins', 'admin', 'ai'], returnsExternalText: true, description: 'Newest-first page of submissions.',
+      inputType: 'SubmissionQuery', outputType: 'Task<SubmissionPage>',
+      inputSchema: { type: 'object', properties: { formName: { type: ['string', 'null'] }, page: { type: 'integer' } } },
+      outputSchema: { type: 'object' },
+    }],
+    events: [{ name: 'form.submitted', clrType: 'FormSubmitted', schema: { type: 'object' } }],
+    hooks: [{ name: 'forms.submitting', clrType: 'FormSubmitting', schema: { type: 'object' } }],
+  }],
+  consumes: [{ contractId: 'visitors.identity@1', optional: true, bindingConfigKey: null, providers: ['visitor-auth'] }],
+  subscribes: [], intercepts: [], jobs: [], contentTypes: [],
+  config: { type: 'object', properties: { forms: { type: 'array' } } },
+  publicConfigKeys: [], permissions: [{ key: 'plugin:forms:manage', displayName: 'Manage forms' }],
+  cSharp: '// dotnet add package Dcms.Plugins.Forms.Api\nusing Dcms.Plugins.Forms.Api;\n\nconsumes: [ContractRequirement.Of<IFormSubmissions>()],\nintercepts: [HookSubscription.Of<FormSubmitting, MyInterceptor>(priority: 0)],',
+};

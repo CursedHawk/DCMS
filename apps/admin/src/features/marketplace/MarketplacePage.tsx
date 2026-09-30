@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { Check, Package, Plus, ShieldCheck, Store } from 'lucide-react';
+import { Check, Code2, Package, Plus, ShieldCheck, Store } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   Badge,
@@ -280,6 +280,14 @@ function PluginDetail({ item }: { item: MarketplaceItem }) {
           JSON-Schema config form, and duplicating that here would be a second write path onto
           the same rows. The shopfront's job ends at "this is the one I want".
         */}
+        <Button
+          variant="outline"
+          data-testid="marketplace-reference"
+          onClick={() => void navigate({ to: '/marketplace/$pluginId', params: { pluginId: item.id } })}
+        >
+          <Code2 className="h-4 w-4" aria-hidden />
+          {t('marketplace.reference')}
+        </Button>
         <Button
           onClick={() =>
             void navigate({ to: '/plugins' as string, search: { add: item.id } as never })

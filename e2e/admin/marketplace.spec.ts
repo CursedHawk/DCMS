@@ -60,3 +60,16 @@ test('filters down to nothing honestly', async ({ page }) => {
   await expect(page.getByText('Nothing matches that')).toBeVisible();
   await expect(page.getByText('Try a different word')).toBeVisible();
 });
+
+test('opens a plugin\'s API reference: packages, C#, contracts and hooks', async ({ page }) => {
+  await page.goto('/marketplace');
+  await card(page, 'Forms').click();
+  await page.getByTestId('marketplace-reference').click();
+
+  await expect(page.getByRole('heading', { name: /API reference/ })).toBeVisible();
+  await expect(page.getByText('Dcms.Plugins.Forms.Api').first()).toBeVisible();
+  await expect(page.getByTestId('plugin-reference-csharp')).toContainText('HookSubscription.Of<FormSubmitting');
+
+  await page.getByRole('tab', { name: /Events & hooks/ }).click();
+  await expect(page.getByText('forms.submitting')).toBeVisible();
+});

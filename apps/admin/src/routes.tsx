@@ -53,7 +53,10 @@ const SettingsIndex = page(() => import('./features/settings/SettingsIndex'), 'S
 const SettingsLayout = page(() => import('./features/settings/SettingsLayout'), 'SettingsLayout');
 const WorkspacePage = page(() => import('./features/workspace/WorkspacePage'), 'WorkspacePage');
 
-// Takes a prop, so it cannot use the helper above.
+// These take a prop, so they cannot use the helper above.
+const PluginReferencePage = lazy(() =>
+  import('./features/marketplace/PluginReferencePage').then((m) => ({ default: m.PluginReferencePage })),
+);
 const SiteWorkspace = lazy(() =>
   import('./features/sites/SiteWorkspace').then((m) => ({ default: m.SiteWorkspace })),
 );
@@ -109,6 +112,19 @@ const tenantsRoute = child('/tenants', TenantsPage);
 const pluginsRoute = child('/plugins', PluginsPage);
 const contentRoute = child('/content', ContentPage);
 const marketplaceRoute = child('/marketplace', MarketplacePage);
+/** A plugin's developer reference: its contracts, events, data and how to use them from C#. */
+const pluginReferenceRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/marketplace/$pluginId',
+  component: function PluginReference() {
+    const { pluginId } = useParams({ strict: false });
+    return (
+      <RequirePermission perm={ROUTE_GUARDS['/marketplace'].perm}>
+        <PluginReferencePage pluginId={pluginId as string} />
+      </RequirePermission>
+    );
+  },
+});
 const mediaRoute = child('/media', MediaPage);
 const formsRoute = child('/forms', FormsPage);
 const sitesRoute = child('/sites', SitesPage);
@@ -217,6 +233,7 @@ export const routeTree = rootRoute.addChildren([
     pluginsRoute,
     contentRoute,
     marketplaceRoute,
+    pluginReferenceRoute,
     mediaRoute,
     formsRoute,
     sitesRoute,

@@ -67,6 +67,23 @@ public sealed class PluginContractWiringTests(ContentFlowFixture fixture)
                                    && c.GetProperty("optional").GetBoolean());
     }
 
+    [DockerFact]
+    public async Task The_marketplace_serves_a_plugins_developer_reference()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (tenant, owner) = await TenantAsync(ct);
+        var admin = fixture.Admin.CreateClient();
+
+        var res = await admin.SendAsync(AdminReq(HttpMethod.Get, "/api/admin/marketplace/forms/reference", owner, tenant), ct);
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await res.Content.ReadFromJsonAsync<JsonElement>(ct);
+        body.GetProperty("provides")[0].GetProperty("hooks")[0].GetProperty("name").GetString().Should().Be("forms.submitting");
+        body.GetProperty("cSharp").GetString().Should().Contain("Dcms.Plugins.Forms.Api");
+
+        (await admin.SendAsync(AdminReq(HttpMethod.Get, "/api/admin/marketplace/nope/reference", owner, tenant), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
     // ---- helpers ----
 
     private async Task<(string Slug, Guid Owner)> TenantAsync(CancellationToken ct)

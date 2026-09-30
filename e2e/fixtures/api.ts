@@ -236,6 +236,7 @@ export function adminApi(
     // The assistant's plugin contract tools (plane=ai): none unless a spec says otherwise.
     .on('GET', '/api/admin/contracts', [])
     .on('GET', '/api/admin/marketplace', data.MARKETPLACE)
+    .on('GET', '/api/admin/marketplace/:id/reference', data.PLUGIN_REFERENCE)
     .on('POST', '/api/admin/plugins/instances', ({ body }) => ({
       id: 'cccccccc-0000-0000-0000-00000000000f',
       pluginId: (body as { pluginId: string }).pluginId,
