@@ -1,8 +1,10 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Dcms.Plugins.Blog.Api;
 using Dcms.Plugins.Forms.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Data;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Microsoft.AspNetCore.Http;
 
@@ -57,6 +59,9 @@ public sealed class GreeterPlugin : IPlugin
         ],
         subscribes: [EventSubscription.Of<BlogPostPublished, CountPublishedPosts>()],
         intercepts: [HookSubscription.Of<FormSubmitting, SpamFilter>(priority: 100)],
+        // A table on the plugin's admin page. (Everything in dcms.storage also shows up there on
+        // its own, as "Stored data"; a data set of your own is for showing it the way you mean it.)
+        dataSets: [DataSetDeclaration.Of<TurnedAway>("turned-away", "Turned away", "Form submissions the spam filter refused.")],
         category: "Samples",
         iconName: "Hand");
 
@@ -111,7 +116,7 @@ public sealed class CountPublishedPosts : IPluginEventHandler<BlogPostPublished>
 /// <summary>A hook: runs before a form submission is stored, and may refuse it.</summary>
 public sealed class SpamFilter : IPluginHookHandler<FormSubmitting>
 {
-    public ValueTask<HookResult<FormSubmitting>> HandleAsync(FormSubmitting hook, IPluginContext context, CancellationToken ct)
+    public async ValueTask<HookResult<FormSubmitting>> HandleAsync(FormSubmitting hook, IPluginContext context, CancellationToken ct)
     {
         var blocked = context.Instance?.Config.RootElement is { ValueKind: JsonValueKind.Object } root
                       && root.TryGetProperty("blockedWords", out var list) && list.ValueKind == JsonValueKind.Array
@@ -121,8 +126,57 @@ public sealed class SpamFilter : IPluginHookHandler<FormSubmitting>
             .Where(v => v.ValueKind == JsonValueKind.String)
             .Any(v => blocked.Any(w => v.GetString()!.Contains(w, StringComparison.OrdinalIgnoreCase)));
 
-        return ValueTask.FromResult(spam
-            ? HookResult.Cancel(hook, "This message looks like spam.")
-            : HookResult.Continue(hook));
+        if (!spam)
+        {
+            return HookResult.Continue(hook);
+        }
+        // Kept so an admin can check the filter is not turning away real people. Best effort: a
+        // hook that throws is skipped (hooks fail open), and the refusal must not hinge on a log.
+        try
+        {
+            await context.Contracts.Get<IPluginStorage>().PutAsync(new PutDocument(TurnedAway.Collection, Guid.NewGuid().ToString("N"),
+                JsonSerializer.SerializeToElement(new { form = hook.FormName, data = hook.Data, at = DateTimeOffset.UtcNow }),
+                InstanceScoped: false), ct);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+        }
+        return HookResult.Cancel(hook, "This message looks like spam.");
     }
+}
+
+/// <summary>
+/// A data set: what the admin sees on the plugin's page. Describe the columns, answer a page of
+/// rows, and say what may be done — here, deleting a row. The console does the rest.
+/// </summary>
+public sealed class TurnedAway(IPluginContext context) : IPluginDataSet
+{
+    public const string Collection = "turned-away";
+
+    private IPluginStorage Storage => context.Contracts.Get<IPluginStorage>();
+
+    public Task<DataSetSchema> DescribeAsync(CancellationToken ct) => Task.FromResult(new DataSetSchema(
+        Columns:
+        [
+            new DataColumn("form", "Form", DataColumnKinds.Badge),
+            new DataColumn("data", "What was sent", DataColumnKinds.Json, Primary: true),
+            new DataColumn("at", "When", DataColumnKinds.DateTime),
+        ],
+        CanDelete: true));
+
+    public async Task<DataPage> ListAsync(DataQuery query, CancellationToken ct)
+    {
+        var page = await Storage.QueryAsync(
+            new QueryDocuments(Collection, Page: query.Page, PageSize: query.PageSize, InstanceScoped: false), ct);
+        return new DataPage(page.Items.Select(ToRow).ToList(), page.TotalCount);
+    }
+
+    public async Task<DataRow?> GetAsync(string key, CancellationToken ct) =>
+        await Storage.GetAsync(new DocumentAddress(Collection, key, InstanceScoped: false), ct) is { } doc ? ToRow(doc) : null;
+
+    public async Task<bool> DeleteAsync(string key, CancellationToken ct) =>
+        (await Storage.DeleteAsync(new DocumentAddress(Collection, key, InstanceScoped: false), ct)).Found;
+
+    private static DataRow ToRow(StoredDocument doc) =>
+        new(doc.Key, JsonNode.Parse(doc.Data.GetRawText())!.AsObject());
 }

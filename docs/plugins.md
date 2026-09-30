@@ -9,6 +9,7 @@ know no plugin by name.
 - [ADR 0016](adr/0016-plugin-contracts.md): contracts, the dispatcher, platform contracts.
 - [ADR 0017](adr/0017-plugin-api-ecosystem.md): `.Api` packages, open contracts, hooks,
   content events, installed plugins, the reference page.
+- [ADR 0018](adr/0018-plugin-admin-pages.md): the plugin's page in the admin, and data sets.
 
 Read a real one next to this page: **Blog** (a content plugin in a dozen lines), **Forms**
 (routes, a hook, a consumer of VisitorAuth), **LiveChat** (host routes, its own events),
@@ -258,6 +259,60 @@ plugin id are stamped from its context and never taken from input.
 A host may implement a platform contract differently from the default (admin-api's media can
 import; content-api's cannot): the first registration of a contract wins.
 
+## Your page in the admin: data sets
+
+Every instance has a page in the admin console (`/plugins/{slug}`): its wiring (what it offers,
+what it uses and which instance answers, who relies on it), its data, settings, site routes,
+developer reference and audit history. You write no UI for it. What you contribute is **data
+sets**: tables of your data the console lists, searches, filters, pages, edits and acts on.
+
+```csharp
+dataSets: [DataSetDeclaration.Of<SubscribersDataSet>("subscribers", "Subscribers",
+    readPermission: "plugin:newsletter:read", writePermission: "plugin:newsletter:manage")],
+
+public sealed class SubscribersDataSet(IPluginContext context, MyDbContext db) : IPluginDataSet
+{
+    public Task<DataSetSchema> DescribeAsync(CancellationToken ct) => Task.FromResult(new DataSetSchema(
+        Columns: [new("email", "Email", DataColumnKinds.Email, Sortable: true, Primary: true),
+                  new("confirmed", "Confirmed", DataColumnKinds.Boolean)],
+        ItemSchema: new JsonObject { ["type"] = "object", ["properties"] = new JsonObject {
+            ["name"] = new JsonObject { ["type"] = "string", ["title"] = "Name" } } },
+        Filters: [new("confirmed", "Status", [new("yes", "Confirmed"), new("no", "Pending")])],
+        Actions: [new DataAction("resend", "Resend confirmation", OpRisk.Safe)],
+        Searchable: true, CanUpdate: true, CanDelete: true, DefaultSort: "email"));
+
+    public Task<DataPage> ListAsync(DataQuery query, CancellationToken ct) => ...; // query.Search, .Filter("confirmed"), .Sort, .Skip
+    public Task<DataRow?> GetAsync(string key, CancellationToken ct) => ...;
+    public Task<DataRow?> UpdateAsync(string key, JsonObject values, CancellationToken ct) => ...;
+    public Task<bool> DeleteAsync(string key, CancellationToken ct) => ...;
+    public Task<DataActionResult> RunActionAsync(string action, IReadOnlyList<string> keys, JsonObject? input, CancellationToken ct) => ...;
+}
+```
+
+- **The runtime is the gate, not you.** Only what the schema says is called (`CanUpdate`,
+  `CanDelete`, `CanCreate`, `CanDownload`, declared actions). Values reach `Create`/`Update`
+  cut down to `ItemSchema`'s properties and validated against it; filters arrive only with
+  declared options, sorts only on sortable columns, pages capped at 100. Throw
+  `ContractValidationException` (400) or `ContractConflictException` (409) for the rest.
+- **Permissions** are full keys, your own or a platform one (`content:read`); unset means
+  `plugins:manage`. A set the caller cannot read is not listed; write needs the write key.
+- **Audit** is the runtime's: every change is `plugin.data.*` against the instance, naming the
+  set, row and action. (The source scan still asks a file using `ExecuteUpdate`/`ExecuteDelete`
+  to say how it is audited — say so in the class comment.)
+- The set is built per request with your `IPluginContext` for the instance being viewed, like a
+  route handler. Describe may read instance config (VisitorAuth's columns follow its attributes).
+- Row `Values` are by column key; a nested object renders as a definition list and multiline
+  text as a transcript. Column kinds: `text`, `number`, `boolean`, `datetime`, `email`, `url`,
+  `badge`, `bytes`, `json`, `media`. `"format": "json"` in an item schema gets a JSON editor.
+- **Free sets.** A plugin consuming `dcms.storage` gets "Stored data" (every document, this
+  instance's and plugin-wide, editable as JSON); one consuming `dcms.blobs` gets "Files"
+  (download, delete). An installed plugin has a data view without writing any of the above.
+
+Served at `/api/admin/plugins/{slug}/_data` (list sets with schemas), `…/_data/{set}` (query:
+`search`, `sort`, `desc`, `page`, `pageSize`, `f.{filter}`), `…/{set}/row?key=` (GET, PUT,
+DELETE), `…/{set}/rows` (POST), `…/{set}/actions/{action}` (`{ keys, input }`),
+`…/{set}/download?key=`. The data of a disabled instance is not served.
+
 ## Configuration
 
 Two levels, never mixed:
@@ -275,7 +330,7 @@ without uninstalling it — anything requiring its contracts then fails startup 
 
 Manifest flags the platform reads instead of knowing your plugin: `tracksVisitors` (a published
 site asks for cookie consent while an instance is enabled), `reservedSlugs`, `clientBindings`,
-`nav` (a sidebar entry).
+`nav` (a sidebar entry), `dataSets` (above).
 
 ## Building a plugin outside this repo
 

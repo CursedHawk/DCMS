@@ -82,7 +82,7 @@ baas-dcms/
 ├── CLAUDE.md / README.md
 ├── AI AGENT PROGRESS.md             # 988-line working notes (tracked)
 ├── TODO/                            # PROGRESS.md, AI AGENT IDE REWORK.md, GRAFANA AND TELEMETRY.md, FIXES…
-├── docs/                            # setup, runbook, vault-secrets, seal-vault, deploy-linux, plugins, mode-a-builder, ai-agent
+├── docs/                            # setup, runbook, vault-secrets, seal-vault, deploy-linux, plugins (incl. data sets, ADR 0018), mode-a-builder, ai-agent
 │   └── adr/                         # ADR 0001–0013
 ├── src/
 │   ├── Services/                    # 10 deployable ASP.NET Core apps (all Sdk.Web, each with Dockerfile)
@@ -357,6 +357,7 @@ Auth legend: **P(x)** = `RequirePermission(x)` (tenant permission, SuperAdmin by
 | GET/POST `/api/admin/plugins/instances`, PUT `…/{id}`, POST `…/{id}/{action}` | P(plugins:manage) | same |
 | GET `/api/admin/navigation` | Auth, NM | `Plugins/NavigationEndpoints.cs` |
 | GET `/api/admin/marketplace` | P(plugins:manage) | `Plugins/MarketplaceEndpoints.cs` |
+| GET `/api/admin/plugins/{slug}/_data`, `…/_data/{set}`, `…/{set}/row?key=` (GET/PUT/DELETE), POST `…/{set}/rows`, `…/{set}/actions/{action}`, GET `…/{set}/download?key=` | Auth; each data set's own read/write permission (default plugins:manage) | `PluginSdk.Runtime/Data/PluginDataEndpoints.cs` (ADR 0018) |
 | GET `/api/admin/content`, `/content/{id}`, `/content/tags`, `/content/page`, `/content/counts`, `/content/scheduled` | P(content:read) | `Cms/ContentEndpoints.cs`, `Cms/ContentListEndpoints.cs` |
 | POST `/api/admin/content`, PUT `/content/{id}` | P(content:write) | `Cms/ContentEndpoints.cs` |
 | POST `/content/{id}/publish\|unpublish\|schedule`, DELETE `/content/{id}/schedule` | P(content:publish) | same |
