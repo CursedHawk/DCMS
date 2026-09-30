@@ -210,3 +210,11 @@
 .dcms-scalar .references-navigation-list {
   height: calc(100dvh - var(--dcms-topbar-height) - var(--refs-header-height, 0px)) !important;
 }
+/*
+ * Scalar's stylesheet paints `body` with its own background from
+ * `@layer scalar-base`, which is declared after Tailwind's `base` and so beats
+ * the theme's body colour for the rest of the session. Unlayered wins.
+ */
+body {
+  background-color: hsl(var(--background));
+}

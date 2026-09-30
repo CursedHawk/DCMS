@@ -1,4 +1,6 @@
 import { ApiReferenceReact } from '@scalar/api-reference-react';
+// The wrapper does not inject its own CSS; without this the docs render as unstyled text.
+import '@scalar/api-reference-react/style.css';
 import { useQuery } from '@tanstack/react-query';
 import { Check, Code2, Copy, Download, FileJson, Rocket } from 'lucide-react';
 import { useState } from 'react';
@@ -98,10 +100,16 @@ export function OpenApiPage() {
         */
         <div className="dcms-scalar rounded-lg border">
           <ApiReferenceReact
+            // Scalar reads its colour mode once at mount; remount so the theme toggle reaches it.
+            key={resolved}
             configuration={{
               content: spec.data,
-              darkMode: resolved === 'dark',
+              // Pinned, not `darkMode` (only a starting point): the console's theme decides.
+              forceDarkModeState: resolved,
+              hideDarkModeToggle: true,
               hideClientButton: true,
+              // Scalar's hosted "Ask AI" would ship the tenant's spec to Scalar; "Copy for AI" covers it.
+              agent: { disabled: true },
             }}
           />
         </div>
