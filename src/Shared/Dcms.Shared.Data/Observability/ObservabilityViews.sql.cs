@@ -37,7 +37,7 @@ internal static class ObservabilityViews
     /// Bumped when a view's shape changes. Recorded in <c>obs.view_version</c> so a dashboard
     /// showing nothing can be told apart from a cluster that has not run the configurator.
     /// </summary>
-    public const int Version = 2;
+    public const int Version = 3;
 
     public static readonly string[] Statements =
     [
@@ -250,7 +250,9 @@ internal static class ObservabilityViews
             COALESCE(a.original_bytes, 0)                             AS original_bytes,
             COALESCE(v.variant_bytes, 0)                              AS variant_bytes,
             COALESCE(a.original_bytes, 0) + COALESCE(v.variant_bytes, 0) AS total_bytes,
-            COALESCE(a.asset_count, 0)                                AS asset_count
+            COALESCE(a.asset_count, 0)                                AS asset_count,
+            -- APPENDED (see v_audit_recent): the cap total_bytes is measured against.
+            t."StorageQuotaBytes"                                     AS quota_bytes
         FROM tenancy.tenants t
         LEFT JOIN LATERAL (
             SELECT sum(x."SizeBytes") AS original_bytes, count(*) AS asset_count

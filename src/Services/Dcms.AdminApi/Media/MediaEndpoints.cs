@@ -17,29 +17,31 @@ namespace Dcms.AdminApi.Media;
 
 public static class MediaEndpoints
 {
-    private const long MaxInlineBytes = 50 * 1024 * 1024;
-
     public static IEndpointRouteBuilder MapMediaEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/admin/media", async (
             HttpRequest request, MediaIngestService ingest, MediaDbContext db,
             CurrentUser me, CancellationToken ct) =>
         {
-            // BUG-02: raise this endpoint's Kestrel body limit (default ~28.6 MB) to the 50 MB
+            // BUG-02: raise this endpoint's Kestrel body limit (default ~28.6 MB) to the 1 GB
             // the feature advertises, before the multipart body is read. Must precede
             // ReadFormAsync, which is why the handler takes HttpRequest rather than IFormFile
             // (parameter binding would read the form first, under the default limit).
+            const long bodyLimit = MediaIngestService.MaxUploadBytes + 1024 * 1024;
             var sizeFeature = request.HttpContext.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
             if (sizeFeature is { IsReadOnly: false })
             {
-                sizeFeature.MaxRequestBodySize = MediaIngestService.MaxInlineBytes + 1024 * 1024;
+                sizeFeature.MaxRequestBodySize = bodyLimit;
             }
             if (!request.HasFormContentType)
             {
                 return Results.BadRequest(new { error = "Expected a multipart file upload." });
             }
 
-            var form = await request.ReadFormAsync(ct);
+            // The form reader has a ceiling of its own (128 MB), separate from Kestrel's. Files
+            // past 64 KB are spooled to a temp file, so 1 GB never sits in memory.
+            var form = await request.ReadFormAsync(
+                new Microsoft.AspNetCore.Http.Features.FormOptions { MultipartBodyLengthLimit = bodyLimit }, ct);
             var file = form.Files["file"] ?? form.Files.FirstOrDefault();
             if (file is null)
             {
@@ -47,11 +49,9 @@ public static class MediaEndpoints
             }
             Guid? folderId = Guid.TryParse(form["folderId"], out var fParsed) ? fParsed : null;
 
-            if (file.Length > MediaIngestService.MaxInlineBytes)
+            if (file.Length > MediaIngestService.MaxUploadBytes)
             {
-                // Checked before buffering: the point of the limit is not to read 2 GB into
-                // memory first and then object to its size.
-                return Results.BadRequest(new { error = "File exceeds the 50 MB inline upload limit." });
+                return Results.BadRequest(new { error = MediaIngestService.TooLarge });
             }
 
             // A folder id, if given, must be one of the tenant's own folders.
@@ -62,7 +62,7 @@ public static class MediaEndpoints
 
             // Streamed straight into the ingest service, which hashes it and hands it to MinIO
             // without ever materialising a byte[]. Buffering here (and passing .ToArray()) cost
-            // two copies of a 50 MB upload in the request's working set for no benefit.
+            // two copies of an upload in the request's working set for no benefit.
             await using var upload = file.OpenReadStream();
 
             var result = await ingest.IngestAsync(
@@ -117,7 +117,8 @@ public static class MediaEndpoints
 
         // Aggregate storage footprint for the whole tenant (originals + renditions),
         // with a per-category breakdown for the usage panel.
-        app.MapGet("/api/admin/media/usage", async (MediaDbContext db, CancellationToken ct) =>
+        app.MapGet("/api/admin/media/usage", async (
+            MediaDbContext db, MediaIngestService ingest, ITenantContext tenant, CancellationToken ct) =>
         {
             var originalBytes = await db.Assets.SumAsync(a => (long?)a.SizeBytes, ct) ?? 0;
             var variantBytes = await db.Variants.SumAsync(v => (long?)v.SizeBytes, ct) ?? 0;
@@ -139,6 +140,8 @@ public static class MediaEndpoints
                 originalBytes,
                 variantBytes,
                 totalBytes = originalBytes + variantBytes,
+                // The cap totalBytes is measured against; uploads are refused once it is reached.
+                quotaBytes = await ingest.QuotaBytesAsync(tenant.TenantId!.Value, ct),
                 assetCount,
                 folderCount,
                 byCategory,

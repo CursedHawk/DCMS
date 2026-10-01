@@ -124,7 +124,7 @@ public class GoogleDriveImportTests(AdminApiFixture fixture)
 
 /// <summary>
 /// A stand-in for the Drive v3 API, in-process on loopback. Three files: a PNG, a Google Doc
-/// (exportable only) and one whose metadata claims 60 MB. Anything but <see cref="GoodToken"/>
+/// (exportable only) and one whose metadata claims 2 GB. Anything but <see cref="GoodToken"/>
 /// gets 401, as an expired picker token does.
 /// </summary>
 public sealed class DriveStubServer : IAsyncDisposable
@@ -170,7 +170,7 @@ public sealed class DriveStubServer : IAsyncDisposable
             ("png1", "media") => Results.Bytes(Png, "image/png"),
             ("png1", _) => Results.Json(new { name = "photo.png", mimeType = "image/png", size = Png.Length.ToString() }),
             ("doc1", _) => Results.Json(new { name = "Brochure", mimeType = "application/vnd.google-apps.document" }),
-            ("big1", _) => Results.Json(new { name = "huge.mp4", mimeType = "video/mp4", size = (60L * 1024 * 1024).ToString() }),
+            ("big1", _) => Results.Json(new { name = "huge.mp4", mimeType = "video/mp4", size = (2L * 1024 * 1024 * 1024).ToString() }),
             _ => Results.NotFound(),
         });
         app.MapGet("/drive/v3/files/{id}/export", (string id, string mimeType) =>

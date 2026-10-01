@@ -152,6 +152,40 @@ public static class TenancyEndpoints
                 + "already checked the operator holds platform:tenants:lifecycle. ADR 0003 keeps "
                 + "the write here, so the console asks rather than reaching into tenancy itself.");
 
+        // How much the tenant's media library may hold. Console-only, like suspend: the cap is a
+        // platform decision, so no tenant permission reaches it. Lowering it below what the tenant
+        // already holds deletes nothing; it only refuses the next upload.
+        app.MapPut("/api/admin/tenants/{tenantId:guid}/storage-quota", async (
+            Guid tenantId, StorageQuotaRequest body, ConsoleCaller console, TenancyDbContext db,
+            IAuditRecorder audit, CancellationToken ct) =>
+        {
+            if (!console.Allowed) return Results.Forbid();
+            if (body.QuotaBytes is not (> 0 and <= MaxStorageQuotaBytes))
+            {
+                return Results.BadRequest(new { error = "The storage limit must be between 1 byte and 100 TB." });
+            }
+
+            // No ambient tenant and no policy on tenancy.tenants -- see SetTenantStatusAsync.
+            var tenant = await db.Tenants.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == tenantId.ToString(), ct);
+            if (tenant is null) return Results.NotFound();
+
+            // Enriched before SaveChangesAsync, which is what writes the record -- see SetTenantStatusAsync.
+            audit.Declared?
+                .Platform()
+                .For("tenant", tenantId, tenant.Identifier)
+                .With("from", tenant.StorageQuotaBytes)
+                .With("to", body.QuotaBytes);
+            tenant.StorageQuotaBytes = body.QuotaBytes;
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        })
+            .RequireAuthorization()
+            .WithAudit(AuditActions.PlatformTenantStorageQuotaChanged, "tenant")
+            .AllowConsoleService(
+                "the platform console sets tenant storage limits; its API holds dcms.console and has "
+                + "already checked the operator holds platform:tenants:write. ADR 0003 keeps the "
+                + "write here, so the console asks rather than reaching into tenancy itself.");
+
         // ---- Tenant-scoped: roles (requires X-Dcms-Tenant) ----
         app.MapGet("/api/admin/roles", async (TenancyDbContext db, ITenantContext tenant, CancellationToken ct) =>
         {
@@ -626,6 +660,9 @@ public static class TenancyEndpoints
         value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')
         && !value.StartsWith('-') && !value.EndsWith('-');
 
+    private const long MaxStorageQuotaBytes = 100L * 1024 * 1024 * 1024 * 1024;
+
+    private sealed record StorageQuotaRequest(long QuotaBytes);
     private sealed record CreateTenantRequest(string Slug, string? Name, Guid? OwnerUserId, string? OwnerEmail);
     private sealed record CreateRoleRequest(string Name, string[] Permissions);
     private sealed record UpdateRoleRequest(string? Name, string[] Permissions);

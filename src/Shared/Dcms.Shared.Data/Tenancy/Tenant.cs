@@ -15,6 +15,15 @@ public sealed class Tenant : ITenantInfo
     public TenantStatus Status { get; set; } = TenantStatus.Active;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>
+    /// How much the tenant's media library may hold, originals and renditions together — the
+    /// same total the console's tenant list shows. New uploads are refused once it is reached.
+    /// Set per tenant from the platform console.
+    /// </summary>
+    public long StorageQuotaBytes { get; set; } = DefaultStorageQuotaBytes;
+
+    public const long DefaultStorageQuotaBytes = 5L * 1024 * 1024 * 1024;
+
     public Guid TenantId => Guid.Parse(Id);
 }
 

@@ -1,10 +1,12 @@
 using System.Security.Cryptography;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Data.Media;
+using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Media;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace Dcms.AdminApi.Media;
@@ -33,12 +35,24 @@ namespace Dcms.AdminApi.Media;
 /// </summary>
 public sealed class MediaIngestService(
     MediaDbContext db,
+    TenancyDbContext tenancy,
     IObjectStorage storage,
     IOptions<StorageOptions> storageOptions,
     IEventPublisher events,
     ITenantContext tenant)
 {
-    public const long MaxInlineBytes = 50 * 1024 * 1024;
+    /// <summary>
+    /// The largest file the library takes. Never held in memory on this side: a form upload is
+    /// spooled to disk by ASP.NET, and a Drive or plugin import by <see cref="AdminPluginMedia"/>.
+    /// </summary>
+    public const long MaxUploadBytes = 1024L * 1024 * 1024;
+
+    /// <summary>
+    /// Images (SVG included) stay at the old ceiling. The worker decodes a raster image whole, in
+    /// memory, four at a time, and SVG is sanitised as one XML document — a 1 GB image is an
+    /// out-of-memory kill, not a picture. Video and audio go through ffmpeg from a temp file.
+    /// </summary>
+    public const long MaxImageBytes = 50L * 1024 * 1024;
 
     /// <summary>
     /// How much of the file the sniffer sees. Wider than any magic number needs, because SVG is
@@ -46,6 +60,8 @@ public sealed class MediaIngestService(
     /// element for it to be recognised at all.
     /// </summary>
     private const int SniffWindow = 1024;
+
+    public const string TooLarge = "File exceeds the 1 GB upload limit.";
 
     /// <summary>Why an ingest was refused. The upload endpoint turns these into 400s.</summary>
     public sealed record Result(Guid? AssetId, MediaCategory? Category, string? ContentType, MediaStatus Status, string? Error)
@@ -78,7 +94,7 @@ public sealed class MediaIngestService(
         Guid? tenantId = null)
     {
         if (length <= 0) return Result.Failed("Empty file.");
-        if (length > MaxInlineBytes) return Result.Failed("File exceeds the 50 MB inline upload limit.");
+        if (length > MaxUploadBytes) return Result.Failed(TooLarge);
 
         MemoryStream? buffered = null;
         MemoryStream? sanitizedSvg = null;
@@ -98,6 +114,10 @@ public sealed class MediaIngestService(
 
             var sniff = ContentSniffer.Sniff(header.AsSpan(0, headerLength));
             if (sniff is null) return Result.Failed("Unsupported or unrecognized file type.");
+            if (sniff.Category == MediaCategory.Image && length > MaxImageBytes)
+            {
+                return Result.Failed("Images can be at most 50 MB.");
+            }
 
             // SEC-12: an SVG is script-capable, and the delivery endpoints serve the original
             // inline as image/svg+xml with no status gate. Sanitizing only in the async media
@@ -130,6 +150,8 @@ public sealed class MediaIngestService(
             var digest = await hasher.ComputeHashAsync(storeStream, ct);
 
             var effectiveTenantId = tenantId ?? tenant.TenantId!.Value;
+            if (await OverQuotaAsync(effectiveTenantId, storeLength, ct) is { } full) return Result.Failed(full);
+
             var assetId = Guid.NewGuid();
             var key = StorageKeys.MediaOriginal(
                 effectiveTenantId, assetId, MediaFileExtensions.ToExtension(sniff.ContentType));
@@ -198,6 +220,44 @@ public sealed class MediaIngestService(
 
         return new Result(assetId, sniff.Category, sniff.ContentType, asset.Status, null);
     }
+
+    /// <summary>
+    /// What the tenant's library holds, originals and renditions together: the number the cap is
+    /// measured against, and the one the console's tenant list shows.
+    /// </summary>
+    public async Task<long> UsedBytesAsync(Guid tenantId, CancellationToken ct)
+    {
+        var originals = await db.Assets.IgnoreQueryFilters()
+            .Where(a => a.TenantId == tenantId).SumAsync(a => (long?)a.SizeBytes, ct) ?? 0;
+        var renditions = await db.Variants.IgnoreQueryFilters()
+            .Where(v => v.TenantId == tenantId).SumAsync(v => (long?)v.SizeBytes, ct) ?? 0;
+        return originals + renditions;
+    }
+
+    public async Task<long> QuotaBytesAsync(Guid tenantId, CancellationToken ct) =>
+        await tenancy.Tenants.IgnoreQueryFilters()
+            .Where(t => t.Id == tenantId.ToString())
+            .Select(t => (long?)t.StorageQuotaBytes)
+            .FirstOrDefaultAsync(ct) ?? Tenant.DefaultStorageQuotaBytes;
+
+    /// <summary>
+    /// The refusal message when <paramref name="incoming"/> does not fit under the cap, else null.
+    /// Renditions are not known yet and are not reserved for, so the worker can carry a tenant a
+    /// little past its cap; the next upload is what gets refused.
+    /// </summary>
+    // ponytail: check-then-insert, so two uploads racing at the edge of the cap can both pass;
+    // a per-tenant advisory lock around check + RecordAsync if that overshoot ever matters.
+    private async Task<string?> OverQuotaAsync(Guid tenantId, long incoming, CancellationToken ct)
+    {
+        var quota = await QuotaBytesAsync(tenantId, ct);
+        var used = await UsedBytesAsync(tenantId, ct);
+        if (used + incoming <= quota) return null;
+        return $"Storage limit reached: this workspace uses {Gigabytes(used)} of its {Gigabytes(quota)}. "
+            + "Delete files to make room, or ask the platform operator for more space.";
+    }
+
+    private static string Gigabytes(long bytes) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{bytes / (1024d * 1024 * 1024):0.##} GB");
 
     /// <summary>
     /// Fills <paramref name="buffer"/> as far as the stream allows. One ReadAsync is entitled to

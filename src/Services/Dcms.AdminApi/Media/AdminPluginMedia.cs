@@ -36,7 +36,7 @@ public sealed class AdminPluginMedia(
             throw new ContractValidationException("Only https URLs without credentials can be imported.");
         }
 
-        byte[] bytes;
+        Stream? file;
         try
         {
             using var response = await httpFactory.CreateClient(HttpClientName)
@@ -47,41 +47,62 @@ public sealed class AdminPluginMedia(
             }
             // The declared length is only an early reject; the real limit is what is read,
             // because Content-Length is the server's claim.
-            if (response.Content.Headers.ContentLength is > MediaIngestService.MaxInlineBytes)
+            if (response.Content.Headers.ContentLength is > MediaIngestService.MaxUploadBytes)
             {
-                return new MediaImportResult(null, "The file exceeds the inline size limit.");
+                return new MediaImportResult(null, MediaIngestService.TooLarge);
             }
-            bytes = await ReadCappedAsync(response, ct);
+            file = await DownloadCappedAsync(response, ct);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Plugin {Plugin} could not import {Host}.", Caller.PluginId, input.Url.Host);
             return new MediaImportResult(null, "The file could not be downloaded.");
         }
-        if (bytes.Length == 0)
+        if (file is null)
         {
-            return new MediaImportResult(null, "The file is empty or exceeds the inline size limit.");
+            return new MediaImportResult(null, MediaIngestService.TooLarge);
         }
 
-        var result = await ingest.IngestAsync(bytes, input.FileName, input.FolderId, createdBy: null, ct, tenantId: Caller.TenantId);
-        return result.Ok ? new MediaImportResult(result.AssetId, null) : new MediaImportResult(null, result.Error);
+        await using (file)
+        {
+            var result = await ingest.IngestAsync(
+                file, file.Length, input.FileName, input.FolderId, createdBy: null, ct, tenantId: Caller.TenantId);
+            return result.Ok ? new MediaImportResult(result.AssetId, null) : new MediaImportResult(null, result.Error);
+        }
     }
 
-    /// <summary>Reads at most <see cref="MediaIngestService.MaxInlineBytes"/>; empty when the body is longer. Shared with the Drive import.</summary>
-    internal static async Task<byte[]> ReadCappedAsync(HttpResponseMessage response, CancellationToken ct)
+    /// <summary>
+    /// Copies the body to a temp file that deletes itself on dispose, and returns it rewound —
+    /// or null when it runs past <see cref="MediaIngestService.MaxUploadBytes"/>. A temp file, not
+    /// a byte[]: 1 GB in memory is more than this container has. Shared with the Drive import.
+    /// </summary>
+    internal static async Task<Stream?> DownloadCappedAsync(HttpResponseMessage response, CancellationToken ct)
     {
-        await using var source = await response.Content.ReadAsStreamAsync(ct);
-        using var buffer = new MemoryStream();
-        var chunk = new byte[81920];
-        int read;
-        while ((read = await source.ReadAsync(chunk, ct)) > 0)
+        var file = new FileStream(
+            Path.Combine(Path.GetTempPath(), $"dcms-import-{Guid.NewGuid():N}"),
+            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920,
+            FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+        try
         {
-            if (buffer.Length + read > MediaIngestService.MaxInlineBytes)
+            await using var source = await response.Content.ReadAsStreamAsync(ct);
+            var chunk = new byte[81920];
+            int read;
+            while ((read = await source.ReadAsync(chunk, ct)) > 0)
             {
-                return [];
+                if (file.Length + read > MediaIngestService.MaxUploadBytes)
+                {
+                    await file.DisposeAsync();
+                    return null;
+                }
+                await file.WriteAsync(chunk.AsMemory(0, read), ct);
             }
-            buffer.Write(chunk, 0, read);
+            file.Position = 0;
+            return file;
         }
-        return buffer.ToArray();
+        catch
+        {
+            await file.DisposeAsync();
+            throw;
+        }
     }
 }

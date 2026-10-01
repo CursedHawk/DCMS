@@ -125,16 +125,17 @@ public static class PlatformRoutes
 
         // ---- Admin REST API, on the admin host ----
         // BUG-02: YARP enforces the server's 30 MB default on proxied bodies unless a route
-        // overrides it, so media (50 MB) and static-site (100 MB) uploads were rejected at the
+        // overrides it, so media (now 1 GB) and static-site (100 MB) uploads were rejected at the
         // edge before admin-api's own per-endpoint limit could apply. Lift it here to the
         // largest documented upload; admin-api still enforces the real per-feature ceilings.
+        // YARP streams the body through, so the size costs the edge no memory.
         //
         // The BFF metadata (ADR 0014) marks the two routes on which the edge may present the
         // operator's session as a bearer token. Inert until Edge:Auth:Bff is on AND the request
         // arrives without an Authorization header of its own; see BffAuthentication.
         routes.Add(Prefix("admin-api", [admin], "/api", AdminApi, order: 30) with
         {
-            MaxRequestBodySize = 105L * 1024 * 1024,
+            MaxRequestBodySize = 1025L * 1024 * 1024,
             Metadata = BffMetadata,
         });
 

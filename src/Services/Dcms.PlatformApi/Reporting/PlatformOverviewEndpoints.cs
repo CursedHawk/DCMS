@@ -43,7 +43,8 @@ public static class PlatformOverviewEndpoints
         int EnabledPlugins,
         int VisitorAccounts,
         int FormSubmissions,
-        long StorageBytes);
+        long StorageBytes,
+        long QuotaBytes);
 
     public static IEndpointRouteBuilder MapPlatformOverviewEndpoints(this IEndpointRouteBuilder app)
     {
@@ -137,7 +138,8 @@ public static class PlatformOverviewEndpoints
                     i.members, i.domains, i.verified_domains, i.sites, i.content_items,
                     i.published_items, i.media_assets, i.enabled_plugins, i.visitor_accounts,
                     i.form_submissions,
-                    COALESCE(s.total_bytes, 0) AS storage_bytes
+                    COALESCE(s.total_bytes, 0) AS storage_bytes,
+                    s.quota_bytes
                 FROM obs.v_tenant_inventory i
                 LEFT JOIN obs.v_storage_usage s ON s.tenant_id = i.tenant_id
                 -- The ::text casts are load-bearing. A parameter whose only appearance is
@@ -165,7 +167,8 @@ public static class PlatformOverviewEndpoints
                     r.GetInt32OrZero("enabled_plugins"),
                     r.GetInt32OrZero("visitor_accounts"),
                     r.GetInt32OrZero("form_submissions"),
-                    r.GetInt64OrZero("storage_bytes")),
+                    r.GetInt64OrZero("storage_bytes"),
+                    r.GetInt64OrZero("quota_bytes")),
                 new Dictionary<string, object?>
                 {
                     ["search"] = string.IsNullOrWhiteSpace(search) ? null : search.Trim(),

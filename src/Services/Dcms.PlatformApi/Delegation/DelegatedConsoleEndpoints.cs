@@ -6,7 +6,7 @@ namespace Dcms.PlatformApi.Delegation;
 
 /// <summary>
 /// The console pages admin-api performs for us: certificates, the platform bell, tenant
-/// lifecycle and the analytics prune.
+/// lifecycle and storage limits, and the analytics prune.
 ///
 /// <para><b>What this layer adds is the permission check.</b> On admin-api these endpoints are
 /// gated on the SuperAdmin role, because the tenant permission model does not reach
@@ -80,6 +80,8 @@ public static class DelegatedConsoleEndpoints
             PlatformConsolePermissions.TenantsLifecycle);
         Delegate(tenants, HttpMethod.Post, "/{id:guid}/resume", "/api/admin/tenants/{0}/resume",
             PlatformConsolePermissions.TenantsLifecycle);
+        Delegate(tenants, HttpMethod.Put, "/{id:guid}/storage-quota", "/api/admin/tenants/{0}/storage-quota",
+            PlatformConsolePermissions.TenantsWrite);
 
         // ---- Retention (a batched delete on analytics.events) ----
 

@@ -353,6 +353,7 @@ public static class AuditActions
 
     public const string PlatformTenantSuspended = "platform.tenant.suspended";
     public const string PlatformTenantResumed = "platform.tenant.resumed";
+    public const string PlatformTenantStorageQuotaChanged = "platform.tenant.storage_quota.changed";
 
     /// <summary>
     /// Irreversible deletion from a telemetry store. Recorded BEFORE the delete runs, not

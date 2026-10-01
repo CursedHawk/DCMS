@@ -42,10 +42,8 @@ public static class PlatformConsolePermissions
     public const string TenantsRead = "platform:tenants:read";
 
     /// <summary>
-    /// Catalog-only: nothing on this console edits a tenant's own settings. Renaming a workspace
-    /// or changing its plan happens inside it, on the admin plane, where the tenant's own
-    /// permission model applies. The key is kept because the console is the obvious place for
-    /// that to arrive, and a role seeded without it should not silently gain it later.
+    /// Platform-set limits on a tenant: its storage cap. Renaming a workspace still happens
+    /// inside it, on the admin plane, where the tenant's own permission model applies.
     /// </summary>
     public const string TenantsWrite = "platform:tenants:write";
     /// <summary>Suspend, resume and delete. Deletion purges every schema, the object store

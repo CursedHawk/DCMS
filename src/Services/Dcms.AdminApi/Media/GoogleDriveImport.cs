@@ -121,10 +121,10 @@ public static partial class GoogleDriveImport
                     return Results.BadRequest(new { error = "This kind of Google file cannot be imported." });
                 }
                 // Drive's declared size is only an early reject (exports have none); the real
-                // limit is what ReadCappedAsync reads.
-                if (meta.SizeBytes > MediaIngestService.MaxInlineBytes)
+                // limit is what DownloadCappedAsync reads.
+                if (meta.SizeBytes > MediaIngestService.MaxUploadBytes)
                 {
-                    return Results.BadRequest(new { error = "File exceeds the 50 MB inline upload limit." });
+                    return Results.BadRequest(new { error = MediaIngestService.TooLarge });
                 }
 
                 var source = export is { } e
@@ -133,11 +133,8 @@ public static partial class GoogleDriveImport
                 using var download = await SendAsync(http, source, body.AccessToken, ct);
                 if (!download.IsSuccessStatusCode) return DriveRefused(download.StatusCode);
 
-                var bytes = await AdminPluginMedia.ReadCappedAsync(download, ct);
-                if (bytes.Length == 0)
-                {
-                    return Results.BadRequest(new { error = "The file is empty or exceeds the 50 MB inline upload limit." });
-                }
+                await using var file = await AdminPluginMedia.DownloadCappedAsync(download, ct);
+                if (file is null) return Results.BadRequest(new { error = MediaIngestService.TooLarge });
 
                 var fileName = string.IsNullOrWhiteSpace(meta.Name) ? id : meta.Name;
                 if (export is { } x && !fileName.EndsWith(x.Extension, StringComparison.OrdinalIgnoreCase))
@@ -145,7 +142,7 @@ public static partial class GoogleDriveImport
                     fileName += x.Extension;
                 }
 
-                var result = await ingest.IngestAsync(bytes, fileName, body.FolderId, me.UserId, ct);
+                var result = await ingest.IngestAsync(file, file.Length, fileName, body.FolderId, me.UserId, ct);
                 if (!result.Ok) return Results.BadRequest(new { error = result.Error });
 
                 // Same body as an upload, so the console treats both identically.
