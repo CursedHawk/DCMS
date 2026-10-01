@@ -94,7 +94,7 @@ generation counter; the ContentCacheInvalidator consumes `content.published`/
 
 ### Media (Phase 5)
 
-admin-api `POST /api/admin/media` (multipart, ≤50 MB): content-sniffs by magic
+admin-api `POST /api/admin/media` (multipart, ≤1 GB; images ≤50 MB; refused past the tenant's storage cap, 5 GB unless the platform console sets another): content-sniffs by magic
 bytes, re-encodes images through ImageSharp (strips EXIF/IPTC/XMP), stores the
 original at `dcms-media/tenants/{tenantId}/{assetId}/original.{ext}`, writes a
 `media_assets` row and dispatches `media.process.image`. media-worker consumes

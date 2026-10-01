@@ -14,9 +14,9 @@ export const categoryMeta: Record<MediaCategory, { color: string; icon: typeof I
 const order: MediaCategory[] = ['Image', 'Video', 'Audio', 'File'];
 
 /**
- * Storage-footprint panel: total bytes the tenant occupies, a segmented bar by
- * category, and the originals-vs-optimized split so the cost of derived
- * renditions is visible.
+ * Storage-footprint panel: total bytes the tenant occupies against its cap, a bar
+ * segmented by category (optimized copies last, in grey) scaled to that cap, and the
+ * originals-vs-optimized split so the cost of derived renditions is visible.
  */
 export function StorageMeter({ usage, isLoading }: { usage?: MediaUsage; isLoading?: boolean }) {
   const { t } = useTranslation();
@@ -32,7 +32,10 @@ export function StorageMeter({ usage, isLoading }: { usage?: MediaUsage; isLoadi
   }
 
   const byCat = new Map(usage.byCategory.map((c) => [c.category, c]));
-  const totalOriginal = usage.originalBytes || 1; // avoid /0 for the bar
+  // The bar is the cap; past it (the cap was lowered, or renditions landed after the last
+  // upload) the segments fill it and the notice below says why uploads stop.
+  const scale = Math.max(usage.quotaBytes, usage.totalBytes, 1);
+  const full = usage.totalBytes >= usage.quotaBytes;
 
   return (
     <div className="rounded-xl border bg-card p-4">
@@ -43,12 +46,22 @@ export function StorageMeter({ usage, isLoading }: { usage?: MediaUsage; isLoadi
         </div>
         <div className="flex items-baseline gap-1.5">
           <span className="text-2xl font-bold tabular-nums">{formatSize(usage.totalBytes)}</span>
-          <span className="text-xs text-muted-foreground">{t('media.usage.used')}</span>
+          <span className="text-xs text-muted-foreground">
+            {t('media.usage.of', { quota: formatSize(usage.quotaBytes) })}
+          </span>
         </div>
       </div>
 
-      {/* Segmented bar: each category's share of the originals footprint. */}
-      <div className="mt-3 flex h-2.5 w-full overflow-hidden rounded-full bg-muted">
+      {/* Segmented bar: each category's originals, then the optimized copies, as shares of the cap. */}
+      <div
+        className="mt-3 flex h-2.5 w-full overflow-hidden rounded-full bg-muted"
+        role="meter"
+        aria-label={t('media.usage.title')}
+        aria-valuemin={0}
+        aria-valuemax={usage.quotaBytes}
+        aria-valuenow={usage.totalBytes}
+        aria-valuetext={`${formatSize(usage.totalBytes)} ${t('media.usage.of', { quota: formatSize(usage.quotaBytes) })}`}
+      >
         {order.map((cat) => {
           const bytes = byCat.get(cat)?.originalBytes ?? 0;
           if (bytes === 0) return null;
@@ -56,12 +69,20 @@ export function StorageMeter({ usage, isLoading }: { usage?: MediaUsage; isLoadi
             <div
               key={cat}
               className={cn('h-full', categoryMeta[cat].color)}
-              style={{ width: `${(bytes / totalOriginal) * 100}%` }}
+              style={{ width: `${(bytes / scale) * 100}%` }}
               title={`${cat}: ${formatSize(bytes)}`}
             />
           );
         })}
+        {usage.variantBytes > 0 && (
+          <div
+            className="h-full bg-muted-foreground/40"
+            style={{ width: `${(usage.variantBytes / scale) * 100}%` }}
+            title={`${t('media.usage.optimized')}: ${formatSize(usage.variantBytes)}`}
+          />
+        )}
       </div>
+      {full && <p className="mt-2 text-xs font-medium text-destructive">{t('media.usage.full')}</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
         {order.map((cat) => {

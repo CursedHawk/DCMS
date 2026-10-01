@@ -55,6 +55,8 @@ export interface MediaUsage {
   originalBytes: number;
   variantBytes: number;
   totalBytes: number;
+  /** The tenant's storage cap; set by the platform operator. Uploads are refused past it. */
+  quotaBytes: number;
   assetCount: number;
   folderCount: number;
   byCategory: { category: MediaCategory; count: number; originalBytes: number }[];

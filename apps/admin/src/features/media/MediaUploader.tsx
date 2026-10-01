@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, cn, Progress, toast, toastApiError } from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
-import { formatSize } from './api';
+import { formatSize, useMediaUsage } from './api';
 import { isInternalDrag } from './dnd';
 import {
   DriveCancelled,
@@ -32,10 +32,17 @@ interface Job {
   name: string;
   size: number;
   source: UploadItem['source'];
+  /** Known only for files from this device; a Drive file's type is the server's to check. */
+  isImage?: boolean;
   send: (onProgress: (fraction: number) => void) => Promise<{ id: string }>;
 }
 
 let nextId = 0;
+
+// The server's ceilings (MediaIngestService), checked here as well so a file that cannot be
+// accepted is refused before its bytes are sent rather than after.
+const MAX_UPLOAD_BYTES = 1024 ** 3;
+const MAX_IMAGE_BYTES = 50 * 1024 ** 2;
 
 /**
  * Drag-and-drop / click uploader, plus Google Drive when the platform has it configured.
@@ -63,6 +70,7 @@ export function MediaUploader({
   const [items, setItems] = useState<UploadItem[]>([]);
   const [busy, setBusy] = useState(false);
   const drive = useDriveConfig().data;
+  const usage = useMediaUsage().data;
 
   const patch = (id: number, changes: Partial<UploadItem>) =>
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...changes } : it)));
@@ -83,9 +91,26 @@ export function MediaUploader({
     setItems(queued);
     setBusy(true);
 
+    // Room left under the tenant's cap, spent as the batch goes. Possibly a little stale; the
+    // server checks again, so this only saves sending a file that will be refused.
+    let room = usage ? usage.quotaBytes - usage.totalBytes : Infinity;
+
     try {
       for (const [index, job] of jobs.entries()) {
         const item = queued[index];
+        const refusal =
+          job.size > MAX_UPLOAD_BYTES
+            ? t('media.limits.tooLarge')
+            : job.isImage && job.size > MAX_IMAGE_BYTES
+              ? t('media.limits.imageTooLarge')
+              : job.size > room
+                ? t('media.limits.noRoom', { free: formatSize(Math.max(room, 0)) })
+                : null;
+        if (refusal) {
+          patch(item.id, { status: 'error', error: refusal });
+          continue;
+        }
+        room -= job.size;
         // A Drive file is downloaded by the server, so there are no bytes to count here:
         // it sits at "the server is processing" until the request returns.
         patch(item.id, { status: 'uploading', progress: job.source === 'drive' ? 1 : 0 });
@@ -120,6 +145,7 @@ export function MediaUploader({
         name: file.name,
         size: file.size,
         source: 'device' as const,
+        isImage: file.type.startsWith('image/'),
         send: (onProgress) => {
           const form = new FormData();
           form.append('file', file);

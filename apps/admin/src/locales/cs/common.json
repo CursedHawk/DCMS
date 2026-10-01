@@ -410,7 +410,6 @@
     },
     "usage": {
       "title": "Využité úložiště",
-      "used": "celkem",
       "originals": "Originály",
       "optimized": "Optimalizované kopie",
       "assets_one": "{{count}} soubor",
@@ -418,7 +417,9 @@
       "assets_other": "{{count}} souborů",
       "folders_one": "{{count}} složka",
       "folders_few": "{{count}} složky",
-      "folders_other": "{{count}} složek"
+      "folders_other": "{{count}} složek",
+      "of": "z {{quota}}",
+      "full": "Úložiště je plné. Smažte soubory, nebo požádejte správce platformy o více místa."
     },
     "folders": {
       "title": "Složky",
@@ -471,6 +472,11 @@
       "import": "Importovat z Google Disku",
       "importing": "Importuje se…",
       "unavailable": "Google Disk se nepodařilo otevřít. Povolte pro tento web vyskakovací okna a zkuste to znovu."
+    },
+    "limits": {
+      "tooLarge": "Soubor může mít nejvýše 1 GB.",
+      "imageTooLarge": "Obrázek může mít nejvýše 50 MB.",
+      "noRoom": "Nedostatek místa v úložišti: volné {{free}}."
     }
   },
   "sites": {

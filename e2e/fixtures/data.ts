@@ -118,7 +118,7 @@ export const MEDIA_ASSETS = [
 ];
 
 export const MEDIA_USAGE = {
-  originalBytes: 71_680, variantBytes: 12_288, totalBytes: 83_968,
+  originalBytes: 71_680, variantBytes: 12_288, totalBytes: 83_968, quotaBytes: 5 * 1024 ** 3,
   assetCount: 2, folderCount: 2,
   byCategory: [{ category: 'Image', count: 2, originalBytes: 71_680 }],
 };
@@ -260,7 +260,7 @@ export const NOTIFICATIONS = {
 
 /** Platform console fixtures. */
 export const PLATFORM_PERMISSIONS = [
-  'platform:overview:read', 'platform:tenants:read', 'platform:tenants:lifecycle',
+  'platform:overview:read', 'platform:tenants:read', 'platform:tenants:write', 'platform:tenants:lifecycle',
   'platform:users:read', 'platform:audit:read', 'platform:observability:read',
   'platform:logs:read', 'platform:roles:manage', 'platform:certificates:manage', 'platform:ratelimits:manage',
   'platform:notifications:read', 'platform:ops:act',
@@ -284,6 +284,7 @@ const tenantRow = (t: typeof TENANT, status: string, createdAt: string) => ({
   visitorAccounts: 0,
   formSubmissions: 4,
   storageBytes: 83_968,
+  quotaBytes: 5 * 1024 ** 3,
 });
 
 export const PLATFORM_TENANTS = [

@@ -18,6 +18,8 @@ export interface TenantRow {
   visitorAccounts: number;
   formSubmissions: number;
   storageBytes: number;
+  /** The cap storageBytes is held to; uploads are refused once it is reached. */
+  quotaBytes: number;
 }
 
 export function useTenants(search: string) {
@@ -45,5 +47,15 @@ export function useSetTenantStatus() {
       void qc.invalidateQueries({ queryKey: ['platform-tenants'] });
       void qc.invalidateQueries({ queryKey: ['platform-overview'] });
     },
+  });
+}
+
+/** The tenant's storage cap. Performed by admin-api, checked here against platform:tenants:write. */
+export function useSetStorageQuota() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tenantId, quotaBytes }: { tenantId: string; quotaBytes: number }) =>
+      platformApi.put<void>(`/tenants/${tenantId}/storage-quota`, { quotaBytes }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['platform-tenants'] }),
   });
 }

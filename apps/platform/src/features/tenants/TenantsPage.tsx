@@ -1,24 +1,30 @@
 import { useMemo, useState } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Pencil } from 'lucide-react';
 import {
-  Button, ConfirmDeleteDialog, DataTable, EmptyState, FilterBar, toastApiError, type Column,
+  Button, ConfirmDeleteDialog, DataTable, Dialog, DialogBody, DialogContent, DialogDescription,
+  DialogFooter, DialogHeader, DialogTitle, EmptyState, FilterBar, Input, Label, toastApiError,
+  type Column,
 } from '@dcms/ui';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { bytes, count, date } from '../../lib/format';
+import { bytes, count, date, ofLimit, railState } from '../../lib/format';
 import { can, useMe, Perm } from '../../lib/permissions';
 import { runtimeConfig } from '../../runtime-config';
-import { useSetTenantStatus, useTenants, type TenantRow } from './api';
+import { useSetStorageQuota, useSetTenantStatus, useTenants, type TenantRow } from './api';
+
+const GB = 1024 ** 3;
 
 export function TenantsPage() {
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [confirming, setConfirming] = useState<TenantRow | null>(null);
+  const [limiting, setLimiting] = useState<TenantRow | null>(null);
   const me = useMe(true);
   const tenants = useTenants(search);
   const setStatus = useSetTenantStatus();
 
   const mayChange = can(me.data, Perm.TenantsLifecycle);
+  const maySetLimits = can(me.data, Perm.TenantsWrite);
 
   const columns: Column<TenantRow>[] = useMemo(
     () => [
@@ -58,8 +64,11 @@ export function TenantsPage() {
         id: 'storage',
         header: 'Storage',
         align: 'right',
-        sortValue: (r) => r.storageBytes,
-        cell: (r) => <span className="font-mono">{bytes(r.storageBytes)}</span>,
+        // By how full, not by bytes: "who is about to hit the limit" is the question here.
+        sortValue: (r) => r.storageBytes / r.quotaBytes,
+        cell: (r) => (
+          <StorageCell row={r} onEdit={maySetLimits ? () => setLimiting(r) : undefined} />
+        ),
       },
       {
         id: 'members',
@@ -124,7 +133,7 @@ export function TenantsPage() {
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mayChange, setStatus.isPending],
+    [mayChange, maySetLimits, setStatus.isPending],
   );
 
   return (
@@ -161,6 +170,8 @@ export function TenantsPage() {
           />
         }
       />
+
+      {limiting && <StorageLimitDialog row={limiting} onClose={() => setLimiting(null)} />}
 
       {/*
         Type-to-confirm, reusing the admin SPA's dialog. Suspension is reversible, so this is
@@ -215,5 +226,90 @@ function StatusPill({ status }: { status: string }) {
       />
       {suspended ? 'Suspended' : 'Active'}
     </span>
+  );
+}
+
+/** Used of cap, with the console's capacity rail under it. A button when the cap is editable. */
+function StorageCell({ row, onEdit }: { row: TenantRow; onEdit?: () => void }) {
+  const fraction = Math.min(row.storageBytes / row.quotaBytes, 1);
+  const body = (
+    <span className="flex w-28 flex-col items-end gap-1">
+      <span className="flex items-center gap-1 font-mono">
+        {ofLimit(row.storageBytes, row.quotaBytes)}
+        {onEdit && <Pencil className="h-3 w-3 text-muted-foreground" aria-hidden />}
+      </span>
+      <span className="rail block h-1.5 w-full" aria-hidden>
+        <span className="rail-fill block" data-state={railState(fraction)} style={{ width: `${fraction * 100}%` }} />
+      </span>
+    </span>
+  );
+  if (!onEdit) return body;
+  return (
+    <button
+      type="button"
+      onClick={onEdit}
+      aria-label={`${ofLimit(row.storageBytes, row.quotaBytes)}, change storage limit`}
+      className="-m-1 rounded-md p-1 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {body}
+    </button>
+  );
+}
+
+function StorageLimitDialog({ row, onClose }: { row: TenantRow; onClose: () => void }) {
+  const { t } = useTranslation();
+  const setQuota = useSetStorageQuota();
+  const [gb, setGb] = useState(String(+(row.quotaBytes / GB).toFixed(2)));
+  const value = Number(gb);
+  const valid = Number.isFinite(value) && value > 0 && value <= 100 * 1024;
+  const below = valid && value * GB < row.storageBytes;
+
+  const save = () =>
+    setQuota.mutate(
+      { tenantId: row.tenantId, quotaBytes: Math.round(value * GB) },
+      {
+        onSuccess: () => {
+          toast.success(`${row.slug} can now store ${bytes(Math.round(value * GB))}`);
+          onClose();
+        },
+        onError: (e) => toastApiError(e, t),
+      },
+    );
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Storage limit for {row.slug}</DialogTitle>
+          <DialogDescription>
+            Every file in the media library counts, originals and optimized versions together. Once
+            the limit is reached, new uploads are refused. It uses {bytes(row.storageBytes)} now.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody className="space-y-1.5">
+          <Label htmlFor="storage-limit">Limit in GB</Label>
+          <Input
+            id="storage-limit"
+            type="number"
+            inputMode="decimal"
+            min={0.01}
+            step="any"
+            className="font-mono"
+            value={gb}
+            onChange={(e) => setGb(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && valid && !setQuota.isPending && save()}
+          />
+          <p className="text-xs text-muted-foreground">
+            {below
+              ? 'That is less than it already stores. Nothing is deleted, but no upload will succeed until files are removed.'
+              : 'The default for a new tenant is 5 GB.'}
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={!valid || setQuota.isPending}>Save limit</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

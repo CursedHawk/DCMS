@@ -183,3 +183,19 @@ test('a file picked in Google Drive is imported by the server, not uploaded', as
   // The bytes never pass through the browser: no multipart upload was made.
   expect(api.requestsTo('POST', '/api/admin/media')).toEqual([]);
 });
+
+test('a full library refuses an upload without sending it', async ({ page, api }) => {
+  api.on('GET', '/api/admin/media/usage', { ...data.MEDIA_USAGE, quotaBytes: data.MEDIA_USAGE.totalBytes });
+
+  await page.goto('/media');
+  await expect(page.getByText('Storage is full.', { exact: false })).toBeVisible();
+
+  await page.locator('input[type=file]').first().setInputFiles({
+    name: 'more.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from('not really a png'),
+  });
+
+  await expect(page.getByText('Not enough storage left', { exact: false })).toBeVisible();
+  expect(api.requestsTo('POST', '/api/admin/media')).toHaveLength(0);
+});

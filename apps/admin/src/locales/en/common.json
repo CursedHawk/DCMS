@@ -398,13 +398,14 @@
     },
     "usage": {
       "title": "Storage used",
-      "used": "total",
       "originals": "Originals",
       "optimized": "Optimized copies",
       "assets_one": "{{count}} file",
       "assets_other": "{{count}} files",
       "folders_one": "{{count}} folder",
-      "folders_other": "{{count}} folders"
+      "folders_other": "{{count}} folders",
+      "of": "of {{quota}}",
+      "full": "Storage is full. Delete files to upload more, or ask the platform operator for more space."
     },
     "folders": {
       "title": "Folders",
@@ -455,6 +456,11 @@
       "import": "Import from Google Drive",
       "importing": "Importing…",
       "unavailable": "Google Drive could not be opened. Check that pop-ups are allowed for this site and try again."
+    },
+    "limits": {
+      "tooLarge": "Files can be at most 1 GB.",
+      "imageTooLarge": "Images can be at most 50 MB.",
+      "noRoom": "Not enough storage left: {{free}} free."
     }
   },
   "sites": {
