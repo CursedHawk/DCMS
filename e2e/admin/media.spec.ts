@@ -140,6 +140,7 @@ test('a file picked in Google Drive is imported by the server, not uploaded', as
           setIncludeFolders = self;
           setSelectFolderEnabled = self;
           setEnableDrives = self;
+          setOwnedByMe = self;
         },
         PickerBuilder: class {
           private cb: (r: object) => void = () => undefined;

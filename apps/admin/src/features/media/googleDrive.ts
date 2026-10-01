@@ -118,6 +118,7 @@ interface GoogleGlobal {
       setIncludeFolders(v: boolean): unknown;
       setSelectFolderEnabled(v: boolean): unknown;
       setEnableDrives(v: boolean): unknown;
+      setOwnedByMe(v: boolean): unknown;
     };
     ViewId: { DOCS: string };
     Feature: { MULTISELECT_ENABLED: string; SUPPORT_DRIVES: string };
@@ -225,15 +226,20 @@ export async function pickFromDrive(
   const token = await accessToken(config.clientId);
   const g = window.google!.picker;
 
-  // One tab per place files live: My Drive first, then shared drives. A view with drives
-  // enabled lists *only* shared drives, so it cannot be the sole view.
-  const docsView = (sharedDrives: boolean) => {
+  // One tab per place files live. A view with drives enabled lists *only* shared drives, and
+  // one filtered by owner lists only files shared with the admin, so My Drive needs its own.
+  const docsView = (place: 'mine' | 'sharedWithMe' | 'sharedDrives') => {
     const view = new g.DocsView(g.ViewId.DOCS);
     view.setMimeTypes(PICKABLE_MIME_TYPES);
-    // Folders to browse into, not to pick: the server imports files.
-    view.setIncludeFolders(true);
-    view.setSelectFolderEnabled(false);
-    if (sharedDrives) view.setEnableDrives(true);
+    if (place === 'sharedWithMe') {
+      // Google: setOwnedByMe must not be combined with setIncludeFolders.
+      view.setOwnedByMe(false);
+    } else {
+      // Folders to browse into, not to pick: the server imports files.
+      view.setIncludeFolders(true);
+      view.setSelectFolderEnabled(false);
+      if (place === 'sharedDrives') view.setEnableDrives(true);
+    }
     return view;
   };
 
@@ -245,8 +251,9 @@ export async function pickFromDrive(
       .setOAuthToken(token)
       .setOrigin(window.location.origin)
       .setLocale(locale)
-      .addView(docsView(false))
-      .addView(docsView(true))
+      .addView(docsView('mine'))
+      .addView(docsView('sharedWithMe'))
+      .addView(docsView('sharedDrives'))
       .enableFeature(g.Feature.SUPPORT_DRIVES);
     if (multiple) builder = builder.enableFeature(g.Feature.MULTISELECT_ENABLED).setMaxItems(50);
 
