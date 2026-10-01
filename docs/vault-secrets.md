@@ -117,6 +117,7 @@ rm -f /tmp/s.pfx
 | `Social__Meta__AppId`, `Social__Meta__AppSecret` | the Meta app behind Facebook Login for Business — Pages, and the Instagram accounts linked to them |
 | `Social__Instagram__AppId`, `Social__Instagram__AppSecret` | the Instagram Login app, for professional accounts with no Facebook Page |
 | `Social__RedirectUri` | the OAuth callback, registered verbatim in the Meta app — `https://<admin host>/api/admin/social/callback` |
+| `GoogleDrive__ClientId`, `GoogleDrive__ApiKey`, `GoogleDrive__AppId` | the console's Drive import: the OAuth client id (may be identity's SSO client), a browser API key restricted to the Picker API and the admin origin, and the Cloud **project number**. Optional — absent hides the button |
 
 **`Audit__ChainKey` must be stable forever.** Rotating it makes every previously written audit
 record fail verification — the chain cannot be re-linked, and `audit verify` reports tampering
