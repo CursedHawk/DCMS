@@ -287,13 +287,31 @@ export function DataTable<T>({
                       aria-label={labels.selectRow}
                     />
                   ) : null}
-                  <button
-                    type="button"
-                    disabled={!onRowClick}
+                  {/*
+                    A div, not a button: the cells hold their own buttons and links (a row's
+                    actions), and a button around them is invalid and, when disabled, swallows
+                    every click inside it. Like the table's <tr>, the card takes the row click;
+                    the heading is the keyboard way in.
+                  */}
+                  {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- the heading button is the keyboard path */}
+                  <div
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
-                    className="min-w-0 flex-1 text-left disabled:cursor-default"
+                    className={cn('min-w-0 flex-1', onRowClick && 'cursor-pointer')}
                   >
-                    <div className="font-medium">{primary?.cell(row)}</div>
+                    {onRowClick ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRowClick(row);
+                        }}
+                        className="block w-full rounded text-left font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {primary?.cell(row)}
+                      </button>
+                    ) : (
+                      <div className="font-medium">{primary?.cell(row)}</div>
+                    )}
                     <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
                       {rest.map((column) => (
                         <div key={column.id} className="contents">
@@ -304,7 +322,7 @@ export function DataTable<T>({
                         </div>
                       ))}
                     </dl>
-                  </button>
+                  </div>
                 </div>
               </div>
             </li>

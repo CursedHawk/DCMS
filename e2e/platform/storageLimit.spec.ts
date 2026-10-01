@@ -24,3 +24,19 @@ test('an operator raises a tenant storage limit', async ({ page, api }) => {
   const put = api.requestsTo('PUT', `/api/platform/tenants/${data.TENANT.tenantId}/storage-quota`).at(-1);
   expect(put?.body).toEqual({ quotaBytes: 12.5 * 1024 ** 3 });
 });
+
+// Below md the table becomes cards, and a card's actions once sat inside a disabled button that
+// swallowed every tap.
+test('the row actions work on a phone', async ({ page, api }) => {
+  api.on('PUT', '/api/platform/tenants/:id/storage-quota', {});
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  await page.goto('/tenants');
+  const card = page.getByRole('listitem').filter({ hasText: data.TENANT.slug });
+  await card.getByRole('button', { name: 'Storage limit', exact: true }).click();
+  await expect(page.getByRole('dialog').getByLabel('Limit in GB')).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
+
+  await card.getByRole('button', { name: 'Suspend' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+});
