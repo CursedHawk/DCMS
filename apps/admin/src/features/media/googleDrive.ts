@@ -225,12 +225,17 @@ export async function pickFromDrive(
   const token = await accessToken(config.clientId);
   const g = window.google!.picker;
 
-  const view = new g.DocsView(g.ViewId.DOCS);
-  view.setMimeTypes(PICKABLE_MIME_TYPES);
-  // Folders to browse into, not to pick: the server imports files.
-  view.setIncludeFolders(true);
-  view.setSelectFolderEnabled(false);
-  view.setEnableDrives(true);
+  // One tab per place files live: My Drive first, then shared drives. A view with drives
+  // enabled lists *only* shared drives, so it cannot be the sole view.
+  const docsView = (sharedDrives: boolean) => {
+    const view = new g.DocsView(g.ViewId.DOCS);
+    view.setMimeTypes(PICKABLE_MIME_TYPES);
+    // Folders to browse into, not to pick: the server imports files.
+    view.setIncludeFolders(true);
+    view.setSelectFolderEnabled(false);
+    if (sharedDrives) view.setEnableDrives(true);
+    return view;
+  };
 
   return new Promise((resolve) => {
     const releaseDialogs = shieldFromDialogs();
@@ -240,7 +245,8 @@ export async function pickFromDrive(
       .setOAuthToken(token)
       .setOrigin(window.location.origin)
       .setLocale(locale)
-      .addView(view)
+      .addView(docsView(false))
+      .addView(docsView(true))
       .enableFeature(g.Feature.SUPPORT_DRIVES);
     if (multiple) builder = builder.enableFeature(g.Feature.MULTISELECT_ENABLED).setMaxItems(50);
 
