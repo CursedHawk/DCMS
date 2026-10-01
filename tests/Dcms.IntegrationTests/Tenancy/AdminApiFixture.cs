@@ -48,6 +48,9 @@ public sealed class AdminApiFixture : IAsyncLifetime
     /// </summary>
     public MetaStubServer MetaStub { get; private set; } = null!;
 
+    /// <summary>In-process stub of the Drive v3 API, for the Google Drive import.</summary>
+    public Dcms.IntegrationTests.Media.DriveStubServer DriveStub { get; private set; } = null!;
+
     /// <summary>Raw Postgres connection string (as the owner) — used by the RLS isolation test.</summary>
     public string PostgresConnectionString => _postgres.GetConnectionString();
 
@@ -81,6 +84,7 @@ public sealed class AdminApiFixture : IAsyncLifetime
         }
 
         MetaStub = await MetaStubServer.StartAsync();
+        DriveStub = await Dcms.IntegrationTests.Media.DriveStubServer.StartAsync();
 
         if (RlsEnforced)
         {
@@ -131,6 +135,11 @@ public sealed class AdminApiFixture : IAsyncLifetime
             builder.UseSetting("Social:OverrideBaseUrl", MetaStub.BaseUrl);
             // The stub serves its CDN over plain http on loopback; imports reach public https only otherwise.
             builder.UseSetting("Media:ImportAllowLocal", "true");
+            // Drive import looks configured; every call goes to the stub.
+            builder.UseSetting("GoogleDrive:ClientId", "test-client");
+            builder.UseSetting("GoogleDrive:ApiKey", "test-key");
+            builder.UseSetting("GoogleDrive:AppId", "test-app");
+            builder.UseSetting("GoogleDrive:ApiBase", DriveStub.ApiBase);
             // The Guestbook sample as an installed plugin: the coverage tests hold its routes to
             // the same rules as the platform's.
             builder.UseSetting("Plugins:Directory", Dcms.IntegrationTests.Cms.ContentFlowFixture.InstalledPluginsDirectory);
@@ -170,6 +179,10 @@ public sealed class AdminApiFixture : IAsyncLifetime
         if (MetaStub is not null)
         {
             await MetaStub.DisposeAsync();
+        }
+        if (DriveStub is not null)
+        {
+            await DriveStub.DisposeAsync();
         }
         await Task.WhenAll(
             _postgres.DisposeAsync().AsTask(),

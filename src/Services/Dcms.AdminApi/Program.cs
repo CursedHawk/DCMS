@@ -131,6 +131,10 @@ builder.Services.AddHttpClient(Dcms.AdminApi.Media.AdminPluginMedia.HttpClientNa
     .ConfigurePrimaryHttpMessageHandler(sp => Dcms.AdminApi.Media.PublicEgress.Handler(
         allowPrivate: sp.GetRequiredService<IConfiguration>().GetValue("Media:ImportAllowLocal", false)));
 builder.Services.AddDcmsPluginWorkers();
+// Google Drive import (Media/GoogleDriveImport.cs). Optional: GoogleDrive__* in
+// secret/dcms/admin-api; unset, the console does not offer Drive.
+builder.Services.Configure<Dcms.AdminApi.Media.GoogleDriveOptions>(
+    builder.Configuration.GetSection(Dcms.AdminApi.Media.GoogleDriveOptions.SectionName));
 
 // Permission evaluation: dynamic policy + tenancy-backed, Redis-cached resolver.
 builder.Services.AddDcmsPermissionAuthorization();
@@ -372,6 +376,7 @@ app.MapMarketplaceEndpoints();
 app.MapContentEndpoints();
 app.MapContentListEndpoints();
 app.MapMediaEndpoints();
+app.MapGoogleDriveImport();
 app.MapSiteEndpoints();
 app.MapSiteDeletion();
 app.MapNotificationEndpoints();

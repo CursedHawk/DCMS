@@ -95,6 +95,7 @@ public static class AuditActions
 
     // ---- media ----
     public const string MediaUploaded = "media.uploaded";
+    public const string MediaImported = "media.imported";
     public const string MediaUpdated = "media.updated";
     public const string MediaMoved = "media.moved";
     public const string MediaDeleted = "media.deleted";

@@ -67,7 +67,8 @@ public sealed class AdminPluginMedia(
         return result.Ok ? new MediaImportResult(result.AssetId, null) : new MediaImportResult(null, result.Error);
     }
 
-    private static async Task<byte[]> ReadCappedAsync(HttpResponseMessage response, CancellationToken ct)
+    /// <summary>Reads at most <see cref="MediaIngestService.MaxInlineBytes"/>; empty when the body is longer. Shared with the Drive import.</summary>
+    internal static async Task<byte[]> ReadCappedAsync(HttpResponseMessage response, CancellationToken ct)
     {
         await using var source = await response.Content.ReadAsStreamAsync(ct);
         using var buffer = new MemoryStream();

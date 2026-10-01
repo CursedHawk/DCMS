@@ -72,6 +72,7 @@ REQUIRED_SHARED=""
 #
 # Deliberately NOT listed, and each for a reason:
 #   Authentication__Google__*   optional -- absent simply hides the sign-in button
+#   GoogleDrive__*              admin-api; optional -- absent hides the console's Drive import
 #   Email__User/__Password      a relay on a private network may need no auth
 #   Alerting__WebhookSecret     shared with the Grafana container, so it stays in .env
 #
