@@ -365,6 +365,8 @@ app.MapDcmsPluginHostEndpoints();
 app.MapDcmsContractAdminEndpoints();
 // Plugins' data sets for the console's plugin pages (docs/adr/0018).
 app.MapDcmsPluginDataEndpoints();
+// Plugins' own admin screens: what they declare, and installed plugins' UI files (docs/adr/0019).
+app.MapDcmsPluginUiEndpoints();
 app.MapNavigationEndpoints();
 app.MapMarketplaceEndpoints();
 app.MapContentEndpoints();

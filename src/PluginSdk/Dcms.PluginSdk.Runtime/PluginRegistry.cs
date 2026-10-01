@@ -290,6 +290,32 @@ public sealed class PluginRegistry : IPluginCatalog
             }
         }
 
+        var screenIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var screen in manifest.AdminScreens ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(screen.Id) || !IsKebabCase(screen.Id) || !screenIds.Add(screen.Id))
+            {
+                throw new InvalidOperationException(
+                    $"Plugin '{manifest.Id}' admin screen id '{screen.Id}' must be unique kebab-case.");
+            }
+            if (screen.Nav is { } nav && nav.Group is not ("main" or "build" or "admin" or "plugins"))
+            {
+                // The sidebar draws these sections only; an entry in any other is never seen.
+                throw new InvalidOperationException(
+                    $"Plugin '{manifest.Id}' admin screen '{screen.Id}' goes in menu section '{nav.Group}'; use main, build, admin or plugins.");
+            }
+            if (string.IsNullOrWhiteSpace(screen.Title))
+            {
+                throw new InvalidOperationException($"Plugin '{manifest.Id}' admin screen '{screen.Id}' needs a title.");
+            }
+            // A key nobody declares can be held by no role: the screen would be invisible to everyone.
+            if (screen.Permission is { } permission && !DeclaresPermission(manifest, permission))
+            {
+                throw new InvalidOperationException(
+                    $"Plugin '{manifest.Id}' admin screen '{screen.Id}' names permission '{permission}', which neither the plugin nor the platform declares.");
+            }
+        }
+
         var dataSetIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var set in manifest.DataSets ?? [])
         {

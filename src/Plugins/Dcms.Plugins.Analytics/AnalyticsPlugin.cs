@@ -39,7 +39,13 @@ public sealed class AnalyticsPlugin : IPlugin
         tracksVisitors: true,
         category: "Insight",
         summary: "Page views, sessions and campaign attribution.",
-        iconName: "TrendingUp");
+        iconName: "TrendingUp",
+        adminScreens:
+        [
+            new AdminScreen("dashboard", "Analytics", Permission: "analytics:read", IconName: "TrendingUp",
+                Nav: new AdminNavPlacement("main", 30), Titles: new Dictionary<string, string> { ["cs"] = "Analytika" },
+                Description: "Visits, sources and campaigns across your sites."),
+        ]);
 
     public void ConfigureServices(IServiceCollection services, PluginHost host)
     {

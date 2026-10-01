@@ -111,6 +111,12 @@ public sealed class LiveChatPlugin : IPlugin
                 "Every chat with its transcript.",
                 readPermission: PlatformPermissions.ChatRead, writePermission: PlatformPermissions.ChatManage,
                 iconName: "MessagesSquare"),
+        ],
+        adminScreens:
+        [
+            new AdminScreen("console", "Chat", Permission: PlatformPermissions.ChatRead, IconName: "MessagesSquare",
+                Nav: new AdminNavPlacement("main", 40), Titles: new Dictionary<string, string> { ["cs"] = "Chat" },
+                Description: "Live conversations with your site's visitors; take over from the chatbot."),
         ]);
 
     public void ConfigureServices(IServiceCollection services, PluginHost host)

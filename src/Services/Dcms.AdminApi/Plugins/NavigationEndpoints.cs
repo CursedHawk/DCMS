@@ -39,9 +39,6 @@ public static class NavigationEndpoints
         new("/media", "nav.media", "Image", PlatformPermissions.MediaRead, "build"),
         new("/sites", "nav.sites", "PanelsTopLeft", PlatformPermissions.SiteEdit, "build"),
         new("/marketplace", "nav.marketplace", "Store", PlatformPermissions.PluginsManage, "build"),
-        new("/forms", "nav.forms", "Inbox", PlatformPermissions.ContentRead, "main"),
-        new("/analytics", "nav.analytics", "TrendingUp", PlatformPermissions.AnalyticsRead, "main"),
-        new("/chat", "nav.chat", "MessagesSquare", PlatformPermissions.ChatRead, "main"),
 
         // Gated on the same permission as the model proxy, so the menu never offers a history
         // page to a member who cannot hold a conversation in the first place.
@@ -66,6 +63,16 @@ public static class NavigationEndpoints
     public sealed record NavEntry(
         string To, string LabelKey, string Icon, string? Permission, string Group);
 
+    /// <summary>
+    /// A menu entry. Platform entries name an i18n <paramref name="LabelKey"/>; plugin entries
+    /// carry their own <paramref name="Label"/> (English) and <paramref name="Labels"/> by language,
+    /// because no locale bundle of the console knows a plugin's words. <paramref name="Detail"/>
+    /// is the instance a per-instance entry belongs to — a tenant-authored name, never translated.
+    /// </summary>
+    private sealed record NavItem(
+        string To, string? LabelKey, string Icon, string Group, int Order,
+        string? Label = null, IReadOnlyDictionary<string, string>? Labels = null, string? Detail = null);
+
     public static IEndpointRouteBuilder MapNavigationEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/admin/navigation", async (
@@ -83,30 +90,22 @@ public static class NavigationEndpoints
             bool May(string? permission) =>
                 permission is null || me.IsSuperAdmin || held.Contains(permission);
 
+            // Platform entries keep their declared order (index × 10), so a plugin places itself
+            // between them with AdminNavPlacement.Order.
             var items = Platform
-                .Where(e => May(e.Permission))
-                .Select(e => new
-                {
-                    to = e.To,
-                    labelKey = e.LabelKey,
-                    icon = e.Icon,
-                    group = e.Group,
-                    // No label: these resolve through the SPA's own locale bundle, which is
-                    // where the product's own strings already live.
-                    label = (string?)null,
-                })
+                .Select((e, index) => (Entry: e, Order: index * 10))
+                .Where(x => May(x.Entry.Permission))
+                .Select(x => new NavItem(x.Entry.To, x.Entry.LabelKey, x.Entry.Icon, x.Entry.Group, x.Order))
                 .ToList();
 
             /*
-             * Plugin instances that declare a page.
+             * Plugin screens with a menu entry, from ENABLED instances only. A disabled instance
+             * keeps its data, config and page (reachable from Plugins), but a switched-off plugin
+             * has no business in the menu.
              *
-             * Only ENABLED ones. A disabled instance keeps its rows and its config so it can be
-             * switched back on, but a menu entry leading to a page that answers 404 is worse
-             * than no entry.
-             *
-             * The label is the instance's own name, not the plugin's: a tenant with two
-             * galleries needs "Homepage" and "Press kit", and two entries both reading "Image
-             * gallery" is the exact ambiguity this endpoint exists to remove.
+             * A plugin-wide screen appears once while any instance is enabled; an instance
+             * screen once per enabled instance, carrying the instance's own name — a tenant with
+             * two galleries needs "Homepage" and "Press kit", not two identical entries.
              */
             var enabled = await db.PluginInstances
                 .Where(p => p.Enabled)
@@ -114,29 +113,32 @@ public static class NavigationEndpoints
                 .Select(p => new { p.PluginId, p.Slug, p.Name })
                 .ToListAsync(ct);
 
-            foreach (var instance in enabled)
+            foreach (var group in enabled.GroupBy(i => i.PluginId))
             {
-                var manifest = catalog.Find(instance.PluginId);
-                if (manifest?.Nav is not { } nav) continue;
-
-                var permission = nav.Permission.Contains(':')
-                    ? nav.Permission
-                    : PlatformPermissions.ForPlugin(instance.PluginId, nav.Permission);
-                if (!May(permission)) continue;
-
-                items.Add(new
+                if (catalog.Find(group.Key) is not { } manifest) continue;
+                foreach (var screen in manifest.AdminScreens ?? [])
                 {
-                    to = nav.RouteTemplate.Replace("{instanceSlug}", instance.Slug),
-                    labelKey = nav.LabelKey,
-                    icon = nav.IconName ?? manifest.IconName ?? "Plug",
-                    group = nav.Group,
-                    // A tenant-authored name, so it is already in the reader's language and
-                    // must NOT go through i18n — there is no key for "Press kit".
-                    label = (string?)instance.Name,
-                });
+                    if (screen.Nav is not { } nav
+                        || !May(PluginPermissions.Resolve(manifest.Id, screen.Permission ?? PlatformPermissions.PluginsManage)))
+                    {
+                        continue;
+                    }
+                    var icon = screen.IconName ?? manifest.IconName ?? "Plug";
+                    if (screen.Scope == AdminScreenScope.Plugin)
+                    {
+                        items.Add(new NavItem($"/app/{manifest.Id}/{screen.Id}", null, icon, nav.Group, nav.Order,
+                            screen.Title, screen.Titles));
+                        continue;
+                    }
+                    foreach (var instance in group)
+                    {
+                        items.Add(new NavItem($"/plugins/{instance.Slug}/{screen.Id}", null, icon, nav.Group, nav.Order,
+                            screen.Title, screen.Titles, instance.Name));
+                    }
+                }
             }
 
-            return Results.Ok(new { items });
+            return Results.Ok(new { items = items.OrderBy(i => i.Order).ToList() });
         }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
 
         return app;

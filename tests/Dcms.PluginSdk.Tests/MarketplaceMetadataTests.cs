@@ -78,33 +78,4 @@ public class MarketplaceMetadataTests
                 $"'{manifest.Id}' uses a category no other plugin does");
         }
     }
-
-    [Fact]
-    public void A_declared_nav_entry_names_a_permission_the_plugin_actually_has()
-    {
-        // The endpoint expands a bare action into plugin:{id}:{action}. An action the manifest
-        // never declared expands into a key no role can hold, so the entry is invisible to
-        // everyone — including the SuperAdmin who would have to debug it.
-        foreach (var manifest in Manifests())
-        {
-            if (manifest.Nav is not { } nav) continue;
-            if (nav.Permission.Contains(':')) continue;
-            manifest.Permissions.Select(p => p.Action).Should().Contain(nav.Permission,
-                $"'{manifest.Id}' contributes a nav entry gated on an action it does not define");
-        }
-    }
-
-    [Fact]
-    public void A_declared_nav_route_is_per_instance()
-    {
-        // One declaration yields one entry per enabled instance. A route with no placeholder
-        // gives a tenant with two galleries two identical menu entries to the same page.
-        foreach (var manifest in Manifests())
-        {
-            if (manifest.Nav is not { } nav) continue;
-            if (!manifest.AllowMultipleInstances) continue;
-            nav.RouteTemplate.Should().Contain("{instanceSlug}",
-                $"'{manifest.Id}' allows multiple instances, so its nav route must distinguish them");
-        }
-    }
 }

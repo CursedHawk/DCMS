@@ -26,8 +26,7 @@ public sealed record PluginManifest(
      * only changes how a plugin is *listed*.
      *
      * Absent values degrade honestly rather than blocking: no category means "Other", no icon
-     * means the generic plugin glyph, no nav declaration means the plugin contributes no menu
-     * entry, which is the correct default for one that has no page of its own.
+     * means the generic plugin glyph. Menu entries come from `AdminScreens` (below).
      */
 
     // <summary>Groups the plugin in the marketplace. Free text; unknown values sort into "Other".</summary>
@@ -37,11 +36,6 @@ public sealed record PluginManifest(
     // <summary>A lucide icon name, resolved by the SPA. An unknown name falls back to the plugin glyph.</summary>
     string? IconName = null,
     IReadOnlyList<string>? Tags = null,
-    // <summary>
-    // A menu entry this plugin's enabled instances contribute, or null for a plugin with no
-    // page of its own — most of them, which surface through Content and the builder palette.
-    // </summary>
-    PluginNavDeclaration? Nav = null,
 
     /*
      * Contracts (docs/adr/0016-plugin-contracts.md). What this plugin offers other plugins and
@@ -74,7 +68,12 @@ public sealed record PluginManifest(
     // Tables of this plugin's data the admin console shows and edits on the plugin's page. The
     // platform adds its own for data the plugin keeps in dcms.storage and dcms.blobs.
     // </summary>
-    IReadOnlyList<DataSetDeclaration>? DataSets = null)
+    IReadOnlyList<DataSetDeclaration>? DataSets = null,
+    // <summary>
+    // Screens the plugin adds to the admin console, with their menu entries. The plugin's admin
+    // UI module (see docs/plugins.md) supplies the components.
+    // </summary>
+    IReadOnlyList<AdminScreen>? AdminScreens = null)
 {
     public static PluginManifest Create(
         string id,
@@ -89,7 +88,6 @@ public sealed record PluginManifest(
         string? summary = null,
         string? iconName = null,
         IReadOnlyList<string>? tags = null,
-        PluginNavDeclaration? nav = null,
         IReadOnlyList<ContractProvision>? provides = null,
         IReadOnlyList<ContractRequirement>? consumes = null,
         IReadOnlyList<EventSubscription>? subscribes = null,
@@ -98,7 +96,8 @@ public sealed record PluginManifest(
         IReadOnlyList<ClientBinding>? clientBindings = null,
         IReadOnlyList<string>? reservedSlugs = null,
         bool tracksVisitors = false,
-        IReadOnlyList<DataSetDeclaration>? dataSets = null)
+        IReadOnlyList<DataSetDeclaration>? dataSets = null,
+        IReadOnlyList<AdminScreen>? adminScreens = null)
         => new(
             id,
             name,
@@ -113,7 +112,6 @@ public sealed record PluginManifest(
             summary,
             iconName,
             tags ?? [],
-            nav,
             provides ?? [],
             consumes ?? [],
             subscribes ?? [],
@@ -122,27 +120,9 @@ public sealed record PluginManifest(
             clientBindings ?? [],
             reservedSlugs ?? [],
             tracksVisitors,
-            dataSets ?? []);
+            dataSets ?? [],
+            adminScreens ?? []);
 }
-
-/// <summary>
-/// A navigation entry contributed by a plugin's enabled instances.
-///
-/// <para>The route is a template: <c>{instanceSlug}</c> is replaced per instance, so one
-/// declaration yields one menu entry per installed instance — "Image gallery · Homepage" and
-/// "Image gallery · Press kit" rather than a single ambiguous "Image gallery".</para>
-///
-/// <para><see cref="Permission"/> is the key a member must hold to see the entry at all. It is
-/// stated rather than inferred from the plugin's own permission list because a plugin can
-/// declare several, and the one that gates its page is not always the first.</para>
-/// </summary>
-public sealed record PluginNavDeclaration(
-    string LabelKey,
-    string RouteTemplate,
-    string Permission,
-    string? IconName = null,
-    // Which sidebar group it joins. Unknown values fall into the plugin section.
-    string Group = "plugins");
 
 /// <summary>
 /// One member of an instance in the generated TypeScript site client, backed by a runtime helper.
