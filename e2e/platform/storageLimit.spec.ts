@@ -12,7 +12,7 @@ test('an operator raises a tenant storage limit', async ({ page, api }) => {
   await page
     .getByRole('row')
     .filter({ hasText: data.TENANT.slug })
-    .getByRole('button', { name: /change storage limit/ })
+    .getByRole('button', { name: 'Storage limit', exact: true })
     .click();
 
   const dialog = page.getByRole('dialog');

@@ -105,6 +105,12 @@ export function TenantsPage() {
               <ExternalLink className="h-3 w-3" aria-hidden />
             </a>
 
+            {maySetLimits && (
+              <Button variant="outline" size="sm" onClick={() => setLimiting(r)}>
+                Storage limit
+              </Button>
+            )}
+
             {mayChange &&
               (r.status === 'Suspended' ? (
                 <Button
