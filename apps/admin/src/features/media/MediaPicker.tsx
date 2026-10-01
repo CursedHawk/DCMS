@@ -81,6 +81,7 @@ export function MediaPicker({
             <MediaUploader
               folderId={folder !== 'all' && folder !== ROOT_FOLDER ? folder : null}
               onUploaded={(id) => onChange(id)}
+              multiple={false}
             />
           </div>
           {media.isLoading ? (

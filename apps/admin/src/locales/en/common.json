@@ -364,7 +364,7 @@
   "media": {
     "title": "Media library",
     "upload": "Upload files",
-    "dropHere": "Drop to move here",
+    "dropHere": "Drop files here or click to upload",
     "processing": "Processing",
     "ready": "Ready",
     "failed": "Failed",
@@ -450,6 +450,11 @@
       "gridBody": "Drag one onto a folder to move it. Select several first and the whole selection moves together.",
       "usageTitle": "Storage",
       "usageBody": "What the library holds, split between originals and the optimised versions generated for the web."
+    },
+    "drive": {
+      "import": "Import from Google Drive",
+      "importing": "Importing…",
+      "unavailable": "Google Drive could not be opened. Check that pop-ups are allowed for this site and try again."
     }
   },
   "sites": {

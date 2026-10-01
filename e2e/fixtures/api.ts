@@ -222,6 +222,11 @@ export function adminApi(
       await route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
       return undefined;
     })
+    // Drive is unconfigured unless a spec says otherwise, as on a platform without a Google app.
+    .on('GET', '/api/admin/media/google-drive/config', async ({ route }) => {
+      await route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+      return undefined;
+    })
     .on('POST', '/api/admin/media/move', { moved: 1 })
     .on('POST', '/api/admin/media/delete', { deleted: 1 })
     .on('POST', '/api/admin/media/folders', ({ body }) => ({

@@ -374,7 +374,7 @@
   "media": {
     "title": "Knihovna médií",
     "upload": "Nahrát soubory",
-    "dropHere": "Přetažením přesunete sem",
+    "dropHere": "Přetáhněte soubory sem nebo klikněte pro nahrání",
     "processing": "Zpracovává se",
     "ready": "Připraveno",
     "failed": "Selhalo",
@@ -466,6 +466,11 @@
       "gridBody": "Přetažením na složku soubor přesunete. Vyberte jich víc a přesunou se všechny najednou.",
       "usageTitle": "Úložiště",
       "usageBody": "Co knihovna obsahuje, rozdělené na originály a optimalizované verze pro web."
+    },
+    "drive": {
+      "import": "Importovat z Google Disku",
+      "importing": "Importuje se…",
+      "unavailable": "Google Disk se nepodařilo otevřít. Povolte pro tento web vyskakovací okna a zkuste to znovu."
     }
   },
   "sites": {

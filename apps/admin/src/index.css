@@ -220,3 +220,10 @@
 body {
   background-color: hsl(var(--background));
 }
+
+/* Google's Drive picker is appended to <body>; a modal Radix dialog sets pointer-events:none
+   there, which would leave the picker visible but unclickable (features/media/googleDrive.ts). */
+.picker-dialog,
+.picker-dialog-bg {
+  pointer-events: auto;
+}
