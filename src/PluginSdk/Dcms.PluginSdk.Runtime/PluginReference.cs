@@ -96,12 +96,15 @@ public static class PluginReference
                 t.Unpublished is null ? null : ContractIds.EventName(t.Unpublished))).ToList(),
             config,
             manifest.PublicConfigKeys,
-            manifest.Permissions.Select(p => (object)new { key = $"plugin:{manifest.Id}:{p.Action}", p.DisplayName }).ToList(),
+            manifest.Permissions.Select(p => (object)new
+            {
+                key = PluginPermissions.Resolve(manifest.Id, p.Action), p.DisplayName, p.Description, p.GrantToMembers,
+            }).ToList(),
             Data.PluginDataSets.Of(manifest).Select(d => (object)new
             {
                 d.Id, d.Title, d.Description,
-                readPermission = d.ReadPermission ?? Shared.Security.PlatformPermissions.PluginsManage,
-                writePermission = d.WritePermission ?? Shared.Security.PlatformPermissions.PluginsManage,
+                readPermission = Data.PluginDataEndpoints.ReadPermission(manifest.Id, d),
+                writePermission = Data.PluginDataEndpoints.WritePermission(manifest.Id, d),
             }).ToList(),
             CSharp(manifest, provides, registry));
     }

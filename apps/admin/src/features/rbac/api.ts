@@ -54,6 +54,8 @@ export interface PermissionDef {
   displayName: string;
   group: string;
   feature: PermissionFeature;
+  /** What the permission lets a member do, as the plugin that adds it describes it. */
+  description?: string | null;
 }
 
 export function useRoles() {

@@ -80,8 +80,10 @@ public sealed class LiveChatPlugin : IPlugin
         configJsonSchema: ConfigSchema,
         permissions:
         [
-            new PermissionDefinition("read", "View chat conversations"),
-            new PermissionDefinition("write", "Reply as an agent and configure the assistant"),
+            new PermissionDefinition("read", "View chat conversations",
+                "Read every conversation visitors had with the chatbot and your team."),
+            new PermissionDefinition("write", "Reply as an agent and configure the assistant",
+                "Take over conversations from the chatbot and answer visitors yourself."),
         ],
         clientBindings:
         [

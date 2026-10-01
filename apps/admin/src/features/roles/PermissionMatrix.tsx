@@ -111,6 +111,9 @@ export function PermissionMatrix({
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block">{p.displayName}</span>
+                      {p.description ? (
+                        <span className="block text-xs text-muted-foreground">{p.description}</span>
+                      ) : null}
                       <FeatureLine feature={p.feature} />
                     </span>
                   </label>

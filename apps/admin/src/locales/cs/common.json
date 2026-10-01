@@ -1565,11 +1565,10 @@
       "actionOn_few": "Provede se pro {{count}} vybrané řádky.",
       "actionOn_other": "Provede se pro {{count}} vybraných řádků.",
       "invalidJson": "Zatím to není platný JSON.",
-      "disabled": "Plugin je vypnutý",
-      "disabledHint": "Zapněte ho, abyste mohli procházet a upravovat jeho data. Během vypnutí se nic nesmazalo.",
       "none": "Není co procházet",
       "noneHint": "Tento plugin neukládá vlastní data.",
-      "noneContentHint": "Obsah tohoto pluginu se upravuje v sekci Obsah; odkazy najdete na kartě Přehled."
+      "noneContentHint": "Obsah tohoto pluginu se upravuje v sekci Obsah; odkazy najdete na kartě Přehled.",
+      "disabledNotice": "Plugin je vypnutý: vaše weby ho nevidí, ale jeho data můžete dál procházet a upravovat."
     },
     "integration": {
       "site": "Na vašem webu",

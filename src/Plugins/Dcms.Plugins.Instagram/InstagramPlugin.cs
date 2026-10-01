@@ -41,7 +41,8 @@ public sealed class InstagramPlugin : IPlugin
             includeStories: true),
         permissions:
         [
-            new PermissionDefinition("connect", "Connect an Instagram account"),
+            new PermissionDefinition("connect", "Connect an Instagram account",
+                "Link or unlink the Instagram account whose posts appear on your sites."),
             new PermissionDefinition("sync", "Trigger an Instagram sync"),
         ],
         contentTypes:

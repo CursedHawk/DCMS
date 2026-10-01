@@ -539,7 +539,8 @@ public static class TenancyEndpoints
                     PlatformPermissions.ForPlugin(m.Id, p.Action),
                     p.DisplayName,
                     m.Name,
-                    new PermissionFeature("plugin", m.Id, m.Name, "/plugins", used.Count > 0, used)));
+                    new PermissionFeature("plugin", m.Id, m.Name, "/plugins", used.Count > 0, used),
+                    p.Description));
             });
 
             // Per-site repo perms (git-backed sites — Mode A builder and Mode B React):
@@ -619,7 +620,7 @@ public static class TenancyEndpoints
     private sealed record PermissionFeature(
         string Kind, string? Id, string Name, string? Route, bool InUse, IReadOnlyList<PermissionFeatureRef> Instances);
 
-    private sealed record PermissionEntry(string Key, string DisplayName, string Group, PermissionFeature Feature);
+    private sealed record PermissionEntry(string Key, string DisplayName, string Group, PermissionFeature Feature, string? Description = null);
 
     private static bool IsSlug(string value) =>
         value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')

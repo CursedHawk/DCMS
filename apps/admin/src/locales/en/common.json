@@ -1533,11 +1533,10 @@
       "actionOn_one": "Runs on the selected row.",
       "actionOn_other": "Runs on {{count}} selected rows.",
       "invalidJson": "Not valid JSON yet.",
-      "disabled": "This plugin is switched off",
-      "disabledHint": "Enable it to browse and edit its data. Nothing was deleted while it was off.",
       "none": "No data to browse here",
       "noneHint": "This plugin keeps no data of its own.",
-      "noneContentHint": "This plugin's content is edited in Content; see the Overview tab for links."
+      "noneContentHint": "This plugin's content is edited in Content; see the Overview tab for links.",
+      "disabledNotice": "This plugin is switched off: your sites can't reach it, but its data is still here to browse and edit."
     },
     "integration": {
       "site": "On your website",

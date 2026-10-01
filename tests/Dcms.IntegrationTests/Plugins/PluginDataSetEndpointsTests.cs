@@ -109,6 +109,22 @@ public sealed class PluginDataSetEndpointsTests(ContentFlowFixture fixture)
             .StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [DockerFact]
+    public async Task A_switched_off_plugins_data_stays_browsable()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (tenant, owner) = await SiteAsync(ct);
+        await RegisterAsync(fixture.Content.CreateClient(), tenant, "zoe@site.test", ct);
+        var admin = fixture.Admin.CreateClient();
+        var instances = await JsonAsync(admin, AdminReq(HttpMethod.Get, "/api/admin/plugins/instances", owner, tenant), ct);
+        var id = instances.EnumerateArray().Single(i => i.GetProperty("slug").GetString() == "members").GetProperty("id").GetGuid();
+        (await admin.SendAsync(AdminReq(HttpMethod.Post, $"/api/admin/plugins/instances/{id}/disable", owner, tenant), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var page = await JsonAsync(admin, AdminReq(HttpMethod.Get, "/api/admin/plugins/members/_data/visitors", owner, tenant), ct);
+        page.GetProperty("total").GetInt64().Should().Be(1, "switching a plugin off hides it from sites, not its data from its owners");
+    }
+
     // ---- helpers ----
 
     private static async Task<JsonElement> JsonAsync(HttpClient client, HttpRequestMessage req, CancellationToken ct)

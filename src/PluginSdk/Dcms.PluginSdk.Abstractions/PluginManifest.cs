@@ -161,5 +161,27 @@ public sealed record ClientBinding(
     string Description,
     IReadOnlyList<string>? RuntimeTypes = null);
 
-/// <summary>Effective permission key: plugin:{pluginId}:{Action}.</summary>
-public sealed record PermissionDefinition(string Action, string DisplayName);
+/// <summary>
+/// A permission the plugin adds to the platform. Its key is <c>plugin:{pluginId}:{Action}</c>;
+/// anywhere the manifest or a route names a permission, the bare <c>Action</c> means this key.
+/// Tenants grant it to roles in the role editor, where <see cref="Description"/> says what it
+/// lets a member do. Owners always hold every plugin permission.
+/// </summary>
+/// <param name="Action">Kebab-case, unique within the plugin: <c>read</c>, <c>moderate</c>.</param>
+/// <param name="GrantToMembers">
+/// Granted to the built-in Member role when a tenant installs its first instance of the plugin.
+/// A default, not a rule: the tenant can take it away again.
+/// </param>
+public sealed record PermissionDefinition(
+    string Action,
+    string DisplayName,
+    string? Description = null,
+    bool GrantToMembers = false);
+
+/// <summary>Permission keys of a plugin, for code that has a plugin id and a manifest reference.</summary>
+public static class PluginPermissions
+{
+    /// <summary>The key a manifest or route reference means: a bare action is the plugin's own, anything with ':' is a full key.</summary>
+    public static string Resolve(string pluginId, string permission) =>
+        permission.Contains(':') ? permission : $"plugin:{pluginId}:{permission}";
+}

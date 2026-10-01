@@ -65,12 +65,12 @@ public static class PluginDataEndpoints
         var result = new List<object>();
         foreach (var declaration in PluginDataSets.Of(found.Plugin.Manifest))
         {
-            if (!await MayAsync(http, ReadPermission(declaration)))
+            if (!await MayAsync(http, ReadPermission(found.Plugin.Manifest.Id, declaration)))
             {
                 continue;
             }
             var set = await OpenAsync(http, found, declaration, ct);
-            result.Add(Describe(declaration, await set.DescribeAsync(ct), await MayAsync(http, WritePermission(declaration))));
+            result.Add(Describe(declaration, await set.DescribeAsync(ct), await MayAsync(http, WritePermission(found.Plugin.Manifest.Id, declaration))));
         }
         return Results.Ok(result);
     }
@@ -202,7 +202,7 @@ public static class PluginDataEndpoints
 
     private sealed record FoundInstance(Guid TenantId, PluginInstanceContext Instance, IPlugin Plugin);
 
-    /// <summary>An enabled instance of any plugin, by slug; null (404) for anything else.</summary>
+    /// <summary>An instance of any plugin, enabled or not, by slug; null (404) for anything else.</summary>
     private static async Task<FoundInstance?> InstanceAsync(HttpContext http, string slug, CancellationToken ct)
     {
         var services = http.RequestServices;
@@ -210,8 +210,8 @@ public static class PluginDataEndpoints
         {
             return null;
         }
-        var enabled = await services.GetRequiredService<PluginContextFactory>().EnabledInstancesAsync(tenantId, ct);
-        var instance = enabled.FirstOrDefault(i => string.Equals(i.Slug, slug, StringComparison.Ordinal));
+        // Enabled or not: a switched-off plugin's data stays reachable for the people who own it.
+        var instance = await services.GetRequiredService<PluginContextFactory>().FindAnyInstanceAsync(tenantId, slug, ct);
         return instance is not null && services.GetRequiredService<PluginRegistry>().FindPlugin(instance.PluginId) is { } plugin
             ? new FoundInstance(tenantId, instance, plugin)
             : null;
@@ -237,11 +237,11 @@ public static class PluginDataEndpoints
         {
             return Results.NotFound();
         }
-        if (!await MayAsync(http, ReadPermission(declaration)))
+        if (!await MayAsync(http, ReadPermission(found.Plugin.Manifest.Id, declaration)))
         {
             return Results.NotFound(); // a set the caller may not read is not listed either
         }
-        if (write && !await MayAsync(http, WritePermission(declaration)))
+        if (write && !await MayAsync(http, WritePermission(found.Plugin.Manifest.Id, declaration)))
         {
             return Results.Json(new { error = "You may view this data but not change it." }, statusCode: StatusCodes.Status403Forbidden);
         }
@@ -283,9 +283,11 @@ public static class PluginDataEndpoints
     private static IResult NotSupported() =>
         Results.Json(new { error = "This data set does not support that." }, statusCode: StatusCodes.Status405MethodNotAllowed);
 
-    private static string ReadPermission(DataSetDeclaration set) => set.ReadPermission ?? PlatformPermissions.PluginsManage;
+    internal static string ReadPermission(string pluginId, DataSetDeclaration set) =>
+        PluginPermissions.Resolve(pluginId, set.ReadPermission ?? PlatformPermissions.PluginsManage);
 
-    private static string WritePermission(DataSetDeclaration set) => set.WritePermission ?? PlatformPermissions.PluginsManage;
+    internal static string WritePermission(string pluginId, DataSetDeclaration set) =>
+        PluginPermissions.Resolve(pluginId, set.WritePermission ?? PlatformPermissions.PluginsManage);
 
     private static async Task<bool> MayAsync(HttpContext http, string permission)
     {

@@ -68,7 +68,7 @@ export function PluginInstancePage({ slug }: { slug: string }) {
   const instance = instances.data?.find((i) => i.slug === slug);
   const manifest = catalog.data?.find((m) => m.id === instance?.pluginId);
   const reference = usePluginReference(instance?.pluginId ?? '');
-  const sets = useDataSets(slug, !!instance?.enabled);
+  const sets = useDataSets(slug, !!instance);
   const me = useMyPermissions(true);
 
   if (instances.isLoading || catalog.isLoading) {
@@ -121,8 +121,12 @@ export function PluginInstancePage({ slug }: { slug: string }) {
 
         <TabsContent value="data">
           {!instance.enabled ? (
-            <EmptyState icon={Database} title={t('pluginPage.data.disabled')} description={t('pluginPage.data.disabledHint')} />
-          ) : sets.isLoading ? (
+            // Switched off, the plugin serves nothing to sites, but its data is still the tenant's.
+            <p role="status" className="mb-4 rounded-md border border-[hsl(var(--warning)/0.4)] bg-[hsl(var(--warning)/0.08)] px-3 py-2 text-sm">
+              {t('pluginPage.data.disabledNotice')}
+            </p>
+          ) : null}
+          {sets.isLoading ? (
             <CenteredSpinner />
           ) : dataSets.length === 0 ? (
             <EmptyState

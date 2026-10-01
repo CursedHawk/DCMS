@@ -22,10 +22,19 @@ public sealed class CmsPluginInstanceStore(CmsDbContext db) : IPluginInstanceSto
             .OrderBy(p => p.CreatedAt)
             .ToListAsync(ct);
 
-        return rows.Select(p => new PluginInstanceContext(
-                p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description, ParseConfig(p.ConfigJson), p.AiToolsEnabled))
-            .ToList();
+        return rows.Select(ToContext).ToList();
     }
+
+    public async Task<PluginInstanceContext?> FindAnyAsync(Guid tenantId, string slug, CancellationToken ct)
+    {
+        using var rls = RlsScope.Tenant(tenantId);
+        var row = await db.PluginInstances.IgnoreQueryFilters().AsNoTracking()
+            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Slug == slug, ct);
+        return row is null ? null : ToContext(row);
+    }
+
+    private static PluginInstanceContext ToContext(PluginInstance p) =>
+        new(p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description, ParseConfig(p.ConfigJson), p.AiToolsEnabled);
 
     private static JsonDocument ParseConfig(string json)
     {

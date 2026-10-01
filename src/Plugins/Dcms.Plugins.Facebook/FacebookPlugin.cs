@@ -32,7 +32,8 @@ public sealed class FacebookPlugin : IPlugin
             includeStories: false),
         permissions:
         [
-            new PermissionDefinition("connect", "Connect a Facebook Page"),
+            new PermissionDefinition("connect", "Connect a Facebook Page",
+                "Link or unlink the Facebook Page whose posts appear on your sites."),
             new PermissionDefinition("sync", "Trigger a Facebook sync"),
         ],
         contentTypes:

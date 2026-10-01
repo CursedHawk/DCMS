@@ -33,8 +33,10 @@ public sealed class VisitorAuthPlugin : IPlugin
         }.ToJsonString(),
         permissions:
         [
-            new PermissionDefinition("read", "View visitor profiles"),
-            new PermissionDefinition("manage", "Edit visitor profiles"),
+            new PermissionDefinition("read", "View visitor profiles",
+                "See the accounts registered on your sites and every profile field, private ones included."),
+            new PermissionDefinition("manage", "Edit visitor profiles",
+                "Change, verify, sign out and delete visitor accounts."),
         ],
         // The site renders the profile form from the definitions; values are never in config.
         publicConfigKeys: [VisitorAttributes.ConfigKey],

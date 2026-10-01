@@ -1,3 +1,4 @@
+using Dcms.Shared.Data.Tenancy;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Runtime;
 using Dcms.Shared.Audit;
@@ -47,7 +48,7 @@ public static class PluginInstanceEndpoints
 
         app.MapPost("/api/admin/plugins/instances", async (
             CreateInstanceRequest body, IPluginCatalog catalog, PluginRegistry registry, PluginConfigValidator validator,
-            CmsDbContext db, ITenantContext tenant, IEventPublisher events, DcmsMetrics metrics,
+            CmsDbContext db, TenancyDbContext tenancy, ITenantContext tenant, IEventPublisher events, DcmsMetrics metrics,
             CancellationToken ct) =>
         {
             var manifest = catalog.Find(body.PluginId);
@@ -97,8 +98,13 @@ public static class PluginInstanceEndpoints
                 Description = body.Description ?? manifest.Description,
                 ConfigJson = config,
             };
+            var firstOfPlugin = !await db.PluginInstances.AnyAsync(p => p.PluginId == manifest.Id, ct);
             db.PluginInstances.Add(instance);
             await db.SaveChangesAsync(ct);
+            if (firstOfPlugin)
+            {
+                await PluginDefaultGrants.ApplyAsync(tenancy, instance.TenantId, manifest, ct);
+            }
             await PublishChange(events, metrics, instance, PluginInstanceChangeKind.Created, ct);
 
             return Results.Created($"/api/admin/plugins/instances/{instance.Id}", new { id = instance.Id });

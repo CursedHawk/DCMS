@@ -1,6 +1,9 @@
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Shared.Kernel.Abstractions;
+using Microsoft.AspNetCore.Authorization;
+using Dcms.Shared.Security.Authorization;
+using Dcms.Shared.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -38,7 +41,10 @@ public static class PluginEndpoints
         var host = app.ServiceProvider.GetRequiredService<PluginHost>();
         foreach (var plugin in registry.Plugins)
         {
-            plugin.MapHostEndpoints(app, host);
+            // An empty-prefix group, only so the plugin's permission requirements can be applied.
+            var group = app.MapGroup(string.Empty);
+            plugin.MapHostEndpoints(group, host);
+            PluginPermissionConvention.Apply(group, plugin.Manifest);
         }
         return app;
     }
@@ -61,6 +67,7 @@ public static class PluginEndpoints
             {
                 plugin.MapEndpoints(builder);
             }
+            PluginPermissionConvention.Apply(group, plugin.Manifest);
         }
         return app;
     }
@@ -137,4 +144,31 @@ public sealed class PluginInstanceFilter(string pluginId) : IEndpointFilter
         http.RequestServices.GetRequiredService<PluginContextAccessor>().Current = pluginContext;
         return await next(context);
     }
+}
+
+/// <summary>
+/// Turns <see cref="PluginEndpointConventions.RequirePluginPermission{TBuilder}"/> into the
+/// platform's own permission gate. Runs as a <c>Finally</c> convention so it sees metadata the
+/// plugin added after mapping the route; the key is resolved against the plugin (a bare action
+/// is its own) and must be one the plugin or the platform declares.
+/// </summary>
+internal static class PluginPermissionConvention
+{
+    public static void Apply(IEndpointConventionBuilder group, PluginManifest manifest) =>
+        group.Finally(endpoint =>
+        {
+            if (endpoint.Metadata.OfType<PluginPermissionMetadata>().LastOrDefault() is not { } required)
+            {
+                return;
+            }
+            var key = PluginPermissions.Resolve(manifest.Id, required.Permission);
+            if (!PlatformPermissions.All.Contains(key)
+                && manifest.Permissions.All(p => PluginPermissions.Resolve(manifest.Id, p.Action) != key))
+            {
+                throw new InvalidOperationException(
+                    $"Plugin '{manifest.Id}' route {endpoint.DisplayName} requires '{key}', which neither the plugin nor the platform declares.");
+            }
+            endpoint.Metadata.Add(new PermissionMetadata(key));
+            endpoint.Metadata.Add(new AuthorizeAttribute(PermissionPolicyProvider.PolicyName(key)));
+        });
 }

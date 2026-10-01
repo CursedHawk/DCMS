@@ -308,8 +308,7 @@ public sealed class PluginRegistry : IPluginCatalog
             foreach (var permission in new[] { set.ReadPermission, set.WritePermission }.OfType<string>())
             {
                 // Its own, or a platform one (Forms reviews submissions under content:read).
-                if (!PlatformPermissions.All.Contains(permission)
-                    && manifest.Permissions.All(p => $"plugin:{manifest.Id}:{p.Action}" != permission))
+                if (!DeclaresPermission(manifest, permission))
                 {
                     throw new InvalidOperationException(
                         $"Plugin '{manifest.Id}' data set '{set.Id}' names permission '{permission}', which neither the plugin nor the platform declares.");
@@ -369,8 +368,26 @@ public sealed class PluginRegistry : IPluginCatalog
         }
     }
 
+    /// <summary>A permission reference (bare action or full key) the plugin or the platform declares.</summary>
+    public static bool DeclaresPermission(PluginManifest manifest, string permission)
+    {
+        var key = PluginPermissions.Resolve(manifest.Id, permission);
+        return PlatformPermissions.All.Contains(key)
+               || manifest.Permissions.Any(p => PluginPermissions.Resolve(manifest.Id, p.Action) == key);
+    }
+
     private static void ValidateManifest(PluginManifest manifest)
     {
+        var actions = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var permission in manifest.Permissions)
+        {
+            if (string.IsNullOrWhiteSpace(permission.Action) || !IsKebabCase(permission.Action) || !actions.Add(permission.Action))
+            {
+                throw new InvalidOperationException(
+                    $"Plugin '{manifest.Id}' permission '{permission.Action}' must be unique kebab-case.");
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(manifest.Id) || !IsKebabCase(manifest.Id))
         {
             throw new InvalidOperationException($"Plugin id '{manifest.Id}' must be non-empty kebab-case.");

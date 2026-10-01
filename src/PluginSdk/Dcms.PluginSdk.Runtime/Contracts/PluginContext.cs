@@ -13,6 +13,13 @@ namespace Dcms.PluginSdk.Runtime.Contracts;
 public interface IPluginInstanceStore
 {
     Task<IReadOnlyList<PluginInstanceContext>> ListEnabledAsync(Guid tenantId, CancellationToken ct);
+
+    /// <summary>
+    /// One instance by slug whether enabled or not — for the admin, which shows a switched-off
+    /// plugin's data and screens. Never for serving a site.
+    /// </summary>
+    async Task<PluginInstanceContext?> FindAnyAsync(Guid tenantId, string slug, CancellationToken ct) =>
+        (await ListEnabledAsync(tenantId, ct)).FirstOrDefault(i => string.Equals(i.Slug, slug, StringComparison.Ordinal));
 }
 
 /// <summary>
@@ -33,6 +40,10 @@ public sealed class PluginContextFactory(PluginRegistry registry, IPluginInstanc
         }
         return _enabled;
     }
+
+    /// <inheritdoc cref="IPluginInstanceStore.FindAnyAsync"/>
+    public Task<PluginInstanceContext?> FindAnyInstanceAsync(Guid tenantId, string slug, CancellationToken ct) =>
+        store.FindAnyAsync(tenantId, slug, ct);
 
     /// <summary>A context for <paramref name="pluginId"/>, optionally serving one of its instances.</summary>
     public async Task<IPluginContext> CreateAsync(

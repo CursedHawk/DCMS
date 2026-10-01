@@ -32,3 +32,25 @@ public sealed class ContentQueryOptions
     public int MaxPageSize { get; set; } = 100;
     public string? DefaultOrderBy { get; set; }
 }
+
+/// <summary>
+/// Says which permission a plugin route needs. The platform enforces it when it mounts the
+/// plugin's routes: a caller without it gets 403 (401 when not signed in), and the requirement
+/// shows up wherever the platform describes the route.
+/// </summary>
+/// <param name="Permission">One of the plugin's own actions (<c>"moderate"</c>) or a full key (<c>"content:read"</c>).</param>
+public sealed record PluginPermissionMetadata(string Permission);
+
+public static class PluginEndpointConventions
+{
+    /// <summary>
+    /// Requires a permission for this route: <c>endpoints.MapPost("/approve", …).RequirePluginPermission("moderate")</c>.
+    /// Works on site-plane, admin-plane and host routes alike; members only ever hold permissions in the admin.
+    /// </summary>
+    public static TBuilder RequirePluginPermission<TBuilder>(this TBuilder builder, string permission)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        builder.WithMetadata(new PluginPermissionMetadata(permission));
+        return builder;
+    }
+}
