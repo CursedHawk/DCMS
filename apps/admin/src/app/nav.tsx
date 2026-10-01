@@ -2,16 +2,13 @@ import {
   Boxes,
   FileText,
   Image,
-  Inbox,
   LayoutDashboard,
   type LucideIcon,
-  MessagesSquare,
   PanelsTopLeft,
   Sparkles,
   Plug,
   Settings,
   Store,
-  TrendingUp,
 } from 'lucide-react';
 import { Perm } from '../lib/permissions';
 
@@ -47,9 +44,6 @@ export const NAV: NavItem[] = [
   { to: '/marketplace', labelKey: 'nav.marketplace', icon: Store, perm: Perm.PluginsManage, group: 'build' },
   { to: '/sites', labelKey: 'nav.sites', icon: PanelsTopLeft, perm: Perm.SiteEdit, group: 'build' },
 
-  { to: '/forms', labelKey: 'nav.forms', icon: Inbox, perm: Perm.ContentRead, group: 'main' },
-  { to: '/analytics', labelKey: 'nav.analytics', icon: TrendingUp, perm: Perm.AnalyticsRead, group: 'main' },
-  { to: '/chat', labelKey: 'nav.chat', icon: MessagesSquare, perm: Perm.ChatRead, group: 'main' },
   /*
    * In the sidebar as well as behind ⌘J. The dock answers a question about the page you are on;
    * this is where the history lives, and history nobody can find is history nobody keeps.

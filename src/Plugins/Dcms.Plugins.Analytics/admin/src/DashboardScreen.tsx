@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2, TrendingUp, X } from 'lucide-react';
 import { useState } from 'react';
 import type { TFunction } from 'i18next';
-import { useTranslation } from 'react-i18next';
 import {
   Area,
   AreaChart,
@@ -12,7 +11,6 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { toast } from 'sonner';
 import {
   Button,
   Card,
@@ -34,10 +32,10 @@ import {
   SelectTrigger,
   SelectValue,
   toastApiError,
+  toast,
 } from '@dcms/ui';
-import { api } from '../../lib/api';
+import { useCan, usePluginApi, usePluginT } from '@dcms/plugin-ui';
 import { mergeSeries, trend, useChartTheme } from './chartTheme';
-import { type MyPermissions, Perm, can, useMyPermissions } from '../../lib/permissions';
 
 interface Analytics {
   range: { from: string; to: string };
@@ -113,10 +111,17 @@ function countryName(code: string): string {
   }
 }
 
-export function AnalyticsPage() {
-  const { t } = useTranslation();
+/**
+ * The analytics dashboard: visits, sources and campaigns. A screen of the Analytics plugin
+ * (manifest screen "dashboard"), at /app/analytics/dashboard; data from the plugin's host
+ * routes under /api/admin/analytics.
+ */
+export function DashboardScreen() {
+  const { t } = usePluginT();
+  const api = usePluginApi();
   const qc = useQueryClient();
-  const me = useMyPermissions(true);
+  // Clearing every recorded event is a workspace decision, gated as the console gated it.
+  const mayClear = useCan('tenant:settings');
 
   const [days, setDays] = useState('30');
   const [type, setType] = useState(ANY);
@@ -212,7 +217,7 @@ export function AnalyticsPage() {
             </Select>
             {/* Clearing history is a workspace-level act, not a reporting one, so it
                 takes tenant:settings rather than analytics:read. */}
-            {canClear(me.data) ? (
+            {mayClear ? (
               <Button variant="outline" onClick={() => setClearOpen(true)}>
                 <Trash2 className="h-4 w-4" /> {t('analytics.clear')}
               </Button>
@@ -404,10 +409,6 @@ export function AnalyticsPage() {
       />
     </Page>
   );
-}
-
-function canClear(me: MyPermissions | undefined): boolean {
-  return can(me, Perm.TenantSettings);
 }
 
 function FilterSelect({

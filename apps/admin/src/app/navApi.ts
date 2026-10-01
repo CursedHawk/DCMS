@@ -7,7 +7,8 @@ import { getCurrentTenantSlug } from '../tenants';
 
 export interface NavResponseItem {
   to: string;
-  labelKey: string;
+  /** Platform entries: an i18n key. Plugin entries: null, with `label`/`labels` instead. */
+  labelKey: string | null;
   /** A lucide icon name. Unknown names fall back to the plugin glyph. */
   icon: string;
   group: string;
@@ -16,6 +17,17 @@ export interface NavResponseItem {
    * and deliberately NOT run through i18n: there is no key for a name somebody typed.
    */
   label: string | null;
+  /** A plugin screen's title in other languages, by language code. */
+  labels?: Record<string, string> | null;
+  /** The instance a per-instance plugin entry belongs to (a tenant-authored name). */
+  detail?: string | null;
+}
+
+/** The label to draw for an entry in `language`. */
+export function navLabel(item: NavResponseItem, language: string, t: (key: string) => string): string {
+  const own = item.labels?.[language] ?? item.labels?.[language.split('-')[0]] ?? item.label;
+  const label = own ?? (item.labelKey ? t(item.labelKey) : item.to);
+  return item.detail ? `${label} (${item.detail})` : label;
 }
 
 /**

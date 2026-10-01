@@ -17,11 +17,66 @@ export const ALL_TENANT_PERMISSIONS = [
   'audit:read', 'audit:export',
 ];
 
+/** GET /api/admin/plugin-ui: plugins with screens, where their UI lives, and their instances. */
+export const PLUGIN_UI = [
+  {
+    pluginId: 'forms', name: 'Forms', icon: 'Inbox', source: 'builtin',
+    module: { kind: 'builtin', key: 'Dcms.Plugins.Forms' },
+    screens: [
+      {
+        id: 'inbox', title: 'Forms', titles: { cs: 'Formuláře' }, description: null, scope: 'plugin',
+        icon: 'Inbox', permission: 'content:read', nav: { group: 'main', order: 20 }, allowed: true,
+      },
+    ],
+    instances: [{ id: 'cccccccc-0000-0000-0000-0000000000f1', slug: 'contact', name: 'Contact', enabled: true }],
+  },
+  {
+    pluginId: 'live-chat', name: 'AI Chatbot', icon: 'MessagesSquare', source: 'builtin',
+    module: { kind: 'builtin', key: 'Dcms.Plugins.LiveChat' },
+    screens: [
+      {
+        id: 'console', title: 'Chat', titles: null, description: null, scope: 'plugin',
+        icon: 'MessagesSquare', permission: 'chat:read', nav: { group: 'main', order: 40 }, allowed: true,
+      },
+    ],
+    // Installed, but switched off: its screen says so instead of rendering.
+    instances: [{ id: 'cccccccc-0000-0000-0000-0000000000f2', slug: 'chatbot', name: 'Chatbot', enabled: false }],
+  },
+];
+
+/** GET /api/admin/forms: the Forms inbox's instances and their forms. */
+export const FORMS_INSTANCES = [
+  {
+    instanceId: 'cccccccc-0000-0000-0000-0000000000f1', slug: 'contact', name: 'Contact', enabled: true,
+    forms: [
+      {
+        name: 'contact', title: 'Contact us', notifyRecipients: [], totalCount: 1, unhandledCount: 1,
+        fields: [
+          { name: 'email', label: 'Email', type: 'email', required: true },
+          { name: 'message', label: 'Message', type: 'textarea', required: true },
+        ],
+      },
+    ],
+  },
+];
+
+export const FORM_SUBMISSIONS = {
+  items: [
+    {
+      id: 'dddddddd-0000-0000-0000-0000000000f1', formName: 'contact',
+      data: { email: 'ada@example.test', message: 'Do you ship to Brno?' },
+      submittedAt: '2026-09-30T09:00:00Z', handledAt: null, userAgent: null,
+    },
+  ],
+  page: 1, pageSize: 25, totalCount: 1,
+};
+
 export const NAVIGATION = {
   items: [
     { to: '/', labelKey: 'nav.dashboard', icon: 'LayoutDashboard', group: 'main', label: null },
-    { to: '/forms', labelKey: 'nav.forms', icon: 'Inbox', group: 'main', label: null },
-    { to: '/analytics', labelKey: 'nav.analytics', icon: 'TrendingUp', group: 'main', label: null },
+    // Plugins' own screens (ADR 0019): their own titles, translated by the plugin, no i18n key.
+    { to: '/app/forms/inbox', labelKey: null, icon: 'Inbox', group: 'main', label: 'Forms', labels: { cs: 'Formuláře' } },
+    { to: '/app/analytics/dashboard', labelKey: null, icon: 'TrendingUp', group: 'main', label: 'Analytics', labels: { cs: 'Analytika' } },
     { to: '/content', labelKey: 'nav.content', icon: 'FileText', group: 'build', label: null },
     { to: '/media', labelKey: 'nav.media', icon: 'Image', group: 'build', label: null },
     { to: '/sites', labelKey: 'nav.sites', icon: 'PanelsTopLeft', group: 'build', label: null },

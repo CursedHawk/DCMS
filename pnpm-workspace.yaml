@@ -1,6 +1,10 @@
 packages:
   - apps/*
   - packages/*
+  # Built-in plugins' admin UIs live beside their C# (docs/adr/0019).
+  - src/Plugins/*/admin
+  # The sample plugin's admin UI, built the way an outside plugin's is.
+  - samples/*/admin
   # The Mode B dependency palette drives IDE type hints only (not a build allowlist);
   # it is never installed for development.
   - '!packages/site-builder-toolchain'

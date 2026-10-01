@@ -111,7 +111,7 @@ export function SchemaForm({
     <div className="dcms-rjsf">
       <Form
         schema={schema}
-        uiSchema={buildUiSchema(schema)}
+        uiSchema={buildUiSchema(schema, Object.keys(widgets ?? {}))}
         formData={formData}
         validator={validator}
         templates={templates}

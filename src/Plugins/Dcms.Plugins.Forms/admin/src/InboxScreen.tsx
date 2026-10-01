@@ -1,8 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, Inbox, Mail, Search, Trash2, Undo2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
 import {
   Badge,
   Button,
@@ -25,9 +23,9 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  toast,
 } from '@dcms/ui';
-import { api } from '../../lib/api';
-import { Perm, can, useMyPermissions } from '../../lib/permissions';
+import { useCan, usePluginApi, usePluginT } from '@dcms/plugin-ui';
 import {
   type FormDef,
   type HandledFilter,
@@ -47,11 +45,15 @@ interface Selection {
   formName: string;
 }
 
-export function FormsPage() {
-  const { t } = useTranslation();
+/**
+ * The Forms inbox: every Forms instance's submissions in one place. A screen of the Forms
+ * plugin (manifest screen "inbox"), rendered by the console at /app/forms/inbox.
+ */
+export function InboxScreen() {
+  const { t } = usePluginT();
+  const api = usePluginApi();
   const qc = useQueryClient();
-  const { data: me } = useMyPermissions(true);
-  const canWrite = can(me, Perm.ContentWrite);
+  const canWrite = useCan('content:write');
 
   const instances = useFormsInstances();
   const [selected, setSelected] = useState<Selection | null>(null);
@@ -395,7 +397,7 @@ function SubmissionDialog({
   onToggleHandled: () => void;
   onDelete: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t } = usePluginT();
   const yes = t('common.yes');
   const no = t('common.no');
   // Fields the form no longer declares still have stored values; showing them

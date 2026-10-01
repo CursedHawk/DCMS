@@ -2,7 +2,7 @@ import { Outlet, createRootRoute, createRoute, redirect, useParams } from '@tans
 import { lazy } from 'react';
 import { RequirePermission } from '@dcms/ui';
 import { AppShell } from './app/AppShell';
-import { LEGACY_SETTINGS_PATHS, ROUTE_GUARDS, type RouteGuard } from './app/routeGuards';
+import { LEGACY_PLUGIN_PATHS, LEGACY_SETTINGS_PATHS, ROUTE_GUARDS, type RouteGuard } from './app/routeGuards';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 
 /*
@@ -23,13 +23,10 @@ const page = <T extends string>(load: () => Promise<Record<T, React.FunctionComp
 
 const AccountPage = page(() => import('./features/account/AccountPage'), 'AccountPage');
 const AiSettingsPage = page(() => import('./features/ai/AiSettingsPage'), 'AiSettingsPage');
-const AnalyticsPage = page(() => import('./features/analytics/AnalyticsPage'), 'AnalyticsPage');
 const AssistantPage = page(() => import('./features/assistant/AssistantPage'), 'AssistantPage');
 const AuditPage = page(() => import('./features/audit/AuditPage'), 'AuditPage');
-const ChatPage = page(() => import('./features/chat/ChatPage'), 'ChatPage');
 const ContentPage = page(() => import('./features/content/ContentPage'), 'ContentPage');
 const DomainsPage = page(() => import('./features/domains/DomainsPage'), 'DomainsPage');
-const FormsPage = page(() => import('./features/forms/FormsPage'), 'FormsPage');
 const InviteAcceptPage = page(
   () => import('./features/invitations/InviteAcceptPage'),
   'InviteAcceptPage',
@@ -56,6 +53,9 @@ const WorkspacePage = page(() => import('./features/workspace/WorkspacePage'), '
 // These take a prop, so they cannot use the helper above.
 const PluginReferencePage = lazy(() =>
   import('./features/marketplace/PluginReferencePage').then((m) => ({ default: m.PluginReferencePage })),
+);
+const PluginAppPage = lazy(() =>
+  import('./pluginHost/PluginScreenView').then((m) => ({ default: m.PluginAppPage })),
 );
 const PluginInstancePage = lazy(() =>
   import('./features/plugins/PluginInstancePage').then((m) => ({ default: m.PluginInstancePage })),
@@ -141,11 +141,34 @@ const pluginInstanceRoute = createRoute({
     );
   },
 });
+/** An instance screen a plugin adds: a tab of the instance's page. */
+const pluginInstanceScreenRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/plugins/$slug/$screen',
+  component: function PluginInstanceScreen() {
+    const { slug, screen } = useParams({ strict: false });
+    return (
+      <RequirePermission perm={ROUTE_GUARDS['/plugins/$slug'].perm}>
+        <PluginInstancePage slug={slug as string} screen={screen as string} />
+      </RequirePermission>
+    );
+  },
+});
+/**
+ * A plugin-wide screen a plugin adds (the Forms inbox, the chat console). No route guard: the
+ * screen's own permission, from the plugin's manifest, is checked by the page.
+ */
+const pluginAppRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/app/$pluginId/$screen',
+  component: function PluginApp() {
+    const { pluginId, screen } = useParams({ strict: false });
+    return <PluginAppPage key={`${pluginId}/${screen}`} pluginId={pluginId as string} screenId={screen as string} />;
+  },
+});
 const mediaRoute = child('/media', MediaPage);
-const formsRoute = child('/forms', FormsPage);
 const sitesRoute = child('/sites', SitesPage);
 const accountRoute = child('/account', AccountPage);
-const analyticsRoute = child('/analytics', AnalyticsPage);
 const assistantRoute = child('/assistant', AssistantPage);
 
 /*
@@ -164,7 +187,6 @@ const assistantChatRoute = createRoute({
     );
   },
 });
-const chatRoute = child('/chat', ChatPage);
 const notificationsRoute = child('/notifications', NotificationsPage);
 const inviteRoute = child('/invite/accept', InviteAcceptPage);
 
@@ -229,6 +251,20 @@ const legacyRoutes = Object.entries(LEGACY_SETTINGS_PATHS).map(([from, to]) =>
   }),
 );
 
+/*
+ * Screens that moved into their plugins (ADR 0019) keep their old URLs, query string included:
+ * notification rows link to /chat?conversation=… and /forms?instance=….
+ */
+const legacyPluginRoutes = Object.entries(LEGACY_PLUGIN_PATHS).map(([from, to]) =>
+  createRoute({
+    getParentRoute: () => appLayoutRoute,
+    path: from,
+    beforeLoad: ({ search }) => {
+      throw redirect({ to: to as string, search: search as never, replace: true });
+    },
+  }),
+);
+
 const editorRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/sites/$siteId',
@@ -248,18 +284,17 @@ export const routeTree = rootRoute.addChildren([
     tenantsRoute,
     pluginsRoute,
     pluginInstanceRoute,
+    pluginInstanceScreenRoute,
+    pluginAppRoute,
     contentRoute,
     marketplaceRoute,
     pluginReferenceRoute,
     mediaRoute,
-    formsRoute,
     sitesRoute,
     editorRoute,
     accountRoute,
-    analyticsRoute,
     assistantRoute,
     assistantChatRoute,
-    chatRoute,
     notificationsRoute,
     inviteRoute,
     settingsRoute.addChildren([
@@ -273,5 +308,6 @@ export const routeTree = rootRoute.addChildren([
       settingsApiRoute,
     ]),
     ...legacyRoutes,
+    ...legacyPluginRoutes,
   ]),
 ]);

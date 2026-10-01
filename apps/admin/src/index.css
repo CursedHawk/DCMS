@@ -8,6 +8,8 @@
  * classes would be omitted from the build. Name that directory explicitly.
  */
 @source '../../../packages/ui/src';
+/* Built-in plugins' admin screens (docs/adr/0019) use the same utilities as the console. */
+@source '../../../src/Plugins/*/admin/src';
 
 :root {
   --background: 0 0% 100%;

@@ -18,3 +18,9 @@ export function Toaster() {
     />
   );
 }
+
+/**
+ * The toast function bound to the console's one toaster. Plugin screens import it from here
+ * rather than from sonner, whose second copy would toast into a toaster nobody renders.
+ */
+export { toast } from 'sonner';

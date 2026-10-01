@@ -9,7 +9,7 @@ import {
   type ShellNavItem,
 } from '@dcms/ui';
 import { NAV, NAV_GROUPS } from './nav';
-import { iconByName, useNavigation } from './navApi';
+import { iconByName, navLabel, useNavigation } from './navApi';
 import { can } from '../lib/permissions';
 
 /**
@@ -30,7 +30,7 @@ export function Sidebar({
   inDrawer?: boolean;
   onNavigate?: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const me = usePermissions();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const nav = useNavigation(!!me);
@@ -55,9 +55,9 @@ export function Sidebar({
     nav.data
       ? nav.data.items.map((item) => ({
           to: item.to,
-          // A tenant-authored instance name has no translation key; the product's own
-          // destinations do. The server says which by sending `label` or not.
-          label: item.label ?? t(item.labelKey),
+          // The product's own destinations have translation keys; a plugin's screens carry
+          // their own titles, and a per-instance entry its instance's name.
+          label: navLabel(item, i18n.language, t),
           icon: iconByName(item.icon),
           group: item.group,
           exact: item.to === '/',

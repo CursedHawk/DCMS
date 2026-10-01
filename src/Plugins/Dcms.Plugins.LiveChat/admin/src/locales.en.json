@@ -1,0 +1,15 @@
+{
+  "chat": {
+    "title": "Chat",
+    "conversations": "Conversations",
+    "noConversation": "Select a conversation",
+    "send": "Send",
+    "message": "Message",
+    "assistant": "Assistant",
+    "botHandling": "Assistant",
+    "botHandlingHint": "The AI assistant is answering this visitor.",
+    "youHandling": "You",
+    "youHandlingHint": "You've taken over — the assistant has stopped replying.",
+    "takeoverHint": "Reply to take over from the assistant."
+  }
+}

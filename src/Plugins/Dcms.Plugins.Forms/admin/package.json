@@ -1,0 +1,25 @@
+{
+  "name": "@dcms/plugin-forms-admin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The Forms plugin's admin screens: the inbox of every form's submissions.",
+  "main": "src/index.tsx",
+  "scripts": {
+    "build": "tsc --noEmit -p .",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@dcms/plugin-ui": "workspace:*",
+    "@dcms/ui": "workspace:*",
+    "@tanstack/react-query": "^5",
+    "lucide-react": "^0.469",
+    "react": "^19",
+    "react-i18next": "^15"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "typescript": "^5",
+    "vitest": "^4"
+  }
+}

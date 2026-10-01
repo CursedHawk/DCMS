@@ -6,6 +6,7 @@ import { Settings } from 'lucide-react';
 import { Dialog, DialogContent, usePermissions } from '@dcms/ui';
 import { can } from '../lib/permissions';
 import { NAV } from './nav';
+import { iconByName, navLabel, useNavigation } from './navApi';
 import { SETTINGS_SECTIONS } from './routeGuards';
 
 export function CommandPalette({
@@ -15,9 +16,10 @@ export function CommandPalette({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const me = usePermissions();
   const navigate = useNavigate();
+  const nav = useNavigation(open);
 
   // Global ⌘K / Ctrl+K shortcut.
   useEffect(() => {
@@ -41,13 +43,17 @@ export function CommandPalette({
    */
   const items = [
     ...NAV.filter((i) => (i.superAdmin ? me?.isSuperAdmin : !i.perm || can(me, i.perm))).map(
-      (i) => ({ to: i.to, labelKey: i.labelKey, icon: i.icon }),
+      (i) => ({ to: i.to, label: t(i.labelKey), icon: i.icon }),
     ),
     ...SETTINGS_SECTIONS.filter((s) => !s.perm || can(me, s.perm)).map((s) => ({
       to: s.to,
-      labelKey: s.labelKey,
+      label: t(s.labelKey),
       icon: Settings,
     })),
+    // Plugins' own screens: only the server knows which plugins this workspace has switched on.
+    ...(nav.data?.items ?? [])
+      .filter((i) => i.labelKey === null)
+      .map((i) => ({ to: i.to, label: navLabel(i, i18n.language, t), icon: iconByName(i.icon) })),
   ];
 
   return (
@@ -65,7 +71,7 @@ export function CommandPalette({
             {items.map((item) => (
               <Command.Item
                 key={item.to}
-                value={t(item.labelKey)}
+                value={item.label}
                 onSelect={() => {
                   onOpenChange(false);
                   void navigate({ to: item.to as string });
@@ -73,7 +79,7 @@ export function CommandPalette({
                 className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-accent aria-selected:text-accent-foreground"
               >
                 <item.icon className="h-4 w-4" />
-                {t(item.labelKey)}
+                {item.label}
               </Command.Item>
             ))}
           </Command.List>

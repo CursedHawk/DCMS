@@ -8,17 +8,39 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { Bot, MessagesSquare, Send } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Badge, Button, cn, EmptyState, Input, setHubConnected, useHubRevalidation } from '@dcms/ui';
-import { getCurrentTenantSlug } from '../../tenants';
-import { type ChatMessage, chatApi, contentApiBase } from '../../chat/api';
+import { usePluginHost, usePluginT } from '@dcms/plugin-ui';
+
+export interface ChatConversation {
+  id: string;
+  visitorName: string;
+  status: string;
+  createdAt: string;
+  lastMessageAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  sender: 'Visitor' | 'Agent' | 'Bot';
+  body: string;
+  sentAt: string;
+  readAt?: string | null;
+}
 
 /** The name this page's connection reports under, for `useHubRevalidation`. */
 const CHAT_HUB = 'chat';
 
-export function ChatPage() {
-  const { t } = useTranslation();
-  const slug = getCurrentTenantSlug();
+/**
+ * The live chat console: every conversation as it happens, with takeover from the chatbot.
+ * A screen of the AI Chatbot plugin (manifest screen "console"), at /app/live-chat/console.
+ * The hub is the plugin's own (content-api /hub/chat); history comes from its admin routes.
+ */
+export function ConsoleScreen() {
+  const { t } = usePluginT();
+  const host = usePluginHost();
+  const slug = host.tenant;
+  const contentApiBase = host.contentApiBase;
+
   const [connected, setConnected] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -28,7 +50,7 @@ export function ChatPage() {
 
   const conversations = useQuery({
     queryKey: ['chat-conversations'],
-    queryFn: () => chatApi.conversations(),
+    queryFn: () => host.api.get<ChatConversation[]>('/admin/chat/conversations'),
     /*
      * Never on a timer.
      *
@@ -104,12 +126,15 @@ export function ChatPage() {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const open = useCallback(async (id: string) => {
-    setSelected(id);
-    setMessages(await chatApi.messages(id));
-    const conn = connRef.current;
-    if (conn?.state === HubConnectionState.Connected) await conn.invoke('JoinConversation', id);
-  }, []);
+  const open = useCallback(
+    async (id: string) => {
+      setSelected(id);
+      setMessages(await host.api.get<ChatMessage[]>(`/admin/chat/conversations/${id}/messages`));
+      const conn = connRef.current;
+      if (conn?.state === HubConnectionState.Connected) await conn.invoke('JoinConversation', id);
+    },
+    [host.api],
+  );
 
   async function send() {
     const conn = connRef.current;

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { api } from '../../lib/api';
+import { usePluginApi } from '@dcms/plugin-ui';
 
 /** A field as declared on the form's plugin-instance config. */
 export interface FormFieldDef {
@@ -50,6 +50,7 @@ export type HandledFilter = 'all' | 'unhandled' | 'handled';
 export const PAGE_SIZE = 25;
 
 export function useFormsInstances() {
+  const api = usePluginApi();
   return useQuery({
     queryKey: ['forms-instances'],
     queryFn: () => api.get<FormsInstance[]>('/admin/forms'),
@@ -62,6 +63,7 @@ export function useSubmissions(
   handled: HandledFilter,
   page: number,
 ) {
+  const api = usePluginApi();
   return useQuery({
     queryKey: ['form-submissions', instanceId, formName, handled, page],
     enabled: !!instanceId && !!formName,

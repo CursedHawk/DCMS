@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Textarea } from '@dcms/ui';
 import { MediaPicker } from '../media/MediaPicker';
-import { MetaConnectionWidget } from './MetaConnectionWidget';
 import { ContractBindingWidget } from './ContractBindingWidget';
 
 /**
@@ -55,12 +54,12 @@ function JsonWidget({ id, value, onChange, disabled, readonly }: WidgetProps) {
   );
 }
 
-/** The custom widgets every plugin-described form (config, data rows, action input) can use. */
+/**
+ * The console's own widgets, for every plugin-described form (config, data rows, action input).
+ * A plugin adds its own through its admin UI module (`configWidgets`, docs/adr/0019).
+ */
 export const configWidgets: RegistryWidgetsType = {
   media: MediaFieldWidget,
-  // `"format": "meta-connection"` -- the Instagram/Facebook plugins' connectionId.
-  // A connection is the product of an OAuth round trip, so it cannot be typed in.
-  'meta-connection': MetaConnectionWidget,
   // `"x-dcms-contract-binding"` -- which instance of another plugin this one uses.
   'contract-binding': ContractBindingWidget,
   json: JsonWidget,

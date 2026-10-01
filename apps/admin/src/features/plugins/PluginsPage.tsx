@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, FileText, Plug, Search, Settings2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -33,6 +33,8 @@ import {
 } from '@dcms/ui';
 import { SchemaForm } from '../../components/SchemaForm';
 import { configWidgets } from './configWidgets';
+import { usePluginUi } from '../../pluginHost/api';
+import { usePluginWidgets } from '../../pluginHost/host';
 import { api } from '../../lib/api';
 import {
   type PluginManifest,
@@ -262,6 +264,9 @@ function InstallDialog({
   const [description, setDescription] = useState('');
   const [config, setConfig] = useState<unknown>({});
   const schema = parseConfigSchema(manifest.configJsonSchema);
+  const ui = usePluginUi();
+  const pluginWidgets = usePluginWidgets(ui.data?.find((p) => p.pluginId === manifest.id), null);
+  const widgets = useMemo(() => ({ ...configWidgets, ...pluginWidgets }), [pluginWidgets]);
   // For multi-instance plugins the description distinguishes each instance's
   // purpose in the generated OpenAPI document, so it is required there.
   const descriptionRequired = manifest.allowMultipleInstances;
@@ -321,7 +326,7 @@ function InstallDialog({
                 schema={schema}
                 formData={config}
                 onChange={setConfig}
-                widgets={configWidgets}
+                widgets={widgets}
               />
             </div>
           ) : null}

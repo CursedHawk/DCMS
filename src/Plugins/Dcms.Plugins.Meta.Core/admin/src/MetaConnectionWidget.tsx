@@ -1,10 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Check, Instagram, Facebook, Link2, RefreshCw, Unlink } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
-import type { WidgetProps } from '@rjsf/utils';
-import { Badge, Button, cn, toastApiError } from '@dcms/ui';
-import { api } from '../../lib/api';
+import { Badge, Button, cn, toast, toastApiError } from '@dcms/ui';
+import { usePluginApi, usePluginT, type PluginWidgetProps } from '@dcms/plugin-ui';
 export type MetaProvider = 'Facebook' | 'InstagramLogin';
 
 export interface MetaConnection {
@@ -21,6 +18,7 @@ export interface MetaConnection {
 }
 
 export function useMetaConnections() {
+  const api = usePluginApi();
   return useQuery({
     queryKey: ['social', 'connections'],
     queryFn: () => api.get<MetaConnection[]>('/admin/social/connections'),
@@ -36,8 +34,9 @@ export function useMetaConnections() {
  * picker, plus the button that starts consent for a new one — the same extension
  * point the media widget uses, for the same reason.
  */
-export function MetaConnectionWidget({ value, onChange, registry }: WidgetProps) {
-  const { t } = useTranslation();
+export function MetaConnectionWidget({ value, onChange, registry }: PluginWidgetProps) {
+  const { t } = usePluginT();
+  const api = usePluginApi();
   const qc = useQueryClient();
   const connections = useMetaConnections();
 

@@ -11,6 +11,12 @@ WORKDIR /repo
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/ apps/
 COPY packages/ packages/
+# Plugins' admin UIs are workspace packages beside their C# (docs/adr/0019); the lockfile names
+# them, so the install needs them even where the app does not compile them in.
+COPY src/Plugins/ src/Plugins/
+COPY samples/ samples/
+# The console compiles every built-in plugin's admin UI in; Node's default heap is not always enough.
+ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN pnpm install --frozen-lockfile && pnpm --filter @dcms/admin build
 
 FROM nginx:alpine AS runtime

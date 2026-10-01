@@ -112,17 +112,14 @@ export const ROUTE_GUARDS: Readonly<Record<string, RouteGuard>> = {
   '/marketplace': { perm: Perm.PluginsManage },
   '/content': { perm: Perm.ContentRead },
   '/media': { perm: Perm.MediaRead },
-  '/forms': { perm: Perm.ContentRead },
   '/sites': { perm: Perm.SiteEdit },
   '/sites/$siteId': { perm: Perm.SiteEdit },
-  '/analytics': { perm: Perm.AnalyticsRead },
   /*
    * The same permission the model proxy already requires. A member who cannot reach
    * `/api/admin/ai/messages` cannot hold a conversation, so a page listing their history would
    * be a list of chats they can read and never continue.
    */
   '/assistant': { perm: Perm.SiteEdit },
-  '/chat': { perm: Perm.ChatRead },
 
   // Derived, so a section cannot be listed in the sub-nav and left unguarded in the router.
   ...Object.fromEntries(
@@ -141,3 +138,13 @@ export const OPEN_ROUTES: readonly string[] = [
   '/notifications',
   '/invite/accept',
 ];
+
+/**
+ * Pages that became plugins' own screens (ADR 0019). The plugin now decides the URL; these keep
+ * links written before the move working — notification rows, bookmarks, the platform console.
+ */
+export const LEGACY_PLUGIN_PATHS: Readonly<Record<string, string>> = {
+  '/forms': '/app/forms/inbox',
+  '/analytics': '/app/analytics/dashboard',
+  '/chat': '/app/live-chat/console',
+};

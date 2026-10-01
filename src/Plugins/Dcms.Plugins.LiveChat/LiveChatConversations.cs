@@ -63,7 +63,7 @@ internal sealed class NotifyAgentsOfNewConversation : IPluginEventHandler<ChatCo
             RequiredPermission: ChatPermissions.Read,
             // Keyed on the conversation, so a redelivery collapses onto one row.
             DedupeKey: $"conversation.started:{e.ConversationId:N}",
-            LinkPath: "/chat",
+            LinkPath: "/app/live-chat/console",
             Kind: Kind,
             Params: new Dictionary<string, string> { ["visitor"] = e.VisitorName },
             ResourceType: "chat_conversation",

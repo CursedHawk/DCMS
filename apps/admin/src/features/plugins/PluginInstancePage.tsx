@@ -35,6 +35,9 @@ import { ResourceHistory } from '../audit/ResourceHistory';
 import { PluginReferenceTabs } from '../marketplace/PluginReferencePage';
 import { useMarketplace, usePluginReference, type PluginReference } from '../marketplace/api';
 import { configWidgets } from './configWidgets';
+import { screenTitle, usePluginUi, type PluginUiInfo } from '../../pluginHost/api';
+import { usePluginWidgets } from '../../pluginHost/host';
+import { PluginScreenView } from '../../pluginHost/PluginScreenView';
 import { DataSetView } from './DataSetView';
 import { useDataPage, useDataSets, type DataSet } from './dataApi';
 import {
@@ -47,6 +50,7 @@ import {
 } from './api';
 
 const TABS = ['overview', 'data', 'settings', 'integration', 'activity'] as const;
+const SCREEN_TAB = 'screen:';
 type Tab = (typeof TABS)[number];
 
 /**
@@ -55,13 +59,18 @@ type Tab = (typeof TABS)[number];
  * generically), its configuration, how to use it from a site or from C#, and what has been done
  * to it. Nothing here is written for a particular plugin.
  */
-export function PluginInstancePage({ slug }: { slug: string }) {
-  const { t } = useTranslation();
+export function PluginInstancePage({ slug, screen }: { slug: string; screen?: string }) {
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as { tab?: string; set?: string };
   const tab: Tab = (TABS as readonly string[]).includes(search.tab ?? '') ? (search.tab as Tab) : 'overview';
   const go = (next: { tab?: Tab; set?: string }) =>
     void navigate({ to: '/plugins/$slug' as string, params: { slug } as never, search: { ...search, ...next } as never });
+  // A plugin's own instance screens are tabs too, with a path of their own (/plugins/{slug}/{screen}).
+  const onTab = (value: string) =>
+    value.startsWith(SCREEN_TAB)
+      ? void navigate({ to: '/plugins/$slug/$screen' as string, params: { slug, screen: value.slice(SCREEN_TAB.length) } as never })
+      : go({ tab: value as Tab });
 
   const instances = usePluginInstances();
   const catalog = usePluginCatalog();
@@ -70,6 +79,9 @@ export function PluginInstancePage({ slug }: { slug: string }) {
   const reference = usePluginReference(instance?.pluginId ?? '');
   const sets = useDataSets(slug, !!instance);
   const me = useMyPermissions(true);
+  const ui = usePluginUi();
+  const pluginUi = ui.data?.find((p) => p.pluginId === instance?.pluginId);
+  const instanceScreens = pluginUi?.screens.filter((s) => s.scope === 'instance' && s.allowed) ?? [];
 
   if (instances.isLoading || catalog.isLoading) {
     return (
@@ -94,10 +106,15 @@ export function PluginInstancePage({ slug }: { slug: string }) {
       <BackLink />
       <Nameplate instance={instance} manifest={manifest} reference={reference.data} />
 
-      <Tabs value={tab} onValueChange={(v) => go({ tab: v as Tab })} className="mt-6">
+      <Tabs value={screen ? SCREEN_TAB + screen : tab} onValueChange={onTab} className="mt-6">
         {/* Scrolls on a phone rather than pushing the page sideways. */}
         <TabsList className="max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="overview">{t('pluginPage.tabs.overview')}</TabsTrigger>
+          {instanceScreens.map((s) => (
+            <TabsTrigger key={s.id} value={SCREEN_TAB + s.id}>
+              {screenTitle(s, i18n.language)}
+            </TabsTrigger>
+          ))}
           <TabsTrigger value="data">
             {t('pluginPage.tabs.data')}
             {dataSets.length > 0 ? ` (${dataSets.length})` : ''}
@@ -108,6 +125,16 @@ export function PluginInstancePage({ slug }: { slug: string }) {
             <TabsTrigger value="activity">{t('pluginPage.tabs.activity')}</TabsTrigger>
           ) : null}
         </TabsList>
+
+        {screen && pluginUi ? (
+          <TabsContent value={SCREEN_TAB + screen}>
+            <PluginScreenView
+              plugin={pluginUi}
+              screenId={screen}
+              instance={{ id: instance.id, slug: instance.slug, name: instance.name, enabled: instance.enabled }}
+            />
+          </TabsContent>
+        ) : null}
 
         <TabsContent value="overview">
           <Overview
@@ -140,7 +167,7 @@ export function PluginInstancePage({ slug }: { slug: string }) {
         </TabsContent>
 
         <TabsContent value="settings">
-          <Settings instance={instance} manifest={manifest} />
+          <Settings instance={instance} manifest={manifest} pluginUi={pluginUi} />
         </TabsContent>
 
         <TabsContent value="integration">
@@ -555,7 +582,24 @@ function DataTab({
 
 /* ---- settings ---- */
 
-function Settings({ instance, manifest }: { instance: PluginInstance; manifest: PluginManifest }) {
+function Settings({
+  instance,
+  manifest,
+  pluginUi,
+}: {
+  instance: PluginInstance;
+  manifest: PluginManifest;
+  pluginUi?: PluginUiInfo;
+}) {
+  // The plugin's own widgets for custom formats in its config (the Meta account picker).
+  const pluginWidgets = usePluginWidgets(
+    pluginUi,
+    useMemo(
+      () => ({ id: instance.id, slug: instance.slug, name: instance.name, enabled: instance.enabled }),
+      [instance.id, instance.slug, instance.name, instance.enabled],
+    ),
+  );
+  const widgets = useMemo(() => ({ ...configWidgets, ...pluginWidgets }), [pluginWidgets]);
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [name, setName] = useState(instance.name);
@@ -630,7 +674,7 @@ function Settings({ instance, manifest }: { instance: PluginInstance; manifest: 
               schema={schema}
               formData={config}
               onChange={setConfig}
-              widgets={configWidgets}
+              widgets={widgets}
               // The Meta widget's Sync-now button needs the instance it belongs to.
               formContext={{ instanceId: instance.id }}
             />

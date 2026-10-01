@@ -129,7 +129,8 @@ export default tseslint.config(
      * `PlatformSampleBroadcaster`, which broadcasts a tick so the sample is taken once per
      * replica rather than once per open browser.</p>
      */
-    files: ['apps/*/src/**/*.{ts,tsx}'],
+    // Plugins' admin screens run inside the console (docs/adr/0019), so the same rule holds.
+    files: ['apps/*/src/**/*.{ts,tsx}', 'src/Plugins/*/admin/src/**/*.{ts,tsx}', 'samples/*/admin/src/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-syntax': [
         'error',

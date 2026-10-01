@@ -298,11 +298,11 @@ public sealed class PluginRegistry : IPluginCatalog
                 throw new InvalidOperationException(
                     $"Plugin '{manifest.Id}' admin screen id '{screen.Id}' must be unique kebab-case.");
             }
-            if (screen.Nav is { } nav && nav.Group is not ("main" or "build" or "admin" or "plugins"))
+            if (screen.Nav is { } nav && nav.Group is not ("main" or "build" or "admin"))
             {
                 // The sidebar draws these sections only; an entry in any other is never seen.
                 throw new InvalidOperationException(
-                    $"Plugin '{manifest.Id}' admin screen '{screen.Id}' goes in menu section '{nav.Group}'; use main, build, admin or plugins.");
+                    $"Plugin '{manifest.Id}' admin screen '{screen.Id}' goes in menu section '{nav.Group}'; use main, build or admin.");
             }
             if (string.IsNullOrWhiteSpace(screen.Title))
             {

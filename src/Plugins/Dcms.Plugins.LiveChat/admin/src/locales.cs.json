@@ -1,0 +1,15 @@
+{
+  "chat": {
+    "title": "Chat",
+    "conversations": "Konverzace",
+    "noConversation": "Vyberte konverzaci",
+    "send": "Odeslat",
+    "message": "Zpráva",
+    "assistant": "Asistent",
+    "botHandling": "Asistent",
+    "botHandlingHint": "Na tohoto návštěvníka odpovídá AI asistent.",
+    "youHandling": "Vy",
+    "youHandlingHint": "Převzali jste konverzaci — asistent přestal odpovídat.",
+    "takeoverHint": "Odpovězte, abyste převzali konverzaci od asistenta."
+  }
+}

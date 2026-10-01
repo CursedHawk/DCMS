@@ -125,7 +125,7 @@ internal static class FormSubmissionEndpoints
                 RequiredPermission: FormsPlugin.SubmissionsReadPermission,
                 // The submission id, so a redelivery collapses onto one row.
                 DedupeKey: $"submitted:{submission.Id:N}",
-                LinkPath: "/forms",
+                LinkPath: "/app/forms/inbox",
                 Kind: "submitted",
                 Params: new Dictionary<string, string> { ["form"] = definition.Title ?? definition.Name },
                 ResourceType: "form_submission",

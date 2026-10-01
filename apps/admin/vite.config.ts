@@ -5,6 +5,14 @@ import { paletteTypesPlugin } from './vite-plugin-palette-types';
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), paletteTypesPlugin()],
+  /*
+   * Built-in plugins' admin UIs (each plugin's admin/ folder) are compiled in from their own workspace
+   * packages, each with its own node_modules links. They must share the console's single copy
+   * of these, or a plugin screen gets a second React (hooks break) or a second query cache.
+   */
+  resolve: {
+    dedupe: ['react', 'react-dom', 'react-i18next', 'i18next', '@tanstack/react-query', '@tanstack/react-router', 'sonner'],
+  },
   // esbuild-wasm ships a prebuilt .wasm that must not be pre-bundled/optimized.
   optimizeDeps: { exclude: ['esbuild-wasm'] },
   build: {

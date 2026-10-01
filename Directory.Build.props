@@ -10,6 +10,8 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- A plugin's admin UI (admin/, a pnpm package) sits beside its C#; its node_modules is not the project's. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);admin/node_modules/**;admin/dist/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <PropertyGroup>

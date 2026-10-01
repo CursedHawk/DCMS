@@ -6,7 +6,12 @@ import { ThemeProvider, Toaster, TooltipProvider } from '@dcms/ui';
 import './lib/i18n';
 import { routeTree } from './routes';
 import { adoptTenantFromUrl } from './tenants';
+import { exposeSharedModules } from './pluginHost/shared';
 import './index.css';
+
+// Installed plugins' admin UIs use the console's React, design system and caches rather than
+// their own (docs/adr/0019); they have to be published before the first plugin module loads.
+exposeSharedModules();
 
 // Before the first render, and before any query runs: a ?tenant= link from the platform
 // console has to be in effect by the time the first request builds its X-Dcms-Tenant header,
