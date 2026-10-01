@@ -1,0 +1,258 @@
+/*
+ * The Guestbook's own styles, shipped beside its module as admin/index.css. Plain CSS on the
+ * console's design tokens (hsl(var(--card)), --border, --radius…), so it follows the console's
+ * theme and dark mode without bundling a second Tailwind. Every class is prefixed gb- to stay
+ * out of the console's way.
+ *
+ * The one deliberate flourish is the note wall: entries read like a guestbook's pages — a serif
+ * message on the guestbook's accent paper, a ribbon of the accent along the top, the signature
+ * underneath. Everything else is the console's own quiet chrome.
+ */
+
+.gb-moderation {
+  --gb-ribbon: #b45309;
+  --gb-paper: rgba(245, 158, 11, 0.08);
+}
+
+.gb-off {
+  margin-bottom: 1rem;
+  border: 1px solid hsl(var(--warning) / 0.4);
+  background: hsl(var(--warning) / 0.08);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.gb-filter {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+  padding: 0.25rem;
+  border-radius: var(--radius);
+  background: hsl(var(--muted));
+}
+
+.gb-filter button {
+  border: 0;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: 0.875rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: calc(var(--radius) - 2px);
+  cursor: pointer;
+}
+
+.gb-filter button[aria-selected='true'] {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  box-shadow: 0 1px 2px hsl(var(--foreground) / 0.08);
+}
+
+.gb-filter button:focus-visible,
+.gb-swatch:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Masonry by columns: notes keep their natural height, as written pages do. */
+.gb-wall {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  columns: 1;
+  column-gap: 1rem;
+}
+
+@media (min-width: 640px) {
+  .gb-wall {
+    columns: 2;
+  }
+}
+
+@media (min-width: 1200px) {
+  .gb-wall {
+    columns: 3;
+  }
+}
+
+.gb-note {
+  break-inside: avoid;
+  margin: 0 0 1rem;
+  padding: 1.1rem 1.2rem 0.9rem;
+  background: linear-gradient(var(--gb-paper), var(--gb-paper)), hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-top: 3px solid var(--gb-ribbon);
+  border-radius: 2px 2px var(--radius) var(--radius);
+}
+
+.gb-message {
+  margin: 0;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  font-size: 1.05rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.gb-signature {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin: 0.9rem 0 0;
+  font-size: 0.8125rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.gb-name {
+  color: var(--gb-ribbon);
+  font-weight: 600;
+}
+
+/* The accents are dark inks chosen for paper; on the console's dark theme the signature takes a
+   lighter mix of the same ink so it keeps its contrast. */
+.dark .gb-name,
+.dark .gb-swatch-dot {
+  color: color-mix(in oklab, var(--gb-ribbon) 45%, white);
+}
+
+.dark .gb-note {
+  border-top-color: color-mix(in oklab, var(--gb-ribbon) 70%, white);
+}
+
+.gb-reply {
+  margin: 0.75rem 0 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid hsl(var(--border));
+  font-size: 0.875rem;
+}
+
+.gb-reply-label {
+  color: hsl(var(--muted-foreground));
+}
+
+.gb-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+/* Overview: one line per guestbook, the waiting count the only thing that raises its voice. */
+.gb-books {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+}
+
+.gb-book {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.5rem 1.5rem;
+  padding: 0.85rem 1rem;
+}
+
+.gb-book + .gb-book {
+  border-top: 1px solid hsl(var(--border));
+}
+
+@media (max-width: 720px) {
+  .gb-book {
+    grid-template-columns: 1fr auto;
+  }
+  .gb-book-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+.gb-book-name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.gb-book-name span {
+  font-weight: 500;
+}
+
+.gb-book-name code {
+  font-family: var(--font-code);
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.gb-waiting {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--warning));
+}
+
+.gb-quiet {
+  font-size: 0.875rem;
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+.gb-book-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.gb-blog {
+  margin-top: 0.75rem;
+}
+
+.gb-latest {
+  margin-top: 2.5rem;
+}
+
+.gb-latest h2 {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* The accent widget: swatches instead of a list of colour names. */
+.gb-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.gb-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.7rem 0.35rem 0.45rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.gb-swatch[aria-checked='true'] {
+  border-color: var(--gb-ribbon);
+  box-shadow: 0 0 0 1px var(--gb-ribbon);
+}
+
+.gb-swatch-dot {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: var(--gb-ribbon);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .gb-filter button {
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+}

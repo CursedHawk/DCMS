@@ -44,4 +44,18 @@
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Media\Dcms.Shared.Media.csproj" />
   </ItemGroup>
 
+  <!-- The Guestbook sample, installed the way an operator would (its build output in a folder of
+       its own): the content-flow hosts load it through Plugins:Directory, so it runs against the
+       real platform — routes, permissions, data sets, screens. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\samples\Dcms.Plugins.Sample.Guestbook\Dcms.Plugins.Sample.Guestbook.csproj"
+                      ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+  <Target Name="InstallSamplePlugin" AfterTargets="Build">
+    <ItemGroup>
+      <SamplePluginFiles Include="..\..\samples\Dcms.Plugins.Sample.Guestbook\bin\$(Configuration)\$(TargetFramework)\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SamplePluginFiles)" DestinationFiles="@(SamplePluginFiles->'$(OutDir)installed-plugins\Dcms.Plugins.Sample.Guestbook\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

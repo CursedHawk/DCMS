@@ -15,7 +15,8 @@
  * synthetic named exports, so the plugin writes ordinary `import { Button } from '@dcms/ui'`.
  */
 import type { Plugin, UserConfig } from 'vite';
-import { SHARED_GLOBAL, SHARED_MODULES } from './shared';
+// With its extension: Vite loads this file through Node, which resolves TypeScript source only by full name.
+import { SHARED_GLOBAL, SHARED_MODULES } from './shared.ts';
 
 const PREFIX = '\0dcms-shared:';
 

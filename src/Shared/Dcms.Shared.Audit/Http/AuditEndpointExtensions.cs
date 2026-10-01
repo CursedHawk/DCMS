@@ -58,34 +58,44 @@ public static class AuditEndpointExtensions
 
         builder.AddEndpointFilter(static (context, next) =>
         {
-            var http = context.HttpContext;
-            var declared = http.GetEndpoint()?.Metadata.GetMetadata<AuditMetadata>();
-            if (declared is not null)
-            {
-                var recorder = http.RequestServices.GetRequiredService<IAuditRecorder>();
-                var scope = http.RequestServices.GetRequiredService<AuditScope>();
-
-                // The route is only resolvable once an endpoint has been selected, which is
-                // exactly now. Entries that commit inside the handler's transaction are
-                // completed before the middleware ever sees the response, so this is their
-                // only chance to learn where the request came from.
-                scope.Http = AuditHttpInfoFactory.Build(http, includeStatus: false);
-                scope.Permission = http.GetEndpoint()?.Metadata.GetMetadata<IAuditPermission>()?.Permission;
-
-                var entry = recorder.Record(declared.Action);
-                entry.Category = declared.Category;
-                if (declared.ResourceType is { } type)
-                {
-                    entry.ResourceType = type;
-                    entry.ResourceId = RouteId(http, type);
-                }
-                scope.Declared = entry;
-            }
-
+            Declare(context.HttpContext);
             return next(context);
         });
 
         return builder;
+    }
+
+    /// <summary>
+    /// Opens the audit entry the endpoint's <see cref="AuditMetadata"/> declares, before its
+    /// handler runs — so the request is recorded under that name even when the handler records
+    /// other things itself. What <see cref="WithAudit{TBuilder}"/> does per request; public for
+    /// hosts that attach the metadata some other way (plugin routes, ADR 0019).
+    /// </summary>
+    public static void Declare(HttpContext http)
+    {
+        var declared = http.GetEndpoint()?.Metadata.GetMetadata<AuditMetadata>();
+        if (declared is null)
+        {
+            return;
+        }
+        var recorder = http.RequestServices.GetRequiredService<IAuditRecorder>();
+        var scope = http.RequestServices.GetRequiredService<AuditScope>();
+
+        // The route is only resolvable once an endpoint has been selected, which is
+        // exactly now. Entries that commit inside the handler's transaction are
+        // completed before the middleware ever sees the response, so this is their
+        // only chance to learn where the request came from.
+        scope.Http = AuditHttpInfoFactory.Build(http, includeStatus: false);
+        scope.Permission = http.GetEndpoint()?.Metadata.GetMetadata<IAuditPermission>()?.Permission;
+
+        var entry = recorder.Record(declared.Action);
+        entry.Category = declared.Category;
+        if (declared.ResourceType is { } type)
+        {
+            entry.ResourceType = type;
+            entry.ResourceId = RouteId(http, type);
+        }
+        scope.Declared = entry;
     }
 
     /// <summary>

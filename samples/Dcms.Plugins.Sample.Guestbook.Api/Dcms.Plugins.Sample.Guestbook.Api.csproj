@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Guestbook sample's public API: what another plugin references to sign, list or moderate
+    entries, react to its events or intercept its hook. Like every .Api, it depends on the
+    plugin SDK abstractions and nothing else, so a consumer never loads the plugin itself.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>

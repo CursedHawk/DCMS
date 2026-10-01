@@ -219,6 +219,13 @@ public sealed class PluginRegistry : IPluginCatalog
             }
         }
 
+        // A provider handles its own events and intercepts its own hooks without declaring that it
+        // consumes what it provides (the Guestbook sample filters its own guestbook.signing).
+        foreach (var provision in manifest.Provides ?? [])
+        {
+            consumed.Add(ContractIds.Of(provision.Contract));
+        }
+
         foreach (var subscription in manifest.Subscribes ?? [])
         {
             if (FindEvent(subscription.EventName) is not { } found)

@@ -131,6 +131,9 @@ public sealed class AdminApiFixture : IAsyncLifetime
             builder.UseSetting("Social:OverrideBaseUrl", MetaStub.BaseUrl);
             // The stub serves its CDN over plain http on loopback; imports reach public https only otherwise.
             builder.UseSetting("Media:ImportAllowLocal", "true");
+            // The Guestbook sample as an installed plugin: the coverage tests hold its routes to
+            // the same rules as the platform's.
+            builder.UseSetting("Plugins:Directory", Dcms.IntegrationTests.Cms.ContentFlowFixture.InstalledPluginsDirectory);
             // The background sync is driven explicitly by tests through the sync-now endpoint,
             // so a timer firing underneath them would only add nondeterminism.
             builder.UseSetting("Social:SyncEnabled", "false");

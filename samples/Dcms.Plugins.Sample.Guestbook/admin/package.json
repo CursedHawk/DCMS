@@ -1,0 +1,25 @@
+{
+  "name": "@dcms/sample-guestbook-admin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The Guestbook sample plugin's admin UI, built as an installed plugin's is: one ES module and its stylesheet, sharing the console's React and design system.",
+  "scripts": {
+    "build": "tsc --noEmit -p . && vite build",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@dcms/plugin-ui": "workspace:*",
+    "@dcms/ui": "workspace:*",
+    "@tanstack/react-query": "^5",
+    "lucide-react": "^0.469",
+    "react": "^19",
+    "react-i18next": "^15"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "typescript": "^5",
+    "vite": "^7",
+    "vitest": "^4"
+  }
+}

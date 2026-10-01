@@ -44,14 +44,14 @@
   <!-- The sample external plugin, installed the way an operator would: its build output in a
        folder of its own, loaded by PluginLoader rather than referenced. -->
   <ItemGroup>
-    <ProjectReference Include="..\..\samples\Dcms.Plugins.Sample.Greeter\Dcms.Plugins.Sample.Greeter.csproj"
+    <ProjectReference Include="..\..\samples\Dcms.Plugins.Sample.Guestbook\Dcms.Plugins.Sample.Guestbook.csproj"
                       ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
   <Target Name="InstallSamplePlugin" AfterTargets="Build">
     <ItemGroup>
-      <SamplePluginFiles Include="..\..\samples\Dcms.Plugins.Sample.Greeter\bin\$(Configuration)\$(TargetFramework)\*.*" />
+      <SamplePluginFiles Include="..\..\samples\Dcms.Plugins.Sample.Guestbook\bin\$(Configuration)\$(TargetFramework)\**\*.*" />
     </ItemGroup>
-    <Copy SourceFiles="@(SamplePluginFiles)" DestinationFolder="$(OutDir)installed-plugins\Dcms.Plugins.Sample.Greeter" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(SamplePluginFiles)" DestinationFiles="@(SamplePluginFiles->'$(OutDir)installed-plugins\Dcms.Plugins.Sample.Guestbook\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

@@ -23,6 +23,9 @@ namespace Dcms.IntegrationTests.Cms;
 /// </summary>
 public sealed class ContentFlowFixture : IAsyncLifetime
 {
+    /// <summary>Where the test build installs plugins for the hosts to load (Plugins:Directory).</summary>
+    public static readonly string InstalledPluginsDirectory = Path.Combine(AppContext.BaseDirectory, "installed-plugins");
+
     private readonly PostgreSqlContainer _postgres = TestPostgres.Build();
 
     private readonly RedisContainer _redis = new RedisBuilder("redis:7").Build();
@@ -119,6 +122,8 @@ public sealed class ContentFlowFixture : IAsyncLifetime
         b.UseSetting("ConnectionStrings:Postgres", _postgres.GetConnectionString());
         b.UseSetting("ConnectionStrings:Redis", _redis.GetConnectionString());
         b.UseSetting("Nats:Url", _nats.GetConnectionString());
+        // The Guestbook sample, loaded as an installed plugin (see the csproj's InstallSamplePlugin).
+        b.UseSetting("Plugins:Directory", InstalledPluginsDirectory);
     }
 
     /// <summary>Returns whatever it is asked for: the value is never validated in this fixture.</summary>

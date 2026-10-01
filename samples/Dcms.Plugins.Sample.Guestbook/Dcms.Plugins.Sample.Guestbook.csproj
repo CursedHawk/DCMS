@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Guestbook sample: a plugin built the way an outside developer builds one, using every
+    part of the plugin system (docs/plugins.md walks through it). It references the SDK
+    abstractions, its own .Api, and the .Api assemblies of the plugins it integrates with —
+    nothing else of DCMS. Outside this repository those are PackageReferences from the GitLab
+    package registry; here they are project references.
+
+    Its admin UI (admin/, a pnpm package built with @dcms/plugin-ui's Vite preset) is published
+    beside the assembly as admin/index.js + admin/index.css, which is where the console loads it
+    from. Build the UI first with pnpm: filter @dcms/sample-guestbook-admin, run build.
+
+    Install: dotnet publish -c Release -o <Plugins:Directory>/Dcms.Plugins.Sample.Guestbook
+  -->
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+    <ProjectReference Include="..\Dcms.Plugins.Sample.Guestbook.Api\Dcms.Plugins.Sample.Guestbook.Api.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Blog.Api\Dcms.Plugins.Blog.Api.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Forms.Api\Dcms.Plugins.Forms.Api.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.VisitorAuth.Api\Dcms.Plugins.VisitorAuth.Api.csproj" />
+  </ItemGroup>
+
+  <!-- The built admin UI ships in the plugin's folder as admin/. Absent until it is built: the
+       plugin then works without screens, and the console says so where they would be. -->
+  <ItemGroup>
+    <None Include="admin\dist\**" LinkBase="admin" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

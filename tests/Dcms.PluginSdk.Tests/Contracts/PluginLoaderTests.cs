@@ -20,44 +20,51 @@ public class PluginLoaderTests
     {
         var loaded = PluginLoader.LoadFrom(Installed);
 
-        var greeter = loaded.Should().ContainSingle().Which;
-        greeter.Manifest.Id.Should().Be("sample-greeter");
+        var guestbook = loaded.Should().ContainSingle().Which;
+        guestbook.Manifest.Id.Should().Be("sample-guestbook");
         // Its own assembly, from its own load context...
-        greeter.GetType().Assembly.Location.Should().Contain("installed-plugins");
+        guestbook.GetType().Assembly.Location.Should().Contain("installed-plugins");
         // ...but the Forms hook it intercepts is the host's type, not a second copy of it.
-        greeter.Manifest.Intercepts!.Single().HookType.Should().BeSameAs(typeof(FormSubmitting));
+        guestbook.Manifest.Intercepts!.Select(i => i.HookType).Should().Contain(typeof(FormSubmitting));
     }
 
     [Fact]
     public async Task The_installed_plugin_joins_the_ecosystem()
     {
+        var installed = PluginLoader.LoadFrom(Installed);
         var registry = new ServiceCollection()
             .AddDcmsPlugins(p =>
             {
                 p.AddAll();
-                foreach (var plugin in PluginLoader.LoadFrom(Installed))
+                foreach (var plugin in installed)
                 {
                     p.Add(plugin);
                 }
             })
             .BuildServiceProvider().GetRequiredService<PluginRegistry>();
+        // What the host would register for it (its operator settings among them).
+        var services = new ServiceCollection();
+        foreach (var plugin in installed)
+        {
+            plugin.ConfigureServices(services, PluginHost.Empty());
+        }
 
-        registry.FindContract("sample.greeter@1").Should().NotBeNull();
-        registry.InterceptorsOf("forms.submitting").Should().Contain(i => i.PluginId == "sample-greeter");
+        registry.FindContract("guestbook.entries@1").Should().NotBeNull();
+        registry.InterceptorsOf("forms.submitting").Should().Contain(i => i.PluginId == "sample-guestbook");
 
         // The built-in Forms plugin runs its hook; the installed plugin refuses the spam.
         var tenant = Guid.NewGuid();
         var factory = new PluginContextFactory(registry, new FakeInstanceStore(
                 Instances.Of(tenant, "forms", "contact"),
-                Instances.Of(tenant, "sample-greeter", "hi", new { blockedWords = new[] { "casino" } })),
-            new ServiceCollection().BuildServiceProvider());
+                Instances.Of(tenant, "sample-guestbook", "guests", new { blockedWords = new[] { "casino" } })),
+            services.BuildServiceProvider());
         var forms = await factory.CreateAsync(tenant, "forms", null, PluginActor.Anonymous, TestContext.Current.CancellationToken);
 
         var data = new Dictionary<string, JsonElement> { ["message"] = JsonSerializer.SerializeToElement("Win at the CASINO") };
         var outcome = await forms.Hooks.RunAsync(new FormSubmitting(Guid.NewGuid(), "contact", data, null), TestContext.Current.CancellationToken);
 
         outcome.Cancelled.Should().BeTrue();
-        outcome.CancelledBy.Should().Be("sample-greeter");
+        outcome.CancelledBy.Should().Be("sample-guestbook");
     }
 
     [Fact]

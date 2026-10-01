@@ -1,6 +1,8 @@
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Shared.Kernel.Abstractions;
+using Dcms.Shared.Audit.Http;
+using Dcms.Shared.Audit;
 using Microsoft.AspNetCore.Authorization;
 using Dcms.Shared.Security.Authorization;
 using Dcms.Shared.Security;
@@ -41,8 +43,11 @@ public static class PluginEndpoints
         var host = app.ServiceProvider.GetRequiredService<PluginHost>();
         foreach (var plugin in registry.Plugins)
         {
-            // An empty-prefix group, only so the plugin's permission requirements can be applied.
-            var group = app.MapGroup(string.Empty);
+            // An empty-prefix group, so the plugin's route conventions can be applied and its
+            // handlers get a tenant-wide IPluginContext (no instance) like every other plugin code.
+            var group = app.MapGroup(string.Empty)
+                .AddEndpointFilter(new PluginHostContextFilter(plugin.Manifest.Id))
+                .AddEndpointFilter(PluginPermissionConvention.DeclareAudit);
             plugin.MapHostEndpoints(group, host);
             PluginPermissionConvention.Apply(group, plugin.Manifest);
         }
@@ -57,7 +62,9 @@ public static class PluginEndpoints
         foreach (var plugin in registry.Plugins)
         {
             var pluginId = plugin.Manifest.Id;
-            var group = app.MapGroup(prefix).AddEndpointFilter(new PluginInstanceFilter(pluginId));
+            var group = app.MapGroup(prefix)
+                .AddEndpointFilter(new PluginInstanceFilter(pluginId))
+                .AddEndpointFilter(PluginPermissionConvention.DeclareAudit);
             var builder = new LiveEndpointBuilder(group, pluginId, seen, allowContentRoutes: !admin);
             if (admin)
             {
@@ -114,6 +121,27 @@ public static class PluginEndpoints
 }
 
 /// <summary>
+/// For a plugin's host routes: when the request carries a workspace, establishes the plugin's
+/// tenant-wide <see cref="IPluginContext"/> (no instance) so the handler can reach its contracts
+/// — its storage, its events — as anywhere else. A route without a workspace (an OAuth callback)
+/// gets none and resolves what it needs itself.
+/// </summary>
+public sealed class PluginHostContextFilter(string pluginId) : IEndpointFilter
+{
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var http = context.HttpContext;
+        var accessor = http.RequestServices.GetRequiredService<PluginContextAccessor>();
+        if (accessor.Current is null && http.RequestServices.GetRequiredService<ITenantContext>().TenantId is { } tenantId)
+        {
+            var factory = http.RequestServices.GetRequiredService<PluginContextFactory>();
+            accessor.Current = await factory.CreateAsync(tenantId, pluginId, null, factory.CurrentActor(), http.RequestAborted);
+        }
+        return await next(context);
+    }
+}
+
+/// <summary>
 /// Resolves <c>{slug}</c> to an enabled instance of one plugin for the request's tenant and
 /// establishes the <see cref="IPluginContext"/> for the handler. Anything else is a 404: a
 /// disabled instance, another plugin's slug, and no tenant all look the same from outside.
@@ -147,28 +175,53 @@ public sealed class PluginInstanceFilter(string pluginId) : IEndpointFilter
 }
 
 /// <summary>
-/// Turns <see cref="PluginEndpointConventions.RequirePluginPermission{TBuilder}"/> into the
-/// platform's own permission gate. Runs as a <c>Finally</c> convention so it sees metadata the
-/// plugin added after mapping the route; the key is resolved against the plugin (a bare action
-/// is its own) and must be one the plugin or the platform declares.
+/// Turns the SDK's route conventions (<see cref="PluginEndpointConventions"/>) into the platform's
+/// own: a required permission becomes the permission gate, a public route a permission
+/// exemption, an audit name the audit action <c>plugin.{id}.{action}</c>. Runs as a
+/// <c>Finally</c> convention so it sees metadata the plugin added after mapping the route; a
+/// permission must be one the plugin or the platform declares.
 /// </summary>
 internal static class PluginPermissionConvention
 {
+    /// <summary>
+    /// For a route named with <c>AuditAs</c>: opens its audit entry before the handler runs, as
+    /// <c>WithAudit</c> does, so the request is recorded under the plugin's name even when the
+    /// handler's contract calls record entries of their own.
+    /// </summary>
+    public static ValueTask<object?> DeclareAudit(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        if (context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<PluginAuditMetadata>() is not null)
+        {
+            AuditEndpointExtensions.Declare(context.HttpContext);
+        }
+        return next(context);
+    }
+
     public static void Apply(IEndpointConventionBuilder group, PluginManifest manifest) =>
         group.Finally(endpoint =>
         {
-            if (endpoint.Metadata.OfType<PluginPermissionMetadata>().LastOrDefault() is not { } required)
+            if (endpoint.Metadata.OfType<PluginPermissionMetadata>().LastOrDefault() is { } required)
             {
-                return;
+                var key = PluginPermissions.Resolve(manifest.Id, required.Permission);
+                if (!PluginRegistry.DeclaresPermission(manifest, key))
+                {
+                    throw new InvalidOperationException(
+                        $"Plugin '{manifest.Id}' route {endpoint.DisplayName} requires '{key}', which neither the plugin nor the platform declares.");
+                }
+                endpoint.Metadata.Add(new PermissionMetadata(key));
+                endpoint.Metadata.Add(new AuthorizeAttribute(PermissionPolicyProvider.PolicyName(key)));
             }
-            var key = PluginPermissions.Resolve(manifest.Id, required.Permission);
-            if (!PlatformPermissions.All.Contains(key)
-                && manifest.Permissions.All(p => PluginPermissions.Resolve(manifest.Id, p.Action) != key))
+            if (endpoint.Metadata.OfType<PluginPublicRouteMetadata>().LastOrDefault() is { } open)
             {
-                throw new InvalidOperationException(
-                    $"Plugin '{manifest.Id}' route {endpoint.DisplayName} requires '{key}', which neither the plugin nor the platform declares.");
+                endpoint.Metadata.Add(new PermissionExemptMetadata($"Plugin '{manifest.Id}': {open.Reason}"));
             }
-            endpoint.Metadata.Add(new PermissionMetadata(key));
-            endpoint.Metadata.Add(new AuthorizeAttribute(PermissionPolicyProvider.PolicyName(key)));
+            if (endpoint.Metadata.OfType<PluginAuditMetadata>().LastOrDefault() is { } audit)
+            {
+                endpoint.Metadata.Add(new AuditMetadata(AuditActions.ForPlugin(manifest.Id, audit.Action), null, AuditCategory.TenantState));
+            }
+            if (endpoint.Metadata.OfType<PluginAuditExemptMetadata>().LastOrDefault() is { } skip)
+            {
+                endpoint.Metadata.Add(new AuditExemptMetadata($"Plugin '{manifest.Id}': {skip.Reason}"));
+            }
         });
 }
