@@ -1,6 +1,7 @@
 # ADR 0018: Every plugin instance has an admin page; plugins describe their data, the console renders it
 
-**Status:** accepted · implemented (2026-09-30)
+**Status:** accepted · implemented (2026-09-30) · amended by [ADR 0019](0019-plugin-screens.md)
+(plugins ship their own screens; a disabled instance's data is browsable)
 
 ## Context
 

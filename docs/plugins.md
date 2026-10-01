@@ -10,11 +10,14 @@ know no plugin by name.
 - [ADR 0017](adr/0017-plugin-api-ecosystem.md): `.Api` packages, open contracts, hooks,
   content events, installed plugins, the reference page.
 - [ADR 0018](adr/0018-plugin-admin-pages.md): the plugin's page in the admin, and data sets.
+- [ADR 0019](adr/0019-plugin-screens.md): plugins' own admin screens and menu entries,
+  `@dcms/plugin-ui`, permissions plugins add.
 
 Read a real one next to this page: **Blog** (a content plugin in a dozen lines), **Forms**
 (routes, a hook, a consumer of VisitorAuth), **LiveChat** (host routes, its own events),
-**Analytics** (site and admin planes, a contract for other plugins), and
-`samples/Dcms.Plugins.Sample.Greeter` (built as an outsider would).
+**Analytics** (site and admin planes, a contract for other plugins, an admin screen), and
+`samples/Dcms.Plugins.Sample.Guestbook` — built as an outsider would, and using **every** part of
+the system once, each with a comment saying what it is for. Start there.
 
 ## Anatomy
 
@@ -85,14 +88,22 @@ A consumer references the `.Api` — Forms references `Dcms.Plugins.VisitorAuth.
   A request reaches the handler only for an **enabled instance of this plugin**; anything else
   is a 404. Take `IPluginContext` as a handler parameter: tenant, instance (with its config),
   actor, contracts and hooks.
-- `MapHostEndpoints` routes are mapped as written, with no instance filter: the handler
-  resolves tenant and instance itself. If one sits at `/api/{literal}`, list the literal in
-  `reservedSlugs` so no instance can be created with a slug it would shadow.
+- `MapHostEndpoints` routes are mapped as written, with no instance filter. When the request
+  carries a workspace, the handler still gets the plugin's tenant-wide `IPluginContext` (no
+  instance) and so its contracts; otherwise it resolves what it needs itself. If one sits at
+  `/api/{literal}`, list the literal in `reservedSlugs` so no instance can be created with a
+  slug it would shadow.
 - Two plugins mapping the same method and pattern fail startup.
-- Every mutating route must say what gates it — `.RequirePermission(...)`,
-  `.RequireVisitor()` (VisitorAuth), `.AllowServicePrincipal(scope, why)` or
-  `.PermissionExempt("why")` — and what it records — `.WithAudit(...)` or `.AuditExempt("why")`.
-  The coverage tests fail otherwise.
+- Every route must say what gates it and every mutating route what it records; the coverage
+  tests fail otherwise. With the SDK alone (any plugin, installed ones included):
+  `.RequirePluginPermission("moderate")` (a bare action is the plugin's own permission; a full
+  key like `"content:read"` works too), `.WithoutPermission("why")` for a public route,
+  `.AuditAs("entry.approved")` (recorded as `plugin.{id}.entry.approved`, opened before the
+  handler runs) or `.SkipAudit("why")`. The runtime turns them into the platform's own gate
+  and audit metadata when it mounts the routes, and refuses a permission nobody declares.
+  First-party plugins may use the platform's equivalents (`.RequirePermission`,
+  `.RequireVisitor()`, `.AllowServicePrincipal`, `.PermissionExempt`, `.WithAudit`,
+  `.AuditExempt`) directly.
 - A route that browsers on other origins call registers its own anonymous CORS policy in
   `ConfigureServices` (site plane only) and names it with `.RequireCors(...)`.
 - A route served by a hand-written helper of the site runtime (`@dcms/api-client`) declares
@@ -289,6 +300,7 @@ public sealed class SubscribersDataSet(IPluginContext context, MyDbContext db) :
 }
 ```
 
+- Permissions: a bare action (`"read"`) is the plugin's own, or name a full key.
 - **The runtime is the gate, not you.** Only what the schema says is called (`CanUpdate`,
   `CanDelete`, `CanCreate`, `CanDownload`, declared actions). Values reach `Create`/`Update`
   cut down to `ItemSchema`'s properties and validated against it; filters arrive only with
@@ -311,7 +323,88 @@ public sealed class SubscribersDataSet(IPluginContext context, MyDbContext db) :
 Served at `/api/admin/plugins/{slug}/_data` (list sets with schemas), `…/_data/{set}` (query:
 `search`, `sort`, `desc`, `page`, `pageSize`, `f.{filter}`), `…/{set}/row?key=` (GET, PUT,
 DELETE), `…/{set}/rows` (POST), `…/{set}/actions/{action}` (`{ keys, input }`),
-`…/{set}/download?key=`. The data of a disabled instance is not served.
+`…/{set}/download?key=`. A switched-off instance's data stays browsable and editable: it is
+hidden from sites, not from its owners.
+
+## Permissions a plugin adds
+
+```csharp
+permissions:
+[
+    new PermissionDefinition("read", "View guestbooks", "See entries and counts of every guestbook.", GrantToMembers: true),
+    new PermissionDefinition("moderate", "Moderate guestbooks", "Approve, reject, edit, reply to and delete entries."),
+],
+```
+
+The key is `plugin:{pluginId}:{action}` (actions are unique kebab-case). The role editor lists
+them under the plugin with their description; Owners hold every plugin permission (a startup
+backfill adds new ones); `GrantToMembers` gives the built-in Member role the permission once,
+when a tenant adds its first instance of the plugin — a default the tenant can take away. Use
+them anywhere a permission is named — routes (`RequirePluginPermission`), data sets, admin
+screens, contract operations (`[Operation(Permission = "plugin:…")]`, a full key there) — and
+in screens with `useCan("moderate")`.
+
+## Admin screens and menu entries
+
+A plugin draws its own screens in the admin console: React components, rendered inside the
+console with its theme, components, data cache, permissions and language. The manifest
+**declares** them — so the platform draws the menu and guards the route without running plugin
+code — and the plugin's admin UI module **implements** them:
+
+```csharp
+adminScreens:
+[
+    // One page for the tenant, /app/{pluginId}/{id}, with a menu entry.
+    new AdminScreen("overview", "Guestbooks", AdminScreenScope.Plugin, Permission: "read", IconName: "BookOpen",
+        Nav: new AdminNavPlacement("main", 60), Titles: new Dictionary<string, string> { ["cs"] = "Knihy návštěv" }),
+    // A tab on each instance's page, /plugins/{slug}/{id}.
+    new AdminScreen("moderation", "Moderation", AdminScreenScope.Instance, Permission: "moderate"),
+],
+```
+
+```tsx
+// admin/src/index.tsx
+import { definePluginAdmin } from '@dcms/plugin-ui';
+export default definePluginAdmin({
+  screens: { overview: OverviewScreen, moderation: ModerationScreen },
+  configWidgets: { 'guestbook-accent': AccentWidget },   // for "format": "guestbook-accent" in schemas
+  locales: { en, cs },                                    // read with usePluginT()
+});
+```
+
+- **Menu entries appear only while an instance of the plugin is enabled**, in the section and
+  order `Nav` names (`main`, `build` or `admin`; platform entries use orders 0–99), titled in the
+  reader's language. A switched-off plugin's plugin-wide screen says so and links to its page;
+  its instance screens stay reachable from that page.
+- A screen renders behind the permission its manifest names (default `plugins:manage`) and in its
+  own error boundary; a plugin that throws does not take the console down.
+- Everything a screen needs from the console comes through `@dcms/plugin-ui`, never console
+  imports: `usePluginApi()` (the signed-in admin API client), `instancePath(slug, path)` for
+  the instance's own admin routes, `useCan(permission)`, `usePluginT()` (the plugin's
+  `locales`, falling back to the console's words), `usePluginScreen()` (plugin, instance,
+  instances), `usePluginHost()` (auth headers and the content API base for a hub,
+  `navigate`, and `components.DataSet` to embed one of its data sets). Use `@dcms/ui` for
+  components and `toast`.
+- **Built-in plugins** keep their UI beside their C#: `src/Plugins/{Assembly}/admin`, a pnpm
+  package whose `src/index.tsx` is the module. The console compiles every such folder in,
+  lazily, by folder name — adding a plugin with a UI is adding the folder. Forms (inbox),
+  AI Chatbot (chat console), Analytics (dashboard) and Instagram/Facebook (the Meta account
+  widget) are the examples.
+- **Installed plugins** ship `admin/index.js` (and optionally `admin/index.css`) in their folder,
+  built with the SDK's preset, which leaves React, `@dcms/ui`, react-query, i18n and
+  `@dcms/plugin-ui` to the console's copies:
+
+  ```ts
+  // vite.config.ts
+  import { defineConfig } from 'vite';
+  import { dcmsPluginAdmin } from '@dcms/plugin-ui/vite';
+  export default defineConfig(dcmsPluginAdmin({ entry: 'src/index.tsx' }));
+  ```
+
+  Ship plain CSS on the console's tokens (`hsl(var(--card))`, `var(--radius)`), prefixed with
+  your own namespace; Tailwind classes the console happens not to use do not exist. The csproj
+  publishes `admin/dist` as `admin/` (see the Guestbook's). The files are served anonymously
+  from `/api/admin/plugin-ui/assets/{pluginId}/…` — they are code, the same for every tenant.
 
 ## Configuration
 
@@ -330,7 +423,10 @@ without uninstalling it — anything requiring its contracts then fails startup 
 
 Manifest flags the platform reads instead of knowing your plugin: `tracksVisitors` (a published
 site asks for cookie consent while an instance is enabled), `reservedSlugs`, `clientBindings`,
-`nav` (a sidebar entry), `dataSets` (above).
+`dataSets` and `adminScreens` (above).
+
+Operator settings bind like any options: `host.SettingsFor(id).Bind(options)` in
+`ConfigureServices`, then register the object (the Guestbook's `GuestbookOptions`).
 
 ## Building a plugin outside this repo
 
@@ -353,9 +449,14 @@ The SDK and every plugin's `.Api` are published to the project's GitLab package 
 </ItemGroup>
 ```
 
-`samples/Dcms.Plugins.Sample.Greeter` is a complete one: its own contract and site route, a
-subscription to `blog.post.published` counting posts in `dcms.storage`, and a
-`forms.submitting` interceptor refusing spam. The admin's **API reference** page
+`samples/Dcms.Plugins.Sample.Guestbook` (with `.Api` beside it) is a complete one, using every
+feature on this page: its own contract with site, admin and AI operations, events and a hook;
+interceptors of its own hook and of `forms.submitting`; handlers of its own event and of
+`blog.post.published`; an interval job and an on-demand one; storage, files, cache,
+notifications and email; permissions with a default grant; a content type; a data set with
+input and dangerous actions; site, admin and host routes; an OpenAPI fragment; and an admin UI
+with a plugin-wide screen, an instance screen and a config widget, built with the Vite preset.
+The integration tests install it from a folder and drive it on the real hosts. The admin's **API reference** page
 (Marketplace → a plugin → API reference) shows any plugin's contracts, events, hooks, data and
 configuration with C# to start from, and runs its admin operations against an instance.
 

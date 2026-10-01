@@ -357,6 +357,7 @@ Auth legend: **P(x)** = `RequirePermission(x)` (tenant permission, SuperAdmin by
 | GET/POST `/api/admin/plugins/instances`, PUT `…/{id}`, POST `…/{id}/{action}` | P(plugins:manage) | same |
 | GET `/api/admin/navigation` | Auth, NM | `Plugins/NavigationEndpoints.cs` |
 | GET `/api/admin/marketplace` | P(plugins:manage) | `Plugins/MarketplaceEndpoints.cs` |
+| GET `/api/admin/plugin-ui` (plugins' screens, UI modules, instances), GET `/api/admin/plugin-ui/assets/{pluginId}/{path}` (installed plugins' UI files, anonymous) | Auth / anonymous | `PluginSdk.Runtime/Hosting/PluginUiEndpoints.cs` (ADR 0019) |
 | GET `/api/admin/plugins/{slug}/_data`, `…/_data/{set}`, `…/{set}/row?key=` (GET/PUT/DELETE), POST `…/{set}/rows`, `…/{set}/actions/{action}`, GET `…/{set}/download?key=` | Auth; each data set's own read/write permission (default plugins:manage) | `PluginSdk.Runtime/Data/PluginDataEndpoints.cs` (ADR 0018) |
 | GET `/api/admin/content`, `/content/{id}`, `/content/tags`, `/content/page`, `/content/counts`, `/content/scheduled` | P(content:read) | `Cms/ContentEndpoints.cs`, `Cms/ContentListEndpoints.cs` |
 | POST `/api/admin/content`, PUT `/content/{id}` | P(content:write) | `Cms/ContentEndpoints.cs` |
@@ -514,15 +515,14 @@ OpenIddict discovery/JWKS endpoints are provided by the library (`/.well-known/o
 | `/auth/callback` | OIDC callback | — |
 | `/` | `features/dashboard/DashboardPage` | open |
 | `/tenants` | `features/tenants/TenantsPage` | SuperAdmin |
-| `/plugins` · `/marketplace` | `features/plugins/PluginsPage` (+ `MetaConnectionWidget`) · `features/marketplace/MarketplacePage` | plugins:manage |
+| `/plugins` · `/plugins/$slug[/$screen]` · `/marketplace` | `features/plugins/PluginsPage`, `PluginInstancePage` (overview, plugin instance screens, data sets, settings, integration, activity) · `features/marketplace/MarketplacePage` | plugins:manage |
+| `/app/$pluginId/$screen` | `pluginHost/PluginScreenView` — a plugin's own screen, loaded from its admin UI module (built-in: `src/Plugins/*/admin`; installed: its folder) | the screen's own permission |
 | `/content` | `features/content/ContentPage` (TipTap rich text / markdown) | content:read |
 | `/media` | `features/media/MediaPage`, `MediaUploader` | media:read |
-| `/forms` | `features/forms/FormsPage` | content:read |
+| `/forms` · `/analytics` · `/chat` | redirects to `/app/forms/inbox` · `/app/analytics/dashboard` · `/app/live-chat/console` (the Forms, Analytics and AI Chatbot plugins' screens, `src/Plugins/Dcms.Plugins.{Forms,Analytics,LiveChat}/admin`) | per screen |
 | `/sites` | `features/sites/SitesPage`, `StaticSitePage` (Mode C) | site:edit |
 | `/sites/$siteId` | `features/sites/SiteWorkspace` → Mode A `features/builder/BuilderPage` (GrapesJS) or Mode B `features/ide/IdePage` (Monaco, `ide/preview` esbuild-wasm worker, `ide/agent`) + `features/site-source` (VFS, git, source control, live updates) | site:edit |
-| `/analytics` | `features/analytics/AnalyticsPage` (recharts) | analytics:read |
 | `/assistant`, `/assistant/$conversationId` | `features/assistant/AssistantPage` (tool-using agent, `tools.ts`) | site:edit |
-| `/chat` | `features/chat/ChatPage` (SignalR `/hub/chat` as agent) | chat:read |
 | `/notifications` | `features/notifications/NotificationsPage` (+ `useNotificationHub`) | open |
 | `/invite/accept` | `features/invitations/InviteAcceptPage` | open |
 | `/account` | `features/account/AccountPage` (identity `/account/api/*`, delete account) | open |

@@ -78,7 +78,8 @@ switches any plugin off per deployment.
 
 CI packs the SDK abstractions, the kernel and every `.Api` as NuGet packages
 (`major.minor.pipeline`, assembly version `major.0.0.0`) into the project's package registry
-when their sources change. `samples/Dcms.Plugins.Sample.Greeter` is built only against those.
+when their sources change. The sample plugin (the Greeter then, the Guestbook since ADR 0019)
+is built only against those.
 
 ### Self-describing
 

@@ -25,3 +25,4 @@ as their implementation phase lands.
 - [0016](0016-plugin-contracts.md) — Plugins own their code and meet through versioned contracts
 - [0017](0017-plugin-api-ecosystem.md) — Every plugin is an API: `.Api` packages, open contracts, hooks, installed plugins
 - [0018](0018-plugin-admin-pages.md) — A page per plugin instance; plugins describe data sets, the console renders them
+- [0019](0019-plugin-screens.md) — Plugins ship their own admin screens and menu entries; permissions are theirs to add
