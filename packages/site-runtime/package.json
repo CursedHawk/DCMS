@@ -27,16 +27,23 @@
     "zod": "^4"
   },
   "peerDependencies": {
-    "react": "^19"
+    "react": "^19",
+    "react-dom": "^19"
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "react-dom": {
       "optional": true
     }
   },
   "devDependencies": {
     "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "jsdom": "^27",
     "react": "^19",
+    "react-dom": "^19",
     "typescript": "^5",
     "vitest": "^4"
   }

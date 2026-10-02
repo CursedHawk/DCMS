@@ -9,11 +9,15 @@ import { StaticSitePage } from './StaticSitePage';
 // respectively); keep them lazy and load only the one this render mode needs.
 const BuilderPage = lazy(() => import('../builder/BuilderPage').then((m) => ({ default: m.BuilderPage })));
 const IdePage = lazy(() => import('../ide/IdePage').then((m) => ({ default: m.IdePage })));
+const VisualBuilderPage = lazy(() =>
+  import('../visual/VisualBuilderPage').then((m) => ({ default: m.VisualBuilderPage })),
+);
 
 /**
  * Entry point for /sites/$siteId. Static-files sites get the upload/publish
- * surface; ReactApp sites get the code IDE (React project); StaticPrerender
- * sites get the visual builder over their HTML/CSS source.
+ * surface; ReactApp sites get the code IDE (React project); ReactBuilder sites
+ * get the Mode D visual React builder; StaticPrerender sites get the visual
+ * builder over their HTML/CSS source.
  */
 export function SiteWorkspace({ siteId }: { siteId: string }) {
   const { t } = useTranslation();
@@ -40,6 +44,8 @@ export function SiteWorkspace({ siteId }: { siteId: string }) {
       <Suspense fallback={<CenteredSpinner />}>
         {site.data?.renderMode === 'ReactApp' ? (
           <IdePage siteId={siteId} />
+        ) : site.data?.renderMode === 'ReactBuilder' ? (
+          <VisualBuilderPage siteId={siteId} />
         ) : (
           <BuilderPage siteId={siteId} />
         )}

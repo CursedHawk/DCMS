@@ -472,6 +472,7 @@
     "modeStaticPrerender": "Visual editor",
     "modeReactApp": "React app",
     "modeStaticFiles": "Static files (upload)",
+    "modeReactBuilder": "Visual React app",
     "dropHint": "Drag & drop your built website here, or",
     "chooseZip": "Choose .zip",
     "chooseFolder": "Choose folder",
@@ -1461,5 +1462,21 @@
     "notInstalledHint": "Add it from the marketplace to use this screen.",
     "openPlugin": "Open {{plugin}}",
     "openMarketplace": "Open the marketplace"
+  },
+  "visual": {
+    "selectSomething": "Select a component on the canvas to edit it.",
+    "noProps": "This component has no settings.",
+    "invalidValue": "That value is not allowed here.",
+    "mediaUrlPlaceholder": "Image URL",
+    "page": "Page",
+    "device": "Preview width",
+    "devices": {
+      "desktop": "Desktop",
+      "tablet": "Tablet",
+      "mobile": "Mobile"
+    },
+    "components": "Components",
+    "pageError": "This page cannot be shown on the canvas: {{error}}",
+    "noPages": "This site has no pages yet."
   }
 }

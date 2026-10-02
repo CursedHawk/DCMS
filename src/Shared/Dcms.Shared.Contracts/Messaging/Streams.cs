@@ -132,7 +132,8 @@ public static class Subjects
     ///
     /// <para>Matched case-insensitively against the render mode as it travels on the message —
     /// a string, not the enum, because Contracts deliberately does not reference the data
-    /// layer. An unrecognised mode routes to the prerender subject, which mirrors what the
+    /// layer. Mode D (ReactBuilder) shares the React lane: its publish is the same Vite build.
+    /// An unrecognised mode routes to the prerender subject, which mirrors what the
     /// builder does with it: <c>BuildAsync</c> dispatches ReactApp and StaticFiles explicitly
     /// and treats everything else as Mode A. Routing an unknown mode to the cheap lane instead
     /// would put a build of unknown cost in front of the ones the lane exists to keep fast.</para>
@@ -141,6 +142,7 @@ public static class Subjects
         string.Equals(renderMode, "StaticFiles", StringComparison.OrdinalIgnoreCase)
             ? SitePublishRequestedStaticFiles
             : string.Equals(renderMode, "ReactApp", StringComparison.OrdinalIgnoreCase)
+              || string.Equals(renderMode, "ReactBuilder", StringComparison.OrdinalIgnoreCase)
                 ? SitePublishRequestedReactApp
                 : SitePublishRequestedStaticPrerender;
 

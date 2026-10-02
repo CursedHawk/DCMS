@@ -104,6 +104,8 @@ export function createEditor({
     height: '100%',
     width: 'auto',
     fromElement: false,
+    // On by default since 0.22: posts usage data from the author's browser on every load.
+    telemetry: false,
     // Persistence is driven by the shared working-draft store (see storage.ts),
     // not by GrapesJS: the Mode B autosave already batches, hashes and conflict-
     // checks every write, and a second debounce on top of it would only make

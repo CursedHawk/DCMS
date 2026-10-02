@@ -16,6 +16,7 @@
     "@dcms/gjs-parse": "workspace:*",
     "@dcms/gjs-schema": "workspace:*",
     "@dcms/plugin-ui": "workspace:*",
+    "@dcms/site-runtime": "workspace:*",
     "@dcms/ui": "workspace:*",
     "@microsoft/signalr": "^8",
     "@radix-ui/react-checkbox": "^1",

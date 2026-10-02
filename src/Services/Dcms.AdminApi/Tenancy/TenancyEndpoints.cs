@@ -577,11 +577,11 @@ public static class TenancyEndpoints
                     p.Description));
             });
 
-            // Per-site repo perms (git-backed sites — Mode A builder and Mode B React):
+            // Per-site repo perms (git-backed sites — every mode but the uploaded bundle):
             // one read + one write key per site, so roles can grant pull/push on
             // individual repositories.
             var gitSites = await sites.Sites
-                .Where(s => s.RenderMode == SiteRenderMode.ReactApp || s.RenderMode == SiteRenderMode.StaticPrerender)
+                .Where(s => s.RenderMode != SiteRenderMode.StaticFiles)
                 .OrderBy(s => s.Name)
                 .Select(s => new { s.Id, s.Name })
                 .ToListAsync(ct);

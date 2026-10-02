@@ -488,6 +488,7 @@
     "modeStaticPrerender": "Vizuální editor",
     "modeReactApp": "React aplikace",
     "modeStaticFiles": "Statické soubory (nahrání)",
+    "modeReactBuilder": "Vizuální React aplikace",
     "dropHint": "Přetáhněte sem sestavený web, nebo",
     "chooseZip": "Vybrat .zip",
     "chooseFolder": "Vybrat složku",
@@ -1493,5 +1494,21 @@
     "notInstalledHint": "Přidejte ho z tržiště, abyste mohli tuto obrazovku používat.",
     "openPlugin": "Otevřít {{plugin}}",
     "openMarketplace": "Otevřít tržiště"
+  },
+  "visual": {
+    "selectSomething": "Vyberte komponentu na plátně a upravte ji.",
+    "noProps": "Tato komponenta nemá žádná nastavení.",
+    "invalidValue": "Tato hodnota zde není povolena.",
+    "mediaUrlPlaceholder": "URL obrázku",
+    "page": "Stránka",
+    "device": "Šířka náhledu",
+    "devices": {
+      "desktop": "Počítač",
+      "tablet": "Tablet",
+      "mobile": "Mobil"
+    },
+    "components": "Komponenty",
+    "pageError": "Tuto stránku nelze zobrazit na plátně: {{error}}",
+    "noPages": "Tento web zatím nemá žádné stránky."
   }
 }

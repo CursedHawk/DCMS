@@ -18,6 +18,7 @@ public class SitePublishSubjectTests
     [InlineData("StaticFiles", Subjects.SitePublishRequestedStaticFiles)]
     [InlineData("StaticPrerender", Subjects.SitePublishRequestedStaticPrerender)]
     [InlineData("ReactApp", Subjects.SitePublishRequestedReactApp)]
+    [InlineData("ReactBuilder", Subjects.SitePublishRequestedReactApp)]
     public void Routes_each_render_mode_to_its_own_subject(string mode, string expected) =>
         Subjects.SitePublishSubjectFor(mode).Should().Be(expected);
 

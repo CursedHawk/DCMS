@@ -222,12 +222,14 @@ public sealed class SitePublishConsumer(
         build.Status = SiteBuildStatus.Building;
         await db.SaveChangesAsync(ct);
 
-        if (string.Equals(job.RenderMode, SiteRenderMode.ReactApp.ToString(), StringComparison.OrdinalIgnoreCase))
+        var mode = Enum.TryParse<SiteRenderMode>(job.RenderMode, ignoreCase: true, out var parsed)
+            ? parsed : SiteRenderMode.StaticPrerender;
+        if (mode.IsViteApp())
         {
             build.LogObjectKey = LogKey(build.ArtifactPrefix);
             await BuildReactAppAsync(build.DefinitionSnapshotJson, build.ArtifactPrefix, ct);
         }
-        else if (string.Equals(job.RenderMode, SiteRenderMode.StaticFiles.ToString(), StringComparison.OrdinalIgnoreCase))
+        else if (mode == SiteRenderMode.StaticFiles)
         {
             await ExtractStaticBundleAsync(build.DefinitionSnapshotJson, build.ArtifactPrefix, ct);
         }

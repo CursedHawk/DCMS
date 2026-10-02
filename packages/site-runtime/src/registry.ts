@@ -1,4 +1,5 @@
-import type { ComponentType, ReactNode } from 'react';
+import type { CSSProperties, ComponentType, ReactNode } from 'react';
+import type { Action } from './actions';
 import { COMPONENT_TYPE, NAME } from './ids';
 import { propDefinitionSchema, propValueSchema, type PropDefinition } from './props';
 
@@ -21,16 +22,29 @@ export interface SlotDefinition {
   max?: number;
 }
 
+/**
+ * How a slot lays out its children. The slot is a real element (`.dcms-slot`) in the editor
+ * and on the site alike, so a component that arranges its children — a stack, a grid — puts
+ * that layout here rather than on an element of its own: the slot is their parent.
+ */
+export interface SlotLayout {
+  className?: string;
+  style?: CSSProperties;
+}
+
 /** What a component's React implementation receives. */
 export interface ComponentRenderProps<P = Record<string, unknown>> {
   nodeId: string;
   props: P;
+  /** The node's action, if it has one. Run it only when `useRenderMode()` is `live`. */
+  action?: Action;
   /**
-   * The rendered content of one of the component's slots. The published runtime renders the
-   * slot's child nodes here; the editor puts the element GrapesJS draws them into. A component
-   * never knows which, and so cannot behave differently on the canvas than on the site.
+   * One of the component's slots, as an element. The published runtime renders the slot's
+   * child nodes into it; the editor hands it to GrapesJS, which draws and drops them there. A
+   * component never knows which, and so cannot behave differently on the canvas than on the
+   * site.
    */
-  slot: (name: string) => ReactNode;
+  slot: (name: string, layout?: SlotLayout) => ReactNode;
 }
 
 export interface ComponentDefinition {
@@ -144,6 +158,9 @@ export function canPlace(
 
   if (slot.allowed && !slot.allowed.includes(childType)) {
     return { ok: false, reason: `${slotLabel} accepts only ${list(slot.allowed, registry)}, not ${child.label}.` };
+  }
+  if (child.allowedParents?.length === 0) {
+    return { ok: false, reason: `${child.label} cannot be placed inside another component.` };
   }
   if (child.allowedParents && !child.allowedParents.includes(parentType)) {
     return { ok: false, reason: `${child.label} can only be placed inside ${list(child.allowedParents, registry)}.` };

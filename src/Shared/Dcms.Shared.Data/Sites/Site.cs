@@ -10,6 +10,12 @@ public enum SiteRenderMode
 
     /// <summary>Mode C: user-uploaded, pre-built static files served as-is.</summary>
     StaticFiles,
+
+    /// <summary>
+    /// Mode D: a React application composed visually (ADR 0020). Its repo is a small Vite app
+    /// whose pages are JSON documents, so it publishes through the Mode B build.
+    /// </summary>
+    ReactBuilder,
 }
 
 public static class SiteRenderModeExtensions
@@ -17,12 +23,18 @@ public static class SiteRenderModeExtensions
     /// <summary>
     /// Render modes whose source is a file map kept in a per-site git repo: Mode B
     /// a React project, Mode A the visual builder's site.json + pages/*.html +
-    /// styles/*.css. They share the whole source stack — working drafts, granular
+    /// styles/*.css, Mode D a Vite app with dcms/*.json pages. They share the whole source stack — working drafts, granular
     /// autosave, branches, diffs, merges, and build-on-push to the release branch.
     /// Mode C (uploaded bundle) has no source to version.
     /// </summary>
-    public static bool IsGitBacked(this SiteRenderMode mode) =>
-        mode is SiteRenderMode.ReactApp or SiteRenderMode.StaticPrerender;
+    public static bool IsGitBacked(this SiteRenderMode mode) => mode != SiteRenderMode.StaticFiles;
+
+    /// <summary>
+    /// Render modes published by building the repo as a Vite application in the sandbox:
+    /// Mode B, and Mode D, whose repo is one (ADR 0020).
+    /// </summary>
+    public static bool IsViteApp(this SiteRenderMode mode) =>
+        mode is SiteRenderMode.ReactApp or SiteRenderMode.ReactBuilder;
 }
 
 public enum SiteBuildStatus
