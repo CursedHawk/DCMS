@@ -121,6 +121,34 @@ public sealed class LoginSessionRevocationTests : IAsyncLifetime
     }
 
     [DockerFact]
+    public async Task Signing_out_ends_every_console_session_that_login_authorized()
+    {
+        // The admin console signs out through /connect/logout; the platform console holds its
+        // own refresh token from the same login. Deleting identity's cookie alone left that
+        // token renewing for 14 days, so one console stayed signed in after the other signed
+        // out -- and Grafana, which needs the cookie, bounced to the login form.
+        var ct = TestContext.Current.CancellationToken;
+        var browser = Browser();
+        await SignInAsync(browser, ct);
+        var auth = await AuthorizeAsync(browser, ct);
+        var tokens = await ExchangeAsync(browser, CodeFrom(auth.Location), auth.Verifier, ct);
+
+        // Before: the refresh works, so a refusal afterwards is the sign-out and not the setup.
+        using (var before = await RefreshAsync(tokens, ct))
+        {
+            before.StatusCode.Should().Be(HttpStatusCode.OK, await before.Content.ReadAsStringAsync(ct));
+            tokens = await before.Content.ReadFromJsonAsync<JsonElement>(ct);
+        }
+
+        using var logout = await browser.GetAsync("/connect/logout", ct);
+        logout.StatusCode.Should().Be(HttpStatusCode.Found);
+
+        using var after = await RefreshAsync(tokens, ct);
+        after.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await after.Content.ReadAsStringAsync(ct)).Should().Contain("invalid_grant");
+    }
+
+    [DockerFact]
     public async Task One_browser_keeps_one_login_id_across_authorizations()
     {
         // The id has to be STABLE, not merely present. If each authorization minted a fresh one
@@ -257,6 +285,16 @@ public sealed class LoginSessionRevocationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(ct));
         return await response.Content.ReadFromJsonAsync<JsonElement>(ct);
     }
+
+    private Task<HttpResponseMessage> RefreshAsync(JsonElement tokens, CancellationToken ct)
+        => _factory.CreateClient().PostAsync("/connect/token", new FormUrlEncodedContent(
+            new Dictionary<string, string>
+            {
+                ["grant_type"] = "refresh_token",
+                ["refresh_token"] = tokens.GetProperty("refresh_token").GetString()!,
+                ["client_id"] = Client,
+                ["client_secret"] = Secret,
+            }), ct);
 
     private static string CodeFrom(string location)
         => QueryHelpers.ParseQuery(new Uri(location).Query)["code"].ToString();

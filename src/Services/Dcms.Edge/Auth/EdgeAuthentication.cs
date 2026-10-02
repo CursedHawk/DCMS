@@ -129,6 +129,13 @@ public static class EdgeAuthentication
                 options.ClientSecret = auth.ClientSecret;
                 options.ResponseType = OpenIdConnectResponseType.Code;
                 options.UsePkce = true;
+                // Query, not the handler's default form_post. A form_post answer is a 200 HTML
+                // page from identity, which sends X-Frame-Options: DENY on everything -- so the
+                // platform console's Grafana frame died on it and showed "refused to connect"
+                // even with a live login. A 302 carries no such restriction, so the whole round
+                // trip completes inside the frame. The code in the URL is single-use and bound to
+                // PKCE and the client secret, which is what form_post would otherwise protect.
+                options.ResponseMode = OpenIdConnectResponseMode.Query;
                 options.CallbackPath = CallbackPath;
                 options.SignedOutCallbackPath = SignedOutCallbackPath;
                 options.SaveTokens = false;

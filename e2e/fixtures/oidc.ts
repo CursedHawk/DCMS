@@ -73,6 +73,36 @@ export async function signIn(
 ): Promise<void> {
   const { key, value } = userStorage(options);
   const tenant = options.tenantSlug;
+
+  // The console refreshes on load and on tab return, which is how it notices a sign-out made
+  // in another console. Answered with a fresh token and no ID token, so the seeded profile is
+  // kept; a refusal here is what signs the console out, and is a spec of its own to write.
+  const authority = options.authority ?? AUTHORITY;
+  const cors = { 'Access-Control-Allow-Origin': '*' };
+  await page.route(`${authority}/.well-known/openid-configuration`, (route) =>
+    route.fulfill({
+      headers: cors,
+      json: {
+        issuer: `${authority}/`,
+        authorization_endpoint: `${authority}/connect/authorize`,
+        token_endpoint: `${authority}/connect/token`,
+        end_session_endpoint: `${authority}/connect/logout`,
+        jwks_uri: `${authority}/.well-known/jwks`,
+      },
+    }),
+  );
+  await page.route(`${authority}/connect/token`, (route) =>
+    route.fulfill({
+      headers: cors,
+      json: {
+        access_token: 'e2e.access-token',
+        refresh_token: 'e2e.refresh-token',
+        token_type: 'Bearer',
+        expires_in: 24 * 60 * 60,
+        scope: 'openid profile email roles offline_access',
+      },
+    }),
+  );
   // The storage notice is a fixed bar across the foot of every page until it is dismissed, and
   // it sits over the controls at the bottom of a list. Pre-dismissed so no spec has to close it
   // first — `shell.spec.ts` turns this off to test the notice itself. It is an option here

@@ -149,7 +149,7 @@ public static class BffAuthentication
         }
 
         app.MapGet("/.edge/me", async (
-            HttpContext context, IDataProtectionProvider protection, BffSessionStore sessions) =>
+            HttpContext context, IDataProtectionProvider protection, BffTokenProvider tokens) =>
         {
             if (BffTokenProvider.SessionIdOf(context.User) is not { Length: > 0 } sessionId)
             {
@@ -157,10 +157,11 @@ public static class BffAuthentication
             }
 
             // The cookie alone is not the session: the row behind it is, and it can be deleted
-            // from another device. Without this check a revoked session keeps rendering a
-            // signed-in shell whose every API call 401s — which is exactly the state "sign out
-            // my other devices" is supposed to end.
-            if (await sessions.GetAsync(sessionId) is null)
+            // from another device — or its login ended by signing out of the platform console,
+            // which identity reports by refusing the next refresh. Asking for a usable token
+            // covers both. Without it a revoked session keeps rendering a signed-in shell whose
+            // every API call 401s.
+            if (await tokens.GetAccessTokenAsync(context.User, context.RequestAborted) is null)
             {
                 return Results.Unauthorized();
             }

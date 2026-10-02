@@ -128,7 +128,8 @@ public static class AuthorizationEndpoints
     private static async Task<IResult> ExchangeAsync(
         HttpContext context,
         UserManager<DcmsUser> userManager,
-        IOpenIddictScopeManager scopeManager)
+        IOpenIddictScopeManager scopeManager,
+        LoginSessionRevocations revocations)
     {
         var request = context.GetOpenIddictServerRequest()
                       ?? throw new InvalidOperationException("OpenIddict request not found.");
@@ -178,12 +179,28 @@ public static class AuthorizationEndpoints
                     }));
             }
 
+            // A token minted from a login that has since been ended -- signed out in any
+            // console, or from the account page's session list -- renews nothing. This is what
+            // makes one sign-out reach every console in that browser rather than only the one
+            // whose button was pressed.
+            var loginSessionId = result.Principal!.FindFirst(LoginSessions.ClaimType)?.Value;
+            if (!string.IsNullOrEmpty(loginSessionId)
+                && await revocations.IsRevokedAsync(loginSessionId, context.RequestAborted))
+            {
+                return Results.Forbid(
+                    authenticationSchemes: [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme],
+                    properties: new AuthenticationProperties(new Dictionary<string, string?>
+                    {
+                        [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
+                        [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "This sign-in has ended.",
+                    }));
+            }
+
             // Carried forward from the authorization code (and then from each refresh token),
             // which is what puts it in the ID token the client actually receives: in the code
             // flow the ID token is minted here, not at the authorize endpoint.
             var principal = await BuildUserPrincipalAsync(
-                user, userManager, scopeManager, result.Principal!.GetScopes(),
-                result.Principal!.FindFirst(LoginSessions.ClaimType)?.Value);
+                user, userManager, scopeManager, result.Principal!.GetScopes(), loginSessionId);
             return Results.SignIn(principal, properties: null, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
         }
 
@@ -213,8 +230,22 @@ public static class AuthorizationEndpoints
         });
     }
 
-    private static async Task<IResult> LogoutAsync(HttpContext context, SignInManager<DcmsUser> signInManager)
+    private static async Task<IResult> LogoutAsync(
+        HttpContext context, SignInManager<DcmsUser> signInManager, LoginSessionRevocations revocations)
     {
+        // Ends the LOGIN, not only this cookie. Every console session in this browser was
+        // authorized from it -- the platform console's refresh token, the edge's BFF session --
+        // and each carries its id, so the token endpoint refuses to renew any of them from here
+        // on. Deleting the cookie alone left those running for their whole 14-day refresh life:
+        // signing out of the admin console left the platform console signed in, and the next
+        // Grafana visit bounced to the login form because the cookie it needed was gone.
+        var cookie = await context.AuthenticateAsync(IdentityConstants.ApplicationScheme);
+        if (cookie.Properties?.Items.TryGetValue(LoginSessions.PropertyItem, out var loginSessionId) == true
+            && !string.IsNullOrEmpty(loginSessionId))
+        {
+            await revocations.RevokeAsync(loginSessionId, context.RequestAborted);
+        }
+
         await signInManager.SignOutAsync();
         return Results.SignOut(
             new AuthenticationProperties { RedirectUri = "/" },

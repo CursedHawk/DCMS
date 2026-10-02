@@ -30,8 +30,17 @@ export function useAuth(): AuthState {
     });
 
     const unsubscribe = subscribeToAuth((u) => setUser(u));
+
+    // Re-asked when the tab comes back, so a sign-out in the platform console or on another
+    // device lands here as the sign-in screen rather than as a shell whose calls all 401.
+    // getUser publishes the change through the subscription above.
+    const recheck = () => {
+      if (document.visibilityState === 'visible') void getUser();
+    };
+    document.addEventListener('visibilitychange', recheck);
     return () => {
       active = false;
+      document.removeEventListener('visibilitychange', recheck);
       unsubscribe();
     };
   }, []);

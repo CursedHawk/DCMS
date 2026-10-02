@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ExternalLink } from 'lucide-react';
-import { Button, EmptyState, useTheme } from '@dcms/ui';
+import { EmptyState, useTheme } from '@dcms/ui';
 import { runtimeConfig } from '../../runtime-config';
 import { SignalsPanel } from './SignalsPanel';
 
@@ -12,10 +12,10 @@ import { SignalsPanel } from './SignalsPanel';
  * worse, so the console frames them and spends its own effort on what Grafana cannot do —
  * acting on what the dashboards show.</p>
  *
- * <p>Two things this page has to be honest about. Grafana's OIDC round trip cannot complete
- * inside an iframe, so the first visit of a session needs one click in a real tab; and if the
- * Grafana origin is not configured, there is nothing to frame and the page says so rather than
- * showing an empty rectangle.</p>
+ * <p>The frame signs itself in: the edge's OIDC round trip is all redirects (response_mode
+ * query), and identity's cookie is same-site with this console, so a signed-in operator lands
+ * on the dashboard with no click. If the Grafana origin is not configured, there is nothing to
+ * frame and the page says so rather than showing an empty rectangle.</p>
  */
 const DASHBOARDS = [
   { uid: 'dcms-overview', slug: 'platform-overview', label: 'Golden signals' },
@@ -33,7 +33,6 @@ const DASHBOARDS = [
 export function MonitoringPage() {
   const { resolved } = useTheme();
   const [current, setCurrent] = useState<(typeof DASHBOARDS)[number]>(DASHBOARDS[0]);
-  const [connected, setConnected] = useState(false);
   const base = runtimeConfig.grafanaBase.replace(/\/+$/, '');
 
   if (!base) {
@@ -58,10 +57,8 @@ export function MonitoringPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Above the frame on purpose. "Which service is erroring" is the first question, and
-          framing a dashboard to answer it costs an OIDC round trip that cannot happen in an
-          iframe — so on the first visit of a session this is the only thing on the page that
-          is already answering. */}
+      {/* Above the frame on purpose: "which service is erroring" is the first question, and
+          this answers it from platform-api even when Grafana is the thing that is down. */}
       <SignalsPanel />
 
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
@@ -88,37 +85,12 @@ export function MonitoringPage() {
         </a>
       </div>
 
-      {connected ? (
-        <iframe
-          key={`${current.uid}-${resolved}`}
-          src={src}
-          title={`Grafana: ${current.label}`}
-          className="min-h-0 flex-1 border-0 bg-background"
-        />
-      ) : (
-        <div className="flex flex-1 items-start justify-center p-10">
-          <div className="max-w-md rounded-md border border-border bg-card p-5">
-            <h2 className="text-sm font-medium">Connect Grafana once per session</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Grafana signs in through the same identity service, but its sign-in cannot complete
-              inside a frame. Open it once in a tab and the dashboards load here afterwards.
-            </p>
-            <div className="mt-4 flex gap-2">
-              <Button
-                onClick={() => {
-                  window.open(base, '_blank', 'noopener');
-                  setConnected(true);
-                }}
-              >
-                Open Grafana, then show dashboards
-              </Button>
-              <Button variant="ghost" onClick={() => setConnected(true)}>
-                Already signed in
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      <iframe
+        key={`${current.uid}-${resolved}`}
+        src={src}
+        title={`Grafana: ${current.label}`}
+        className="min-h-0 flex-1 border-0 bg-background"
+      />
     </div>
   );
 }
