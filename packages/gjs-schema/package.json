@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@dcms/site-runtime": "workspace:*",
     "zod": "^4"
   },
   "devDependencies": {

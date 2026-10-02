@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { emptyTheme, themeTokensSchema } from '@dcms/site-runtime/theme';
 import {
   GLOBAL_CSS,
   pageCssPath,
@@ -22,53 +23,10 @@ import {
  * loading as an empty site.
  */
 
+/** Shared with Mode D; see `@dcms/site-runtime/theme`. */
+export { emptyTheme, themeTokensSchema, type ThemeTokens } from '@dcms/site-runtime/theme';
+
 export const SITE_MANIFEST_VERSION = 2;
-
-/**
- * The design vocabulary a site is styled with.
- *
- * The groups are deliberately wider than colours and fonts. A look is not just a
- * palette — it is also how hard the shadows are, how tight the headings track,
- * how fast the type scale grows and how much air a section gets. Keeping all of
- * that as tokens is what lets a design kit be a plain data bundle: applying one
- * rewrites `styles/theme.css` and restyles the whole site, without the author
- * writing a line of CSS and without touching their own stylesheet.
- *
- * The rule for what belongs here: if the block stylesheet reads it as
- * `var(--dcms-…)`, it is a token. Anything else is `custom`.
- */
-export const themeTokensSchema = z.object({
-  /** Token name → CSS colour, emitted as `--dcms-color-<name>`. */
-  colors: z.record(z.string(), z.string()).default({}),
-  /** Token name → font stack, emitted as `--dcms-font-<name>`. */
-  fonts: z.record(z.string(), z.string()).default({}),
-  /** Token name → length, emitted as `--dcms-space-<name>`. */
-  spacing: z.record(z.string(), z.string()).default({}),
-  /** Step name → font size, emitted as `--dcms-text-<name>`. The type scale. */
-  text: z.record(z.string(), z.string()).default({}),
-  /** Step name → box-shadow, emitted as `--dcms-shadow-<name>`. */
-  shadows: z.record(z.string(), z.string()).default({}),
-  /**
-   * The remaining named design decisions, emitted as `--dcms-<name>` with no
-   * group infix: `container`, `radius-sm`, `radius-lg`, `radius-pill`,
-   * `border-width`, `transition`, `leading-body`, `leading-heading`,
-   * `weight-heading`, `tracking-heading`, `transform-heading`, `section-py`.
-   *
-   * One flat group rather than six single-purpose ones, because these share
-   * nothing but being scalar — and a group per token would be a schema change
-   * every time a kit wants one more knob.
-   */
-  metrics: z.record(z.string(), z.string()).default({}),
-  /** Default corner radius, emitted as `--dcms-radius`. */
-  radius: z.string().optional(),
-  /** Escape hatch: raw custom properties merged into `:root` verbatim. */
-  custom: z.record(z.string(), z.string()).default({}),
-});
-
-/** A theme that defines nothing — every group present and empty. */
-export function emptyTheme(): ThemeTokens {
-  return { colors: {}, fonts: {}, spacing: {}, text: {}, shadows: {}, metrics: {}, custom: {} };
-}
 
 export const seoMetaSchema = z.object({
   title: z.string(),
@@ -192,7 +150,6 @@ export const siteManifestSchema = z.object({
   settings: siteSettingsSchema.default({ lang: 'en', renderNav: true, cookieConsent: { mode: 'banner' } }),
 });
 
-export type ThemeTokens = z.infer<typeof themeTokensSchema>;
 export type SeoMeta = z.infer<typeof seoMetaSchema>;
 export type PageEntry = z.infer<typeof pageEntrySchema>;
 export type RegionEntry = z.infer<typeof regionEntrySchema>;
