@@ -105,7 +105,7 @@ export function AgentPanel({
 }: {
   siteId: string;
   siteName?: string;
-  /** Mode A ('static') or Mode B ('react'). Decides the prompt, the tools and the check. */
+  /** Mode A ('static'), Mode B ('react') or Mode D ('visual'). Decides the prompt, the tools and the check. */
   kind?: SiteAgentKind;
   /** Tools this surface contributes, kept out of this chunk by being passed in. */
   tools?: readonly ToolSpec<TenantToolContext>[];

@@ -15,7 +15,7 @@ import {
   type Page,
   type TenantComponentDoc,
 } from '@dcms/site-runtime';
-import { useVfs } from '../site-source';
+import { useVfs } from '../site-source/vfs';
 import { newNodeId } from './canvas/tree';
 import { serializeDoc } from './starter';
 

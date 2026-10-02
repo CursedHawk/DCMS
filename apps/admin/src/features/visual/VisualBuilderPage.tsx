@@ -32,6 +32,7 @@ import {
   RefreshCw,
   Rocket,
   Smartphone,
+  Sparkles,
   Tablet,
   Undo2,
   X,
@@ -72,6 +73,8 @@ import { VISUAL_DEVICES, type DeviceId } from './canvas/editor';
 import { starterFiles } from './starter';
 import { useVisual, type VisualView } from './store';
 import { useSiteRuntime } from './useSiteRuntime';
+import { AgentPanel } from '../ide/agent/AgentPanel';
+import { VISUAL_TOOLS, validateVisualSite } from './agent/visualTools';
 import { previewClient, useContentCatalog } from './data';
 
 // Widen for TanStack Link typing (sibling routes are registered via a helper).
@@ -85,7 +88,7 @@ const VIEWS: { id: VisualView; icon: typeof Code2; labelKey: string }[] = [
   { id: 'preview', icon: Eye, labelKey: 'visual.preview' },
 ];
 
-type SidebarView = 'components' | 'mine' | 'layers' | 'pages' | 'theme' | 'scm' | 'deploy' | 'problems';
+type SidebarView = 'components' | 'mine' | 'layers' | 'pages' | 'theme' | 'scm' | 'deploy' | 'problems' | 'agent';
 
 /**
  * The Mode D builder (ADR 0020): a page is a tree of React components, edited on a GrapesJS
@@ -446,6 +449,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
             <Rail active={sidebar === 'scm'} label={t('ide.git.title')} onClick={() => setSidebar('scm')} badge={changes.data?.length ?? 0}><GitBranch className="h-5 w-5" /></Rail>
             <Rail active={sidebar === 'deploy'} label={t('ide.deploy.title')} onClick={() => setSidebar('deploy')}><Rocket className="h-5 w-5" /></Rail>
             <Rail active={sidebar === 'problems'} label={t('visual.problems.title')} onClick={() => setSidebar('problems')} badge={errors}><AlertCircle className="h-5 w-5" /></Rail>
+            <Rail active={sidebar === 'agent'} label={t('ide.agent.title')} onClick={() => setSidebar('agent')}><Sparkles className="h-5 w-5" /></Rail>
           </div>
           <div className="min-w-0 flex-1 overflow-hidden">
             {/* The palette stays mounted: its payload arrives once, at editor creation. */}
@@ -467,6 +471,9 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
             )}
             {sidebar === 'deploy' && <DeploymentsView siteId={siteId} />}
             {sidebar === 'problems' && <ProblemsPanel problems={problems} editor={editor} />}
+            {sidebar === 'agent' && (
+              <AgentPanel siteId={siteId} siteName={site.data?.name} kind="visual" tools={VISUAL_TOOLS} validate={validateVisualSite} />
+            )}
           </div>
         </div>
         <Resizer onDelta={(dx) => setSidebarWidth(sidebarWidth + dx)} onReset={resetSidebarWidth} />

@@ -180,7 +180,7 @@ export function useAgentSession(opts: {
    * genuinely does not need the reach.
    */
   const [scope, setScopeState] = useState<AgentScope>(
-    kind === 'static' ? 'site+tenant' : DEFAULT_SCOPE,
+    kind !== 'react' ? 'site+tenant' : DEFAULT_SCOPE,
   );
   const [classification, setClassification] = useState<Classification | null>(null);
   const [changes, setChanges] = useState<FileChange[]>([]);
@@ -358,7 +358,7 @@ export function useAgentSession(opts: {
        */
       // Only Mode B has types to baseline; a Mode A site has no .ts file to check.
       baselineRef.current =
-        kind === 'static' ? Promise.resolve(null) : baselineTypeProblems(Object.keys(vfs.files));
+        kind !== 'react' ? Promise.resolve(null) : baselineTypeProblems(Object.keys(vfs.files));
 
       /*
        * How much of the transcript has reached the server.
@@ -638,7 +638,7 @@ export function useAgentSession(opts: {
             tools: toolsFor(
               [
                 ...(ALL_TOOLS as ToolSpec<TenantToolContext>[]).filter(
-                  (tool) => kind !== 'static' || !REACT_ONLY_TOOLS.has(tool.name),
+                  (tool) => kind === 'react' || !REACT_ONLY_TOOLS.has(tool.name),
                 ),
                 ...(opts.tools ?? []),
                 ...SKILL_TOOLS,

@@ -5,6 +5,7 @@ import { AI_MODES, decide } from './modes';
 import { ALL_TOOLS } from '../ide/agent/checkTools';
 import { SANDBOX_TOOLS, SKILL_TOOLS, TENANT_TOOLS } from '../ide/agent/tenantTools';
 import { STATIC_TOOLS } from '../builder/agent/staticTools';
+import { VISUAL_TOOLS } from '../visual/agent/visualTools';
 
 /**
  * The rules a tool has to obey to be offered at all.
@@ -26,6 +27,7 @@ const REGISTRY: ToolSpec<unknown>[] = [
   ...(SANDBOX_TOOLS as unknown as ToolSpec<unknown>[]),
   ...(TENANT_TOOLS as unknown as ToolSpec<unknown>[]),
   ...(STATIC_TOOLS as unknown as ToolSpec<unknown>[]),
+  ...(VISUAL_TOOLS as unknown as ToolSpec<unknown>[]),
 ];
 
 /**
