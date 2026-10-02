@@ -379,3 +379,94 @@ test('a selection becomes a component; editing it starts v2; an exposed setting 
     props: { text: 'Hello from a component' },
   });
 });
+
+const POSTS = [
+  { id: 'p1', slug: 'hello', contentType: 'post', data: { title: 'Hello world', body: '<p>First</p>' } },
+  { id: 'p2', slug: 'second', contentType: 'post', data: { title: 'Second post', body: '<p>Two</p>' } },
+];
+
+const dataSite = {
+  'dcms/app.json': doc({
+    schemaVersion: 1,
+    routes: [
+      { id: 'home', path: '/', page: 'home' },
+      { id: 'post', path: '/posts/:slug', page: 'post' },
+    ],
+  }),
+  'dcms/pages/home.json': doc({
+    schemaVersion: 1,
+    id: 'home',
+    title: 'Home',
+    root: {
+      id: 'r',
+      type: 'dcms.page',
+      slots: {
+        default: [
+          {
+            id: 'list',
+            type: 'dcms.collection',
+            props: { source: { instance: 'press-room', contentType: 'post' }, limit: 6 },
+            slots: {
+              item: [
+                {
+                  id: 'card',
+                  type: 'dcms.stack',
+                  slots: {
+                    default: [
+                      { id: 'title', type: 'dcms.heading', props: { text: 'Heading' } },
+                      { id: 'more', type: 'dcms.button', props: { label: 'Read' }, action: { type: 'navigate', to: '/posts/:slug' } },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    },
+  }),
+  'dcms/pages/post.json': doc({
+    schemaVersion: 1,
+    id: 'post',
+    title: 'Post',
+    data: { source: { instance: 'press-room', contentType: 'post' }, param: 'slug' },
+    root: { id: 'r2', type: 'dcms.page', slots: { default: [{ id: 'pt', type: 'dcms.heading', bind: { text: 'title' } }] } },
+  }),
+};
+
+function content(api: MockApi) {
+  api
+    .on('GET', '/api/admin/sites/:id/preview/api/press-room/post', { items: POSTS, totalCount: 2, page: 1, pageSize: 6 })
+    .on('GET', '/api/admin/sites/:id/preview/api/press-room/post/:slug', ({ params }) => POSTS.find((p) => p.slug === params.slug));
+}
+
+test('a collection shows real content on the canvas, and a heading in it binds to a field', async ({ page, api }) => {
+  content(api);
+  const frame = await open(page, api, dataSite);
+  await expect(frame.getByText('This item is the first of 2; the site repeats it for each.')).toBeVisible();
+
+  await frame.locator('[data-dcms-node="title"] h2').click();
+  await page.getByRole('combobox', { name: 'What Text shows' }).click();
+  await page.getByRole('option', { name: 'The item’s Title' }).click();
+
+  // The canvas fills the bound heading from the first post…
+  await expect(frame.locator('[data-dcms-node="title"] h2')).toHaveText('Hello world');
+  // …and the page saves the binding, not the text.
+  await expect.poll(() => saved(api, 'dcms/pages/home.json') ?? '', { timeout: 15000 }).toContain('"bind"');
+  const card = JSON.parse(saved(api, 'dcms/pages/home.json')!).root.slots.default[0].slots.item[0];
+  expect(card.slots.default[0].bind).toEqual({ text: 'title' });
+});
+
+test('preview lists every item and a card links to its detail page', async ({ page, api }) => {
+  content(api);
+  const bound = JSON.parse(dataSite['dcms/pages/home.json']);
+  bound.root.slots.default[0].slots.item[0].slots.default[0].bind = { text: 'title' };
+  await open(page, api, { ...dataSite, 'dcms/pages/home.json': doc(bound) });
+
+  await page.getByRole('group', { name: 'View' }).getByTitle('Preview').click();
+  const preview = page.frameLocator('iframe[title="Preview"]');
+  await expect(preview.getByRole('heading')).toHaveText(['Hello world', 'Second post']);
+  await preview.getByRole('link', { name: 'Read' }).nth(1).click();
+  await expect(preview.getByRole('heading', { name: 'Second post' })).toBeVisible();
+  await expect(preview.getByRole('heading')).toHaveCount(1);
+});

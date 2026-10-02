@@ -1494,7 +1494,14 @@
       "navigate": "Go to a page",
       "external": "Open a link",
       "page": "Page",
-      "newTab": "Open in a new tab"
+      "newTab": "Open in a new tab",
+      "scrollTo": "Scroll to a section",
+      "openModal": "Open a popup",
+      "toast": "Show a message",
+      "toastDefault": "Thanks!",
+      "section": "Section",
+      "popup": "Popup",
+      "noPopups": "Add a Popup to this page first."
     },
     "pages": {
       "noApp": "dcms/app.json cannot be read. Fix it in the code view.",
@@ -1560,6 +1567,18 @@
       "linkExposed": "The link is exposed",
       "slot": "Let pages put content in “{{slot}}”",
       "slotExposed": "Pages put content in “{{slot}}”"
+    },
+    "data": {
+      "chooseSource": "Choose content",
+      "bindTo": "What {{prop}} shows",
+      "fixedValue": "A fixed value",
+      "showsField": "The item’s {{field}}",
+      "boundHint": "Shows the item’s {{field}}.",
+      "noSourceYet": "Choose the collection’s content to see its fields.",
+      "detailPage": "Detail page",
+      "notDetail": "Not a detail page",
+      "detailHint": "Shows the item whose slug is in the address (:{{param}}).",
+      "needsParam": "Give the address a :slug part (e.g. /events/:slug) to make this a detail page."
     }
   }
 }

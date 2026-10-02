@@ -1,12 +1,16 @@
 import {
+  BINDABLE,
   actionSchema,
   propValueSchema,
+  sourceKey,
   type Action,
   type ComponentDefinition,
   type PropDefinition,
   type Registry,
   type Responsive,
+  type Source,
 } from '@dcms/site-runtime';
+import type { ContentField } from '@dcms/gjs-blocks';
 import type { Component, Editor } from 'grapesjs';
 import { RotateCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -25,8 +29,10 @@ import {
 import { MediaPicker } from '../media/MediaPicker';
 import { assetIdFrom, mediaUrlFor } from '../builder/panels/TraitsPanel';
 import { useEditorEvent, useSelected } from '../builder/panels/useEditorEvent';
-import { EXTRA, PROPS, type NodeExtra } from './canvas/tree';
+import { EXTRA, ID, PROPS, type NodeExtra } from './canvas/tree';
 import { ExposePanel, InstanceVersion } from './ExposePanel';
+import { META_BINDABLE, scopeOf, useContentCatalog } from './data';
+import { readPage } from './documents';
 import { useVisual } from './store';
 
 /**
@@ -49,6 +55,7 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
   const { t } = useTranslation();
   const selected = useSelected(editor);
   const device = useVisual((s) => s.device);
+  const catalog = useContentCatalog();
   // Undo/redo change props without changing the selection; re-read on those too.
   useEditorEvent(editor, `component:update:${PROPS} component:update:${EXTRA} undo redo`);
 
@@ -62,6 +69,23 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
 
   const props = (selected.get(PROPS) ?? {}) as Record<string, unknown>;
   const extra = (selected.get(EXTRA) ?? {}) as NodeExtra;
+
+  // The item this node can bind to: its collection's, or the detail page's (P4).
+  const target = useVisual.getState().target;
+  const pageSource = target?.kind === 'page' ? readPage(target.id)?.data?.source : undefined;
+  const scope = scopeOf(selected, !!pageSource);
+  const scopeSource: Source | null | undefined = scope?.kind === 'collection' ? scope.source : scope?.kind === 'page' ? pageSource : null;
+  const fields: ContentField[] = scopeSource
+    ? [...(catalog.sources.find((s) => sourceKey(s.source) === sourceKey(scopeSource))?.fields ?? []), ...META_BINDABLE]
+    : [];
+  const writeBind = (name: string, path: string | undefined) => {
+    const bind = { ...extra.bind };
+    if (path) bind[name] = path;
+    else delete bind[name];
+    const next: NodeExtra = { ...extra, bind: Object.keys(bind).length ? bind : undefined };
+    if (!next.bind) delete next.bind;
+    selected.set(EXTRA, next);
+  };
   const overrides = device === 'desktop' ? undefined : extra.responsive?.[device];
 
   const writeProp = (prop: PropDefinition, value: unknown) => {
@@ -108,6 +132,17 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
               component={selected}
               prop={prop}
               value={value}
+              sources={catalog.sources}
+              binding={
+                scope && device === 'desktop' && BINDABLE[prop.kind]
+                  ? {
+                      fields: fields.filter((f) => BINDABLE[prop.kind]!.includes(f.kind)),
+                      path: extra.bind?.[prop.name],
+                      unknownSource: !scopeSource,
+                      onBind: (path) => writeBind(prop.name, path),
+                    }
+                  : undefined
+              }
               deviceNote={
                 device !== 'desktop'
                   ? prop.responsive
@@ -124,6 +159,8 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
         {definition.actions?.length ? (
           <ActionField
             key={`${selected.cid}:action`}
+            editor={editor}
+            inItem={!!scope}
             definition={definition}
             action={extra.action}
             onCommit={(action) => {
@@ -141,17 +178,29 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
 
 type DeviceNote = { kind: 'override'; onReset: () => void } | { kind: 'inherits' } | { kind: 'desktopOnly' };
 
+interface Binding {
+  fields: ContentField[];
+  path?: string;
+  /** In an item's scope, but the collection has no content chosen yet. */
+  unknownSource: boolean;
+  onBind: (path: string | undefined) => void;
+}
+
 function PropField({
   component,
   prop,
   value,
   deviceNote,
+  binding,
+  sources,
   onCommit,
 }: {
   component: Component;
   prop: PropDefinition;
   value: unknown;
   deviceNote?: DeviceNote;
+  binding?: Binding;
+  sources: { source: Source; label: string }[];
   onCommit: (value: unknown) => void;
 }) {
   const { t } = useTranslation();
@@ -172,6 +221,24 @@ function PropField({
 
   let control: React.ReactNode;
   switch (prop.kind) {
+    case 'source': {
+      const current = value && typeof value === 'object' ? sourceKey(value as Source) : '';
+      control = (
+        <Select value={current} onValueChange={(key) => commit(sources.find((s) => sourceKey(s.source) === key)?.source)}>
+          <SelectTrigger id={id}>
+            <SelectValue placeholder={t('visual.data.chooseSource')} />
+          </SelectTrigger>
+          <SelectContent>
+            {sources.map((s) => (
+              <SelectItem key={sourceKey(s.source)} value={sourceKey(s.source)}>
+                {s.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      );
+      break;
+    }
     case 'select':
       control = (
         <Select value={typeof value === 'string' ? value : (prop.default ?? '')} onValueChange={commit}>
@@ -247,7 +314,32 @@ function PropField({
         {deviceNote?.kind === 'inherits' && <span className="text-[11px] text-muted-foreground">{t('visual.inheritsDesktop')}</span>}
         {deviceNote?.kind === 'desktopOnly' && <span className="text-[11px] text-muted-foreground">{t('visual.allDevices')}</span>}
       </div>
-      {control}
+      {binding && (
+        <Select value={binding.path ?? '__fixed'} onValueChange={(v) => binding.onBind(v === '__fixed' ? undefined : v)}>
+          <SelectTrigger className="h-7 text-xs" aria-label={t('visual.data.bindTo', { prop: prop.label })}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__fixed">{t('visual.data.fixedValue')}</SelectItem>
+            {binding.path && !binding.fields.some((f) => f.path === binding.path) && (
+              <SelectItem value={binding.path}>{binding.path}</SelectItem>
+            )}
+            {binding.fields.map((f) => (
+              <SelectItem key={f.path} value={f.path}>
+                {t('visual.data.showsField', { field: f.label })}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {binding?.path ? (
+        <p className="rounded bg-primary/10 px-2 py-1 text-xs text-primary">
+          {t('visual.data.boundHint', { field: binding.fields.find((f) => f.path === binding.path)?.label ?? binding.path })}
+        </p>
+      ) : (
+        control
+      )}
+      {binding?.unknownSource && <p className="text-xs text-muted-foreground">{t('visual.data.noSourceYet')}</p>}
       {error ? (
         <p className="text-xs text-destructive" role="alert">
           {error}
@@ -264,10 +356,15 @@ function PropField({
  * the same `actionSchema` the site loads with, so a `javascript:` link cannot be saved.
  */
 function ActionField({
+  editor,
+  inItem,
   definition,
   action,
   onCommit,
 }: {
+  editor: Editor | null;
+  /** Inside a collection item or on a detail page: links may use `:slug`. */
+  inItem: boolean;
   definition: ComponentDefinition;
   action: Action | undefined;
   onCommit: (action: Action | undefined) => void;
@@ -277,6 +374,16 @@ function ActionField({
   const [error, setError] = useState<string | null>(null);
   const kind = action?.type ?? 'none';
   const allowed = definition.actions ?? [];
+  // Sections to scroll to, and popups to open: the nodes on the canvas, by their layer name.
+  const nodes: { id: string; label: string; type: string }[] = [];
+  const stack = [...(editor?.getWrapper()?.components().models ?? [])];
+  while (stack.length) {
+    const c = stack.shift()!;
+    const id = c.get(ID) as string | undefined;
+    if (id) nodes.push({ id, label: `${c.getName()} · ${id}`, type: c.get('type') ?? '' });
+    stack.push(...c.components().models);
+  }
+  const modals = nodes.filter((n) => n.type === 'dcms.modal');
 
   const commit = (next: Action | undefined) => {
     if (next) {
@@ -301,7 +408,13 @@ function ActionField({
               ? { type: 'navigate', to: app?.routes[0]?.path ?? '/' }
               : v === 'open-external'
                 ? { type: 'open-external', href: 'https://' }
-                : undefined,
+                : v === 'scroll-to'
+                  ? { type: 'scroll-to', target: nodes[0]?.id ?? 'top' }
+                  : v === 'open-modal'
+                    ? { type: 'open-modal', modal: modals[0]?.id ?? 'popup' }
+                    : v === 'show-toast'
+                      ? { type: 'show-toast', message: t('visual.action.toastDefault') }
+                      : undefined,
           )
         }
       >
@@ -312,6 +425,9 @@ function ActionField({
           <SelectItem value="none">{t('visual.action.none')}</SelectItem>
           {allowed.includes('navigate') && <SelectItem value="navigate">{t('visual.action.navigate')}</SelectItem>}
           {allowed.includes('open-external') && <SelectItem value="open-external">{t('visual.action.external')}</SelectItem>}
+          {allowed.includes('scroll-to') && <SelectItem value="scroll-to">{t('visual.action.scrollTo')}</SelectItem>}
+          {allowed.includes('open-modal') && <SelectItem value="open-modal">{t('visual.action.openModal')}</SelectItem>}
+          {allowed.includes('show-toast') && <SelectItem value="show-toast">{t('visual.action.toast')}</SelectItem>}
         </SelectContent>
       </Select>
 
@@ -322,7 +438,8 @@ function ActionField({
           </SelectTrigger>
           <SelectContent>
             {(app?.routes ?? [])
-              .filter((r) => !r.path.includes(':'))
+              // A detail page's address needs an item to fill `:slug` from.
+              .filter((r) => inItem || !r.path.includes(':'))
               .map((r) => (
                 <SelectItem key={r.id} value={r.path}>
                   {r.path}
@@ -344,6 +461,40 @@ function ActionField({
             {t('visual.action.newTab')}
           </label>
         </>
+      )}
+      {action?.type === 'scroll-to' && (
+        <Select value={action.target} onValueChange={(target) => commit({ type: 'scroll-to', target })}>
+          <SelectTrigger aria-label={t('visual.action.section')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {nodes.map((n) => (
+              <SelectItem key={n.id} value={n.id}>
+                {n.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {action?.type === 'open-modal' &&
+        (modals.length ? (
+          <Select value={action.modal} onValueChange={(modal) => commit({ type: 'open-modal', modal })}>
+            <SelectTrigger aria-label={t('visual.action.popup')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {modals.map((n) => (
+                <SelectItem key={n.id} value={n.id}>
+                  {n.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <p className="text-xs text-muted-foreground">{t('visual.action.noPopups')}</p>
+        ))}
+      {action?.type === 'show-toast' && (
+        <TextField id="action-toast" value={action.message} onCommit={(message) => message && commit({ ...action, message })} />
       )}
       {error && (
         <p className="text-xs text-destructive" role="alert">

@@ -44,7 +44,7 @@ const page: Node = {
         props: { background: 'alt', spacing: 'lg', width: 'normal' },
         slots: {
           default: [
-            { id: 'h', type: 'dcms.heading', props: { text: 'Hello', level: '1', align: 'center' } },
+            { id: 'h', type: 'dcms.heading', props: { text: 'Hello', level: '1', align: 'center' }, bind: { text: 'title' } },
             {
               id: 'row',
               type: 'dcms.stack',

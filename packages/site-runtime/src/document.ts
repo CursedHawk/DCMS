@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { actionSchema, type Action } from './actions';
+import { sourceSchema, type Source } from './data';
 import { COMPONENT_TYPE, DOC_ID, NAME, NODE_ID, isInternalPath, isSafeExternalHref } from './ids';
 
 /**
@@ -30,9 +31,17 @@ export interface Node {
   slots?: Record<string, Node[]>;
   responsive?: Responsive;
   action?: Action;
+  /**
+   * Props read from the item in scope (a collection's item, a detail page's item): prop name →
+   * field path (`title`, `values.colour`, `#slug`). Absent outside a data context.
+   */
+  bind?: Record<string, string>;
 }
 
 const propsSchema = z.record(z.string().regex(NAME), z.unknown());
+
+/** `title`, `values.colour`, or a meta field: `#slug`, `#id`, `#publishedAt`, `#index`, `#number`, `#count`. */
+export const FIELD_PATH = /^(?:#(?:slug|id|publishedAt|index|number|count)|[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)$/;
 
 export const nodeSchema: z.ZodType<Node> = z.strictObject({
   id: z.string().regex(NODE_ID, 'must be 1–64 letters, digits, - or _'),
@@ -46,6 +55,7 @@ export const nodeSchema: z.ZodType<Node> = z.strictObject({
     .strictObject({ tablet: propsSchema.optional(), mobile: propsSchema.optional() })
     .optional(),
   action: actionSchema.optional(),
+  bind: z.record(z.string().regex(NAME), z.string().regex(FIELD_PATH, 'must be a field path')).optional(),
 });
 
 /** Every node in a tree, depth first, root included. */
@@ -84,6 +94,11 @@ export const pageSchema = z
     id: z.string().regex(DOC_ID, 'must be kebab-case'),
     title: z.string().min(1).max(120),
     seo: seoSchema.optional(),
+    /**
+     * A detail page: it shows one item of `source`, the one whose slug is the route parameter
+     * `param` (`/events/:slug` → `slug`). Its nodes bind to that item like a collection's do.
+     */
+    data: z.strictObject({ source: sourceSchema, param: z.string().regex(/^[a-zA-Z][a-zA-Z0-9]*$/) }).optional(),
     root: nodeSchema,
   })
   .superRefine((page, ctx) => uniqueNodeIds(page.root, ctx, ['root']));
@@ -172,3 +187,4 @@ export type Page = z.infer<typeof pageSchema>;
 export type Route = z.infer<typeof routeSchema>;
 export type App = z.infer<typeof appSchema>;
 export type Seo = z.infer<typeof seoSchema>;
+export type { Source };

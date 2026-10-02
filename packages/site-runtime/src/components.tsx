@@ -4,6 +4,7 @@ import type { NavItem, Responsive } from './document';
 import type { PropDefinition } from './props';
 import { createRegistry, type ComponentDefinition, type ComponentRenderProps } from './registry';
 import { useRenderMode } from './renderMode';
+import { Collection, Form, FormField, Modal, RichText, runAction } from './dataComponents';
 import { SiteLink, useSite } from './site';
 
 /**
@@ -173,6 +174,7 @@ const BUTTON_SIZES = ['sm', 'md', 'lg'] as const;
  * the action runner, which is not wired yet — until then those buttons render inert.
  */
 function Button({ props, action }: ComponentRenderProps<Props>) {
+  const mode = useRenderMode();
   const variant = choice(props.variant, VARIANTS, 'primary');
   const size = choice(props.size, BUTTON_SIZES, 'md');
   const className = `dcms-button dcms-button-${variant} dcms-button-${size}`;
@@ -189,8 +191,10 @@ function Button({ props, action }: ComponentRenderProps<Props>) {
       </SiteLink>
     );
   }
+  // Scroll, popup and toast actions run on click — on the site, never on the canvas.
+  const onClick = mode === 'live' && action ? () => runAction(action) : undefined;
   return (
-    <button type="button" className={className}>
+    <button type="button" className={className} onClick={onClick}>
       {label}
     </button>
   );
@@ -348,6 +352,74 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
     props: [responsiveSelect('size', 'Size', SPACER_SIZES, 'md')],
   },
   {
+    type: 'dcms.collection',
+    version: 1,
+    label: 'Collection',
+    description: 'A list of content from one of your plugins — events, posts, products. Design one item; the site repeats it.',
+    category: 'Data',
+    component: Collection,
+    props: [
+      { kind: 'source', name: 'source', label: 'Content', required: true },
+      { kind: 'number', name: 'limit', label: 'How many', default: 6, min: 1, max: 50, step: 1 },
+      { kind: 'text', name: 'tag', label: 'Only items tagged', maxLength: 64 },
+      select('layout', 'Layout', ['grid', 'list'] as const, 'grid'),
+    ],
+    slots: [
+      { name: 'item', label: 'Each item' },
+      { name: 'loading', label: 'While loading' },
+      { name: 'empty', label: 'When empty' },
+      { name: 'error', label: 'On error' },
+    ],
+  },
+  {
+    type: 'dcms.richtext',
+    version: 1,
+    label: 'Rich text',
+    description: 'Formatted text — headings, lists, links. Often bound to a post’s body.',
+    category: 'Content',
+    component: RichText,
+    props: [{ kind: 'richText', name: 'html', label: 'Content', default: '<p>Formatted text.</p>' }],
+  },
+  {
+    type: 'dcms.form',
+    version: 1,
+    label: 'Form',
+    description: 'Sends what visitors enter to one of your Forms plugin’s forms.',
+    category: 'Forms',
+    component: Form,
+    props: [
+      { kind: 'text', name: 'instance', label: 'Forms plugin', description: 'The plugin instance’s slug, e.g. “forms”.', required: true, maxLength: 64 },
+      { kind: 'text', name: 'form', label: 'Form name', required: true, maxLength: 128 },
+      { kind: 'text', name: 'submitLabel', label: 'Button label', default: 'Send', maxLength: 60 },
+      { kind: 'text', name: 'successMessage', label: 'Thank-you message', default: 'Thank you — your message was sent.', maxLength: 300 },
+    ],
+    slots: [{ name: 'fields', label: 'Fields' }],
+  },
+  {
+    type: 'dcms.field',
+    version: 1,
+    label: 'Form field',
+    category: 'Forms',
+    component: FormField,
+    props: [
+      { kind: 'text', name: 'name', label: 'Field name', default: 'name', required: true, maxLength: 64 },
+      { kind: 'text', name: 'label', label: 'Label', default: 'Name', maxLength: 120 },
+      select('type', 'Type', ['text', 'email', 'tel', 'number', 'textarea', 'checkbox'] as const, 'text'),
+      { kind: 'boolean', name: 'required', label: 'Required', default: false },
+      { kind: 'text', name: 'placeholder', label: 'Placeholder', maxLength: 120 },
+    ],
+  },
+  {
+    type: 'dcms.modal',
+    version: 1,
+    label: 'Popup',
+    description: 'Hidden until a button opens it.',
+    category: 'Layout',
+    component: Modal,
+    props: [{ kind: 'text', name: 'title', label: 'Title (for screen readers)', default: 'Popup', maxLength: 120 }],
+    slots: [{ name: 'default', label: 'Content' }],
+  },
+  {
     type: 'dcms.heading',
     version: 1,
     label: 'Heading',
@@ -392,7 +464,7 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
     label: 'Button',
     category: 'Content',
     component: Button,
-    actions: ['navigate', 'open-external'],
+    actions: ['navigate', 'open-external', 'scroll-to', 'open-modal', 'show-toast'],
     props: [
       { kind: 'text', name: 'label', label: 'Label', default: 'Button', maxLength: 80 },
       select('variant', 'Style', VARIANTS, 'primary'),

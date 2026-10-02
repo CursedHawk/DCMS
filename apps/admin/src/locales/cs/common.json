@@ -1526,7 +1526,14 @@
       "navigate": "Přejít na stránku",
       "external": "Otevřít odkaz",
       "page": "Stránka",
-      "newTab": "Otevřít v nové kartě"
+      "newTab": "Otevřít v nové kartě",
+      "scrollTo": "Posunout na sekci",
+      "openModal": "Otevřít vyskakovací okno",
+      "toast": "Zobrazit zprávu",
+      "toastDefault": "Děkujeme!",
+      "section": "Sekce",
+      "popup": "Vyskakovací okno",
+      "noPopups": "Nejdřív na stránku přidejte vyskakovací okno."
     },
     "pages": {
       "noApp": "Soubor dcms/app.json nelze přečíst. Opravte ho v zobrazení kódu.",
@@ -1599,6 +1606,18 @@
       "linkExposed": "Odkaz je zpřístupněn",
       "slot": "Povolit stránkám vložit obsah do „{{slot}}“",
       "slotExposed": "Stránky vkládají obsah do „{{slot}}“"
+    },
+    "data": {
+      "chooseSource": "Vyberte obsah",
+      "bindTo": "Co zobrazí {{prop}}",
+      "fixedValue": "Pevná hodnota",
+      "showsField": "Položka: {{field}}",
+      "boundHint": "Zobrazuje položku: {{field}}.",
+      "noSourceYet": "Vyberte obsah kolekce, aby se zobrazila její pole.",
+      "detailPage": "Stránka detailu",
+      "notDetail": "Není stránka detailu",
+      "detailHint": "Zobrazí položku, jejíž slug je v adrese (:{{param}}).",
+      "needsParam": "Přidejte do adresy část :slug (např. /akce/:slug), aby to byla stránka detailu."
     }
   }
 }

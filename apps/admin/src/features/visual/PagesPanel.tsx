@@ -1,9 +1,22 @@
-import { pageIdFromPath } from '@dcms/site-runtime';
+import { pageIdFromPath, sourceKey } from '@dcms/site-runtime';
 import { ChevronDown, ChevronRight, FileText, Home, LayoutTemplate, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button, Input, Label, Switch, Textarea, cn } from '@dcms/ui';
+import {
+  Button,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Switch,
+  Textarea,
+  cn,
+} from '@dcms/ui';
+import { useContentCatalog } from './data';
 import { useVfs } from '../site-source';
 import {
   createPage,
@@ -185,6 +198,8 @@ function PageSettings({ routeId, path, pageId }: { routeId: string; path: string
         <Switch checked={inMainMenu(app, path)} onCheckedChange={() => report(toggleMainMenu(path, page.title), t)} /> {t('visual.pages.inMenu')}
       </label>
 
+      <DetailSettings pageId={pageId} path={path} />
+
       <div className="space-y-2 border-t pt-2">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SEO</div>
         <Field label={t('visual.pages.seoTitle')} value={seo.title ?? ''} placeholder={page.title} onCommit={(v) => setSeo('title', v)} />
@@ -267,6 +282,55 @@ function Field({
           onKeyDown={(e) => e.key === 'Enter' && commit()}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * A detail page shows one item: the one whose slug is in its address (`/events/:slug`). Its
+ * components bind to that item exactly as they would inside a collection.
+ */
+function DetailSettings({ pageId, path }: { pageId: string; path: string }) {
+  const { t } = useTranslation();
+  const catalog = useContentCatalog();
+  const page = readPage(pageId);
+  if (!page) return null;
+  const param = /:([A-Za-z][A-Za-z0-9]*)/.exec(path)?.[1];
+  const current = page.data ? sourceKey(page.data.source) : '__none';
+
+  return (
+    <div className="space-y-1 border-t pt-2">
+      <Label>{t('visual.data.detailPage')}</Label>
+      <Select
+        value={current}
+        onValueChange={(key) => {
+          const found = catalog.sources.find((s) => sourceKey(s.source) === key)?.source;
+          report(
+            updatePage(pageId, (p) => {
+              const next = { ...p, data: found && param ? { source: found, param } : undefined };
+              if (!next.data) delete next.data;
+              return next;
+            }),
+            t,
+          );
+        }}
+      >
+        <SelectTrigger aria-label={t('visual.data.detailPage')}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none">{t('visual.data.notDetail')}</SelectItem>
+          {param &&
+            catalog.sources.map((s) => (
+              <SelectItem key={sourceKey(s.source)} value={sourceKey(s.source)}>
+                {s.label}
+              </SelectItem>
+            ))}
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-muted-foreground">
+        {param ? t('visual.data.detailHint', { param }) : t('visual.data.needsParam')}
+      </p>
     </div>
   );
 }

@@ -1,9 +1,10 @@
-import { SiteContext, SiteStyles, builtinRegistry, loadDocuments, siteRoutes } from '@dcms/site-runtime';
+import { DataClientContext, SiteContext, SiteStyles, loadDocuments, siteRoutes } from '@dcms/site-runtime';
 import { useEffect, useMemo, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { useVfs } from '../site-source';
 import { assetIdOf, resolveMedia } from '../builder/panels/media';
+import { useVisual } from './store';
 
 /**
  * The site as a visitor gets it: the same `siteRoutes` the published app builds, under a memory
@@ -21,6 +22,8 @@ export function VisualPreview({ initialPath, width }: { initialPath: string; wid
   const frame = useRef<HTMLIFrameElement>(null);
   const root = useRef<Root | null>(null);
   const dcmsFiles = useVfs((s) => s.files);
+  const registry = useVisual((s) => s.registry);
+  const dataClient = useVisual((s) => s.dataClient);
 
   const documents = useMemo(() => {
     const modules: Record<string, unknown> = {};
@@ -45,14 +48,16 @@ export function VisualPreview({ initialPath, width }: { initialPath: string; wid
       root.current = createRoot(doc.getElementById('root')!);
       watchMedia(doc);
     }
-    const router = createMemoryRouter(siteRoutes(documents, builtinRegistry), { initialEntries: [initialPath] });
+    const router = createMemoryRouter(siteRoutes(documents, registry), { initialEntries: [initialPath] });
     root.current.render(
-      <SiteContext.Provider value={{ app: documents.app }}>
-        <SiteStyles theme={documents.theme} />
-        <RouterProvider router={router} />
-      </SiteContext.Provider>,
+      <DataClientContext.Provider value={dataClient}>
+        <SiteContext.Provider value={{ app: documents.app }}>
+          <SiteStyles theme={documents.theme} />
+          <RouterProvider router={router} />
+        </SiteContext.Provider>
+      </DataClientContext.Provider>,
     );
-  }, [documents, initialPath]);
+  }, [documents, initialPath, registry, dataClient]);
 
   useEffect(
     () => () => {

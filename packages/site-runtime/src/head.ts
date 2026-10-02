@@ -1,3 +1,4 @@
+import { readField, type ItemScope } from './data';
 import type { App, Page } from './document';
 
 /**
@@ -16,11 +17,24 @@ export interface HeadTags {
   canonical?: string;
 }
 
-export function pageHead(app: App, page: Page): HeadTags {
-  const title = page.seo?.title || page.title;
+/**
+ * `{title}`, `{#slug}` in a detail page's SEO fields are read from the item it shows. Without an
+ * item (the build-time HTML of a detail route) they are dropped, leaving the static words.
+ */
+function fill(value: string | undefined, scope: ItemScope | null | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const out = value.replace(/\{(#?[A-Za-z0-9_.]+)\}/g, (_, path: string) => {
+    const field = scope ? readField(scope, path) : undefined;
+    return typeof field === 'string' || typeof field === 'number' ? String(field) : '';
+  });
+  return out.replace(/\s{2,}/g, ' ').trim() || undefined;
+}
+
+export function pageHead(app: App, page: Page, scope?: ItemScope | null): HeadTags {
+  const title = fill(page.seo?.title, scope) || page.title;
   const fullTitle = app.seo?.titleTemplate ? app.seo.titleTemplate.replace('%s', title) : title;
-  const description = page.seo?.description ?? app.seo?.description;
-  const image = page.seo?.ogImage ?? app.seo?.ogImage;
+  const description = fill(page.seo?.description, scope) ?? app.seo?.description;
+  const image = fill(page.seo?.ogImage, scope) ?? app.seo?.ogImage;
 
   const meta: HeadTags['meta'] = [];
   if (description) meta.push({ key: 'name', name: 'description', content: description });
@@ -34,8 +48,8 @@ export function pageHead(app: App, page: Page): HeadTags {
 const MANAGED = 'data-dcms-head';
 
 /** Replace the tags the previous page set; leave everything else in the head alone. */
-export function applyHead(doc: Document, app: App, page: Page): void {
-  const head = pageHead(app, page);
+export function applyHead(doc: Document, app: App, page: Page, scope?: ItemScope | null): void {
+  const head = pageHead(app, page, scope);
   doc.title = head.title;
   for (const el of Array.from(doc.head.querySelectorAll(`[${MANAGED}]`))) el.remove();
   for (const tag of head.meta) {

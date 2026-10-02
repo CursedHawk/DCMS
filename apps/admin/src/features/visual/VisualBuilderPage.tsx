@@ -6,6 +6,8 @@ import {
   checkVisualSite,
   componentDependencies,
   componentFileOf,
+  listPath,
+  parseItemList,
   readComponentDocs,
   siteRegistry,
   tenantType,
@@ -70,6 +72,7 @@ import { VISUAL_DEVICES, type DeviceId } from './canvas/editor';
 import { starterFiles } from './starter';
 import { useVisual, type VisualView } from './store';
 import { useSiteRuntime } from './useSiteRuntime';
+import { previewClient, useContentCatalog } from './data';
 
 // Widen for TanStack Link typing (sibling routes are registered via a helper).
 const sitesPath: string = '/sites';
@@ -217,7 +220,33 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
     useVisual.getState().setBlockedTypes(blocked);
   }, [target, componentDocs]);
 
-  const problems = useMemo(() => checkVisualSite(files, registry), [files, registry]);
+  // The canvas and preview read real published content through the admin's preview proxy.
+  const dataClient = useMemo(() => previewClient(siteId), [siteId]);
+  useEffect(() => useVisual.getState().setDataClient(dataClient), [dataClient]);
+
+  // A detail page is designed with a real item in it: its source's first.
+  const pageData = target?.kind === 'page' ? readPage(target.id)?.data : undefined;
+  const pageSourceKey = pageData ? listPath(pageData.source, { limit: 1 }) : null;
+  useEffect(() => {
+    useVisual.getState().setPageItem(null);
+    if (!pageSourceKey) return;
+    let live = true;
+    dataClient.get(pageSourceKey).then(
+      (json) => live && useVisual.getState().setPageItem(parseItemList(json).items[0] ?? null),
+      () => live && useVisual.getState().setPageItem(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [pageSourceKey, dataClient]);
+  const pageItem = useVisual((s) => s.pageItem);
+
+  // With the tenant's content types known, the validator also checks sources and bound fields.
+  const catalog = useContentCatalog();
+  const problems = useMemo(
+    () => checkVisualSite(files, registry, catalog.isLoading ? undefined : catalog.schema),
+    [files, registry, catalog],
+  );
   const errors = problems.filter((p) => p.severity === 'error').length;
 
   const onEditorReady = useCallback((instance: Editor) => {
@@ -281,7 +310,13 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
   const showCanvas = view === 'design' || view === 'split';
   const showCode = view === 'split' || view === 'code';
   const pageRoute = target?.kind === 'page' ? app?.routes.find((r) => r.page === target.id) : undefined;
-  const previewPath = pageRoute && !pageRoute.path.includes(':') ? pageRoute.path : '/';
+  const previewPath = !pageRoute
+    ? '/'
+    : !pageRoute.path.includes(':')
+      ? pageRoute.path
+      : pageItem
+        ? pageRoute.path.replace(/:[A-Za-z][A-Za-z0-9]*/, encodeURIComponent(pageItem.slug))
+        : '/';
   const targetLabel =
     target?.kind === 'shell'
       ? t('visual.pages.shell')

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sourceSchema } from './data';
 import { NAME, isInternalPath, isSafeExternalHref } from './ids';
 
 /**
@@ -53,6 +54,8 @@ export const propDefinitionSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('contentRef'), ...base, contentType: z.string().optional() }),
   z.strictObject({ kind: z.literal('date'), ...base, default: z.string().optional() }),
   z.strictObject({ kind: z.literal('icon'), ...base, default: z.string().optional() }),
+  /** Which plugin content to show: `{ instance, contentType }`. */
+  z.strictObject({ kind: z.literal('source'), ...base }),
 ]);
 
 export type PropDefinition = z.infer<typeof propDefinitionSchema>;
@@ -101,5 +104,7 @@ export function propValueSchema(def: PropDefinition): z.ZodType {
       return z.union([z.iso.date(), z.iso.datetime({ offset: true })]);
     case 'icon':
       return z.string().regex(/^[a-z0-9-]{1,64}$/, 'must be an icon name');
+    case 'source':
+      return sourceSchema;
   }
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { Outlet, RouterProvider, createBrowserRouter, useParams, type RouteObject } from 'react-router';
 import { BUILTIN_COMPONENTS } from './components';
 import { appSchema, pageSchema, type App, type Page } from './document';
+import { ItemContext, itemPath, parseItem, useData } from './data';
 import { applyHead } from './head';
 import { APP_JSON, THEME_JSON, pageIdFromPath } from './paths';
 import type { Registry } from './registry';
@@ -108,11 +109,28 @@ function Shell({ app, registry }: { app: App; registry: Registry }) {
 
 function RoutePage({ page, app, registry }: { page: Page | undefined; app: App; registry: Registry }) {
   const params = useParams();
+  const slug = page?.data ? params[page.data.param] : undefined;
+  const item = useData(page?.data && slug ? itemPath(page.data.source, slug) : null, parseItem);
+  const scope = useMemo(
+    () => (page?.data && item.state === 'ready' ? { item: item.value, index: 0, count: 1 } : null),
+    [page, item],
+  );
+
   useEffect(() => {
-    if (page) applyHead(document, app, page);
-  }, [app, page, params]);
+    if (page && (!page.data || scope)) applyHead(document, app, page, scope);
+  }, [app, page, params, scope]);
+
   if (!page) return <NotFound />;
-  return <RenderNode node={page.root} registry={registry} />;
+  if (page.data) {
+    // A detail page with no such item is a 404, not an empty page.
+    if (!slug || item.state === 'error') return <NotFound />;
+    if (item.state === 'loading') return <main className="dcms-page" aria-busy="true" />;
+  }
+  return (
+    <ItemContext.Provider value={scope}>
+      <RenderNode node={page.root} registry={registry} />
+    </ItemContext.Provider>
+  );
 }
 
 function NotFound() {

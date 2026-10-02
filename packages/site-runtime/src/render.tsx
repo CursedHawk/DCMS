@@ -1,4 +1,5 @@
 import { Component, useContext, type CSSProperties, type ContextType, type ErrorInfo, type ReactNode } from 'react';
+import { bindAction, bindProps, useItem } from './data';
 import type { Node } from './document';
 import type { Registry, SlotLayout } from './registry';
 import { RenderModeContext, useRenderMode } from './renderMode';
@@ -55,6 +56,7 @@ export function RenderNode({ node, registry }: RenderNodeProps) {
 function NodeBody({ node, registry }: RenderNodeProps) {
   const mode = useRenderMode();
   const scope = useContext(TemplateScopeContext);
+  const item = useItem();
   const definition = definitionFor(registry, node);
   if (!definition) {
     const known = registry.has(node.type);
@@ -75,7 +77,9 @@ function NodeBody({ node, registry }: RenderNodeProps) {
       </div>
     </span>
   );
-  return <Impl nodeId={node.id} props={node.props ?? {}} action={node.action} responsive={node.responsive} slot={slot} />;
+  // Inside a collection or on a detail page, bound props come from the item in scope.
+  const props = bindProps(node.props ?? {}, node.bind, definition.props, item);
+  return <Impl nodeId={node.id} props={props} action={bindAction(node.action, item)} responsive={node.responsive} slot={slot} />;
 }
 
 function Problem({ children }: { children: ReactNode }) {

@@ -1,4 +1,4 @@
-import { APP_JSON, appSchema, builtinRegistry, type App, type Registry } from '@dcms/site-runtime';
+import { APP_JSON, appSchema, builtinRegistry, fetchDataClient, type App, type ContentItem, type DataClient, type Registry } from '@dcms/site-runtime';
 import { create } from 'zustand';
 import type { DeviceId } from './canvas/editor';
 
@@ -28,6 +28,15 @@ interface VisualState {
    * composer, itself and every component that already contains it (a loop would render forever).
    */
   blockedTypes: ReadonlySet<string>;
+  /** How the canvas and preview read content: the admin's preview proxy for this site. */
+  dataClient: DataClient;
+  /** What each collection on the canvas fetched, by its node id — the items its template binds to. */
+  previewItems: Readonly<Record<string, readonly ContentItem[]>>;
+  /** The item a detail page is shown with on the canvas (its source's first), when it is one. */
+  pageItem: ContentItem | null;
+  setDataClient: (client: DataClient) => void;
+  publishItems: (nodeId: string, items: readonly ContentItem[]) => void;
+  setPageItem: (item: ContentItem | null) => void;
   /** Write the canvas's pending edits to its file now (set by the canvas while it is mounted). */
   flushCanvas: () => void;
   setRegistry: (registry: Registry) => void;
@@ -45,6 +54,16 @@ export const useVisual = create<VisualState>((set, get) => ({
   app: null,
   registry: builtinRegistry,
   blockedTypes: new Set(),
+  dataClient: fetchDataClient,
+  previewItems: {},
+  pageItem: null,
+  setDataClient: (dataClient) => set({ dataClient, previewItems: {}, pageItem: null }),
+  publishItems: (nodeId, items) => {
+    const current = get().previewItems[nodeId];
+    if (current && JSON.stringify(current) === JSON.stringify(items)) return;
+    set({ previewItems: { ...get().previewItems, [nodeId]: items } });
+  },
+  setPageItem: (pageItem) => set({ pageItem }),
   flushCanvas: () => {},
   setRegistry: (registry) => set({ registry }),
   setBlockedTypes: (blockedTypes) => set({ blockedTypes }),

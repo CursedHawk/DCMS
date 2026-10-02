@@ -43,6 +43,7 @@
     "clsx": "^2",
     "cmdk": "^1",
     "css-tree": "^3.2.1",
+    "dompurify": "3.4.16",
     "esbuild-wasm": "^0.25",
     "framer-motion": "^12",
     "grapesjs": "^0.23.5",

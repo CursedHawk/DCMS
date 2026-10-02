@@ -26,6 +26,8 @@ export default tseslint.config(
       'apps/*/dist/**',
       // Generated at request time by the .NET emitter, and shipped to tenants as-is.
       'packages/site-builder-toolchain/**',
+      // Staged copies of @dcms/site-runtime and throwaway sites built from the visual template.
+      'packages/site-template-react/.visual/**',
       // k6 scripts. A different runtime with its own globals and its own module resolution;
       // linting them against browser or node rules reports 130 things that are all fine.
       'loadtest/**',

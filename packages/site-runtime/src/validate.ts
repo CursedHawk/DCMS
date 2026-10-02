@@ -1,5 +1,6 @@
 import { BUILTIN_COMPONENTS } from './components';
-import { appSchema, pageSchema, walk, type App, type NavItem, type Node } from './document';
+import { BINDABLE, sourceSchema, type Source } from './data';
+import { appSchema, pageSchema, type App, type NavItem, type Node, type Page } from './document';
 import { isInternalPath } from './ids';
 import { APP_JSON, THEME_JSON, pageIdFromPath } from './paths';
 import { propValueSchema } from './props';
@@ -52,14 +53,33 @@ function navPaths(items: readonly NavItem[]): string[] {
   return items.flatMap((item) => [item.to, ...navPaths(item.children ?? [])]);
 }
 
-function checkTree(root: Node, file: string, where: 'page' | 'shell' | 'component', registry: Registry, out: SiteProblem[]): void {
+/**
+ * What the tenant's plugins actually offer, when the caller knows it (the builder does; a bare
+ * file map does not): `instance/contentType` → the field paths items of it have.
+ */
+export type ContentSchema = ReadonlyMap<string, ReadonlySet<string>>;
+
+const META = new Set(['#slug', '#id', '#publishedAt', '#index', '#number', '#count']);
+
+/** What bindings in a subtree read from: a known source, an item of unknown shape, or nothing. */
+type Scope = { kind: 'none' } | { kind: 'unknown' } | { kind: 'source'; key: string };
+
+function checkTree(
+  root: Node,
+  file: string,
+  where: 'page' | 'shell' | 'component',
+  registry: Registry,
+  out: SiteProblem[],
+  rootScope: Scope = { kind: 'none' },
+  content?: ContentSchema,
+): void {
   const problem = (severity: SiteProblem['severity'], message: string, nodeId?: string) =>
     out.push({ severity, file, nodeId, message });
 
   if (where !== 'component' && root.type !== PAGE_ROOT) problem('error', `The root must be a ${PAGE_ROOT}, not “${root.type}”.`, root.id);
 
   let outlets = 0;
-  for (const node of walk(root)) {
+  const visit = (node: Node, scope: Scope): void => {
     if (node.type === OUTLET) outlets++;
     const definition = definitionFor(registry, node);
     if (!definition) {
@@ -68,7 +88,7 @@ function checkTree(root: Node, file: string, where: 'page' | 'shell' | 'componen
         registry.has(node.type) ? `“${node.type}” has no version ${node.version}.` : `“${node.type}” is not a known component.`,
         node.id,
       );
-      continue;
+      return;
     }
 
     const props = new Map(definition.props.map((p) => [p.name, p]));
@@ -90,13 +110,38 @@ function checkTree(root: Node, file: string, where: 'page' | 'shell' | 'componen
       }
     }
     for (const prop of definition.props) {
-      if (prop.required && (node.props?.[prop.name] === undefined || node.props[prop.name] === '')) {
+      const bound = node.bind?.[prop.name] !== undefined;
+      if (prop.required && !bound && (node.props?.[prop.name] === undefined || node.props[prop.name] === '')) {
         problem('error', `${definition.label} › ${prop.label} is required.`, node.id);
       }
     }
 
+    // Bindings read the item a collection or a detail page provides; with none, they read nothing.
+    for (const [name, path] of Object.entries(node.bind ?? {})) {
+      const prop = props.get(name);
+      if (!prop) {
+        problem('warning', `${definition.label} has no setting “${name}” to bind.`, node.id);
+      } else if (!BINDABLE[prop.kind]) {
+        problem('error', `${definition.label} › ${prop.label} cannot be bound to content.`, node.id);
+      } else if (scope.kind === 'none') {
+        problem('error', `${definition.label} › ${prop.label} shows “${path}”, but nothing around it provides an item — put it inside a collection, or on a detail page.`, node.id);
+      } else if (scope.kind === 'source' && content && !META.has(path) && !content.get(scope.key)?.has(path)) {
+        problem('error', `${definition.label} › ${prop.label} shows the field “${path}”, which ${scope.key} does not have.`, node.id);
+      }
+    }
+    if (node.action?.type === 'navigate' && /:(slug|id)\b/.test(node.action.to) && scope.kind === 'none') {
+      problem('warning', `${definition.label} links to ${node.action.to}, but there is no item here to fill “:slug” in.`, node.id);
+    }
+
     if (node.action && !definition.actions?.includes(node.action.type)) {
       problem('warning', `${definition.label} does not run “${node.action.type}” actions; it is ignored.`, node.id);
+    }
+
+    if (node.type === 'dcms.collection' && content) {
+      const source = sourceSchema.safeParse(node.props?.source);
+      if (source.success && !content.has(sourceKey(source.data))) {
+        problem('error', `The collection shows ${sourceKey(source.data)}, which this site’s plugins do not provide.`, node.id);
+      }
     }
 
     const declared = new Set((definition.slots ?? []).map((s) => s.name));
@@ -105,16 +150,23 @@ function checkTree(root: Node, file: string, where: 'page' | 'shell' | 'componen
         if (children.length) problem('warning', `${definition.label} has no slot “${slot}”; what is in it is kept but never shown.`, node.id);
         continue;
       }
+      let childScope = scope;
+      if (node.type === 'dcms.collection' && slot === 'item') {
+        const source = sourceSchema.safeParse(node.props?.source);
+        childScope = source.success ? { kind: 'source', key: sourceKey(source.data) } : { kind: 'unknown' };
+      }
       children.forEach((child, index) => {
         const placement = canPlace(registry, node.type, slot, child.type, index);
         if (!placement.ok && registry.has(child.type)) problem('error', placement.reason, child.id);
+        visit(child, childScope);
       });
     }
 
-    if (node.type === 'dcms.image' && node.props?.src && !node.props.alt) {
+    if (node.type === 'dcms.image' && node.props?.src && !node.props.alt && !node.bind?.alt) {
       problem('warning', 'An image has no description (alt text) for people who cannot see it.', node.id);
     }
-  }
+  };
+  visit(root, rootScope);
 
   if (where === 'shell' && outlets !== 1) {
     problem('error', outlets === 0 ? 'The app shell has no place for the page content.' : 'The app shell shows the page content more than once.');
@@ -122,7 +174,11 @@ function checkTree(root: Node, file: string, where: 'page' | 'shell' | 'componen
   if (where !== 'shell' && outlets > 0) problem('error', 'Page content can only be placed in the app shell.');
 }
 
-export function checkVisualSite(files: Readonly<Record<string, string>>, given?: Registry): SiteProblem[] {
+export function sourceKey(source: Source): string {
+  return `${source.instance}/${source.contentType}`;
+}
+
+export function checkVisualSite(files: Readonly<Record<string, string>>, given?: Registry, content?: ContentSchema): SiteProblem[] {
   const out: SiteProblem[] = [];
 
   // The site's own components first: every other document may use them.
@@ -140,7 +196,8 @@ export function checkVisualSite(files: Readonly<Record<string, string>>, given?:
   const registry = given ?? built.registry;
 
   for (const doc of components.docs) {
-    checkTree(doc.root, `dcms/components/${doc.name}/v${doc.version}.json`, 'component', registry, out);
+    // A template's item comes from wherever an instance is placed, which is not known here.
+    checkTree(doc.root, `dcms/components/${doc.name}/v${doc.version}.json`, 'component', registry, out, { kind: 'unknown' }, content);
   }
   // A component that contains itself, directly or through others, would render forever.
   const deps = new Map<string, Set<string>>();
@@ -171,6 +228,7 @@ export function checkVisualSite(files: Readonly<Record<string, string>>, given?:
   }
 
   const pageIds = new Set<string>();
+  const pageData = new Map<string, Page['data']>();
   for (const [path, text] of Object.entries(files)) {
     const id = pageIdFromPath(path);
     if (!id) continue;
@@ -187,7 +245,12 @@ export function checkVisualSite(files: Readonly<Record<string, string>>, given?:
     }
     if (page.data.id !== id) out.push({ severity: 'error', file: path, message: `its id is “${page.data.id}” but the file is named “${id}”.` });
     pageIds.add(id);
-    checkTree(page.data.root, path, 'page', registry, out);
+    pageData.set(id, page.data.data);
+    const scope: Scope = page.data.data ? { kind: 'source', key: sourceKey(page.data.data.source) } : { kind: 'none' };
+    checkTree(page.data.root, path, 'page', registry, out, scope, content);
+    if (page.data.data && content && !content.has(sourceKey(page.data.data.source))) {
+      out.push({ severity: 'error', file: path, message: `It shows one item of ${sourceKey(page.data.data.source)}, which this site’s plugins do not provide.` });
+    }
   }
 
   const appJson = parse(files[APP_JSON]);
@@ -210,6 +273,10 @@ export function checkVisualSite(files: Readonly<Record<string, string>>, given?:
     if (!pageIds.has(route.page)) {
       out.push({ severity: 'error', file: APP_JSON, message: `The route ${route.path} shows the page “${route.page}”, which does not exist.` });
     }
+    const data = pageData.get(route.page);
+    if (data && !route.path.split('/').includes(`:${data.param}`)) {
+      out.push({ severity: 'error', file: APP_JSON, message: `The route ${route.path} shows a detail page, so it needs “:${data.param}” in it.` });
+    }
   }
   if (!app.routes.some((r) => r.path === '/')) out.push({ severity: 'error', file: APP_JSON, message: 'No route serves “/”. The site has no home page.' });
   for (const id of pageIds) {
@@ -224,7 +291,7 @@ export function checkVisualSite(files: Readonly<Record<string, string>>, given?:
     }
   }
 
-  if (app.shell) checkTree(app.shell, APP_JSON, 'shell', registry, out);
+  if (app.shell) checkTree(app.shell, APP_JSON, 'shell', registry, out, { kind: 'none' }, content);
   return out;
 }
 
