@@ -55,6 +55,16 @@ public static class SiteScaffoldEndpoints
             return Results.Ok(new { fingerprint = generated.Fingerprint, files = generated.Files });
         }).RequirePermission(PlatformPermissions.SiteEdit);
 
+        // The Mode D component runtime as a site carries it (src/dcms/runtime/). Tenant-independent,
+        // so it is the same for every site of every tenant on this deploy; the builder compares the
+        // fingerprint with the site's src/dcms/runtime/manifest.json and writes the files when they
+        // differ, which keeps the published site on the runtime the canvas draws with.
+        app.MapGet("/api/admin/site-runtime", () =>
+        {
+            var layer = SiteRuntimeLayer.Files;
+            return Results.Ok(new { fingerprint = layer.Fingerprint, files = layer.Files });
+        }).RequirePermission(PlatformPermissions.SiteEdit);
+
         // The cheap question the editor asks on open and whenever the tenant's plugins change:
         // "would regenerating write anything?" Compared with the site's manifest, it is the whole
         // decision, so the layer itself is only fetched when the answer is yes.

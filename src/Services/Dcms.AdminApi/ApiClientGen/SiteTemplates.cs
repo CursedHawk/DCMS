@@ -22,8 +22,11 @@ public static class SiteTemplates
 {
     private const string Prefix = "Dcms.AdminApi.SiteTemplates/";
 
-    /// <summary>In the order the editor offers them.</summary>
-    public static readonly IReadOnlyList<string> Ids = ["blank", "content", "landing"];
+    /// <summary>In the order the editor offers them. <c>visual</c> is the Mode D scaffold (ADR 0020).</summary>
+    public static readonly IReadOnlyList<string> Ids = ["blank", "content", "landing", VisualId];
+
+    /// <summary>The Mode D site: a Vite app that renders <c>dcms/**.json</c> with the component runtime.</summary>
+    public const string VisualId = "visual";
 
     public static bool Exists(string? id) => id is not null && Ids.Contains(id, StringComparer.Ordinal);
 
@@ -47,6 +50,13 @@ public static class SiteTemplates
         foreach (var (path, content) in generated.Files)
         {
             files[path] = content;
+        }
+        if (id == VisualId)
+        {
+            foreach (var (path, content) in SiteRuntimeLayer.Files.Files)
+            {
+                files[path] = content;
+            }
         }
         return files;
     }

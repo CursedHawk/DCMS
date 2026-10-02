@@ -19,6 +19,14 @@
     <EmbeddedResource Include="..\..\..\packages\api-client\src\types.ts" LogicalName="Dcms.AdminApi.ApiClientGen.Runtime.types.ts" />
   </ItemGroup>
 
+  <!-- Embed the Mode D component runtime (see ApiClientGen/SiteRuntimeLayer.cs): copied into every
+       Mode D site at src/dcms/runtime/, so it must ship as source. Tests stay behind. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\packages\site-runtime\src\*.ts;..\..\..\packages\site-runtime\src\*.tsx" Exclude="..\..\..\packages\site-runtime\src\*.test.ts;..\..\..\packages\site-runtime\src\*.test.tsx">
+      <LogicalName>Dcms.AdminApi.SiteRuntime/%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <!-- Embed the Mode B starter templates (see ApiClientGen/SiteTemplates.cs). Targeted globs
        avoid walking node_modules. shared/src/api/ is a typecheck fixture of generated output and
        is never shipped - each tenant's own generated layer takes its place. -->

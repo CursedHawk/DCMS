@@ -44,7 +44,7 @@ export const ideApi = {
    * A complete new site from one of the starter templates: the template's files plus this
    * tenant's generated API layer. See `SiteTemplates` on the server.
    */
-  scaffold: (siteId: string, template: SiteTemplate) =>
+  scaffold: (siteId: string, template: SiteTemplate | 'visual') =>
     api.get<{ fingerprint: string; files: Record<string, string> }>(
       `/admin/sites/${siteId}/starter-files?template=${template}`,
     ),
@@ -60,4 +60,8 @@ export const ideApi = {
 
   /** The fingerprint of what `generatedFiles` would return now — compared with the site's manifest. */
   apiFingerprint: () => api.get<{ fingerprint: string }>('/admin/api-fingerprint'),
+
+  /** The Mode D component runtime as a site carries it, under `src/dcms/runtime/` (ADR 0020). */
+  siteRuntime: () =>
+    api.get<{ fingerprint: string; files: Record<string, string> }>('/admin/site-runtime'),
 };

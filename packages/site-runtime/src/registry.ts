@@ -1,5 +1,6 @@
 import type { CSSProperties, ComponentType, ReactNode } from 'react';
-import type { Action } from './actions';
+import type { Action, ActionType } from './actions';
+import type { Responsive } from './document';
 import { COMPONENT_TYPE, NAME } from './ids';
 import { propDefinitionSchema, propValueSchema, type PropDefinition } from './props';
 
@@ -39,6 +40,12 @@ export interface ComponentRenderProps<P = Record<string, unknown>> {
   /** The node's action, if it has one. Run it only when `useRenderMode()` is `live`. */
   action?: Action;
   /**
+   * Tablet and mobile overrides of `props`, for props declared `responsive`. Rendered as
+   * `t-`/`m-` classes (see `variants` in components.tsx and RESPONSIVE_RULES in styles.ts), so a
+   * device switch on the canvas and a real phone get the same CSS.
+   */
+  responsive?: Responsive;
+  /**
    * One of the component's slots, as an element. The published runtime renders the slot's
    * child nodes into it; the editor hands it to GrapesJS, which draws and drops them there. A
    * component never knows which, and so cannot behave differently on the canvas than on the
@@ -58,6 +65,8 @@ export interface ComponentDefinition {
   component: ComponentType<ComponentRenderProps<any>>;
   props: readonly PropDefinition[];
   slots?: readonly SlotDefinition[];
+  /** The actions an author may give an instance (`node.action`). Absent means none. */
+  actions?: readonly ActionType[];
   /** The only parent types this may be placed in. Absent means anywhere a slot accepts it. */
   allowedParents?: readonly string[];
   /** False for structural pieces that exist only where the platform puts them — the shell's outlet. */

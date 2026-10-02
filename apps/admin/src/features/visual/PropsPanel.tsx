@@ -1,5 +1,14 @@
-import { propValueSchema, type PropDefinition, type Registry } from '@dcms/site-runtime';
+import {
+  actionSchema,
+  propValueSchema,
+  type Action,
+  type ComponentDefinition,
+  type PropDefinition,
+  type Registry,
+  type Responsive,
+} from '@dcms/site-runtime';
 import type { Component, Editor } from 'grapesjs';
+import { RotateCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -13,8 +22,11 @@ import {
   Switch,
   Textarea,
 } from '@dcms/ui';
+import { MediaPicker } from '../media/MediaPicker';
+import { assetIdFrom, mediaUrlFor } from '../builder/panels/TraitsPanel';
 import { useEditorEvent, useSelected } from '../builder/panels/useEditorEvent';
-import { PROPS } from './canvas/tree';
+import { EXTRA, PROPS, type NodeExtra } from './canvas/tree';
+import { useVisual } from './store';
 
 /**
  * The inspector: the selected component's props, one control per declared prop.
@@ -24,14 +36,20 @@ import { PROPS } from './canvas/tree';
  * (`propValueSchema`) before it is written — the same rule the validator and the AI tools
  * apply — so what can be typed here is exactly what can be saved.
  *
+ * **Devices.** With the canvas on Tablet or Mobile, a prop declared `responsive` edits that
+ * device's override (`node.responsive`) instead of the desktop value, and says so; anything else
+ * stays a desktop setting. That is the whole responsive model an author has to learn: pick the
+ * device, change what should differ.
+ *
  * Text is committed on blur and Enter, not per keystroke: each commit is an undo step, and
  * undoing a heading one letter at a time is not undo anyone wants.
  */
 export function PropsPanel({ editor, registry }: { editor: Editor | null; registry: Registry }) {
   const { t } = useTranslation();
   const selected = useSelected(editor);
+  const device = useVisual((s) => s.device);
   // Undo/redo change props without changing the selection; re-read on those too.
-  useEditorEvent(editor, `component:update:${PROPS} undo redo`);
+  useEditorEvent(editor, `component:update:${PROPS} component:update:${EXTRA} undo redo`);
 
   const definition = selected ? registry.get(selected.get('type') ?? '') : undefined;
   if (!selected || !definition) {
@@ -39,10 +57,25 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
   }
 
   const props = (selected.get(PROPS) ?? {}) as Record<string, unknown>;
-  const write = (name: string, value: unknown) => {
+  const extra = (selected.get(EXTRA) ?? {}) as NodeExtra;
+  const overrides = device === 'desktop' ? undefined : extra.responsive?.[device];
+
+  const writeProp = (prop: PropDefinition, value: unknown) => {
+    if (device !== 'desktop' && prop.responsive) {
+      const responsive: Responsive = { ...extra.responsive };
+      const forDevice = { ...responsive[device] };
+      if (value === undefined) delete forDevice[prop.name];
+      else forDevice[prop.name] = value;
+      if (Object.keys(forDevice).length) responsive[device] = forDevice;
+      else delete responsive[device];
+      const next: NodeExtra = { ...extra, responsive: Object.keys(responsive).length ? responsive : undefined };
+      if (!next.responsive) delete next.responsive;
+      selected.set(EXTRA, next);
+      return;
+    }
     const next = { ...props };
-    if (value === undefined || value === '') delete next[name];
-    else next[name] = value;
+    if (value === undefined || value === '') delete next[prop.name];
+    else next[prop.name] = value;
     selected.set(PROPS, next);
   };
 
@@ -51,32 +84,68 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
       <div className="border-b px-4 py-3">
         <div className="text-sm font-medium">{definition.label}</div>
         {definition.description && <p className="mt-0.5 text-xs text-muted-foreground">{definition.description}</p>}
+        {device !== 'desktop' && (
+          <p className="mt-2 rounded bg-primary/10 px-2 py-1 text-xs text-primary">
+            {t('visual.editingDevice', { device: t(`visual.devices.${device}`) })}
+          </p>
+        )}
       </div>
       <div className="space-y-4 p-4">
-        {definition.props.length === 0 && <p className="text-sm text-muted-foreground">{t('visual.noProps')}</p>}
-        {definition.props.map((prop) => (
-          <PropField
-            key={`${selected.cid}:${prop.name}`}
-            component={selected}
-            prop={prop}
-            value={props[prop.name]}
-            onCommit={(value) => write(prop.name, value)}
+        {definition.props.length === 0 && !definition.actions?.length && (
+          <p className="text-sm text-muted-foreground">{t('visual.noProps')}</p>
+        )}
+        {definition.props.map((prop) => {
+          const overridden = overrides?.[prop.name] !== undefined && prop.responsive;
+          const value = overridden ? overrides![prop.name] : props[prop.name];
+          return (
+            <PropField
+              key={`${selected.cid}:${device}:${prop.name}`}
+              component={selected}
+              prop={prop}
+              value={value}
+              deviceNote={
+                device !== 'desktop'
+                  ? prop.responsive
+                    ? overridden
+                      ? { kind: 'override', onReset: () => writeProp(prop, undefined) }
+                      : { kind: 'inherits' }
+                    : { kind: 'desktopOnly' }
+                  : undefined
+              }
+              onCommit={(next) => writeProp(prop, next)}
+            />
+          );
+        })}
+        {definition.actions?.length ? (
+          <ActionField
+            key={`${selected.cid}:action`}
+            definition={definition}
+            action={extra.action}
+            onCommit={(action) => {
+              const next: NodeExtra = { ...extra, action };
+              if (!action) delete next.action;
+              selected.set(EXTRA, next);
+            }}
           />
-        ))}
+        ) : null}
       </div>
     </div>
   );
 }
 
+type DeviceNote = { kind: 'override'; onReset: () => void } | { kind: 'inherits' } | { kind: 'desktopOnly' };
+
 function PropField({
   component,
   prop,
   value,
+  deviceNote,
   onCommit,
 }: {
   component: Component;
   prop: PropDefinition;
   value: unknown;
+  deviceNote?: DeviceNote;
   onCommit: (value: unknown) => void;
 }) {
   const { t } = useTranslation();
@@ -126,13 +195,28 @@ function PropField({
         />
       );
       break;
+    case 'media': {
+      // Stored as the published URL (/api/media/<id>/original), which the site resolves
+      // same-origin; the canvas swaps in an authenticated copy (MediaBridge). See builder/panels/media.ts.
+      const url = typeof value === 'string' ? value : '';
+      control = (
+        <div className="space-y-2">
+          <MediaPicker
+            value={assetIdFrom(url)}
+            category={'Image' as never}
+            onChange={(assetId) => commit(assetId ? mediaUrlFor(assetId) : undefined)}
+          />
+          <TextField id={id} value={url} placeholder={t('visual.mediaUrlPlaceholder')} onCommit={(raw) => commit(raw)} />
+        </div>
+      );
+      break;
+    }
     default:
       control = (
         <TextField
           id={id}
           multiline={prop.kind === 'richText' || (prop.kind === 'text' && prop.multiline === true)}
           value={typeof value === 'string' ? value : ''}
-          placeholder={prop.kind === 'media' ? t('visual.mediaUrlPlaceholder') : undefined}
           onCommit={(raw) => commit(raw)}
         />
       );
@@ -140,7 +224,23 @@ function PropField({
 
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={id}>{prop.label}</Label>
+      <div className="flex items-center gap-2">
+        <Label htmlFor={id} className="min-w-0 flex-1">
+          {prop.label}
+        </Label>
+        {deviceNote?.kind === 'override' && (
+          <button
+            type="button"
+            onClick={deviceNote.onReset}
+            title={t('visual.resetOverride')}
+            className="flex items-center gap-1 rounded px-1 text-[11px] text-primary hover:bg-primary/10"
+          >
+            <RotateCcw className="h-3 w-3" /> {t('visual.overridden')}
+          </button>
+        )}
+        {deviceNote?.kind === 'inherits' && <span className="text-[11px] text-muted-foreground">{t('visual.inheritsDesktop')}</span>}
+        {deviceNote?.kind === 'desktopOnly' && <span className="text-[11px] text-muted-foreground">{t('visual.allDevices')}</span>}
+      </div>
       {control}
       {error ? (
         <p className="text-xs text-destructive" role="alert">
@@ -148,6 +248,101 @@ function PropField({
         </p>
       ) : (
         prop.description && <p className="text-xs text-muted-foreground">{prop.description}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What the component does when clicked — a page on this site or a link elsewhere. Validated with
+ * the same `actionSchema` the site loads with, so a `javascript:` link cannot be saved.
+ */
+function ActionField({
+  definition,
+  action,
+  onCommit,
+}: {
+  definition: ComponentDefinition;
+  action: Action | undefined;
+  onCommit: (action: Action | undefined) => void;
+}) {
+  const { t } = useTranslation();
+  const app = useVisual((s) => s.app);
+  const [error, setError] = useState<string | null>(null);
+  const kind = action?.type ?? 'none';
+  const allowed = definition.actions ?? [];
+
+  const commit = (next: Action | undefined) => {
+    if (next) {
+      const parsed = actionSchema.safeParse(next);
+      if (!parsed.success) {
+        setError(parsed.error.issues[0]?.message ?? t('visual.invalidValue'));
+        return;
+      }
+    }
+    setError(null);
+    onCommit(next);
+  };
+
+  return (
+    <div className="space-y-2 border-t pt-4">
+      <Label>{t('visual.action.title')}</Label>
+      <Select
+        value={kind}
+        onValueChange={(v) =>
+          commit(
+            v === 'navigate'
+              ? { type: 'navigate', to: app?.routes[0]?.path ?? '/' }
+              : v === 'open-external'
+                ? { type: 'open-external', href: 'https://' }
+                : undefined,
+          )
+        }
+      >
+        <SelectTrigger aria-label={t('visual.action.title')}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">{t('visual.action.none')}</SelectItem>
+          {allowed.includes('navigate') && <SelectItem value="navigate">{t('visual.action.navigate')}</SelectItem>}
+          {allowed.includes('open-external') && <SelectItem value="open-external">{t('visual.action.external')}</SelectItem>}
+        </SelectContent>
+      </Select>
+
+      {action?.type === 'navigate' && (
+        <Select value={action.to} onValueChange={(to) => commit({ type: 'navigate', to })}>
+          <SelectTrigger aria-label={t('visual.action.page')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(app?.routes ?? [])
+              .filter((r) => !r.path.includes(':'))
+              .map((r) => (
+                <SelectItem key={r.id} value={r.path}>
+                  {r.path}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+      )}
+      {action?.type === 'open-external' && (
+        <>
+          <TextField
+            id="action-href"
+            value={action.href === 'https://' ? '' : action.href}
+            placeholder="https://"
+            onCommit={(href) => commit({ ...action, href })}
+          />
+          <label className="flex items-center gap-2 text-sm">
+            <Switch checked={action.newTab === true} onCheckedChange={(newTab) => commit({ ...action, newTab })} />
+            {t('visual.action.newTab')}
+          </label>
+        </>
+      )}
+      {error && (
+        <p className="text-xs text-destructive" role="alert">
+          {error}
+        </p>
       )}
     </div>
   );

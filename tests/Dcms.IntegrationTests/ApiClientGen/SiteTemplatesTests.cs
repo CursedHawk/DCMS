@@ -19,8 +19,11 @@ public partial class SiteTemplatesTests
 
     public static TheoryData<string> Templates() => new(SiteTemplates.Ids);
 
+    /// <summary>The Mode B starters: hand-written React projects, as opposed to the Mode D scaffold.</summary>
+    public static TheoryData<string> ModeBTemplates() => new(SiteTemplates.Ids.Where(id => id != SiteTemplates.VisualId));
+
     [Theory]
-    [MemberData(nameof(Templates))]
+    [MemberData(nameof(ModeBTemplates))]
     public void Materialises_a_complete_project(string template)
     {
         var files = SiteTemplates.Materialize(template, Generated);
@@ -73,7 +76,7 @@ public partial class SiteTemplatesTests
     }
 
     [Theory]
-    [MemberData(nameof(Templates))]
+    [MemberData(nameof(ModeBTemplates))]
     public void Tells_the_agent_what_it_must_not_edit_and_where_to_look(string template)
     {
         var guide = SiteTemplates.Materialize(template, Generated)["AGENTS.md"];
@@ -83,6 +86,46 @@ public partial class SiteTemplatesTests
         Assert.Contains("`src/dcms/`", guide);
         Assert.Contains("useApi", guide);
         Assert.Contains("tokens.css", guide);
+    }
+
+    [Fact]
+    public void The_visual_scaffold_carries_the_runtime_and_the_tenant_client()
+    {
+        var files = SiteTemplates.Materialize(SiteTemplates.VisualId, Generated);
+
+        foreach (var required in new[]
+                 {
+                     "index.html", "package.json", "tsconfig.json", "vite.config.ts", "AGENTS.md", "src/main.tsx",
+                     "src/api/index.ts", "src/dcms/index.ts", "openapi.json",
+                     "src/dcms/runtime/index.ts", "src/dcms/runtime/app.tsx", "src/dcms/runtime/vite.ts",
+                     SiteRuntimeLayer.ManifestPath,
+                 })
+        {
+            Assert.True(files.ContainsKey(required), $"visual is missing {required}");
+        }
+
+        // Only what ships: the runtime's tests stay in the workspace.
+        Assert.DoesNotContain(files.Keys, p => p.StartsWith(SiteRuntimeLayer.Root, StringComparison.Ordinal) && p.Contains(".test."));
+        // The scaffold's own template typecheck lists react-router at the version the runtime is built against.
+        Assert.Contains("\"react-router\": \"7.18.2\"", files["package.json"]);
+        Assert.Contains("dcmsRoutes", files["vite.config.ts"]);
+        Assert.Contains("dcms/pages", files["AGENTS.md"]);
+    }
+
+    [Fact]
+    public void The_runtime_layer_lists_every_file_it_owns_and_owns_nothing_outside_its_folder()
+    {
+        var layer = SiteRuntimeLayer.Files;
+        Assert.All(layer.Files.Keys, p => Assert.StartsWith(SiteRuntimeLayer.Root, p));
+        Assert.True(layer.Files.Count > 10, "the runtime embed glob matched almost nothing");
+
+        var manifest = System.Text.Json.JsonDocument.Parse(layer.Files[SiteRuntimeLayer.ManifestPath]).RootElement;
+        Assert.Equal(layer.Fingerprint, manifest.GetProperty("fingerprint").GetString());
+        Assert.Equal(
+            layer.Files.Keys.Order(StringComparer.Ordinal),
+            manifest.GetProperty("files").EnumerateArray().Select(e => e.GetString()!).Order(StringComparer.Ordinal));
+        // Under src/dcms/, so the generated-path rules that keep authors' hands off DCMS files apply.
+        Assert.All(layer.Files.Keys, p => Assert.True(GeneratedLayer.Owns(p)));
     }
 
     [Fact]

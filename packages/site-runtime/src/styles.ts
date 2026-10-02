@@ -10,7 +10,75 @@
  * and the site (see `render.tsx`), and those wrappers sit between every component and its
  * children.
  */
-export const RUNTIME_CSS = `
+
+/**
+ * The widths the tablet and mobile overrides apply below. The builder's device widths sit inside
+ * them, so switching the canvas to Tablet shows exactly what a tablet gets: the canvas frame is
+ * the viewport its media queries see.
+ */
+export const TABLET_MAX_WIDTH = 1024;
+export const MOBILE_MAX_WIDTH = 640;
+
+/**
+ * Classes a prop with `responsive: true` can take a per-device value of. Each is emitted three
+ * times: as itself, as `t-<class>` under the tablet query and as `m-<class>` under the mobile
+ * one, in that order — so a mobile override beats a tablet one, and a tablet override carries
+ * down to phones unless mobile says otherwise.
+ */
+const RESPONSIVE_RULES: readonly (readonly [string, string])[] = [
+  ['dcms-width-narrow', 'max-width: var(--dcms-container-narrow, 44rem);'],
+  ['dcms-width-normal', 'max-width: var(--dcms-container, 72rem);'],
+  ['dcms-width-wide', 'max-width: calc(var(--dcms-container, 72rem) * 1.25);'],
+  ['dcms-width-full', 'max-width: none;'],
+  ['dcms-py-none', 'padding-block: 0;'],
+  ['dcms-py-sm', 'padding-block: calc(var(--dcms-section-py, 5rem) * 0.4);'],
+  ['dcms-py-md', 'padding-block: var(--dcms-section-py, 5rem);'],
+  ['dcms-py-lg', 'padding-block: calc(var(--dcms-section-py, 5rem) * 1.6);'],
+  ['dcms-stack-vertical', 'flex-direction: column;'],
+  ['dcms-stack-horizontal', 'flex-direction: row;'],
+  ['dcms-gap-none', 'gap: 0;'],
+  ['dcms-gap-xs', 'gap: var(--dcms-space-xs, 0.5rem);'],
+  ['dcms-gap-sm', 'gap: var(--dcms-space-sm, 0.75rem);'],
+  ['dcms-gap-md', 'gap: var(--dcms-space-md, 1rem);'],
+  ['dcms-gap-lg', 'gap: var(--dcms-space-lg, 2rem);'],
+  ['dcms-gap-xl', 'gap: var(--dcms-space-xl, 4rem);'],
+  ['dcms-align-start', 'align-items: flex-start;'],
+  ['dcms-align-center', 'align-items: center;'],
+  ['dcms-align-end', 'align-items: flex-end;'],
+  ['dcms-align-stretch', 'align-items: stretch;'],
+  ['dcms-justify-start', 'justify-content: flex-start;'],
+  ['dcms-justify-center', 'justify-content: center;'],
+  ['dcms-justify-end', 'justify-content: flex-end;'],
+  ['dcms-justify-between', 'justify-content: space-between;'],
+  ['dcms-size-sm', 'font-size: var(--dcms-text-sm, 0.875rem);'],
+  ['dcms-size-base', 'font-size: var(--dcms-text-base, 1rem);'],
+  ['dcms-size-lg', 'font-size: var(--dcms-text-lg, 1.25rem);'],
+  ['dcms-text-start', 'text-align: start;'],
+  ['dcms-text-center', 'text-align: center;'],
+  ['dcms-text-end', 'text-align: end;'],
+  ['dcms-ratio-auto', 'aspect-ratio: auto;'],
+  ['dcms-ratio-16-9', 'aspect-ratio: 16 / 9; height: auto;'],
+  ['dcms-ratio-4-3', 'aspect-ratio: 4 / 3; height: auto;'],
+  ['dcms-ratio-1-1', 'aspect-ratio: 1 / 1; height: auto;'],
+  ['dcms-ratio-3-4', 'aspect-ratio: 3 / 4; height: auto;'],
+  ['dcms-cols-1', 'grid-template-columns: repeat(1, minmax(0, 1fr));'],
+  ['dcms-cols-2', 'grid-template-columns: repeat(2, minmax(0, 1fr));'],
+  ['dcms-cols-3', 'grid-template-columns: repeat(3, minmax(0, 1fr));'],
+  ['dcms-cols-4', 'grid-template-columns: repeat(4, minmax(0, 1fr));'],
+  ['dcms-cols-5', 'grid-template-columns: repeat(5, minmax(0, 1fr));'],
+  ['dcms-cols-6', 'grid-template-columns: repeat(6, minmax(0, 1fr));'],
+  ['dcms-split-1-1', 'grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);'],
+  ['dcms-split-2-1', 'grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);'],
+  ['dcms-split-1-2', 'grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);'],
+  ['dcms-split-stacked', 'grid-template-columns: minmax(0, 1fr);'],
+  ['dcms-spacer-xs', 'height: var(--dcms-space-xs, 0.5rem);'],
+  ['dcms-spacer-sm', 'height: var(--dcms-space-sm, 0.75rem);'],
+  ['dcms-spacer-md', 'height: var(--dcms-space-md, 1rem);'],
+  ['dcms-spacer-lg', 'height: var(--dcms-space-lg, 2rem);'],
+  ['dcms-spacer-xl', 'height: var(--dcms-space-xl, 4rem);'],
+];
+
+const STATIC_CSS = `
 html { background: var(--dcms-color-surface, #fff); }
 body { margin: 0; }
 .dcms-node { min-width: 0; }
@@ -24,39 +92,15 @@ body { margin: 0; }
 .dcms-flow > * + * { margin-top: var(--dcms-space-md, 1rem); }
 
 .dcms-width { box-sizing: border-box; margin-inline: auto; padding-inline: var(--dcms-space-md, 1rem); }
-.dcms-width-narrow { max-width: var(--dcms-container-narrow, 44rem); }
-.dcms-width-normal { max-width: var(--dcms-container, 72rem); }
-.dcms-width-wide { max-width: calc(var(--dcms-container, 72rem) * 1.25); }
-.dcms-width-full { max-width: none; }
 
 .dcms-section { display: block; }
-.dcms-py-none { padding-block: 0; }
-.dcms-py-sm { padding-block: calc(var(--dcms-section-py, 5rem) * 0.4); }
-.dcms-py-md { padding-block: var(--dcms-section-py, 5rem); }
-.dcms-py-lg { padding-block: calc(var(--dcms-section-py, 5rem) * 1.6); }
 .dcms-bg-alt { background: var(--dcms-color-surface-alt, #f8fafc); }
 .dcms-bg-soft { background: var(--dcms-color-brand-soft, #eef2ff); }
 .dcms-bg-inverse { background: var(--dcms-color-inverse, #0f172a); color: var(--dcms-color-inverse-text, #f8fafc); }
 .dcms-bg-inverse .dcms-heading, .dcms-bg-inverse .dcms-text { color: inherit; }
 
 .dcms-stack { display: flex; }
-.dcms-stack-vertical { flex-direction: column; }
-.dcms-stack-horizontal { flex-direction: row; }
 .dcms-wrap { flex-wrap: wrap; }
-.dcms-gap-none { gap: 0; }
-.dcms-gap-xs { gap: var(--dcms-space-xs, 0.5rem); }
-.dcms-gap-sm { gap: var(--dcms-space-sm, 0.75rem); }
-.dcms-gap-md { gap: var(--dcms-space-md, 1rem); }
-.dcms-gap-lg { gap: var(--dcms-space-lg, 2rem); }
-.dcms-gap-xl { gap: var(--dcms-space-xl, 4rem); }
-.dcms-align-start { align-items: flex-start; }
-.dcms-align-center { align-items: center; }
-.dcms-align-end { align-items: flex-end; }
-.dcms-align-stretch { align-items: stretch; }
-.dcms-justify-start { justify-content: flex-start; }
-.dcms-justify-center { justify-content: center; }
-.dcms-justify-end { justify-content: flex-end; }
-.dcms-justify-between { justify-content: space-between; }
 
 .dcms-heading {
   margin: 0;
@@ -75,20 +119,9 @@ body { margin: 0; }
 .dcms-heading-6 { font-size: var(--dcms-text-base, 1rem); }
 
 .dcms-text { margin: 0; white-space: pre-line; }
-.dcms-size-sm { font-size: var(--dcms-text-sm, 0.875rem); }
-.dcms-size-base { font-size: var(--dcms-text-base, 1rem); }
-.dcms-size-lg { font-size: var(--dcms-text-lg, 1.25rem); }
 .dcms-tone-muted { color: var(--dcms-color-muted, #64748b); }
-.dcms-text-start { text-align: start; }
-.dcms-text-center { text-align: center; }
-.dcms-text-end { text-align: end; }
 
 .dcms-image { display: block; width: 100%; height: auto; }
-.dcms-ratio-16-9 { aspect-ratio: 16 / 9; }
-.dcms-ratio-4-3 { aspect-ratio: 4 / 3; }
-.dcms-ratio-1-1 { aspect-ratio: 1 / 1; }
-.dcms-ratio-3-4 { aspect-ratio: 3 / 4; }
-.dcms-ratio-16-9, .dcms-ratio-4-3, .dcms-ratio-1-1, .dcms-ratio-3-4 { height: auto; }
 .dcms-fit-cover { object-fit: cover; }
 .dcms-fit-contain { object-fit: contain; }
 .dcms-radius-sm { border-radius: var(--dcms-radius-sm, 0.375rem); }
@@ -115,8 +148,39 @@ body { margin: 0; }
 .dcms-button-ghost { background: transparent; color: var(--dcms-color-brand, #4f46e5); }
 .dcms-button:focus-visible { outline: 2px solid var(--dcms-color-accent, #0ea5e9); outline-offset: 2px; }
 
+.dcms-nav-list { list-style: none; margin: 0; padding: 0; display: flex; gap: var(--dcms-space-md, 1rem); }
+.dcms-nav-vertical .dcms-nav-list { flex-direction: column; gap: var(--dcms-space-xs, 0.5rem); }
+.dcms-nav-list .dcms-nav-list { display: none; }
+.dcms-nav-link { color: inherit; text-decoration: none; font-weight: 500; }
+.dcms-nav-link:hover { color: var(--dcms-color-brand, #4f46e5); }
+.dcms-outlet-placeholder {
+  display: grid; place-items: center; min-height: 6rem; padding: 1rem;
+  border: 1px dashed rgba(100,116,139,.6); border-radius: 0.375rem;
+  color: var(--dcms-color-muted, #64748b); font: 0.875rem system-ui, sans-serif;
+}
+.dcms-not-found { padding: var(--dcms-section-py, 5rem) var(--dcms-space-md, 1rem); text-align: center; }
+
+.dcms-grid { display: grid; }
+.dcms-split { display: grid; gap: var(--dcms-space-lg, 2rem); align-items: start; }
+.dcms-spacer { display: block; }
+
 .dcms-problem {
   padding: 0.75rem; border: 1px dashed #dc2626; border-radius: 0.375rem;
   color: #b91c1c; background: #fef2f2; font: 0.875rem system-ui, sans-serif;
 }
 `;
+
+
+function responsiveCss(): string {
+  const block = (prefix: string) =>
+    RESPONSIVE_RULES.map(([cls, decl]) => `.${prefix}${cls} { ${decl} }`).join('\n');
+  return [
+    block(''),
+    // A split collapses to one column on phones unless the author chose otherwise for mobile.
+    `@media (max-width: ${MOBILE_MAX_WIDTH}px) { .dcms-split { grid-template-columns: minmax(0, 1fr); } }`,
+    `@media (max-width: ${TABLET_MAX_WIDTH}px) {\n${block('t-')}\n}`,
+    `@media (max-width: ${MOBILE_MAX_WIDTH}px) {\n${block('m-')}\n}`,
+  ].join('\n');
+}
+
+export const RUNTIME_CSS = STATIC_CSS + responsiveCss();

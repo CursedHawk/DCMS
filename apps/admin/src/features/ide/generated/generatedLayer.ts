@@ -72,12 +72,14 @@ export interface GeneratedUpdate {
 export function planGeneratedUpdate(
   current: Readonly<Record<string, string>>,
   incoming: Readonly<Record<string, string>>,
+  /** Whose record decides deletions: the API layer's by default, the Mode D runtime's for that layer. */
+  manifestPath: string = MANIFEST_PATH,
 ): GeneratedUpdate {
   const writes = Object.entries(incoming)
     .filter(([path, content]) => isGeneratedPath(path) && current[path] !== content)
     .sort(([a], [b]) => a.localeCompare(b));
 
-  const previous = readManifest(current[MANIFEST_PATH]);
+  const previous = readManifest(current[manifestPath]);
   const deletes = (previous?.files ?? [])
     .filter((path) => isGeneratedPath(path) && !(path in incoming) && current[path] !== undefined)
     .sort();

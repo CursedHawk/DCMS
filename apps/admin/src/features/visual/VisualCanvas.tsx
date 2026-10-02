@@ -1,15 +1,28 @@
-import { THEME_JSON, pagePath, pageSchema, themeTokensSchema, type Page, type Registry } from '@dcms/site-runtime';
+import { APP_JSON, THEME_JSON, appSchema, pagePath, pageSchema, themeTokensSchema, type Node, type Registry } from '@dcms/site-runtime';
 import type { Editor } from 'grapesjs';
 import { useEffect, useRef } from 'react';
 import { useVfs } from '../site-source';
 import { applyTheme, createVisualEditor } from './canvas/editor';
 import { fromGrapes, toGrapes } from './canvas/tree';
+import { defaultShell } from './documents';
 import { serializeDoc } from './starter';
+import type { CanvasTarget } from './store';
+
+/**
+ * One document the canvas can edit: where its tree lives in a file, and how to put an edited
+ * tree back. A page is a whole file; the app shell is one field of `app.json`, so writing it
+ * back must keep the rest of that file exactly as it was.
+ */
+interface Doc {
+  root: Node;
+  /** The file's new text with `root` in place of the tree that was loaded. */
+  write: (root: Node) => string;
+}
 
 /** What the canvas currently holds, and the exact file text it came from or last wrote. */
 interface Loaded {
   path: string;
-  page: Page;
+  doc: Doc;
   text: string;
   generation: number;
 }
@@ -27,13 +40,13 @@ interface Loaded {
  * whatever the author was in the middle of typing in the code view with an empty page.
  */
 export function VisualCanvas({
-  pageId,
+  target,
   registry,
   onReady,
   onTeardown,
   onPageError,
 }: {
-  pageId: string;
+  target: CanvasTarget;
   registry: Registry;
   onReady: (editor: Editor) => void;
   onTeardown: () => void;
@@ -46,7 +59,7 @@ export function VisualCanvas({
   const captureTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const themeText = useRef<string | undefined>(undefined);
 
-  const path = pagePath(pageId);
+  const path = target.kind === 'page' ? pagePath(target.id) : APP_JSON;
   const fileText = useVfs((s) => s.files[path]);
   const generation = useVfs((s) => s.generation);
   const theme = useVfs((s) => s.files[THEME_JSON]);
@@ -100,9 +113,9 @@ export function VisualCanvas({
     }
 
     loaded.current = null;
-    const page = parsePage(fileText);
-    if (typeof page === 'string') {
-      onPageError(page);
+    const doc = target.kind === 'page' ? pageDoc(fileText) : shellDoc(fileText);
+    if (typeof doc === 'string') {
+      onPageError(doc);
       editor.setComponents([] as never);
       return;
     }
@@ -112,19 +125,19 @@ export function VisualCanvas({
     loading.current = true;
     editor.UndoManager.stop();
     try {
-      editor.setComponents(toGrapes(page.root, registry) as never);
+      editor.setComponents(toGrapes(doc.root, registry) as never);
     } finally {
       editor.UndoManager.start();
     }
     editor.UndoManager.clear();
     editor.select(undefined);
-    loaded.current = { path, page, text: fileText!, generation };
+    loaded.current = { path, doc, text: fileText!, generation };
     // GrapesJS reports the load itself as an update; let that pass before listening again.
     setTimeout(() => {
       loading.current = false;
     }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, fileText, generation]);
+  }, [path, fileText, generation, target.kind]);
 
   useEffect(() => {
     themeText.current = theme;
@@ -134,18 +147,55 @@ export function VisualCanvas({
   return <div ref={containerRef} className="h-full w-full" />;
 }
 
-function parsePage(text: string | undefined): Page | string {
-  if (text === undefined) return 'This page has no file.';
-  let json: unknown;
+function parseJson(text: string | undefined, missing: string): unknown {
+  if (text === undefined) return missing;
   try {
-    json = JSON.parse(text);
+    return { json: JSON.parse(text) as unknown };
   } catch (e) {
     return `Not valid JSON: ${(e as Error).message}`;
   }
-  const parsed = pageSchema.safeParse(json);
-  if (parsed.success) return parsed.data;
-  const issue = parsed.error.issues[0];
-  return `${issue?.path.join('.') || 'page'}: ${issue?.message ?? 'invalid'}`;
+}
+
+function pageDoc(text: string | undefined): Doc | string {
+  const read = parseJson(text, 'This page has no file.');
+  if (typeof read === 'string') return read;
+  const parsed = pageSchema.safeParse((read as { json: unknown }).json);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    return `${issue?.path.join('.') || 'page'}: ${issue?.message ?? 'invalid'}`;
+  }
+  const page = parsed.data;
+  return { root: page.root, write: (root) => serializeDoc({ ...page, root }) };
+}
+
+function shellDoc(text: string | undefined): Doc | string {
+  const read = parseJson(text, 'This site has no dcms/app.json.');
+  if (typeof read === 'string') return read;
+  const parsed = appSchema.safeParse((read as { json: unknown }).json);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    return `app.json ${issue?.path.join('.') || ''}: ${issue?.message ?? 'invalid'}`;
+  }
+  const app = parsed.data;
+  // A site that has never had a shell is shown the default; it is only written once edited.
+  // The rest of app.json is re-read at write time, not taken from this load: the Pages panel
+  // edits routes and menus in the same file, and a shell capture must never put back the routes
+  // as they were when the shell was opened.
+  return {
+    root: app.shell ?? defaultShell(),
+    write: (shell) => {
+      const now = appSchema.safeParse(safeJson(useVfs.getState().files[APP_JSON]));
+      return serializeDoc({ ...(now.success ? now.data : app), shell });
+    },
+  };
+}
+
+function safeJson(text: string | undefined): unknown {
+  try {
+    return JSON.parse(text ?? '');
+  } catch {
+    return undefined;
+  }
 }
 
 function applyThemeText(editor: Editor, text: string | undefined): void {
@@ -164,11 +214,13 @@ function capture(editor: Editor, loaded: { current: Loaded | null }): void {
   const root = editor.getWrapper()?.components().at(0);
   if (!current || !root) return;
 
-  const page: Page = { ...current.page, root: fromGrapes(root) };
-  const text = serializeDoc(page);
-  if (text === current.text) return;
+  const tree = fromGrapes(root);
+  const text = current.doc.write(tree);
+  if (text === useVfs.getState().files[current.path]) return;
 
-  // Recorded before writing, so the file change it causes is recognised as our own.
-  loaded.current = { ...current, page, text };
+  // Recorded before writing, so the file change it causes is recognised as our own. The doc is
+  // re-derived from what was written, so the next capture writes on top of it.
+  const doc: Doc = { root: tree, write: (next) => current.doc.write(next) };
+  loaded.current = { ...current, doc, text };
   useVfs.getState().writeFile(current.path, text);
 }

@@ -3,17 +3,19 @@
   "private": true,
   "version": "0.2.0",
   "type": "module",
-  "description": "The starter templates for DCMS Mode B sites, embedded into admin-api. Its build typechecks every template against shared/src/api, a committed copy of real generated client output.",
+  "description": "The starter templates for DCMS Mode B sites and the Mode D (visual) site scaffold, embedded into admin-api. Its build typechecks every template against shared/src/api, a committed copy of real generated client output, and the visual template against the staged @dcms/site-runtime source.",
   "scripts": {
-    "build": "tsc -p tsconfig.blank.json && tsc -p tsconfig.content.json && tsc -p tsconfig.landing.json"
+    "build": "tsc -p tsconfig.blank.json && tsc -p tsconfig.content.json && tsc -p tsconfig.landing.json && node scripts/stage-visual-runtime.mjs && tsc -p tsconfig.visual.json"
   },
   "devDependencies": {
+    "@types/node": "^26.4.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "react": "^19",
     "react-dom": "^19",
     "react-router": "7.18.2",
     "typescript": "^5",
-    "vite": "^7"
+    "vite": "^7",
+    "zod": "^4"
   }
 }

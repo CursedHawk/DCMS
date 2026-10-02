@@ -1477,6 +1477,52 @@
     },
     "components": "Components",
     "pageError": "This page cannot be shown on the canvas: {{error}}",
-    "noPages": "This site has no pages yet."
+    "noPages": "This site has no pages yet.",
+    "collapse": "Collapse",
+    "expand": "Show settings",
+    "preview": "Preview",
+    "view": "View",
+    "scaffoldFailed": "The site could not be set up. Reload to try again.",
+    "editingDevice": "Editing {{device}}: settings marked as differing apply to this size and smaller.",
+    "resetOverride": "Use the desktop value again",
+    "overridden": "differs",
+    "inheritsDesktop": "as desktop",
+    "allDevices": "all sizes",
+    "action": {
+      "title": "When clicked",
+      "none": "Nothing",
+      "navigate": "Go to a page",
+      "external": "Open a link",
+      "page": "Page",
+      "newTab": "Open in a new tab"
+    },
+    "pages": {
+      "noApp": "dcms/app.json cannot be read. Fix it in the code view.",
+      "shell": "App shell",
+      "everyPage": "around every page",
+      "unrouted": "Pages with no address",
+      "address": "Address",
+      "inMenu": "Show in the main menu",
+      "seoTitle": "Search title",
+      "seoDescription": "Search description",
+      "seoImage": "Share image",
+      "noIndex": "Hide from search engines",
+      "confirmDelete": "Delete the page “{{title}}”? Its address and menu entries go with it.",
+      "siteSeo": "Whole site",
+      "titleTemplate": "Title pattern (%s is the page title)",
+      "defaultDescription": "Default description"
+    },
+    "theme": {
+      "title": "Theme",
+      "hint": "A design kit sets colours, type, spacing and corners for the whole site at once."
+    },
+    "problems": {
+      "title": "Problems",
+      "none": "No problems found.",
+      "count_one": "{{count}} problem",
+      "count_other": "{{count}} problems",
+      "blockPublish_one": "Fix {{count}} error before publishing.",
+      "blockPublish_other": "Fix {{count}} errors before publishing."
+    }
   }
 }

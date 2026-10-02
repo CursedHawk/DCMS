@@ -47,8 +47,9 @@ describe('RenderNode', () => {
 
   it('turns a navigate button into a link on the site and an inert button on the canvas', () => {
     const button: Node = { id: 'b', type: 'dcms.button', props: { label: 'Go' }, action: { type: 'navigate', to: '/contact' } };
-    expect(html(button, 'live')).toContain('<a class="dcms-button dcms-button-primary dcms-button-md" href="/contact">Go</a>');
-    expect(html(button, 'edit')).toContain('<button type="button" class="dcms-button dcms-button-primary dcms-button-md">Go</button>');
+    expect(html(button, 'live')).toContain('<a href="/contact" class="dcms-button dcms-button-primary dcms-button-md">Go</a>');
+    // No href on the canvas: a click there selects, and must not navigate the editor's frame.
+    expect(html(button, 'edit')).toContain('<a class="dcms-button dcms-button-primary dcms-button-md">Go</a>');
   });
 
   it('opens an external link in a new tab without handing it the opener', () => {
@@ -68,6 +69,23 @@ describe('RenderNode', () => {
     expect(html(ghost, 'live')).toBe('<div class="dcms-node" data-dcms-node="g" data-dcms-type="dcms.ghost"></div>');
   });
 
+});
+
+describe('responsive props', () => {
+  it('adds a tablet and a mobile class beside the desktop one', () => {
+    const grid: Node = {
+      id: 'g',
+      type: 'dcms.grid',
+      props: { columns: '4', gap: 'lg' },
+      responsive: { tablet: { columns: '2' }, mobile: { columns: '1', gap: 'sm' } },
+    };
+    expect(html(grid)).toContain('class="dcms-slot dcms-grid dcms-cols-4 t-dcms-cols-2 m-dcms-cols-1 dcms-gap-lg m-dcms-gap-sm"');
+  });
+
+  it('keeps an override to the prop’s own options', () => {
+    const grid: Node = { id: 'g', type: 'dcms.grid', responsive: { mobile: { columns: '99"><script>' } } };
+    expect(html(grid)).toContain('dcms-cols-3 m-dcms-cols-3');
+  });
 });
 
 describe('BUILTIN_COMPONENTS', () => {

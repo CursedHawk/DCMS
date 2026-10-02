@@ -1,0 +1,9 @@
+{
+  // Typechecks templates/visual as it will exist in a site: its own files over shared/, plus the
+  // runtime at src/dcms/runtime/ (staged into .visual/ by scripts/stage-visual-runtime.mjs).
+  "extends": "./templates/visual/tsconfig.json",
+  "compilerOptions": {
+    "rootDirs": ["./shared", "./templates/visual", "./.visual"]
+  },
+  "include": ["shared/src", "templates/visual/src", ".visual/src"]
+}

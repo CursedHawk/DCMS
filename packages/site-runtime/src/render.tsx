@@ -64,7 +64,7 @@ function NodeBody({ node, registry }: RenderNodeProps) {
       </div>
     </span>
   );
-  return <Impl nodeId={node.id} props={node.props ?? {}} action={node.action} slot={slot} />;
+  return <Impl nodeId={node.id} props={node.props ?? {}} action={node.action} responsive={node.responsive} slot={slot} />;
 }
 
 function Problem({ children }: { children: ReactNode }) {

@@ -1,89 +1,165 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { APP_JSON, appSchema, builtinRegistry, pageIdFromPath } from '@dcms/site-runtime';
+import { APP_JSON, builtinRegistry, checkVisualSite } from '@dcms/site-runtime';
 import type { Editor } from 'grapesjs';
-import { AlertTriangle, ArrowLeft, Layers, Monitor, Redo2, RefreshCw, Smartphone, Tablet, Undo2, Blocks } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import {
-  Button,
-  CenteredSpinner,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  cn,
-} from '@dcms/ui';
-import { api } from '../../lib/api';
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  Blocks,
+  Code2,
+  Columns2,
+  Eye,
+  FileText,
+  GitBranch,
+  Layers,
+  Monitor,
+  MousePointer2,
+  Palette,
+  Redo2,
+  RefreshCw,
+  Rocket,
+  Smartphone,
+  Tablet,
+  Undo2,
+  X,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
+import { Button, CenteredSpinner, cn } from '@dcms/ui';
+import { ApiError, api } from '../../lib/api';
+import { useAuth } from '../../useAuth';
+import { MediaBridge } from '../builder/panels/MediaBridge';
 import { BlocksPanel } from '../builder/panels/BlocksPanel';
 import { LayersPanel } from '../builder/panels/LayersPanel';
-import { Resizer, useDraftSession, useStoredWidth, useVfs } from '../site-source';
+import { useGeneratedApi } from '../ide/generated/useGeneratedApi';
+import {
+  DeploymentsView,
+  MergeDialog,
+  RELEASE_BRANCH,
+  Resizer,
+  SourceControlView,
+  gitApi,
+  ideApi,
+  useDraftSession,
+  useSiteLiveUpdates,
+  useStoredWidth,
+  useVfs,
+} from '../site-source';
+import { PagesPanel } from './PagesPanel';
+import { readPage } from './documents';
+import { ProblemsPanel } from './ProblemsPanel';
 import { PropsPanel } from './PropsPanel';
+import { ThemePanel } from './ThemePanel';
 import { VisualCanvas } from './VisualCanvas';
+import { VisualCodeView } from './VisualCodeView';
+import { VisualPreview } from './VisualPreview';
 import { VISUAL_DEVICES, type DeviceId } from './canvas/editor';
 import { starterFiles } from './starter';
+import { useVisual, type VisualView } from './store';
+import { useSiteRuntime } from './useSiteRuntime';
 
 // Widen for TanStack Link typing (sibling routes are registered via a helper).
 const sitesPath: string = '/sites';
 
 const DEVICE_ICONS: Record<DeviceId, typeof Monitor> = { desktop: Monitor, tablet: Tablet, mobile: Smartphone };
+const VIEWS: { id: VisualView; icon: typeof Code2; labelKey: string }[] = [
+  { id: 'design', icon: MousePointer2, labelKey: 'builder.viewDesign' },
+  { id: 'split', icon: Columns2, labelKey: 'builder.viewSplit' },
+  { id: 'code', icon: Code2, labelKey: 'builder.viewCode' },
+  { id: 'preview', icon: Eye, labelKey: 'visual.preview' },
+];
 
-type SidebarView = 'components' | 'layers';
+type SidebarView = 'components' | 'layers' | 'pages' | 'theme' | 'scm' | 'deploy' | 'problems';
 
 /**
  * The Mode D builder (ADR 0020): a page is a tree of React components, edited on a GrapesJS
  * canvas that draws them with the same code the published site runs.
  *
- * The source is the same per-site git file map as Modes A and B, through the same draft
- * session; what differs is only what the author edits — `dcms/pages/*.json` through a canvas.
- * Publishing, source control and the agent arrive with the rest of P2.
+ * The source is the same per-site git file map as Modes A and B, through the same draft session,
+ * source control, deployments and "publish = ship this branch to release" flow; what differs is
+ * what the author edits — `dcms/**.json` through a canvas — and what keeps the repository a
+ * buildable Vite app: the scaffold on the first open, and the runtime and API layers refreshed
+ * on every open after.
  */
 export function VisualBuilderPage({ siteId }: { siteId: string }) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [editor, setEditor] = useState<Editor | null>(null);
   const [sidebar, setSidebar] = useState<SidebarView>('components');
-  const [device, setDevice] = useState<DeviceId>('desktop');
   const [pageError, setPageError] = useState<string | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
-  const [chosenPage, setChosenPage] = useState<string | null>(null);
+  const [publishMerge, setPublishMerge] = useState(false);
+  const [branchMoved, setBranchMoved] = useState(false);
+  const [draftMovedPaths, setDraftMovedPaths] = useState<string[] | null>(null);
 
-  const [sidebarWidth, setSidebarWidth, resetSidebarWidth] = useStoredWidth('dcms.visual.sidebarWidth', 260, 200, 480);
+  const [sidebarWidth, setSidebarWidth, resetSidebarWidth] = useStoredWidth('dcms.visual.sidebarWidth', 300, 220, 520);
   const [inspectorWidth, setInspectorWidth, resetInspectorWidth] = useStoredWidth('dcms.visual.inspectorWidth', 300, 220, 520);
+  const [codeWidth, setCodeWidth, resetCodeWidth] = useStoredWidth('dcms.visual.codeWidth', 560, 280, 1400);
+
+  const target = useVisual((s) => s.target);
+  const device = useVisual((s) => s.device);
+  const view = useVisual((s) => s.view);
+  const app = useVisual((s) => s.app);
 
   const site = useQuery({
     queryKey: ['site', siteId],
     queryFn: () => api.get<{ name: string }>(`/admin/sites/${siteId}`),
   });
-  const session = useDraftSession({ siteId, seed: () => starterFiles(site.data?.name) });
+
+  // A brand-new site is the visual scaffold (a Vite app with the runtime and this tenant's API
+  // client, from the server) plus the starter documents. Seeded once, on the first empty load.
+  const scaffold = useMutation({
+    mutationFn: () => ideApi.scaffold(siteId, 'visual'),
+    onSuccess: ({ files }) => useVfs.getState().seedStarter({ ...files, ...starterFiles(site.data?.name) }),
+    onError: () => toast.error(t('visual.scaffoldFailed')),
+  });
+  const session = useDraftSession({
+    siteId,
+    seed: () => null,
+    onLoaded: (_branch, isEmpty) => {
+      if (isEmpty) scaffold.mutate();
+    },
+  });
 
   const dirty = useVfs((s) => s.dirty);
   const conflict = useVfs((s) => s.conflict);
   const branch = useVfs((s) => s.branch);
   const files = useVfs((s) => s.files);
+  const draftVersion = useVfs((s) => s.version);
 
-  const pages = useMemo(
-    () =>
-      Object.keys(files)
-        .map(pageIdFromPath)
-        .filter((id): id is string => id !== null)
-        .sort(),
-    [files],
-  );
-  const homePage = useMemo(() => {
-    try {
-      const app = appSchema.safeParse(JSON.parse(files[APP_JSON] ?? ''));
-      return app.success ? app.data.routes.find((r) => r.path === '/')?.page : undefined;
-    } catch {
-      return undefined;
-    }
-  }, [files]);
-  const pageId =
-    (chosenPage && pages.includes(chosenPage) ? chosenPage : null) ??
-    (homePage && pages.includes(homePage) ? homePage : null) ??
-    pages[0] ??
-    null;
+  const settled = session.ready && !session.switching && !conflict && !scaffold.isPending && files[APP_JSON] !== undefined;
+  useGeneratedApi({ siteId, settled });
+  useSiteRuntime({ settled });
+
+  const { user } = useAuth();
+  useSiteLiveUpdates({
+    siteId,
+    branch,
+    myUserId: user?.profile.sub,
+    onCommit: () => setBranchMoved(true),
+    draftVersion,
+    onDraftChanged: (d) => setDraftMovedPaths(d.paths),
+  });
+  useEffect(() => setBranchMoved(false), [branch]);
+
+  // The app document, for menus on the canvas and the panels that edit it.
+  useEffect(() => useVisual.getState().syncApp(files[APP_JSON]), [files]);
+
+  // Open the home page first, and follow it if the page being edited is deleted.
+  useEffect(() => {
+    if (!app) return;
+    const current = useVisual.getState().target;
+    const pageExists = (id: string) => files[`dcms/pages/${id}.json`] !== undefined;
+    if (current?.kind === 'shell' || (current?.kind === 'page' && pageExists(current.id))) return;
+    const home = app.routes.find((r) => r.path === '/')?.page ?? app.routes[0]?.page;
+    if (home && pageExists(home)) useVisual.getState().setTarget({ kind: 'page', id: home });
+  }, [app, files]);
+
+  const problems = useMemo(() => checkVisualSite(files, builtinRegistry), [files]);
+  const errors = problems.filter((p) => p.severity === 'error').length;
 
   const onEditorReady = useCallback((instance: Editor) => {
     setEditor(instance);
@@ -92,14 +168,63 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
       setCanRedo(instance.UndoManager.hasRedo());
     };
     instance.on('update undo redo', sync);
+    instance.setDevice(VISUAL_DEVICES.find((d) => d.id === useVisual.getState().device)!.name);
   }, []);
 
   const chooseDevice = (id: DeviceId) => {
-    setDevice(id);
+    useVisual.getState().setDevice(id);
     editor?.setDevice(VISUAL_DEVICES.find((d) => d.id === id)!.name);
   };
 
-  if (site.isLoading || !session.ready) return <CenteredSpinner label={t('common.loading')} />;
+  const publish = useMutation({
+    mutationFn: async () => {
+      await session.flush();
+      await gitApi.commit(siteId, { branch, message: `Publish ${branch}` });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['git-changes', siteId] });
+      queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
+      if (branch === RELEASE_BRANCH) {
+        toast.success(t('editor.publishQueued'));
+        setSidebar('deploy');
+      } else {
+        setPublishMerge(true);
+      }
+    },
+    onError: (e) => {
+      if (e instanceof ApiError && e.status === 409) {
+        toast.error(t('ide.git.resolveInScm'));
+        setSidebar('scm');
+      } else {
+        toast.error(t('errors.generic'));
+      }
+    },
+  });
+
+  const startPublish = () => {
+    // The same report the AI gets: a site the validator calls broken is not shipped.
+    if (errors > 0) {
+      toast.error(t('visual.problems.blockPublish', { count: errors }));
+      setSidebar('problems');
+      return;
+    }
+    publish.mutate();
+  };
+
+  const changes = useQuery({
+    queryKey: ['git-changes', siteId, branch],
+    queryFn: () => gitApi.changes(siteId, branch),
+    enabled: session.ready,
+  });
+
+  if (site.isLoading || !session.ready || scaffold.isPending) return <CenteredSpinner label={t('common.loading')} />;
+
+  const showCanvas = view === 'design' || view === 'split';
+  const showCode = view === 'split' || view === 'code';
+  const pageRoute = target?.kind === 'page' ? app?.routes.find((r) => r.page === target.id) : undefined;
+  const previewPath = pageRoute && !pageRoute.path.includes(':') ? pageRoute.path : '/';
+  const targetLabel =
+    target?.kind === 'shell' ? t('visual.pages.shell') : target ? (readPage(target.id)?.title ?? target.id) : '';
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
@@ -111,42 +236,35 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
         </Link>
         <span className="font-medium">{site.data?.name}</span>
         <span className="text-xs text-muted-foreground">{t('sites.modeReactBuilder')}</span>
-
-        {pages.length > 0 && pageId && (
-          <Select value={pageId} onValueChange={setChosenPage}>
-            <SelectTrigger className="ml-2 h-8 w-48" aria-label={t('visual.page')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {pages.map((id) => (
-                <SelectItem key={id} value={id}>
-                  {id}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {targetLabel && (
+          <button
+            type="button"
+            onClick={() => setSidebar('pages')}
+            className="ml-2 max-w-48 truncate rounded-md border px-2 py-1 text-xs"
+            title={t('builder.pages')}
+          >
+            {targetLabel}
+          </button>
         )}
 
-        <div className="mx-2 flex items-center gap-1 rounded-md border bg-muted p-0.5" role="group" aria-label={t('visual.device')}>
+        <Segmented label={t('visual.view')}>
+          {VIEWS.map(({ id, icon: Icon, labelKey }) => (
+            <SegmentButton key={id} active={view === id} title={t(labelKey)} onClick={() => useVisual.getState().setView(id)}>
+              <Icon className="h-4 w-4" />
+            </SegmentButton>
+          ))}
+        </Segmented>
+
+        <Segmented label={t('visual.device')}>
           {VISUAL_DEVICES.map(({ id }) => {
             const Icon = DEVICE_ICONS[id];
             return (
-              <button
-                key={id}
-                type="button"
-                title={t(`visual.devices.${id}`)}
-                aria-pressed={device === id}
-                onClick={() => chooseDevice(id)}
-                className={cn(
-                  'flex h-7 w-8 items-center justify-center rounded',
-                  device === id ? 'bg-background shadow-sm' : 'text-muted-foreground',
-                )}
-              >
+              <SegmentButton key={id} active={device === id} title={t(`visual.devices.${id}`)} onClick={() => chooseDevice(id)}>
                 <Icon className="h-4 w-4" />
-              </button>
+              </SegmentButton>
             );
           })}
-        </div>
+        </Segmented>
 
         <Button size="icon" variant="ghost" disabled={!canUndo} onClick={() => editor?.UndoManager.undo()} title={t('actions.undo')}>
           <Undo2 className="h-4 w-4" />
@@ -156,84 +274,202 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
         </Button>
 
         <div className="flex-1" />
+        {problems.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setSidebar('problems')}
+            className={cn('flex items-center gap-1 rounded px-2 py-1 text-xs', errors ? 'text-destructive' : 'text-amber-600')}
+          >
+            {errors ? <AlertCircle className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+            {t('visual.problems.count', { count: problems.length })}
+          </button>
+        )}
         <span className="text-xs text-muted-foreground">
           {branch} · {dirty ? t('common.saving') : session.status}
         </span>
+        <Button onClick={startPublish} disabled={publish.isPending || !!conflict || session.switching}>
+          <Rocket className="h-4 w-4" /> {t('ide.git.publishToRelease')}
+        </Button>
       </div>
 
-      {conflict && (
-        <div className="flex shrink-0 items-center gap-2 border-b bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span className="min-w-0 flex-1">{t('ide.conflictWarning', { files: conflict.join(', ') })}</span>
+      <MediaBridge editor={editor} />
+      <MergeDialog
+        siteId={siteId}
+        head={branch}
+        open={publishMerge}
+        onOpenChange={setPublishMerge}
+        onMerged={() => {
+          queryClient.invalidateQueries({ queryKey: ['git-history', siteId] });
+          queryClient.invalidateQueries({ queryKey: ['git-changes', siteId] });
+          queryClient.invalidateQueries({ queryKey: ['site-builds', siteId] });
+          setSidebar('deploy');
+        }}
+      />
+
+      {draftMovedPaths && !conflict && (
+        <Banner tone="warning" icon={<AlertTriangle className="h-4 w-4 shrink-0" />} message={t('ide.draftMovedWarning', { files: draftMovedPaths.slice(0, 3).join(', ') })}>
+          <Button size="sm" variant="outline" onClick={() => session.openBranch(branch)} disabled={session.switching}>
+            <RefreshCw className="h-4 w-4" /> {t('ide.reloadLatest')}
+          </Button>
+          <button type="button" onClick={() => setDraftMovedPaths(null)} aria-label={t('actions.dismiss')} className="rounded p-1">
+            <X className="h-4 w-4" />
+          </button>
+        </Banner>
+      )}
+      {(conflict || branchMoved) && (
+        <Banner
+          tone="destructive"
+          icon={<AlertTriangle className="h-4 w-4 shrink-0" />}
+          message={conflict ? t('ide.conflictWarning', { files: conflict.join(', ') }) : t('ide.branchMovedWarning', { branch })}
+        >
           <Button size="sm" variant="outline" onClick={() => session.openBranch(branch)}>
             <RefreshCw className="h-4 w-4" /> {t('ide.reloadLatest')}
           </Button>
-        </div>
+        </Banner>
       )}
-      {pageError && (
-        <div className="flex shrink-0 items-center gap-2 border-b bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span className="min-w-0 flex-1">{t('visual.pageError', { error: pageError })}</span>
-        </div>
+      {pageError && view !== 'code' && (
+        <Banner tone="warning" icon={<AlertTriangle className="h-4 w-4 shrink-0" />} message={t('visual.pageError', { error: pageError })}>
+          <Button size="sm" variant="outline" onClick={() => useVisual.getState().setView('split')}>
+            <Code2 className="h-4 w-4" /> {t('builder.openCode')}
+          </Button>
+        </Banner>
       )}
 
       <div className="relative flex min-h-0 flex-1">
-        <div style={{ width: sidebarWidth }} className="flex min-w-0 shrink-0 flex-col border-r bg-card">
-          <div className="flex shrink-0 gap-1 border-b p-1" role="tablist">
-            {(
-              [
-                ['components', Blocks, 'visual.components'],
-                ['layers', Layers, 'builder.layers'],
-              ] as const
-            ).map(([id, Icon, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={sidebar === id}
-                onClick={() => setSidebar(id)}
-                className={cn(
-                  'flex flex-1 items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs',
-                  sidebar === id ? 'bg-muted font-medium' : 'text-muted-foreground hover:bg-muted/60',
-                )}
-              >
-                <Icon className="h-3.5 w-3.5" /> {t(label)}
-              </button>
-            ))}
+        <div style={{ width: sidebarWidth }} className="flex min-w-0 shrink-0 border-r bg-card">
+          <div className="flex w-11 shrink-0 flex-col items-center gap-1 border-r py-2" role="tablist" aria-orientation="vertical">
+            <Rail active={sidebar === 'components'} label={t('visual.components')} onClick={() => setSidebar('components')}><Blocks className="h-5 w-5" /></Rail>
+            <Rail active={sidebar === 'layers'} label={t('builder.layers')} onClick={() => setSidebar('layers')}><Layers className="h-5 w-5" /></Rail>
+            <Rail active={sidebar === 'pages'} label={t('builder.pages')} onClick={() => setSidebar('pages')}><FileText className="h-5 w-5" /></Rail>
+            <Rail active={sidebar === 'theme'} label={t('visual.theme.title')} onClick={() => setSidebar('theme')}><Palette className="h-5 w-5" /></Rail>
+            <Rail active={sidebar === 'scm'} label={t('ide.git.title')} onClick={() => setSidebar('scm')} badge={changes.data?.length ?? 0}><GitBranch className="h-5 w-5" /></Rail>
+            <Rail active={sidebar === 'deploy'} label={t('ide.deploy.title')} onClick={() => setSidebar('deploy')}><Rocket className="h-5 w-5" /></Rail>
+            <Rail active={sidebar === 'problems'} label={t('visual.problems.title')} onClick={() => setSidebar('problems')} badge={errors}><AlertCircle className="h-5 w-5" /></Rail>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {/* Both stay mounted: the block palette's payload arrives once, at editor creation. */}
-            <div className={cn(sidebar !== 'components' && 'hidden')}>
+          <div className="min-w-0 flex-1 overflow-hidden">
+            {/* The palette stays mounted: its payload arrives once, at editor creation. */}
+            <div className={cn('h-full overflow-y-auto', sidebar !== 'components' && 'hidden')}>
               <BlocksPanel editor={editor} />
             </div>
-            <div className={cn(sidebar !== 'layers' && 'hidden')}>
-              <LayersPanel editor={editor} />
-            </div>
+            {sidebar === 'layers' && <LayersPanel editor={editor} />}
+            {sidebar === 'pages' && <PagesPanel />}
+            {sidebar === 'theme' && <ThemePanel />}
+            {sidebar === 'scm' && (
+              <SourceControlView
+                siteId={siteId}
+                branch={branch}
+                onSwitchBranch={(b) => session.openBranch(b)}
+                onReload={() => session.openBranch(branch)}
+                onRestored={(restored, version, hashes) => useVfs.getState().load(restored, version, hashes)}
+              />
+            )}
+            {sidebar === 'deploy' && <DeploymentsView siteId={siteId} />}
+            {sidebar === 'problems' && <ProblemsPanel problems={problems} editor={editor} />}
           </div>
         </div>
         <Resizer onDelta={(dx) => setSidebarWidth(sidebarWidth + dx)} onReset={resetSidebarWidth} />
 
-        <div className="min-w-0 flex-1 bg-muted/40">
-          {pageId ? (
-            <VisualCanvas
-              pageId={pageId}
-              registry={builtinRegistry}
-              onReady={onEditorReady}
-              onTeardown={() => setEditor(null)}
-              onPageError={setPageError}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-              {t('visual.noPages')}
+        <div className="flex min-w-0 flex-1">
+          {/* The canvas stays mounted when hidden: unmounting destroys GrapesJS, and with it the
+              undo history and every panel's handle on the editor. */}
+          <div className={cn('min-w-0 flex-1 bg-muted/40', !showCanvas && 'hidden')}>
+            {target ? (
+              <VisualCanvas
+                target={target}
+                registry={builtinRegistry}
+                onReady={onEditorReady}
+                onTeardown={() => setEditor(null)}
+                onPageError={setPageError}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">{t('visual.noPages')}</div>
+            )}
+          </div>
+          {view === 'preview' && (
+            <div className="min-w-0 flex-1">
+              <VisualPreview initialPath={previewPath} width={VISUAL_DEVICES.find((d) => d.id === device)?.width} />
+            </div>
+          )}
+          {showCode && showCanvas && (
+            <Resizer onDelta={(dx) => setCodeWidth(codeWidth - dx)} onReset={resetCodeWidth} ariaLabel={t('builder.resizeCode')} />
+          )}
+          {showCode && (
+            <div style={showCanvas ? { width: codeWidth } : undefined} className={cn('min-w-0 border-l', showCanvas ? 'max-w-[75%] shrink-0' : 'flex-1')}>
+              <VisualCodeView activePage={target?.kind === 'page' ? target.id : null} />
             </div>
           )}
         </div>
 
-        <Resizer onDelta={(dx) => setInspectorWidth(inspectorWidth - dx)} onReset={resetInspectorWidth} />
-        <div style={{ width: inspectorWidth }} className="min-w-0 shrink-0 border-l bg-card">
-          <PropsPanel editor={editor} registry={builtinRegistry} />
-        </div>
+        {view !== 'preview' && (
+          <>
+            <Resizer onDelta={(dx) => setInspectorWidth(inspectorWidth - dx)} onReset={resetInspectorWidth} />
+            <div style={{ width: inspectorWidth }} className="min-w-0 shrink-0 border-l bg-card">
+              <PropsPanel editor={editor} registry={builtinRegistry} />
+            </div>
+          </>
+        )}
       </div>
+    </div>
+  );
+}
+
+function Segmented({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="mx-1 flex items-center gap-1 rounded-md border bg-muted p-0.5" role="group" aria-label={label}>
+      {children}
+    </div>
+  );
+}
+
+function SegmentButton({ active, title, onClick, children }: { active: boolean; title: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn('flex h-7 w-8 items-center justify-center rounded', active ? 'bg-background shadow-sm' : 'text-muted-foreground')}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Rail({ active, label, onClick, badge, children }: { active: boolean; label: string; onClick: () => void; badge?: number; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={cn(
+        'relative flex h-9 w-9 items-center justify-center rounded-md',
+        active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50',
+      )}
+    >
+      {children}
+      {badge ? (
+        <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+function Banner({ tone, icon, message, children }: { tone: 'destructive' | 'warning'; icon: ReactNode; message: string; children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        'flex shrink-0 items-center gap-2 border-b px-3 py-2 text-sm',
+        tone === 'destructive' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+      )}
+    >
+      {icon}
+      <span className="min-w-0 flex-1">{message}</span>
+      {children}
     </div>
   );
 }
