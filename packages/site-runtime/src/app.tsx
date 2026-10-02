@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { Outlet, RouterProvider, createBrowserRouter, useParams, type RouteObject } from 'react-router';
-import { builtinRegistry } from './components';
+import { BUILTIN_COMPONENTS } from './components';
 import { appSchema, pageSchema, type App, type Page } from './document';
 import { applyHead } from './head';
 import { APP_JSON, THEME_JSON, pageIdFromPath } from './paths';
@@ -8,6 +8,7 @@ import type { Registry } from './registry';
 import { RenderNode } from './render';
 import { SiteContext } from './site';
 import { RUNTIME_CSS } from './styles';
+import { readComponentDocs, siteRegistry, type TenantComponentDoc } from './tenant';
 import { emptyTheme, themeRootCss, themeTokensSchema, type ThemeTokens } from './theme';
 
 /**
@@ -23,6 +24,8 @@ export interface SiteDocuments {
   app: App;
   pages: Readonly<Record<string, Page>>;
   theme: ThemeTokens;
+  /** The site's own components (dcms/components/<name>/v<N>.json), every version. */
+  components: readonly TenantComponentDoc[];
   /** What could not be read, for the console. */
   problems: readonly string[];
 }
@@ -52,11 +55,18 @@ export function loadDocuments(modules: Readonly<Record<string, unknown>>): SiteD
     if (page.success) pages[id] = page.data;
     else problems.push(`${path}: ${page.error.issues[0]?.message}`);
   }
-  return { app, pages, theme, problems };
+  const components = readComponentDocs(byPath);
+  for (const p of components.problems) problems.push(`${p.path}: ${p.message}`);
+  return { app, pages, theme, components: components.docs, problems };
+}
+
+/** The registry a site renders with: the built-ins and the site's own components. */
+export function registryFor(documents: SiteDocuments): Registry {
+  return siteRegistry(BUILTIN_COMPONENTS, documents.components).registry;
 }
 
 /** The routes of a site, for a browser router on the site and a memory router in the builder's preview. */
-export function siteRoutes(documents: SiteDocuments, registry: Registry = builtinRegistry): RouteObject[] {
+export function siteRoutes(documents: SiteDocuments, registry: Registry = registryFor(documents)): RouteObject[] {
   const children: RouteObject[] = documents.app.routes.map((route) => ({
     path: route.path,
     element: <RoutePage page={documents.pages[route.page]} app={documents.app} registry={registry} />,
@@ -75,8 +85,11 @@ export function SiteStyles({ theme }: { theme: ThemeTokens }) {
   );
 }
 
-export function DcmsApp({ documents, registry = builtinRegistry }: { documents: SiteDocuments; registry?: Registry }) {
-  const router = useMemo(() => createBrowserRouter(siteRoutes(documents, registry)), [documents, registry]);
+export function DcmsApp({ documents, registry }: { documents: SiteDocuments; registry?: Registry }) {
+  const router = useMemo(
+    () => createBrowserRouter(siteRoutes(documents, registry ?? registryFor(documents))),
+    [documents, registry],
+  );
   useEffect(() => {
     for (const problem of documents.problems) console.error(`dcms: ${problem}`);
   }, [documents]);

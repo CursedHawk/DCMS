@@ -1,9 +1,13 @@
-import { APP_JSON, appSchema, type App } from '@dcms/site-runtime';
+import { APP_JSON, appSchema, builtinRegistry, type App, type Registry } from '@dcms/site-runtime';
 import { create } from 'zustand';
 import type { DeviceId } from './canvas/editor';
 
 /** What the canvas is editing: one page, or the app shell every page renders inside. */
-export type CanvasTarget = { kind: 'page'; id: string } | { kind: 'shell' };
+export type CanvasTarget =
+  | { kind: 'page'; id: string }
+  | { kind: 'shell' }
+  /** A component's template, in the composer (P3). */
+  | { kind: 'component'; name: string; version: number };
 
 export type VisualView = 'design' | 'split' | 'code' | 'preview';
 
@@ -17,6 +21,17 @@ interface VisualState {
    * root, and a context does not cross roots — a store does.
    */
   app: App | null;
+  /** The built-ins plus this site's own components; what the canvas, inspector and validator use. */
+  registry: Registry;
+  /**
+   * Component types that may not be dropped right now: while a component is open in the
+   * composer, itself and every component that already contains it (a loop would render forever).
+   */
+  blockedTypes: ReadonlySet<string>;
+  /** Write the canvas's pending edits to its file now (set by the canvas while it is mounted). */
+  flushCanvas: () => void;
+  setRegistry: (registry: Registry) => void;
+  setBlockedTypes: (types: ReadonlySet<string>) => void;
   setTarget: (target: CanvasTarget) => void;
   setDevice: (device: DeviceId) => void;
   setView: (view: VisualView) => void;
@@ -28,6 +43,11 @@ export const useVisual = create<VisualState>((set, get) => ({
   device: 'desktop',
   view: 'design',
   app: null,
+  registry: builtinRegistry,
+  blockedTypes: new Set(),
+  flushCanvas: () => {},
+  setRegistry: (registry) => set({ registry }),
+  setBlockedTypes: (blockedTypes) => set({ blockedTypes }),
   setTarget: (target) => set({ target }),
   setDevice: (device) => set({ device }),
   setView: (view) => set({ view }),
@@ -51,7 +71,13 @@ export function parseApp(text: string | undefined): App | null {
 
 export function sameTarget(a: CanvasTarget | null, b: CanvasTarget | null): boolean {
   if (!a || !b) return a === b;
-  return a.kind === b.kind && (a.kind === 'shell' || a.id === (b as { id: string }).id);
+  if (a.kind !== b.kind) return false;
+  if (a.kind === 'page') return a.id === (b as { id: string }).id;
+  if (a.kind === 'component') {
+    const c = b as { name: string; version: number };
+    return a.name === c.name && a.version === c.version;
+  }
+  return true;
 }
 
 export { APP_JSON };

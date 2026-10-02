@@ -1557,6 +1557,48 @@
       "blockPublish_one": "Před publikováním opravte {{count}} chybu.",
       "blockPublish_few": "Před publikováním opravte {{count}} chyby.",
       "blockPublish_other": "Před publikováním opravte {{count}} chyb."
+    },
+    "mine": {
+      "title": "Moje komponenty",
+      "new": "Nová komponenta",
+      "placeholder": "Karta akce",
+      "none": "Zatím žádné komponenty. Vytvořte novou, nebo na stránce něco vyberte a udělejte z toho komponentu.",
+      "makeFromSelection": "Udělat z výběru komponentu",
+      "namePrompt": "Pojmenujte novou komponentu",
+      "made": "„{{label}}“ je teď komponenta.",
+      "edit": "Upravit",
+      "editing": "{{label}} (v{{version}})",
+      "newVersion": "Stránky používají aktuální verzi, takže úpravy založí verzi {{version}}.",
+      "used_one": "použita jednou",
+      "used_few": "použita {{count}}×",
+      "used_other": "použita {{count}}×",
+      "versions_one": "{{count}} verze",
+      "versions_few": "{{count}} verze",
+      "versions_other": "{{count}} verzí",
+      "outdated_one": "{{count}} použití je na starší verzi než v{{version}}.",
+      "outdated_few": "{{count}} použití jsou na starších verzích než v{{version}}.",
+      "outdated_other": "{{count}} použití je na starších verzích než v{{version}}.",
+      "updateAll": "Aktualizovat vše",
+      "updated_one": "Aktualizována {{count}} instance.",
+      "updated_few": "Aktualizovány {{count}} instance.",
+      "updated_other": "Aktualizováno {{count}} instancí.",
+      "updatedDropped_one": "Aktualizována {{count}} instance. Nastavení, která nová verze nemá, byla odebrána: {{dropped}}.",
+      "updatedDropped_few": "Aktualizovány {{count}} instance. Nastavení, která nová verze nemá, byla odebrána: {{dropped}}.",
+      "updatedDropped_other": "Aktualizováno {{count}} instancí. Nastavení, která nová verze nemá, byla odebrána: {{dropped}}.",
+      "confirmDelete": "Smazat komponentu „{{label}}“ a všechny její verze?",
+      "instanceOutdated": "Používá verzi {{version}}; je k dispozici verze {{latest}}.",
+      "updateOne": "Aktualizovat na v{{version}}"
+    },
+    "expose": {
+      "title": "Nastavení této komponenty",
+      "hint": "Zpřístupněte, co má jít změnit tomu, kdo „{{label}}“ použije na stránce.",
+      "prop": "Zpřístupnit „{{prop}}“",
+      "exposedAs": "„{{prop}}“ je zpřístupněno jako {{name}}",
+      "link": "odkaz",
+      "exposeLink": "Zpřístupnit odkaz",
+      "linkExposed": "Odkaz je zpřístupněn",
+      "slot": "Povolit stránkám vložit obsah do „{{slot}}“",
+      "slotExposed": "Stránky vkládají obsah do „{{slot}}“"
     }
   }
 }

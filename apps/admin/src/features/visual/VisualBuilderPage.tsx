@@ -1,6 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { APP_JSON, builtinRegistry, checkVisualSite } from '@dcms/site-runtime';
+import {
+  APP_JSON,
+  BUILTIN_COMPONENTS,
+  checkVisualSite,
+  componentDependencies,
+  componentFileOf,
+  readComponentDocs,
+  siteRegistry,
+  tenantType,
+} from '@dcms/site-runtime';
 import type { Editor } from 'grapesjs';
 import {
   AlertCircle,
@@ -16,6 +25,7 @@ import {
   Monitor,
   MousePointer2,
   Palette,
+  Puzzle,
   Redo2,
   RefreshCw,
   Rocket,
@@ -48,7 +58,8 @@ import {
   useVfs,
 } from '../site-source';
 import { PagesPanel } from './PagesPanel';
-import { readPage } from './documents';
+import { readComponent, readPage } from './documents';
+import { ComponentsPanel } from './ComponentsPanel';
 import { ProblemsPanel } from './ProblemsPanel';
 import { PropsPanel } from './PropsPanel';
 import { ThemePanel } from './ThemePanel';
@@ -71,7 +82,7 @@ const VIEWS: { id: VisualView; icon: typeof Code2; labelKey: string }[] = [
   { id: 'preview', icon: Eye, labelKey: 'visual.preview' },
 ];
 
-type SidebarView = 'components' | 'layers' | 'pages' | 'theme' | 'scm' | 'deploy' | 'problems';
+type SidebarView = 'components' | 'mine' | 'layers' | 'pages' | 'theme' | 'scm' | 'deploy' | 'problems';
 
 /**
  * The Mode D builder (ADR 0020): a page is a tree of React components, edited on a GrapesJS
@@ -153,12 +164,60 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
     if (!app) return;
     const current = useVisual.getState().target;
     const pageExists = (id: string) => files[`dcms/pages/${id}.json`] !== undefined;
-    if (current?.kind === 'shell' || (current?.kind === 'page' && pageExists(current.id))) return;
+    if (current?.kind === 'shell' || current?.kind === 'component' || (current?.kind === 'page' && pageExists(current.id))) return;
     const home = app.routes.find((r) => r.path === '/')?.page ?? app.routes[0]?.page;
     if (home && pageExists(home)) useVisual.getState().setTarget({ kind: 'page', id: home });
   }, [app, files]);
 
-  const problems = useMemo(() => checkVisualSite(files, builtinRegistry), [files]);
+  // The site's own components, keyed by their files' text so an unrelated edit does not rebuild
+  // the registry — every rebuild re-registers the canvas types and reloads the canvas.
+  const componentsKey = useMemo(
+    () =>
+      Object.entries(files)
+        .filter(([p]) => componentFileOf(p))
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([p, text]) => `${p}\n${text}`)
+        .join('\u0000'),
+    [files],
+  );
+  const componentDocs = useMemo(() => {
+    const byPath = new Map<string, unknown>();
+    for (const [path, text] of Object.entries(useVfs.getState().files)) {
+      if (!componentFileOf(path)) continue;
+      try {
+        byPath.set(path, JSON.parse(text));
+      } catch {
+        // Reported by the problems list.
+      }
+    }
+    return readComponentDocs(byPath).docs;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [componentsKey]);
+  const registry = useMemo(() => siteRegistry(BUILTIN_COMPONENTS, componentDocs).registry, [componentDocs]);
+  useEffect(() => useVisual.getState().setRegistry(registry), [registry]);
+
+  // While a component is open, neither it nor anything that already contains it may be dropped
+  // into it: a component inside itself would render forever.
+  useEffect(() => {
+    if (target?.kind !== 'component') {
+      useVisual.getState().setBlockedTypes(new Set());
+      return;
+    }
+    const contains = new Map(componentDocs.map((d) => [tenantType(d.name), componentDependencies(d)]));
+    const blocked = new Set([tenantType(target.name)]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const [type, deps] of contains) {
+        if (!blocked.has(type) && [...deps].some((d) => blocked.has(d))) {
+          blocked.add(type);
+          grew = true;
+        }
+      }
+    }
+    useVisual.getState().setBlockedTypes(blocked);
+  }, [target, componentDocs]);
+
+  const problems = useMemo(() => checkVisualSite(files, registry), [files, registry]);
   const errors = problems.filter((p) => p.severity === 'error').length;
 
   const onEditorReady = useCallback((instance: Editor) => {
@@ -224,7 +283,13 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
   const pageRoute = target?.kind === 'page' ? app?.routes.find((r) => r.page === target.id) : undefined;
   const previewPath = pageRoute && !pageRoute.path.includes(':') ? pageRoute.path : '/';
   const targetLabel =
-    target?.kind === 'shell' ? t('visual.pages.shell') : target ? (readPage(target.id)?.title ?? target.id) : '';
+    target?.kind === 'shell'
+      ? t('visual.pages.shell')
+      : target?.kind === 'component'
+        ? t('visual.mine.editing', { label: readComponent(target.name, target.version)?.label ?? target.name, version: target.version })
+        : target
+          ? (readPage(target.id)?.title ?? target.id)
+          : '';
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
@@ -339,6 +404,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
         <div style={{ width: sidebarWidth }} className="flex min-w-0 shrink-0 border-r bg-card">
           <div className="flex w-11 shrink-0 flex-col items-center gap-1 border-r py-2" role="tablist" aria-orientation="vertical">
             <Rail active={sidebar === 'components'} label={t('visual.components')} onClick={() => setSidebar('components')}><Blocks className="h-5 w-5" /></Rail>
+            <Rail active={sidebar === 'mine'} label={t('visual.mine.title')} onClick={() => setSidebar('mine')}><Puzzle className="h-5 w-5" /></Rail>
             <Rail active={sidebar === 'layers'} label={t('builder.layers')} onClick={() => setSidebar('layers')}><Layers className="h-5 w-5" /></Rail>
             <Rail active={sidebar === 'pages'} label={t('builder.pages')} onClick={() => setSidebar('pages')}><FileText className="h-5 w-5" /></Rail>
             <Rail active={sidebar === 'theme'} label={t('visual.theme.title')} onClick={() => setSidebar('theme')}><Palette className="h-5 w-5" /></Rail>
@@ -351,6 +417,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
             <div className={cn('h-full overflow-y-auto', sidebar !== 'components' && 'hidden')}>
               <BlocksPanel editor={editor} />
             </div>
+            {sidebar === 'mine' && <ComponentsPanel editor={editor} />}
             {sidebar === 'layers' && <LayersPanel editor={editor} />}
             {sidebar === 'pages' && <PagesPanel />}
             {sidebar === 'theme' && <ThemePanel />}
@@ -376,7 +443,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
             {target ? (
               <VisualCanvas
                 target={target}
-                registry={builtinRegistry}
+                registry={registry}
                 onReady={onEditorReady}
                 onTeardown={() => setEditor(null)}
                 onPageError={setPageError}
@@ -404,7 +471,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
           <>
             <Resizer onDelta={(dx) => setInspectorWidth(inspectorWidth - dx)} onReset={resetInspectorWidth} />
             <div style={{ width: inspectorWidth }} className="min-w-0 shrink-0 border-l bg-card">
-              <PropsPanel editor={editor} registry={builtinRegistry} />
+              <PropsPanel editor={editor} registry={registry} />
             </div>
           </>
         )}

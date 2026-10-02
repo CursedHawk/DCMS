@@ -1,4 +1,4 @@
-import { walk, type Action, type Node, type Registry, type Responsive } from '@dcms/site-runtime';
+import { definitionFor, walk, type Action, type Node, type Registry, type Responsive } from '@dcms/site-runtime';
 import type { Component } from 'grapesjs';
 
 /**
@@ -38,7 +38,7 @@ export interface NodeExtra {
 type GrapesDefinition = Record<string, unknown>;
 
 export function toGrapes(node: Node, registry: Registry): GrapesDefinition {
-  const definition = registry.get(node.type);
+  const definition = definitionFor(registry, node);
   if (!definition) return { type: UNKNOWN_TYPE, [RAW]: node };
 
   const declared = new Set((definition.slots ?? []).map((s) => s.name));

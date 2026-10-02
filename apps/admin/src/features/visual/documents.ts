@@ -2,11 +2,18 @@ import {
   APP_JSON,
   DOC_ID,
   appSchema,
+  componentFileOf,
+  componentPath,
+  pageIdFromPath,
   pagePath,
   pageSchema,
+  tenantComponentSchema,
+  tenantType,
+  walk,
   type App,
   type Node,
   type Page,
+  type TenantComponentDoc,
 } from '@dcms/site-runtime';
 import { useVfs } from '../site-source';
 import { newNodeId } from './canvas/tree';
@@ -180,3 +187,258 @@ export function defaultShell(): Node {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// The site's own components (P3)
+// ---------------------------------------------------------------------------
+
+export interface ComponentInfo {
+  name: string;
+  /** Every version on disk, ascending. */
+  versions: number[];
+  latest: TenantComponentDoc;
+}
+
+/** Every component in the working draft, by name. Unreadable files are the validator's to report. */
+export function listComponents(all: Readonly<Record<string, string>> = files()): ComponentInfo[] {
+  const byName = new Map<string, TenantComponentDoc[]>();
+  for (const [path, text] of Object.entries(all)) {
+    const file = componentFileOf(path);
+    if (!file) continue;
+    try {
+      const doc = tenantComponentSchema.safeParse(JSON.parse(text));
+      if (doc.success) byName.set(file.name, [...(byName.get(file.name) ?? []), doc.data]);
+    } catch {
+      // Reported by checkVisualSite.
+    }
+  }
+  return [...byName.entries()]
+    .map(([name, docs]) => {
+      docs.sort((a, b) => a.version - b.version);
+      return { name, versions: docs.map((d) => d.version), latest: docs.at(-1)! };
+    })
+    .sort((a, b) => a.latest.label.localeCompare(b.latest.label));
+}
+
+export function readComponent(name: string, version: number): TenantComponentDoc | null {
+  try {
+    const doc = tenantComponentSchema.safeParse(JSON.parse(files()[componentPath(name, version)] ?? ''));
+    return doc.success ? doc.data : null;
+  } catch {
+    return null;
+  }
+}
+
+export function updateComponent(name: string, version: number, change: (doc: TenantComponentDoc) => TenantComponentDoc): Result {
+  const current = readComponent(name, version);
+  if (!current) return { ok: false, error: `${componentPath(name, version)} cannot be read.` };
+  const next = tenantComponentSchema.safeParse(change(current));
+  if (!next.success) return { ok: false, error: next.error.issues[0]?.message ?? 'invalid' };
+  useVfs.getState().writeFile(componentPath(name, version), serializeDoc(next.data));
+  return { ok: true };
+}
+
+/** Every document that can hold component instances: pages, the shell, other components' templates. */
+function documentsWithTrees(all: Readonly<Record<string, string>>): { path: string; roots: Node[] }[] {
+  const out: { path: string; roots: Node[] }[] = [];
+  for (const [path, text] of Object.entries(all)) {
+    try {
+      if (pageIdFromPath(path)) {
+        const page = pageSchema.safeParse(JSON.parse(text));
+        if (page.success) out.push({ path, roots: [page.data.root] });
+      } else if (path === APP_JSON) {
+        const app = appSchema.safeParse(JSON.parse(text));
+        if (app.success && app.data.shell) out.push({ path, roots: [app.data.shell] });
+      } else if (componentFileOf(path)) {
+        const doc = tenantComponentSchema.safeParse(JSON.parse(text));
+        if (doc.success) out.push({ path, roots: [doc.data.root] });
+      }
+    } catch {
+      // Unreadable documents hold no instances we could count.
+    }
+  }
+  return out;
+}
+
+/** Where a component is used: version → number of instances, across every document. */
+export function componentUsage(name: string, all: Readonly<Record<string, string>> = files()): Map<number, number> {
+  const type = tenantType(name);
+  const latest = listComponents(all).find((c) => c.name === name)?.latest.version;
+  const usage = new Map<number, number>();
+  for (const { path, roots } of documentsWithTrees(all)) {
+    if (componentFileOf(path)?.name === name) continue;
+    for (const root of roots) {
+      for (const node of walk(root)) {
+        if (node.type !== type) continue;
+        const v = node.version ?? latest ?? 1;
+        usage.set(v, (usage.get(v) ?? 0) + 1);
+      }
+    }
+  }
+  return usage;
+}
+
+function componentNameFor(label: string, taken: ReadonlySet<string>): string {
+  return pageIdFor(label, taken).slice(0, 48);
+}
+
+/** A new component, v1 — empty, or made from an existing node tree (a selection on a page). */
+export function createComponent(label: string, root?: Node): Result & { name?: string } {
+  const taken = new Set(listComponents().map((c) => c.name));
+  const name = componentNameFor(label, taken);
+  const doc: TenantComponentDoc = {
+    schemaVersion: 1,
+    name,
+    version: 1,
+    label,
+    props: [],
+    slots: [],
+    bindings: {},
+    slotTargets: {},
+    root: root ? freshIds(root) : { id: newNodeId(), type: 'dcms.stack', slots: { default: [] } },
+  };
+  const parsed = tenantComponentSchema.safeParse(doc);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? 'invalid' };
+  useVfs.getState().writeFile(componentPath(name, 1), serializeDoc(parsed.data));
+  return { ok: true, name };
+}
+
+/** A copy of a tree with new ids throughout: a template is its own document, not the page's. */
+function freshIds(node: Node): Node {
+  const copy = structuredClone(node) as Node;
+  const taken = new Set<string>();
+  for (const n of walk(copy)) {
+    n.id = newNodeId(taken);
+    taken.add(n.id);
+  }
+  return copy;
+}
+
+/**
+ * The version to edit. A version that pages already use is never changed under them: editing
+ * one starts the next version as a copy, and instances move to it when someone updates them.
+ */
+export function versionToEdit(name: string): { version: number; created: boolean } | null {
+  const info = listComponents().find((c) => c.name === name);
+  if (!info) return null;
+  const latest = info.latest;
+  if (!componentUsage(name).get(latest.version)) return { version: latest.version, created: false };
+  const next: TenantComponentDoc = { ...latest, version: latest.version + 1 };
+  useVfs.getState().writeFile(componentPath(name, next.version), serializeDoc(next));
+  return { version: next.version, created: true };
+}
+
+/** Delete every version of a component nothing uses. */
+export function deleteComponent(name: string): Result {
+  const used = [...componentUsage(name).values()].reduce((a, b) => a + b, 0);
+  if (used > 0) return { ok: false, error: `It is used ${used} times. Remove those first.` };
+  const info = listComponents().find((c) => c.name === name);
+  for (const v of info?.versions ?? []) useVfs.getState().deleteFile(componentPath(name, v));
+  return { ok: true };
+}
+
+/**
+ * An instance moved to another version: settings the new version does not have are dropped
+ * (and named, so the author knows what changed); slot content is kept under the same slot name.
+ */
+export function migrateInstance(node: Node, to: TenantComponentDoc): { node: Node; dropped: string[] } {
+  const keep = new Set(to.props.map((p) => p.name));
+  const props = Object.fromEntries(Object.entries(node.props ?? {}).filter(([k]) => keep.has(k)));
+  const dropped = Object.keys(node.props ?? {}).filter((k) => !keep.has(k));
+  const next: Node = { ...node, version: to.version, props: Object.keys(props).length ? props : undefined };
+  if (!next.props) delete next.props;
+  return { node: next, dropped };
+}
+
+/** Move every instance, in every document, to the latest version. */
+export function updateAllInstances(name: string): { updated: number; dropped: string[] } {
+  const info = listComponents().find((c) => c.name === name);
+  if (!info) return { updated: 0, dropped: [] };
+  const type = tenantType(name);
+  let updated = 0;
+  const dropped = new Set<string>();
+  const rewrite = (node: Node): Node => {
+    let next = node;
+    if (node.type === type && (node.version ?? info.latest.version) !== info.latest.version) {
+      const migrated = migrateInstance(node, info.latest);
+      migrated.dropped.forEach((d) => dropped.add(d));
+      next = migrated.node;
+      updated++;
+    }
+    if (!next.slots) return next;
+    return { ...next, slots: Object.fromEntries(Object.entries(next.slots).map(([k, v]) => [k, v.map(rewrite)])) };
+  };
+
+  const all = files();
+  for (const [path, text] of Object.entries(all)) {
+    if (componentFileOf(path)?.name === name) continue;
+    const before = updated;
+    try {
+      const json = JSON.parse(text);
+      if (pageIdFromPath(path) && pageSchema.safeParse(json).success) {
+        const page = json as Page;
+        const root = rewrite(page.root);
+        if (updated > before) useVfs.getState().writeFile(path, serializeDoc({ ...page, root }));
+      } else if (path === APP_JSON && appSchema.safeParse(json).success && (json as App).shell) {
+        const app = json as App;
+        const shell = rewrite(app.shell!);
+        if (updated > before) useVfs.getState().writeFile(path, serializeDoc({ ...app, shell }));
+      } else if (componentFileOf(path) && tenantComponentSchema.safeParse(json).success) {
+        const doc = json as TenantComponentDoc;
+        const root = rewrite(doc.root);
+        if (updated > before) useVfs.getState().writeFile(path, serializeDoc({ ...doc, root }));
+      }
+    } catch {
+      // Unreadable documents are left alone; the validator reports them.
+    }
+  }
+  return { updated, dropped: [...dropped] };
+}
+
+/** The file a canvas target is stored in. */
+export function targetPath(target: { kind: 'page'; id: string } | { kind: 'shell' } | { kind: 'component'; name: string; version: number }): string {
+  return target.kind === 'page' ? pagePath(target.id) : target.kind === 'component' ? componentPath(target.name, target.version) : APP_JSON;
+}
+
+/** Replace one node, by id, wherever it is in a document's tree. */
+export function replaceNodeInFile(path: string, nodeId: string, replacement: Node): boolean {
+  let found = false;
+  const swap = (node: Node): Node => {
+    if (node.id === nodeId) {
+      found = true;
+      return replacement;
+    }
+    if (!node.slots) return node;
+    return { ...node, slots: Object.fromEntries(Object.entries(node.slots).map(([k, v]) => [k, v.map(swap)])) };
+  };
+  try {
+    const json = JSON.parse(files()[path] ?? '');
+    if (path === APP_JSON) {
+      const app = json as App;
+      if (!app.shell) return false;
+      const shell = swap(app.shell);
+      if (found) useVfs.getState().writeFile(path, serializeDoc({ ...app, shell }));
+    } else {
+      const doc = json as { root: Node };
+      const root = swap(doc.root);
+      if (found) useVfs.getState().writeFile(path, serializeDoc({ ...doc, root }));
+    }
+  } catch {
+    return false;
+  }
+  return found;
+}
+
+/**
+ * Remove wiring to nodes that are no longer in the template. Deleting the heading a setting was
+ * wired to must not leave a component file the schema refuses — the next load would fail.
+ */
+export function pruneComponent(doc: TenantComponentDoc): TenantComponentDoc {
+  const ids = new Set([...walk(doc.root)].map((n) => n.id));
+  const bindings = Object.fromEntries(
+    Object.entries(doc.bindings).map(([prop, targets]) => [prop, targets.filter((t) => ids.has(t.node))]),
+  );
+  const slotTargets = Object.fromEntries(Object.entries(doc.slotTargets).filter(([, t]) => ids.has(t.node)));
+  return { ...doc, bindings, slotTargets, slots: doc.slots.filter((s) => slotTargets[s.name]) };
+}
+

@@ -1,12 +1,24 @@
-import { APP_JSON, THEME_JSON, appSchema, pagePath, pageSchema, themeTokensSchema, type Node, type Registry } from '@dcms/site-runtime';
+import {
+  APP_JSON,
+  THEME_JSON,
+  appSchema,
+  componentPath,
+  pagePath,
+  pageSchema,
+  tenantComponentSchema,
+  themeTokensSchema,
+  type Node,
+  type Registry,
+} from '@dcms/site-runtime';
 import type { Editor } from 'grapesjs';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useVfs } from '../site-source';
 import { applyTheme, createVisualEditor } from './canvas/editor';
-import { fromGrapes, toGrapes } from './canvas/tree';
-import { defaultShell } from './documents';
+import { registerVisualTypes } from './canvas/types';
+import { ID, fromGrapes, toGrapes } from './canvas/tree';
+import { defaultShell, pruneComponent } from './documents';
 import { serializeDoc } from './starter';
-import type { CanvasTarget } from './store';
+import { useVisual, type CanvasTarget } from './store';
 
 /**
  * One document the canvas can edit: where its tree lives in a file, and how to put an edited
@@ -59,7 +71,9 @@ export function VisualCanvas({
   const captureTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const themeText = useRef<string | undefined>(undefined);
 
-  const path = target.kind === 'page' ? pagePath(target.id) : APP_JSON;
+  const path =
+    target.kind === 'page' ? pagePath(target.id) : target.kind === 'component' ? componentPath(target.name, target.version) : APP_JSON;
+  const [registered, setRegistered] = useState(registry);
   const fileText = useVfs((s) => s.files[path]);
   const generation = useVfs((s) => s.generation);
   const theme = useVfs((s) => s.files[THEME_JSON]);
@@ -79,6 +93,14 @@ export function VisualCanvas({
       }, 300);
     };
     editor.on('update', onUpdate);
+    useVisual.setState({
+      flushCanvas: () => {
+        if (!captureTimer.current) return;
+        clearTimeout(captureTimer.current);
+        captureTimer.current = null;
+        capture(editor, loaded);
+      },
+    });
     // The theme lives in the frame's document, which exists only once the frame has loaded.
     editor.on('load', () => applyThemeText(editor, themeText.current));
     onReady(editor);
@@ -90,6 +112,7 @@ export function VisualCanvas({
         capture(editor, loaded);
       }
       editor.off('update', onUpdate);
+      useVisual.setState({ flushCanvas: () => {} });
       onTeardown();
       editor.destroy();
       editorRef.current = null;
@@ -113,13 +136,17 @@ export function VisualCanvas({
     }
 
     loaded.current = null;
-    const doc = target.kind === 'page' ? pageDoc(fileText) : shellDoc(fileText);
+    const doc = target.kind === 'page' ? pageDoc(fileText) : target.kind === 'component' ? componentDoc(fileText) : shellDoc(fileText);
     if (typeof doc === 'string') {
       onPageError(doc);
       editor.setComponents([] as never);
       return;
     }
     onPageError(null);
+
+    // Whatever was selected stays selected across a reload of the same document (an inspector
+    // edit that rewrote the file, a code-view change), so the author does not lose their place.
+    const keep = current?.path === path ? (editor.getSelected()?.get(ID) as string | undefined) : undefined;
 
     // Replacing the document is not an undoable edit — it is the starting point.
     loading.current = true;
@@ -130,14 +157,31 @@ export function VisualCanvas({
       editor.UndoManager.start();
     }
     editor.UndoManager.clear();
-    editor.select(undefined);
+    editor.select(keep ? findNode(editor, keep) : undefined);
+    // A component's template root stays put: it is what the component *is*.
+    if (target.kind === 'component') editor.getWrapper()?.components().at(0)?.set({ removable: false, draggable: false, copyable: false });
     loaded.current = { path, doc, text: fileText!, generation };
     // GrapesJS reports the load itself as an update; let that pass before listening again.
     setTimeout(() => {
       loading.current = false;
     }, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, fileText, generation, target.kind]);
+  }, [path, fileText, generation, target.kind, registered]);
+
+  // The site's own components changed (one created, edited or deleted): re-register the canvas
+  // types and reload, so instances draw with — and the palette offers — what now exists.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || registry === registered) return;
+    if (captureTimer.current) {
+      clearTimeout(captureTimer.current);
+      captureTimer.current = null;
+      capture(editor, loaded);
+    }
+    registerVisualTypes(editor, registry);
+    loaded.current = null;
+    setRegistered(registry);
+  }, [registry, registered]);
 
   useEffect(() => {
     themeText.current = theme;
@@ -188,6 +232,37 @@ function shellDoc(text: string | undefined): Doc | string {
       return serializeDoc({ ...(now.success ? now.data : app), shell });
     },
   };
+}
+
+function componentDoc(text: string | undefined): Doc | string {
+  const read = parseJson(text, 'This component has no file.');
+  if (typeof read === 'string') return read;
+  const parsed = tenantComponentSchema.safeParse((read as { json: unknown }).json);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    return `${issue?.path.join('.') || 'component'}: ${issue?.message ?? 'invalid'}`;
+  }
+  const doc = parsed.data;
+  const path = componentPath(doc.name, doc.version);
+  return {
+    root: doc.root,
+    // Re-read at write time: the inspector edits this file's settings and slots while the
+    // template is open, and a template capture must not put back an older list of them.
+    write: (root) => {
+      const now = tenantComponentSchema.safeParse(safeJson(useVfs.getState().files[path]));
+      return serializeDoc(pruneComponent({ ...(now.success ? now.data : doc), root }));
+    },
+  };
+}
+
+function findNode(editor: Editor, id: string) {
+  const stack = [...(editor.getWrapper()?.components().models ?? [])];
+  while (stack.length) {
+    const c = stack.pop()!;
+    if (c.get(ID) === id) return c;
+    stack.push(...c.components().models);
+  }
+  return undefined;
 }
 
 function safeJson(text: string | undefined): unknown {

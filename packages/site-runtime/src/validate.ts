@@ -1,9 +1,11 @@
-import { builtinRegistry } from './components';
+import { BUILTIN_COMPONENTS } from './components';
 import { appSchema, pageSchema, walk, type App, type NavItem, type Node } from './document';
 import { isInternalPath } from './ids';
 import { APP_JSON, THEME_JSON, pageIdFromPath } from './paths';
 import { propValueSchema } from './props';
 import { canPlace, type Registry } from './registry';
+import { definitionFor } from './scope';
+import { componentDependencies, componentFileOf, readComponentDocs, siteRegistry, tenantType } from './tenant';
 import { themeTokensSchema } from './theme';
 
 /**
@@ -50,18 +52,22 @@ function navPaths(items: readonly NavItem[]): string[] {
   return items.flatMap((item) => [item.to, ...navPaths(item.children ?? [])]);
 }
 
-function checkTree(root: Node, file: string, where: 'page' | 'shell', registry: Registry, out: SiteProblem[]): void {
+function checkTree(root: Node, file: string, where: 'page' | 'shell' | 'component', registry: Registry, out: SiteProblem[]): void {
   const problem = (severity: SiteProblem['severity'], message: string, nodeId?: string) =>
     out.push({ severity, file, nodeId, message });
 
-  if (root.type !== PAGE_ROOT) problem('error', `The root must be a ${PAGE_ROOT}, not “${root.type}”.`, root.id);
+  if (where !== 'component' && root.type !== PAGE_ROOT) problem('error', `The root must be a ${PAGE_ROOT}, not “${root.type}”.`, root.id);
 
   let outlets = 0;
   for (const node of walk(root)) {
     if (node.type === OUTLET) outlets++;
-    const definition = registry.get(node.type);
+    const definition = definitionFor(registry, node);
     if (!definition) {
-      problem('error', `“${node.type}” is not a known component.`, node.id);
+      problem(
+        'error',
+        registry.has(node.type) ? `“${node.type}” has no version ${node.version}.` : `“${node.type}” is not a known component.`,
+        node.id,
+      );
       continue;
     }
 
@@ -113,11 +119,49 @@ function checkTree(root: Node, file: string, where: 'page' | 'shell', registry: 
   if (where === 'shell' && outlets !== 1) {
     problem('error', outlets === 0 ? 'The app shell has no place for the page content.' : 'The app shell shows the page content more than once.');
   }
-  if (where === 'page' && outlets > 0) problem('error', 'Page content can only be placed in the app shell.');
+  if (where !== 'shell' && outlets > 0) problem('error', 'Page content can only be placed in the app shell.');
 }
 
-export function checkVisualSite(files: Readonly<Record<string, string>>, registry: Registry = builtinRegistry): SiteProblem[] {
+export function checkVisualSite(files: Readonly<Record<string, string>>, given?: Registry): SiteProblem[] {
   const out: SiteProblem[] = [];
+
+  // The site's own components first: every other document may use them.
+  const componentJson = new Map<string, unknown>();
+  for (const [path, text] of Object.entries(files)) {
+    if (!componentFileOf(path)) continue;
+    const json = parse(text);
+    if (json.ok) componentJson.set(path, json.value);
+    else out.push({ severity: 'error', file: path, message: json.message });
+  }
+  const components = readComponentDocs(componentJson);
+  for (const p of components.problems) out.push({ severity: 'error', file: p.path, message: p.message });
+  const built = siteRegistry(BUILTIN_COMPONENTS, components.docs);
+  for (const message of built.problems) out.push({ severity: 'error', file: 'dcms/components', message });
+  const registry = given ?? built.registry;
+
+  for (const doc of components.docs) {
+    checkTree(doc.root, `dcms/components/${doc.name}/v${doc.version}.json`, 'component', registry, out);
+  }
+  // A component that contains itself, directly or through others, would render forever.
+  const deps = new Map<string, Set<string>>();
+  for (const doc of components.docs) {
+    const type = tenantType(doc.name);
+    deps.set(type, new Set([...(deps.get(type) ?? []), ...componentDependencies(doc)]));
+  }
+  const reported = new Set<string>();
+  const visit = (type: string, path: string[]): void => {
+    if (path.includes(type)) {
+      const cycle = [...path.slice(path.indexOf(type)), type];
+      const key = [...cycle].sort().join();
+      if (!reported.has(key)) {
+        reported.add(key);
+        out.push({ severity: 'error', file: 'dcms/components', message: `Components contain each other in a loop: ${cycle.join(' → ')}.` });
+      }
+      return;
+    }
+    for (const next of deps.get(type) ?? []) visit(next, [...path, type]);
+  };
+  for (const type of deps.keys()) visit(type, []);
 
   const theme = parse(files[THEME_JSON]);
   if (theme.ok && !themeTokensSchema.safeParse(theme.value).success) {

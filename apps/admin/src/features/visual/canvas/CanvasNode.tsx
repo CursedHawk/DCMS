@@ -1,6 +1,8 @@
 import {
   NodeBoundary,
+  RegistryContext,
   RenderModeContext,
+  definitionFor,
   SLOT_SHELL_STYLE,
   SiteContext,
   type ComponentDefinition,
@@ -27,15 +29,19 @@ function CanvasSlot({ model, name, layout }: { model: Component; name: string; l
   return <span ref={shell} style={SLOT_SHELL_STYLE} />;
 }
 
-export function CanvasNode({ model, definition }: { model: Component; definition: ComponentDefinition }) {
-  const Impl = definition.component;
+export function CanvasNode({ model, definition: latest }: { model: Component; definition: ComponentDefinition }) {
   const extra = (model.get(EXTRA) ?? {}) as NodeExtra;
   // Read here rather than passed in: each node is its own React root, so a store is the one
   // thing every root sees change at once (a menu edited in the Pages panel, say).
   const app = useVisual((s) => s.app);
+  const registry = useVisual((s) => s.registry);
+  // An instance pinned to an older version of a component draws that version.
+  const definition = definitionFor(registry, { type: latest.type, version: extra.version }) ?? latest;
+  const Impl = definition.component;
   return (
     <RenderModeContext.Provider value="edit">
       <SiteContext.Provider value={{ app }}>
+        <RegistryContext.Provider value={registry}>
         <NodeBoundary type={definition.type}>
           <Impl
             nodeId={model.get(ID) as string}
@@ -45,6 +51,7 @@ export function CanvasNode({ model, definition }: { model: Component; definition
             slot={(name, layout) => <CanvasSlot model={model} name={name} layout={layout} />}
           />
         </NodeBoundary>
+        </RegistryContext.Provider>
       </SiteContext.Provider>
     </RenderModeContext.Provider>
   );

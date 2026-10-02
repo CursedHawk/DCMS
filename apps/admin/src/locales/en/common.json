@@ -1523,6 +1523,43 @@
       "count_other": "{{count}} problems",
       "blockPublish_one": "Fix {{count}} error before publishing.",
       "blockPublish_other": "Fix {{count}} errors before publishing."
+    },
+    "mine": {
+      "title": "My components",
+      "new": "New component",
+      "placeholder": "Event card",
+      "none": "No components yet. Create one, or select something on a page and make it a component.",
+      "makeFromSelection": "Make the selection a component",
+      "namePrompt": "Name the new component",
+      "made": "“{{label}}” is now a component.",
+      "edit": "Edit",
+      "editing": "{{label}} (v{{version}})",
+      "newVersion": "Pages use the current version, so your edits start version {{version}}.",
+      "used_one": "used once",
+      "used_other": "used {{count}} times",
+      "versions_one": "{{count}} version",
+      "versions_other": "{{count}} versions",
+      "outdated_one": "{{count}} use is on an older version than v{{version}}.",
+      "outdated_other": "{{count}} uses are on older versions than v{{version}}.",
+      "updateAll": "Update all",
+      "updated_one": "Updated {{count}} instance.",
+      "updated_other": "Updated {{count}} instances.",
+      "updatedDropped_one": "Updated {{count}} instance. Settings the new version no longer has were removed: {{dropped}}.",
+      "updatedDropped_other": "Updated {{count}} instances. Settings the new version no longer has were removed: {{dropped}}.",
+      "confirmDelete": "Delete the component “{{label}}” and all its versions?",
+      "instanceOutdated": "This uses version {{version}}; version {{latest}} is available.",
+      "updateOne": "Update to v{{version}}"
+    },
+    "expose": {
+      "title": "Settings of this component",
+      "hint": "Expose what someone using “{{label}}” on a page should be able to change.",
+      "prop": "Expose “{{prop}}”",
+      "exposedAs": "“{{prop}}” is exposed as {{name}}",
+      "link": "link",
+      "exposeLink": "Expose the link",
+      "linkExposed": "The link is exposed",
+      "slot": "Let pages put content in “{{slot}}”",
+      "slotExposed": "Pages put content in “{{slot}}”"
     }
   }
 }

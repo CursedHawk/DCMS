@@ -3,6 +3,7 @@ import type { Action, ActionType } from './actions';
 import type { Responsive } from './document';
 import { COMPONENT_TYPE, NAME } from './ids';
 import { propDefinitionSchema, propValueSchema, type PropDefinition } from './props';
+import type { TenantComponentDoc } from './tenant';
 
 /**
  * The component registry: what each type is, what it accepts, and the one rule for where it
@@ -65,6 +66,10 @@ export interface ComponentDefinition {
   component: ComponentType<ComponentRenderProps<any>>;
   props: readonly PropDefinition[];
   slots?: readonly SlotDefinition[];
+  /** Earlier versions of a tenant component, so instances pinned to one keep rendering. */
+  olderVersions?: Readonly<Record<number, ComponentDefinition>>;
+  /** The document a tenant component was made from; absent for built-ins. */
+  template?: TenantComponentDoc;
   /** The actions an author may give an instance (`node.action`). Absent means none. */
   actions?: readonly ActionType[];
   /** The only parent types this may be placed in. Absent means anywhere a slot accepts it. */

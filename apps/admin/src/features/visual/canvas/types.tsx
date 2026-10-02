@@ -2,6 +2,7 @@ import { NODE_CLASS, canPlace, defaultProps, type Registry } from '@dcms/site-ru
 import type { Component, Editor } from 'grapesjs';
 import { createRoot, type Root } from 'react-dom/client';
 import { CanvasNode } from './CanvasNode';
+import { useVisual } from '../store';
 import { applyLayout, type SlotViewState } from './slots';
 import { EXTRA, ID, PROPS, RAW, SLOT, SLOT_TYPE, UNKNOWN_TYPE, newNodeId } from './tree';
 
@@ -55,6 +56,7 @@ export function registerVisualTypes(editor: Editor, registry: Registry): void {
         droppable: (source: Component, target: Component) => {
           const parent = target.parent();
           if (!parent) return false;
+          if (useVisual.getState().blockedTypes.has(source.get('type') ?? '')) return false;
           const siblings = target.components().models.filter((c) => c !== source).length;
           return canPlace(registry, parent.get('type') ?? '', target.get(SLOT), source.get('type') ?? '', siblings).ok;
         },
@@ -103,7 +105,9 @@ export function registerVisualTypes(editor: Editor, registry: Registry): void {
           const cloning = (this as unknown as { opt?: { forCloning?: boolean } }).opt?.forCloning;
           if (!this.get(ID) || cloning) this.set(ID, newNodeId(), { silent: true });
           if (!this.get(PROPS)) this.set(PROPS, defaultProps(definition), { silent: true });
-          if (!this.get(EXTRA)) this.set(EXTRA, {}, { silent: true });
+          // A site's own component is pinned to the version it was placed with, so changing the
+          // component later never changes a page behind its author's back.
+          if (!this.get(EXTRA)) this.set(EXTRA, definition.template ? { version: definition.version } : {}, { silent: true });
           if (this.components().length === 0 && definition.slots?.length) {
             this.components(
               definition.slots.map((slot) => ({ type: SLOT_TYPE, [SLOT]: slot.name, name: slot.label ?? slot.name })),
@@ -146,6 +150,12 @@ export function registerVisualTypes(editor: Editor, registry: Registry): void {
     });
   }
 
+  // Re-registration (a component was created, renamed or removed) must also take away the
+  // blocks of components that no longer exist.
+  for (const block of [...editor.Blocks.getAll().models]) {
+    const id = String(block.getId());
+    if (id.startsWith('dcms-d:') && !registry.has(id.slice('dcms-d:'.length))) editor.Blocks.remove(id);
+  }
   for (const definition of registry.values()) {
     if (definition.draggable === false) continue;
     editor.Blocks.add(`dcms-d:${definition.type}`, {

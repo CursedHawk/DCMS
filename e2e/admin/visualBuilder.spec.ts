@@ -334,3 +334,48 @@ test('publishing is refused while the site has errors, and says where they are',
   await expect(page.getByText('The route /x shows the page “missing”, which does not exist.')).toBeVisible();
   expect(api.requestsTo('POST', `/api/admin/sites/${SITE}/git/commit`)).toHaveLength(0);
 });
+
+test('a selection becomes a component; editing it starts v2; an exposed setting reaches the page after updating', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  page.on('dialog', (d) => void d.accept('Welcome title'));
+
+  // Make the heading a component: v1 is written and the heading is replaced by an instance of it.
+  await frame.locator('[data-dcms-node="h"] h1').click();
+  await page.getByRole('tab', { name: 'My components' }).click();
+  await page.getByRole('button', { name: 'Make the selection a component' }).click();
+
+  await expect.poll(() => saved(api, 'dcms/components/welcome-title/v1.json') ?? '', { timeout: 15000 }).toContain('"label": "Welcome title"');
+  await expect.poll(() => saved(api, 'dcms/pages/home.json') ?? '', { timeout: 15000 }).toContain('"type": "tenant.welcome-title"');
+  const instance = JSON.parse(saved(api, 'dcms/pages/home.json')!).root.slots.default[0];
+  expect(instance).toEqual({ id: 'h', type: 'tenant.welcome-title', version: 1 });
+  // The instance draws the template: same heading, now coming from the component.
+  await expect(frame.locator('[data-dcms-node="h"][data-dcms-type="tenant.welcome-title"] h1')).toHaveText('Welcome home');
+
+  // The page uses v1, so editing starts v2.
+  await page.getByRole('button', { name: 'Edit' }).click();
+  await expect.poll(() => saved(api, 'dcms/components/welcome-title/v2.json') ?? '', { timeout: 15000 }).toContain('"version": 2');
+
+  // In the composer: expose the heading's text as a setting of the component.
+  await frame.locator('h1').first().click();
+  await page.getByRole('button', { name: 'Expose “Text”' }).click();
+  await expect.poll(() => saved(api, 'dcms/components/welcome-title/v2.json') ?? '', { timeout: 15000 }).toContain('"name": "text"');
+  const v2 = JSON.parse(saved(api, 'dcms/components/welcome-title/v2.json')!);
+  expect(v2.props[0]).toMatchObject({ kind: 'text', name: 'text', default: 'Welcome home' });
+
+  // Back on the page, the instance is still v1 — until it is updated.
+  await page.getByRole('tab', { name: 'Pages' }).click();
+  await page.getByRole('button', { name: /^Home/ }).click();
+  await frame.locator('[data-dcms-node="h"] h1').click();
+  await page.getByRole('button', { name: 'Update to v2' }).click();
+  const field = page.getByLabel('Heading: Text');
+  await field.fill('Hello from a component');
+  await field.press('Enter');
+
+  await expect(frame.locator('[data-dcms-node="h"] h1')).toHaveText('Hello from a component');
+  await expect.poll(() => saved(api, 'dcms/pages/home.json') ?? '', { timeout: 15000 }).toContain('"version": 2');
+  expect(JSON.parse(saved(api, 'dcms/pages/home.json')!).root.slots.default[0]).toMatchObject({
+    type: 'tenant.welcome-title',
+    version: 2,
+    props: { text: 'Hello from a component' },
+  });
+});

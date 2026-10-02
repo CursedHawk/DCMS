@@ -1,7 +1,8 @@
-import { Component, type CSSProperties, type ContextType, type ErrorInfo, type ReactNode } from 'react';
+import { Component, useContext, type CSSProperties, type ContextType, type ErrorInfo, type ReactNode } from 'react';
 import type { Node } from './document';
 import type { Registry, SlotLayout } from './registry';
 import { RenderModeContext, useRenderMode } from './renderMode';
+import { RegistryContext, TemplateScopeContext, definitionFor } from './scope';
 
 /**
  * Turning a node tree into React.
@@ -42,20 +43,30 @@ interface RenderNodeProps {
 export function RenderNode({ node, registry }: RenderNodeProps) {
   return (
     <div className={NODE_CLASS} data-dcms-node={node.id} data-dcms-type={node.type}>
-      <NodeBoundary type={node.type}>
-        <NodeBody node={node} registry={registry} />
-      </NodeBoundary>
+      <RegistryContext.Provider value={registry}>
+        <NodeBoundary type={node.type}>
+          <NodeBody node={node} registry={registry} />
+        </NodeBoundary>
+      </RegistryContext.Provider>
     </div>
   );
 }
 
 function NodeBody({ node, registry }: RenderNodeProps) {
   const mode = useRenderMode();
-  const definition = registry.get(node.type);
-  if (!definition) return mode === 'edit' ? <Problem>Unknown component “{node.type}”</Problem> : null;
+  const scope = useContext(TemplateScopeContext);
+  const definition = definitionFor(registry, node);
+  if (!definition) {
+    const known = registry.has(node.type);
+    return mode === 'edit' ? (
+      <Problem>{known ? `“${node.type}” has no version ${node.version}` : `Unknown component “${node.type}”`}</Problem>
+    ) : null;
+  }
 
   const Impl = definition.component;
-  const slot = (name: string, layout?: SlotLayout) => (
+  // Inside a tenant component's template, a slot wired to one of the component's own slots is
+  // drawn by the instance (see tenant.tsx); everything else renders its own children.
+  const slot = (name: string, layout?: SlotLayout) => scope?.slotFor(node.id, name, layout) ?? (
     <span style={SLOT_SHELL_STYLE}>
       <div className={slotClassName(layout)} style={layout?.style} data-dcms-slot={name}>
         {(node.slots?.[name] ?? []).map((child) => (

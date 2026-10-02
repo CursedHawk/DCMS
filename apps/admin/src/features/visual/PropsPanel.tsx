@@ -26,6 +26,7 @@ import { MediaPicker } from '../media/MediaPicker';
 import { assetIdFrom, mediaUrlFor } from '../builder/panels/TraitsPanel';
 import { useEditorEvent, useSelected } from '../builder/panels/useEditorEvent';
 import { EXTRA, PROPS, type NodeExtra } from './canvas/tree';
+import { ExposePanel, InstanceVersion } from './ExposePanel';
 import { useVisual } from './store';
 
 /**
@@ -51,7 +52,10 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
   // Undo/redo change props without changing the selection; re-read on those too.
   useEditorEvent(editor, `component:update:${PROPS} component:update:${EXTRA} undo redo`);
 
-  const definition = selected ? registry.get(selected.get('type') ?? '') : undefined;
+  const latest = selected ? registry.get(selected.get('type') ?? '') : undefined;
+  const pinned = (selected?.get(EXTRA) as NodeExtra | undefined)?.version;
+  // An instance pinned to an older version of a site component is edited as that version.
+  const definition = latest && pinned !== undefined && pinned !== latest.version ? (latest.olderVersions?.[pinned] ?? latest) : latest;
   if (!selected || !definition) {
     return <p className="p-4 text-sm text-muted-foreground">{t('visual.selectSomething')}</p>;
   }
@@ -91,6 +95,7 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
         )}
       </div>
       <div className="space-y-4 p-4">
+        {latest && <InstanceVersion selected={selected} latest={latest} />}
         {definition.props.length === 0 && !definition.actions?.length && (
           <p className="text-sm text-muted-foreground">{t('visual.noProps')}</p>
         )}
@@ -128,6 +133,7 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
             }}
           />
         ) : null}
+        <ExposePanel selected={selected} definition={definition} />
       </div>
     </div>
   );
