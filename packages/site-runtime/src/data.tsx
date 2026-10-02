@@ -190,8 +190,12 @@ export function readField(scope: ItemScope, path: string): unknown {
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** A media field as an image URL: a stored asset id becomes its published delivery URL. */
+/**
+ * A media field as an image URL: a stored asset id becomes its published delivery URL. A list
+ * of media (a gallery's images, an event's photos) is shown by its first.
+ */
 export function mediaUrl(value: unknown): string | undefined {
+  if (Array.isArray(value)) return mediaUrl(value[0]);
   if (typeof value === 'string') {
     if (GUID.test(value)) return `/api/media/${value}/original`;
     if (value.startsWith('/') || /^https?:\/\//.test(value)) return value;

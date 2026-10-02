@@ -86,7 +86,9 @@ describe('Mode D agent tools', () => {
   });
 
   it('builds a component, exposes a setting, and will not edit a version pages use', async () => {
-    await run('create_component', { label: 'Event card', root: { type: 'dcms.stack', slots: { default: [{ id: 't', type: 'dcms.heading', props: { text: 'Title' } }] } } });
+    await run('create_component', { label: 'Event card', root: { id: 'card', type: 'dcms.stack', slots: { default: [{ id: 't', type: 'dcms.heading', props: { text: 'Title' } }] } } });
+    expect(JSON.parse(useVfs.getState().files['dcms/components/event-card/v1.json']!).root.slots.default[0].id).toBe('t');
+    expect((await run('set_props', { doc: 'component:event-card@1', node: 'card', props: { direction: 'horizontal' } })).content).toBe('Updated card.');
     const exposed = await run('expose_setting', { component: 'component:event-card@1', node: 't', prop: 'text', name: 'title' });
     expect(exposed.content).toBe('Exposed as the setting “title”.');
     await run('insert_node', { doc: 'page:home', parent: 'root', slot: 'default', node: { id: 'card', type: 'tenant.event-card', props: { title: 'Gala' } } });

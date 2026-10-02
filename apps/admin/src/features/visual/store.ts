@@ -1,4 +1,4 @@
-import { APP_JSON, appSchema, builtinRegistry, fetchDataClient, type App, type ContentItem, type DataClient, type Registry } from '@dcms/site-runtime';
+import { APP_JSON, appSchema, builtinRegistry, fetchDataClient, type App, type ContentItem, type ContentSchema, type DataClient, type Registry } from '@dcms/site-runtime';
 import { create } from 'zustand';
 import type { DeviceId } from './canvas/editor';
 
@@ -28,6 +28,8 @@ interface VisualState {
    * composer, itself and every component that already contains it (a loop would render forever).
    */
   blockedTypes: ReadonlySet<string>;
+  /** The tenant's content types and fields, once known — what bindings are checked against. */
+  contentSchema: ContentSchema | undefined;
   /** How the canvas and preview read content: the admin's preview proxy for this site. */
   dataClient: DataClient;
   /** What each collection on the canvas fetched, by its node id — the items its template binds to. */
@@ -41,6 +43,7 @@ interface VisualState {
   flushCanvas: () => void;
   setRegistry: (registry: Registry) => void;
   setBlockedTypes: (types: ReadonlySet<string>) => void;
+  setContentSchema: (schema: ContentSchema | undefined) => void;
   setTarget: (target: CanvasTarget) => void;
   setDevice: (device: DeviceId) => void;
   setView: (view: VisualView) => void;
@@ -54,6 +57,7 @@ export const useVisual = create<VisualState>((set, get) => ({
   app: null,
   registry: builtinRegistry,
   blockedTypes: new Set(),
+  contentSchema: undefined,
   dataClient: fetchDataClient,
   previewItems: {},
   pageItem: null,
@@ -67,6 +71,7 @@ export const useVisual = create<VisualState>((set, get) => ({
   flushCanvas: () => {},
   setRegistry: (registry) => set({ registry }),
   setBlockedTypes: (blockedTypes) => set({ blockedTypes }),
+  setContentSchema: (contentSchema) => set({ contentSchema }),
   setTarget: (target) => set({ target }),
   setDevice: (device) => set({ device }),
   setView: (view) => set({ view }),

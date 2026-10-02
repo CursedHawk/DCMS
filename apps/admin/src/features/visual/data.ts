@@ -39,7 +39,12 @@ export function useContentCatalog(): ContentCatalog {
       for (const contentType of manifest?.contentTypes ?? []) {
         const source = sourceSchema.safeParse({ instance: instance.slug, contentType: contentType.name });
         if (!source.success) continue;
-        const fields = contentFields(contentType, customFieldsOf(contentType, parseInstanceConfig(instance.config)));
+        // A JSON list of image ids (Events' photos, a gallery's images) is an image to Mode D:
+        // the runtime shows its first. Mode A's picker keeps calling it text — its runtime cannot.
+        const images = new Set(contentType.fields.filter((f) => f.reference?.mediaCategory === 'Image').map((f) => f.name));
+        const fields = contentFields(contentType, customFieldsOf(contentType, parseInstanceConfig(instance.config))).map((f) =>
+          images.has(f.path) ? { ...f, kind: 'media' as const } : f,
+        );
         sources.push({ source: source.data, label: `${instance.name} › ${contentType.name}`, fields });
       }
     }

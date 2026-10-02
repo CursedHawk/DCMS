@@ -34,6 +34,7 @@ import { useVfs } from '../../site-source/vfs';
 import { newNodeId } from '../canvas/tree';
 import { defaultShell, migrateInstance, pageIdFor, pruneComponent } from '../documents';
 import { serializeDoc } from '../starter';
+import { useVisual } from '../store';
 
 /**
  * The Mode D agent's tools (P5): structured edits of the site's documents, never free-form text.
@@ -299,7 +300,7 @@ export const VISUAL_TOOLS: Tool[] = [
         const f = componentFileOf(path);
         if (f) components.set(f.name, [...(components.get(f.name) ?? []), f.version].sort((a, b) => a - b));
       }
-      const problems = checkVisualSite(all, registryFromFiles(all));
+      const problems = checkVisualSite(all, registryFromFiles(all), useVisual.getState().contentSchema);
       return {
         content: JSON.stringify(
           {
@@ -383,12 +384,12 @@ export const VISUAL_TOOLS: Tool[] = [
       type: 'object',
       properties: {
         doc: DOC,
-        parent: { type: 'string', description: 'id of the node to insert into' },
-        slot: { type: 'string', description: 'its slot, e.g. "default", "item"' },
+        parent: { type: 'string', description: 'id of the node to insert into; omit for the document’s root' },
+        slot: { type: 'string', description: 'its slot, e.g. "default", "item"; omit for "default"' },
         index: { type: 'number', description: 'position in the slot; omit to append' },
         node: { type: 'object', description: '{ type, props?, slots?, bind?, action? }' },
       },
-      required: ['doc', 'parent', 'slot', 'node'],
+      required: ['doc', 'node'],
       additionalProperties: false,
     },
     risk: 'safe',
@@ -404,9 +405,9 @@ export const VISUAL_TOOLS: Tool[] = [
       if (def?.template && parsed.version === undefined) parsed.version = def.version;
       let inserted = '';
       const result = edit(doc.root, (root) => {
-        const target = find(root, str(input, 'parent'));
+        const target = find(root, str(input, 'parent') || root.id);
         if (!target) return `There is no node “${str(input, 'parent')}” in ${str(input, 'doc')}.`;
-        const slot = str(input, 'slot');
+        const slot = str(input, 'slot') || 'default';
         const list = (target.node.slots ??= {})[slot] ?? [];
         const index = typeof input.index === 'number' ? Math.max(0, Math.min(list.length, Math.round(input.index))) : list.length;
         const placement = canPlace(registry, target.node.type, slot, parsed.type, list.length);
@@ -550,7 +551,7 @@ export const VISUAL_TOOLS: Tool[] = [
       // Values are checked by the site validator's rules, so a wrong option is named, not saved.
       const built = doc.build(result.root);
       if (!built.ok) return err(`That would not be a valid document — ${built.error}`);
-      const problems = checkVisualSite({ ...files(), [doc.path]: built.text }, registry).filter(
+      const problems = checkVisualSite({ ...files(), [doc.path]: built.text }, registry, useVisual.getState().contentSchema).filter(
         (p) => p.file === doc.path && p.nodeId === str(input, 'node') && p.severity === 'error',
       );
       if (problems.length) return err(problems.map((p) => p.message).join('\n'));
@@ -667,7 +668,8 @@ export const VISUAL_TOOLS: Tool[] = [
         navigation: input.in_menu ? { ...app.navigation, main: [...(app.navigation?.main ?? []), { label: title, to: path }] } : app.navigation,
       });
       if (!nextApp.success) return err(issue(nextApp.error));
-      const page = pageSchema.safeParse({ schemaVersion: 1, id, title, ...(data ? { data } : {}), root: { id: newNodeId(), type: 'dcms.page', slots: { default: [] } } });
+      // A detail page's tab and share title is the item's own, until someone says otherwise.
+      const page = pageSchema.safeParse({ schemaVersion: 1, id, title, ...(data ? { data, seo: { title: '{title}' } } : {}), root: { id: newNodeId(), type: 'dcms.page', slots: { default: [] } } });
       if (!page.success) return err(issue(page.error));
       const created = ctx.tx.create(pagePath(id), serializeDoc(page.data));
       if (created.isError) return created;
@@ -769,14 +771,14 @@ export const VISUAL_TOOLS: Tool[] = [
       if (typeof parsed === 'string') return err(parsed.replace(/^node/, 'root'));
       const taken = new Set(Object.keys(files()).map(componentFileOf).filter(Boolean).map((f) => f!.name));
       const name = pageIdFor(str(input, 'label'), taken).slice(0, 48);
-      const root = withIds({ ...parsed, id: '' }, new Set());
+      const root = withIds(parsed, new Set());
       const placement = checkPlacement(root, registryFromFiles());
       if (placement) return err(placement);
       const doc = tenantComponentSchema.safeParse({ schemaVersion: 1, name, version: 1, label: str(input, 'label'), props: [], slots: [], bindings: {}, slotTargets: {}, root });
       if (!doc.success) return err(issue(doc.error));
       const o = ctx.tx.create(componentPath(name, 1), serializeDoc(doc.data));
       if (o.isError) return o;
-      return { ...o, content: `Created ${tenantType(name)} v1 — edit it as component:${name}@1.` };
+      return { ...o, content: `Created ${tenantType(name)} v1 (root ${root.id}) — edit it as component:${name}@1.` };
     },
   },
   {
@@ -945,7 +947,7 @@ export const VISUAL_TOOLS: Tool[] = [
     describe: () => 'check site',
     maxResultChars: 12_000,
     run: async () => {
-      const problems = checkVisualSite(files(), registryFromFiles());
+      const problems = checkVisualSite(files(), registryFromFiles(), useVisual.getState().contentSchema);
       return { content: formatProblems(problems), isError: problems.some((p) => p.severity === 'error') };
     },
   },
@@ -953,6 +955,6 @@ export const VISUAL_TOOLS: Tool[] = [
 
 /** The run's deterministic gate: the same report, errors fail it. */
 export async function validateVisualSite(): Promise<{ ok: boolean; report: string }> {
-  const problems = checkVisualSite(files(), registryFromFiles());
+  const problems = checkVisualSite(files(), registryFromFiles(), useVisual.getState().contentSchema);
   return { ok: !problems.some((p) => p.severity === 'error'), report: formatProblems(problems) };
 }

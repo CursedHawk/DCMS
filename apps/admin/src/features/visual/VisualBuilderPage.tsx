@@ -246,10 +246,10 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
 
   // With the tenant's content types known, the validator also checks sources and bound fields.
   const catalog = useContentCatalog();
-  const problems = useMemo(
-    () => checkVisualSite(files, registry, catalog.isLoading ? undefined : catalog.schema),
-    [files, registry, catalog],
-  );
+  const contentSchema = catalog.isLoading ? undefined : catalog.schema;
+  const problems = useMemo(() => checkVisualSite(files, registry, contentSchema), [files, registry, contentSchema]);
+  // The agent's checks read it from the store: it must see the problems this list shows.
+  useEffect(() => useVisual.getState().setContentSchema(contentSchema), [contentSchema]);
   const errors = problems.filter((p) => p.severity === 'error').length;
 
   const onEditorReady = useCallback((instance: Editor) => {

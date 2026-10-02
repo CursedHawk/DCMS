@@ -5,7 +5,7 @@ import { RouterProvider, createMemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { loadDocuments, siteRoutes } from './app';
 import { builtinRegistry } from './components';
-import { DataClientContext, type ContentItem, type DataClient } from './data';
+import { DataClientContext, mediaUrl, type ContentItem, type DataClient } from './data';
 import type { Node, Page } from './document';
 import { pageHead } from './head';
 import { RenderNode } from './render';
@@ -113,6 +113,13 @@ describe('detail pages', () => {
     const app = { schemaVersion: 1 as const, routes: [], seo: { titleTemplate: '%s · Acme' } };
     expect(pageHead(app, page, { item: items[0]!, index: 0, count: 1 }).title).toBe('Summer party · Acme');
     expect(pageHead(app, page).title).toBe('Event · Acme');
+  });
+});
+
+describe('mediaUrl', () => {
+  it('shows a list of media (an event’s photos) by its first, and nothing for an empty one', () => {
+    expect(mediaUrl(['11111111-1111-1111-1111-111111111111', '/b.jpg'])).toBe('/api/media/11111111-1111-1111-1111-111111111111/original');
+    expect(mediaUrl([])).toBeUndefined();
   });
 });
 
