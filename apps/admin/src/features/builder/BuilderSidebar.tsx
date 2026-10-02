@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import type { Editor } from 'grapesjs';
-import { Blocks, FileText, GitBranch, Layers, LayoutTemplate, Puzzle, Rocket } from 'lucide-react';
+import { Blocks, FileText, GitBranch, Layers, LayoutTemplate, Puzzle, Rocket, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
 import { DeploymentsView, SourceControlView, gitApi, useVfs } from '../site-source';
+import { AgentPanel } from '../ide/agent/AgentPanel';
+import { STATIC_TOOLS, validateStaticSite } from './agent/staticTools';
 import { BlocksPanel } from './panels/BlocksPanel';
 import { LayersPanel } from './panels/LayersPanel';
 import { ComponentsPanel } from './panels/ComponentsPanel';
@@ -11,21 +13,35 @@ import { LayoutPanel } from './panels/LayoutPanel';
 import { PagesPanel } from './panels/PagesPanel';
 import { useBuilder } from './store';
 
-export type SidebarView = 'blocks' | 'layers' | 'pages' | 'layout' | 'components' | 'scm' | 'deploy';
+export type SidebarView =
+  | 'blocks'
+  | 'layers'
+  | 'pages'
+  | 'layout'
+  | 'components'
+  | 'scm'
+  | 'deploy'
+  | 'agent';
 
 /**
- * The builder's left rail. Source Control and Deployments are the very same
- * components the Mode B IDE uses — a Mode A site is git-backed in exactly the
- * same way, so branches, diffs, merges and build history need no second
- * implementation.
+ * The builder's left rail. Source Control, Deployments **and the agent** are the
+ * very same components the Mode B IDE uses — a Mode A site is git-backed in
+ * exactly the same way, so branches, diffs, merges, build history and an agent
+ * editing the working draft need no second implementation.
+ *
+ * The agent is given `kind="static"`, which is the whole of what differs: a
+ * different system prompt, no React-only tools, and manifest consistency as the
+ * check in place of a compiler this mode does not have.
  */
 export function BuilderSidebar({
   siteId,
+  siteName,
   view,
   onViewChange,
   editor,
 }: {
   siteId: string;
+  siteName?: string;
   view: SidebarView;
   onViewChange: (v: SidebarView) => void;
   editor: Editor | null;
@@ -74,6 +90,13 @@ export function BuilderSidebar({
         <RailButton active={view === 'deploy'} label={t('ide.deploy.title')} onClick={() => onViewChange('deploy')}>
           <Rocket className="h-5 w-5" />
         </RailButton>
+        <RailButton
+          active={view === 'agent'}
+          label={t('ide.agent.title')}
+          onClick={() => onViewChange('agent')}
+        >
+          <Sparkles className="h-5 w-5" />
+        </RailButton>
       </div>
 
       <div className="min-w-0 flex-1 overflow-hidden">
@@ -96,6 +119,15 @@ export function BuilderSidebar({
           />
         )}
         {view === 'deploy' && <DeploymentsView siteId={siteId} />}
+        {view === 'agent' && (
+          <AgentPanel
+            siteId={siteId}
+            siteName={siteName}
+            kind="static"
+            tools={STATIC_TOOLS}
+            validate={validateStaticSite}
+          />
+        )}
       </div>
     </div>
   );

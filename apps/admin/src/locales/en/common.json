@@ -570,31 +570,6 @@
     "refreshBlockStylesConfirm": "This replaces styles/global.css with the current block stylesheet. Any edits you made in that file are lost — your page CSS is untouched.",
     "refreshBlockStylesNeedsKit": "The newer stylesheet uses {{count}} design tokens your theme does not define, so the “{{kit}}” kit is applied at the same time. Without it the page would lose its type scale, corners and shadows.",
     "radius": "Corner radius",
-    "ai": {
-      "title": "Generate with AI",
-      "generate": "Generate",
-      "generating": "Generating…",
-      "applied": "Added to your working draft — review it in Source Control.",
-      "unusable": "The model did not return usable output.",
-      "rawOutput": "What came back:",
-      "rawEmpty": "(nothing)",
-      "scopeBlock": "Section",
-      "scopePage": "Page",
-      "scopeSite": "Whole site",
-      "hintBlock": "Adds one section to the end of the current page. Nothing else changes.",
-      "hintPage": "Replaces everything on “{{page}}” — its markup and its styles.",
-      "hintSite": "Replaces every page, the navigation and the theme. You will see what it wrote before anything is applied.",
-      "confirmSiteTitle": "Replace this site?",
-      "confirmSiteBody": "The generated site has {{pages}} pages and {{styles}} stylesheets. Applying it replaces the pages you have now. Nothing is committed — you can review the whole change in Source Control and discard it.",
-      "siteUnusable": "This cannot be applied:",
-      "skippedFiles": "Skipped, because a Mode A site does not contain them:",
-      "replaceSite": "Replace the site",
-      "placeholder": {
-        "block": "A pricing section with three tiers — Starter, Team and Enterprise — and a note that prices exclude VAT.",
-        "page": "A contact page: how to reach us, opening hours, and a map placeholder.",
-        "site": "A site for a small architecture studio in Brno: home, projects, about, contact. Calm, lots of whitespace."
-      }
-    },
     "regions": {
       "title": "Layout",
       "add": "Add region",
@@ -844,7 +819,9 @@
       "newFile": "new file",
       "deleteFile": "delete",
       "moreLines_one": "… and {{count}} more line",
-      "moreLines_other": "… and {{count}} more lines"
+      "moreLines_other": "… and {{count}} more lines",
+      "scope": "Reach",
+      "scopeHint": "How far outside this site the agent may reach. Workspace content lets it see which plugin instances and content types exist."
     },
     "starter": {
       "title": "Start your site",

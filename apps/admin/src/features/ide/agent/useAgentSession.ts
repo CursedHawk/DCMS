@@ -32,17 +32,40 @@ import { useQueryClient } from '@tanstack/react-query';
 import { ALL_TOOLS, formatProblems } from './checkTools';
 import { DEFAULT_SCOPE, toolsFor, rememberScope, type AgentScope } from '../../agent/scope';
 import { SANDBOX_TOOLS, SKILL_TOOLS, TENANT_TOOLS, type TenantToolContext } from './tenantTools';
-import { buildSystemPrompt } from './systemPrompt';
+import { buildSystemPrompt, type SiteAgentKind } from './systemPrompt';
 
 /**
- * The Mode B IDE's agent session.
+ * The site agent's session, for both editors.
  *
- * <p>The loop itself now lives in `features/agent/runtime.ts`, shared with the console
- * assistant; what remains here is this surface's wiring — which tools, which prompt, and how the
- * event stream becomes React state.</p>
+ * <p>The loop itself lives in `features/agent/runtime.ts`; what remains here is the wiring —
+ * which tools, which prompt, and how the event stream becomes React state.</p>
+ *
+ * <p>It serves the Mode B IDE and the Mode A visual builder, which differ in exactly three
+ * things: the system prompt, the tools that make no sense in the other mode, and the
+ * deterministic check (a compiler there, manifest consistency here). Everything else about
+ * running an agent over a git-backed working draft — approvals, the transaction, stored
+ * transcripts, run records, the change-review pane — was already identical, which is why the
+ * builder's old one-shot "generate and apply JSON" flow is gone rather than ported.</p>
  */
 
 const MAX_TOKENS = 16000;
+
+/**
+ * Tools that only mean something for a Mode B site.
+ *
+ * <p>Removed from a Mode A run rather than left to fail: that mode has no TypeScript to check,
+ * no bundler to run, no package.json to list and no React preview to query. A model told a tool
+ * exists will reach for it, then spend a turn recovering from an answer that was never coming.</p>
+ */
+const REACT_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  'check_types',
+  'check_build',
+  'last_build',
+  'dependencies',
+  'preview_console',
+  'preview_dom',
+  'preview_text',
+]);
 
 /**
  * One thing that happened in a run, as the panel shows it.
@@ -118,15 +141,47 @@ export interface AgentSession {
 export function useAgentSession(opts: {
   siteId: string;
   siteName?: string;
+  /**
+   * Which kind of site this is. Mode A ('static') gets a different prompt, drops the tools that
+   * only mean something to a React project, and is gated by manifest consistency rather than by
+   * a compiler it does not have.
+   */
+  kind?: SiteAgentKind;
+  /**
+   * Tools this surface contributes beyond the shared registry.
+   *
+   * <p>Passed in rather than imported so a surface's own tools stay in its own bundle: the Mode
+   * A tools reach the block catalogue and the design kits, and folding those into the chunk
+   * both panels share made every IDE visitor download 121 KB of a builder they never open.</p>
+   */
+  tools?: readonly ToolSpec<TenantToolContext>[];
+  /**
+   * The deterministic gate, when this surface has one of its own. Replaces the Mode B compiler
+   * checks entirely — a surface with no compiler is not an unverified Mode B run, it is a
+   * different kind of verification.
+   */
+  validate?: () => Promise<{ ok: boolean; report: string } | null>;
   getOpenApi?: () => string | undefined;
 }): AgentSession {
+  const kind: SiteAgentKind = opts.kind ?? 'react';
   const [entries, setEntries] = useState<AgentEntry[]>([]);
   const [running, setRunning] = useState(false);
   const [mode, setMode] = useState<AiMode>(DEFAULT_MODE);
   const [needsKey, setNeedsKey] = useState(false);
   const [keyProvider, setKeyProvider] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingApproval | null>(null);
-  const [scope, setScopeState] = useState<AgentScope>(DEFAULT_SCOPE);
+  /*
+   * Mode A starts a step wider than Mode B, and that is the one asymmetry worth having.
+   *
+   * A Mode A page does not fetch content — it emits a placeholder naming a plugin instance and a
+   * content type, which the published page fills in. Write that at site-only scope and the model
+   * has no way to learn which instances exist, so it invents a slug and the page renders empty.
+   * A Mode B site reads content through a generated client it can simply read off disk, so it
+   * genuinely does not need the reach.
+   */
+  const [scope, setScopeState] = useState<AgentScope>(
+    kind === 'static' ? 'site+tenant' : DEFAULT_SCOPE,
+  );
   const [classification, setClassification] = useState<Classification | null>(null);
   const [changes, setChanges] = useState<FileChange[]>([]);
   const [lastRun, setLastRun] = useState<AgentRunMetrics | null>(null);
@@ -301,7 +356,9 @@ export function useAgentSession(opts: {
        * baseline is free. It has to be taken now — by the time the gate runs, the files it
        * would measure have already been edited.
        */
-      baselineRef.current = baselineTypeProblems(Object.keys(vfs.files));
+      // Only Mode B has types to baseline; a Mode A site has no .ts file to check.
+      baselineRef.current =
+        kind === 'static' ? Promise.resolve(null) : baselineTypeProblems(Object.keys(vfs.files));
 
       /*
        * How much of the transcript has reached the server.
@@ -573,10 +630,17 @@ export function useAgentSession(opts: {
           for await (const event of runAgent<TenantToolContext>({
             task: trimmed,
             messages: messagesRef.current,
-            system: buildSystemPrompt({ siteName: opts.siteName, openApi: opts.getOpenApi?.() }),
+            system: buildSystemPrompt({
+              kind,
+              siteName: opts.siteName,
+              openApi: opts.getOpenApi?.(),
+            }),
             tools: toolsFor(
               [
-                ...(ALL_TOOLS as ToolSpec<TenantToolContext>[]),
+                ...(ALL_TOOLS as ToolSpec<TenantToolContext>[]).filter(
+                  (tool) => kind !== 'static' || !REACT_ONLY_TOOLS.has(tool.name),
+                ),
+                ...(opts.tools ?? []),
                 ...SKILL_TOOLS,
                 ...SANDBOX_TOOLS,
                 ...TENANT_TOOLS,
@@ -608,6 +672,12 @@ export function useAgentSession(opts: {
              * one the panel can surface.
              */
             validate: async () => {
+              // A surface with its own gate uses it instead. Mode A's is manifest consistency:
+              // a page listed in site.json with no file, a file with no entry, a manifest that
+              // no longer parses — each is a site that looks finished and is broken, and each is
+              // what writing four files in a row produces.
+              if (opts.validate) return opts.validate();
+
               const changed = tx.changes().map((c) => c.path);
 
               const found = await checkTypes(changed);
@@ -682,7 +752,7 @@ export function useAgentSession(opts: {
     },
     // `permissions` matters: it decides which tools the run is offered, and a stale copy would
     // hand the agent the tool set from before somebody's role changed.
-    [opts, push, running, permissions, queryClient],
+    [kind, opts, push, running, permissions, queryClient],
   );
 
   return {

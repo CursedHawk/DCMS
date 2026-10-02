@@ -25,7 +25,6 @@ import { BuilderCanvas } from './BuilderCanvas';
 import { BuilderSidebar, type SidebarView } from './BuilderSidebar';
 import { Inspector } from './Inspector';
 import { CodeView } from './code/CodeView';
-import { AiPanel } from './ai/AiPanel';
 import { AssetsBridge } from './panels/AssetsBridge';
 import { MediaBridge } from './panels/MediaBridge';
 import { RegionChrome } from './panels/RegionChrome';
@@ -75,7 +74,6 @@ export function BuilderPage({ siteId }: { siteId: string }) {
   const setView = useBuilder((s) => s.setView);
 
   const [sidebarView, setSidebarView] = useState<SidebarView>('blocks');
-  const [aiOpen, setAiOpen] = useState(false);
   const [publishMerge, setPublishMerge] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -307,11 +305,14 @@ export function BuilderPage({ siteId }: { siteId: string }) {
           <Redo2 className="h-4 w-4" />
         </Button>
 
+        {/* The AI entry point. It opens the agent rail rather than a dialog: generating a
+            section used to be a one-shot prompt that returned JSON and either applied or did
+            not, which is why "make the hero narrower" was not something it could do. */}
         <Button
           size="icon"
-          variant="ghost"
-          onClick={() => setAiOpen(true)}
-          title={t('builder.ai.title')}
+          variant={sidebarView === 'agent' ? 'secondary' : 'ghost'}
+          onClick={() => setSidebarView('agent')}
+          title={t('ide.agent.title')}
         >
           <Sparkles className="h-4 w-4" />
         </Button>
@@ -343,8 +344,6 @@ export function BuilderPage({ siteId }: { siteId: string }) {
       {/* While a component template is open, its empty bound elements say what
           they are bound to instead of rendering as blank boxes. */}
       <TemplateHints editor={editor} />
-
-      <AiPanel open={aiOpen} onOpenChange={setAiOpen} specs={specs} />
 
       <MergeDialog
         siteId={siteId}
@@ -436,6 +435,7 @@ export function BuilderPage({ siteId }: { siteId: string }) {
         <div style={{ width: sidebarWidth }} className="min-w-0 shrink-0 border-r bg-card">
           <BuilderSidebar
             siteId={siteId}
+            siteName={site.data?.name}
             view={sidebarView}
             onViewChange={setSidebarView}
             editor={editor}

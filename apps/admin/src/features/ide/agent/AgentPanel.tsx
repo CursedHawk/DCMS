@@ -4,13 +4,17 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, cn } from '@dcms/ui';
 import { AI_MODES, type AiMode } from '../../agent/modes';
+import { AGENT_SCOPES, type AgentScope } from '../../agent/scope';
 import { ConversationRail } from '../../assistant/ConversationRail';
 import type { ConversationScope } from '../../assistant/conversations';
 import { ApprovalCard } from './ApprovalCard';
 import { ChangeReview } from './ChangeReview';
 import type { AgentRunMetrics } from './runMetrics';
 import { Transcript } from './Transcript';
+import type { SiteAgentKind } from './systemPrompt';
 import { useAgentSession } from './useAgentSession';
+import type { ToolSpec } from '../../agent/contracts';
+import type { TenantToolContext } from './tenantTools';
 
 // The router's typed route union is intentionally loose here (see routes.tsx); a
 // string-typed path matches the existing pattern (e.g. sitesPath in IdePage).
@@ -85,9 +89,31 @@ const MODE_LABEL: Record<AiMode, string> = {
   auto: 'Full auto',
 };
 
-export function AgentPanel({ siteId, siteName }: { siteId: string; siteName?: string }) {
+/** How far the run may reach. A separate axis from mode — see `features/agent/scope.ts`. */
+const SCOPE_LABEL: Record<AgentScope, string> = {
+  site: 'This site only',
+  'site+tenant': 'Site + workspace content',
+  sandbox: 'Site + sandbox',
+};
+
+export function AgentPanel({
+  siteId,
+  siteName,
+  kind,
+  tools,
+  validate,
+}: {
+  siteId: string;
+  siteName?: string;
+  /** Mode A ('static') or Mode B ('react'). Decides the prompt, the tools and the check. */
+  kind?: SiteAgentKind;
+  /** Tools this surface contributes, kept out of this chunk by being passed in. */
+  tools?: readonly ToolSpec<TenantToolContext>[];
+  /** This surface's own deterministic gate, if it has one. */
+  validate?: () => Promise<{ ok: boolean; report: string } | null>;
+}) {
   const { t } = useTranslation();
-  const session = useAgentSession({ siteId, siteName });
+  const session = useAgentSession({ siteId, siteName, kind, tools, validate });
   const [input, setInput] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [scope, setScope] = useState<ConversationScope>('mine');
@@ -262,19 +288,38 @@ export function AgentPanel({ siteId, siteName }: { siteId: string; siteName?: st
 
             `read` and `careful` are deliberately reachable: reviewing what the agent WOULD do
             is a legitimate way to use it on a site that is already live. */}
-        <select
-          value={session.mode}
-          onChange={(ev) => session.setMode(ev.target.value as AiMode)}
-          title={t('ide.agent.modeHint')}
-          aria-label={t('ide.agent.mode')}
-          className="mt-1.5 rounded border-0 bg-transparent px-1 py-0.5 text-[11px] font-medium text-muted-foreground outline-none hover:bg-accent focus:ring-1 focus:ring-primary"
-        >
-          {AI_MODES.map((m) => (
-            <option key={m} value={m}>
-              {MODE_LABEL[m]}
-            </option>
-          ))}
-        </select>
+        <div className="mt-1.5 flex items-center gap-1">
+          <select
+            value={session.mode}
+            onChange={(ev) => session.setMode(ev.target.value as AiMode)}
+            title={t('ide.agent.modeHint')}
+            aria-label={t('ide.agent.mode')}
+            className="rounded border-0 bg-transparent px-1 py-0.5 text-[11px] font-medium text-muted-foreground outline-none hover:bg-accent focus:ring-1 focus:ring-primary"
+          >
+            {AI_MODES.map((m) => (
+              <option key={m} value={m}>
+                {MODE_LABEL[m]}
+              </option>
+            ))}
+          </select>
+
+          {/* Reach, which until now had no control at all — so the tenant tools the registry
+              offers were unreachable and a Mode A page could not learn which plugin instances
+              exist. Narrowing it is the author's to do, and it has to be visible to be done. */}
+          <select
+            value={session.scope}
+            onChange={(ev) => session.setScope(ev.target.value as AgentScope)}
+            title={t('ide.agent.scopeHint')}
+            aria-label={t('ide.agent.scope')}
+            className="rounded border-0 bg-transparent px-1 py-0.5 text-[11px] font-medium text-muted-foreground outline-none hover:bg-accent focus:ring-1 focus:ring-primary"
+          >
+            {AGENT_SCOPES.map((s) => (
+              <option key={s} value={s}>
+                {SCOPE_LABEL[s]}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );

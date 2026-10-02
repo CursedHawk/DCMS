@@ -586,31 +586,6 @@
     "refreshBlockStylesConfirm": "Nahradí styles/global.css aktuální knihovnou stylů bloků. Vaše úpravy v tomto souboru budou ztraceny — CSS stránek zůstane beze změny.",
     "refreshBlockStylesNeedsKit": "Nová knihovna stylů používá {{count}} designových tokenů, které váš motiv nedefinuje, proto se zároveň použije sada „{{kit}}“. Bez ní by stránka přišla o velikosti písma, zaoblení a stíny.",
     "radius": "Zaoblení rohů",
-    "ai": {
-      "title": "Vygenerovat pomocí AI",
-      "generate": "Vygenerovat",
-      "generating": "Generuji…",
-      "applied": "Přidáno do pracovní verze — zkontrolujte v Source Control.",
-      "unusable": "Model nevrátil použitelný výstup.",
-      "rawOutput": "Co se vrátilo:",
-      "rawEmpty": "(nic)",
-      "scopeBlock": "Sekce",
-      "scopePage": "Stránka",
-      "scopeSite": "Celý web",
-      "hintBlock": "Přidá jednu sekci na konec aktuální stránky. Nic jiného se nezmění.",
-      "hintPage": "Nahradí celý obsah stránky „{{page}}“ — značkování i styly.",
-      "hintSite": "Nahradí všechny stránky, navigaci i motiv. Před použitím uvidíte, co model vytvořil.",
-      "confirmSiteTitle": "Nahradit tento web?",
-      "confirmSiteBody": "Vygenerovaný web má {{pages}} stránek a {{styles}} stylů. Použitím nahradíte stávající stránky. Nic se necommituje — celou změnu zkontrolujete v Source Control a můžete ji zahodit.",
-      "siteUnusable": "Toto nelze použít:",
-      "skippedFiles": "Přeskočeno, protože do webu režimu A nepatří:",
-      "replaceSite": "Nahradit web",
-      "placeholder": {
-        "block": "Cenová sekce se třemi variantami — Start, Tým a Firma — a poznámkou, že ceny jsou bez DPH.",
-        "page": "Kontaktní stránka: jak nás zastihnout, otevírací doba a místo pro mapu.",
-        "site": "Web pro malé architektonické studio v Brně: úvod, projekty, o nás, kontakt. Klidný, hodně bílého místa."
-      }
-    },
     "regions": {
       "title": "Rozvržení",
       "add": "Přidat oblast",
@@ -866,7 +841,9 @@
       "deleteFile": "smazat",
       "moreLines_one": "… a {{count}} další řádek",
       "moreLines_few": "… a {{count}} další řádky",
-      "moreLines_other": "… a {{count}} dalších řádků"
+      "moreLines_other": "… a {{count}} dalších řádků",
+      "scope": "Dosah",
+      "scopeHint": "Jak daleko za tento web agent dosáhne. Obsah pracovního prostoru mu dovolí zjistit, které instance pluginů a typy obsahu existují."
     },
     "starter": {
       "title": "Začněte svůj web",

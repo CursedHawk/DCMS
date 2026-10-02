@@ -159,6 +159,23 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
     );
   }, []);
 
+  /**
+   * Rewrite the answer bubble a turn is streaming into.
+   *
+   * <p>Separate from {@link patchStep} because that one narrows to tool cards. Passing empty
+   * text removes the bubble: a turn whose text blocks were all whitespace must not leave an
+   * empty box behind the tool cards it actually produced.</p>
+   */
+  const patchSay = useCallback((id: string, text: string) => {
+    setSteps((current) =>
+      text
+        ? current.map((step) =>
+            step.id === id && step.kind === 'assistant' ? { ...step, text } : step,
+          )
+        : current.filter((step) => step.id !== id),
+    );
+  }, []);
+
   const setMode = useCallback((next: AiMode) => {
     setModeState(next);
     rememberMode(next);
@@ -332,6 +349,16 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
 
           for (let round = 0; round < MAX_ITERATIONS; round++) {
             let streamed = '';
+            /*
+             * The bubble this turn is writing into, created on its first delta.
+             *
+             * <p>The answer used to appear only once the whole turn had returned, which on a
+             * long reply is several seconds of a spinner and then a wall of text. The deltas
+             * were already arriving — they were being concatenated into a string nobody could
+             * see. Rendering them as they land is the difference between waiting for an answer
+             * and watching one being written, and it costs one more setState per token.</p>
+             */
+            let sayId: string | null = null;
             const turn = await streamAssistantTurn(
               {
                 max_tokens: MAX_TOKENS,
@@ -339,7 +366,21 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
                 messages: history.current,
                 tools: toolDefinitions(tools),
               },
-              { onText: (delta) => (streamed += delta) },
+              {
+                onText: (delta) => {
+                  streamed += delta;
+                  if (sayId === null) {
+                    // Deferred to the first delta rather than created up front: a turn that
+                    // only calls tools says nothing, and an empty bubble above its cards reads
+                    // as an answer that failed.
+                    const step = sayStep(streamed);
+                    sayId = step.id;
+                    push(step);
+                  } else {
+                    patchSay(sayId, streamed);
+                  }
+                },
+              },
               controller.signal,
             );
 
@@ -353,7 +394,10 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
              * very much answered.
              */
             const spoken = streamed.trim() || textOf(turn.content);
-            if (spoken) push(sayStep(spoken));
+            // Settle the bubble on the trimmed text, or drop it if the turn said nothing after
+            // all. A turn that never streamed gets its bubble now, complete.
+            if (sayId !== null) patchSay(sayId, spoken);
+            else if (spoken) push(sayStep(spoken));
 
             const calls = turn.content.filter((b): b is ToolUseBlock => b.type === 'tool_use');
             if (calls.length === 0) {
@@ -454,6 +498,7 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
       onConversationChange,
       contractTools,
       page,
+      patchSay,
       patchStep,
       persist,
       queryClient,

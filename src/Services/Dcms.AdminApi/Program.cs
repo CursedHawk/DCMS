@@ -109,7 +109,6 @@ builder.Services.AddDcmsDataProtection(builder.Configuration);
 // certificate-status and custom-upload endpoints, which is when it starts to.
 builder.Services.AddDcmsEdgeData(builder.Configuration);
 builder.Services.AddDcmsVaultTransit();
-builder.Services.AddScoped<AiPromptBuilder>();
 // One resolution of the tenant's content-API document for every generator (see ApiClientGen).
 builder.Services.AddScoped<Dcms.AdminApi.ApiClientGen.TenantApiResolver>();
 builder.Services.AddDcmsTenantResolutionByHeader();
@@ -396,7 +395,6 @@ app.MapAnalyticsPruneEndpoints();
 app.MapAlertEndpoints();
 app.MapSitePreview();
 app.MapAiSettingsEndpoints();
-app.MapAiGenerationEndpoints();
 app.MapAiAgentEndpoints();
 app.MapAiConversationEndpoints();
 app.MapOpenApiPreview();

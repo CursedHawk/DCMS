@@ -327,3 +327,85 @@ describe('the transcript', () => {
     expect(card.error).toBe('the collection is gone');
   });
 });
+
+/**
+ * Streaming.
+ *
+ * <p>The deltas were already arriving before this — they were being concatenated into a string
+ * the operator never saw, so a long answer was several seconds of spinner and then a wall of
+ * text. These assert the two halves of the fix: the bubble appears mid-stream, and a turn that
+ * streams nothing at all still gets its answer from the finished blocks.</p>
+ */
+describe('streaming', () => {
+  const texts = (steps: readonly { kind: string; text?: string }[]) =>
+    steps.filter((s) => s.kind === 'assistant').map((s) => s.text);
+
+  it('shows the answer while it is still arriving', async () => {
+    let emit: ((delta: string) => void) | null = null;
+    let finish: (() => void) | null = null;
+    vi.mocked(streamAssistantTurn).mockImplementation((_body, handlers) => {
+      emit = (delta) => handlers.onText?.(delta);
+      return new Promise((resolve) => {
+        finish = () =>
+          resolve({
+            content: [{ type: 'text', text: 'Hello there' }],
+            stopReason: 'end_turn',
+          } as never);
+      });
+    });
+
+    const { result } = renderHook(() => useAssistantSession(null, options), { wrapper });
+    act(() => result.current.send('hi'));
+    await waitFor(() => expect(emit).not.toBeNull());
+
+    act(() => emit!('Hello'));
+    expect(texts(result.current.steps)).toEqual(['Hello']);
+    act(() => emit!(' there'));
+    expect(texts(result.current.steps)).toEqual(['Hello there']);
+
+    // One bubble, rewritten — not one per delta.
+    act(() => finish!());
+    await waitFor(() => expect(result.current.running).toBe(false));
+    expect(texts(result.current.steps)).toEqual(['Hello there']);
+  });
+
+  it('still answers when the turn arrives complete with no deltas', async () => {
+    // A provider the gateway had to translate, or a cached reply: onText never fires.
+    vi.mocked(streamAssistantTurn).mockResolvedValue({
+      content: [{ type: 'text', text: 'Complete answer' }],
+      stopReason: 'end_turn',
+    } as never);
+
+    const { result } = renderHook(() => useAssistantSession(null, options), { wrapper });
+    act(() => result.current.send('hi'));
+
+    await waitFor(() => expect(texts(result.current.steps)).toEqual(['Complete answer']));
+  });
+
+  it('leaves no empty bubble behind a turn that only called tools', async () => {
+    // The whitespace is the trap: it fires onText, so the bubble is created, and then trims to
+    // nothing. An empty box above the tool cards reads as an answer that failed.
+    vi.mocked(streamAssistantTurn)
+      .mockImplementationOnce((_body, handlers) => {
+        handlers.onText?.('  \n');
+        return Promise.resolve({
+          content: [
+            { type: 'text', text: '  \n' },
+            { type: 'tool_use', id: 'call-1', name: 'list_content', input: {} },
+          ],
+          stopReason: 'tool_use',
+        } as never);
+      })
+      .mockResolvedValue({
+        content: [{ type: 'text', text: 'done' }],
+        stopReason: 'end_turn',
+      } as never);
+    vi.mocked(api.get).mockResolvedValue({ items: [] });
+
+    const { result } = renderHook(() => useAssistantSession(null, options), { wrapper });
+    act(() => result.current.send('what is here'));
+
+    await waitFor(() => expect(result.current.running).toBe(false));
+    expect(texts(result.current.steps)).toEqual(['done']);
+  });
+});

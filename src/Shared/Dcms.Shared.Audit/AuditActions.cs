@@ -167,9 +167,6 @@ public static class AuditActions
     public const string AiCredentialsUpdated = "ai.credentials.updated";
     public const string AiCredentialsDeleted = "ai.credentials.deleted";
     public const string AiCredentialsRead = "ai.credentials.read";
-    public const string AiGenerateSite = "ai.generate.site";
-    public const string AiGeneratePage = "ai.generate.page";
-    public const string AiGenerateBlock = "ai.generate.block";
 
     /// <summary>A call proxied to the model on the tenant's credentials — who spent the budget.</summary>
     public const string AiRequestProxied = "ai.request";

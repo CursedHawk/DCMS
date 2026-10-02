@@ -7,10 +7,14 @@ import {
   pageCssPath,
   pageHtmlPath,
   regionHtmlPath,
+  renderThemeCss,
   type SiteManifest,
 } from '@dcms/gjs-schema';
 import { create } from 'zustand';
-import { useVfs } from '../site-source';
+// The store itself, not the feature barrel: that barrel also exports the Monaco editor, and
+// pulling it in here drags the whole editor chunk into every module that touches builder state
+// — including its tests, which have no DOM for it.
+import { useVfs } from '../site-source/vfs';
 import { aiGuideFor, projectFiles, readProject, type Project } from './project';
 
 /**
@@ -63,6 +67,15 @@ interface BuilderState {
    * reload the canvas in a loop.
    */
   capturedFiles: Record<string, string>;
+  /**
+   * The theme as CSS, as of the last sync.
+   *
+   * The canvas holds its own copy of the `:root` block, so a theme changed from outside it —
+   * the code view, a git restore, an agent applying a design kit — leaves the canvas rendering
+   * the old tokens until the author happens to switch page. The drift check above cannot see
+   * it: it watches the files the canvas *writes*, and the canvas never writes `site.json`.
+   */
+  themeCss: string;
 
   /** Re-read the project from the working-draft file map. */
   syncFromVfs: () => void;
@@ -93,6 +106,7 @@ export const useBuilder = create<BuilderState>((set, get) => ({
   view: 'design',
   reloadToken: 0,
   capturedFiles: {},
+  themeCss: '',
 
   syncFromVfs: () => {
     const files = useVfs.getState().files;
@@ -120,20 +134,40 @@ export const useBuilder = create<BuilderState>((set, get) => ({
       (path) => captured[path] !== undefined && files[path] !== captured[path],
     );
 
+    // Compared against the last sync rather than against the canvas, so it catches a theme
+    // change whatever made it. The first load is not drift: there is no previous project to
+    // have drifted from, and the canvas is about to read everything anyway.
+    const themeCss = project ? renderThemeCss(project.manifest.theme) : '';
+    const themeDrifted = get().project !== null && themeCss !== get().themeCss;
+
     set((s) => ({
       project,
       error,
       activeSlug,
       activeKind,
-      reloadToken: drifted ? s.reloadToken + 1 : s.reloadToken,
+      themeCss,
+      reloadToken: drifted || themeDrifted ? s.reloadToken + 1 : s.reloadToken,
     }));
 
-    // The authoring contract is generated, which has to mean *every* repo has a
-    // current one — including the ones that predate it and the one someone just
-    // deleted the file from. Opening the site is enough. `writeFile` is a no-op
-    // when the content already matches, so this settles after one pass rather
-    // than looping through the sync it triggers.
-    if (project) useVfs.getState().writeFile(AGENTS_MD, aiGuideFor(project));
+    /*
+     * The generated files, regenerated.
+     *
+     * `AGENTS.md` because the authoring contract being generated has to mean *every* repo has a
+     * current one — including the ones that predate it and the one someone just deleted the file
+     * from. `styles/theme.css` because the publisher links it as a file rather than deriving it
+     * from `site.json`, so a theme changed by anything other than a builder edit — the code
+     * view, a git restore, an agent applying a design kit — would ship the previous palette.
+     * Writing both here is what makes "derived from site.json" true however site.json changed,
+     * rather than only when the change came through `update()`.
+     *
+     * `writeFile` is a no-op when the content already matches, so this settles after one pass
+     * rather than looping through the sync it triggers.
+     */
+    if (project) {
+      const vfs = useVfs.getState();
+      vfs.writeFile(AGENTS_MD, aiGuideFor(project));
+      vfs.writeFile(THEME_CSS, themeCss);
+    }
   },
 
   noteCapture: (files) =>
