@@ -48,6 +48,8 @@
     "visitorsHint": "Distinct visitors, counted by a rotating hash. The same person on two devices counts twice; the same device across the period counts once.",
     "sessionsHint": "A run of activity from one visitor. A new session starts after a gap of inactivity.",
     "pageviewsHint": "Page views only — the subset of events with type \"pageview\".",
-    "eventsHint": "Everything recorded, including page views, outbound clicks, downloads and page-leave signals."
+    "eventsHint": "Everything recorded, including page views, outbound clicks, downloads and page-leave signals.",
+    "refresh": "Refresh rate",
+    "refreshEvery": "Refresh every {{count}} min"
   }
 }

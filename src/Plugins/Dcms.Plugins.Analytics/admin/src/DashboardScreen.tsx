@@ -94,6 +94,20 @@ const campaignColumns = (t: TFunction): Column<Campaign>[] => [
   },
 ];
 
+/** How often the dashboard refetches, in minutes. Never below one: each tick is three queries over the raw event table. */
+const REFRESH_MINUTES = [1, 2, 5, 10, 15, 30, 60];
+const DEFAULT_REFRESH_MINUTES = 5;
+const REFRESH_KEY = 'dcms.analytics.refreshMinutes';
+
+function readRefreshMinutes(): number {
+  try {
+    const saved = Number(localStorage.getItem(REFRESH_KEY));
+    return REFRESH_MINUTES.includes(saved) ? saved : DEFAULT_REFRESH_MINUTES;
+  } catch {
+    return DEFAULT_REFRESH_MINUTES;
+  }
+}
+
 /** Radix Select reserves the empty string for "nothing selected". */
 const ANY = '__any';
 
@@ -134,6 +148,26 @@ export function DashboardScreen() {
   // over the raw event table, and refetching on every character would hammer it.
   const [appliedPath, setAppliedPath] = useState('');
 
+  const [refreshMinutes, setRefreshMinutes] = useState(readRefreshMinutes);
+  const changeRefresh = (value: string) => {
+    setRefreshMinutes(Number(value));
+    try {
+      localStorage.setItem(REFRESH_KEY, value);
+    } catch {
+      // Private window or blocked storage: the choice lasts until the page closes.
+    }
+  };
+  /*
+   * Polling, on purpose and against the console-wide rule: nothing on the server announces new
+   * events (the hub's "analytics" tag fires only on a clear), so a dashboard left open would
+   * otherwise never move. The reader picks the period, never below a minute; react-query skips
+   * the ticks while the tab is hidden.
+   */
+  const polling = {
+    // eslint-disable-next-line no-restricted-syntax -- a reader-chosen period of a minute or more; see above.
+    refetchInterval: refreshMinutes * 60_000,
+  };
+
   const query = new URLSearchParams({ days });
   if (type !== ANY) query.set('type', type);
   if (country !== ANY) query.set('country', country);
@@ -143,6 +177,7 @@ export function DashboardScreen() {
   const a = useQuery({
     queryKey: ['analytics', query.toString()],
     queryFn: () => api.get<Analytics>(`/admin/analytics?${query}`),
+    ...polling,
   });
 
   /*
@@ -157,24 +192,28 @@ export function DashboardScreen() {
    * visitors, and distinct counts do not decompose — a two-period fetch could not be split back
    * into two visitor numbers without over-counting anyone who appeared in both.
    */
+  // The window is computed when the request goes out, not in the key: a key holding "now" changed
+  // on every render, so each answer re-rendered into a new key and fetched again — forever.
   const span = Number(days);
-  const previousQuery = new URLSearchParams(query);
-  previousQuery.delete('days');
-  {
-    const to = new Date();
-    to.setDate(to.getDate() - span);
-    const from = new Date(to);
-    from.setDate(from.getDate() - span);
-    previousQuery.set('from', from.toISOString());
-    previousQuery.set('to', to.toISOString());
-  }
   const previous = useQuery({
-    queryKey: ['analytics', 'previous', previousQuery.toString()],
-    queryFn: () => api.get<Analytics>(`/admin/analytics?${previousQuery}`),
+    queryKey: ['analytics', 'previous', query.toString()],
+    queryFn: () => {
+      const previousQuery = new URLSearchParams(query);
+      previousQuery.delete('days');
+      const to = new Date();
+      to.setDate(to.getDate() - span);
+      const from = new Date(to);
+      from.setDate(from.getDate() - span);
+      previousQuery.set('from', from.toISOString());
+      previousQuery.set('to', to.toISOString());
+      return api.get<Analytics>(`/admin/analytics?${previousQuery}`);
+    },
+    ...polling,
   });
   const dimensions = useQuery({
     queryKey: ['analytics-dimensions', days],
     queryFn: () => api.get<Dimensions>(`/admin/analytics/dimensions?days=${days}`),
+    ...polling,
   });
 
   const clear = useMutation({
@@ -211,6 +250,18 @@ export function DashboardScreen() {
                 {['7', '30', '90', '365'].map((d) => (
                   <SelectItem key={d} value={d}>
                     {t('analytics.days', { count: Number(d) })}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={String(refreshMinutes)} onValueChange={changeRefresh}>
+              <SelectTrigger className="w-44" aria-label={t('analytics.refresh')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REFRESH_MINUTES.map((m) => (
+                  <SelectItem key={m} value={String(m)}>
+                    {t('analytics.refreshEvery', { count: m })}
                   </SelectItem>
                 ))}
               </SelectContent>
