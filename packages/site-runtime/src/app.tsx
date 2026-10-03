@@ -9,6 +9,7 @@ import { APP_JSON, THEME_JSON, pageIdFromPath } from './paths';
 import type { Registry } from './registry';
 import { RenderNode } from './render';
 import { SiteContext } from './site';
+import { PageStateContext } from './state';
 import { RUNTIME_CSS } from './styles';
 import { readComponentDocs, siteRegistry, type TenantComponentDoc } from './tenant';
 import { emptyTheme, themeRootCss, themeTokensSchema, type ThemeTokens } from './theme';
@@ -129,15 +130,18 @@ function RoutePage({ page, app, registry }: { page: Page | undefined; app: App; 
   }, [app, page, params, scope]);
 
   if (!page) return <NotFound />;
+  const stateScope = { pageId: page.id, defaults: page.state ?? {} };
   if (page.data) {
     // A detail page with no such item is a 404, not an empty page.
     if (!slug || item.state === 'error') return <NotFound />;
     if (item.state === 'loading') return <main className="dcms-page" aria-busy="true" />;
   }
   return (
-    <ItemContext.Provider value={scope}>
-      <RenderNode node={page.root} registry={registry} />
-    </ItemContext.Provider>
+    <PageStateContext.Provider value={stateScope}>
+      <ItemContext.Provider value={scope}>
+        <RenderNode node={page.root} registry={registry} />
+      </ItemContext.Provider>
+    </PageStateContext.Provider>
   );
 }
 

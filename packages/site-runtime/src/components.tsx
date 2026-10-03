@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useContext, type ReactNode } from 'react';
 import { Outlet, useInRouterContext } from 'react-router';
 import type { NavItem, Responsive } from './document';
 import type { PropDefinition } from './props';
@@ -6,6 +6,7 @@ import { createRegistry, type ComponentDefinition, type ComponentRenderProps } f
 import { useRenderMode } from './renderMode';
 import { Collection, Form, FormField, Modal, RichText, runAction } from './dataComponents';
 import { SiteLink, useSite } from './site';
+import { PageStateContext } from './state';
 
 /**
  * The built-in components.
@@ -175,6 +176,7 @@ const BUTTON_SIZES = ['sm', 'md', 'lg'] as const;
  */
 function Button({ props, action }: ComponentRenderProps<Props>) {
   const mode = useRenderMode();
+  const pageState = useContext(PageStateContext);
   const variant = choice(props.variant, VARIANTS, 'primary');
   const size = choice(props.size, BUTTON_SIZES, 'md');
   const className = `dcms-button dcms-button-${variant} dcms-button-${size}`;
@@ -192,7 +194,7 @@ function Button({ props, action }: ComponentRenderProps<Props>) {
     );
   }
   // Scroll, popup and toast actions run on click — on the site, never on the canvas.
-  const onClick = mode === 'live' && action ? () => runAction(action) : undefined;
+  const onClick = mode === 'live' && action ? () => runAction(action, pageState) : undefined;
   return (
     <button type="button" className={className} onClick={onClick}>
       {label}
@@ -464,7 +466,7 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
     label: 'Button',
     category: 'Content',
     component: Button,
-    actions: ['navigate', 'open-external', 'scroll-to', 'open-modal', 'show-toast'],
+    actions: ['navigate', 'open-external', 'scroll-to', 'open-modal', 'show-toast', 'set-state', 'toggle-state'],
     props: [
       { kind: 'text', name: 'label', label: 'Label', default: 'Button', maxLength: 80 },
       select('variant', 'Style', VARIANTS, 'primary'),

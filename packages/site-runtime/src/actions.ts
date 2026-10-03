@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { NODE_ID, isInternalPath, isSafeExternalHref } from './ids';
+import { NAME, NODE_ID, isInternalPath, isSafeExternalHref } from './ids';
+import { stateValueSchema } from './state';
 
 /**
  * What a component may *do*, as data.
@@ -9,7 +10,7 @@ import { NODE_ID, isInternalPath, isSafeExternalHref } from './ids';
  * AI all offer behaviour from the same short menu, and what makes every action reviewable in a
  * diff. In the editor the runtime does not run them at all — a click there selects.
  *
- * `set-state` is deliberately absent until there is a state model for it to write to.
+ * `set-state` and `toggle-state` write the page's declared state (state.ts).
  */
 
 const internalPath = z.string().refine(isInternalPath, 'must be a path on this site, starting with /');
@@ -27,6 +28,8 @@ export const actionSchema = z.discriminatedUnion('type', [
     message: z.string().min(1).max(200),
     tone: z.enum(['info', 'success', 'error']).optional(),
   }),
+  z.strictObject({ type: z.literal('set-state'), key: z.string().regex(NAME), value: stateValueSchema }),
+  z.strictObject({ type: z.literal('toggle-state'), key: z.string().regex(NAME) }),
 ]);
 
 export type Action = z.infer<typeof actionSchema>;

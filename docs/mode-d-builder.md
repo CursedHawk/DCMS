@@ -100,6 +100,18 @@ dropping (and naming) settings the new version no longer has.
 `checkVisualSite` checks sources and bound fields against the tenant's content types, so a
 renamed field or a removed plugin shows up in Problems, not as an empty card.
 
+## Page state, custom CSS, language
+
+- **Page state** — `page.state` declares named values with defaults (`{ "tab": "dates",
+  "open": false }`). Buttons `set-state` / `toggle-state` them; a node's `when`
+  (`{ state, equals? }`) shows it only while the value matches — tabs, toggles, show/hide.
+  The canvas always shows everything; preview and site hide. The shell has no state.
+  Declared in Pages › page settings; *Show when* in the inspector.
+- **Custom CSS** (Advanced, collapsed) — `node.css` holds declarations applied to that
+  instance's element through a rule scoped to its id. Braces, `< >`, at-rules, escapes and
+  `url()`-like functions are refused, by the schema and again at render.
+- **Language** — `app.locale` sets `<html lang>` and how a bound ISO date reads in a text prop.
+
 ## The agent
 
 The Agent tab runs the shared agent with kind `visual`. Its tools edit documents as trees:
@@ -107,7 +119,7 @@ The Agent tab runs the shared agent with kind `visual`. Its tools edit documents
 `remove_node`, `duplicate_node`, `set_props` (with a device), `bind_props`, `set_action`,
 `create_page`, `update_page`, `delete_page` (asks first), `create_component`,
 `start_component_version`, `expose_setting`, `expose_slot`, `update_instances`,
-`set_design_kit`, `check_visual_site`. Every write re-validates the whole document and its
+`set_design_kit`, `set_css`, `set_when`, `check_visual_site`. Every write re-validates the whole document and its
 placement, and goes through the run transaction (reviewable, revertable). The run's gate is
 `checkVisualSite` with the same content schema the Problems list uses.
 
@@ -162,4 +174,3 @@ serve), and a prompt-driven run against a real model.
   `open-modal`, the agent. Copies get fresh ids at birth.
 - A binding with no item around it (outside a collection's item slot, on a non-detail
   page) is an error, not an empty string.
-- Dates bound to text props print as stored (ISO); there is no date formatting yet.

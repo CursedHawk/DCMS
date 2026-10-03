@@ -429,3 +429,35 @@ test('an instance’s own CSS applies on the canvas and saves with the node; uns
   await expect(frame.locator('[data-dcms-node="h"] h1')).toHaveCSS('letter-spacing', '12px');
   await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"css": "letter-spacing: 12px"');
 });
+
+test('page state: declared in Pages, set by a button, shown when — on the site, while the canvas shows all', async ({ page, api }) => {
+  const home = JSON.parse(twoPages['dcms/pages/home.json']);
+  home.state = { open: false };
+  home.root.slots.default.push(
+    { id: 'more', type: 'dcms.button', props: { label: 'More' }, action: { type: 'toggle-state', key: 'open' } },
+    { id: 'details', type: 'dcms.text', props: { text: 'The details' }, when: { state: 'open' } },
+  );
+  const frame = await open(page, api, { ...twoPages, 'dcms/pages/home.json': doc(home) });
+
+  // The canvas edits everything, hidden or not; the inspector says what hides it.
+  await expect(frame.getByText('The details')).toBeVisible();
+  await frame.locator('[data-dcms-node="details"] p').click();
+  await expect(page.getByRole('combobox', { name: 'Show when' })).toHaveText('open');
+
+  // A new state, declared in the page's settings.
+  await page.getByRole('tab', { name: 'Pages' }).click();
+  await page.getByRole('button', { name: 'Show settings' }).first().click();
+  await page.getByLabel('New state name').fill('tab');
+  await page.getByRole('button', { name: 'Add state' }).click();
+  await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"tab": false');
+
+  // On the site the details wait for the button.
+  await page.getByRole('group', { name: 'View' }).getByTitle('Preview').click();
+  const preview = page.frameLocator('iframe[title="Preview"]');
+  await expect(preview.getByRole('button', { name: 'More' })).toBeVisible();
+  await expect(preview.getByText('The details')).toHaveCount(0);
+  await preview.getByRole('button', { name: 'More' }).click();
+  await expect(preview.getByText('The details')).toBeVisible();
+  await preview.getByRole('button', { name: 'More' }).click();
+  await expect(preview.getByText('The details')).toHaveCount(0);
+});

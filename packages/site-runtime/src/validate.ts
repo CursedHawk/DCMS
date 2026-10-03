@@ -1,7 +1,7 @@
 import { codeContractOf, codeContractPath, codeDefinitions, codeSourceOf, codeSourcePath, readCodeContracts, type CodeContract } from './code';
 import { BUILTIN_COMPONENTS } from './components';
 import { BINDABLE, sourceSchema, type Source } from './data';
-import { appSchema, pageSchema, type App, type NavItem, type Node, type Page } from './document';
+import { appSchema, pageSchema, walk, type App, type NavItem, type Node, type Page } from './document';
 import { isInternalPath } from './ids';
 import { APP_JSON, THEME_JSON, pageIdFromPath } from './paths';
 import { propValueSchema } from './props';
@@ -64,6 +64,29 @@ const META = new Set(['#slug', '#id', '#publishedAt', '#index', '#number', '#cou
 
 /** What bindings in a subtree read from: a known source, an item of unknown shape, or nothing. */
 type Scope = { kind: 'none' } | { kind: 'unknown' } | { kind: 'source'; key: string };
+
+/**
+ * Page state: whatever a node shows `when`, or an action sets or toggles, is a value its page
+ * declares — and a toggle flips a true/false one. The shell belongs to no page, so it has none.
+ * (A component's template is checked where it is placed, which is not known here.)
+ */
+function checkState(root: Node, file: string, state: Readonly<Record<string, unknown>> | null, out: SiteProblem[]): void {
+  for (const node of walk(root)) {
+    const keys: { key: string; toggle: boolean }[] = [];
+    if (node.when) keys.push({ key: node.when.state, toggle: false });
+    if (node.action?.type === 'set-state') keys.push({ key: node.action.key, toggle: false });
+    if (node.action?.type === 'toggle-state') keys.push({ key: node.action.key, toggle: true });
+    for (const { key, toggle } of keys) {
+      if (state === null) {
+        out.push({ severity: 'error', file, nodeId: node.id, message: `The app shell has no page state, so “${key}” means nothing here.` });
+      } else if (!(key in state)) {
+        out.push({ severity: 'error', file, nodeId: node.id, message: `This page declares no state “${key}”.` });
+      } else if (toggle && typeof state[key] !== 'boolean') {
+        out.push({ severity: 'error', file, nodeId: node.id, message: `“${key}” is not true/false, so it cannot be toggled.` });
+      }
+    }
+  }
+}
 
 function checkTree(
   root: Node,
@@ -282,6 +305,7 @@ export function checkVisualSite(files: Readonly<Record<string, string>>, given?:
     pageData.set(id, page.data.data);
     const scope: Scope = page.data.data ? { kind: 'source', key: sourceKey(page.data.data.source) } : { kind: 'none' };
     checkTree(page.data.root, path, 'page', registry, out, scope, content);
+    checkState(page.data.root, path, page.data.state ?? {}, out);
     if (page.data.data && content && !content.has(sourceKey(page.data.data.source))) {
       out.push({ severity: 'error', file: path, message: `It shows one item of ${sourceKey(page.data.data.source)}, which this site’s plugins do not provide.` });
     }
@@ -325,7 +349,10 @@ export function checkVisualSite(files: Readonly<Record<string, string>>, given?:
     }
   }
 
-  if (app.shell) checkTree(app.shell, APP_JSON, 'shell', registry, out, { kind: 'none' }, content);
+  if (app.shell) {
+    checkTree(app.shell, APP_JSON, 'shell', registry, out, { kind: 'none' }, content);
+    checkState(app.shell, APP_JSON, null, out);
+  }
   return out;
 }
 

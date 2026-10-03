@@ -1576,6 +1576,19 @@
       "hint": "Pouze deklarace, použité na tuto komponentu. Přednost mají motiv a vlastnosti: řídí se design kitem.",
       "invalid": "Ve vlastním CSS není povoleno."
     },
+    "state": {
+      "title": "Stav stránky",
+      "newName": "Název nového stavu",
+      "add": "Přidat stav",
+      "hint": "Hodnoty, které nastavují tlačítka a podle kterých se komponenty zobrazují. Zadejte true, false, číslo nebo text.",
+      "showWhen": "Zobrazit, když",
+      "always": "Vždy",
+      "equalsHint": "rovná se… (prázdné: když true)",
+      "canvasNote": "Plátno ukazuje vše; web a náhled skryjí.",
+      "set": "Nastavit stav stránky",
+      "toggle": "Přepnout stav stránky",
+      "key": "Stav"
+    },
     "mine": {
       "title": "Moje komponenty",
       "newCode": "Nová vývojářská komponenta (TSX)",

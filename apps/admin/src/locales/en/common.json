@@ -1542,6 +1542,19 @@
       "hint": "Declarations only, applied to this component. Prefer the theme and props: they follow the design kit.",
       "invalid": "Not allowed in custom CSS."
     },
+    "state": {
+      "title": "Page state",
+      "newName": "New state name",
+      "add": "Add state",
+      "hint": "Values its buttons set and its components show “when”. Type true, false, a number or text.",
+      "showWhen": "Show when",
+      "always": "Always",
+      "equalsHint": "equals… (empty: when true)",
+      "canvasNote": "The canvas shows everything; the site and preview hide it.",
+      "set": "Set page state",
+      "toggle": "Toggle page state",
+      "key": "State"
+    },
     "mine": {
       "title": "My components",
       "newCode": "New developer component (TSX)",

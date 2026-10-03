@@ -1,4 +1,4 @@
-import { definitionFor, walk, type Action, type Node, type Registry, type Responsive } from '@dcms/site-runtime';
+import { definitionFor, walk, type Action, type Node, type Registry, type Responsive, type When } from '@dcms/site-runtime';
 import type { Component } from 'grapesjs';
 
 /**
@@ -35,6 +35,7 @@ export interface NodeExtra {
   action?: Action;
   bind?: Record<string, string>;
   css?: string;
+  when?: When;
 }
 
 type GrapesDefinition = Record<string, unknown>;
@@ -51,6 +52,7 @@ export function toGrapes(node: Node, registry: Registry): GrapesDefinition {
   if (node.action !== undefined) extra.action = node.action;
   if (node.bind !== undefined) extra.bind = node.bind;
   if (node.css !== undefined) extra.css = node.css;
+  if (node.when !== undefined) extra.when = node.when;
 
   return {
     type: node.type,
@@ -109,6 +111,7 @@ export function fromGrapes(component: Component, seen: Set<string> = new Set()):
     action: extra.action,
     bind: extra.bind,
     css: extra.css,
+    when: extra.when,
   });
 }
 
@@ -126,6 +129,7 @@ export function canonicalNode(node: Node): Node {
   if (node.action !== undefined) out.action = node.action;
   if (node.bind !== undefined && Object.keys(node.bind).length) out.bind = node.bind;
   if (node.css) out.css = node.css;
+  if (node.when !== undefined) out.when = node.when;
   return out;
 }
 

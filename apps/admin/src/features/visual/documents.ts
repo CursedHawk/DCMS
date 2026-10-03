@@ -484,3 +484,11 @@ export function createCodeComponent(label: string): { name: string; contractPath
   );
   return { name, contractPath, sourcePath };
 }
+
+/** A state value as typed in the inspector: true/false, a number, or text. */
+export function parseStateValue(text: string): boolean | number | string {
+  const t = text.trim();
+  if (t === 'true' || t === 'false') return t === 'true';
+  if (/^-?\d+(?:\.\d+)?$/.test(t)) return Number(t);
+  return t;
+}

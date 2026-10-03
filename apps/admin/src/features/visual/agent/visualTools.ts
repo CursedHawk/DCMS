@@ -20,6 +20,7 @@ import {
   tenantType,
   themeTokensSchema,
   walk,
+  whenSchema,
   type App,
   type Node,
   type Page,
@@ -591,7 +592,7 @@ export const VISUAL_TOOLS: Tool[] = [
   {
     name: 'set_action',
     description:
-      'What a node does when clicked (only components whose list_component_types entry has actions): {type:"navigate", to:"/about"} (or "/events/:slug" inside an item), {type:"open-external", href, newTab?}, {type:"scroll-to", target:<node id>}, {type:"open-modal", modal:<Popup node id>}, {type:"show-toast", message}. null removes it.',
+      'What a node does when clicked (only components whose list_component_types entry has actions): {type:"navigate", to:"/about"} (or "/events/:slug" inside an item), {type:"open-external", href, newTab?}, {type:"scroll-to", target:<node id>}, {type:"open-modal", modal:<Popup node id>}, {type:"show-toast", message}, {type:"set-state", key, value} or {type:"toggle-state", key} (a state the page declares — see update_page). null removes it.',
     input_schema: {
       type: 'object',
       properties: { doc: DOC, node: { type: 'string' }, action: { type: ['object', 'null'] } },
@@ -653,6 +654,42 @@ export const VISUAL_TOOLS: Tool[] = [
     },
   },
   {
+    name: 'set_when',
+    description:
+      'Show a node on the site only while a page state matches: { state: "tab", equals: "venues" }, or { state: "open" } for while it is true. The page must declare the state (update_page). null always shows it. The canvas always shows every node.',
+    input_schema: {
+      type: 'object',
+      properties: { doc: DOC, node: { type: 'string' }, when: { type: ['object', 'null'] } },
+      required: ['doc', 'node', 'when'],
+      additionalProperties: false,
+    },
+    risk: 'safe',
+    summarize: (input) => `Show ${str(input, 'node')} only when its page state matches`,
+    describe: (input) => `set when on ${str(input, 'node')}`,
+    run: async (input, ctx) => {
+      const doc = loadDoc(str(input, 'doc'));
+      if (typeof doc === 'string') return err(doc);
+      const when = input.when === null ? null : whenSchema.safeParse(input.when);
+      if (when && !when.success) return err(`when: ${issue(when.error)}`);
+      const result = edit(doc.root, (root) => {
+        const hit = find(root, str(input, 'node'));
+        if (!hit) return `There is no node “${str(input, 'node')}”.`;
+        if (when) hit.node.when = when.data;
+        else delete hit.node.when;
+        return null;
+      });
+      if ('error' in result) return err(result.error);
+      // The validator knows which states the page declares; a missing one is named, not saved.
+      const built = doc.build(result.root);
+      if (!built.ok) return err(`That would not be a valid document — ${built.error}`);
+      const problems = checkVisualSite({ ...files(), [doc.path]: built.text }, registryFromFiles(), useVisual.getState().contentSchema).filter(
+        (p) => p.file === doc.path && p.nodeId === str(input, 'node') && p.severity === 'error',
+      );
+      if (problems.length) return err(problems.map((p) => p.message).join('\n'));
+      return save(ctx, doc, result.root, registryFromFiles(), `Updated when ${str(input, 'node')} shows.`);
+    },
+  },
+  {
     name: 'create_page',
     description:
       'Add a page and the route that shows it, optionally with a main-menu entry. For a detail page (one item of plugin content, e.g. /events/:slug) pass `detail_of` { instance, contentType } and a path with :slug. The new page is empty: fill it with insert_node on doc page:<id>.',
@@ -706,10 +743,11 @@ export const VISUAL_TOOLS: Tool[] = [
   },
   {
     name: 'update_page',
-    description: 'Change a page’s title, SEO ({ title?, description?, ogImage?, noIndex? } — on a detail page "{title}" quotes the item) or its address (menu entries follow).',
+    description:
+      'Change a page’s title, SEO ({ title?, description?, ogImage?, noIndex? } — on a detail page "{title}" quotes the item), its address (menu entries follow), or its state: named values with defaults ({ tab: "dates", open: false }) that set-state/toggle-state actions change and set_when shows nodes by — tabs, toggles, show/hide. `state` replaces the whole set.',
     input_schema: {
       type: 'object',
-      properties: { page: { type: 'string' }, title: { type: 'string' }, seo: { type: 'object' }, path: { type: 'string' } },
+      properties: { page: { type: 'string' }, title: { type: 'string' }, seo: { type: 'object' }, path: { type: 'string' }, state: { type: 'object' } },
       required: ['page'],
       additionalProperties: false,
     },
@@ -725,6 +763,7 @@ export const VISUAL_TOOLS: Tool[] = [
         ...page.data,
         ...(input.title ? { title: str(input, 'title') } : {}),
         ...(input.seo ? { seo: { ...page.data.seo, ...(input.seo as object) } } : {}),
+        ...(input.state ? { state: input.state } : {}),
       });
       if (!next.success) return err(issue(next.error));
       const paths: string[] = [];

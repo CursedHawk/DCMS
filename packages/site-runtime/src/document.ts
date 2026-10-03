@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { pageStateSchema, whenSchema, type When } from './state';
 import { actionSchema, type Action } from './actions';
 import { sourceSchema, type Source } from './data';
 import { COMPONENT_TYPE, DOC_ID, NAME, NODE_ID, isInternalPath, isSafeExternalHref } from './ids';
@@ -41,6 +42,8 @@ export interface Node {
    * to the component's own element. Declarations only — no selectors, at-rules or url()s.
    */
   css?: string;
+  /** Shown only while the page's state matches (state.ts). Always shown on the canvas. */
+  when?: When;
 }
 
 const propsSchema = z.record(z.string().regex(NAME), z.unknown());
@@ -74,6 +77,7 @@ export const nodeSchema: z.ZodType<Node> = z.strictObject({
   action: actionSchema.optional(),
   bind: z.record(z.string().regex(NAME), z.string().regex(FIELD_PATH, 'must be a field path')).optional(),
   css: nodeCssSchema.optional(),
+  when: whenSchema.optional(),
 });
 
 /** Every node in a tree, depth first, root included. */
@@ -117,6 +121,8 @@ export const pageSchema = z
      * `param` (`/events/:slug` → `slug`). Its nodes bind to that item like a collection's do.
      */
     data: z.strictObject({ source: sourceSchema, param: z.string().regex(/^[a-zA-Z][a-zA-Z0-9]*$/) }).optional(),
+    /** Named values the page's actions set and its nodes' `when` reads, with their defaults. */
+    state: pageStateSchema.optional(),
     root: nodeSchema,
   })
   .superRefine((page, ctx) => uniqueNodeIds(page.root, ctx, ['root']));

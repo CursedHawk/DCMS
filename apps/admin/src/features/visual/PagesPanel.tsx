@@ -22,6 +22,7 @@ import {
   createPage,
   deletePage,
   inMainMenu,
+  parseStateValue,
   readPage,
   setRoutePath,
   toggleMainMenu,
@@ -199,6 +200,7 @@ function PageSettings({ routeId, path, pageId }: { routeId: string; path: string
       </label>
 
       <DetailSettings pageId={pageId} path={path} />
+      <StateSettings pageId={pageId} />
 
       <div className="space-y-2 border-t pt-2">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SEO</div>
@@ -296,6 +298,66 @@ function Field({
  * A detail page shows one item: the one whose slug is in its address (`/events/:slug`). Its
  * components bind to that item exactly as they would inside a collection.
  */
+/**
+ * The page's state (backlog #123): named values its buttons set and its components show `when`.
+ * Typed as `true`, `false`, a number or text; a toggle needs true/false.
+ */
+function StateSettings({ pageId }: { pageId: string }) {
+  const { t } = useTranslation();
+  const [name, setName] = useState('');
+  const page = readPage(pageId);
+  if (!page) return null;
+  const state = page.state ?? {};
+  const write = (next: Record<string, boolean | number | string>) =>
+    report(
+      updatePage(pageId, (p) => {
+        const { state: _old, ...rest } = p;
+        return Object.keys(next).length ? { ...rest, state: next } : rest;
+      }),
+      t,
+    );
+  return (
+    <div className="space-y-2 border-t pt-2">
+      <Label>{t('visual.state.title')}</Label>
+      {Object.entries(state).map(([key, value]) => (
+        <div key={key} className="flex items-end gap-1">
+          <div className="min-w-0 flex-1">
+            <Field label={key} value={String(value)} onCommit={(v) => write({ ...state, [key]: parseStateValue(v) })} />
+          </div>
+          <Button
+            size="icon"
+            variant="ghost"
+            title={t('actions.delete')}
+            onClick={() => {
+              const next = { ...state };
+              delete next[key];
+              write(next);
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      ))}
+      <form
+        className="flex gap-1"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const key = name.trim();
+          if (!key || key in state) return;
+          write({ ...state, [key]: false });
+          setName('');
+        }}
+      >
+        <Input aria-label={t('visual.state.newName')} placeholder={t('visual.state.newName')} value={name} onChange={(e) => setName(e.target.value)} />
+        <Button type="submit" size="icon" variant="outline" disabled={!name.trim()} aria-label={t('visual.state.add')}>
+          <Plus className="h-4 w-4" />
+        </Button>
+      </form>
+      <p className="text-xs text-muted-foreground">{t('visual.state.hint')}</p>
+    </div>
+  );
+}
+
 function DetailSettings({ pageId, path }: { pageId: string; path: string }) {
   const { t } = useTranslation();
   const catalog = useContentCatalog();

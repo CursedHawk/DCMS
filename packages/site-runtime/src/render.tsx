@@ -1,6 +1,7 @@
 import { Component, useContext, type CSSProperties, type ContextType, type ErrorInfo, type ReactNode } from 'react';
 import { bindAction, bindProps, useItem } from './data';
 import { useSite } from './site';
+import { useShown } from './state';
 import { nodeCssSchema, type Node } from './document';
 import type { Registry, SlotLayout } from './registry';
 import { RenderModeContext, useRenderMode } from './renderMode';
@@ -52,6 +53,10 @@ export function NodeCss({ id, css }: { id: string; css?: string }) {
 }
 
 export function RenderNode({ node, registry }: RenderNodeProps) {
+  const shown = useShown(node.when);
+  const mode = useRenderMode();
+  // Hidden by page state: gone from the site, wrapper and all, so it takes no gap in a stack.
+  if (!shown && mode === 'live') return null;
   return (
     <div className={NODE_CLASS} data-dcms-node={node.id} data-dcms-type={node.type}>
       <NodeCss id={node.id} css={node.css} />

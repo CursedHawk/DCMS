@@ -1,6 +1,7 @@
 import DOMPurify from 'dompurify';
 import { createContext, useContext, useEffect, useId, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
 import type { Action } from './actions';
+import { writeState, type PageStateScope } from './state';
 import {
   DataClientContext,
   DataError,
@@ -267,8 +268,14 @@ function showToast(message: string, tone: 'info' | 'success' | 'error' = 'info')
 }
 
 /** Run an action that is not a link. Links are rendered as links (see SiteLink). */
-export function runAction(action: Action): void {
+export function runAction(action: Action, pageState?: PageStateScope | null): void {
   switch (action.type) {
+    case 'set-state':
+      if (pageState) writeState(pageState, action.key, action.value);
+      return;
+    case 'toggle-state':
+      if (pageState) writeState(pageState, action.key, (current) => !current);
+      return;
     case 'scroll-to':
       document.querySelector(`[data-dcms-node="${CSS.escape(action.target)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;

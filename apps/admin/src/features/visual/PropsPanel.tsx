@@ -12,6 +12,7 @@ import {
   type Registry,
   type Responsive,
   type Source,
+  type When,
 } from '@dcms/site-runtime';
 import type { ContentField } from '@dcms/gjs-blocks';
 import type { Component, Editor } from 'grapesjs';
@@ -37,7 +38,7 @@ import { useEditorEvent, useSelected } from '../builder/panels/useEditorEvent';
 import { EXTRA, ID, PROPS, type NodeExtra } from './canvas/tree';
 import { ExposePanel, InstanceVersion } from './ExposePanel';
 import { META_BINDABLE, scopeOf, useContentCatalog } from './data';
-import { readPage } from './documents';
+import { parseStateValue, readPage } from './documents';
 import { useVisual } from './store';
 import { useVfs } from '../site-source/vfs';
 
@@ -189,6 +190,15 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
             }}
           />
         ) : null}
+        <ShowWhenField
+          key={`${selected.cid}:when`}
+          when={extra.when}
+          onCommit={(when) => {
+            const next: NodeExtra = { ...extra, when };
+            if (!when) delete next.when;
+            selected.set(EXTRA, next);
+          }}
+        />
         <ExposePanel selected={selected} definition={definition} />
         {/* Out of the way on purpose: the design kit stays authoritative for everyone else. */}
         <details className="rounded-md border px-3 py-2" open={!!extra.css}>
@@ -397,6 +407,48 @@ function PropField({
  * What the component does when clicked — a page on this site or a link elsewhere. Validated with
  * the same `actionSchema` the site loads with, so a `javascript:` link cannot be saved.
  */
+/** The state the open page declares — null on the shell or a component, which have none. */
+function usePageState(): Record<string, boolean | number | string> | null {
+  const target = useVisual((s) => s.target);
+  useVfs((s) => (target?.kind === 'page' ? s.files[`dcms/pages/${target.id}.json`] : undefined));
+  return target?.kind === 'page' ? (readPage(target.id)?.state ?? {}) : null;
+}
+
+/** "Show when": the node is on the site only while a page state matches. */
+function ShowWhenField({ when, onCommit }: { when: When | undefined; onCommit: (when: When | undefined) => void }) {
+  const { t } = useTranslation();
+  const state = usePageState();
+  const keys = Object.keys(state ?? {});
+  if (!keys.length && !when) return null;
+  return (
+    <div className="space-y-2 border-t pt-4">
+      <Label>{t('visual.state.showWhen')}</Label>
+      <Select value={when?.state ?? '__always'} onValueChange={(key) => onCommit(key === '__always' ? undefined : { state: key })}>
+        <SelectTrigger aria-label={t('visual.state.showWhen')}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__always">{t('visual.state.always')}</SelectItem>
+          {keys.map((k) => (
+            <SelectItem key={k} value={k}>
+              {k}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {when && (
+        <TextField
+          id="when-equals"
+          value={when.equals === undefined ? '' : String(when.equals)}
+          placeholder={t('visual.state.equalsHint')}
+          onCommit={(v) => onCommit(v.trim() ? { state: when.state, equals: parseStateValue(v) } : { state: when.state })}
+        />
+      )}
+      <p className="text-xs text-muted-foreground">{t('visual.state.canvasNote')}</p>
+    </div>
+  );
+}
+
 function ActionField({
   editor,
   inItem,
@@ -426,6 +478,9 @@ function ActionField({
     stack.push(...c.components().models);
   }
   const modals = nodes.filter((n) => n.type === 'dcms.modal');
+  const pageState = usePageState() ?? {};
+  const stateKeys = Object.keys(pageState);
+  const toggleKeys = stateKeys.filter((k) => typeof pageState[k] === 'boolean');
 
   const commit = (next: Action | undefined) => {
     if (next) {
@@ -456,7 +511,11 @@ function ActionField({
                     ? { type: 'open-modal', modal: modals[0]?.id ?? 'popup' }
                     : v === 'show-toast'
                       ? { type: 'show-toast', message: t('visual.action.toastDefault') }
-                      : undefined,
+                      : v === 'set-state'
+                        ? { type: 'set-state', key: stateKeys[0] ?? 'state', value: true }
+                        : v === 'toggle-state'
+                          ? { type: 'toggle-state', key: toggleKeys[0] ?? 'state' }
+                          : undefined,
           )
         }
       >
@@ -470,6 +529,8 @@ function ActionField({
           {allowed.includes('scroll-to') && <SelectItem value="scroll-to">{t('visual.action.scrollTo')}</SelectItem>}
           {allowed.includes('open-modal') && <SelectItem value="open-modal">{t('visual.action.openModal')}</SelectItem>}
           {allowed.includes('show-toast') && <SelectItem value="show-toast">{t('visual.action.toast')}</SelectItem>}
+          {allowed.includes('set-state') && stateKeys.length > 0 && <SelectItem value="set-state">{t('visual.state.set')}</SelectItem>}
+          {allowed.includes('toggle-state') && toggleKeys.length > 0 && <SelectItem value="toggle-state">{t('visual.state.toggle')}</SelectItem>}
         </SelectContent>
       </Select>
 
@@ -535,6 +596,23 @@ function ActionField({
         ) : (
           <p className="text-xs text-muted-foreground">{t('visual.action.noPopups')}</p>
         ))}
+      {(action?.type === 'set-state' || action?.type === 'toggle-state') && (
+        <Select value={action.key} onValueChange={(key) => commit({ ...action, key })}>
+          <SelectTrigger aria-label={t('visual.state.key')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(action.type === 'toggle-state' ? toggleKeys : stateKeys).map((k) => (
+              <SelectItem key={k} value={k}>
+                {k}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {action?.type === 'set-state' && (
+        <TextField id="action-state-value" value={String(action.value)} onCommit={(v) => commit({ ...action, value: parseStateValue(v) })} />
+      )}
       {action?.type === 'show-toast' && (
         <TextField id="action-toast" value={action.message} onCommit={(message) => message && commit({ ...action, message })} />
       )}

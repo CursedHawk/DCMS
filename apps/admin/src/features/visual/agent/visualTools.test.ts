@@ -112,6 +112,18 @@ describe('Mode D agent tools', () => {
     expect(page('home').root.slots.default[0].css).toBeUndefined();
   });
 
+  it('builds tabs from page state: declared values, actions that set them, nodes shown when', async () => {
+    await run('update_page', { page: 'home', state: { tab: 'dates' } });
+    await run('insert_node', { doc: 'page:home', node: { id: 'b', type: 'dcms.button', props: { label: 'Venues' } } });
+    await run('insert_node', { doc: 'page:home', node: { id: 'p', type: 'dcms.text', props: { text: 'Venues panel' } } });
+    expect((await run('set_action', { doc: 'page:home', node: 'b', action: { type: 'set-state', key: 'tab', value: 'venues' } })).isError).toBeFalsy();
+    expect((await run('set_when', { doc: 'page:home', node: 'p', when: { state: 'tab', equals: 'venues' } })).isError).toBeFalsy();
+    expect((await run('set_when', { doc: 'page:home', node: 'p', when: { state: 'nope' } })).content).toBe('This page declares no state “nope”.');
+    expect(page('home').state).toEqual({ tab: 'dates' });
+    expect(page('home').root.slots.default[1].when).toEqual({ state: 'tab', equals: 'venues' });
+    expect((await validateVisualSite()).ok).toBe(true);
+  });
+
   it('asks before deleting a page, and never deletes the home page', async () => {
     expect(tool('delete_page').risk).toBe('dangerous');
     expect((await run('delete_page', { page: 'home' })).content).toBe('The home page cannot be deleted.');
