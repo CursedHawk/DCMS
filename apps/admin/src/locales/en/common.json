@@ -26,7 +26,8 @@
     "openMenu": "Open navigation",
     "language": "Language",
     "marketplace": "Marketplace",
-    "assistant": "Assistant"
+    "assistant": "Assistant",
+    "connections": "Connections"
   },
   "actions": {
     "create": "Create",
@@ -1322,7 +1323,8 @@
     "domainsHint": "Custom domains and certificates",
     "aiHint": "Model and API keys",
     "auditHint": "What has been done here",
-    "apiHint": "The endpoints this workspace exposes"
+    "apiHint": "The endpoints this workspace exposes",
+    "connectionsHint": "External APIs your sites read, with their keys kept on the server."
   },
   "pluginReference": {
     "back": "Marketplace",
@@ -1607,5 +1609,40 @@
       "detailHint": "Shows the item whose slug is in the address (:{{param}}).",
       "needsParam": "Give the address a :slug part (e.g. /events/:slug) to make this a detail page."
     }
+  },
+  "connections": {
+    "title": "Connections",
+    "description": "External APIs your sites can show data from. DCMS calls them with the key, on a schedule, for the operations you list — sites read the stored responses, so the key never reaches a browser.",
+    "add": "Add connection",
+    "edit": "Edit {{name}}",
+    "none": "No connections yet",
+    "noneHint": "Connect a ticketing, booking or catalogue API to show its data on a visual site.",
+    "name": "Name",
+    "slug": "Address name",
+    "baseUrl": "Base URL (https)",
+    "auth": "Authentication",
+    "authKinds": {
+      "none": "None",
+      "bearer": "Bearer token",
+      "header": "Key in a header",
+      "query": "Key in the query"
+    },
+    "headerName": "Header name",
+    "queryName": "Query parameter",
+    "key": "Key",
+    "keyStored": "Stored — leave empty to keep it",
+    "keyHint": "Encrypted in Vault and never shown again. Only DCMS’s admin service can use it.",
+    "operations": "Operations (GET, one per line)",
+    "operationsHint": "Paths under the base URL, optionally with a query. Only these are fetched; sites read /api/connections/<address name><operation>.",
+    "refreshMinutes": "Refresh every (min)",
+    "refresh": "Refresh now",
+    "refreshed": "Refreshed.",
+    "refreshFailed": "Some operations failed; their last data is still served.",
+    "saved": "Saved and synced.",
+    "savedWithErrors": "Saved, but some operations failed — see the connection.",
+    "removed": "Connection removed.",
+    "confirmDelete": "Remove “{{name}}”? Sites using it lose its data.",
+    "failing": "Failing",
+    "synced": "Synced {{when}}"
   }
 }

@@ -7,9 +7,10 @@ import {
   CODE_PREFIX,
   codeContractOf,
   componentFileOf,
+  listParser,
   listPath,
-  parseItemList,
   tenantType,
+  type Source,
 } from '@dcms/site-runtime';
 import type { Editor } from 'grapesjs';
 import {
@@ -227,19 +228,21 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
 
   // A detail page is designed with a real item in it: its source's first.
   const pageData = target?.kind === 'page' ? readPage(target.id)?.data : undefined;
-  const pageSourceKey = pageData ? listPath(pageData.source, { limit: 1 }) : null;
+  // Keyed on the whole source: a connection's `items` path changes how the same response reads.
+  const pageSourceJson = pageData ? JSON.stringify(pageData.source) : null;
   useEffect(() => {
     useVisual.getState().setPageItem(null);
-    if (!pageSourceKey) return;
+    if (!pageSourceJson) return;
+    const source = JSON.parse(pageSourceJson) as Source;
     let live = true;
-    dataClient.get(pageSourceKey).then(
-      (json) => live && useVisual.getState().setPageItem(parseItemList(json).items[0] ?? null),
+    dataClient.get(listPath(source, { limit: 1 })).then(
+      (json) => live && useVisual.getState().setPageItem(listParser(source, 1)(json).items[0] ?? null),
       () => live && useVisual.getState().setPageItem(null),
     );
     return () => {
       live = false;
     };
-  }, [pageSourceKey, dataClient]);
+  }, [pageSourceJson, dataClient]);
   const pageItem = useVisual((s) => s.pageItem);
 
   // With the tenant's content types known, the validator also checks sources and bound fields.

@@ -42,6 +42,8 @@ public static class RlsConfigurator
         // two tables: the policy is the only thing between one tenant's plugin state and another's.
         ("plugins", "plugin_data"),
         ("plugins", "plugin_secrets"),
+        ("cms", "api_connections"),
+        ("cms", "api_snapshots"),
         ("cms", "content_items"),
         ("cms", "content_versions"),
         ("media", "media_assets"),

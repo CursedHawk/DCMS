@@ -240,6 +240,8 @@ export function adminApi(
     .on('DELETE', '/api/admin/media/folders/:id', {})
 
     .on('GET', '/api/admin/plugins/instances', data.PLUGIN_INSTANCES)
+    // External API connections (Settings › Connections); the visual builder lists their operations.
+    .on('GET', '/api/admin/connections', [])
     .on('GET', '/api/admin/plugins/catalog', data.PLUGIN_CATALOG)
     // The assistant's plugin contract tools (plane=ai): none unless a spec says otherwise.
     .on('GET', '/api/admin/contracts', [])

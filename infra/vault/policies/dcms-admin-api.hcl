@@ -68,6 +68,17 @@ path "transit/decrypt/dcms-plugin-secrets" {
   capabilities = ["update"]
 }
 
+# External API connection credentials (cms.api_connections). Both directions, here only:
+# admin-api fetches the tenant's API and stores the response; content-api serves the stored
+# snapshot and is granted neither direction, so the public plane never holds a usable credential.
+path "transit/encrypt/dcms-api-connections" {
+  capabilities = ["update"]
+}
+
+path "transit/decrypt/dcms-api-connections" {
+  capabilities = ["update"]
+}
+
 # Uploaded TLS private keys (edge.certificates, Source = Custom). admin-api is where a tenant
 # uploads their own certificate, so it needs encrypt.
 #

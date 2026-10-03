@@ -327,6 +327,13 @@ echo "  transit key dcms-social-tokens present"
 vault write -f transit/keys/dcms-plugin-secrets >/dev/null
 echo "  transit key dcms-plugin-secrets present"
 
+# External API connections' credentials (cms.api_connections, Mode D). Its own key, both
+# directions to admin-api only: admin-api is what calls the tenant's API and stores the result
+# (cms.api_snapshots), and content-api serves those snapshots without ever needing the
+# credential. Never recreate it: every stored connection credential would become unreadable.
+vault write -f transit/keys/dcms-api-connections >/dev/null
+echo "  transit key dcms-api-connections present"
+
 # TLS private keys and the ACME account key, held by the edge. A separate key again, and for the
 # sharpest version of the same reason: the edge is the process an anonymous request from the
 # internet reaches first, and a shared key would make a compromise there decrypt every tenant's

@@ -79,6 +79,10 @@ public sealed class ContentFlowFixture : IAsyncLifetime
             b.UseSetting("Social:OverrideBaseUrl", MetaStub.BaseUrl);
             b.UseSetting("Media:ImportAllowLocal", "true");
             b.UseSetting("Social:SyncEnabled", "false");
+            // External API connections (ApiConnectionTests): the stub provider is plain http on
+            // loopback, and the background refresher stays out of the way of the tests' timing.
+            b.UseSetting("Connections:AllowLocal", "true");
+            b.UseSetting("Connections:PollSeconds", "3600");
             b.ConfigureTestServices(services =>
             {
                 services.AddAuthentication(TestAuthHandler.SchemeName)

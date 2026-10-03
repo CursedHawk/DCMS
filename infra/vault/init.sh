@@ -61,6 +61,9 @@ fi
 if ! vault read transit/keys/dcms-plugin-secrets >/dev/null 2>&1; then
   vault write -f transit/keys/dcms-plugin-secrets
 fi
+if ! vault read transit/keys/dcms-api-connections >/dev/null 2>&1; then
+  vault write -f transit/keys/dcms-api-connections
+fi
 
 # The edge wraps its Data Protection key ring with this unconditionally, so a dev edge needs it
 # present before it mints its first session key.

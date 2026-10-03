@@ -26,7 +26,8 @@
     "openMenu": "Otevřít navigaci",
     "language": "Jazyk",
     "marketplace": "Tržiště",
-    "assistant": "Asistent"
+    "assistant": "Asistent",
+    "connections": "Propojení"
   },
   "actions": {
     "create": "Vytvořit",
@@ -1350,7 +1351,8 @@
     "domainsHint": "Vlastní domény a certifikáty",
     "aiHint": "Model a API klíče",
     "auditHint": "Co se tu dělo",
-    "apiHint": "Endpointy, které tento prostor nabízí"
+    "apiHint": "Endpointy, které tento prostor nabízí",
+    "connectionsHint": "Externí API, ze kterých weby čtou; klíče zůstávají na serveru."
   },
   "pluginReference": {
     "back": "Tržiště",
@@ -1646,5 +1648,40 @@
       "detailHint": "Zobrazí položku, jejíž slug je v adrese (:{{param}}).",
       "needsParam": "Přidejte do adresy část :slug (např. /akce/:slug), aby to byla stránka detailu."
     }
+  },
+  "connections": {
+    "title": "Propojení",
+    "description": "Externí API, jejichž data mohou weby zobrazovat. DCMS je volá s klíčem, pravidelně, jen pro uvedené operace — weby čtou uložené odpovědi, takže klíč se nikdy nedostane do prohlížeče.",
+    "add": "Přidat propojení",
+    "edit": "Upravit {{name}}",
+    "none": "Zatím žádná propojení",
+    "noneHint": "Připojte API vstupenek, rezervací nebo katalogu a zobrazte jeho data na vizuálním webu.",
+    "name": "Název",
+    "slug": "Název v adrese",
+    "baseUrl": "Základní URL (https)",
+    "auth": "Ověření",
+    "authKinds": {
+      "none": "Žádné",
+      "bearer": "Bearer token",
+      "header": "Klíč v hlavičce",
+      "query": "Klíč v dotazu"
+    },
+    "headerName": "Název hlavičky",
+    "queryName": "Parametr dotazu",
+    "key": "Klíč",
+    "keyStored": "Uložen — ponechte prázdné",
+    "keyHint": "Šifrován ve Vaultu a už nikdy nezobrazen. Použít jej může jen administrační služba DCMS.",
+    "operations": "Operace (GET, jedna na řádek)",
+    "operationsHint": "Cesty pod základní URL, volitelně s dotazem. Načítají se jen tyto; weby čtou /api/connections/<název v adrese><operace>.",
+    "refreshMinutes": "Obnovit každých (min)",
+    "refresh": "Obnovit nyní",
+    "refreshed": "Obnoveno.",
+    "refreshFailed": "Některé operace selhaly; jejich poslední data se dál zobrazují.",
+    "saved": "Uloženo a synchronizováno.",
+    "savedWithErrors": "Uloženo, ale některé operace selhaly — viz propojení.",
+    "removed": "Propojení odebráno.",
+    "confirmDelete": "Odebrat „{{name}}“? Weby, které ho používají, přijdou o jeho data.",
+    "failing": "Selhává",
+    "synced": "Synchronizováno {{when}}"
   }
 }

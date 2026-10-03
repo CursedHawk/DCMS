@@ -108,6 +108,28 @@ dropping (and naming) settings the new version no longer has.
 `checkVisualSite` checks sources and bound fields against the tenant's content types, so a
 renamed field or a removed plugin shows up in Problems, not as an empty card.
 
+## External API connections
+
+*Settings › Connections* connects an external HTTP API — a ticket shop, a booking system — for
+sites to show its data. **Synced, never proxied:**
+
+- A connection is a base URL (https), a key (bearer, a named header or a query parameter), the
+  GET operations a site may use (`/events`, `/events?city=brno`, at most ten) and a refresh
+  interval (15 min – 24 h). Stored in `cms.api_connections`; the key is Transit-encrypted under
+  `dcms-api-connections`, which **only admin-api** may use, and no response ever carries it.
+- admin-api calls each operation (public addresses only, no redirects, 15 s, 512 KB, JSON only)
+  on save, on *Refresh now*, and on schedule (`ApiConnectionWorker`), and stores the response in
+  `cms.api_snapshots` with the shape it found — where the list sits and an item's fields. A
+  failing operation keeps its last good snapshot and reports the error on the connection.
+- content-api serves `GET /api/connections/{slug}{operation}` from the snapshot. It holds no key
+  and makes no outbound call, so visitor traffic never reaches the provider or its quota, and an
+  operation that is not listed does not exist.
+- On a site, a source is `{ connection, operation, items?, id?, slug? }`: a Collection lists the
+  items at `items`; a detail page finds the item whose `slug` field (default `slug`, else `id`)
+  matches the route. Field kinds in the picker are guessed from names (image, url, date); any
+  field may be bound, since an API's items are whatever it returns. The agent reads them with
+  `list_connections`.
+
 ## Page state, custom CSS, language
 
 - **Page state** — `page.state` declares named values with defaults (`{ "tab": "dates",

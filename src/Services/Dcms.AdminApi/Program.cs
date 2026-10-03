@@ -168,6 +168,20 @@ builder.Services.AddHostedService<NotificationIngestConsumer>();
 // Invitation expiry is the one source with no event behind it -- it is a passive column
 // that nothing has ever swept. See InvitationExpiryWorker.
 builder.Services.AddHostedService<InvitationExpiryWorker>();
+// External API connections (Mode D, backlog #124): fetched here, served as snapshots by
+// content-api. Public addresses only, and no redirects — a redirect would carry a header
+// credential to whatever host the provider names.
+builder.Services.AddHttpClient(Dcms.AdminApi.Connections.ApiConnectionFetcher.HttpClientName, client =>
+        client.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(sp =>
+    {
+        var handler = Dcms.AdminApi.Media.PublicEgress.Handler(
+            allowPrivate: sp.GetRequiredService<IConfiguration>().GetValue("Connections:AllowLocal", false));
+        handler.AllowAutoRedirect = false;
+        return handler;
+    });
+builder.Services.AddScoped<Dcms.AdminApi.Connections.ApiConnectionFetcher>();
+builder.Services.AddHostedService<Dcms.AdminApi.Connections.ApiConnectionWorker>();
 builder.Services.AddHostedService<NotificationRetentionWorker>();
 builder.Services.AddHostedService<Dcms.AdminApi.Ai.AiConversationRetentionWorker>();
 // The platform console's own bell. Separate publisher and separate tables, because these
@@ -360,6 +374,7 @@ app.MapDomainCertificateEndpoints();
 app.MapManagedCertificateEndpoints();
 app.MapRateLimitExemptionEndpoints();
 app.MapPluginEndpoints();
+Dcms.AdminApi.Connections.ApiConnectionEndpoints.MapApiConnectionEndpoints(app);
 // Plugins' own admin routes, /api/admin/plugins/{slug}/..., for authenticated tenant members
 // (UseTenantMembership above has already confirmed membership of X-Dcms-Tenant).
 app.MapDcmsPluginAdminEndpoints().RequireAuthorization();

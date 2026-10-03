@@ -218,3 +218,45 @@ describe('dates bound to text', () => {
     expect(bindProps({}, { label: 'date', when: 'date' }, defs as never, scope, 'en-GB')).toEqual({ label: '1 Jul 2026', when: '2026-07-01' });
   });
 });
+
+describe('external API connections as sources', () => {
+  const source = { connection: 'tickets', operation: '/events?city=brno', items: 'data.events', slug: 'code' };
+  const response = { data: { events: [{ id: 7, code: 'gala', name: 'Gala' }, { id: 8, code: 'jam', name: 'Jam' }, 'noise'] } };
+
+  it('list the synced response’s items, keyed by the fields the source names', async () => {
+    const node: Node = {
+      id: 'list',
+      type: 'dcms.collection',
+      props: { source, limit: 1 },
+      slots: { item: [{ id: 't', type: 'dcms.heading', bind: { text: 'name' } }] },
+    };
+    const data = client({ '/api/connections/tickets/events?city=brno': response });
+    const el = await render(<RenderNode node={node} registry={builtinRegistry} />, data);
+    expect([...el.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Gala']);
+  });
+
+  it('give a detail page the list’s item with that slug, and 404 for one it does not have', async () => {
+    const page: Page = { schemaVersion: 1, id: 'ev', title: 'Ev', data: { source, param: 'slug' }, root: { id: 'r', type: 'dcms.page', slots: { default: [{ id: 'h', type: 'dcms.heading', bind: { text: 'name' } }] } } };
+    const documents = loadDocuments({ 'dcms/app.json': { schemaVersion: 1, routes: [{ id: 'ev', path: '/events/:slug', page: 'ev' }] }, 'dcms/pages/ev.json': page });
+    const data = client({ '/api/connections/tickets/events?city=brno': response });
+    const shown = await render(<RouterProvider router={createMemoryRouter(siteRoutes(documents), { initialEntries: ['/events/jam'] })} />, data);
+    expect(shown.querySelector('h2')?.textContent).toBe('Jam');
+    const missing = await render(<RouterProvider router={createMemoryRouter(siteRoutes(documents), { initialEntries: ['/events/nope'] })} />, data);
+    expect(missing.textContent).toContain('Page not found');
+  });
+
+  it('are checked against the connections that exist, with any field allowed', () => {
+    const json = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;
+    const files = (src: unknown) => ({
+      'dcms/app.json': json({ schemaVersion: 1, routes: [{ id: 'home', path: '/', page: 'home' }] }),
+      'dcms/pages/home.json': json({ schemaVersion: 1, id: 'home', title: 'Home', root: { id: 'r', type: 'dcms.page', slots: { default: [
+        { id: 'l', type: 'dcms.collection', props: { source: src }, slots: { item: [{ id: 't', type: 'dcms.heading', bind: { text: 'anything.at.all' } }] } },
+      ] } } }),
+    });
+    const content = new Map([['connections/tickets/events?city=brno', new Set(['*'])]]);
+    expect(checkVisualSite(files(source), undefined, content)).toEqual([]);
+    expect(checkVisualSite(files({ ...source, connection: 'gone' }), undefined, content).map((p) => p.message)).toContain(
+      'The collection shows connections/gone/events?city=brno, which this site’s plugins do not provide.',
+    );
+  });
+});

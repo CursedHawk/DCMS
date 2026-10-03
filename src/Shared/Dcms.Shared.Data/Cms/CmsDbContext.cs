@@ -25,6 +25,8 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options, ITenantContext
     public DbSet<PluginInstance> PluginInstances => Set<PluginInstance>();
     public DbSet<PluginDatum> PluginData => Set<PluginDatum>();
     public DbSet<PluginSecret> PluginSecrets => Set<PluginSecret>();
+    public DbSet<ApiConnection> ApiConnections => Set<ApiConnection>();
+    public DbSet<ApiSnapshot> ApiSnapshots => Set<ApiSnapshot>();
     public DbSet<ContentItem> ContentItems => Set<ContentItem>();
     public DbSet<ContentVersion> ContentVersions => Set<ContentVersion>();
     public DbSet<ContentOutboxMessage> Outbox => Set<ContentOutboxMessage>();
@@ -74,6 +76,32 @@ public class CmsDbContext(DbContextOptions<CmsDbContext> options, ITenantContext
             e.Property(s => s.PluginId).HasMaxLength(64).IsRequired();
             e.Property(s => s.Name).HasMaxLength(128).IsRequired();
             e.HasIndex(s => new { s.TenantId, s.InstanceId, s.Name }).IsUnique();
+            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<ApiConnection>(e =>
+        {
+            e.ToTable("api_connections", CmsSchema);
+            e.HasKey(c => c.Id);
+            e.Property(c => c.Slug).HasMaxLength(48).IsRequired();
+            e.Property(c => c.Name).HasMaxLength(120).IsRequired();
+            e.Property(c => c.BaseUrl).HasMaxLength(2048).IsRequired();
+            e.Property(c => c.AuthKind).HasMaxLength(16).IsRequired();
+            e.Property(c => c.AuthName).HasMaxLength(128);
+            e.Property(c => c.LastError).HasMaxLength(2000);
+            e.HasIndex(c => new { c.TenantId, c.Slug }).IsUnique();
+            e.HasQueryFilter(c => c.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<ApiSnapshot>(e =>
+        {
+            e.ToTable("api_snapshots", CmsSchema);
+            e.HasKey(s => s.Id);
+            e.Property(s => s.Operation).HasMaxLength(512).IsRequired();
+            e.Property(s => s.Body).HasColumnType("jsonb").IsRequired();
+            e.Property(s => s.ItemsPath).HasMaxLength(256);
+            e.HasOne<ApiConnection>().WithMany().HasForeignKey(s => s.ConnectionId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(s => new { s.ConnectionId, s.Operation }).IsUnique();
             e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
         });
 

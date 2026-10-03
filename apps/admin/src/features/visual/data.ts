@@ -1,8 +1,10 @@
 import { META_FIELDS, contentFields, type ContentField } from '@dcms/gjs-blocks';
 import { sourceSchema, sourceKey, type ContentItem, type ContentSchema, type DataClient, type Source } from '@dcms/site-runtime';
 import type { Component } from 'grapesjs';
+import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { api } from '../../lib/api';
+import { CONNECTIONS_KEY, type ApiConnection } from '../connections/api';
 import { customFieldsOf, parseInstanceConfig, usePluginCatalog, usePluginInstances } from '../plugins/api';
 import { ID, PROPS, SLOT } from './canvas/tree';
 
@@ -19,6 +21,19 @@ export function previewClient(siteId: string): DataClient {
   };
 }
 
+/**
+ * What an external API's field probably holds, from its name: an image, a link, a date — so it
+ * can bind to an Image or a Link. ponytail: a name heuristic; the sync could record value kinds
+ * if names prove too unreliable.
+ */
+function guessKind(path: string): ContentField['kind'] {
+  const name = path.split('.').pop()!.toLowerCase();
+  if (/image|photo|picture|thumbnail|cover|logo|avatar/.test(name)) return 'media';
+  if (/url|link|href/.test(name)) return 'url';
+  if (/date|time|_at$|at$/.test(name)) return 'date';
+  return 'text';
+}
+
 /** Every plugin instance's content types and their fields — what the field picker offers. */
 export interface ContentCatalog {
   sources: { source: Source; label: string; fields: ContentField[] }[];
@@ -30,6 +45,7 @@ export interface ContentCatalog {
 export function useContentCatalog(): ContentCatalog {
   const catalog = usePluginCatalog();
   const instances = usePluginInstances();
+  const connections = useQuery({ queryKey: CONNECTIONS_KEY, queryFn: () => api.get<ApiConnection[]>('/admin/connections'), retry: false });
   return useMemo(() => {
     const manifests = new Map((catalog.data ?? []).map((m) => [m.id, m]));
     const sources: ContentCatalog['sources'] = [];
@@ -48,9 +64,30 @@ export function useContentCatalog(): ContentCatalog {
         sources.push({ source: source.data, label: `${instance.name} › ${contentType.name}`, fields });
       }
     }
-    const schema = new Map(sources.map((s) => [sourceKey(s.source), new Set(s.fields.map((f) => f.path))]));
-    return { sources, schema, isLoading: catalog.isLoading || instances.isLoading };
-  }, [catalog.data, catalog.isLoading, instances.data, instances.isLoading]);
+    // External API connections' operations: their fields as the last sync found them. Any
+    // field binds (`*`) — an API's items are whatever it returns, and the sync may not have seen
+    // every field yet.
+    const connectionKeys = new Set<string>();
+    for (const connection of connections.data ?? []) {
+      for (const shape of connection.shapes ?? []) {
+        const source = sourceSchema.safeParse({ connection: connection.slug, operation: shape.operation, ...(shape.items ? { items: shape.items } : {}) });
+        if (!source.success) continue;
+        connectionKeys.add(sourceKey(source.data));
+        sources.push({
+          source: source.data,
+          label: `${connection.name} › GET ${shape.operation}`,
+          fields: shape.fields.map((path) => ({ path, label: path, kind: guessKind(path), custom: false })),
+        });
+      }
+    }
+    const schema = new Map(
+      sources.map((s) => {
+        const key = sourceKey(s.source);
+        return [key, new Set([...s.fields.map((f) => f.path), ...(connectionKeys.has(key) ? ['*'] : [])])];
+      }),
+    );
+    return { sources, schema, isLoading: catalog.isLoading || instances.isLoading || connections.isLoading };
+  }, [catalog.data, catalog.isLoading, instances.data, instances.isLoading, connections.data, connections.isLoading]);
 }
 
 /** The meta fields the runtime understands (`#slug`, `#index`…), out of the list the admin keeps. */

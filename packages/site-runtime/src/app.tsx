@@ -3,7 +3,7 @@ import { Outlet, RouterProvider, createBrowserRouter, useParams, type RouteObjec
 import { codeDefinitions, readCodeContracts, type CodeContract, type CodeModules } from './code';
 import { BUILTIN_COMPONENTS } from './components';
 import { appSchema, pageSchema, type App, type Page } from './document';
-import { DataClientContext, ItemContext, itemPath, parseItem, useData, type DataClient } from './data';
+import { DataClientContext, ItemContext, itemParser, itemPath, parseItem, useData, type DataClient } from './data';
 import { applyHead } from './head';
 import { APP_JSON, THEME_JSON, pageIdFromPath } from './paths';
 import type { Registry } from './registry';
@@ -119,7 +119,7 @@ function Shell({ app, registry }: { app: App; registry: Registry }) {
 function RoutePage({ page, app, registry }: { page: Page | undefined; app: App; registry: Registry }) {
   const params = useParams();
   const slug = page?.data ? params[page.data.param] : undefined;
-  const item = useData(page?.data && slug ? itemPath(page.data.source, slug) : null, parseItem);
+  const item = useData(page?.data && slug ? itemPath(page.data.source, slug) : null, page?.data && slug ? itemParser(page.data.source, slug) : parseItem);
   const scope = useMemo(
     () => (page?.data && item.state === 'ready' ? { item: item.value, index: 0, count: 1 } : null),
     [page, item],

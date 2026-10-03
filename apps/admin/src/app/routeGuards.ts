@@ -67,6 +67,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     descriptionKey: 'settings.auditHint',
     perm: Perm.AuditRead,
   },
+  // External APIs sites read through DCMS (Mode D). Their keys are plugin-grade credentials.
+  {
+    to: '/settings/connections',
+    labelKey: 'nav.connections',
+    descriptionKey: 'settings.connectionsHint',
+    perm: Perm.PluginsManage,
+  },
   // No permission: the API reference describes the endpoints this workspace exposes, and every
   // member can already call them. It is also why /settings is never empty for anybody.
   { to: '/settings/api', labelKey: 'nav.openapi', descriptionKey: 'settings.apiHint' },

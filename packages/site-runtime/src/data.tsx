@@ -17,11 +17,33 @@ import type { PropDefinition } from './props';
  */
 
 /** Which content: a plugin instance (its slug) and one of its content types. */
-export const sourceSchema = z.strictObject({
+export const pluginSourceSchema = z.strictObject({
   instance: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, 'must be a plugin instance slug'),
   contentType: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/, 'must be a content type name'),
 });
+
+const DOT_PATH = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/;
+
+/**
+ * An external API connection's operation (backlog #124): `/api/connections/{connection}{operation}`
+ * serves its last synced response. `items` is where the list sits in it (`data.events`; absent:
+ * the response itself), `id` and `slug` which fields of an item are those (default `id`, `slug`).
+ */
+export const connectionSourceSchema = z.strictObject({
+  connection: z.string().regex(/^[a-z0-9][a-z0-9-]{0,47}$/, 'must be a connection slug'),
+  operation: z.string().max(512).regex(/^\/(?!\/)[^\s#]*$/, 'must be a path starting with /'),
+  items: z.string().regex(DOT_PATH, 'must be a field path like data.items').optional(),
+  id: z.string().regex(DOT_PATH).optional(),
+  slug: z.string().regex(DOT_PATH).optional(),
+});
+
+export const sourceSchema = z.union([pluginSourceSchema, connectionSourceSchema]);
 export type Source = z.infer<typeof sourceSchema>;
+export type ConnectionSource = z.infer<typeof connectionSourceSchema>;
+
+export function isConnectionSource(source: Source): source is ConnectionSource {
+  return 'connection' in source;
+}
 
 /** One published item, as the delivery API returns it. */
 export interface ContentItem {
@@ -89,6 +111,7 @@ export function useItem(): ItemScope | null {
 }
 
 export function listPath(source: Source, options: { limit?: number; tag?: string; page?: number } = {}): string {
+  if (isConnectionSource(source)) return `/api/connections/${source.connection}${source.operation}`;
   const query = new URLSearchParams();
   if (options.page) query.set('page', String(options.page));
   if (options.limit) query.set('pageSize', String(options.limit));
@@ -98,6 +121,8 @@ export function listPath(source: Source, options: { limit?: number; tag?: string
 }
 
 export function itemPath(source: Source, slug: string): string {
+  // A connection serves lists only: a detail page finds its item in the list.
+  if (isConnectionSource(source)) return listPath(source);
   return `/api/${source.instance}/${encodeURIComponent(source.contentType)}/${encodeURIComponent(slug)}`;
 }
 
@@ -136,10 +161,14 @@ export function useData<T>(path: string | null, parse: (json: unknown) => T): Lo
     if (!path) return;
     let live = true;
     setState({ state: 'loading' });
-    cached(client, path).then(
-      (json) => live && setState({ state: 'ready', value: parse(json) }),
-      (error: Error) => live && setState({ state: 'error', error }),
-    );
+    // Parsed inside the chain: a response that does not parse is an error state (a detail
+    // page's 404), not an unhandled rejection.
+    cached(client, path)
+      .then((json) => parse(json))
+      .then(
+        (value) => live && setState({ state: 'ready', value }),
+        (error: Error) => live && setState({ state: 'error', error }),
+      );
     return () => {
       live = false;
     };
@@ -153,6 +182,42 @@ export function parseItemList(json: unknown): ItemList {
   const body = (json ?? {}) as { items?: unknown; totalCount?: unknown };
   const items = Array.isArray(body.items) ? (body.items as ContentItem[]).filter(isItem) : [];
   return { items, totalCount: typeof body.totalCount === 'number' ? body.totalCount : items.length };
+}
+
+/**
+ * A connection's response as items: the array at `items`, each object an item whose id and slug
+ * are read from the named fields (a slug falls back to the id). Anything not an object is skipped.
+ */
+function connectionItems(source: ConnectionSource, json: unknown): ContentItem[] {
+  const at = (value: unknown, path: string | undefined) =>
+    path ? path.split('.').reduce<unknown>((v, k) => (v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined), value) : value;
+  const list = at(json, source.items);
+  if (!Array.isArray(list)) return [];
+  return list.flatMap((value, index) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
+    const id = at(value, source.id ?? 'id');
+    const slug = at(value, source.slug ?? 'slug') ?? id;
+    return [{ id: String(id ?? index), slug: String(slug ?? index), data: value as Record<string, unknown> }];
+  });
+}
+
+/** How a list response reads for this source, at most `limit` items. */
+export function listParser(source: Source, limit?: number): (json: unknown) => ItemList {
+  if (!isConnectionSource(source)) return parseItemList;
+  return (json) => {
+    const all = connectionItems(source, json);
+    return { items: limit ? all.slice(0, limit) : all, totalCount: all.length };
+  };
+}
+
+/** How an item response reads for this source; for a connection, the list's item with this slug. */
+export function itemParser(source: Source, slug: string): (json: unknown) => ContentItem {
+  if (!isConnectionSource(source)) return parseItem;
+  return (json) => {
+    const found = connectionItems(source, json).find((item) => item.slug === slug);
+    if (!found) throw new Error('no such item');
+    return found;
+  };
 }
 
 export function parseItem(json: unknown): ContentItem {

@@ -1,6 +1,6 @@
 import { codeContractOf, codeContractPath, codeDefinitions, codeSourceOf, codeSourcePath, readCodeContracts, type CodeContract } from './code';
 import { BUILTIN_COMPONENTS } from './components';
-import { BINDABLE, sourceSchema, type Source } from './data';
+import { BINDABLE, isConnectionSource, sourceSchema, type Source } from './data';
 import { appSchema, pageSchema, walk, type App, type NavItem, type Node, type Page } from './document';
 import { isInternalPath } from './ids';
 import { APP_JSON, THEME_JSON, pageIdFromPath } from './paths';
@@ -57,6 +57,10 @@ function navPaths(items: readonly NavItem[]): string[] {
 /**
  * What the tenant's plugins actually offer, when the caller knows it (the builder does; a bare
  * file map does not): `instance/contentType` → the field paths items of it have.
+ */
+/**
+ * Source key → the field paths its items have. A set holding `*` accepts any field: an external
+ * connection's items are whatever its API returns.
  */
 export type ContentSchema = ReadonlyMap<string, ReadonlySet<string>>;
 
@@ -149,7 +153,7 @@ function checkTree(
         problem('error', `${definition.label} › ${prop.label} cannot be bound to content.`, node.id);
       } else if (scope.kind === 'none') {
         problem('error', `${definition.label} › ${prop.label} shows “${path}”, but nothing around it provides an item — put it inside a collection, or on a detail page.`, node.id);
-      } else if (scope.kind === 'source' && content && !META.has(path) && !content.get(scope.key)?.has(path)) {
+      } else if (scope.kind === 'source' && content && !META.has(path) && !content.get(scope.key)?.has(path) && !content.get(scope.key)?.has('*')) {
         problem('error', `${definition.label} › ${prop.label} shows the field “${path}”, which ${scope.key} does not have.`, node.id);
       }
     }
@@ -199,7 +203,7 @@ function checkTree(
 }
 
 export function sourceKey(source: Source): string {
-  return `${source.instance}/${source.contentType}`;
+  return isConnectionSource(source) ? `connections/${source.connection}${source.operation}` : `${source.instance}/${source.contentType}`;
 }
 
 /**

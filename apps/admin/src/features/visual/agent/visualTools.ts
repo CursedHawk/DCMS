@@ -15,6 +15,7 @@ import {
   pageIdFromPath,
   pagePath,
   pageSchema,
+  sourceKey,
   sourceSchema,
   tenantComponentSchema,
   tenantType,
@@ -29,6 +30,8 @@ import {
 } from '@dcms/site-runtime';
 import type { ToolOutcome, ToolSpec } from '../../agent/contracts';
 import type { TenantToolContext } from '../../ide/agent/tenantTools';
+import { api } from '../../../lib/api';
+import { type ApiConnection } from '../../connections/api';
 import { useVfs } from '../../site-source/vfs';
 import { newNodeId } from '../canvas/tree';
 import { defaultShell, migrateInstance, pageIdFor, pruneComponent, registryOf } from '../documents';
@@ -289,7 +292,7 @@ export const VISUAL_TOOLS: Tool[] = [
         .map((id) => {
           const p = pageSchema.safeParse(json(all[pagePath(id)]));
           return p.success
-            ? { doc: `page:${id}`, title: p.data.title, detailOf: p.data.data ? `${p.data.data.source.instance}/${p.data.data.source.contentType}` : undefined }
+            ? { doc: `page:${id}`, title: p.data.title, detailOf: p.data.data ? sourceKey(p.data.data.source) : undefined }
             : { doc: `page:${id}`, unreadable: true };
         });
       const components = new Map<string, number[]>();
@@ -371,6 +374,31 @@ export const VISUAL_TOOLS: Tool[] = [
           allowedParents: d.allowedParents,
         }));
       return { content: JSON.stringify(out) };
+    },
+  },
+  {
+    name: 'list_connections',
+    description:
+      'The external APIs this workspace has connected (Settings › Connections): each operation a site may read, where its list sits in the response and the fields an item has. A Collection (or a detail page) reads one as source { connection, operation, items? } — e.g. { connection: "tickets", operation: "/events", items: "data" }; bind item fields by their paths. Plugin content is describe_content_types instead.',
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+    describe: () => 'list connections',
+    maxResultChars: 12_000,
+    run: async () => {
+      try {
+        const connections = await api.get<ApiConnection[]>('/admin/connections');
+        return {
+          content: JSON.stringify(
+            connections.map((c) => ({
+              connection: c.slug,
+              name: c.name,
+              operations: (c.shapes ?? []).map((s) => ({ operation: s.operation, items: s.items ?? undefined, fields: s.fields })),
+              lastError: c.lastError ?? undefined,
+            })),
+          ),
+        };
+      } catch {
+        return err('Connections cannot be listed with your permissions (they need plugin management).');
+      }
     },
   },
   {
@@ -692,14 +720,14 @@ export const VISUAL_TOOLS: Tool[] = [
   {
     name: 'create_page',
     description:
-      'Add a page and the route that shows it, optionally with a main-menu entry. For a detail page (one item of plugin content, e.g. /events/:slug) pass `detail_of` { instance, contentType } and a path with :slug. The new page is empty: fill it with insert_node on doc page:<id>.',
+      'Add a page and the route that shows it, optionally with a main-menu entry. For a detail page (one item, e.g. /events/:slug) pass `detail_of` — { instance, contentType } for plugin content, or a connection source { connection, operation, items? } — and a path with :slug. The new page is empty: fill it with insert_node on doc page:<id>.',
     input_schema: {
       type: 'object',
       properties: {
         title: { type: 'string' },
         path: { type: 'string', description: '/about, /events/:slug' },
         in_menu: { type: 'boolean' },
-        detail_of: { type: 'object', description: '{ instance, contentType }' },
+        detail_of: { type: 'object', description: '{ instance, contentType } or { connection, operation, items? }' },
       },
       required: ['title', 'path'],
       additionalProperties: false,

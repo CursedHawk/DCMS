@@ -6,6 +6,7 @@ import {
   DataClientContext,
   DataError,
   ItemContext,
+  listParser,
   listPath,
   parseItemList,
   sourceSchema,
@@ -51,7 +52,7 @@ export function Collection({ nodeId, props, slot }: ComponentRenderProps<Props>)
   const limit = typeof props.limit === 'number' ? Math.min(Math.max(Math.round(props.limit), 1), 50) : 6;
   const tag = text(props.tag).trim() || undefined;
   const layout = props.layout === 'list' ? 'dcms-collection-list' : 'dcms-collection-grid';
-  const list = useData(source.success ? listPath(source.data, { limit, tag }) : null, parseItemList);
+  const list = useData(source.success ? listPath(source.data, { limit, tag }) : null, source.success ? listParser(source.data, limit) : parseItemList);
 
   useEffect(() => {
     if (mode === 'edit' && list.state === 'ready') sink?.publish(nodeId, list.value.items);

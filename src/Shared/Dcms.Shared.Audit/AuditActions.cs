@@ -146,6 +146,11 @@ public static class AuditActions
     public const string PluginInstanceUpdated = "plugin.instance.updated";
     public const string PluginInstanceActioned = "plugin.instance.actioned";
 
+    // ---- external API connections (Mode D backlog #124) ----
+    public const string ApiConnectionSaved = "api.connection.saved";
+    public const string ApiConnectionDeleted = "api.connection.deleted";
+    public const string ApiConnectionRefreshed = "api.connection.refreshed";
+
     /// <summary>A plugin called a writing (Safe or Dangerous) operation on another contract.</summary>
     public const string PluginContractInvoked = "plugin.contract.invoked";
 

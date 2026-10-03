@@ -144,6 +144,7 @@ app.MapDcmsPlugins();
 app.MapPluginConfig();
 app.MapContentDelivery();
 app.MapTagDelivery();
+app.MapConnectionDelivery();
 app.MapMediaDelivery();
 app.MapOpenApi();
 app.MapGet("/", () => Results.Ok(new { service = "content-api" }));

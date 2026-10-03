@@ -29,6 +29,7 @@ public static class PluginInstanceSlugs
             ["media"] = "/api/media/…",
             ["openapi"] = "/api/openapi",
             ["tags"] = "/api/tags",
+            ["connections"] = "/api/connections/… (external API connections)",
             // admin-api's own routes beside plugin admin routes (/api/admin/plugins/{slug}/…).
             ["catalog"] = "/api/admin/plugins/catalog",
             ["instances"] = "/api/admin/plugins/instances/…",

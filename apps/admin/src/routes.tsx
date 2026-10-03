@@ -42,6 +42,7 @@ const NotificationsPage = page(
   'NotificationsPage',
 );
 const OpenApiPage = page(() => import('./features/openapi/OpenApiPage'), 'OpenApiPage');
+const ConnectionsPage = page(() => import('./features/connections/ConnectionsPage'), 'ConnectionsPage');
 const PluginsPage = page(() => import('./features/plugins/PluginsPage'), 'PluginsPage');
 const RolesPage = page(() => import('./features/roles/RolesPage'), 'RolesPage');
 const SitesPage = page(() => import('./features/sites/SitesPage'), 'SitesPage');
@@ -232,6 +233,7 @@ const settingsDomainsRoute = settingsChild('domains', DomainsPage);
 const settingsAiRoute = settingsChild('ai', AiSettingsPage);
 const settingsAuditRoute = settingsChild('audit', AuditPage);
 const settingsApiRoute = settingsChild('api', OpenApiPage);
+const settingsConnectionsRoute = settingsChild('connections', ConnectionsPage);
 
 /*
  * The old top-level URLs, kept alive as redirects.
@@ -305,6 +307,7 @@ export const routeTree = rootRoute.addChildren([
       settingsDomainsRoute,
       settingsAiRoute,
       settingsAuditRoute,
+      settingsConnectionsRoute,
       settingsApiRoute,
     ]),
     ...legacyRoutes,
