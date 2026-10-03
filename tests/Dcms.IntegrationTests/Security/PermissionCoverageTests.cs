@@ -253,6 +253,7 @@ public sealed class IdentityPermissionCoverageTests : PermissionCoverageTestsBas
         "POST /account/api/password",
         "POST /account/api/ssh-keys",
         "POST /account/external/complete",
+        "POST /account/external/link",
         "POST /account/forgot-password",
         "POST /account/login",
         "POST /account/register",

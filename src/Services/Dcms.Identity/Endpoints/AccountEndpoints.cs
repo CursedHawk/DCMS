@@ -259,6 +259,7 @@ public static class AccountEndpoints
 
         app.MapGet("/account/external/callback", async (
             HttpContext http, IAntiforgery antiforgery,
+            UserManager<DcmsUser> userManager,
             SignInManager<DcmsUser> signInManager, string? returnUrl) =>
         {
             var info = await signInManager.GetExternalLoginInfoAsync();
@@ -275,10 +276,17 @@ public static class AccountEndpoints
                 return Results.Redirect(SafeReturnUrl(returnUrl));
             }
 
+            // An account already owns this email → offer to add Google to it. Emails are
+            // unique, so creating a second account would only fail further on.
+            var email = info.Principal.FindFirstValue(ClaimTypes.Email);
+            if (!string.IsNullOrEmpty(email) && await userManager.FindByEmailAsync(email) is not null)
+            {
+                return Results.Content(LinkExternalPage(returnUrl, email, error: null, CsrfField(http, antiforgery)), "text/html");
+            }
+
             // New user → ask for a username before creating the local account. The
             // external cookie set during the challenge still carries the provider
             // info, so GetExternalLoginInfoAsync works again on the POST below.
-            var email = info.Principal.FindFirstValue(ClaimTypes.Email);
             var suggested = SuggestUsername(email, info.Principal.FindFirstValue(ClaimTypes.Name));
             return Results.Content(CompleteExternalPage(returnUrl, email, suggested, error: null, CsrfField(http, antiforgery)), "text/html");
         });
@@ -336,6 +344,53 @@ public static class AccountEndpoints
             await signInManager.SignInAsync(user, isPersistent: false);
             return Results.Redirect(SafeReturnUrl(returnUrl));
         }).WithAudit(AuditActions.SsoLinked, category: AuditCategory.Auth);
+
+        // Add Google to the existing account that owns its email. The password is the consent:
+        // a matching email alone is not proof — whoever registered that address here first (no
+        // email confirmation on sign-up) would otherwise keep a password into the account its
+        // real owner just adopted through Google.
+        app.MapPost("/account/external/link", async (
+            HttpContext http, IAntiforgery antiforgery,
+            UserManager<DcmsUser> userManager,
+            SignInManager<DcmsUser> signInManager,
+            IAuditRecorder audit,
+            DcmsMetrics metrics,
+            [FromForm] string password,
+            [FromForm] string? returnUrl) =>
+        {
+            var info = await signInManager.GetExternalLoginInfoAsync();
+            var email = info?.Principal.FindFirstValue(ClaimTypes.Email);
+            var user = string.IsNullOrEmpty(email) ? null : await userManager.FindByEmailAsync(email);
+            if (info is null || user is null)
+            {
+                return Results.Redirect($"/account/login?error=external&returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
+            }
+
+            var check = await signInManager.CheckPasswordSignInAsync(user, password, lockoutOnFailure: true);
+            if (!check.Succeeded)
+            {
+                // Same shape as a failed password sign-in: this form is one more place to guess.
+                audit.Declare(check.IsLockedOut ? AuditActions.LoginLockedOut : AuditActions.LoginFailed)
+                    .Platform()
+                    .As(AuditCategory.Auth, check.IsLockedOut ? AuditSeverity.Warning : AuditSeverity.Notice)
+                    .With("email", email)
+                    .With("method", "google-link")
+                    .About(user.Id)
+                    .Failed(check.IsLockedOut ? "locked-out" : "invalid-credentials");
+                metrics.Login("password", check.IsLockedOut ? "lockedout" : "failed");
+                var message = check.IsLockedOut ? "This account is temporarily locked. Try again later." : "Incorrect password.";
+                return Results.Content(LinkExternalPage(returnUrl, user.Email!, message, CsrfField(http, antiforgery)), "text/html");
+            }
+
+            var link = await userManager.AddLoginAsync(user, info);
+            if (!link.Succeeded)
+            {
+                return Results.Content(LinkExternalPage(returnUrl, user.Email!, FirstError(link), CsrfField(http, antiforgery)), "text/html");
+            }
+
+            await signInManager.SignInAsync(user, isPersistent: false);
+            return Results.Redirect(SafeReturnUrl(returnUrl));
+        }).WithAudit(AuditActions.SsoLinkedToExisting, category: AuditCategory.Auth);
 
         return app;
     }
@@ -430,6 +485,27 @@ public static class AccountEndpoints
             </form>
             """;
         return Layout("DCMS — Choose a username", body);
+    }
+
+    private static string LinkExternalPage(string? returnUrl, string email, string? error, string csrf)
+    {
+        var errorBlock = error is null ? string.Empty : ErrorBlock(error);
+        var body = $$"""
+            <form method="post" action="/account/external/link">
+              {{csrf}}
+              <h1>Connect Google?</h1>
+              <p class="lead">An account for <strong>{{Enc(email)}}</strong> already exists. Enter its password to add Google as a way to sign in to it.</p>
+              {{errorBlock}}
+              <input type="hidden" name="returnUrl" value="{{Enc(returnUrl)}}" />
+              <input type="email" name="email" value="{{Enc(email)}}" autocomplete="username" hidden />
+              <label for="password">Password</label>
+              <input id="password" name="password" type="password" autocomplete="current-password" required autofocus />
+              <p class="forgot"><a href="/account/forgot-password{{QueryReturn(returnUrl)}}">Forgot password?</a></p>
+              <button type="submit">Connect Google</button>
+              <p class="alt"><a href="/account/login{{QueryReturn(returnUrl)}}">Not now — back to sign in</a></p>
+            </form>
+            """;
+        return Layout("DCMS — Connect Google", body);
     }
 
     private static string ForgotPasswordPage(string? returnUrl, bool sent, string? error, string csrf)

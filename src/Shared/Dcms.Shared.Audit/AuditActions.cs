@@ -218,6 +218,9 @@ public static class AuditActions
     /// </summary>
     public const string AccountDetached = "auth.account.detached";
     public const string SsoLinked = "auth.sso.linked";
+
+    /// <summary>Google added to an account that already owned its email, confirmed with that account's password.</summary>
+    public const string SsoLinkedToExisting = "auth.sso.linked.existing";
     public const string SshKeyAdded = "auth.sshkey.added";
     public const string SshKeyRemoved = "auth.sshkey.removed";
     public const string TokenIssued = "auth.token.issued";
