@@ -1549,6 +1549,7 @@
       "confirmDelete": "Smazat stránku „{{title}}“? Smaže se i její adresa a položky menu.",
       "siteSeo": "Celý web",
       "titleTemplate": "Vzor titulku (%s je titulek stránky)",
+      "locale": "Jazyk (data, <html lang>)",
       "defaultDescription": "Výchozí popis"
     },
     "theme": {
@@ -1568,6 +1569,12 @@
     "api": {
       "title": "Průzkumník API",
       "unavailable": "Popis API není k dispozici."
+    },
+    "css": {
+      "advanced": "Pokročilé",
+      "label": "Vlastní CSS této instance",
+      "hint": "Pouze deklarace, použité na tuto komponentu. Přednost mají motiv a vlastnosti: řídí se design kitem.",
+      "invalid": "Ve vlastním CSS není povoleno."
     },
     "mine": {
       "title": "Moje komponenty",

@@ -10,6 +10,7 @@ import {
   componentPath,
   definitionFor,
   formatProblems,
+  nodeCssSchema,
   nodeSchema,
   pageIdFromPath,
   pagePath,
@@ -619,6 +620,36 @@ export const VISUAL_TOOLS: Tool[] = [
       });
       if ('error' in result) return err(result.error);
       return save(ctx, doc, result.root, registry, `Updated the action of ${str(input, 'node')}.`);
+    },
+  },
+  {
+    name: 'set_css',
+    description:
+      'Advanced, last resort: CSS declarations for one instance (`letter-spacing: .1em; border-radius: 0`), applied to its component. Declarations only — no selectors, at-rules or url(). Prefer props and set_design_kit; use this only for what no prop expresses. Empty string removes it.',
+    input_schema: {
+      type: 'object',
+      properties: { doc: DOC, node: { type: 'string' }, css: { type: 'string' } },
+      required: ['doc', 'node', 'css'],
+      additionalProperties: false,
+    },
+    risk: 'safe',
+    summarize: (input) => `Give ${str(input, 'node')} its own CSS`,
+    describe: (input) => `set css on ${str(input, 'node')}`,
+    run: async (input, ctx) => {
+      const doc = loadDoc(str(input, 'doc'));
+      if (typeof doc === 'string') return err(doc);
+      const css = str(input, 'css').trim();
+      const checked = nodeCssSchema.safeParse(css);
+      if (css && !checked.success) return err(`css ${checked.error.issues[0]?.message}`);
+      const result = edit(doc.root, (root) => {
+        const hit = find(root, str(input, 'node'));
+        if (!hit) return `There is no node “${str(input, 'node')}”.`;
+        if (css) hit.node.css = css;
+        else delete hit.node.css;
+        return null;
+      });
+      if ('error' in result) return err(result.error);
+      return save(ctx, doc, result.root, registryFromFiles(), `Updated the CSS of ${str(input, 'node')}.`);
     },
   },
   {

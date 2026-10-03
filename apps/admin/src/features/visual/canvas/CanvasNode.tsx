@@ -1,6 +1,7 @@
 import {
   DataClientContext,
   NodeBoundary,
+  NodeCss,
   PreviewItemsContext,
   RegistryContext,
   RenderModeContext,
@@ -51,13 +52,14 @@ export function CanvasNode({ model, definition: latest }: { model: Component; de
   );
   const count = useVisual((s) => (scope?.kind === 'collection' ? (s.previewItems[scope.nodeId]?.length ?? 0) : 1));
   const itemScope = item ? { item, index: 0, count } : null;
-  const props = bindProps((model.get(PROPS) ?? {}) as Record<string, unknown>, extra.bind, definition.props, itemScope);
+  const props = bindProps((model.get(PROPS) ?? {}) as Record<string, unknown>, extra.bind, definition.props, itemScope, app?.locale);
   return (
     <RenderModeContext.Provider value="edit">
       <SiteContext.Provider value={{ app }}>
         <RegistryContext.Provider value={registry}>
         <DataClientContext.Provider value={dataClient}>
         <PreviewItemsContext.Provider value={PREVIEW_SINK}>
+        <NodeCss id={model.get(ID) as string} css={extra.css} />
         <NodeBoundary type={definition.type}>
           <Impl
             nodeId={model.get(ID) as string}

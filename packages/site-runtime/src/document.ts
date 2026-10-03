@@ -36,12 +36,29 @@ export interface Node {
    * field path (`title`, `values.colour`, `#slug`). Absent outside a data context.
    */
   bind?: Record<string, string>;
+  /**
+   * Advanced: CSS declarations for this one instance (`letter-spacing: .1em; border: 0`), applied
+   * to the component's own element. Declarations only — no selectors, at-rules or url()s.
+   */
+  css?: string;
 }
 
 const propsSchema = z.record(z.string().regex(NAME), z.unknown());
 
 /** `title`, `values.colour`, or a meta field: `#slug`, `#id`, `#publishedAt`, `#index`, `#number`, `#count`. */
 export const FIELD_PATH = /^(?:#(?:slug|id|publishedAt|index|number|count)|[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)$/;
+
+/**
+ * What an instance's CSS may not contain. Braces would end the rule it is scoped into and style
+ * the rest of the page (or the admin's canvas); `<` could end the style element; at-rules and
+ * escapes hide the rest; url() and friends fetch from anywhere. What is left is declarations.
+ */
+const UNSAFE_CSS = /[{}<>@\\]|url\s*\(|image-set\s*\(|expression\s*\(/i;
+
+export const nodeCssSchema = z
+  .string()
+  .max(2000)
+  .refine((css) => !UNSAFE_CSS.test(css), 'may hold declarations only: no { } < > @ \\, url(), image-set() or expression()');
 
 export const nodeSchema: z.ZodType<Node> = z.strictObject({
   id: z.string().regex(NODE_ID, 'must be 1–64 letters, digits, - or _'),
@@ -56,6 +73,7 @@ export const nodeSchema: z.ZodType<Node> = z.strictObject({
     .optional(),
   action: actionSchema.optional(),
   bind: z.record(z.string().regex(NAME), z.string().regex(FIELD_PATH, 'must be a field path')).optional(),
+  css: nodeCssSchema.optional(),
 });
 
 /** Every node in a tree, depth first, root included. */
@@ -151,6 +169,8 @@ export const appSchema = z
     navigation: z.record(z.string().regex(NAME), z.array(navItemSchema)).optional(),
     /** The tree every route renders inside: header, footer and the outlet the page goes in. */
     shell: nodeSchema.optional(),
+    /** The site's language (BCP 47: `cs`, `en-GB`): `<html lang>` and how bound dates read. */
+    locale: z.string().regex(/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/, 'must be a language tag like cs or en-GB').optional(),
     seo: z
       .strictObject({
         /** `%s` is replaced with the page's title: `%s · Acme`. */

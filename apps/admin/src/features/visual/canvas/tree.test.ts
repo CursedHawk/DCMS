@@ -141,3 +141,10 @@ describe('drop rules', () => {
     expect(slotOf(root).get('removable')).toBe(false);
   });
 });
+
+describe('an instance’s own CSS', () => {
+  it('survives the canvas round trip', () => {
+    const tree: Node = { id: 'root', type: 'dcms.page', slots: { default: [{ id: 'h', type: 'dcms.heading', props: { text: 'x' }, css: 'letter-spacing: .1em' }] } };
+    expect(fromGrapes(load(tree))).toEqual(tree);
+  });
+});

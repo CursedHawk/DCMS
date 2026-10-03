@@ -413,3 +413,19 @@ test('preview lists every item and a card links to its detail page', async ({ pa
   await expect(preview.getByRole('heading', { name: 'Second post' })).toBeVisible();
   await expect(preview.getByRole('heading')).toHaveCount(1);
 });
+
+test('an instance’s own CSS applies on the canvas and saves with the node; unsafe CSS is refused', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  await frame.locator('[data-dcms-node="h"] h1').click();
+  await page.getByText('Advanced', { exact: true }).click();
+  const css = page.getByLabel('Custom CSS for this instance');
+
+  await css.fill('color: red } body { display: none');
+  await css.blur();
+  await expect(page.getByText(/may hold declarations only/)).toBeVisible();
+
+  await css.fill('letter-spacing: 12px');
+  await css.blur();
+  await expect(frame.locator('[data-dcms-node="h"] h1')).toHaveCSS('letter-spacing', '12px');
+  await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"css": "letter-spacing: 12px"');
+});

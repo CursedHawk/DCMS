@@ -1517,6 +1517,7 @@
       "confirmDelete": "Delete the page “{{title}}”? Its address and menu entries go with it.",
       "siteSeo": "Whole site",
       "titleTemplate": "Title pattern (%s is the page title)",
+      "locale": "Language (dates, <html lang>)",
       "defaultDescription": "Default description"
     },
     "theme": {
@@ -1534,6 +1535,12 @@
     "api": {
       "title": "API explorer",
       "unavailable": "The API description is not available."
+    },
+    "css": {
+      "advanced": "Advanced",
+      "label": "Custom CSS for this instance",
+      "hint": "Declarations only, applied to this component. Prefer the theme and props: they follow the design kit.",
+      "invalid": "Not allowed in custom CSS."
     },
     "mine": {
       "title": "My components",

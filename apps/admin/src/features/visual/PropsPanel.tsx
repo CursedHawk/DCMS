@@ -2,6 +2,7 @@ import {
   BINDABLE,
   CODE_PREFIX,
   codeSourcePath,
+  nodeCssSchema,
   actionSchema,
   propValueSchema,
   sourceKey,
@@ -17,6 +18,7 @@ import type { Component, Editor } from 'grapesjs';
 import { FileCode, RotateCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import {
   Button,
   Input,
@@ -188,6 +190,29 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
           />
         ) : null}
         <ExposePanel selected={selected} definition={definition} />
+        {/* Out of the way on purpose: the design kit stays authoritative for everyone else. */}
+        <details className="rounded-md border px-3 py-2" open={!!extra.css}>
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('visual.css.advanced')}</summary>
+          <div className="mt-2 space-y-1">
+            <Label htmlFor={`${selected.cid}:css`}>{t('visual.css.label')}</Label>
+            <TextField
+              key={`${selected.cid}:css`}
+              id={`${selected.cid}:css`}
+              multiline
+              value={extra.css ?? ''}
+              placeholder="letter-spacing: .1em; border-radius: 0"
+              onCommit={(value) => {
+                const css = value.trim();
+                const checked = nodeCssSchema.safeParse(css);
+                if (css && !checked.success) return void toast.error(checked.error.issues[0]?.message ?? t('visual.css.invalid'));
+                const next: NodeExtra = { ...extra, css: css || undefined };
+                if (!css) delete next.css;
+                selected.set(EXTRA, next);
+              }}
+            />
+            <p className="text-xs text-muted-foreground">{t('visual.css.hint')}</p>
+          </div>
+        </details>
       </div>
     </div>
   );

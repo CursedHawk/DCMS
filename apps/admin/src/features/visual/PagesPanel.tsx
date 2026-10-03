@@ -242,6 +242,12 @@ function SiteSeo() {
       <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('visual.pages.siteSeo')}</div>
       <Field label={t('visual.pages.titleTemplate')} value={app.seo?.titleTemplate ?? ''} placeholder="%s · Acme" onCommit={(v) => set('titleTemplate', v)} />
       <Field label={t('visual.pages.defaultDescription')} value={app.seo?.description ?? ''} multiline onCommit={(v) => set('description', v)} />
+      <Field
+        label={t('visual.pages.locale')}
+        value={app.locale ?? ''}
+        placeholder="cs, en-GB"
+        onCommit={(v) => report(updateApp((a) => ({ ...a, locale: v.trim() || undefined })), t)}
+      />
     </div>
   );
 }

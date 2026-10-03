@@ -215,8 +215,30 @@ export function mediaUrl(value: unknown): string | undefined {
 }
 
 /** A field's value converted to what a prop of this kind holds — or nothing, if it cannot be. */
-export function coerce(prop: PropDefinition, value: unknown): unknown {
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/;
+
+/**
+ * A stored date as people read it, in the site's language: `2026-07-01` → `1 Jul 2026`. A date
+ * without a time is formatted in UTC so it cannot move to the day before; a date-time shows the
+ * visitor's local time. Anything else — or a locale the browser rejects — is returned as given.
+ */
+export function formatDate(value: string, locale?: string): string {
+  const dateOnly = ISO_DATE.test(value);
+  if (!dateOnly && !ISO_DATETIME.test(value)) return value;
+  const date = new Date(dateOnly ? `${value}T00:00:00Z` : value);
+  if (Number.isNaN(date.getTime())) return value;
+  try {
+    return new Intl.DateTimeFormat(locale, dateOnly ? { dateStyle: 'medium', timeZone: 'UTC' } : { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  } catch {
+    return value;
+  }
+}
+
+export function coerce(prop: PropDefinition, value: unknown, locale?: string): unknown {
   if (value === undefined || value === null) return undefined;
+  // Text shows a date the way people read it; a date or url prop keeps the stored value.
+  if (prop.kind === 'text' && typeof value === 'string') return formatDate(value, locale);
   switch (prop.kind) {
     case 'media':
       return mediaUrl(value);
@@ -254,13 +276,14 @@ export function bindProps(
   bind: Readonly<Record<string, string>> | undefined,
   definitions: readonly PropDefinition[],
   scope: ItemScope | null,
+  locale?: string,
 ): Record<string, unknown> {
   if (!bind || !scope) return props;
   const out = { ...props };
   for (const def of definitions) {
     const path = bind[def.name];
     if (path === undefined) continue;
-    const value = coerce(def, readField(scope, path));
+    const value = coerce(def, readField(scope, path), locale);
     if (value !== undefined) out[def.name] = value;
   }
   return out;

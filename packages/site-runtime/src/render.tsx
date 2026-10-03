@@ -1,6 +1,7 @@
 import { Component, useContext, type CSSProperties, type ContextType, type ErrorInfo, type ReactNode } from 'react';
 import { bindAction, bindProps, useItem } from './data';
-import type { Node } from './document';
+import { useSite } from './site';
+import { nodeCssSchema, type Node } from './document';
 import type { Registry, SlotLayout } from './registry';
 import { RenderModeContext, useRenderMode } from './renderMode';
 import { RegistryContext, TemplateScopeContext, definitionFor } from './scope';
@@ -41,9 +42,19 @@ interface RenderNodeProps {
 }
 
 /** One node and everything under it, as the published site renders it. */
+/**
+ * An instance's own CSS, scoped to its component's element. The schema has already refused
+ * anything but declarations; this re-checks, since a tree may reach a renderer unvalidated.
+ */
+export function NodeCss({ id, css }: { id: string; css?: string }) {
+  if (!css || !nodeCssSchema.safeParse(css).success) return null;
+  return <style>{`[data-dcms-node="${id}"] > :not(style) { ${css} }`}</style>;
+}
+
 export function RenderNode({ node, registry }: RenderNodeProps) {
   return (
     <div className={NODE_CLASS} data-dcms-node={node.id} data-dcms-type={node.type}>
+      <NodeCss id={node.id} css={node.css} />
       <RegistryContext.Provider value={registry}>
         <NodeBoundary type={node.type}>
           <NodeBody node={node} registry={registry} />
@@ -57,6 +68,7 @@ function NodeBody({ node, registry }: RenderNodeProps) {
   const mode = useRenderMode();
   const scope = useContext(TemplateScopeContext);
   const item = useItem();
+  const locale = useSite().app?.locale;
   const definition = definitionFor(registry, node);
   if (!definition) {
     const known = registry.has(node.type);
@@ -78,7 +90,7 @@ function NodeBody({ node, registry }: RenderNodeProps) {
     </span>
   );
   // Inside a collection or on a detail page, bound props come from the item in scope.
-  const props = bindProps(node.props ?? {}, node.bind, definition.props, item);
+  const props = bindProps(node.props ?? {}, node.bind, definition.props, item, locale);
   return <Impl nodeId={node.id} props={props} action={bindAction(node.action, item)} responsive={node.responsive} slot={slot} />;
 }
 

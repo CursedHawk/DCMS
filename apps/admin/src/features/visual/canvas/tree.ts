@@ -34,6 +34,7 @@ export interface NodeExtra {
   responsive?: Responsive;
   action?: Action;
   bind?: Record<string, string>;
+  css?: string;
 }
 
 type GrapesDefinition = Record<string, unknown>;
@@ -49,6 +50,7 @@ export function toGrapes(node: Node, registry: Registry): GrapesDefinition {
   if (node.responsive !== undefined) extra.responsive = node.responsive;
   if (node.action !== undefined) extra.action = node.action;
   if (node.bind !== undefined) extra.bind = node.bind;
+  if (node.css !== undefined) extra.css = node.css;
 
   return {
     type: node.type,
@@ -106,6 +108,7 @@ export function fromGrapes(component: Component, seen: Set<string> = new Set()):
     responsive: extra.responsive,
     action: extra.action,
     bind: extra.bind,
+    css: extra.css,
   });
 }
 
@@ -122,6 +125,7 @@ export function canonicalNode(node: Node): Node {
   if (node.responsive !== undefined) out.responsive = node.responsive;
   if (node.action !== undefined) out.action = node.action;
   if (node.bind !== undefined && Object.keys(node.bind).length) out.bind = node.bind;
+  if (node.css) out.css = node.css;
   return out;
 }
 

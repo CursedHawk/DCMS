@@ -198,3 +198,23 @@ describe('Form', () => {
     expect(el.querySelector('[role="status"]')?.textContent).toBe('Got it');
   });
 });
+
+describe('dates bound to text', () => {
+  it('read as dates in the site’s language, without moving a date-only value to another day', async () => {
+    const { formatDate } = await import('./data');
+    expect(formatDate('2026-07-01', 'en-GB')).toBe('1 Jul 2026');
+    expect(formatDate('2026-07-01', 'cs')).toBe('1. 7. 2026');
+    expect(formatDate('Lucerna', 'cs')).toBe('Lucerna');
+    expect(formatDate('2026-07-01', 'not a locale!')).toBe('2026-07-01');
+  });
+
+  it('format only what a text prop shows; a url or date prop keeps the stored value', async () => {
+    const { bindProps } = await import('./data');
+    const scope = { item: { id: '1', slug: 's', data: { date: '2026-07-01' } }, index: 0, count: 1 };
+    const defs = [
+      { kind: 'text', name: 'label', label: 'L' },
+      { kind: 'date', name: 'when', label: 'W' },
+    ] as const;
+    expect(bindProps({}, { label: 'date', when: 'date' }, defs as never, scope, 'en-GB')).toEqual({ label: '1 Jul 2026', when: '2026-07-01' });
+  });
+});

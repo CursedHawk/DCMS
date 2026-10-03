@@ -103,6 +103,15 @@ describe('Mode D agent tools', () => {
     expect(page('home').root.slots.default[0].version).toBe(2);
   });
 
+  it('gives an instance its own CSS, and refuses CSS that could leave it', async () => {
+    await run('insert_node', { doc: 'page:home', node: { id: 'h', type: 'dcms.heading' } });
+    expect((await run('set_css', { doc: 'page:home', node: 'h', css: 'letter-spacing: .1em' })).content).toBe('Updated the CSS of h.');
+    expect(page('home').root.slots.default[0].css).toBe('letter-spacing: .1em');
+    expect((await run('set_css', { doc: 'page:home', node: 'h', css: 'color: red } body { display: none' })).isError).toBe(true);
+    await run('set_css', { doc: 'page:home', node: 'h', css: '' });
+    expect(page('home').root.slots.default[0].css).toBeUndefined();
+  });
+
   it('asks before deleting a page, and never deletes the home page', async () => {
     expect(tool('delete_page').risk).toBe('dangerous');
     expect((await run('delete_page', { page: 'home' })).content).toBe('The home page cannot be deleted.');

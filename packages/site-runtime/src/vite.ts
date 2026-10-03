@@ -30,6 +30,7 @@ export function routeFileName(path: string): string | null {
 /** `index.html` with this page's head in place of the template's `<title>`. */
 export function withHead(indexHtml: string, app: App, page: Page): string {
   const tags = headHtml(pageHead(app, page));
+  if (app.locale) indexHtml = indexHtml.replace(/<html\b[^>]*>/, `<html lang="${app.locale}">`);
   return /<title>[\s\S]*?<\/title>/.test(indexHtml)
     ? indexHtml.replace(/<title>[\s\S]*?<\/title>/, tags)
     : indexHtml.replace('</head>', `    ${tags}\n  </head>`);

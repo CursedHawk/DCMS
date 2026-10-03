@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_COMPONENTS, builtinRegistry, defaultProps } from './components';
-import type { Node } from './document';
+import { nodeSchema, type Node } from './document';
 import { RenderNode } from './render';
 import { RenderModeContext, type RenderMode } from './renderMode';
 
@@ -98,5 +98,18 @@ describe('BUILTIN_COMPONENTS', () => {
 
   it('keeps the page root out of every slot', () => {
     expect(builtinRegistry.get('dcms.page')?.draggable).toBe(false);
+  });
+});
+
+describe('an instance’s own CSS', () => {
+  it('is scoped to the component’s element, and anything that could escape that scope is refused', () => {
+    const node = { id: 'h', type: 'dcms.heading', props: { text: 'Hi' }, css: 'letter-spacing: .2em' };
+    expect(renderToStaticMarkup(<RenderNode node={node} registry={builtinRegistry} />)).toContain(
+      '<style>[data-dcms-node="h"] > :not(style) { letter-spacing: .2em }</style>',
+    );
+    for (const css of ['color: red } body { display: none', '</style><script>', '@import "x"', 'background: url(https://evil)', 'c\\6f lor: red']) {
+      expect(nodeSchema.safeParse({ ...node, css }).success, css).toBe(false);
+      expect(renderToStaticMarkup(<RenderNode node={{ ...node, css }} registry={builtinRegistry} />)).not.toContain('<style>');
+    }
   });
 });

@@ -51,6 +51,7 @@ const MANAGED = 'data-dcms-head';
 export function applyHead(doc: Document, app: App, page: Page, scope?: ItemScope | null): void {
   const head = pageHead(app, page, scope);
   doc.title = head.title;
+  if (app.locale) doc.documentElement.lang = app.locale;
   for (const el of Array.from(doc.head.querySelectorAll(`[${MANAGED}]`))) el.remove();
   for (const tag of head.meta) {
     const el = doc.createElement('meta');
