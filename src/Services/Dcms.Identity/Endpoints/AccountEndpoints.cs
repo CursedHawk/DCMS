@@ -281,7 +281,9 @@ public static class AccountEndpoints
             var email = info.Principal.FindFirstValue(ClaimTypes.Email);
             if (!string.IsNullOrEmpty(email) && await userManager.FindByEmailAsync(email) is not null)
             {
-                return Results.Content(LinkExternalPage(returnUrl, email, error: null, CsrfField(http, antiforgery)), "text/html");
+                return GoogleVerifiedEmail(info)
+                    ? Results.Content(LinkExternalPage(returnUrl, email, error: null, CsrfField(http, antiforgery)), "text/html")
+                    : Results.Redirect($"/account/login?error=external&returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
             }
 
             // New user → ask for a username before creating the local account. The
@@ -345,41 +347,20 @@ public static class AccountEndpoints
             return Results.Redirect(SafeReturnUrl(returnUrl));
         }).WithAudit(AuditActions.SsoLinked, category: AuditCategory.Auth);
 
-        // Add Google to the existing account that owns its email. The password is the consent:
-        // a matching email alone is not proof — whoever registered that address here first (no
-        // email confirmation on sign-up) would otherwise keep a password into the account its
-        // real owner just adopted through Google.
+        // Add Google to the existing account that owns its email, on the user's say-so. The
+        // email is the only proof of ownership here, so it must be one Google verified.
         app.MapPost("/account/external/link", async (
             HttpContext http, IAntiforgery antiforgery,
             UserManager<DcmsUser> userManager,
             SignInManager<DcmsUser> signInManager,
-            IAuditRecorder audit,
-            DcmsMetrics metrics,
-            [FromForm] string password,
             [FromForm] string? returnUrl) =>
         {
             var info = await signInManager.GetExternalLoginInfoAsync();
             var email = info?.Principal.FindFirstValue(ClaimTypes.Email);
             var user = string.IsNullOrEmpty(email) ? null : await userManager.FindByEmailAsync(email);
-            if (info is null || user is null)
+            if (info is null || user is null || !GoogleVerifiedEmail(info))
             {
                 return Results.Redirect($"/account/login?error=external&returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}");
-            }
-
-            var check = await signInManager.CheckPasswordSignInAsync(user, password, lockoutOnFailure: true);
-            if (!check.Succeeded)
-            {
-                // Same shape as a failed password sign-in: this form is one more place to guess.
-                audit.Declare(check.IsLockedOut ? AuditActions.LoginLockedOut : AuditActions.LoginFailed)
-                    .Platform()
-                    .As(AuditCategory.Auth, check.IsLockedOut ? AuditSeverity.Warning : AuditSeverity.Notice)
-                    .With("email", email)
-                    .With("method", "google-link")
-                    .About(user.Id)
-                    .Failed(check.IsLockedOut ? "locked-out" : "invalid-credentials");
-                metrics.Login("password", check.IsLockedOut ? "lockedout" : "failed");
-                var message = check.IsLockedOut ? "This account is temporarily locked. Try again later." : "Incorrect password.";
-                return Results.Content(LinkExternalPage(returnUrl, user.Email!, message, CsrfField(http, antiforgery)), "text/html");
             }
 
             var link = await userManager.AddLoginAsync(user, info);
@@ -394,6 +375,11 @@ public static class AccountEndpoints
 
         return app;
     }
+
+    // Mapped from Google's userinfo in Program.cs. A Google account can carry an address it never
+    // proved it owns; linking on one of those would hand over whoever's account has it here.
+    private static bool GoogleVerifiedEmail(ExternalLoginInfo info) =>
+        string.Equals(info.Principal.FindFirstValue("email_verified"), "true", StringComparison.OrdinalIgnoreCase);
 
     private static async Task<bool> GoogleEnabledAsync(SignInManager<DcmsUser> signInManager)
     {
@@ -494,15 +480,11 @@ public static class AccountEndpoints
             <form method="post" action="/account/external/link">
               {{csrf}}
               <h1>Connect Google?</h1>
-              <p class="lead">An account for <strong>{{Enc(email)}}</strong> already exists. Enter its password to add Google as a way to sign in to it.</p>
+              <p class="lead">An account for <strong>{{Enc(email)}}</strong> already exists. Do you want to add Google as a way to sign in to it?</p>
               {{errorBlock}}
               <input type="hidden" name="returnUrl" value="{{Enc(returnUrl)}}" />
-              <input type="email" name="email" value="{{Enc(email)}}" autocomplete="username" hidden />
-              <label for="password">Password</label>
-              <input id="password" name="password" type="password" autocomplete="current-password" required autofocus />
-              <p class="forgot"><a href="/account/forgot-password{{QueryReturn(returnUrl)}}">Forgot password?</a></p>
-              <button type="submit">Connect Google</button>
-              <p class="alt"><a href="/account/login{{QueryReturn(returnUrl)}}">Not now — back to sign in</a></p>
+              <button type="submit" autofocus>Yes, connect Google</button>
+              <p class="alt"><a href="/account/login{{QueryReturn(returnUrl)}}">No, back to sign in</a></p>
             </form>
             """;
         return Layout("DCMS — Connect Google", body);

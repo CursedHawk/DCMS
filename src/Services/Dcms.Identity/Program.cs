@@ -68,6 +68,8 @@ if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(goo
         options.ClientId = googleClientId;
         options.ClientSecret = googleClientSecret;
         options.SignInScheme = IdentityConstants.ExternalScheme;
+        // Not mapped by default; linking Google to an existing account by email requires it.
+        options.ClaimActions.MapJsonKey("email_verified", "email_verified");
     });
 }
 
