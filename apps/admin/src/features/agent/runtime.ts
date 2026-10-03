@@ -9,6 +9,7 @@ import { classify, type Classification } from './classify';
 import { pruneHistory, type WorkingMemory } from './context';
 import {
   DEFAULT_CONTEXT_BUDGET,
+  riskOf,
   type AgentEvent,
   type ApprovalDecision,
   type ContextBudget,
@@ -219,7 +220,7 @@ async function drive<TContext>(
       }
 
       const results = await executeCalls(calls, byName, opts, out, memory, allowedForRun);
-      if (calls.some((c) => (byName.get(c.name)?.risk ?? 'read') !== 'read')) {
+      if (calls.some((c) => { const spec = byName.get(c.name); return spec !== undefined && riskOf(spec, c.input) !== 'read'; })) {
         wroteSomething = true;
       }
       opts.messages.push({ role: 'user', content: results });
@@ -283,7 +284,7 @@ async function executeCalls<TContext>(
   // an approval prompt becomes something people dismiss without reading.
   const gated = calls.filter((call) => {
     const spec = byName.get(call.name);
-    if (!spec || decide(opts.mode, spec.risk ?? 'read') !== 'approve') return false;
+    if (!spec || decide(opts.mode, riskOf(spec, call.input)) !== 'approve') return false;
     return !allowedForRun.has(call.name);
   });
 
@@ -315,7 +316,7 @@ async function executeCalls<TContext>(
       continue;
     }
 
-    const risk = spec.risk ?? 'read';
+    const risk = riskOf(spec, call.input);
     const verdict = decide(opts.mode, risk);
 
     if (verdict === 'unavailable') {
@@ -365,7 +366,7 @@ async function runOne<TContext>(
     type: 'tool.started',
     call,
     label: spec.describe?.(call.input) ?? spec.name,
-    risk: spec.risk ?? 'read',
+    risk: riskOf(spec, call.input),
   });
 
   try {

@@ -166,6 +166,7 @@ body { margin: 0; }
 
 .dcms-collection-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(16rem, 100%), 1fr)); gap: var(--dcms-space-lg, 2rem); }
 .dcms-collection-list { display: flex; flex-direction: column; gap: var(--dcms-space-md, 1rem); }
+.dcms-code-placeholder { font: 0.875rem system-ui, sans-serif; color: #334155; background: repeating-linear-gradient(135deg, #f8fafc 0 10px, #f1f5f9 10px 20px); border: 1px dashed #94a3b8; border-radius: 6px; padding: 1rem; }
 .dcms-editor-note, .dcms-editor-state { font: 0.75rem system-ui, sans-serif; color: #64748b; padding: 0.25rem 0; }
 .dcms-editor-state { margin-top: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .dcms-richtext > :first-child { margin-top: 0; }

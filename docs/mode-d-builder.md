@@ -13,6 +13,8 @@ dcms/app.json                      routes, menus, the app shell, SEO defaults
 dcms/theme.json                    design tokens (a design kit)
 dcms/pages/<id>.json               one page: { schemaVersion, id, title, seo?, data?, root }
 dcms/components/<name>/v<N>.json   a component the tenant built, one file per version
+dcms/code/<name>.json              a developer component's contract
+src/components/<name>.tsx          its source
 src/main.tsx                       GENERATED: globs dcms/**/*.json into <DcmsApp/>
 src/dcms/runtime/**                GENERATED: @dcms/site-runtime, vendored per site
 src/api/**                         GENERATED: the tenant API client (as in Mode B)
@@ -43,7 +45,7 @@ it is copied into every site.
 
 The canvas frame is **same-origin with the admin**, so only DCMS's own runtime code ever
 runs in it. Tenant components are data the runtime interprets; rich text goes through
-DOMPurify. Developer-written TSX (P7) must never run there.
+DOMPurify. Developer-written TSX never runs there — see *Developer components*.
 
 ## Editing surfaces
 
@@ -108,6 +110,31 @@ The Agent tab runs the shared agent with kind `visual`. Its tools edit documents
 `set_design_kit`, `check_visual_site`. Every write re-validates the whole document and its
 placement, and goes through the run transaction (reviewable, revertable). The run's gate is
 `checkVisualSite` with the same content schema the Problems list uses.
+
+## Developer components (P7)
+
+A developer writes a React component in TSX; authors place and configure it like any other.
+
+- **Contract** `dcms/code/<name>.json` — `{ schemaVersion, name, label, description?, category?,
+  props }`, the same prop definitions built-ins use. The builder reads only this.
+- **Source** `src/components/<name>.tsx` — its default export receives the props as React props.
+  *My components › New developer component (TSX)* writes both; *Edit source* on a selected
+  instance opens it in the code view, typed against React and the vendored runtime.
+- **Type** `code.<name>`. `codeDefinitions(contracts, modules?)` renders the developer's component
+  when the modules are given — the published site's entry globs `src/components/*.tsx` — and a
+  placeholder otherwise.
+- **Where it runs.** Never on the canvas or in the in-admin preview: both share the admin's
+  origin. A site with any developer component previews in the Mode B sandbox instead — the whole
+  draft bundled in the browser (esbuild-wasm, `import.meta.glob` expanded by
+  `ide/preview/importGlob.ts`, packages pinned from the palette then the site's package.json),
+  run in an opaque-origin `srcdoc` frame whose API calls the admin replays only inside the
+  site's preview subtree.
+- **Checks.** `checkVisualSite` wants a contract that parses, a source beside it with a default
+  export, and warns about a source with no contract. Types and the build check the rest.
+- **API explorer** — the rail's `{}` button opens the tenant API description (Scalar) the
+  generated client in `src/api` is built from.
+- **Dependencies.** `package.json` is in the code view. An agent edit to it is `dangerous` in
+  every agent kind (`riskFor` on the file tools): the build installs what it declares.
 
 ## Publishing
 

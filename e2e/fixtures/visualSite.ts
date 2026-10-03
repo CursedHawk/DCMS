@@ -49,11 +49,12 @@ export function saved(api: MockApi, path: string): string | null {
 export const doc = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;
 
 export async function open(page: Page, api: MockApi, files: Record<string, string>) {
+  // The generated layers' stand-ins, unless the spec brings the real files.
   builderServer(api, {
-    ...files,
     'src/api/manifest.json': API_MANIFEST,
     'src/dcms/runtime/index.ts': '// runtime\n',
     'src/dcms/runtime/manifest.json': RUNTIME_MANIFEST,
+    ...files,
   });
   await page.setViewportSize({ width: 1600, height: 950 });
   await page.goto(`/sites/${SITE}`);

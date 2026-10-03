@@ -1531,8 +1531,15 @@
       "blockPublish_one": "Fix {{count}} error before publishing.",
       "blockPublish_other": "Fix {{count}} errors before publishing."
     },
+    "api": {
+      "title": "API explorer",
+      "unavailable": "The API description is not available."
+    },
     "mine": {
       "title": "My components",
+      "newCode": "New developer component (TSX)",
+      "developer": "Developer components",
+      "editSource": "Edit source",
       "new": "New component",
       "placeholder": "Event card",
       "none": "No components yet. Create one, or select something on a page and make it a component.",

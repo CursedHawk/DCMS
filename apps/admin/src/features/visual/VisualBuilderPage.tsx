@@ -2,14 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
   APP_JSON,
-  BUILTIN_COMPONENTS,
   checkVisualSite,
   componentDependencies,
+  CODE_PREFIX,
+  codeContractOf,
   componentFileOf,
   listPath,
   parseItemList,
-  readComponentDocs,
-  siteRegistry,
   tenantType,
 } from '@dcms/site-runtime';
 import type { Editor } from 'grapesjs';
@@ -32,15 +31,16 @@ import {
   RefreshCw,
   Rocket,
   Smartphone,
+  Braces,
   Sparkles,
   Tablet,
   Undo2,
   X,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button, CenteredSpinner, cn } from '@dcms/ui';
+import { Button, CenteredSpinner, Dialog, DialogContent, DialogTitle, cn } from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
 import { useAuth } from '../../useAuth';
 import { MediaBridge } from '../builder/panels/MediaBridge';
@@ -61,7 +61,7 @@ import {
   useVfs,
 } from '../site-source';
 import { PagesPanel } from './PagesPanel';
-import { readComponent, readPage } from './documents';
+import { readComponent, readPage, registryOf } from './documents';
 import { ComponentsPanel } from './ComponentsPanel';
 import { ProblemsPanel } from './ProblemsPanel';
 import { PropsPanel } from './PropsPanel';
@@ -69,6 +69,9 @@ import { ThemePanel } from './ThemePanel';
 import { VisualCanvas } from './VisualCanvas';
 import { VisualCodeView } from './VisualCodeView';
 import { VisualPreview } from './VisualPreview';
+import { SandboxPreview } from './SandboxPreview';
+
+const ApiExplorer = lazy(() => import('./ApiExplorer'));
 import { VISUAL_DEVICES, type DeviceId } from './canvas/editor';
 import { starterFiles } from './starter';
 import { useVisual, type VisualView } from './store';
@@ -180,26 +183,21 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
   const componentsKey = useMemo(
     () =>
       Object.entries(files)
-        .filter(([p]) => componentFileOf(p))
+        .filter(([p]) => componentFileOf(p) || codeContractOf(p))
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([p, text]) => `${p}\n${text}`)
         .join('\u0000'),
     [files],
   );
-  const componentDocs = useMemo(() => {
-    const byPath = new Map<string, unknown>();
-    for (const [path, text] of Object.entries(useVfs.getState().files)) {
-      if (!componentFileOf(path)) continue;
-      try {
-        byPath.set(path, JSON.parse(text));
-      } catch {
-        // Reported by the problems list.
-      }
-    }
-    return readComponentDocs(byPath).docs;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [componentsKey]);
-  const registry = useMemo(() => siteRegistry(BUILTIN_COMPONENTS, componentDocs).registry, [componentDocs]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const registry = useMemo(() => registryOf(useVfs.getState().files), [componentsKey]);
+  // Developer code runs only in the sandboxed preview, so a site with any previews there.
+  const [apiOpen, setApiOpen] = useState(false);
+  const hasCode = useMemo(() => [...registry.keys()].some((type) => type.startsWith(CODE_PREFIX)), [registry]);
+  const componentDocs = useMemo(
+    () => [...registry.values()].flatMap((d) => (d.template ? [d.template, ...Object.values(d.olderVersions ?? {}).flatMap((o) => (o.template ? [o.template] : []))] : [])),
+    [registry],
+  );
   useEffect(() => useVisual.getState().setRegistry(registry), [registry]);
 
   // While a component is open, neither it nor anything that already contains it may be dropped
@@ -396,6 +394,12 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
       </div>
 
       <MediaBridge editor={editor} />
+      <Dialog open={apiOpen} onOpenChange={setApiOpen}>
+        <DialogContent className="h-[85vh] max-w-6xl overflow-hidden p-0">
+          <DialogTitle className="sr-only">{t('visual.api.title')}</DialogTitle>
+          <Suspense fallback={<CenteredSpinner />}>{apiOpen && <ApiExplorer />}</Suspense>
+        </DialogContent>
+      </Dialog>
       <MergeDialog
         siteId={siteId}
         head={branch}
@@ -450,6 +454,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
             <Rail active={sidebar === 'deploy'} label={t('ide.deploy.title')} onClick={() => setSidebar('deploy')}><Rocket className="h-5 w-5" /></Rail>
             <Rail active={sidebar === 'problems'} label={t('visual.problems.title')} onClick={() => setSidebar('problems')} badge={errors}><AlertCircle className="h-5 w-5" /></Rail>
             <Rail active={sidebar === 'agent'} label={t('ide.agent.title')} onClick={() => setSidebar('agent')}><Sparkles className="h-5 w-5" /></Rail>
+            <Rail active={apiOpen} label={t('visual.api.title')} onClick={() => setApiOpen(true)}><Braces className="h-5 w-5" /></Rail>
           </div>
           <div className="min-w-0 flex-1 overflow-hidden">
             {/* The palette stays mounted: its payload arrives once, at editor creation. */}
@@ -496,7 +501,11 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
           </div>
           {view === 'preview' && (
             <div className="min-w-0 flex-1">
-              <VisualPreview initialPath={previewPath} width={VISUAL_DEVICES.find((d) => d.id === device)?.width} />
+              {hasCode ? (
+                <SandboxPreview siteId={siteId} />
+              ) : (
+                <VisualPreview initialPath={previewPath} width={VISUAL_DEVICES.find((d) => d.id === device)?.width} />
+              )}
             </div>
           )}
           {showCode && showCanvas && (

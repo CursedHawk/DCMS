@@ -1,8 +1,9 @@
 import { useEffect, useMemo } from 'react';
 import { Outlet, RouterProvider, createBrowserRouter, useParams, type RouteObject } from 'react-router';
+import { codeDefinitions, readCodeContracts, type CodeContract, type CodeModules } from './code';
 import { BUILTIN_COMPONENTS } from './components';
 import { appSchema, pageSchema, type App, type Page } from './document';
-import { ItemContext, itemPath, parseItem, useData } from './data';
+import { DataClientContext, ItemContext, itemPath, parseItem, useData, type DataClient } from './data';
 import { applyHead } from './head';
 import { APP_JSON, THEME_JSON, pageIdFromPath } from './paths';
 import type { Registry } from './registry';
@@ -27,12 +28,16 @@ export interface SiteDocuments {
   theme: ThemeTokens;
   /** The site's own components (dcms/components/<name>/v<N>.json), every version. */
   components: readonly TenantComponentDoc[];
+  /** Developer components' contracts (dcms/code/<name>.json). */
+  code: readonly CodeContract[];
+  /** Their implementations, where code may run (the site, the sandboxed preview). */
+  codeModules?: CodeModules;
   /** What could not be read, for the console. */
   problems: readonly string[];
 }
 
 /** Repo path → parsed JSON, keyed however the bundler names them (`../dcms/app.json`, `/dcms/...`). */
-export function loadDocuments(modules: Readonly<Record<string, unknown>>): SiteDocuments {
+export function loadDocuments(modules: Readonly<Record<string, unknown>>, codeModules?: CodeModules): SiteDocuments {
   const problems: string[] = [];
   const byPath = new Map<string, unknown>();
   for (const [key, value] of Object.entries(modules)) {
@@ -58,12 +63,14 @@ export function loadDocuments(modules: Readonly<Record<string, unknown>>): SiteD
   }
   const components = readComponentDocs(byPath);
   for (const p of components.problems) problems.push(`${p.path}: ${p.message}`);
-  return { app, pages, theme, components: components.docs, problems };
+  const code = readCodeContracts(byPath);
+  for (const p of code.problems) problems.push(`${p.path}: ${p.message}`);
+  return { app, pages, theme, components: components.docs, code: code.contracts, codeModules, problems };
 }
 
 /** The registry a site renders with: the built-ins and the site's own components. */
 export function registryFor(documents: SiteDocuments): Registry {
-  return siteRegistry(BUILTIN_COMPONENTS, documents.components).registry;
+  return siteRegistry([...BUILTIN_COMPONENTS, ...codeDefinitions(documents.code, documents.codeModules)], documents.components).registry;
 }
 
 /** The routes of a site, for a browser router on the site and a memory router in the builder's preview. */
@@ -86,7 +93,7 @@ export function SiteStyles({ theme }: { theme: ThemeTokens }) {
   );
 }
 
-export function DcmsApp({ documents, registry }: { documents: SiteDocuments; registry?: Registry }) {
+export function DcmsApp({ documents, registry, dataClient }: { documents: SiteDocuments; registry?: Registry; dataClient?: DataClient }) {
   const router = useMemo(
     () => createBrowserRouter(siteRoutes(documents, registry ?? registryFor(documents))),
     [documents, registry],
@@ -94,12 +101,13 @@ export function DcmsApp({ documents, registry }: { documents: SiteDocuments; reg
   useEffect(() => {
     for (const problem of documents.problems) console.error(`dcms: ${problem}`);
   }, [documents]);
-  return (
+  const site = (
     <SiteContext.Provider value={{ app: documents.app }}>
       <SiteStyles theme={documents.theme} />
       <RouterProvider router={router} />
     </SiteContext.Provider>
   );
+  return dataClient ? <DataClientContext.Provider value={dataClient}>{site}</DataClientContext.Provider> : site;
 }
 
 /** The shell around every route: the app's own `shell` tree, whose outlet the page renders into. */

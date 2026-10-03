@@ -148,7 +148,7 @@ export function usePreview(enabled: boolean, siteId: string, refreshKey = 0): Pr
       id,
       files,
       entry,
-      versions: paletteVersions,
+      versions: previewVersions(files),
       previewBaseUrl: `/api/admin/sites/${siteId}/preview`,
     };
     workerRef.current?.postMessage(req);
@@ -187,4 +187,24 @@ export function usePreview(enabled: boolean, siteId: string, refreshKey = 0): Pr
   }, [refreshKey]);
 
   return { ...state, refresh: build };
+}
+
+/**
+ * The palette's pins, plus the site's own for packages the palette does not have (a Mode D
+ * site's zod and dompurify). The palette wins where both pin a package, so a Mode B preview
+ * resolves exactly as it always has.
+ */
+export function previewVersions(files: Readonly<Record<string, string>>): Record<string, string> {
+  let own: Record<string, string> = {};
+  try {
+    const deps = (JSON.parse(files['package.json'] ?? '{}') as { dependencies?: Record<string, unknown> }).dependencies ?? {};
+    own = Object.fromEntries(
+      Object.entries(deps)
+        .filter(([, v]) => typeof v === 'string' && /^[\^~]?\d+\.\d+\.\d+$/.test(v))
+        .map(([k, v]) => [k, (v as string).replace(/^[\^~]/, '')]),
+    );
+  } catch {
+    // An unreadable package.json is the build's to report; the palette still applies.
+  }
+  return { ...own, ...paletteVersions };
 }

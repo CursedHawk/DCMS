@@ -1,5 +1,5 @@
-import { APP_JSON, THEME_JSON, appSchema, pageIdFromPath, pageSchema, themeTokensSchema } from '@dcms/site-runtime';
-import { FileJson, GitCompare, X } from 'lucide-react';
+import { APP_JSON, THEME_JSON, appSchema, codeContractOf, codeContractSchema, codeSourceOf, pageIdFromPath, pageSchema, themeTokensSchema } from '@dcms/site-runtime';
+import { FileCode, FileJson, GitCompare, X } from 'lucide-react';
 import type * as Monaco from 'monaco-editor';
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { cn } from '@dcms/ui';
 import { DiffEditor, MonacoEditor, monaco, setGeneratedPathPredicate, setupMonaco, useVfs } from '../site-source';
 import { isGeneratedPath } from '../ide/generated/generatedLayer';
+import { ensurePaletteTypes } from '../ide/types/palette';
 
 /**
  * The documents behind the canvas, as text.
@@ -30,6 +31,7 @@ function registerSchemas(m: typeof Monaco): void {
       { uri: 'https://dcms.local/schemas/app.json', fileMatch: [`file:///${APP_JSON}`], schema: json(appSchema) },
       { uri: 'https://dcms.local/schemas/page.json', fileMatch: ['file:///dcms/pages/*.json'], schema: json(pageSchema) },
       { uri: 'https://dcms.local/schemas/theme.json', fileMatch: [`file:///${THEME_JSON}`], schema: json(themeTokensSchema) },
+      { uri: 'https://dcms.local/schemas/code.json', fileMatch: ['file:///dcms/code/*.json'], schema: json(codeContractSchema) },
     ],
   });
 }
@@ -42,13 +44,26 @@ export function VisualCodeView({ activePage }: { activePage: string | null }) {
   const openDiffs = useVfs((s) => s.openDiffs);
 
   const files = useMemo(
-    () => keys.split('\n').filter((p) => p === APP_JSON || p === THEME_JSON || pageIdFromPath(p) !== null),
+    () =>
+      keys
+        .split('\n')
+        .filter(
+          (p) =>
+            p === APP_JSON ||
+            p === THEME_JSON ||
+            p === 'package.json' ||
+            pageIdFromPath(p) !== null ||
+            codeContractOf(p) !== null ||
+            (p.startsWith('src/components/') && codeSourceOf(p) !== null),
+        ),
     [keys],
   );
 
   useEffect(() => {
     setupMonaco();
     registerSchemas(monaco);
+    // React's types, for developer components (the runtime's own are files in the draft).
+    ensurePaletteTypes();
     // The runtime, the API client and openapi.json are DCMS's; Monaco shows them read-only.
     setGeneratedPathPredicate(isGeneratedPath);
   }, []);
@@ -75,7 +90,7 @@ export function VisualCodeView({ activePage }: { activePage: string | null }) {
               !activeDiff && activePath === path ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:bg-accent/50',
             )}
           >
-            <FileJson className="h-3.5 w-3.5" />
+            {path.endsWith('.tsx') ? <FileCode className="h-3.5 w-3.5" /> : <FileJson className="h-3.5 w-3.5" />}
             {path.replace(/^dcms\//, '')}
           </button>
         ))}

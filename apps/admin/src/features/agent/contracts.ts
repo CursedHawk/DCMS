@@ -47,6 +47,12 @@ export interface ToolSpec<TContext> {
   /** How much damage it can do, for the mode table in `modes.ts`. Omitted means read-only. */
   risk?: ToolRisk;
 
+  /**
+   * The risk of one call, where it depends on the input — an edit is `safe`, an edit to
+   * package.json adds code from the registry and is not. Overrides `risk` for that call.
+   */
+  riskFor?: (input: Record<string, unknown>) => ToolRisk;
+
   /** React-query key roots to invalidate once it has run. */
   invalidates?: string[];
 
@@ -269,4 +275,9 @@ export const DEFAULT_CONTEXT_BUDGET: ContextBudget = {
  */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3.5);
+}
+
+/** The risk of one call: its own when the tool says, the tool's otherwise. */
+export function riskOf(spec: Pick<ToolSpec<never>, 'risk' | 'riskFor'>, input: Record<string, unknown>): ToolRisk | 'read' {
+  return spec.riskFor?.(input) ?? spec.risk ?? 'read';
 }

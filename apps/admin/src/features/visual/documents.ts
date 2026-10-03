@@ -1,4 +1,11 @@
 import {
+  BUILTIN_COMPONENTS,
+  codeContractOf,
+  codeDefinitions,
+  readCodeContracts,
+  readComponentDocs,
+  siteRegistry,
+  type Registry,
   APP_JSON,
   DOC_ID,
   appSchema,
@@ -10,6 +17,8 @@ import {
   tenantComponentSchema,
   tenantType,
   walk,
+  codeContractPath,
+  codeSourcePath,
   type App,
   type Node,
   type Page,
@@ -442,3 +451,36 @@ export function pruneComponent(doc: TenantComponentDoc): TenantComponentDoc {
   return { ...doc, bindings, slotTargets, slots: doc.slots.filter((s) => slotTargets[s.name]) };
 }
 
+
+/**
+ * The registry the builder and the agent use: built-ins, the site's own components, and the
+ * developer components' contracts — as placeholders, since no developer code runs in the admin.
+ */
+export function registryOf(files: Readonly<Record<string, string>>): Registry {
+  const byPath = new Map<string, unknown>();
+  for (const [path, text] of Object.entries(files)) {
+    if (!componentFileOf(path) && !codeContractOf(path)) continue;
+    try {
+      byPath.set(path, JSON.parse(text));
+    } catch {
+      // Reported by the problems list.
+    }
+  }
+  return siteRegistry([...BUILTIN_COMPONENTS, ...codeDefinitions(readCodeContracts(byPath).contracts)], readComponentDocs(byPath).docs).registry;
+}
+
+/** A developer component: its contract and a starter source the developer takes from there. */
+export function createCodeComponent(label: string): { name: string; contractPath: string; sourcePath: string } {
+  const { files } = useVfs.getState();
+  const taken = new Set(Object.keys(files).map(codeContractOf).filter((n): n is string => n !== null));
+  const name = pageIdFor(label, taken).slice(0, 48);
+  const contractPath = codeContractPath(name);
+  const sourcePath = codeSourcePath(name);
+  const fn = name.replace(/(^|-)([a-z0-9])/g, (_m, _d, c: string) => c.toUpperCase()).replace(/^(\d)/, 'C$1');
+  useVfs.getState().createFile(contractPath, serializeDoc({ schemaVersion: 1, name, label, props: [{ kind: 'text', name: 'title', label: 'Title', default: label }] }));
+  useVfs.getState().createFile(
+    sourcePath,
+    `/**\n * ${label} — a developer component. The builder places it and edits the props declared in\n * ${contractPath}; they arrive here as ordinary React props. It runs on the site and in the\n * sandboxed preview, never on the canvas.\n */\nexport default function ${fn}({ title }: { title?: string }) {\n  return <div>{title}</div>;\n}\n`,
+  );
+  return { name, contractPath, sourcePath };
+}

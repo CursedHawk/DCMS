@@ -1,7 +1,6 @@
 import { DESIGN_KITS, applyKit, findKit } from '@dcms/gjs-blocks';
 import {
   APP_JSON,
-  BUILTIN_COMPONENTS,
   THEME_JSON,
   actionSchema,
   appSchema,
@@ -15,8 +14,6 @@ import {
   pageIdFromPath,
   pagePath,
   pageSchema,
-  readComponentDocs,
-  siteRegistry,
   sourceSchema,
   tenantComponentSchema,
   tenantType,
@@ -32,7 +29,7 @@ import type { ToolOutcome, ToolSpec } from '../../agent/contracts';
 import type { TenantToolContext } from '../../ide/agent/tenantTools';
 import { useVfs } from '../../site-source/vfs';
 import { newNodeId } from '../canvas/tree';
-import { defaultShell, migrateInstance, pageIdFor, pruneComponent } from '../documents';
+import { defaultShell, migrateInstance, pageIdFor, pruneComponent, registryOf } from '../documents';
 import { serializeDoc } from '../starter';
 import { useVisual } from '../store';
 
@@ -67,11 +64,9 @@ function json(text: string | undefined): unknown {
   }
 }
 
-/** The registry the site renders with: built-ins plus its own components. */
+/** The registry the site renders with: built-ins, its own components, developer contracts. */
 export function registryFromFiles(all: Readonly<Record<string, string>> = files()): Registry {
-  const byPath = new Map<string, unknown>();
-  for (const [path, text] of Object.entries(all)) if (componentFileOf(path)) byPath.set(path, json(text));
-  return siteRegistry(BUILTIN_COMPONENTS, readComponentDocs(byPath).docs).registry;
+  return registryOf(all);
 }
 
 // ---------------------------------------------------------------------------

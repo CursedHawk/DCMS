@@ -1,3 +1,4 @@
+import { codeContractOf, codeContractPath, codeDefinitions, codeSourceOf, codeSourcePath, readCodeContracts, type CodeContract } from './code';
 import { BUILTIN_COMPONENTS } from './components';
 import { BINDABLE, sourceSchema, type Source } from './data';
 import { appSchema, pageSchema, type App, type NavItem, type Node, type Page } from './document';
@@ -178,6 +179,38 @@ export function sourceKey(source: Source): string {
   return `${source.instance}/${source.contentType}`;
 }
 
+/**
+ * Developer components: a contract that parses, a source file beside it with a default export,
+ * and no source file without a contract (it would never be placed). The source itself is checked
+ * by the type checker and the build, not here.
+ */
+function checkCode(files: Readonly<Record<string, string>>, out: SiteProblem[]): CodeContract[] {
+  const json = new Map<string, unknown>();
+  for (const [path, text] of Object.entries(files)) {
+    if (!codeContractOf(path)) continue;
+    const parsed = parse(text);
+    if (parsed.ok) json.set(path, parsed.value);
+    else out.push({ severity: 'error', file: path, message: parsed.message });
+  }
+  const { contracts, problems } = readCodeContracts(json);
+  for (const p of problems) out.push({ severity: 'error', file: p.path, message: p.message });
+  for (const contract of contracts) {
+    const source = files[codeSourcePath(contract.name)];
+    if (source === undefined) {
+      out.push({ severity: 'error', file: codeContractPath(contract.name), message: `has no source: create ${codeSourcePath(contract.name)}.` });
+    } else if (!/export\s+default\b/.test(source)) {
+      out.push({ severity: 'error', file: codeSourcePath(contract.name), message: 'needs a default export: the component the builder places.' });
+    }
+  }
+  for (const path of Object.keys(files)) {
+    const name = path.startsWith('src/components/') ? codeSourceOf(path) : null;
+    if (name && !contracts.some((c) => c.name === name) && files[codeContractPath(name)] === undefined) {
+      out.push({ severity: 'warning', file: path, message: `has no contract, so the builder cannot place it: add ${codeContractPath(name)}.` });
+    }
+  }
+  return contracts;
+}
+
 export function checkVisualSite(files: Readonly<Record<string, string>>, given?: Registry, content?: ContentSchema): SiteProblem[] {
   const out: SiteProblem[] = [];
 
@@ -191,7 +224,8 @@ export function checkVisualSite(files: Readonly<Record<string, string>>, given?:
   }
   const components = readComponentDocs(componentJson);
   for (const p of components.problems) out.push({ severity: 'error', file: p.path, message: p.message });
-  const built = siteRegistry(BUILTIN_COMPONENTS, components.docs);
+  const code = checkCode(files, out);
+  const built = siteRegistry([...BUILTIN_COMPONENTS, ...codeDefinitions(code)], components.docs);
   for (const message of built.problems) out.push({ severity: 'error', file: 'dcms/components', message });
   const registry = given ?? built.registry;
 

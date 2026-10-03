@@ -1,5 +1,7 @@
 import {
   BINDABLE,
+  CODE_PREFIX,
+  codeSourcePath,
   actionSchema,
   propValueSchema,
   sourceKey,
@@ -12,10 +14,11 @@ import {
 } from '@dcms/site-runtime';
 import type { ContentField } from '@dcms/gjs-blocks';
 import type { Component, Editor } from 'grapesjs';
-import { RotateCcw } from 'lucide-react';
+import { FileCode, RotateCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  Button,
   Input,
   Label,
   Select,
@@ -34,6 +37,7 @@ import { ExposePanel, InstanceVersion } from './ExposePanel';
 import { META_BINDABLE, scopeOf, useContentCatalog } from './data';
 import { readPage } from './documents';
 import { useVisual } from './store';
+import { useVfs } from '../site-source/vfs';
 
 /**
  * The inspector: the selected component's props, one control per declared prop.
@@ -120,6 +124,19 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
       </div>
       <div className="space-y-4 p-4">
         {latest && <InstanceVersion selected={selected} latest={latest} />}
+        {definition.type.startsWith(CODE_PREFIX) && (
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full"
+            onClick={() => {
+              useVisual.getState().setView('split');
+              useVfs.getState().open(codeSourcePath(definition.type.slice(CODE_PREFIX.length)));
+            }}
+          >
+            <FileCode className="h-4 w-4" /> {t('visual.mine.editSource')}
+          </Button>
+        )}
         {definition.props.length === 0 && !definition.actions?.length && (
           <p className="text-sm text-muted-foreground">{t('visual.noProps')}</p>
         )}

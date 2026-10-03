@@ -1,15 +1,16 @@
 import type { Editor } from 'grapesjs';
-import { ArrowUpCircle, Pencil, Plus, Puzzle, Trash2, Wand2 } from 'lucide-react';
+import { ArrowUpCircle, Code2, FileCode, Pencil, Plus, Puzzle, Trash2, Wand2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button, Input, Label } from '@dcms/ui';
-import { tenantType } from '@dcms/site-runtime';
+import { codeContractOf, codeSourcePath, tenantType } from '@dcms/site-runtime';
 import { useSelected } from '../builder/panels/useEditorEvent';
 import { useVfs } from '../site-source';
 import { fromGrapes, SLOT_TYPE } from './canvas/tree';
 import {
   componentUsage,
+  createCodeComponent,
   createComponent,
   deleteComponent,
   listComponents,
@@ -35,6 +36,19 @@ export function ComponentsPanel({ editor }: { editor: Editor | null }) {
   const selected = useSelected(editor);
   const [label, setLabel] = useState('');
   const components = listComponents(files);
+  const developer = Object.keys(files).map(codeContractOf).filter((n): n is string => n !== null).sort();
+
+  // A developer component is code: it is edited in the code view, never on the canvas.
+  const editSource = (name: string) => {
+    useVisual.getState().setView('split');
+    useVfs.getState().open(codeSourcePath(name));
+  };
+  const createCode = () => {
+    if (!label.trim()) return;
+    const { name } = createCodeComponent(label.trim());
+    setLabel('');
+    editSource(name);
+  };
 
   const open = (name: string) => {
     const pick = versionToEdit(name);
@@ -89,6 +103,9 @@ export function ComponentsPanel({ editor }: { editor: Editor | null }) {
             <Plus className="h-4 w-4" />
           </Button>
         </div>
+        <Button type="button" size="sm" variant="outline" className="w-full" disabled={!label.trim()} onClick={createCode}>
+          <Code2 className="h-4 w-4" /> {t('visual.mine.newCode')}
+        </Button>
         {canMake && (
           <Button type="button" size="sm" variant="outline" className="w-full" onClick={makeFromSelection}>
             <Wand2 className="h-4 w-4" /> {t('visual.mine.makeFromSelection')}
@@ -161,6 +178,22 @@ export function ComponentsPanel({ editor }: { editor: Editor | null }) {
             );
           })}
         </ul>
+      )}
+      {developer.length > 0 && (
+        <>
+          <div className="border-y px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('visual.mine.developer')}</div>
+          <ul className="divide-y">
+            {developer.map((name) => (
+              <li key={name} className="flex items-center gap-2 px-3 py-2">
+                <FileCode className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate font-mono text-xs">{codeSourcePath(name)}</span>
+                <Button size="icon" variant="ghost" title={t('visual.mine.editSource')} onClick={() => editSource(name)}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );

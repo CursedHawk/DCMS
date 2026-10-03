@@ -43,18 +43,23 @@ export interface DataClient {
 }
 
 /** Same-origin `fetch`: on a published site `/api/*` is served by site-host's proxy. */
-export const fetchDataClient: DataClient = {
-  async get(path) {
-    const res = await fetch(path, { headers: { Accept: 'application/json' } });
-    if (!res.ok) throw new DataError(res.status, path);
-    return res.json();
-  },
-  async post(path, body) {
-    const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!res.ok) throw new DataError(res.status, path, await res.json().catch(() => undefined));
-    return res.status === 204 ? undefined : res.json().catch(() => undefined);
-  },
-};
+/** A client for the delivery API at `base` (empty: the site's own origin, which proxies /api). */
+export function createFetchDataClient(base = ''): DataClient {
+  return {
+    async get(path) {
+      const res = await fetch(base + path, { headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new DataError(res.status, path);
+      return res.json();
+    },
+    async post(path, body) {
+      const res = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!res.ok) throw new DataError(res.status, path, await res.json().catch(() => undefined));
+      return res.status === 204 ? undefined : res.json().catch(() => undefined);
+    },
+  };
+}
+
+export const fetchDataClient: DataClient = createFetchDataClient();
 
 export class DataError extends Error {
   constructor(

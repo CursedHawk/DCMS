@@ -1,6 +1,9 @@
-import * as esbuild from 'esbuild-wasm';
+// The ESM build: the package's main entry is CommonJS, which Vite's dev server (deps excluded from
+// pre-bundling, see vite.config.ts) hands over untranslated, and `initialize` is then undefined.
+import * as esbuild from 'esbuild-wasm/esm/browser.js';
 import wasmURL from 'esbuild-wasm/esbuild.wasm?url';
 import { base64ToBytes, bytesToBase64, isBinaryPath, mimeOf } from '../../site-source/binary';
+import { expandImportGlobs } from './importGlob';
 
 // In-browser bundler for the live preview. It transpiles + bundles the Mode B
 // project entirely client-side: local files come from the posted file map;
@@ -161,7 +164,10 @@ function vfsPlugin(
         if (isBinaryPath(args.path)) {
           return { contents: base64ToBytes(contents), loader: loaderFor(args.path) };
         }
-        return { contents, loader: loaderFor(args.path), resolveDir: '/' };
+        const loader = loaderFor(args.path);
+        // Vite's import.meta.glob, which a Mode D entry reads its documents and components with.
+        const code = loader === 'ts' || loader === 'tsx' || loader === 'js' || loader === 'jsx' ? expandImportGlobs(contents, args.path, Object.keys(files)) : contents;
+        return { contents: code, loader, resolveDir: '/' };
       });
 
       build.onLoad({ filter: /.*/, namespace: 'http' }, async (args) => {

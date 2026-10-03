@@ -1,4 +1,5 @@
 import type { ToolSpec } from '../../agent/contracts';
+import type { ToolRisk } from '../../agent/modes';
 import { summarize } from '../../agent/projectIndex';
 import type { AgentTransaction } from '../../agent/transaction';
 import {
@@ -35,6 +36,15 @@ const str = (input: Record<string, unknown>, key: string): string =>
 
 const num = (input: Record<string, unknown>, key: string): number | undefined =>
   typeof input[key] === 'number' ? (input[key] as number) : undefined;
+
+/**
+ * An edit is `safe` — the run's transaction can put it back. An edit to package.json is not:
+ * the build installs what it declares, so it adds code from the registry to the site and to the
+ * build. It asks first, in every mode that asks for anything.
+ */
+function dependencyRisk(path: string): ToolRisk {
+  return path.replace(/^\/+/, '') === 'package.json' ? 'dangerous' : 'safe';
+}
 
 export const IDE_TOOLS: IdeTool[] = [
   {
@@ -154,6 +164,7 @@ export const IDE_TOOLS: IdeTool[] = [
       additionalProperties: false,
     },
     risk: 'safe',
+    riskFor: (input) => dependencyRisk(str(input, 'path')),
     describe: (input) => `edit ${str(input, 'path')}`,
     summarize: (input) => `Edit ${str(input, 'path')}`,
     run: async (input, ctx) =>
@@ -182,6 +193,7 @@ export const IDE_TOOLS: IdeTool[] = [
       additionalProperties: false,
     },
     risk: 'safe',
+    riskFor: (input) => dependencyRisk(str(input, 'path')),
     describe: (input) => `edit ${str(input, 'path')}`,
     summarize: (input) =>
       `Replace lines ${num(input, 'start_line')}-${num(input, 'end_line')} of ${str(input, 'path')}`,
@@ -210,6 +222,7 @@ export const IDE_TOOLS: IdeTool[] = [
       additionalProperties: false,
     },
     risk: 'safe',
+    riskFor: (input) => dependencyRisk(str(input, 'path')),
     describe: (input) => `edit ${str(input, 'path')}`,
     summarize: (input) => `Insert into ${str(input, 'path')} at line ${num(input, 'line')}`,
     run: async (input, ctx) =>
@@ -236,6 +249,7 @@ export const IDE_TOOLS: IdeTool[] = [
       additionalProperties: false,
     },
     risk: 'safe',
+    riskFor: (input) => dependencyRisk(str(input, 'path')),
     describe: (input) => `edit ${str(input, 'path')}`,
     summarize: (input) =>
       `Delete lines ${num(input, 'start_line')}-${num(input, 'end_line')} of ${str(input, 'path')}`,
@@ -258,6 +272,7 @@ export const IDE_TOOLS: IdeTool[] = [
       additionalProperties: false,
     },
     risk: 'safe',
+    riskFor: (input) => dependencyRisk(str(input, 'path')),
     describe: (input) => `create ${str(input, 'path')}`,
     summarize: (input) => `Create ${str(input, 'path')}`,
     run: async (input, ctx) => ctx.tx.create(str(input, 'path'), str(input, 'content')),
@@ -291,6 +306,7 @@ export const IDE_TOOLS: IdeTool[] = [
       additionalProperties: false,
     },
     risk: 'safe',
+    riskFor: (input) => (dependencyRisk(str(input, 'from')) === 'dangerous' ? 'dangerous' : dependencyRisk(str(input, 'to'))),
     describe: (input) => `rename ${str(input, 'from')}`,
     summarize: (input) => `Rename ${str(input, 'from')} to ${str(input, 'to')}`,
     run: async (input, ctx) => ctx.tx.rename(str(input, 'from'), str(input, 'to')),

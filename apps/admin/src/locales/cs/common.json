@@ -1565,8 +1565,15 @@
       "blockPublish_few": "Před publikováním opravte {{count}} chyby.",
       "blockPublish_other": "Před publikováním opravte {{count}} chyb."
     },
+    "api": {
+      "title": "Průzkumník API",
+      "unavailable": "Popis API není k dispozici."
+    },
     "mine": {
       "title": "Moje komponenty",
+      "newCode": "Nová vývojářská komponenta (TSX)",
+      "developer": "Vývojářské komponenty",
+      "editSource": "Upravit zdrojový kód",
       "new": "Nová komponenta",
       "placeholder": "Karta akce",
       "none": "Zatím žádné komponenty. Vytvořte novou, nebo na stránce něco vyberte a udělejte z toho komponentu.",
