@@ -58,6 +58,21 @@ public class StorageQuotaTests(AdminApiFixture fixture)
         (await SetQuotaAsync(client, tenantId, 0, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [DockerFact]
+    public async Task A_SuperAdmin_with_no_workspace_picked_still_gets_usage()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+
+        // No X-Dcms-Tenant: there is no tenant to read a cap from, which used to be a 500.
+        var res = await client.SendAsync(
+            Req(HttpMethod.Get, "/api/admin/media/usage", Guid.NewGuid(), null, asSuperAdmin: true), ct);
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("quotaBytes").GetInt64()
+            .Should().Be(5L * 1024 * 1024 * 1024);
+    }
+
     private static Task<HttpResponseMessage> SetQuotaAsync(HttpClient client, Guid tenantId, long bytes, CancellationToken ct) =>
         client.SendAsync(Req(HttpMethod.Put, $"/api/admin/tenants/{tenantId}/storage-quota", Guid.NewGuid(), null,
             new { quotaBytes = bytes }, asSuperAdmin: true), ct);

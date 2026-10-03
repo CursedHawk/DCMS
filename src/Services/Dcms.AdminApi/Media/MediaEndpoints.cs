@@ -141,7 +141,10 @@ public static class MediaEndpoints
                 variantBytes,
                 totalBytes = originalBytes + variantBytes,
                 // The cap totalBytes is measured against; uploads are refused once it is reached.
-                quotaBytes = await ingest.QuotaBytesAsync(tenant.TenantId!.Value, ct),
+                // A SuperAdmin with no workspace picked has no tenant, and nothing to count.
+                quotaBytes = tenant.TenantId is { } tenantId
+                    ? await ingest.QuotaBytesAsync(tenantId, ct)
+                    : Dcms.Shared.Data.Tenancy.Tenant.DefaultStorageQuotaBytes,
                 assetCount,
                 folderCount,
                 byCategory,

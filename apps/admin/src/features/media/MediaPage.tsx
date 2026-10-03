@@ -27,6 +27,7 @@ import {
   PageHeader,
   TourTarget,
   toastApiError,
+  useCan,
   usePageTour,
 } from '@dcms/ui';
 import { FolderRail } from './FolderRail';
@@ -35,6 +36,7 @@ import { MediaThumb } from './MediaThumb';
 import { useAiPageContext } from '../assistant/context';
 import { assetDragProps, folderDropProps } from './dnd';
 import { MediaUploader } from './MediaUploader';
+import { Perm } from '../../lib/permissions';
 import { StorageMeter, categoryMeta } from './StorageMeter';
 import {
   ROOT_FOLDER,
@@ -62,6 +64,9 @@ export function MediaPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [detailId, setDetailId] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(true);
+  // A reader gets the library without the upload area: every way in (device, Drive) needs
+  // media:write, and a drop zone that only ever answers 403 reads as a broken feature.
+  const canUpload = useCan(Perm.MediaWrite);
 
   const media = useMedia(folder);
   const folders = useMediaFolders();
@@ -215,12 +220,14 @@ export function MediaPage() {
         title={t('media.title')}
         description={t('media.subtitle')}
         actions={
-          <Button
-            variant={showUpload ? 'secondary' : 'default'}
-            onClick={() => setShowUpload((s) => !s)}
-          >
-            <UploadCloud className="h-4 w-4" /> {t('media.upload')}
-          </Button>
+          canUpload ? (
+            <Button
+              variant={showUpload ? 'secondary' : 'default'}
+              onClick={() => setShowUpload((s) => !s)}
+            >
+              <UploadCloud className="h-4 w-4" /> {t('media.upload')}
+            </Button>
+          ) : null
         }
       />
 
@@ -251,7 +258,7 @@ export function MediaPage() {
         </aside>
 
         <section className="min-w-0 space-y-4">
-          {showUpload ? (
+          {canUpload && showUpload ? (
             <TourTarget id="media.upload">
               <MediaUploader folderId={folder && folder !== ROOT_FOLDER ? folder : null} />
             </TourTarget>

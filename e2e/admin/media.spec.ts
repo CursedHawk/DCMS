@@ -199,3 +199,17 @@ test('a full library refuses an upload without sending it', async ({ page, api }
   await expect(page.getByText('Not enough storage left', { exact: false })).toBeVisible();
   expect(api.requestsTo('POST', '/api/admin/media')).toHaveLength(0);
 });
+
+test.describe('a member who may only look', () => {
+  test.use({ grants: ['media:read'] });
+
+  // Every way in needs media:write. A drop zone that only ever answers 403, with the Drive
+  // button missing beside it, reads as a broken feature rather than a permission.
+  test('sees the library without an upload area', async ({ page }) => {
+    await page.goto('/media');
+    await expect(page.getByText('logo.png')).toBeVisible();
+
+    await expect(page.getByText('Drop files here or click to upload')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Upload files' })).toHaveCount(0);
+  });
+});
