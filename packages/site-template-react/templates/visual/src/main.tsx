@@ -1,5 +1,5 @@
 import { StrictMode } from 'react';
-import { createRoot } from 'react-dom/client';
+import { createRoot, hydrateRoot } from 'react-dom/client';
 import { config } from './config';
 import { installAnalytics } from './dcms';
 import { DcmsApp, createFetchDataClient, loadDocuments } from './dcms/runtime';
@@ -14,8 +14,12 @@ const documents = loadDocuments(
   import.meta.glob('./components/*.tsx', { eager: true, import: 'default' }),
 );
 
-createRoot(document.getElementById('root')!).render(
+const app = (
   <StrictMode>
     <DcmsApp documents={documents} dataClient={createFetchDataClient(config.apiBaseUrl)} />
-  </StrictMode>,
+  </StrictMode>
 );
+// A prerendered page (scripts/prerender.mjs) is hydrated; any other starts from empty.
+const root = document.getElementById('root')!;
+if (root.firstElementChild) hydrateRoot(root, app);
+else createRoot(root).render(app);

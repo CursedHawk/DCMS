@@ -72,7 +72,15 @@ header menu and footer live there. Menus (`navigation.main`, …) are drawn by `
 
 The Vite plugin `dcmsRoutes` writes one HTML file per route with its head tags
 (`about.html`, `events_@.html` for `/events/:slug`); site-host serves those before the SPA
-fallback, so deep links and link previews work without SSR.
+fallback, so deep links and link previews work.
+
+Routes without parameters are also **prerendered**: the template's build runs a second,
+SSR pass over `src/entry-server.tsx` and `scripts/prerender.mjs` fills each route's
+`<div id="root">` (`runtime/server.tsx`); `src/main.tsx` hydrates what it finds. Plugin
+content is still fetched in the browser — the build cannot reach the API — so collections
+prerender in their loading state, as the browser's first render does, and rich text is
+sanitised client-side (empty box on the server). Prerendering is best effort: a route that
+fails keeps its empty root and never fails the build.
 
 ## Components the tenant builds
 

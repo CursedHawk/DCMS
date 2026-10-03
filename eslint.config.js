@@ -168,7 +168,7 @@ export default tseslint.config(
      * these files get `js.configs.recommended` with no globals and every `console` and
      * `process` reads as undefined.
      */
-    files: ['scripts/**/*.mjs'],
+    files: ['scripts/**/*.mjs', '**/scripts/**/*.mjs'],
     languageOptions: { globals: { ...globals.node } },
   },
 );

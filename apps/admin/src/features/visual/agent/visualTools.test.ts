@@ -78,6 +78,7 @@ describe('Mode D agent tools', () => {
     expect(out.isError).toBeFalsy();
     const app = JSON.parse(useVfs.getState().files['dcms/app.json']!);
     expect(app.routes).toContainEqual({ id: 'event', path: '/events/:slug', page: 'event' });
+    expect(page('event').seo).toEqual({ title: '{title}' });
     const root = page('event').root.id;
     await run('insert_node', { doc: 'page:event', parent: root, slot: 'default', node: { id: 'h', type: 'dcms.heading' } });
     await run('bind_props', { doc: 'page:event', node: 'h', bind: { text: 'title' } });

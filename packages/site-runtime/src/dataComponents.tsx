@@ -109,9 +109,15 @@ export function Collection({ nodeId, props, slot }: ComponentRenderProps<Props>)
  * admin's own origin, so it is a security boundary, not a nicety; where DOMPurify cannot run (no
  * DOM) the content is shown as text rather than trusted.
  */
+const noSubscribe = () => () => {};
+
 export function RichText({ props }: ComponentRenderProps<Props>) {
+  // False while prerendering and while hydrating what was prerendered: sanitising needs a DOM,
+  // so the server leaves the box empty and the browser fills it — the two first renders match.
+  const inBrowser = useSyncExternalStore(noSubscribe, () => true, () => false);
   const html = text(props.html);
   if (!html) return null;
+  if (!inBrowser) return <div className="dcms-richtext" />;
   if (!DOMPurify.isSupported) return <div className="dcms-richtext">{html}</div>;
   const clean = DOMPurify.sanitize(html, { USE_PROFILES: { html: true }, FORBID_TAGS: ['style', 'form', 'input', 'button'] });
   return <div className="dcms-richtext" dangerouslySetInnerHTML={{ __html: clean }} />;
