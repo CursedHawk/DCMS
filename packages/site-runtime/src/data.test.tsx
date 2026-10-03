@@ -260,3 +260,56 @@ describe('external API connections as sources', () => {
     );
   });
 });
+
+describe('collection paging', () => {
+  const posts = (from: number, n: number) =>
+    Array.from({ length: n }, (_, i) => ({ id: String(from + i), slug: `p${from + i}`, data: { title: `Post ${from + i}` } }));
+  const node = (paging: string): Node => ({
+    id: 'list',
+    type: 'dcms.collection',
+    props: { source: { instance: 'news', contentType: 'post' }, limit: 2, paging },
+    slots: { item: [{ id: 't', type: 'dcms.heading', bind: { text: 'title' } }] },
+  });
+  const titles = (el: HTMLElement) => [...el.querySelectorAll('h2')].map((h) => h.textContent);
+  const click = async (el: HTMLElement, label: string) => {
+    await act(async () => {
+      [...el.querySelectorAll('button')].find((b) => b.textContent === label || b.getAttribute('aria-label') === label)!.click();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  };
+
+  it('“Load more” asks for a bigger page until everything is shown', async () => {
+    const data = client({
+      '/api/news/post?pageSize=2': { items: posts(1, 2), totalCount: 3 },
+      '/api/news/post?pageSize=4': { items: posts(1, 3), totalCount: 3 },
+    });
+    const el = await render(<RenderNode node={node('more')} registry={builtinRegistry} />, data);
+    expect(titles(el)).toEqual(['Post 1', 'Post 2']);
+    await click(el, 'Load more');
+    expect(titles(el)).toEqual(['Post 1', 'Post 2', 'Post 3']);
+    expect(el.querySelector('.dcms-collection-more')).toBeNull();
+  });
+
+  it('page numbers fetch the page asked for', async () => {
+    const data = client({
+      '/api/news/post?pageSize=2': { items: posts(1, 2), totalCount: 3 },
+      '/api/news/post?page=2&pageSize=2': { items: posts(3, 1), totalCount: 3 },
+    });
+    const el = await render(<RenderNode node={node('pages')} registry={builtinRegistry} />, data);
+    expect(el.querySelector('.dcms-pager span')?.textContent).toBe('1 / 2');
+    await click(el, 'Next page');
+    expect(titles(el)).toEqual(['Post 3']);
+    expect(el.querySelector('.dcms-pager span')?.textContent).toBe('2 / 2');
+  });
+
+  it('a connection pages over its snapshot without asking again', async () => {
+    const data = client({ '/api/connections/tickets/events': posts(1, 5).map((p) => ({ id: p.id, slug: p.slug, title: p.data.title })) });
+    const conn: Node = { ...node('pages'), props: { source: { connection: 'tickets', operation: '/events' }, limit: 2, paging: 'pages' } };
+    const el = await render(<RenderNode node={conn} registry={builtinRegistry} />, data);
+    expect(titles(el)).toEqual(['Post 1', 'Post 2']);
+    await click(el, 'Next page');
+    await click(el, 'Next page');
+    expect(titles(el)).toEqual(['Post 5']);
+    expect(data.calls).toEqual(['/api/connections/tickets/events']);
+  });
+});

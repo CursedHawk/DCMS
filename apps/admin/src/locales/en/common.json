@@ -1584,7 +1584,12 @@
       "updatedDropped_other": "Updated {{count}} instances. Settings the new version no longer has were removed: {{dropped}}.",
       "confirmDelete": "Delete the component “{{label}}” and all its versions?",
       "instanceOutdated": "This uses version {{version}}; version {{latest}} is available.",
-      "updateOne": "Update to v{{version}}"
+      "updateOne": "Update to v{{version}}",
+      "changesTitle": "What updating changes",
+      "changeRemoved": "“{{name}}” ({{value}}) is no longer a setting — its value goes",
+      "changeAdded": "New settings: {{names}}",
+      "changeHidden": "The content in “{{slot}}” stops showing — the new version has no such slot",
+      "updatedHidden": "Content in {{slots}} no longer shows on {{count}} updated instance(s)."
     },
     "expose": {
       "title": "Settings of this component",

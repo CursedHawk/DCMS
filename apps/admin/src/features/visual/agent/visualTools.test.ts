@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createTransaction } from '../../agent/transaction';
 import { vfsPort } from '../../agent/vfsPort';
 import { useVfs } from '../../site-source/vfs';
+import { useVisual } from '../store';
 import { VISUAL_TOOLS, validateVisualSite } from './visualTools';
 
 /**
@@ -123,6 +124,19 @@ describe('Mode D agent tools', () => {
     expect(page('home').state).toEqual({ tab: 'dates' });
     expect(page('home').root.slots.default[1].when).toEqual({ state: 'tab', equals: 'venues' });
     expect((await validateVisualSite()).ok).toBe(true);
+  });
+
+  it('inspect_selected names the node the author means by “this”, and where it sits', async () => {
+    expect((await run('inspect_selected', {})).content).toBe('Nothing is selected on the canvas.');
+    await run('insert_node', { doc: 'page:home', node: { id: 's', type: 'dcms.section', slots: { default: [{ id: 'h', type: 'dcms.heading', props: { text: 'Hi' } }] } } });
+    useVisual.setState({ target: { kind: 'page', id: 'home' }, selectedNodeId: () => 'h' });
+    const out = JSON.parse((await run('inspect_selected', {})).content as string);
+    expect(out).toEqual({
+      doc: 'page:home',
+      inside: ['dcms.page#root.default', 'dcms.section#s.default'],
+      node: { id: 'h', type: 'dcms.heading', props: { text: 'Hi' } },
+    });
+    useVisual.setState({ target: null, selectedNodeId: () => null });
   });
 
   it('asks before deleting a page, and never deletes the home page', async () => {

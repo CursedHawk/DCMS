@@ -162,12 +162,13 @@ export function ComponentsPanel({ editor }: { editor: Editor | null }) {
                       onClick={() => {
                         // Leave the canvas on something that is not being rewritten underneath it.
                         if (sameTarget(target, { kind: 'component', name, version: latest.version })) setTarget({ kind: 'shell' });
-                        const { updated, dropped } = updateAllInstances(name);
+                        const { updated, dropped, hiddenSlots } = updateAllInstances(name);
                         toast.success(
                           dropped.length
                             ? t('visual.mine.updatedDropped', { count: updated, dropped: dropped.join(', ') })
                             : t('visual.mine.updated', { count: updated }),
                         );
+                        if (hiddenSlots.length) toast.warning(t('visual.mine.updatedHidden', { count: updated, slots: hiddenSlots.join(', ') }));
                       }}
                     >
                       <ArrowUpCircle className="h-4 w-4" /> {t('visual.mine.updateAll')}

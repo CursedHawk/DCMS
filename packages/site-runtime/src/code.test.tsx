@@ -36,8 +36,12 @@ describe('developer components', () => {
     expect(messages(site({ 'src/components/countdown.tsx': 'export function Countdown() {}' }))).toEqual([
       'error src/components/countdown.tsx: needs a default export: the component the builder places.',
     ]);
-    expect(messages(site({ 'src/components/countdown.tsx': 'export default function Countdown() {}', 'src/components/stray.tsx': 'export default 1' }))).toEqual([
+    expect(messages(site({ 'src/components/countdown.tsx': 'export default function Countdown({ until }) {}', 'src/components/stray.tsx': 'export default 1' }))).toEqual([
       'warning src/components/stray.tsx: has no contract, so the builder cannot place it: add dcms/code/stray.json.',
+    ]);
+    // A setting the source never mentions cannot be doing anything.
+    expect(messages(site({ 'src/components/countdown.tsx': 'export default function Countdown({ untilDate }) {}' }))).toEqual([
+      'warning src/components/countdown.tsx: never reads “until”, which dcms/code/countdown.json offers authors as a setting.',
     ]);
   });
 });

@@ -5,8 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button } from '@dcms/ui';
 import { useVfs } from '../site-source';
-import { EXTRA, ID, PROPS, SLOT, SLOT_TYPE, type NodeExtra } from './canvas/tree';
-import { migrateInstance, readComponent, updateComponent } from './documents';
+import { EXTRA, ID, PROPS, SLOT, SLOT_TYPE, fromGrapes, type NodeExtra } from './canvas/tree';
+import { migrateInstance, readComponent, updateComponent, versionChanges } from './documents';
 import { useVisual } from './store';
 
 function uniqueName(base: string, taken: ReadonlySet<string>): string {
@@ -133,6 +133,8 @@ export function InstanceVersion({ selected, latest }: { selected: Component; lat
   const { t } = useTranslation();
   const extra = (selected.get(EXTRA) ?? {}) as NodeExtra;
   if (!latest.template || extra.version === undefined || extra.version === latest.version) return null;
+  const from = latest.olderVersions?.[extra.version]?.template;
+  const changes = versionChanges(fromGrapes(selected, new Set()), from, latest.template);
   const update = () => {
     const node = { id: selected.get(ID) as string, type: latest.type, version: extra.version, props: selected.get(PROPS) as Record<string, unknown> };
     const { node: migrated, dropped } = migrateInstance(node, latest.template!);
@@ -147,7 +149,20 @@ export function InstanceVersion({ selected, latest }: { selected: Component; lat
   };
   return (
     <div className="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
-      <span className="min-w-0 flex-1">{t('visual.mine.instanceOutdated', { version: extra.version, latest: latest.version })}</span>
+      <div className="min-w-0 flex-1 space-y-1">
+        <div>{t('visual.mine.instanceOutdated', { version: extra.version, latest: latest.version })}</div>
+        {(changes.removed.length > 0 || changes.added.length > 0 || changes.hiddenSlots.length > 0) && (
+          <ul className="list-disc pl-4 text-muted-foreground" aria-label={t('visual.mine.changesTitle')}>
+            {changes.removed.map((r) => (
+              <li key={`r:${r.name}`}>{t('visual.mine.changeRemoved', { name: r.name, value: String(r.value) })}</li>
+            ))}
+            {changes.added.length > 0 && <li>{t('visual.mine.changeAdded', { names: changes.added.join(', ') })}</li>}
+            {changes.hiddenSlots.map((s) => (
+              <li key={`s:${s}`}>{t('visual.mine.changeHidden', { slot: s })}</li>
+            ))}
+          </ul>
+        )}
+      </div>
       <Button size="sm" variant="outline" onClick={update}>
         <ArrowUpCircle className="h-4 w-4" /> {t('visual.mine.updateOne', { version: latest.version })}
       </Button>

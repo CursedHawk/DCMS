@@ -130,6 +130,7 @@ function visualPrompt(ctx: SystemPromptContext): string {
 
     `## How to work
 - Start with inspect_site, then inspect_document for any document you will change. Node ids from there are how every edit tool addresses a node.
+- When the author says “this”, “here” or “the selected …”, call inspect_selected: it is what they have selected on the canvas.
 - Build with the tools, never by writing files: insert_node, move_node, remove_node, duplicate_node, set_props, bind_props, set_action, create_page, update_page, create_component, expose_setting, expose_slot. They refuse what the canvas would refuse, and say why — read the reason and adjust.
 - list_component_types is the catalogue: exact type names, prop names, allowed values, which slots accept what. Use only what it lists; invent nothing.
 - Build a whole section in one insert_node call (a node with its children) rather than one node at a time.

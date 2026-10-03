@@ -227,6 +227,19 @@ function checkCode(files: Readonly<Record<string, string>>, out: SiteProblem[]):
       out.push({ severity: 'error', file: codeContractPath(contract.name), message: `has no source: create ${codeSourcePath(contract.name)}.` });
     } else if (!/export\s+default\b/.test(source)) {
       out.push({ severity: 'error', file: codeSourcePath(contract.name), message: 'needs a default export: the component the builder places.' });
+    } else {
+      // A setting whose name the source never mentions is one the component cannot be reading:
+      // authors would change it and see nothing happen. (Mentioned is not proof of read — a
+      // comment counts — so this only ever reports what is certainly unused.)
+      for (const prop of contract.props) {
+        if (!new RegExp(`(?<![\\w$])${prop.name.replace(/[$]/g, '\\$')}(?![\\w$])`).test(source)) {
+          out.push({
+            severity: 'warning',
+            file: codeSourcePath(contract.name),
+            message: `never reads “${prop.name}”, which ${codeContractPath(contract.name)} offers authors as a setting.`,
+          });
+        }
+      }
     }
   }
   for (const path of Object.keys(files)) {

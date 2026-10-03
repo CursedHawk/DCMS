@@ -350,27 +350,54 @@ export function deleteComponent(name: string): Result {
  * An instance moved to another version: settings the new version does not have are dropped
  * (and named, so the author knows what changed); slot content is kept under the same slot name.
  */
-export function migrateInstance(node: Node, to: TenantComponentDoc): { node: Node; dropped: string[] } {
+export function migrateInstance(node: Node, to: TenantComponentDoc): { node: Node; dropped: string[]; hiddenSlots: string[] } {
   const keep = new Set(to.props.map((p) => p.name));
   const props = Object.fromEntries(Object.entries(node.props ?? {}).filter(([k]) => keep.has(k)));
   const dropped = Object.keys(node.props ?? {}).filter((k) => !keep.has(k));
   const next: Node = { ...node, version: to.version, props: Object.keys(props).length ? props : undefined };
   if (!next.props) delete next.props;
-  return { node: next, dropped };
+  return { node: next, dropped, hiddenSlots: versionChanges(node, undefined, to).hiddenSlots };
+}
+
+/**
+ * What moving an instance to another version does to it, before it happens: settings it has a
+ * value for that the version no longer has (the value goes), settings the version adds, and
+ * slots holding content the version no longer shows — the content stays in the file, kept for a
+ * version that has the slot again, but the page stops showing it.
+ */
+export function versionChanges(
+  node: Node,
+  from: TenantComponentDoc | undefined,
+  to: TenantComponentDoc,
+): { removed: { name: string; value: unknown }[]; added: string[]; hiddenSlots: string[] } {
+  const next = new Set(to.props.map((p) => p.name));
+  const before = new Set(from?.props.map((p) => p.name) ?? Object.keys(node.props ?? {}));
+  const slots = new Set(to.slots.map((s) => s.name));
+  return {
+    removed: Object.entries(node.props ?? {})
+      .filter(([k]) => !next.has(k))
+      .map(([name, value]) => ({ name, value })),
+    added: to.props.map((p) => p.name).filter((n) => !before.has(n)),
+    hiddenSlots: Object.entries(node.slots ?? {})
+      .filter(([name, children]) => children.length > 0 && !slots.has(name))
+      .map(([name]) => name),
+  };
 }
 
 /** Move every instance, in every document, to the latest version. */
-export function updateAllInstances(name: string): { updated: number; dropped: string[] } {
+export function updateAllInstances(name: string): { updated: number; dropped: string[]; hiddenSlots: string[] } {
   const info = listComponents().find((c) => c.name === name);
-  if (!info) return { updated: 0, dropped: [] };
+  if (!info) return { updated: 0, dropped: [], hiddenSlots: [] };
   const type = tenantType(name);
   let updated = 0;
   const dropped = new Set<string>();
+  const hiddenSlots = new Set<string>();
   const rewrite = (node: Node): Node => {
     let next = node;
     if (node.type === type && (node.version ?? info.latest.version) !== info.latest.version) {
       const migrated = migrateInstance(node, info.latest);
       migrated.dropped.forEach((d) => dropped.add(d));
+      migrated.hiddenSlots.forEach((d) => hiddenSlots.add(d));
       next = migrated.node;
       updated++;
     }
@@ -401,7 +428,7 @@ export function updateAllInstances(name: string): { updated: number; dropped: st
       // Unreadable documents are left alone; the validator reports them.
     }
   }
-  return { updated, dropped: [...dropped] };
+  return { updated, dropped: [...dropped], hiddenSlots: [...hiddenSlots] };
 }
 
 /** The file a canvas target is stored in. */

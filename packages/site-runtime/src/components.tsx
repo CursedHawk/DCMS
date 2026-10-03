@@ -365,6 +365,8 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
       { kind: 'number', name: 'limit', label: 'How many', default: 6, min: 1, max: 50, step: 1 },
       { kind: 'text', name: 'tag', label: 'Only items tagged', maxLength: 64 },
       select('layout', 'Layout', ['grid', 'list'] as const, 'grid'),
+      select('paging', 'More than fit', ['none', 'more', 'pages'] as const, 'none', { none: 'Show only “How many”', more: '“Load more” button', pages: 'Page numbers' }),
+      { kind: 'text', name: 'moreLabel', label: '“Load more” label', maxLength: 40 },
     ],
     slots: [
       { name: 'item', label: 'Each item' },

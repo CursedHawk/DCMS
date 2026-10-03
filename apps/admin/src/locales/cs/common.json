@@ -1623,7 +1623,12 @@
       "updatedDropped_other": "Aktualizováno {{count}} instancí. Nastavení, která nová verze nemá, byla odebrána: {{dropped}}.",
       "confirmDelete": "Smazat komponentu „{{label}}“ a všechny její verze?",
       "instanceOutdated": "Používá verzi {{version}}; je k dispozici verze {{latest}}.",
-      "updateOne": "Aktualizovat na v{{version}}"
+      "updateOne": "Aktualizovat na v{{version}}",
+      "changesTitle": "Co aktualizace změní",
+      "changeRemoved": "„{{name}}“ ({{value}}) už není nastavení — hodnota zmizí",
+      "changeAdded": "Nová nastavení: {{names}}",
+      "changeHidden": "Obsah v „{{slot}}“ se přestane zobrazovat — nová verze takový slot nemá",
+      "updatedHidden": "Obsah v {{slots}} se na aktualizovaných instancích ({{count}}) už nezobrazuje."
     },
     "expose": {
       "title": "Nastavení této komponenty",

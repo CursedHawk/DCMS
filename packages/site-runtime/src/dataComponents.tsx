@@ -1,11 +1,12 @@
 import DOMPurify from 'dompurify';
-import { createContext, useContext, useEffect, useId, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useMemo, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
 import type { Action } from './actions';
 import { writeState, type PageStateScope } from './state';
 import {
   DataClientContext,
   DataError,
   ItemContext,
+  isConnectionSource,
   listParser,
   listPath,
   parseItemList,
@@ -52,23 +53,49 @@ export function Collection({ nodeId, props, slot }: ComponentRenderProps<Props>)
   const limit = typeof props.limit === 'number' ? Math.min(Math.max(Math.round(props.limit), 1), 50) : 6;
   const tag = text(props.tag).trim() || undefined;
   const layout = props.layout === 'list' ? 'dcms-collection-list' : 'dcms-collection-grid';
-  const list = useData(source.success ? listPath(source.data, { limit, tag }) : null, source.success ? listParser(source.data, limit) : parseItemList);
+  const paging = props.paging === 'more' || props.paging === 'pages' ? props.paging : 'none';
+  // How many "Load more" has asked for, or which page the pager is on. Starts over when what the
+  // collection shows changes.
+  const [shown, setShown] = useState(1);
+  const [page, setPage] = useState(1);
+  const sourceJson = JSON.stringify(props.source ?? null);
+  useEffect(() => {
+    setShown(1);
+    setPage(1);
+  }, [sourceJson, tag, limit, paging]);
+
+  // A plugin's delivery API pages itself; a connection's snapshot is all there is, sliced here.
+  const connection = source.success && isConnectionSource(source.data);
+  const want = paging === 'more' ? Math.min(limit * shown, 100) : limit;
+  const atPage = paging === 'pages' ? page : 1;
+  const list = useData(
+    source.success ? listPath(source.data, connection ? {} : { limit: want, tag, page: atPage > 1 ? atPage : undefined }) : null,
+    source.success ? listParser(source.data) : parseItemList,
+  );
+  const windowed = useMemo(
+    () =>
+      list.state === 'ready' && connection
+        ? { ...list, value: { items: list.value.items.slice((atPage - 1) * limit, (atPage - 1) * limit + want), totalCount: list.value.totalCount } }
+        : list,
+    [list, connection, atPage, limit, want],
+  );
 
   useEffect(() => {
-    if (mode === 'edit' && list.state === 'ready') sink?.publish(nodeId, list.value.items);
-  }, [mode, list, sink, nodeId]);
+    if (mode === 'edit' && windowed.state === 'ready') sink?.publish(nodeId, windowed.value.items);
+  }, [mode, windowed, sink, nodeId]);
 
   if (mode === 'edit') {
-    const items = list.state === 'ready' ? list.value.items : [];
+    const items = windowed.state === 'ready' ? windowed.value.items : [];
     const note = !source.success
       ? 'Choose the content this collection shows.'
-      : list.state === 'loading'
+      : windowed.state === 'loading'
         ? 'Loading content…'
-        : list.state === 'error'
+        : windowed.state === 'error'
           ? 'The content could not be loaded.'
           : items.length === 0
             ? 'There is no published content yet; the site will show the “empty” state below.'
-            : `This item is the first of ${items.length}${list.value.totalCount > items.length ? ` (of ${list.value.totalCount})` : ''}; the site repeats it for each.`;
+            : `This item is the first of ${items.length}${windowed.value.totalCount > items.length ? ` (of ${windowed.value.totalCount})` : ''}; the site repeats it for each.` +
+              (paging === 'more' ? ' The site adds a “Load more” button.' : paging === 'pages' ? ' The site adds page numbers.' : '');
     return (
       <div className="dcms-collection">
         <div className={layout}>
@@ -88,21 +115,49 @@ export function Collection({ nodeId, props, slot }: ComponentRenderProps<Props>)
   }
 
   if (!source.success) return null;
-  if (list.state === 'loading') return <div className="dcms-collection" aria-busy="true">{slot('loading')}</div>;
-  if (list.state === 'error') return <div className="dcms-collection">{slot('error')}</div>;
-  if (list.value.items.length === 0) return <div className="dcms-collection">{slot('empty')}</div>;
-  const count = list.value.items.length;
+  if (windowed.state === 'loading') return <div className="dcms-collection" aria-busy="true">{slot('loading')}</div>;
+  if (windowed.state === 'error') return <div className="dcms-collection">{slot('error')}</div>;
+  if (windowed.value.items.length === 0) return <div className="dcms-collection">{slot('empty')}</div>;
+  const count = windowed.value.items.length;
+  const total = windowed.value.totalCount;
+  const pages = Math.max(1, Math.ceil(total / limit));
   return (
-    <div className="dcms-collection">
+    <div className="dcms-collection" id={`dcms-collection-${nodeId}`}>
       <div className={layout}>
-        {list.value.items.map((item, index) => (
+        {windowed.value.items.map((item, index) => (
           <ItemContext.Provider key={item.id || item.slug} value={{ item, index, count }}>
             {slot('item')}
           </ItemContext.Provider>
         ))}
       </div>
+      {/* Only while the last request came back full: a plugin may cap its page size lower. */}
+      {paging === 'more' && count < total && count === want && (
+        <div className="dcms-collection-more">
+          <button type="button" className="dcms-button dcms-button-secondary dcms-button-md" onClick={() => setShown((n) => n + 1)}>
+            {text(props.moreLabel).trim() || 'Load more'}
+          </button>
+        </div>
+      )}
+      {paging === 'pages' && pages > 1 && (
+        <nav className="dcms-pager" aria-label="Pages">
+          <button type="button" className="dcms-button dcms-button-ghost dcms-button-sm" aria-label="Previous page" disabled={atPage <= 1} onClick={() => turn(atPage - 1)}>
+            ‹
+          </button>
+          <span aria-live="polite">
+            {atPage} / {pages}
+          </span>
+          <button type="button" className="dcms-button dcms-button-ghost dcms-button-sm" aria-label="Next page" disabled={atPage >= pages} onClick={() => turn(atPage + 1)}>
+            ›
+          </button>
+        </nav>
+      )}
     </div>
   );
+
+  function turn(to: number) {
+    setPage(to);
+    document.getElementById(`dcms-collection-${nodeId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 /**

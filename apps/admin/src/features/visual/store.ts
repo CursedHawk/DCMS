@@ -41,6 +41,8 @@ interface VisualState {
   setPageItem: (item: ContentItem | null) => void;
   /** Write the canvas's pending edits to its file now (set by the canvas while it is mounted). */
   flushCanvas: () => void;
+  /** The id of the node selected on the canvas (set by the canvas while it is mounted). */
+  selectedNodeId: () => string | null;
   setRegistry: (registry: Registry) => void;
   setBlockedTypes: (types: ReadonlySet<string>) => void;
   setContentSchema: (schema: ContentSchema | undefined) => void;
@@ -69,6 +71,7 @@ export const useVisual = create<VisualState>((set, get) => ({
   },
   setPageItem: (pageItem) => set({ pageItem }),
   flushCanvas: () => {},
+  selectedNodeId: () => null,
   setRegistry: (registry) => set({ registry }),
   setBlockedTypes: (blockedTypes) => set({ blockedTypes }),
   setContentSchema: (contentSchema) => set({ contentSchema }),

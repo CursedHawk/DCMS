@@ -340,6 +340,38 @@ export const VISUAL_TOOLS: Tool[] = [
     },
   },
   {
+    name: 'inspect_selected',
+    description:
+      'What the author has selected on the canvas — the node they mean by “this” — with its document, its id, the chain of components it sits in, and its props, bindings and action. Call it when a request points at something (“make this bigger”, “change this text”) rather than searching for it.',
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+    describe: () => 'inspect selection',
+    maxResultChars: 8_000,
+    run: async () => {
+      const { target, selectedNodeId } = useVisual.getState();
+      const id = selectedNodeId();
+      if (!target || !id) return { content: 'Nothing is selected on the canvas.' };
+      const ref = target.kind === 'page' ? `page:${target.id}` : target.kind === 'shell' ? 'shell' : `component:${target.name}@${target.version}`;
+      const doc = loadDoc(ref);
+      if (typeof doc === 'string') return err(doc);
+      const trail: string[] = [];
+      const locate = (node: Node): Node | null => {
+        if (node.id === id) return node;
+        for (const [slot, children] of Object.entries(node.slots ?? {})) {
+          for (const child of children) {
+            trail.push(`${node.type}#${node.id}.${slot}`);
+            const hit = locate(child);
+            if (hit) return hit;
+            trail.pop();
+          }
+        }
+        return null;
+      };
+      const node = locate(doc.root);
+      if (!node) return { content: `The selection (${id}) is not saved in ${ref} yet; try again in a moment.` };
+      return { content: JSON.stringify({ doc: ref, inside: trail, node: compact(node) }) };
+    },
+  },
+  {
     name: 'list_component_types',
     description:
       'Every component type you may place: its props (with kinds, options and defaults; `responsive` ones may differ on tablet/mobile), its slots and what each accepts, the actions it can run, and where it may go. The site’s own components (tenant.*) are included. Use the exact type names and prop names from here.',
@@ -987,11 +1019,13 @@ export const VISUAL_TOOLS: Tool[] = [
       const type = tenantType(name);
       let updated = 0;
       const dropped = new Set<string>();
+      const hidden = new Set<string>();
       const rewrite = (n: Node): Node => {
         let out = n;
         if (n.type === type && (n.version ?? latest.data.version) !== latest.data.version) {
           const m = migrateInstance(n, latest.data);
           m.dropped.forEach((d) => dropped.add(d));
+          m.hiddenSlots.forEach((d) => hidden.add(d));
           out = m.node;
           updated++;
         }
@@ -1011,7 +1045,10 @@ export const VISUAL_TOOLS: Tool[] = [
         if (o.isError) return o;
         paths.push(doc.path);
       }
-      return { content: `Updated ${updated} use(s)${dropped.size ? `; dropped settings: ${[...dropped].join(', ')}` : ''}.`, paths };
+      return {
+        content: `Updated ${updated} use(s)${dropped.size ? `; dropped settings: ${[...dropped].join(', ')}` : ''}${hidden.size ? `; content in these slots no longer shows (the new version has none): ${[...hidden].join(', ')}` : ''}.`,
+        paths,
+      };
     },
   },
   {

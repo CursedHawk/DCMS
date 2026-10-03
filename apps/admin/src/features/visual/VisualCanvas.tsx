@@ -94,6 +94,7 @@ export function VisualCanvas({
     };
     editor.on('update', onUpdate);
     useVisual.setState({
+      selectedNodeId: () => (editor.getSelected()?.get(ID) as string | undefined) ?? null,
       flushCanvas: () => {
         if (!captureTimer.current) return;
         clearTimeout(captureTimer.current);
@@ -112,7 +113,7 @@ export function VisualCanvas({
         capture(editor, loaded);
       }
       editor.off('update', onUpdate);
-      useVisual.setState({ flushCanvas: () => {} });
+      useVisual.setState({ flushCanvas: () => {}, selectedNodeId: () => null });
       onTeardown();
       editor.destroy();
       editorRef.current = null;

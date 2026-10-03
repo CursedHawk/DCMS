@@ -88,12 +88,17 @@ A selection becomes a component (`dcms/components/<name>/v1.json`): a template t
 the settings (`props` → `bindings` onto inner nodes) and slots (`slotTargets` onto an
 **empty** inner slot) it exposes. Instances pin a `version`. A version that pages use is
 never edited in place: editing starts `v<N+1>`, and *Update to vN* migrates an instance,
-dropping (and naming) settings the new version no longer has.
+dropping (and naming) settings the new version no longer has. The instance's notice lists
+what updating changes first: settings that go (with their value), settings that arrive, and
+slots whose content stops showing because the new version has no such slot (the content stays
+in the file).
 
 ## Data
 
 - **Collection** (`dcms.collection`, `props.source { instance, contentType }`) repeats its
-  `item` slot per item; `empty` and `error` are slots too.
+  `item` slot per item; `empty` and `error` are slots too. *More than fit* (`paging`) adds a
+  “Load more” button (a growing page, up to 100 items) or page numbers (the delivery API's
+  `page`); a connection pages over its snapshot without another request.
 - **Detail page**: `page.data { source, param }` reads the item the route names; a missing
   item is a 404.
 - **Bindings**: `node.bind` maps a prop to a field path — `title`, `values.colour`, or
@@ -149,7 +154,7 @@ The Agent tab runs the shared agent with kind `visual`. Its tools edit documents
 `remove_node`, `duplicate_node`, `set_props` (with a device), `bind_props`, `set_action`,
 `create_page`, `update_page`, `delete_page` (asks first), `create_component`,
 `start_component_version`, `expose_setting`, `expose_slot`, `update_instances`,
-`set_design_kit`, `set_css`, `set_when`, `check_visual_site`. Every write re-validates the whole document and its
+`set_design_kit`, `set_css`, `set_when`, `inspect_selected` (what the author means by “this”), `list_connections`, `check_visual_site`. Every write re-validates the whole document and its
 placement, and goes through the run transaction (reviewable, revertable). The run's gate is
 `checkVisualSite` with the same content schema the Problems list uses.
 
@@ -172,7 +177,8 @@ A developer writes a React component in TSX; authors place and configure it like
   run in an opaque-origin `srcdoc` frame whose API calls the admin replays only inside the
   site's preview subtree.
 - **Checks.** `checkVisualSite` wants a contract that parses, a source beside it with a default
-  export, and warns about a source with no contract. Types and the build check the rest.
+  export, warns about a source with no contract, and about a contract setting the source never
+  mentions (it cannot be reading it). Types and the build check the rest.
 - **API explorer** — the rail's `{}` button opens the tenant API description (Scalar) the
   generated client in `src/api` is built from.
 - **Dependencies.** `package.json` is in the code view. An agent edit to it is `dangerous` in
