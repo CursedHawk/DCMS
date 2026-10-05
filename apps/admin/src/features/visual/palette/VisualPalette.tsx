@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Input, cn } from '@dcms/ui';
+import { HelpLink } from '../help/HelpLink';
 import { useCustomPayload } from '../../builder/panels/useEditorEvent';
 import { thumbnailOf } from '../catalog/look';
 import { insertComponent } from '../canvas/insert';
@@ -233,7 +234,9 @@ export function VisualPalette({ editor }: { editor: Editor | null }) {
             </div>
           </section>
         ))}
-        <p className="px-1 pt-1 text-[11px] text-muted-foreground">{t(tab === 'sections' ? 'visual.palette.sectionsHint' : 'visual.palette.hint')}</p>
+        <p className="px-1 pt-1 text-[11px] text-muted-foreground">
+          {t(tab === 'sections' ? 'visual.palette.sectionsHint' : 'visual.palette.hint')} <HelpLink article="sections" className="align-middle" />
+        </p>
       </div>
     </div>
   );

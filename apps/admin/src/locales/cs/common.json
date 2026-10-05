@@ -1666,7 +1666,8 @@
       "detailPage": "Stránka detailu",
       "notDetail": "Není stránka detailu",
       "detailHint": "Zobrazí položku, jejíž slug je v adrese (:{{param}}).",
-      "needsParam": "Přidejte do adresy část :slug (např. /akce/:slug), aby to byla stránka detailu."
+      "needsParam": "Přidejte do adresy část :slug (např. /akce/:slug), aby to byla stránka detailu.",
+      "noSources": "Zatím není co ukázat. Obsah pochází z pluginů s obsahem — blog, události, produkty — a z propojení s jinými službami."
     },
     "groups": {
       "content": "Obsah",
@@ -1782,7 +1783,13 @@
     "help": {
       "title": "Nápověda",
       "builderTour": "Provést mě editorem",
-      "tasks": "Ukažte mi, jak…"
+      "tasks": "Ukažte mi, jak…",
+      "articles": "Články nápovědy",
+      "allArticles": "Všechny články",
+      "search": "Hledat v nápovědě",
+      "noMatch": "Nic neodpovídá „{{query}}“.",
+      "showMe": "Ukažte mi to",
+      "about": "Nápověda: {{title}}"
     },
     "tour": {
       "builder": {
@@ -1796,7 +1803,7 @@
         },
         "inspector": {
           "title": "Nastavení vybrané části",
-          "body": "Co vybraná část ukazuje a jak vypadá, rozdělené do skupin Obsah, Styl, Rozvržení a dalších. Ikona ⓘ u nastavení vysvětlí, co dělá."
+          "body": "Co vybraná část ukazuje a jak vypadá, rozdělené do skupin Obsah, Vzhled, Rozvržení a dalších. Ikona ⓘ u nastavení vysvětlí, co dělá."
         },
         "views": {
           "title": "Návrh, kód, nebo náhled",
@@ -1912,10 +1919,11 @@
         },
         "deploy": {
           "title": "Sledujte spuštění",
-          "body": "Nasazení ukazují každé sestavení, kdy je živé, a umožní vrátit se k dřívějšímu."
+          "body": "Nasazení ukazují každé sestavení, jeho záznam a kdy je živé."
         }
       }
-    }
+    },
+    "emptyPage": "Tahle stránka je prázdná."
   },
   "connections": {
     "title": "Propojení",

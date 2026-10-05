@@ -4,6 +4,7 @@ import { AlertTriangle, Check, RotateCcw } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Label, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, cn } from '@dcms/ui';
+import { HelpLink } from './help/HelpLink';
 import { useVfs } from '../site-source';
 import { Segmented } from './inspector/Segmented';
 import { serializeDoc } from './starter';
@@ -36,8 +37,8 @@ export function ThemePanel() {
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <div className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {t('visual.theme.title')}
+      <div className="flex items-center gap-1.5 border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {t('visual.theme.title')} <HelpLink article="theme" />
       </div>
       <p className="px-3 pt-3 text-xs text-muted-foreground">{t('visual.theme.hint')}</p>
       <ul className="space-y-2 p-3">

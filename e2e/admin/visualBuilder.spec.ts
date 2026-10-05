@@ -788,3 +788,41 @@ test('a task tour waits for what its step asks, and carries on into the studio',
   await expect(page.getByRole('region', { name: 'Component studio' })).toBeVisible();
   await expect(tour.getByRole('heading', { name: 'What pages may change' })).toBeVisible();
 });
+
+test('help: articles to search and read, a ? beside a panel, and a tour from an article', async ({ page, api }) => {
+  await open(page, api, twoPages);
+  const drawer = page.getByRole('dialog', { name: 'Help articles' });
+  await page.getByRole('button', { name: 'Help', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Help articles' }).click();
+  await drawer.getByLabel('Search help').fill('phone');
+  await drawer.getByRole('button', { name: /^Computer, tablet and phone/ }).click();
+  const article = page.getByRole('dialog', { name: 'Computer, tablet and phone' });
+  await expect(article.getByText('Most layouts already adapt')).toBeVisible();
+  await article.getByRole('button', { name: 'All articles' }).click();
+  await expect(drawer).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(drawer).toHaveCount(0);
+
+  // The ? beside a panel opens its article; the article's tour starts from it.
+  await page.getByRole('tab', { name: 'Theme' }).click();
+  await page.getByRole('button', { name: 'Help: The look of the site' }).click();
+  await expect(page.getByRole('dialog', { name: 'The look of the site' })).toBeVisible();
+  await page.getByRole('button', { name: 'All articles' }).click();
+  await drawer.getByRole('button', { name: /^Lists and detail pages/ }).click();
+  await page.getByRole('button', { name: 'Show me' }).click();
+  await expect(page.getByRole('dialog', { name: 'Page tour' }).getByRole('heading', { name: 'Add a collection' })).toBeVisible();
+});
+
+test('an empty page says how to start', async ({ page, api }) => {
+  await open(page, api, twoPages);
+  await page.getByRole('tab', { name: 'Pages' }).click();
+  await page.getByRole('button', { name: 'Add page' }).click();
+  await page.locator('#new-page-title').fill('Our Team');
+  await page.getByRole('button', { name: 'Create' }).click();
+  const empty = page.getByRole('status').filter({ hasText: 'This page is empty.' });
+  await expect(empty).toBeVisible();
+  await empty.getByRole('button', { name: 'Add a section below' }).click();
+  await expect(page.getByRole('tab', { name: 'Sections' })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('button', { name: /^Pricing/ }).click();
+  await expect(empty).toHaveCount(0);
+});

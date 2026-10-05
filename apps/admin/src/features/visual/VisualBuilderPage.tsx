@@ -77,6 +77,8 @@ import { SandboxPreview } from './SandboxPreview';
 const ApiExplorer = lazy(() => import('./ApiExplorer'));
 import { VISUAL_DEVICES, type DeviceId } from './canvas/editor';
 import { SHOW_SHORTCUTS } from './canvas/commands';
+import { HelpDrawer } from './help/HelpDrawer';
+import { HelpLink } from './help/HelpLink';
 import { HelpMenu } from './help/HelpMenu';
 import { builderTour, miniTour, type MiniTour } from './help/tours';
 import { ADD_SECTION } from './canvas/types';
@@ -369,6 +371,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
       : pageItem
         ? pageRoute.path.replace(/:[A-Za-z][A-Za-z0-9]*/, encodeURIComponent(pageItem.slug))
         : '/';
+  const emptyPage = target?.kind === 'page' && (readPage(target.id)?.root.slots?.default ?? []).length === 0;
   const targetLabel =
     target?.kind === 'shell'
       ? t('visual.pages.shell')
@@ -455,6 +458,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
 
       {target?.kind === 'component' && <StudioBar />}
       <MediaBridge editor={editor} />
+      <HelpDrawer onTour={runTour} />
       <Dialog open={apiOpen} onOpenChange={setApiOpen}>
         <DialogContent className="h-[85vh] max-w-6xl overflow-hidden p-0">
           <DialogTitle className="sr-only">{t('visual.api.title')}</DialogTitle>
@@ -556,6 +560,20 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
                 <TourTarget id="visual.canvas">
                   <div className="relative min-h-0 flex-1">
                     <DragNote editor={editor} />
+                    {emptyPage && (
+                      // An empty page teaches its first step instead of sitting there blank.
+                      <div className="absolute inset-x-0 bottom-6 z-10 flex justify-center px-4">
+                        <div role="status" className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-4 py-3 text-sm shadow-lg">
+                          <span>{t('visual.emptyPage')}</span>
+                          <Button size="sm" onClick={() => editor?.trigger(ADD_SECTION)}>
+                            {t('visual.palette.addSection')}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => runTour('firstPage')}>
+                            {t('visual.help.showMe')}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                     <VisualCanvas
                       target={target}
                       registry={registry}
@@ -569,7 +587,14 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
                 <CanvasShortcuts editor={editor} />
               </>
             ) : (
-              <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">{t('visual.noPages')}</div>
+              <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-sm text-muted-foreground">
+                <p className="flex items-center gap-1.5">
+                  {t('visual.noPages')} <HelpLink article="pages" />
+                </p>
+                <Button size="sm" variant="outline" onClick={() => setSidebar('pages')}>
+                  <FileText className="h-4 w-4" /> {t('builder.pages')}
+                </Button>
+              </div>
             )}
           </div>
           {view === 'preview' && (

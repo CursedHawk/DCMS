@@ -3,6 +3,7 @@ import type { Editor } from 'grapesjs';
 import { AlertCircle, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ID } from './canvas/tree';
+import { HelpLink } from './help/HelpLink';
 import { useVisual } from './store';
 
 /**
@@ -28,7 +29,7 @@ export function ProblemsPanel({ problems, editor }: { problems: readonly SitePro
   if (problems.length === 0) {
     return (
       <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-        <CheckCircle2 className="h-4 w-4 text-emerald-600" /> {t('visual.problems.none')}
+        <CheckCircle2 className="h-4 w-4 text-emerald-600" /> {t('visual.problems.none')} <HelpLink article="publishing" />
       </div>
     );
   }

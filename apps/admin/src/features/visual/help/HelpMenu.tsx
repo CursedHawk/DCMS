@@ -1,9 +1,10 @@
 import { CircleHelp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@dcms/ui';
+import { useVisual } from '../store';
 import { MINI_TOURS, type MiniTour } from './tours';
 
-/** The builder's Help: its tour again, a short tour of one task, the keys. */
+/** The builder's Help: its tour again, a short tour of one task, the articles, the keys. */
 export function HelpMenu({ onTour, onShortcuts }: { onTour: (which: MiniTour | null) => void; onShortcuts: () => void }) {
   const { t } = useTranslation();
   return (
@@ -23,6 +24,7 @@ export function HelpMenu({ onTour, onShortcuts }: { onTour: (which: MiniTour | n
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => useVisual.getState().openHelp()}>{t('visual.help.articles')}</DropdownMenuItem>
         <DropdownMenuItem onSelect={onShortcuts}>{t('ide.shortcuts.title')}</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button, Input, Label } from '@dcms/ui';
+import { HelpLink } from './help/HelpLink';
 import { codeContractOf, codeSourcePath } from '@dcms/site-runtime';
 import { useSelected } from '../builder/panels/useEditorEvent';
 import { useVfs } from '../site-source';
@@ -70,8 +71,8 @@ export function ComponentsPanel({ editor }: { editor: Editor | null }) {
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <div className="border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        {t('visual.mine.title')}
+      <div className="flex items-center gap-1.5 border-b px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {t('visual.mine.title')} <HelpLink article="components" />
       </div>
 
       <form
@@ -99,7 +100,9 @@ export function ComponentsPanel({ editor }: { editor: Editor | null }) {
       </form>
 
       {components.length === 0 ? (
-        <p className="p-4 text-sm text-muted-foreground">{t('visual.mine.none')}</p>
+        <p className="p-4 text-sm text-muted-foreground">
+          {t('visual.mine.none')} <HelpLink article="components" className="align-middle" />
+        </p>
       ) : (
         <ul className="divide-y">
           {components.map(({ name, versions, latest }) => {

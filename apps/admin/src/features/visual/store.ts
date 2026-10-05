@@ -58,6 +58,10 @@ interface VisualState {
   pendingSelect: string | null;
   /** Leave the studio for where it was opened from. */
   leaveStudio: () => void;
+  /** The help drawer: closed (null), its list of articles, or one article. */
+  help: { article: string | null } | null;
+  openHelp: (article?: string) => void;
+  closeHelp: () => void;
   setDevice: (device: DeviceId) => void;
   setView: (view: VisualView) => void;
   syncApp: (text: string | undefined) => void;
@@ -106,6 +110,9 @@ export const useVisual = create<VisualState>((set, get) => ({
     get().flushCanvas();
     set({ target: back.target, studioReturn: null, pendingSelect: back.select });
   },
+  help: null,
+  openHelp: (article) => set({ help: { article: article ?? null } }),
+  closeHelp: () => set({ help: null }),
   setDevice: (device) => set({ device }),
   setView: (view) => set({ view }),
   syncApp: (text) => {

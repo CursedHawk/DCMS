@@ -16,6 +16,7 @@ import {
   Textarea,
   cn,
 } from '@dcms/ui';
+import { HelpLink } from './help/HelpLink';
 import { useContentCatalog } from './data';
 import { useVfs } from '../site-source';
 import {
@@ -65,7 +66,9 @@ export function PagesPanel() {
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       <div className="flex items-center justify-between border-b px-3 py-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('builder.pages')}</span>
+        <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          {t('builder.pages')} <HelpLink article="pages" />
+        </span>
         <Button size="sm" variant="ghost" onClick={() => setAdding((v) => !v)}>
           <Plus className="h-4 w-4" /> {t('builder.addPage')}
         </Button>
@@ -345,7 +348,9 @@ function StateSettings({ pageId }: { pageId: string }) {
     );
   return (
     <div className="space-y-2 border-t pt-2">
-      <Label>{t('visual.state.title')}</Label>
+      <Label className="flex items-center gap-1.5">
+        {t('visual.state.title')} <HelpLink article="state" />
+      </Label>
       {Object.entries(state).map(([key, value]) => (
         <div key={key} className="flex items-end gap-1">
           <div className="min-w-0 flex-1">

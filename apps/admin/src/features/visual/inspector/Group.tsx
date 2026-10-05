@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
+import { HelpLink } from '../help/HelpLink';
 
 const KEY = 'dcms.visual.inspector.closed';
 
@@ -16,7 +17,7 @@ function closedGroups(): Set<string> {
  * remembered per browser: someone who never touches Advanced should not have to close it on
  * every selection.
  */
-export function Group({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+export function Group({ id, title, help, children }: { id: string; title: string; help?: string; children: ReactNode }) {
   const [open, setOpen] = useState(() => !closedGroups().has(id));
   const toggle = () => {
     setOpen(!open);
@@ -31,7 +32,7 @@ export function Group({ id, title, children }: { id: string; title: string; chil
   };
   return (
     <section className="border-b last:border-b-0">
-      <h3>
+      <h3 className="flex items-center pr-4">
         <button
           type="button"
           aria-expanded={open}
@@ -41,6 +42,7 @@ export function Group({ id, title, children }: { id: string; title: string; chil
           {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           {title}
         </button>
+        {help && <HelpLink article={help} />}
       </h3>
       {open && <div className="space-y-4 px-4 pb-4">{children}</div>}
     </section>

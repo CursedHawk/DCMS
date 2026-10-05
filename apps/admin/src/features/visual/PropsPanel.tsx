@@ -43,6 +43,7 @@ import { META_BINDABLE, scopeOf, useContentCatalog } from './data';
 import { parseStateValue, readPage } from './documents';
 import { useVisual, type CanvasTarget } from './store';
 import { lookOf } from './catalog/look';
+import { HelpLink } from './help/HelpLink';
 import { Group } from './inspector/Group';
 import { IconPicker } from './inspector/IconPicker';
 import { Segmented } from './inspector/Segmented';
@@ -178,11 +179,12 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
             <Icon className="h-4 w-4" />
           </span>
           <div className="min-w-0 text-sm font-medium">{definition.label}</div>
+          {articleFor(definition.type) && <HelpLink article={articleFor(definition.type)!} />}
         </div>
         {definition.description && <p className="mt-1.5 text-xs text-muted-foreground">{definition.description}</p>}
         {device !== 'desktop' && (
           <p className="mt-2 rounded bg-primary/10 px-2 py-1 text-xs text-primary">
-            {t('visual.editingDevice', { device: t(`visual.devices.${device}`) })}
+            {t('visual.editingDevice', { device: t(`visual.devices.${device}`) })} <HelpLink article="responsive" className="align-middle text-primary" />
           </p>
         )}
       </div>
@@ -240,7 +242,7 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
         // Behaviour shows only when there is something in it: an action, page state, a setting.
         if (behaviour && !inGroup.length && !definition.actions?.length && !hasPageState) return null;
         return (
-          <Group key={group} id={group} title={t(`visual.groups.${group}`)}>
+          <Group key={group} id={group} title={t(`visual.groups.${group}`)} help={GROUP_HELP[group]}>
             {inGroup.map(renderProp)}
             {extras}
           </Group>
@@ -330,7 +332,12 @@ function PropField({
   switch (prop.kind) {
     case 'source': {
       const current = value && typeof value === 'object' ? sourceKey(value as Source) : '';
-      control = (
+      // Nothing to choose from yet: say where content comes from, rather than an empty list.
+      control = !sources.length ? (
+        <p className="text-xs text-muted-foreground">
+          {t('visual.data.noSources')} <HelpLink article="connections" className="align-middle" />
+        </p>
+      ) : (
         <Select value={current} onValueChange={(key) => commit(sources.find((s) => sourceKey(s.source) === key)?.source)}>
           <SelectTrigger id={id}>
             <SelectValue placeholder={t('visual.data.chooseSource')} />
@@ -753,4 +760,14 @@ function TextField({
       onKeyDown={onKeyDown}
     />
   );
+}
+
+/** The help article about an inspector group, when one says more than its settings' own help. */
+const GROUP_HELP: Partial<Record<string, string>> = { data: 'collections', behaviour: 'state' };
+
+/** The help article about a kind of part, for the ones that take more than a glance. */
+function articleFor(type: string): string | undefined {
+  if (type.startsWith(CODE_PREFIX)) return 'developer';
+  if (type.startsWith('tenant.')) return 'components';
+  return ({ 'dcms.collection': 'collections', 'dcms.form': 'forms', 'dcms.field': 'forms', 'dcms.modal': 'state' } as Record<string, string>)[type];
 }

@@ -1627,7 +1627,8 @@
       "detailPage": "Detail page",
       "notDetail": "Not a detail page",
       "detailHint": "Shows the item whose slug is in the address (:{{param}}).",
-      "needsParam": "Give the address a :slug part (e.g. /events/:slug) to make this a detail page."
+      "needsParam": "Give the address a :slug part (e.g. /events/:slug) to make this a detail page.",
+      "noSources": "No content to show yet. Content comes from plugins with content — a blog, events, products — and from connections to other services."
     },
     "groups": {
       "content": "Content",
@@ -1742,7 +1743,13 @@
     "help": {
       "title": "Help",
       "builderTour": "Show me around the builder",
-      "tasks": "Show me how to…"
+      "tasks": "Show me how to…",
+      "articles": "Help articles",
+      "allArticles": "All articles",
+      "search": "Search help",
+      "noMatch": "Nothing matches “{{query}}”.",
+      "showMe": "Show me",
+      "about": "Help: {{title}}"
     },
     "tour": {
       "builder": {
@@ -1872,10 +1879,11 @@
         },
         "deploy": {
           "title": "Watch it go live",
-          "body": "Deployments shows each build and when it is live, and lets you go back to an earlier one."
+          "body": "Deployments shows each build, its log and when it is live."
         }
       }
-    }
+    },
+    "emptyPage": "This page is empty."
   },
   "connections": {
     "title": "Connections",
