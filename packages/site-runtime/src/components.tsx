@@ -5,6 +5,7 @@ import { choice, responsiveSelect, select, text, variants, type Props } from './
 import { createRegistry, type ComponentDefinition, type ComponentRenderProps } from './registry';
 import { useRenderMode } from './renderMode';
 import { CONTENT_COMPONENTS } from './contentComponents';
+import { INTERACTIVE_COMPONENTS } from './interactiveComponents';
 import { MEDIA_COMPONENTS } from './mediaComponents';
 import { Collection, Form, FormField, Modal, RichText, runAction } from './dataComponents';
 import { SiteLink, useSite } from './site';
@@ -726,6 +727,7 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
   },
   ...CONTENT_COMPONENTS,
   ...MEDIA_COMPONENTS,
+  ...INTERACTIVE_COMPONENTS,
 ];
 
 export const builtinRegistry = createRegistry(BUILTIN_COMPONENTS);

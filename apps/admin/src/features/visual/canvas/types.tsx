@@ -5,7 +5,7 @@ import { thumbnailOf } from '../catalog/look';
 import { CanvasNode } from './CanvasNode';
 import { useVisual } from '../store';
 import { applyLayout, type SlotViewState } from './slots';
-import { EXTRA, ID, PROPS, RAW, SLOT, SLOT_TYPE, UNKNOWN_TYPE, newNodeId } from './tree';
+import { EXTRA, ID, PROPS, RAW, SLOT, SLOT_TYPE, UNKNOWN_TYPE, newNodeId, nodeFromStarter, toGrapes } from './tree';
 
 /**
  * GrapesJS component types for the Mode D registry, with React drawing them.
@@ -110,8 +110,14 @@ export function registerVisualTypes(editor: Editor, registry: Registry): void {
           // component later never changes a page behind its author's back.
           if (!this.get(EXTRA)) this.set(EXTRA, definition.template ? { version: definition.version } : {}, { silent: true });
           if (this.components().length === 0 && definition.slots?.length) {
+            // A fresh one starts with its starter children (an accordion with two questions).
             this.components(
-              definition.slots.map((slot) => ({ type: SLOT_TYPE, [SLOT]: slot.name, name: slot.label ?? slot.name })),
+              definition.slots.map((slot) => ({
+                type: SLOT_TYPE,
+                [SLOT]: slot.name,
+                name: slot.label ?? slot.name,
+                components: (definition.starter?.[slot.name] ?? []).map((s) => toGrapes(nodeFromStarter(s, registry), registry)),
+              })),
             );
           }
         },

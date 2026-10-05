@@ -4,6 +4,7 @@ export * from './code';
 export * from './components';
 export * from './contentComponents';
 export * from './icons';
+export * from './interactiveComponents';
 export * from './mediaComponents';
 export * from './data';
 export * from './dataComponents';

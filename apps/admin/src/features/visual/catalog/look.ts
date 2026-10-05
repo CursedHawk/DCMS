@@ -2,6 +2,13 @@ import { thumbnail } from '@dcms/gjs-blocks';
 import { CODE_PREFIX, type ComponentDefinition } from '@dcms/site-runtime';
 import {
   AppWindow,
+  ChevronsUpDown,
+  CircleHelp,
+  GalleryHorizontal,
+  PanelTop,
+  RectangleHorizontal,
+  Share2,
+  Timer,
   Columns2,
   FileCode,
   FileText,
@@ -73,6 +80,13 @@ export const COMPONENT_LOOKS: Readonly<Record<string, ComponentLook>> = {
   'dcms.gallery': { icon: Images, archetype: 'gallery' },
   'dcms.map': { icon: MapPin, archetype: 'map' },
   'dcms.embed': { icon: Frame, archetype: 'embed' },
+  'dcms.accordion': { icon: ChevronsUpDown, archetype: 'faq' },
+  'dcms.accordion-item': { icon: CircleHelp, archetype: 'faq' },
+  'dcms.tabs': { icon: PanelTop, archetype: 'tabs' },
+  'dcms.tab': { icon: RectangleHorizontal, archetype: 'tabs' },
+  'dcms.carousel': { icon: GalleryHorizontal, archetype: 'carousel' },
+  'dcms.countdown': { icon: Timer, archetype: 'stats' },
+  'dcms.social': { icon: Share2, archetype: 'logos' },
 };
 
 const TENANT: ComponentLook = { icon: Puzzle, archetype: 'card' };

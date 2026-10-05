@@ -148,3 +148,23 @@ describe('an instance’s own CSS', () => {
     expect(fromGrapes(load(tree))).toEqual(tree);
   });
 });
+
+describe('starters', () => {
+  it('a freshly dropped accordion arrives with its questions and their answers, all with ids', () => {
+    const root = load({ id: 'root', type: 'dcms.page' });
+    const [added] = root.components().at(0).append({ type: 'dcms.accordion' });
+    const node = fromGrapes(added!);
+    const items = node.slots!.items!;
+    expect(items.map((i) => [i.type, i.props?.title])).toEqual([
+      ['dcms.accordion-item', 'How long does delivery take?'],
+      ['dcms.accordion-item', 'Can I return an order?'],
+    ]);
+    expect(items[0]!.slots!.default!.map((c) => c.type)).toEqual(['dcms.text']);
+    expect(new Set([node.id, ...items.map((i) => i.id), ...items.flatMap((i) => i.slots!.default!.map((c) => c.id))]).size).toBe(5);
+  });
+
+  it('a loaded node keeps exactly what it has', () => {
+    const tree: Node = { id: 'root', type: 'dcms.page', slots: { default: [{ id: 'a', type: 'dcms.accordion' }] } };
+    expect(fromGrapes(load(tree))).toEqual(tree);
+  });
+});

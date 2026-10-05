@@ -545,3 +545,27 @@ test('a video takes a pasted YouTube link and shows a still on the canvas; setti
   await expect(frame.locator('[data-dcms-type="dcms.video"] iframe')).toHaveCount(0);
   await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"url": "https://youtu.be/dQw4w9WgXcQ"');
 });
+
+test('an accordion arrives with questions open on the canvas; on the site they open on click, and tabs switch', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  await frame.locator('[data-dcms-node="h"] h1').click();
+  await page.getByPlaceholder('Search components').fill('faq');
+  await page.getByRole('button', { name: 'Accordion', exact: true }).click();
+  await expect(frame.getByText('How long does delivery take?')).toBeVisible();
+  // Every answer is open to be edited.
+  await expect(frame.getByText('Usually two to three working days.')).toBeVisible();
+
+  await page.getByPlaceholder('Search components').fill('tabs');
+  await page.getByRole('button', { name: 'Tabs', exact: true }).click();
+  await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"type": "dcms.tab"');
+
+  await page.getByRole('group', { name: 'View' }).getByTitle('Preview').click();
+  const preview = page.frameLocator('iframe[title="Preview"]');
+  await expect(preview.getByText('Usually two to three working days.')).toBeHidden();
+  await preview.getByText('How long does delivery take?').click();
+  await expect(preview.getByText('Usually two to three working days.')).toBeVisible();
+  await expect(preview.getByText('What it is, in a sentence or two.')).toBeVisible();
+  await preview.getByRole('tab', { name: 'Prices' }).click();
+  await expect(preview.getByText('What it costs.')).toBeVisible();
+  await expect(preview.getByText('What it is, in a sentence or two.')).toBeHidden();
+});

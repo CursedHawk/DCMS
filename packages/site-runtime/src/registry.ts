@@ -84,6 +84,18 @@ export interface ComponentDefinition {
    * edited); `select-first`, the default, swallow them so a click selects.
    */
   interaction?: 'select-first' | 'interactive';
+  /**
+   * What a freshly placed one starts with, per slot — an accordion arrives with two questions,
+   * not empty. Only for new placements from the palette; a loaded node keeps what it has.
+   */
+  starter?: Readonly<Record<string, readonly StarterNode[]>>;
+}
+
+/** A child a new component starts with: its type, props beyond the defaults, its own starters. */
+export interface StarterNode {
+  type: string;
+  props?: Record<string, unknown>;
+  slots?: Readonly<Record<string, readonly StarterNode[]>>;
 }
 
 export type Registry = ReadonlyMap<string, ComponentDefinition>;

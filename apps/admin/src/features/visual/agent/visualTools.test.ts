@@ -62,7 +62,7 @@ describe('Mode D agent tools', () => {
   it('refuses what the canvas would refuse, with the same reason', async () => {
     const out = await run('insert_node', { doc: 'page:home', parent: 'root', slot: 'default', node: { type: 'dcms.page' } });
     expect(out).toMatchObject({ isError: true, content: 'Page cannot be placed inside another component.' });
-    const bad = await run('insert_node', { doc: 'page:home', parent: 'root', slot: 'default', node: { type: 'dcms.carousel' } });
+    const bad = await run('insert_node', { doc: 'page:home', parent: 'root', slot: 'default', node: { type: 'acme.rocket' } });
     expect(bad.isError).toBe(true);
   });
 

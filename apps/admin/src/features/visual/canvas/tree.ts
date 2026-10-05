@@ -1,4 +1,4 @@
-import { definitionFor, walk, type Action, type Node, type Registry, type Responsive, type When } from '@dcms/site-runtime';
+import { defaultProps, definitionFor, walk, type StarterNode, type Action, type Node, type Registry, type Responsive, type When } from '@dcms/site-runtime';
 import type { Component } from 'grapesjs';
 
 /**
@@ -142,4 +142,19 @@ export function newNodeId(taken?: ReadonlySet<string>): string {
     const id = `n${Array.from(bytes, (b) => ID_ALPHABET[b % ID_ALPHABET.length]).join('')}`;
     if (!taken?.has(id)) return id;
   }
+}
+
+/**
+ * A starter child as a full node: fresh ids, its definition's defaults under the starter's own
+ * props, and — where the starter does not say — its own starter children.
+ */
+export function nodeFromStarter(starter: StarterNode, registry: Registry): Node {
+  const def = registry.get(starter.type);
+  const slots = starter.slots ?? def?.starter;
+  return {
+    id: newNodeId(),
+    type: starter.type,
+    props: { ...(def ? defaultProps(def) : {}), ...starter.props },
+    ...(slots ? { slots: Object.fromEntries(Object.entries(slots).map(([name, children]) => [name, children.map((c) => nodeFromStarter(c, registry))])) } : {}),
+  };
 }
