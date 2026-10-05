@@ -3,18 +3,7 @@ import { Check } from 'lucide-react';
 import { useMemo } from 'react';
 import { cn } from '@dcms/ui';
 import { useVfs } from '../../site-source/vfs';
-
-/** The theme variable (and the runtime's own fallback) each background choice paints with. */
-const BACKGROUND_VARS: Readonly<Record<string, readonly [string, string]>> = {
-  none: ['--dcms-color-surface', '#ffffff'],
-  alt: ['--dcms-color-surface-alt', '#f8fafc'],
-  soft: ['--dcms-color-brand-soft', '#eef2ff'],
-  inverse: ['--dcms-color-inverse', '#0f172a'],
-};
-
-export function hasSwatches(name: string, values: readonly string[]): boolean {
-  return name === 'background' && values.every((v) => v in BACKGROUND_VARS);
-}
+import { BACKGROUND_VARS } from './backgrounds';
 
 /**
  * A background choice as the colours themselves, taken from this site's theme — what the band

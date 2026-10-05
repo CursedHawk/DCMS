@@ -45,7 +45,8 @@ import { useVisual, type CanvasTarget } from './store';
 import { lookOf } from './catalog/look';
 import { Group } from './inspector/Group';
 import { Segmented } from './inspector/Segmented';
-import { Swatches, hasSwatches } from './inspector/Swatches';
+import { Swatches } from './inspector/Swatches';
+import { hasSwatches } from './inspector/backgrounds';
 import { useVfs } from '../site-source/vfs';
 
 /**
