@@ -519,6 +519,23 @@ test('clicking a palette card adds it after the selection and selects it', async
   await expect(page.getByRole('combobox', { name: 'Tone' }).or(page.getByRole('radiogroup', { name: 'Tone' }))).toBeVisible();
 });
 
+test('a section template from the Sections tab lands below the selected band, whole and editable', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  await frame.locator('[data-dcms-node="h"] h1').click();
+  // The selection toolbar's + opens the Sections tab.
+  await page.getByTitle('Add a section below').click();
+  await expect(page.getByRole('tab', { name: 'Sections' })).toHaveAttribute('aria-selected', 'true');
+  await page.getByPlaceholder('Search components').fill('prices');
+  await page.getByRole('button', { name: /^Pricing/ }).click();
+  await expect(frame.getByText('Simple, honest prices')).toBeVisible();
+  await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('Simple, honest prices');
+  const home = JSON.parse(saved(api, HOME)!);
+  expect(home.root.slots.default.map((n: { type: string }) => n.type)).toEqual(['dcms.heading', 'dcms.section', 'dcms.stack']);
+  // Ordinary parts: a heading inside it selects and edits like any other.
+  await frame.getByText('Simple, honest prices').click();
+  await expect(page.getByLabel('Text', { exact: true })).toHaveValue('Simple, honest prices');
+});
+
 test('an icon is added from the palette and its symbol picked by sight', async ({ page, api }) => {
   const frame = await open(page, api, twoPages);
   await frame.locator('[data-dcms-node="h"] h1').click();

@@ -1673,7 +1673,10 @@
         "mine": "Vaše vlastní komponenty se tu objeví, až nějakou vytvoříte.",
         "developer": "Vývojářské komponenty se tu objeví, až nějakou přidáte."
       },
-      "hint": "Kartu přetáhněte na stránku, nebo na ni klikněte a přidá se za výběr."
+      "hint": "Kartu přetáhněte na stránku, nebo na ni klikněte a přidá se za výběr.",
+      "sections": "Sekce",
+      "sectionsHint": "Kliknutím přidáte sekci pod vybranou část stránky — nebo na konec. Vše v ní lze upravit.",
+      "addSection": "Přidat sekci pod"
     },
     "icons": {
       "none": "žádná",

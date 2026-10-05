@@ -2,7 +2,8 @@ import { builtinRegistry, type Node } from '@dcms/site-runtime';
 import grapesjs, { type Editor } from 'grapesjs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { insertComponent } from './insert';
-import { fromGrapes, toGrapes } from './tree';
+import { SECTION_TEMPLATES } from '../templates/sections';
+import { fromGrapes, nodeFromStarter, toGrapes } from './tree';
 import { registerVisualTypes } from './types';
 
 let editor: Editor;
@@ -57,5 +58,16 @@ describe('click to insert', () => {
     expect(types().slots!.default!.map((n) => n.type)).toEqual(['dcms.section', 'dcms.stack', 'dcms.section']);
     const refused = insertComponent(editor, builtinRegistry, 'dcms.page');
     expect(refused).toEqual({ ok: false, reason: 'Page cannot be placed inside another component.' });
+  });
+
+  it('a section template goes between bands: after the one holding the selection, as a whole tree', () => {
+    load();
+    editor.select(find('h'));
+    const tree = toGrapes(nodeFromStarter(SECTION_TEMPLATES.find((t) => t.id === 'cta-band')!.tree, builtinRegistry), builtinRegistry);
+    const out = insertComponent(editor, builtinRegistry, 'dcms.section', tree, { band: true });
+    expect(out.ok).toBe(true);
+    const page = types();
+    expect(page.slots!.default!.map((n) => n.type)).toEqual(['dcms.section', 'dcms.section', 'dcms.stack']);
+    expect(page.slots!.default![1]!.slots!.default![0]!.slots!.default!.map((n) => n.type)).toEqual(['dcms.heading', 'dcms.text', 'dcms.button']);
   });
 });

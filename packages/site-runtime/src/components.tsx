@@ -5,6 +5,7 @@ import { choice, responsiveSelect, select, text, variants, type Props } from './
 import { createRegistry, type ComponentDefinition, type ComponentRenderProps } from './registry';
 import { useRenderMode } from './renderMode';
 import { CONTENT_COMPONENTS, IconGlyph } from './contentComponents';
+import { mediaUrl } from './data';
 import { INTERACTIVE_COMPONENTS } from './interactiveComponents';
 import { MEDIA_COMPONENTS } from './mediaComponents';
 import { NAV_COMPONENTS } from './navComponents';
@@ -38,6 +39,7 @@ function Page({ slot }: ComponentRenderProps) {
 }
 
 const BACKGROUNDS = ['none', 'alt', 'soft', 'inverse'] as const;
+const OVERLAYS = ['dark', 'light', 'none'] as const;
 const SECTION_SPACES = ['none', 'sm', 'md', 'lg'] as const;
 
 /** A section's anchor as an element id: lower-case letters, digits and dashes, or none. */
@@ -51,8 +53,16 @@ function Section({ props, responsive, slot }: ComponentRenderProps<Props>) {
   const bg = choice(props.background, BACKGROUNDS, 'none');
   const py = v('spacing', SECTION_SPACES, 'md', (x) => `dcms-py-${x}`);
   const width = v('width', WIDTHS, 'normal', (x) => `dcms-width-${x}`);
+  // A background picture, behind a tint so text stays readable. The address goes through
+  // mediaUrl (site paths, http(s), asset ids) before it reaches the style.
+  const image = mediaUrl(props.image);
+  const overlay = choice(props.overlay, OVERLAYS, 'dark');
   return (
-    <section id={anchorId(props.anchor)} className={`dcms-section dcms-bg-${bg} ${py}`}>
+    <section
+      id={anchorId(props.anchor)}
+      className={`dcms-section dcms-bg-${bg} ${py}${image ? ` dcms-section-image dcms-overlay-${overlay}` : ''}`}
+      style={image ? { backgroundImage: `url("${encodeURI(image)}")` } : undefined}
+    >
       {slot('default', { className: `dcms-width ${width} dcms-flow` })}
     </section>
   );
@@ -332,6 +342,17 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
       responsiveSelect('width', 'Content width', WIDTHS, 'normal', WIDTH_LABELS, {
         group: 'layout',
         description: 'How wide the content may grow. The background always spans the whole page.',
+      }),
+      {
+        kind: 'media',
+        name: 'image',
+        label: 'Background picture',
+        group: 'style',
+        description: 'A photo behind the whole band — for a hero. Text on it is kept readable by the tint below.',
+      },
+      select('overlay', 'Tint over the picture', OVERLAYS, 'dark', { dark: 'Darken (light text)', light: 'Lighten (dark text)', none: 'None' }, {
+        group: 'style',
+        description: 'Keeps text readable on a busy photo.',
       }),
       {
         kind: 'text',

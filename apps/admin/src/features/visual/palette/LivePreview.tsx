@@ -25,11 +25,12 @@ const LAYOUT_WIDTH = 760;
 /**
  * A miniature of a node tree, drawn by the site runtime in this site's theme — what dropping it
  * will look like. Rendered into a shadow root so the runtime's stylesheet stays inside it, and
- * as `live` so editor notes do not show. Trusted code only: the tree is data the runtime draws
- * (tenant components, section templates); developer components are placeholders here as on the
- * canvas.
+ * as `live` so editor notes do not show — section templates draw as `edit`, so a picture still
+ * to be chosen shows as a placeholder rather than nothing. Trusted code only: the tree is data
+ * the runtime draws (tenant components, section templates); developer components are
+ * placeholders here as on the canvas.
  */
-export function LivePreview({ node, registry, app }: { node: Node; registry: Registry; app: App | null }) {
+export function LivePreview({ node, registry, app, mode = 'live' }: { node: Node; registry: Registry; app: App | null; mode?: 'live' | 'edit' }) {
   const host = useRef<HTMLDivElement>(null);
   const root = useRef<Root | null>(null);
   const frame = useRef<HTMLDivElement | null>(null);
@@ -63,7 +64,7 @@ export function LivePreview({ node, registry, app }: { node: Node; registry: Reg
     }
     (shadow.querySelector('style[data-role="theme"]') as HTMLStyleElement).textContent = RUNTIME_CSS + theme;
     root.current.render(
-      <RenderModeContext.Provider value="live">
+      <RenderModeContext.Provider value={mode}>
         <SiteContext.Provider value={{ app }}>
           <DataClientContext.Provider value={NO_DATA}>
             <RenderNode node={node} registry={registry} />
@@ -71,7 +72,7 @@ export function LivePreview({ node, registry, app }: { node: Node; registry: Reg
         </SiteContext.Provider>
       </RenderModeContext.Provider>,
     );
-  }, [node, registry, app, themeText]);
+  }, [node, registry, app, themeText, mode]);
 
   useEffect(
     () => () => {

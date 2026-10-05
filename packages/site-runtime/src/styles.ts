@@ -357,6 +357,14 @@ body { margin: 0; }
 .dcms-breadcrumbs a:hover { color: var(--dcms-color-brand, #4f46e5); }
 .dcms-breadcrumbs [aria-current="page"] { color: var(--dcms-color-text, #1e293b); }
 
+/* Section background pictures (U2) */
+.dcms-section-image { position: relative; background-size: cover; background-position: center; isolation: isolate; }
+.dcms-section-image::before { content: ''; position: absolute; inset: 0; z-index: -1; }
+.dcms-overlay-dark::before { background: linear-gradient(rgb(0 0 0 / 55%), rgb(0 0 0 / 45%)); }
+.dcms-overlay-light::before { background: rgb(255 255 255 / 78%); }
+.dcms-overlay-dark { color: #fff; }
+.dcms-overlay-dark .dcms-heading, .dcms-overlay-dark .dcms-text { color: inherit; }
+
 .dcms-problem {
   padding: 0.75rem; border: 1px dashed #dc2626; border-radius: 0.375rem;
   color: #b91c1c; background: #fef2f2; font: 0.875rem system-ui, sans-serif;

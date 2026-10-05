@@ -1634,7 +1634,10 @@
         "mine": "Your own components appear here once you make one.",
         "developer": "Developer components appear here once you add one."
       },
-      "hint": "Drag a card onto the page, or click it to add it after what is selected."
+      "hint": "Drag a card onto the page, or click it to add it after what is selected.",
+      "sections": "Sections",
+      "sectionsHint": "Click a section to add it below the part of the page that is selected — or at the end. Everything in it can be changed.",
+      "addSection": "Add a section below"
     },
     "icons": {
       "none": "none",

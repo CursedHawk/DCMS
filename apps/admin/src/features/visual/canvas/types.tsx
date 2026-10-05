@@ -1,6 +1,7 @@
 import { NODE_CLASS, canPlace, defaultProps, type Registry } from '@dcms/site-runtime';
-import type { Component, Editor } from 'grapesjs';
+import type { Component, Editor, ToolbarButtonProps } from 'grapesjs';
 import { createRoot, type Root } from 'react-dom/client';
+import i18n from '../../../lib/i18n';
 import { thumbnailOf } from '../catalog/look';
 import { CanvasNode } from './CanvasNode';
 import { useVisual } from '../store';
@@ -36,12 +37,24 @@ interface NodeViewState {
   renderReact(): void;
 }
 
+/** Command and editor event: open the Sections palette to add a section below the selection. */
+export const ADD_SECTION = 'dcms:add-section';
+
 export function registerVisualTypes(editor: Editor, registry: Registry): void {
   const components = editor.Components;
   const BaseView = components.getType('default')!.view;
   const base = BaseView.prototype as unknown as {
     updateAttributes(this: unknown): void;
     updateClasses(this: unknown): void;
+  };
+
+  // The selection toolbar's "add a section below": the Sections palette answers it, and the
+  // section it inserts goes after the band holding the selection.
+  editor.Commands.add(ADD_SECTION, { run: (ed) => ed.trigger(ADD_SECTION) });
+  const addSection = {
+    label: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    command: ADD_SECTION,
+    attributes: { title: i18n.t('visual.palette.addSection'), class: 'dcms-tb-add-section' },
   };
 
   components.addType(SLOT_TYPE, {
@@ -109,6 +122,8 @@ export function registerVisualTypes(editor: Editor, registry: Registry): void {
           // A site's own component is pinned to the version it was placed with, so changing the
           // component later never changes a page behind its author's back.
           if (!this.get(EXTRA)) this.set(EXTRA, definition.template ? { version: definition.version } : {}, { silent: true });
+          const toolbar = this.get('toolbar') as ToolbarButtonProps[] | undefined;
+          if (placeable && toolbar) this.set('toolbar', [...toolbar, addSection], { silent: true });
           if (this.components().length === 0 && definition.slots?.length) {
             // A fresh one starts with its starter children (an accordion with two questions).
             this.components(

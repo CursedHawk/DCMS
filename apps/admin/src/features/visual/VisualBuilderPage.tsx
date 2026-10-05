@@ -74,6 +74,7 @@ import { SandboxPreview } from './SandboxPreview';
 
 const ApiExplorer = lazy(() => import('./ApiExplorer'));
 import { VISUAL_DEVICES, type DeviceId } from './canvas/editor';
+import { ADD_SECTION } from './canvas/types';
 import { starterFiles } from './starter';
 import { useVisual, type VisualView } from './store';
 import { useSiteRuntime } from './useSiteRuntime';
@@ -168,6 +169,16 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
 
   // The app document, for menus on the canvas and the panels that edit it.
   useEffect(() => useVisual.getState().syncApp(files[APP_JSON]), [files]);
+
+  // The canvas toolbar's "add a section below" shows the palette, which opens its Sections tab.
+  useEffect(() => {
+    if (!editor) return;
+    const open = () => setSidebar('components');
+    editor.on(ADD_SECTION, open);
+    return () => {
+      editor.off(ADD_SECTION, open);
+    };
+  }, [editor]);
 
   // Open the home page first, and follow it if the page being edited is deleted.
   useEffect(() => {

@@ -12,12 +12,19 @@ export type Insertion = { ok: true; component: Component } | { ok: false; reason
  * `content` is what the palette would drop (`{ type }`, or a whole tree for a section
  * template); the component types fill in ids, defaults and slots as they would for a drop.
  */
-export function insertComponent(editor: Editor, registry: Registry, type: string, content: object = { type }): Insertion {
+export function insertComponent(editor: Editor, registry: Registry, type: string, content: object = { type }, { band = false } = {}): Insertion {
   const selected = editor.getSelected();
   const root = editor.getWrapper()?.components().at(0);
+  const pageSlot = root?.components().models.find((c) => c.get('type') === SLOT_TYPE);
   const candidates: { slot: Component; at?: number }[] = [];
 
-  if (selected?.get('type') === SLOT_TYPE) {
+  if (band) {
+    // A whole section of the page goes between the page's bands: after the one holding the
+    // selection, never inside it.
+    let top = selected;
+    while (top && top.parent() && top.parent() !== pageSlot) top = top.parent();
+    if (pageSlot && top?.parent() === pageSlot) candidates.push({ slot: pageSlot, at: pageSlot.components().indexOf(top) + 1 });
+  } else if (selected?.get('type') === SLOT_TYPE) {
     candidates.push({ slot: selected });
   } else if (selected) {
     const parent = selected.parent();
@@ -26,7 +33,6 @@ export function insertComponent(editor: Editor, registry: Registry, type: string
     const own = selected.components().models.filter((c) => c.get('type') === SLOT_TYPE);
     if (own.length && own.every((s) => s.components().length === 0)) candidates.unshift({ slot: own[0]! });
   }
-  const pageSlot = root?.components().models.find((c) => c.get('type') === SLOT_TYPE);
   if (pageSlot) candidates.push({ slot: pageSlot });
 
   let reason = 'There is nowhere on this page to add it.';
