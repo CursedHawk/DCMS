@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react';
 import { mediaUrl } from './data';
 import { choice, responsiveSelect, select, text, variants, type Props } from './kit';
 import type { ComponentDefinition, ComponentRenderProps } from './registry';
@@ -50,7 +50,10 @@ function Video({ props, responsive }: ComponentRenderProps<Props>) {
     return mode === 'edit' ? <div className={`dcms-video dcms-video-empty ${ratio}`}>Video — paste a YouTube or Vimeo link, or pick a file, in the settings.</div> : null;
   }
   if (target.kind === 'file') {
+    const captions = text(props.captions).trim();
     return (
+      // Captions are the author's to supply (a .vtt file); a silent background loop needs none.
+      // eslint-disable-next-line jsx-a11y/media-has-caption
       <video
         className={`dcms-video ${ratio}`}
         src={target.src}
@@ -62,7 +65,9 @@ function Video({ props, responsive }: ComponentRenderProps<Props>) {
         muted={muted}
         loop={loop}
         title={title}
-      />
+      >
+        {captions && <track kind="captions" src={captions} label="Captions" default />}
+      </video>
     );
   }
   if (mode === 'edit') {
@@ -113,17 +118,35 @@ function Gallery({ props, responsive, slot }: ComponentRenderProps<Props>) {
   const lightbox = props.lightbox !== false && mode === 'live';
   const [open, setOpen] = useState<{ shots: Shot[]; at: number } | null>(null);
 
-  // The pictures are the gallery's children, whatever they are bound to; read them from the page.
-  const onClick = (e: MouseEvent<HTMLDivElement>) => {
+  const box = useRef<HTMLDivElement>(null);
+  // The pictures are the gallery's children, rendered by their own nodes; make each one a
+  // keyboard-reachable button that opens the lightbox.
+  useEffect(() => {
     if (!lightbox) return;
-    const img = (e.target as HTMLElement).closest('img');
+    for (const img of box.current?.querySelectorAll<HTMLImageElement>('.dcms-slot img') ?? []) {
+      img.tabIndex = 0;
+      img.setAttribute('role', 'button');
+      img.setAttribute('aria-label', `Open picture${img.alt ? `: ${img.alt}` : ''}`);
+    }
+  });
+  const openAt = (e: MouseEvent<HTMLDivElement> | ReactKeyboardEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (!lightbox || target.closest('.dcms-lightbox')) return;
+    const img = target.closest('img');
     if (!img) return;
-    const all = [...e.currentTarget.querySelectorAll('img')];
+    const all = [...e.currentTarget.querySelectorAll<HTMLImageElement>('.dcms-slot img')];
     setOpen({ shots: all.map((i) => ({ src: i.currentSrc || i.src, alt: i.alt })), at: Math.max(0, all.indexOf(img)) });
   };
 
   return (
-    <div className={`dcms-gallery dcms-gallery-${shape}${lightbox ? ' dcms-gallery-zoomable' : ''}`} onClick={onClick}>
+    // Delegation: the interactive elements are the pictures, made buttons above.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div
+      ref={box}
+      className={`dcms-gallery dcms-gallery-${shape}${lightbox ? ' dcms-gallery-zoomable' : ''}`}
+      onClick={openAt}
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), openAt(e))}
+    >
       {slot('images', { className: `dcms-grid ${columns} dcms-gap-${gap === 'none' ? 'none' : gap}` })}
       {open && <Lightbox shots={open.shots} at={open.at} onClose={() => setOpen(null)} />}
     </div>
@@ -146,7 +169,7 @@ function Lightbox({ shots, at, onClose }: { shots: Shot[]; at: number; onClose: 
   }, [go, onClose]);
   const shot = shots[index]!;
   return (
-    <div className="dcms-lightbox" role="dialog" aria-modal="true" aria-label={shot.alt || 'Picture'} onClick={(e) => e.stopPropagation()}>
+    <div className="dcms-lightbox" role="dialog" aria-modal="true" aria-label={shot.alt || 'Picture'}>
       <button type="button" className="dcms-lightbox-scrim" aria-label="Close" tabIndex={-1} onClick={onClose} />
       <img src={shot.src} alt={shot.alt} />
       <button ref={close} type="button" className="dcms-lightbox-close" aria-label="Close" onClick={onClose}>
@@ -296,6 +319,14 @@ export const MEDIA_COMPONENTS: readonly ComponentDefinition[] = [
       { kind: 'url', name: 'url', label: 'Video link', showIf: { prop: 'source', is: ['link'] }, group: 'content', description: 'The address of the video on YouTube or Vimeo — copy it from the browser.' },
       { kind: 'media', name: 'file', label: 'Video file', accept: 'video', showIf: { prop: 'source', is: ['file'] }, group: 'content', description: 'A video from your media library.' },
       { kind: 'media', name: 'poster', label: 'Cover picture', group: 'content', description: 'Shown before the video plays.' },
+      {
+        kind: 'url',
+        name: 'captions',
+        label: 'Captions file (.vtt)',
+        showIf: { prop: 'source', is: ['file'] },
+        group: 'content',
+        description: 'Subtitles for people who cannot hear the video — a WebVTT file’s address. YouTube and Vimeo bring their own.',
+      },
       { kind: 'text', name: 'title', label: 'Title (for screen readers)', maxLength: 120, group: 'content', description: 'Says what the video is, for people who cannot see it.' },
       responsiveSelect('ratio', 'Shape', VIDEO_RATIOS, '16-9', { '16-9': 'Widescreen', '4-3': 'Classic', '1-1': 'Square', '9-16': 'Upright (phone)' }, {
         group: 'style',

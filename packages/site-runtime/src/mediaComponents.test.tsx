@@ -84,5 +84,11 @@ describe('gallery', () => {
     expect(el.querySelector('.dcms-lightbox img')?.getAttribute('alt')).toBe('First');
     await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
     expect(el.querySelector('.dcms-lightbox')).toBeNull();
+    // Keyboard users reach the same viewer: each picture is a button.
+    const first = el.querySelectorAll('img')[0]!;
+    expect(first.getAttribute('role')).toBe('button');
+    expect(first.tabIndex).toBe(0);
+    await act(async () => first.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    expect(el.querySelector('.dcms-lightbox img')?.getAttribute('alt')).toBe('First');
   });
 });
