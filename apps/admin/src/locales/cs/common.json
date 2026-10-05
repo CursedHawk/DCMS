@@ -1684,6 +1684,33 @@
       "choose": "Vyberte ikonu",
       "search": "Hledat ikony",
       "noMatch": "Žádná ikona neodpovídá."
+    },
+    "trail": {
+      "label": "Vybraná část a části kolem ní",
+      "empty": "Kliknutím na stránku něco vyberte — pravým tlačítkem další možnosti, ? pro klávesy."
+    },
+    "menu": {
+      "label": "Akce pro {{name}}",
+      "selectParent": "Vybrat okolní část",
+      "duplicate": "Duplikovat",
+      "moveUp": "Posunout nahoru",
+      "moveDown": "Posunout dolů",
+      "wrapIn": "Obalit: {{name}}",
+      "unwrap": "Rozbalit — ponechat obsah",
+      "copyStyle": "Kopírovat styl",
+      "pasteStyle": "Vložit styl",
+      "makeReusable": "Udělat znovupoužitelné…",
+      "delete": "Smazat"
+    },
+    "shortcuts": {
+      "select": "Výběr",
+      "change": "Úpravy",
+      "rightClick": "Pravé tlačítko",
+      "menu": "Vše, co lze s částí udělat",
+      "move": "Posunout dříve nebo později",
+      "copyPaste": "Kopírovat a vložit část",
+      "style": "Kopírovat a vložit její styl",
+      "undo": "Zpět a znovu"
     }
   },
   "connections": {

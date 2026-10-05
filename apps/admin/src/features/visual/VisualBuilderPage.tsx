@@ -46,6 +46,7 @@ import { ApiError, api } from '../../lib/api';
 import { useAuth } from '../../useAuth';
 import { MediaBridge } from '../builder/panels/MediaBridge';
 import { VisualPalette } from './palette/VisualPalette';
+import { CanvasMenu, CanvasShortcuts, SelectionTrail } from './CanvasTools';
 import { LayersPanel } from '../builder/panels/LayersPanel';
 import { useGeneratedApi } from '../ide/generated/useGeneratedApi';
 import {
@@ -500,15 +501,22 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
         <div className="flex min-w-0 flex-1">
           {/* The canvas stays mounted when hidden: unmounting destroys GrapesJS, and with it the
               undo history and every panel's handle on the editor. */}
-          <div className={cn('min-w-0 flex-1 bg-muted/40', !showCanvas && 'hidden')}>
+          <div className={cn('flex min-w-0 flex-1 flex-col bg-muted/40', !showCanvas && 'hidden')}>
             {target ? (
-              <VisualCanvas
-                target={target}
-                registry={registry}
-                onReady={onEditorReady}
-                onTeardown={() => setEditor(null)}
-                onPageError={setPageError}
-              />
+              <>
+                <SelectionTrail editor={editor} registry={registry} />
+                <div className="min-h-0 flex-1">
+                  <VisualCanvas
+                    target={target}
+                    registry={registry}
+                    onReady={onEditorReady}
+                    onTeardown={() => setEditor(null)}
+                    onPageError={setPageError}
+                  />
+                </div>
+                <CanvasMenu editor={editor} registry={registry} />
+                <CanvasShortcuts editor={editor} />
+              </>
             ) : (
               <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">{t('visual.noPages')}</div>
             )}

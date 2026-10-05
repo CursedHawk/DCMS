@@ -2,6 +2,11 @@ import { useTranslation } from 'react-i18next';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@dcms/ui';
 import { modifierLabel } from './commands';
 
+export interface ShortcutGroup {
+  title: string;
+  rows: { keys: string; label: string }[];
+}
+
 /**
  * What the keyboard does in this editor.
  *
@@ -16,14 +21,17 @@ import { modifierLabel } from './commands';
 export function ShortcutSheet({
   open,
   onOpenChange,
+  groups: own,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Another editor's keys (the visual builder's), in place of the IDE's. */
+  groups?: ShortcutGroup[];
 }) {
   const { t } = useTranslation();
   const mod = modifierLabel();
 
-  const groups: { title: string; rows: { keys: string; label: string }[] }[] = [
+  const groups: ShortcutGroup[] = own ?? [
     {
       title: t('ide.shortcuts.navigate'),
       rows: [

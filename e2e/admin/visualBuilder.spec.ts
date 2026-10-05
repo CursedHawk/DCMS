@@ -550,6 +550,36 @@ test('a section template from the Sections tab lands below the selected band, wh
   await expect(page.getByLabel('Text', { exact: true })).toHaveValue('Simple, honest prices');
 });
 
+test('right-click offers what can be done to a part; wrapping keeps it, inside the new container', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  await frame.locator('[data-dcms-node="go"]').click({ button: 'right' });
+  const menu = page.getByRole('menu', { name: 'Actions for Button' });
+  await expect(menu).toBeVisible();
+  await menu.getByRole('menuitem', { name: 'Wrap in a Card' }).click();
+  await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"type": "dcms.card"');
+  const row = JSON.parse(saved(api, HOME)!).root.slots.default[1];
+  expect(row.slots.default[0].type).toBe('dcms.card');
+  expect(row.slots.default[0].slots.default.map((n: { id: string }) => n.id)).toEqual(['go']);
+  // The breadcrumb shows where the new card sits, and walks up from it.
+  const trail = page.getByRole('navigation', { name: 'Selected part and the parts around it' });
+  await expect(trail.getByRole('button')).toHaveText(['Page', 'Stack', 'Card']);
+  await trail.getByRole('button', { name: 'Stack' }).click();
+  await expect(trail.getByRole('button')).toHaveText(['Page', 'Stack']);
+});
+
+test('the keyboard moves, duplicates and walks up; ? lists the keys', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  await frame.locator('[data-dcms-node="h"] h1').click();
+  await page.keyboard.press('Alt+ArrowDown');
+  await expect.poll(() => JSON.parse(saved(api, HOME) ?? '{"root":{"slots":{"default":[]}}}').root.slots.default.map((n: { id: string }) => n.id), { timeout: 15000 }).toEqual(['row', 'h']);
+  await page.keyboard.press('Control+d');
+  await expect.poll(() => JSON.parse(saved(api, HOME)!).root.slots.default.length, { timeout: 15000 }).toBe(3);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('navigation', { name: 'Selected part and the parts around it' }).getByRole('button')).toHaveText(['Page']);
+  await page.keyboard.press('Shift+Slash');
+  await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toContainText('Move earlier or later');
+});
+
 test('an icon is added from the palette and its symbol picked by sight', async ({ page, api }) => {
   const frame = await open(page, api, twoPages);
   await frame.locator('[data-dcms-node="h"] h1').click();

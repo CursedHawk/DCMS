@@ -4,21 +4,19 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { Button, Input, Label } from '@dcms/ui';
-import { codeContractOf, codeSourcePath, tenantType } from '@dcms/site-runtime';
+import { codeContractOf, codeSourcePath } from '@dcms/site-runtime';
 import { useSelected } from '../builder/panels/useEditorEvent';
 import { useVfs } from '../site-source';
-import { fromGrapes, SLOT_TYPE } from './canvas/tree';
 import {
   componentUsage,
   createCodeComponent,
   createComponent,
   deleteComponent,
   listComponents,
-  replaceNodeInFile,
-  targetPath,
   updateAllInstances,
   versionToEdit,
 } from './documents';
+import { canMakeReusable, makeReusable } from './makeReusable';
 import { sameTarget, useVisual } from './store';
 
 /**
@@ -67,21 +65,8 @@ export function ComponentsPanel({ editor }: { editor: Editor | null }) {
 
   // "Make component": the selected node (and everything in it) becomes v1 of a new component,
   // and the selection is replaced by an instance of it — the author keeps what they had built.
-  const canMake = !!selected && selected.get('type') !== SLOT_TYPE && !!selected.parent() && target?.kind !== 'component';
-  const makeFromSelection = () => {
-    if (!selected) return;
-    const name = window.prompt(t('visual.mine.namePrompt'), selected.getName());
-    if (!name?.trim()) return;
-    if (!target) return;
-    // In the files, not on the canvas: creating a component re-registers the canvas and reloads
-    // it, so a model swapped in now would be thrown away. Pending canvas edits go first.
-    useVisual.getState().flushCanvas();
-    const node = fromGrapes(selected);
-    const result = createComponent(name.trim(), node);
-    if (!result.ok) return void toast.error(result.error);
-    replaceNodeInFile(targetPath(target), node.id, { id: node.id, type: tenantType(result.name!), version: 1 });
-    toast.success(t('visual.mine.made', { label: name.trim() }));
-  };
+  const canMake = canMakeReusable(selected);
+  const makeFromSelection = () => canMake && makeReusable(selected, t);
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">

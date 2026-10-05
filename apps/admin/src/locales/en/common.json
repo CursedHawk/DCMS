@@ -1645,6 +1645,33 @@
       "choose": "Choose an icon",
       "search": "Search icons",
       "noMatch": "No icon matches."
+    },
+    "trail": {
+      "label": "Selected part and the parts around it",
+      "empty": "Click something on the page to select it — right-click for more, ? for keys."
+    },
+    "menu": {
+      "label": "Actions for {{name}}",
+      "selectParent": "Select the part around it",
+      "duplicate": "Duplicate",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "wrapIn": "Wrap in a {{name}}",
+      "unwrap": "Unwrap — keep what is inside",
+      "copyStyle": "Copy style",
+      "pasteStyle": "Paste style",
+      "makeReusable": "Make reusable…",
+      "delete": "Delete"
+    },
+    "shortcuts": {
+      "select": "Selecting",
+      "change": "Changing",
+      "rightClick": "Right-click",
+      "menu": "Everything you can do to a part",
+      "move": "Move earlier or later",
+      "copyPaste": "Copy and paste a part",
+      "style": "Copy and paste its style",
+      "undo": "Undo and redo"
     }
   },
   "connections": {

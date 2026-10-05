@@ -14,6 +14,7 @@ import type { Editor } from 'grapesjs';
 import { useEffect, useRef, useState } from 'react';
 import { useVfs } from '../site-source';
 import { applyTheme, createVisualEditor } from './canvas/editor';
+import { findNode } from './canvas/operations';
 import { registerVisualTypes } from './canvas/types';
 import { ID, fromGrapes, toGrapes } from './canvas/tree';
 import { defaultShell, pruneComponent } from './documents';
@@ -254,16 +255,6 @@ function componentDoc(text: string | undefined): Doc | string {
       return serializeDoc(pruneComponent({ ...(now.success ? now.data : doc), root }));
     },
   };
-}
-
-function findNode(editor: Editor, id: string) {
-  const stack = [...(editor.getWrapper()?.components().models ?? [])];
-  while (stack.length) {
-    const c = stack.pop()!;
-    if (c.get(ID) === id) return c;
-    stack.push(...c.components().models);
-  }
-  return undefined;
 }
 
 function safeJson(text: string | undefined): unknown {

@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import i18n from '../../../lib/i18n';
 import { thumbnailOf } from '../catalog/look';
 import { CanvasNode } from './CanvasNode';
+import { registerCanvasCommands } from './commands';
 import { useVisual } from '../store';
 import { applyLayout, type SlotViewState } from './slots';
 import { EXTRA, ID, PROPS, RAW, SLOT, SLOT_TYPE, UNKNOWN_TYPE, newNodeId, nodeFromStarter, toGrapes } from './tree';
@@ -51,6 +52,7 @@ export function registerVisualTypes(editor: Editor, registry: Registry): void {
   // The selection toolbar's "add a section below": the Sections palette answers it, and the
   // section it inserts goes after the band holding the selection.
   editor.Commands.add(ADD_SECTION, { run: (ed) => ed.trigger(ADD_SECTION) });
+  registerCanvasCommands(editor, registry);
   const addSection = {
     label: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     command: ADD_SECTION,
