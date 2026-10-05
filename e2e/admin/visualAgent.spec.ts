@@ -191,9 +191,9 @@ test('the agent builds the events slice: kit, card component, collection, shell 
 
   // The canvas draws the card from the first gig; on mobile the card stacks.
   await expect(frame.getByText('Summer Jam')).toBeVisible({ timeout: 15000 });
-  await page.getByTitle('Mobile').click();
+  await page.getByTitle('Mobile', { exact: true }).click();
   await expect(frame.locator('[data-dcms-type="tenant.event-card"] .dcms-stack').first()).toHaveCSS('flex-direction', 'column');
-  await page.getByTitle('Desktop').click();
+  await page.getByTitle('Desktop', { exact: true }).click();
 
   // The site, as a visitor gets it: every gig, the shell's footer, and a card's link to its page.
   await page.getByRole('group', { name: 'View' }).getByTitle('Preview').click();

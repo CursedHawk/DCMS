@@ -11,10 +11,20 @@ import { NAME, isInternalPath, isSafeExternalHref } from './ids';
  * props exactly the way a built-in does.
  */
 
+/**
+ * Where a setting sits in the inspector. `content` is what the thing says or shows, `style` how
+ * it looks, `layout` how it arranges itself or its children, `behaviour` what it does, `data`
+ * where its content comes from.
+ */
+export const PROP_GROUPS = ['content', 'style', 'layout', 'behaviour', 'data'] as const;
+export type PropGroup = (typeof PROP_GROUPS)[number];
+
 const base = {
   name: z.string().regex(NAME),
   label: z.string().min(1).max(60),
+  /** One or two plain sentences: what this setting changes. The inspector's help text. */
   description: z.string().max(300).optional(),
+  group: z.enum(PROP_GROUPS).optional(),
   required: z.boolean().optional(),
   /** Whether tablet and mobile may override the desktop value. */
   responsive: z.boolean().optional(),

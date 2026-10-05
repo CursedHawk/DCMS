@@ -1,6 +1,7 @@
 import { NODE_CLASS, canPlace, defaultProps, type Registry } from '@dcms/site-runtime';
 import type { Component, Editor } from 'grapesjs';
 import { createRoot, type Root } from 'react-dom/client';
+import { thumbnailOf } from '../catalog/look';
 import { CanvasNode } from './CanvasNode';
 import { useVisual } from '../store';
 import { applyLayout, type SlotViewState } from './slots';
@@ -162,8 +163,11 @@ export function registerVisualTypes(editor: Editor, registry: Registry): void {
       label: definition.label,
       category: definition.category,
       media: BLOCK_ICON,
+      // The palette's wireframe and hover text (BlocksPanel reads `thumbnail` and `docs`).
+      thumbnail: thumbnailOf(definition),
+      docs: definition.description,
       content: { type: definition.type },
-    });
+    } as Parameters<Editor['Blocks']['add']>[1]);
   }
 }
 

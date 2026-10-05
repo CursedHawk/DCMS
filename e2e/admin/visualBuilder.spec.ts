@@ -219,7 +219,7 @@ test('the app shell draws the site’s menu and saves into app.json', async ({ p
 
   await frame.locator('[data-dcms-type="dcms.section"]').first().click({ position: { x: 5, y: 5 } });
   await page.getByRole('combobox', { name: 'Vertical spacing' }).click();
-  await page.getByRole('option', { name: 'lg', exact: true }).click();
+  await page.getByRole('option', { name: 'Large', exact: true }).click();
 
   await expect.poll(() => saved(api, 'dcms/app.json') ?? '', { timeout: 15000 }).toContain('"shell"');
   const app = JSON.parse(saved(api, 'dcms/app.json')!);
@@ -233,9 +233,9 @@ test('on Tablet an edit is an override for that size; desktop keeps its value', 
   await frame.locator('[data-dcms-node="row"] .dcms-slot').first().click({ position: { x: 600, y: 5 } });
   await expect(page.getByText('Stack', { exact: true }).first()).toBeVisible();
 
-  await page.getByTitle('Tablet').click();
+  await page.getByTitle('Tablet', { exact: true }).click();
   await page.getByRole('combobox', { name: 'Direction' }).click();
-  await page.getByRole('option', { name: 'vertical', exact: true }).click();
+  await page.getByRole('option', { name: 'One under another', exact: true }).click();
 
   await expect.poll(() => saved(api, 'dcms/pages/home.json') ?? '', { timeout: 15000 }).toContain('"tablet"');
   const row = JSON.parse(saved(api, 'dcms/pages/home.json')!).root.slots.default[1];

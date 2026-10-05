@@ -47,7 +47,7 @@ describe('checkVisualSite', () => {
     const out = messages({ 'dcms/app.json': app(), 'dcms/pages/home.json': page('home', [grid, text]) });
     expect(out).toContain('error: Grid › Columns: "9" is not an allowed value.');
     expect(out).toContain('warning: Grid has no setting “colour”; it is ignored.');
-    expect(out).toContain('error: Grid › Gap on tablet: "huge" is not an allowed value.');
+    expect(out).toContain('error: Grid › Space between on tablet: "huge" is not an allowed value.');
     expect(out).toContain('warning: Text › “tone” cannot differ on mobile; the override is ignored.');
   });
 

@@ -68,7 +68,7 @@ describe('Mode D agent tools', () => {
 
   it('refuses a prop value the component does not allow, and an override for a prop that cannot differ', async () => {
     await run('insert_node', { doc: 'page:home', parent: 'root', slot: 'default', node: { id: 's', type: 'dcms.stack' } });
-    expect((await run('set_props', { doc: 'page:home', node: 's', props: { gap: 'huge' } })).content).toBe('Stack › Gap: "huge" is not an allowed value.');
+    expect((await run('set_props', { doc: 'page:home', node: 's', props: { gap: 'huge' } })).content).toBe('Stack › Space between: "huge" is not an allowed value.');
     expect((await run('set_props', { doc: 'page:home', node: 's', props: { wrap: true }, device: 'mobile' })).content).toBe('Stack › wrap cannot differ on mobile.');
     expect((await run('set_props', { doc: 'page:home', node: 's', props: { direction: 'horizontal' }, device: 'mobile' })).isError).toBeFalsy();
     expect(page('home').root.slots.default[0].responsive).toEqual({ mobile: { direction: 'horizontal' } });

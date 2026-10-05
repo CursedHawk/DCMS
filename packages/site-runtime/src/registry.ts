@@ -60,8 +60,11 @@ export interface ComponentDefinition {
   /** Bumped on any change to props or slots that an existing instance could notice. */
   version: number;
   label: string;
+  /** What it is for, in a sentence an author with no web background understands. */
   description?: string;
   category: string;
+  /** Other words people search for it by ("photo" for Image, "columns" for Grid). */
+  keywords?: readonly string[];
   icon?: string;
   component: ComponentType<ComponentRenderProps<any>>;
   props: readonly PropDefinition[];
