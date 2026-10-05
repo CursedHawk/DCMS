@@ -1,7 +1,7 @@
 import { CHOICE_FIELDS, fieldOptions } from './dataComponents';
 import { EMBED_SERVICES, embedUrl, videoTarget } from './mediaComponents';
 import { codeContractOf, codeContractPath, codeDefinitions, codeSourceOf, codeSourcePath, readCodeContracts, type CodeContract } from './code';
-import { BUILTIN_COMPONENTS } from './components';
+import { BUILTIN_COMPONENTS, anchorId } from './components';
 import { BINDABLE, isConnectionSource, sourceSchema, type Source } from './data';
 import { appSchema, pageSchema, walk, type App, type NavItem, type Node, type Page } from './document';
 import { isInternalPath } from './ids';
@@ -355,6 +355,15 @@ export function checkVisualSite(files: Readonly<Record<string, string>>, given?:
     const scope: Scope = page.data.data ? { kind: 'source', key: sourceKey(page.data.data.source) } : { kind: 'none' };
     checkTree(page.data.root, path, 'page', registry, out, scope, content);
     checkState(page.data.root, path, page.data.state ?? {}, out);
+    // Two sections answering to one anchor: a link to it lands on the first only.
+    const anchors = new Map<string, number>();
+    for (const node of walk(page.data.root)) {
+      const anchor = node.type === 'dcms.section' ? anchorId(node.props?.anchor) : undefined;
+      if (anchor) anchors.set(anchor, (anchors.get(anchor) ?? 0) + 1);
+    }
+    for (const [anchor, count] of anchors) {
+      if (count > 1) out.push({ severity: 'warning', file: path, message: `${count} sections use the anchor “${anchor}”; a link to /#${anchor} reaches only the first.` });
+    }
     if (page.data.data && content && !content.has(sourceKey(page.data.data.source))) {
       out.push({ severity: 'error', file: path, message: `It shows one item of ${sourceKey(page.data.data.source)}, which this site’s plugins do not provide.` });
     }

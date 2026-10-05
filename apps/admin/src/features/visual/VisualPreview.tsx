@@ -1,4 +1,4 @@
-import { DataClientContext, SiteContext, SiteStyles, loadDocuments, siteRoutes } from '@dcms/site-runtime';
+import { DataClientContext, SiteContext, SiteStyles, loadDocuments, routeTitles, siteRoutes } from '@dcms/site-runtime';
 import { useEffect, useMemo, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { RouterProvider, createMemoryRouter } from 'react-router';
@@ -51,7 +51,7 @@ export function VisualPreview({ initialPath, width }: { initialPath: string; wid
     const router = createMemoryRouter(siteRoutes(documents, registry), { initialEntries: [initialPath] });
     root.current.render(
       <DataClientContext.Provider value={dataClient}>
-        <SiteContext.Provider value={{ app: documents.app }}>
+        <SiteContext.Provider value={{ app: documents.app, titles: routeTitles(documents) }}>
           <SiteStyles theme={documents.theme} />
           <RouterProvider router={router} />
         </SiteContext.Provider>

@@ -6,6 +6,7 @@ export * from './contentComponents';
 export * from './icons';
 export * from './interactiveComponents';
 export * from './mediaComponents';
+export * from './navComponents';
 export * from './data';
 export * from './dataComponents';
 export * from './document';

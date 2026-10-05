@@ -569,3 +569,22 @@ test('an accordion arrives with questions open on the canvas; on the site they o
   await expect(preview.getByText('What it costs.')).toBeVisible();
   await expect(preview.getByText('What it is, in a sentence or two.')).toBeHidden();
 });
+
+test('on a phone the menu folds behind a button that opens it; the current page is marked', async ({ page, api }) => {
+  const app = JSON.parse(twoPages['dcms/app.json']);
+  app.shell = { id: 'sh', type: 'dcms.page', slots: { default: [{ id: 'nav', type: 'dcms.nav' }, { id: 'out', type: 'dcms.outlet' }] } };
+  await open(page, api, { ...twoPages, 'dcms/app.json': doc(app) });
+  await page.getByTitle('Mobile', { exact: true }).click();
+  await page.getByRole('group', { name: 'View' }).getByTitle('Preview').click();
+  const preview = page.frameLocator('iframe[title="Preview"]');
+  const menu = preview.getByRole('button', { name: 'Menu' });
+  await expect(menu).toHaveAttribute('aria-expanded', 'false');
+  await expect(preview.getByRole('link', { name: 'About', exact: true })).toBeHidden();
+  await menu.click();
+  await preview.getByRole('link', { name: 'About', exact: true }).click();
+  await expect(preview.getByRole('heading', { name: 'About us' })).toBeVisible();
+  // Following a link closes the menu; reopened, it shows where the visitor is.
+  await expect(menu).toHaveAttribute('aria-expanded', 'false');
+  await menu.click();
+  await expect(preview.getByRole('link', { name: 'About', exact: true })).toHaveAttribute('aria-current', 'page');
+});

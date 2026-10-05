@@ -1,6 +1,6 @@
 import { renderToString } from 'react-dom/server';
 import { RouterProvider, createMemoryRouter } from 'react-router';
-import { SiteStyles, registryFor, siteRoutes, type SiteDocuments } from './app';
+import { SiteStyles, registryFor, routeTitles, siteRoutes, type SiteDocuments } from './app';
 import { SiteContext } from './site';
 import { routeFileName } from './vite';
 
@@ -20,7 +20,7 @@ import { routeFileName } from './vite';
 export function renderRoute(documents: SiteDocuments, path: string): string {
   const router = createMemoryRouter(siteRoutes(documents, registryFor(documents)), { initialEntries: [path] });
   return renderToString(
-    <SiteContext.Provider value={{ app: documents.app }}>
+    <SiteContext.Provider value={{ app: documents.app, titles: routeTitles(documents) }}>
       <SiteStyles theme={documents.theme} />
       <RouterProvider router={router} />
     </SiteContext.Provider>,

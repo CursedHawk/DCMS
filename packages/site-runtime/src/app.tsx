@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { Outlet, RouterProvider, createBrowserRouter, useParams, type RouteObject } from 'react-router';
+import { Outlet, RouterProvider, createBrowserRouter, useLocation, useParams, type RouteObject } from 'react-router';
 import { codeDefinitions, readCodeContracts, type CodeContract, type CodeModules } from './code';
 import { BUILTIN_COMPONENTS } from './components';
 import { appSchema, pageSchema, type App, type Page } from './document';
@@ -70,6 +70,11 @@ export function loadDocuments(modules: Readonly<Record<string, unknown>>, codeMo
 }
 
 /** The registry a site renders with: the built-ins and the site's own components. */
+/** Each route's page title by path, for breadcrumbs. */
+export function routeTitles(documents: SiteDocuments): Record<string, string> {
+  return Object.fromEntries(documents.app.routes.flatMap((r) => (documents.pages[r.page] ? [[r.path, documents.pages[r.page]!.title]] : [])));
+}
+
 export function registryFor(documents: SiteDocuments): Registry {
   return siteRegistry([...BUILTIN_COMPONENTS, ...codeDefinitions(documents.code, documents.codeModules)], documents.components).registry;
 }
@@ -103,7 +108,7 @@ export function DcmsApp({ documents, registry, dataClient }: { documents: SiteDo
     for (const problem of documents.problems) console.error(`dcms: ${problem}`);
   }, [documents]);
   const site = (
-    <SiteContext.Provider value={{ app: documents.app }}>
+    <SiteContext.Provider value={{ app: documents.app, titles: routeTitles(documents) }}>
       <SiteStyles theme={documents.theme} />
       <RouterProvider router={router} />
     </SiteContext.Provider>
@@ -128,6 +133,12 @@ function RoutePage({ page, app, registry }: { page: Page | undefined; app: App; 
   useEffect(() => {
     if (page && (!page.data || scope)) applyHead(document, app, page, scope);
   }, [app, page, params, scope]);
+
+  // A link to /#pricing lands on the section with that anchor, once the page has drawn it.
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash.length > 1) document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [hash, scope]);
 
   if (!page) return <NotFound />;
   const stateScope = { pageId: page.id, defaults: page.state ?? {} };

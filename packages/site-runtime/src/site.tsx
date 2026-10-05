@@ -11,6 +11,8 @@ import { useRenderMode } from './renderMode';
  */
 export interface SiteInfo {
   app: App | null;
+  /** Each route's page title, by path — for breadcrumbs. Absent on the canvas. */
+  titles?: Readonly<Record<string, string>>;
 }
 
 export const SiteContext = createContext<SiteInfo>({ app: null });

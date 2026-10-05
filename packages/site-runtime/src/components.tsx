@@ -1,12 +1,13 @@
-import { useContext, type ReactNode } from 'react';
-import { Outlet, useInRouterContext } from 'react-router';
+import { useContext, useState, type ReactNode } from 'react';
+import { Outlet, useInRouterContext, useLocation } from 'react-router';
 import type { NavItem } from './document';
 import { choice, responsiveSelect, select, text, variants, type Props } from './kit';
 import { createRegistry, type ComponentDefinition, type ComponentRenderProps } from './registry';
 import { useRenderMode } from './renderMode';
-import { CONTENT_COMPONENTS } from './contentComponents';
+import { CONTENT_COMPONENTS, IconGlyph } from './contentComponents';
 import { INTERACTIVE_COMPONENTS } from './interactiveComponents';
 import { MEDIA_COMPONENTS } from './mediaComponents';
+import { NAV_COMPONENTS } from './navComponents';
 import { Collection, FIELD_TYPES, Form, FormField, Modal, RichText, runAction } from './dataComponents';
 import { SiteLink, useSite } from './site';
 import { PageStateContext } from './state';
@@ -39,13 +40,19 @@ function Page({ slot }: ComponentRenderProps) {
 const BACKGROUNDS = ['none', 'alt', 'soft', 'inverse'] as const;
 const SECTION_SPACES = ['none', 'sm', 'md', 'lg'] as const;
 
+/** A section's anchor as an element id: lower-case letters, digits and dashes, or none. */
+export function anchorId(value: unknown): string | undefined {
+  const id = typeof value === 'string' ? value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') : '';
+  return id || undefined;
+}
+
 function Section({ props, responsive, slot }: ComponentRenderProps<Props>) {
   const v = variants(props, responsive);
   const bg = choice(props.background, BACKGROUNDS, 'none');
   const py = v('spacing', SECTION_SPACES, 'md', (x) => `dcms-py-${x}`);
   const width = v('width', WIDTHS, 'normal', (x) => `dcms-width-${x}`);
   return (
-    <section className={`dcms-section dcms-bg-${bg} ${py}`}>
+    <section id={anchorId(props.anchor)} className={`dcms-section dcms-bg-${bg} ${py}`}>
       {slot('default', { className: `dcms-width ${width} dcms-flow` })}
     </section>
   );
@@ -180,36 +187,60 @@ function PageOutlet() {
 
 const NAV_LAYOUTS = ['horizontal', 'vertical'] as const;
 
-function NavList({ items }: { items: readonly NavItem[] }) {
+function NavList({ items, current, onFollow }: { items: readonly NavItem[]; current: string | null; onFollow?: () => void }) {
   return (
     <ul className="dcms-nav-list">
       {items.map((item, i) => (
         <li key={`${i}:${item.to}`}>
-          <SiteLink to={item.to} className="dcms-nav-link">
+          <SiteLink to={item.to} className="dcms-nav-link" aria-current={current !== null && item.to === current ? 'page' : undefined} onClick={onFollow}>
             {item.label}
           </SiteLink>
-          {item.children?.length ? <NavList items={item.children} /> : null}
+          {item.children?.length ? <NavList items={item.children} current={current} onFollow={onFollow} /> : null}
         </li>
       ))}
     </ul>
   );
 }
 
-/** One of the app's named menus (`app.json` → `navigation`), so every page shares it. */
-function Navigation({ props }: ComponentRenderProps<Props>) {
+function Navigation(props: ComponentRenderProps<Props>) {
+  // Reading the router's location is only possible inside the router, so that half is split off.
+  return useInRouterContext() ? <RoutedNavigation {...props} /> : <NavigationView {...props} current={null} />;
+}
+
+function RoutedNavigation(props: ComponentRenderProps<Props>) {
+  return <NavigationView {...props} current={useLocation().pathname} />;
+}
+
+function NavigationView({ nodeId, props, current }: ComponentRenderProps<Props> & { current: string | null }) {
   const { app } = useSite();
   const mode = useRenderMode();
+  const [open, setOpen] = useState(false);
   const menu = text(props.menu, 'main');
   const layout = choice(props.layout, NAV_LAYOUTS, 'horizontal');
+  const collapse = layout === 'horizontal' && choice(props.mobile, ['menu', 'wrap'] as const, 'menu') === 'menu';
   const items = app?.navigation?.[menu] ?? [];
   if (!items.length) return mode === 'edit' ? <div className="dcms-outlet-placeholder">Menu “{menu}” is empty</div> : null;
+  const listId = `dcms-nav-${nodeId}`;
   return (
-    <nav className={`dcms-nav dcms-nav-${layout}`} aria-label={menu}>
-      <NavList items={items} />
+    <nav className={`dcms-nav dcms-nav-${layout}${collapse ? ' dcms-nav-collapsible' : ''}${open ? ' dcms-nav-open' : ''}`} aria-label={menu}>
+      {collapse && (
+        <button
+          type="button"
+          className="dcms-nav-toggle"
+          aria-expanded={open}
+          aria-controls={listId}
+          onClick={() => mode === 'live' && setOpen(!open)}
+        >
+          <IconGlyph name={open ? 'x' : 'menu'} />
+          <span>{text(props.menuLabel, 'Menu')}</span>
+        </button>
+      )}
+      <div id={listId} className="dcms-nav-panel">
+        <NavList items={items} current={current} onFollow={() => setOpen(false)} />
+      </div>
     </nav>
   );
 }
-
 // ---------------------------------------------------------------------------
 
 const alignProp = responsiveSelect('align', 'Alignment', ALIGNS, 'start', ALIGN_LABELS, {
@@ -264,6 +295,21 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
         group: 'layout',
         description: 'Links side by side, as in a header, or one under another, as in a footer or sidebar.',
       }),
+      select('mobile', 'On phones', ['menu', 'wrap'] as const, 'menu', { menu: 'Behind a menu button', wrap: 'Links wrap onto lines' }, {
+        group: 'behaviour',
+        description: 'A row of links rarely fits a phone: fold it behind a menu button, or let it wrap.',
+        showIf: { prop: 'layout', is: ['horizontal'] },
+      }),
+      {
+        kind: 'text',
+        name: 'menuLabel',
+        label: 'Menu button label',
+        default: 'Menu',
+        maxLength: 30,
+        group: 'content',
+        description: 'The word next to the menu button on phones.',
+        showIf: { prop: 'mobile', is: ['menu'] },
+      },
     ],
   },
   {
@@ -287,6 +333,14 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
         group: 'layout',
         description: 'How wide the content may grow. The background always spans the whole page.',
       }),
+      {
+        kind: 'text',
+        name: 'anchor',
+        label: 'Anchor name',
+        maxLength: 48,
+        group: 'behaviour',
+        description: 'A short name (e.g. “pricing”) so menus and buttons can link straight to this section: /#pricing.',
+      },
     ],
     slots: [{ name: 'default', label: 'Content' }],
   },
@@ -781,6 +835,7 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
   ...CONTENT_COMPONENTS,
   ...MEDIA_COMPONENTS,
   ...INTERACTIVE_COMPONENTS,
+  ...NAV_COMPONENTS,
 ];
 
 export const builtinRegistry = createRegistry(BUILTIN_COMPONENTS);

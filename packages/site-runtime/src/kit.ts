@@ -35,6 +35,8 @@ export function text(value: unknown, fallback = ''): string {
 export interface Meta {
   group: PropGroup;
   description: string;
+  /** Shown only while another setting has one of these values (see PropDefinition.showIf). */
+  showIf?: { prop: string; is: string[] };
 }
 
 /**

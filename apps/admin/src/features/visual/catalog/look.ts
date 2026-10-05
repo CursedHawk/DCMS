@@ -2,9 +2,11 @@ import { thumbnail } from '@dcms/gjs-blocks';
 import { CODE_PREFIX, type ComponentDefinition } from '@dcms/site-runtime';
 import {
   AppWindow,
+  ChevronsRight,
   ChevronsUpDown,
   CircleHelp,
   GalleryHorizontal,
+  PanelBottom,
   PanelTop,
   RectangleHorizontal,
   Share2,
@@ -87,6 +89,8 @@ export const COMPONENT_LOOKS: Readonly<Record<string, ComponentLook>> = {
   'dcms.carousel': { icon: GalleryHorizontal, archetype: 'carousel' },
   'dcms.countdown': { icon: Timer, archetype: 'stats' },
   'dcms.social': { icon: Share2, archetype: 'logos' },
+  'dcms.footer': { icon: PanelBottom, archetype: 'footer' },
+  'dcms.breadcrumbs': { icon: ChevronsRight, archetype: 'navbar' },
 };
 
 const TENANT: ComponentLook = { icon: Puzzle, archetype: 'card' };
