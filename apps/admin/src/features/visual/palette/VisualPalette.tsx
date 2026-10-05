@@ -150,7 +150,6 @@ export function VisualPalette({ editor }: { editor: Editor | null }) {
                     key={def.type}
                     type="button"
                     title={def.description}
-                    aria-description={def.description}
                     draggable={!!b && !!payload}
                     onDragStart={(e) => b && payload?.dragStart(b, e.nativeEvent)}
                     onDrag={(e) => payload?.drag(e.nativeEvent)}
