@@ -95,8 +95,8 @@ test('a component dragged from the palette lands in the slot it is dropped on', 
   const frame = page.frameLocator('iframe.gjs-frame');
   await expect(frame.locator('[data-dcms-type="dcms.heading"]')).toBeVisible({ timeout: 30000 });
 
-  // Search, as an author would: the palette opens its first sections only.
-  await page.getByPlaceholder('Search blocks').fill('Image');
+  // Search, as an author would — by what they want ("photo"), not by the component's name.
+  await page.getByPlaceholder('Search components').fill('photo');
   const block = page.getByText('Image', { exact: true }).first();
   const target = frame.locator('.dcms-node[data-dcms-node="hero"] .dcms-slot').first();
   await dragWithMouse(page, block, target);
@@ -505,4 +505,16 @@ test('the inspector groups settings and shows short choices whole: swatches, seg
 
   await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"background": "inverse"');
   expect(saved(api, HOME)).toContain('"align": "center"');
+});
+
+test('clicking a palette card adds it after the selection and selects it', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  await frame.locator('[data-dcms-node="h"] h1').click();
+  await page.getByRole('button', { name: 'Text', exact: true }).click();
+  // Right after the heading, selected, with its default copy.
+  await expect(frame.locator('[data-dcms-type="dcms.text"]')).toHaveText('Write something here.');
+  await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"type": "dcms.text"');
+  const home = JSON.parse(saved(api, HOME)!);
+  expect(home.root.slots.default.map((n: { type: string }) => n.type)).toEqual(['dcms.heading', 'dcms.text', 'dcms.stack']);
+  await expect(page.getByRole('combobox', { name: 'Tone' }).or(page.getByRole('radiogroup', { name: 'Tone' }))).toBeVisible();
 });

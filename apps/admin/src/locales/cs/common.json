@@ -1660,7 +1660,21 @@
       "behaviour": "Chování",
       "data": "Data"
     },
-    "helpFor": "Co dělá „{{prop}}“"
+    "helpFor": "Co dělá „{{prop}}“",
+    "palette": {
+      "search": "Hledat komponenty",
+      "kinds": "Druhy komponent",
+      "elements": "Prvky",
+      "mine": "Moje",
+      "developer": "Vývojářské",
+      "noMatch": "Nic neodpovídá „{{query}}“.",
+      "none": {
+        "elements": "Sem není co přidat.",
+        "mine": "Vaše vlastní komponenty se tu objeví, až nějakou vytvoříte.",
+        "developer": "Vývojářské komponenty se tu objeví, až nějakou přidáte."
+      },
+      "hint": "Kartu přetáhněte na stránku, nebo na ni klikněte a přidá se za výběr."
+    }
   },
   "connections": {
     "title": "Propojení",

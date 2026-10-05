@@ -1621,7 +1621,21 @@
       "behaviour": "Behaviour",
       "data": "Data"
     },
-    "helpFor": "What “{{prop}}” does"
+    "helpFor": "What “{{prop}}” does",
+    "palette": {
+      "search": "Search components",
+      "kinds": "Kinds of component",
+      "elements": "Elements",
+      "mine": "Mine",
+      "developer": "Developer",
+      "noMatch": "Nothing matches “{{query}}”.",
+      "none": {
+        "elements": "No components to add here.",
+        "mine": "Your own components appear here once you make one.",
+        "developer": "Developer components appear here once you add one."
+      },
+      "hint": "Drag a card onto the page, or click it to add it after what is selected."
+    }
   },
   "connections": {
     "title": "Connections",

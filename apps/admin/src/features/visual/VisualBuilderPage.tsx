@@ -45,7 +45,7 @@ import { Button, CenteredSpinner, Dialog, DialogContent, DialogTitle, cn } from 
 import { ApiError, api } from '../../lib/api';
 import { useAuth } from '../../useAuth';
 import { MediaBridge } from '../builder/panels/MediaBridge';
-import { BlocksPanel } from '../builder/panels/BlocksPanel';
+import { VisualPalette } from './palette/VisualPalette';
 import { LayersPanel } from '../builder/panels/LayersPanel';
 import { useGeneratedApi } from '../ide/generated/useGeneratedApi';
 import {
@@ -462,7 +462,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
           <div className="min-w-0 flex-1 overflow-hidden">
             {/* The palette stays mounted: its payload arrives once, at editor creation. */}
             <div className={cn('h-full overflow-y-auto', sidebar !== 'components' && 'hidden')}>
-              <BlocksPanel editor={editor} />
+              <VisualPalette editor={editor} />
             </div>
             {sidebar === 'mine' && <ComponentsPanel editor={editor} />}
             {sidebar === 'layers' && <LayersPanel editor={editor} />}
