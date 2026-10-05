@@ -1520,7 +1520,8 @@
       "siteSeo": "Whole site",
       "titleTemplate": "Title pattern (%s is the page title)",
       "locale": "Language (dates, <html lang>)",
-      "defaultDescription": "Default description"
+      "defaultDescription": "Default description",
+      "startWith": "Start with"
     },
     "theme": {
       "title": "Theme",

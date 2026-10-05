@@ -59,6 +59,16 @@ describe('Mode D agent tools', () => {
     expect((await validateVisualSite()).ok).toBe(true);
   });
 
+  it('inserts a section template as a band of the page, and the site stays valid', async () => {
+    const list = JSON.parse((await run('list_section_templates', {})).content as string);
+    expect(list.map((t: { id: string }) => t.id)).toContain('faq');
+    const out = await run('insert_section', { doc: 'page:home', template: 'faq', index: 0 });
+    expect(out.content).toMatch(/^Inserted the FAQ section as n[a-z0-9]{8}\.$/);
+    expect(page('home').root.slots.default[0].type).toBe('dcms.section');
+    expect((await validateVisualSite()).ok).toBe(true);
+    expect((await run('insert_section', { doc: 'page:home', template: 'nope' })).isError).toBe(true);
+  });
+
   it('refuses what the canvas would refuse, with the same reason', async () => {
     const out = await run('insert_node', { doc: 'page:home', parent: 'root', slot: 'default', node: { type: 'dcms.page' } });
     expect(out).toMatchObject({ isError: true, content: 'Page cannot be placed inside another component.' });

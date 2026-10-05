@@ -4,6 +4,7 @@ import { createElement } from 'react';
 import { RenderModeContext, RenderNode } from '@dcms/site-runtime';
 import { describe, expect, it } from 'vitest';
 import { nodeFromStarter } from '../canvas/tree';
+import { PAGE_TEMPLATES, pageBody } from './pages';
 import { SECTION_TEMPLATES } from './sections';
 
 const json = (v: unknown) => `${JSON.stringify(v)}\n`;
@@ -37,5 +38,13 @@ describe('the section library', () => {
         expect(() => renderToStaticMarkup(createElement(RenderModeContext.Provider, { value: mode }, createElement(RenderNode, { node: tree, registry: builtinRegistry }))), `${t.id} ${mode}`).not.toThrow();
       }
     }
+  });
+});
+
+describe('page templates', () => {
+  it('are made of sections that exist', () => {
+    const ids = new Set(SECTION_TEMPLATES.map((t) => t.id));
+    for (const p of PAGE_TEMPLATES) for (const s of p.sections) expect(ids.has(s), `${p.id}: ${s}`).toBe(true);
+    expect(pageBody(PAGE_TEMPLATES.find((p) => p.id === 'about')!, builtinRegistry).map((n) => n.type)).toEqual(Array(5).fill('dcms.section'));
   });
 });

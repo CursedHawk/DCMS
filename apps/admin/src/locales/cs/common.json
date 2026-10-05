@@ -1552,7 +1552,8 @@
       "siteSeo": "Celý web",
       "titleTemplate": "Vzor titulku (%s je titulek stránky)",
       "locale": "Jazyk (data, <html lang>)",
-      "defaultDescription": "Výchozí popis"
+      "defaultDescription": "Výchozí popis",
+      "startWith": "Začít s"
     },
     "theme": {
       "title": "Vzhled",

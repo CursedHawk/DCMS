@@ -33,10 +33,11 @@ import type { TenantToolContext } from '../../ide/agent/tenantTools';
 import { api } from '../../../lib/api';
 import { type ApiConnection } from '../../connections/api';
 import { useVfs } from '../../site-source/vfs';
-import { newNodeId } from '../canvas/tree';
+import { newNodeId, nodeFromStarter } from '../canvas/tree';
 import { defaultShell, migrateInstance, pageIdFor, pruneComponent, registryOf } from '../documents';
 import { serializeDoc } from '../starter';
 import { useVisual } from '../store';
+import { SECTION_TEMPLATES } from '../templates/sections';
 
 /**
  * The Mode D agent's tools (P5): structured edits of the site's documents, never free-form text.
@@ -476,6 +477,52 @@ export const VISUAL_TOOLS: Tool[] = [
       });
       if ('error' in result) return err(result.error);
       return save(ctx, doc, result.root, registry, `Inserted ${parsed.type} as ${inserted}.`);
+    },
+  },
+  {
+    name: 'list_section_templates',
+    description:
+      'The section library: finished bands of a page (heroes, features, pricing, FAQ, testimonials, contact, footer…) built from ordinary components with sample copy. insert_section places one; then adjust its texts and pictures with set_props. Faster and better laid out than building a common section node by node.',
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+    describe: () => 'list section templates',
+    run: async () => ({ content: JSON.stringify(SECTION_TEMPLATES.map((t) => ({ id: t.id, label: t.label, category: t.category, description: t.description }))) }),
+  },
+  {
+    name: 'insert_section',
+    description:
+      'Insert a section template (an id from list_section_templates) as a band of a page — into the document root’s default slot. Returns the new section’s id; inspect_document shows its parts, which are then edited like any others.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        doc: DOC,
+        template: { type: 'string', description: 'template id, e.g. "hero-centred", "pricing", "faq"' },
+        index: { type: 'number', description: 'position among the page’s bands; omit to append' },
+      },
+      required: ['doc', 'template'],
+      additionalProperties: false,
+    },
+    risk: 'safe',
+    summarize: (input) => `Add the “${str(input, 'template')}” section to ${str(input, 'doc')}`,
+    describe: (input) => `added the ${str(input, 'template')} section to ${str(input, 'doc')}`,
+    run: async (input, ctx) => {
+      const template = SECTION_TEMPLATES.find((t) => t.id === str(input, 'template'));
+      if (!template) return err(`There is no section template “${str(input, 'template')}”; list_section_templates has them.`);
+      const doc = loadDoc(str(input, 'doc'));
+      if (typeof doc === 'string') return err(doc);
+      const registry = registryFromFiles();
+      let inserted = '';
+      const result = edit(doc.root, (root) => {
+        const list = (root.slots ??= {}).default ?? [];
+        const placement = canPlace(registry, root.type, 'default', template.tree.type, list.length);
+        if (!placement.ok) return placement.reason;
+        const node = nodeFromStarter(template.tree, registry);
+        inserted = node.id;
+        const index = typeof input.index === 'number' ? Math.max(0, Math.min(list.length, Math.round(input.index))) : list.length;
+        root.slots.default = [...list.slice(0, index), node, ...list.slice(index)];
+        return null;
+      });
+      if ('error' in result) return err(result.error);
+      return save(ctx, doc, result.root, registry, `Inserted the ${template.label} section as ${inserted}.`);
     },
   },
   {

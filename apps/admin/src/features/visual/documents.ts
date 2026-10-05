@@ -100,7 +100,7 @@ export function pageIdFor(title: string, taken: ReadonlySet<string>): string {
 }
 
 /** A new page, its route, and (optionally) an entry in the main menu — or why not. */
-export function createPage(title: string, path: string, addToMenu: boolean): Result & { id?: string } {
+export function createPage(title: string, path: string, addToMenu: boolean, body: Node[] = []): Result & { id?: string } {
   const app = readApp();
   if (!app) return { ok: false, error: 'dcms/app.json cannot be read.' };
   const taken = new Set(Object.keys(files()).map((p) => /^dcms\/pages\/(.+)\.json$/.exec(p)?.[1]).filter(Boolean) as string[]);
@@ -123,7 +123,7 @@ export function createPage(title: string, path: string, addToMenu: boolean): Res
     schemaVersion: 1,
     id,
     title,
-    root: { id: newNodeId(), type: 'dcms.page', slots: { default: [] } },
+    root: { id: newNodeId(), type: 'dcms.page', slots: { default: body } },
   };
   useVfs.getState().writeFile(pagePath(id), serializeDoc(page));
   return { ok: true, id };

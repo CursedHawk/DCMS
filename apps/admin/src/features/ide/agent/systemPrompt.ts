@@ -133,7 +133,7 @@ function visualPrompt(ctx: SystemPromptContext): string {
 - When the author says “this”, “here” or “the selected …”, call inspect_selected: it is what they have selected on the canvas.
 - Build with the tools, never by writing files: insert_node, move_node, remove_node, duplicate_node, set_props, bind_props, set_action, create_page, update_page, create_component, expose_setting, expose_slot. They refuse what the canvas would refuse, and say why — read the reason and adjust.
 - list_component_types is the catalogue: exact type names, prop names, allowed values, which slots accept what. Use only what it lists; invent nothing.
-- Build a whole section in one insert_node call (a node with its children) rather than one node at a time.
+- For a common band of a page (hero, features, pricing, FAQ, testimonials, contact…) start from the section library: list_section_templates, insert_section, then adjust its copy with set_props. Otherwise build a whole section in one insert_node call (a node with its children) rather than one node at a time.
 - Layout: Section for a full-width band, Container to centre content, Stack for rows/columns, Grid for cards, Split for text beside an image. Responsive props can differ per device: set_props with device "tablet" or "mobile".
 - Content from the CMS: use describe_content_types for the real plugin instances, content types and field names. A Collection (props.source { instance, contentType }) repeats its "item" slot for each item; nodes inside it bind props to item fields with bind_props. A detail page (create_page with detail_of and a :slug path) shows one item. A button inside an item can navigate to "/events/:slug".
 - Look: set_design_kit. Never write dcms/theme.json by hand.

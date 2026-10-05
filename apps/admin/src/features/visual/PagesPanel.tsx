@@ -31,6 +31,7 @@ import {
   type Result,
 } from './documents';
 import { sameTarget, useVisual } from './store';
+import { PAGE_TEMPLATES, pageBody } from './templates/pages';
 
 function report(result: Result, t: (k: string) => string): boolean {
   if (!result.ok) toast.error(result.error || t('errors.generic'));
@@ -133,11 +134,13 @@ function AddPage({ onDone }: { onDone: (id?: string) => void }) {
   const [title, setTitle] = useState('');
   const [path, setPath] = useState('');
   const [menu, setMenu] = useState(true);
+  const [template, setTemplate] = useState(PAGE_TEMPLATES[0]!);
+  const registry = useVisual((s) => s.registry);
   const derived = `/${title.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`;
 
   const submit = () => {
     if (!title.trim()) return;
-    const result = createPage(title.trim(), path.trim() || derived, menu);
+    const result = createPage(title.trim(), path.trim() || derived, menu, pageBody(template, registry));
     if (report(result, t)) onDone(result.id);
   };
 
@@ -149,6 +152,30 @@ function AddPage({ onDone }: { onDone: (id?: string) => void }) {
         submit();
       }}
     >
+      <div role="radiogroup" aria-label={t('visual.pages.startWith')} className="grid grid-cols-2 gap-1.5">
+        {PAGE_TEMPLATES.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            role="radio"
+            aria-checked={template.id === p.id}
+            title={p.description}
+            onClick={() => {
+              // A suggested title and address, unless the author has typed their own.
+              if (!title.trim() || title === template.title) setTitle(p.title);
+              if (!path.trim() || path === template.path) setPath(p.path);
+              setTemplate(p);
+            }}
+            className={cn(
+              'rounded-md border bg-background px-2 py-1.5 text-left text-xs',
+              template.id === p.id ? 'border-primary ring-1 ring-primary' : 'hover:border-primary/60',
+            )}
+          >
+            <span className="block font-medium">{p.label}</span>
+            <span className="line-clamp-2 text-muted-foreground">{p.description}</span>
+          </button>
+        ))}
+      </div>
       <Label htmlFor="new-page-title">{t('builder.pageTitle')}</Label>
       <Input id="new-page-title" value={title} onChange={(e) => setTitle(e.target.value)} />
       <Label htmlFor="new-page-path">{t('visual.pages.address')}</Label>

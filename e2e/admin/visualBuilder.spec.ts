@@ -258,6 +258,20 @@ test('adding a page writes its file, its route and a menu entry', async ({ page,
   expect(app.navigation.main).toContainEqual({ label: 'Our Team', to: '/our-team' });
 });
 
+test('a page started from a template arrives with its sections and a suggested title and address', async ({ page, api }) => {
+  await open(page, api, twoPages);
+  await page.getByRole('tab', { name: 'Pages' }).click();
+  await page.getByRole('button', { name: 'Add page' }).click();
+  await page.getByRole('radio', { name: /^Services/ }).click();
+  await expect(page.locator('#new-page-title')).toHaveValue('Services');
+  await page.getByRole('button', { name: 'Create' }).click();
+
+  await expect.poll(() => saved(api, 'dcms/pages/services.json') ?? '', { timeout: 15000 }).toContain('What we do');
+  const services = JSON.parse(saved(api, 'dcms/pages/services.json')!);
+  expect(services.root.slots.default).toHaveLength(5);
+  expect(JSON.parse(saved(api, 'dcms/app.json')!).routes).toContainEqual({ id: 'services', path: '/services', page: 'services' });
+});
+
 test('preview runs the site: a button navigates to another page', async ({ page, api }) => {
   await open(page, api, twoPages);
   await page.getByRole('group', { name: 'View' }).getByTitle('Preview').click();
