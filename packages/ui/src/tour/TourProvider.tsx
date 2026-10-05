@@ -120,8 +120,3 @@ export function useTour(): TourContextValue {
   }
   return context;
 }
-
-/** True when the current page has anything to show. The launcher hides itself otherwise. */
-export function useTourAvailable(): boolean {
-  return useTour().steps.length > 0;
-}

@@ -86,7 +86,7 @@ public sealed class VisitorTokenService(VisitorTokenOptions options)
     {
         Span<byte> bytes = stackalloc byte[32];
         RandomNumberGenerator.Fill(bytes);
-        var token = Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        var token = System.Buffers.Text.Base64Url.EncodeToString(bytes);
         return new RefreshTokenMaterial(token, HashToken(token), DateTimeOffset.UtcNow.AddDays(options.RefreshTokenDays));
     }
 

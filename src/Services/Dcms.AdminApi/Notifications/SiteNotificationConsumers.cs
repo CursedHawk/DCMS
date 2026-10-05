@@ -154,7 +154,7 @@ internal static class SiteBuildBroadcast
                 .Select(s => s.ActiveBuildId)
                 .FirstOrDefaultAsync(ct);
 
-            var live = scope.GetRequiredService<ISiteLiveUpdates>();
+            var live = scope.GetRequiredService<SiteLiveUpdates>();
             await live.BuildChangedAsync(tenantId, new BuildUpdate(
                 SiteId: siteId,
                 Id: build.Id,

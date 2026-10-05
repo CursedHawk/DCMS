@@ -49,10 +49,6 @@ export function pageCssPath(slug: string): string {
   return `${PAGE_CSS_DIR}/${slug}.css`;
 }
 
-export function blockPath(name: string): string {
-  return `${BLOCKS_DIR}/${name}.json`;
-}
-
 /** The page slug a `pages/<slug>.html` path refers to, or null if it isn't one. */
 export function slugFromPageHtmlPath(path: string): string | null {
   const match = /^pages\/([^/]+)\.html$/.exec(path);

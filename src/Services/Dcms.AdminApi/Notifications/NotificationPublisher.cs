@@ -44,7 +44,12 @@ public sealed record NotificationRequest(
     Guid? ActorUserId = null,
     IReadOnlyCollection<Guid>? ExtraUserIds = null);
 
-public interface INotificationPublisher
+public sealed class NotificationPublisher(
+    NotificationsDbContext db,
+    TenancyDbContext tenancy,
+    IHubContext<NotificationHub> hub,
+    ResourceChangePublisher resources,
+    ILogger<NotificationPublisher> logger)
 {
     /// <summary>
     /// Resolves recipients, persists the notification, and pushes it to whoever is connected.
@@ -52,16 +57,6 @@ public interface INotificationPublisher
     /// no audience. Never throws for an ordinary failure — callers raise notifications
     /// alongside business writes that must not be lost to a notification problem.
     /// </summary>
-    Task<int> RaiseAsync(NotificationRequest request, CancellationToken ct = default);
-}
-
-public sealed class NotificationPublisher(
-    NotificationsDbContext db,
-    TenancyDbContext tenancy,
-    IHubContext<NotificationHub> hub,
-    IResourceChangePublisher resources,
-    ILogger<NotificationPublisher> logger) : INotificationPublisher
-{
     public async Task<int> RaiseAsync(NotificationRequest request, CancellationToken ct = default)
     {
         // Recipients are resolved and rows written for exactly this tenant, whoever calls -- a

@@ -572,9 +572,6 @@ services:
       Auth__RequireHttpsMetadata: "true"
       Observability__PrometheusUrl: "http://prometheus:9090"
       Observability__LokiUrl: "http://loki:3100"
-      Observability__TempoUrl: "http://tempo:3200"
-      Observability__NatsMonitoringUrl: "http://nats:8222"
-      Observability__VaultUrl: "http://vault:8200"
       # The console's own service client -- see the base compose for why it is a separate
       # client from dcms-admin-api rather than a reuse of it.
       ServiceClient__TokenEndpoint: "http://identity:8080/connect/token"

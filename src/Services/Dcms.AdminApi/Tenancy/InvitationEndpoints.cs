@@ -195,7 +195,7 @@ public static class InvitationEndpoints
         // query filters are bypassed and tenant ids are set explicitly.
         app.MapPost("/api/admin/invitations/accept", async (
             AcceptInvitationRequest body, CurrentUser me, TenancyDbContext db,
-            INotificationPublisher notifications,
+            NotificationPublisher notifications,
             TenancyPermissionResolver permissions, IEventPublisher events, CancellationToken ct) =>
         {
             var userId = me.RequireUserId();
@@ -378,7 +378,7 @@ public static class InvitationEndpoints
     {
         Span<byte> bytes = stackalloc byte[32];
         RandomNumberGenerator.Fill(bytes);
-        return Convert.ToBase64String(bytes).Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        return System.Buffers.Text.Base64Url.EncodeToString(bytes);
     }
 
     private static string HashToken(string token)

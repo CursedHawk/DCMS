@@ -144,7 +144,7 @@ public static class DomainEndpoints
         }).RequirePermission(PlatformPermissions.DomainsManage).WithAudit(AuditActions.DomainProvisioned, "domain");
 
         app.MapPost("/api/admin/domains/{id:guid}/verify", async (
-            Guid id, TenancyDbContext db, IDnsTxtLookup dns, IConfiguration config,
+            Guid id, TenancyDbContext db, DnsTxtLookup dns, IConfiguration config,
             IEventPublisher events, ITenantContext tenant, CancellationToken ct) =>
         {
             var domain = await db.Domains.FirstOrDefaultAsync(d => d.Id == id, ct);

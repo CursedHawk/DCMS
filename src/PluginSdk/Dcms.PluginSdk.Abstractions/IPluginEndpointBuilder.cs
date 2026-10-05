@@ -30,7 +30,6 @@ public sealed class ContentQueryOptions
 {
     public int DefaultPageSize { get; set; } = 20;
     public int MaxPageSize { get; set; } = 100;
-    public string? DefaultOrderBy { get; set; }
 }
 
 /// <summary>

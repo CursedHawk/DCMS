@@ -7,13 +7,19 @@ using MimeKit;
 namespace Dcms.Shared.Messaging.Email;
 
 /// <summary>
-/// MailKit-backed <see cref="IEmailSender"/>. A fresh connection per message is
-/// fine for the low volume of transactional mail and keeps the sender stateless.
+/// The SMTP transport, used only by email-worker as it drains the EMAIL work queue.
+/// Services that want to send mail publish to <see cref="IEmailQueue"/> instead —
+/// this is the last hop, not the entry point. MailKit-backed; a fresh connection per
+/// message is fine for the low volume of transactional mail and keeps the sender stateless.
 /// </summary>
-public sealed class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<SmtpEmailSender> logger) : IEmailSender
+public sealed class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<SmtpEmailSender> logger)
 {
     private readonly EmailOptions _options = options.Value;
 
+    /// <param name="replyTo">
+    /// Optional Reply-To. Set for mail whose natural reply target is not the
+    /// configured From — e.g. a form notification replying to the visitor.
+    /// </param>
     public async Task SendAsync(
         string toAddress,
         string subject,

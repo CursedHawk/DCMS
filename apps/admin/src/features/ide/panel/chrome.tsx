@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { Button, cn } from '@dcms/ui';
+import { Button } from '@dcms/ui';
 
 /**
  * The shared vocabulary of the bottom panel.
@@ -52,36 +52,5 @@ export function PanelUnchecked({
         </Button>
       ) : null}
     </div>
-  );
-}
-
-/**
- * A row that points at a place in the code.
- *
- * <p>Mono for the path and the line number, because those are verbatim machine text the author
- * may want to copy; the message itself is prose and set in the UI face. That split is the
- * panel's typographic rule — monospace means "this is exactly what the machine said", never
- * "this looks technical".</p>
- */
-export function PanelRow({
-  onClick,
-  children,
-  className,
-}: {
-  onClick?: () => void;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  const classes = cn(
-    'flex w-full items-baseline gap-2 rounded px-2 py-1 text-left text-xs',
-    onClick && 'hover:bg-accent',
-    className,
-  );
-
-  if (!onClick) return <div className={classes}>{children}</div>;
-  return (
-    <button type="button" onClick={onClick} className={classes}>
-      {children}
-    </button>
   );
 }

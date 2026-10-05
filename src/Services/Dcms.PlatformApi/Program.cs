@@ -61,7 +61,7 @@ if (!string.IsNullOrWhiteSpace(signalRRedis))
         options => options.Configuration.ChannelPrefix =
             StackExchange.Redis.RedisChannel.Literal("dcms-console"));
 }
-builder.Services.AddSingleton<IPlatformChangePublisher, PlatformChangePublisher>();
+builder.Services.AddSingleton<PlatformChangePublisher>();
 builder.Services.AddHostedService<PlatformLiveUpdates>();
 builder.Services.AddHostedService<PlatformSampleBroadcaster>();
 

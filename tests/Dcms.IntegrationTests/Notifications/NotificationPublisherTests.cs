@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 using NotificationRequest = AdminApiApp::Dcms.AdminApi.Notifications.NotificationRequest;
-using INotificationPublisher = AdminApiApp::Dcms.AdminApi.Notifications.INotificationPublisher;
+using NotificationPublisher = AdminApiApp::Dcms.AdminApi.Notifications.NotificationPublisher;
 
 namespace Dcms.IntegrationTests.Notifications;
 
@@ -101,7 +101,7 @@ public class NotificationPublisherTests(AdminApiFixture fixture)
     private async Task<int> RaiseAsync(NotificationRequest request, CancellationToken ct)
     {
         using var scope = fixture.Factory.Services.CreateScope();
-        var publisher = scope.ServiceProvider.GetRequiredService<INotificationPublisher>();
+        var publisher = scope.ServiceProvider.GetRequiredService<NotificationPublisher>();
         return await publisher.RaiseAsync(request, ct);
     }
 

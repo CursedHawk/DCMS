@@ -46,6 +46,7 @@ import {
   type DataRow,
   type DataSet,
 } from './dataApi';
+import { formatSize } from '../media/api';
 
 const PAGE_SIZE = 25;
 const ALL = '__all';
@@ -251,7 +252,7 @@ export function Value({ column, value }: { column: Pick<DataColumn, 'kind'>; val
     case 'number':
       return <span className="tabular-nums">{Number(value).toLocaleString()}</span>;
     case 'bytes':
-      return <span className="tabular-nums">{formatBytes(Number(value))}</span>;
+      return <span className="tabular-nums">{formatSize(Number(value))}</span>;
     case 'badge':
       return <Badge tone="secondary">{String(value)}</Badge>;
     case 'url':
@@ -273,12 +274,6 @@ export function Value({ column, value }: { column: Pick<DataColumn, 'kind'>; val
     default:
       return <span className="line-clamp-2">{typeof value === 'object' ? JSON.stringify(value) : String(value)}</span>;
   }
-}
-
-function formatBytes(n: number) {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
 const humanize = (key: string) => key.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());

@@ -53,7 +53,7 @@ public sealed class AnalyticsPlugin : IPlugin
         {
             // Country comes from the edge; register a GeoIP-database implementation in its
             // place if the deployment has no country-stamping proxy.
-            services.TryAddSingleton<IGeoIpResolver, HeaderGeoIpResolver>();
+            services.TryAddSingleton<HeaderGeoIpResolver>();
             services.AddCors(o => o.AddPolicy(AnalyticsIngestEndpoints.CollectCorsPolicy, policy => policy
                 .AllowAnyOrigin()
                 .AllowAnyHeader()

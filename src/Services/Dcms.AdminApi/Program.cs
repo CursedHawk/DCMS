@@ -140,7 +140,7 @@ builder.Services.AddDcmsPermissionAuthorization();
 builder.Services.AddScoped<TenancyPermissionResolver>();
 builder.Services.AddScoped<IPermissionResolver>(sp => sp.GetRequiredService<TenancyPermissionResolver>());
 
-builder.Services.AddSingleton<IDnsTxtLookup, DnsTxtLookup>();
+builder.Services.AddSingleton<DnsTxtLookup>();
 builder.Services.AddHostedService<MembershipChangedConsumer>();
 builder.Services.AddHostedService<OutboxDispatcher>();
 builder.Services.AddHostedService<ScheduledPublishWorker>();
@@ -152,10 +152,10 @@ builder.Services.AddHostedService<AnalyticsRetentionWorker>();
 // notification, so the producing services are untouched. All are shared durables: the work
 // is a database write that exactly one replica must do, and the SignalR Redis backplane is
 // what carries the push to browsers connected to the others.
-builder.Services.AddScoped<INotificationPublisher, NotificationPublisher>();
+builder.Services.AddScoped<NotificationPublisher>();
 // Singleton: it holds nothing but an IHubContext, and endpoints, consumers and workers all
 // reach for it — a scoped registration would be a scope per push for no reason.
-builder.Services.AddSingleton<IResourceChangePublisher, ResourceChangePublisher>();
+builder.Services.AddSingleton<ResourceChangePublisher>();
 builder.Services.AddHostedService<SitePublishedNotificationConsumer>();
 builder.Services.AddHostedService<SiteBuildFailedNotificationConsumer>();
 builder.Services.AddHostedService<MediaProcessedNotificationConsumer>();
@@ -188,7 +188,7 @@ builder.Services.AddHostedService<Dcms.AdminApi.Ai.AiConversationRetentionWorker
 // notifications have no tenant and their audience is a global role admin-api cannot enumerate
 // -- see PlatformNotification. The worker reads the edge's attempt ledger rather than
 // consuming an event: that ledger is the rate-limit guard, so it cannot be skipped.
-builder.Services.AddScoped<IPlatformNotificationPublisher, PlatformNotificationPublisher>();
+builder.Services.AddScoped<PlatformNotificationPublisher>();
 builder.Services.AddHostedService<CertificateNotificationWorker>();
 builder.Services.AddHostedService<Dcms.AdminApi.Audit.AuditChainWriter>();
 // Brings in the records from the two services that cannot reach the audit schema, so
@@ -291,7 +291,7 @@ builder.Services.AddScoped<Dcms.AdminApi.Sites.SiteDeleter>();
 // Live deployment/commit fan-out to everyone with a site open in the IDE. Singleton because
 // it holds nothing per-request -- IHubContext is itself a singleton -- and because the site
 // event consumers reach it from background scopes.
-builder.Services.AddSingleton<Dcms.AdminApi.Sites.ISiteLiveUpdates, Dcms.AdminApi.Sites.SiteLiveUpdates>();
+builder.Services.AddSingleton<Dcms.AdminApi.Sites.SiteLiveUpdates>();
 builder.Services.AddScoped<TenantDeleter>();
 
 var app = builder.Build();

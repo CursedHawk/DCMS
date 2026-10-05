@@ -45,7 +45,7 @@ public static class AuditServiceCollectionExtensions
         // these numbers are what tells the two apart.
         services.AddMetrics();
         services.TryAddSingleton<AuditMetrics>();
-        services.TryAddSingleton<IClock, SystemClock>();
+        services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IAuditSink, LoggingAuditSink>();
 
         // Fallback tenant context. identity, ai-gateway and email-worker have no tenancy at

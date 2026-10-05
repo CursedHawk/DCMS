@@ -154,12 +154,3 @@ export function starterFiles(siteName = 'Home'): Record<string, string> {
     [regionHtmlPath('footer')]: FOOTER_HTML(siteName),
   };
 }
-
-/**
- * True when the loaded file map is not a Mode A project yet — a brand-new site,
- * or one whose repo holds only the auto-created README. Either way the builder
- * seeds the starter rather than opening an empty canvas.
- */
-export function needsStarter(files: Record<string, string>): boolean {
-  return files[SITE_JSON] === undefined;
-}

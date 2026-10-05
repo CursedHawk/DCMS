@@ -36,7 +36,7 @@ public sealed class AuditChainTests : IAsyncLifetime
         await AuditSchemaConfigurator.ApplyAsync(_db, NullLogger.Instance);
 
         var keys = new FixedKey();
-        _appender = new AuditChainAppender(_db, keys, new SystemClock());
+        _appender = new AuditChainAppender(_db, keys, TimeProvider.System);
         _verifier = new AuditChainVerifier(_db, keys, new AuditMetrics(new TestMeterFactory()));
     }
 

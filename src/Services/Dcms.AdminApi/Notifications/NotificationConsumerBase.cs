@@ -115,7 +115,7 @@ public abstract class NotificationConsumerBase<TEvent>(
                 var request = await MapAsync(evt, scope.ServiceProvider, ct);
                 if (request is not null)
                 {
-                    var publisher = scope.ServiceProvider.GetRequiredService<INotificationPublisher>();
+                    var publisher = scope.ServiceProvider.GetRequiredService<NotificationPublisher>();
                     await publisher.RaiseAsync(request, ct);
                 }
             }

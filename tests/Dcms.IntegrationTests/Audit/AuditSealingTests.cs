@@ -52,7 +52,7 @@ public sealed class AuditSealingTests : IAsyncLifetime
         await CreatePartitionAsync(LastPeriod);
 
         _keys = new FixedKey();
-        _appender = new AuditChainAppender(_db, _keys, new SystemClock());
+        _appender = new AuditChainAppender(_db, _keys, TimeProvider.System);
         _verifier = new AuditChainVerifier(_db, _keys, new AuditMetrics(new TestMeterFactory()));
         _sealer = new AuditChainSealer(_db, _verifier, _keys, NullLogger<AuditChainSealer>.Instance);
     }

@@ -30,7 +30,7 @@ namespace Dcms.EmailWorker;
 /// </summary>
 public sealed class EmailSendConsumer(
     INatsJSContext jetStream,
-    IEmailSender sender,
+    SmtpEmailSender sender,
     IServiceProvider services,
     DcmsMetrics metrics,
     ILogger<EmailSendConsumer> logger) : BackgroundService

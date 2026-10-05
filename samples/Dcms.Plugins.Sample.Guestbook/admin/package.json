@@ -5,8 +5,7 @@
   "type": "module",
   "description": "The Guestbook sample plugin's admin UI, built as an installed plugin's is: one ES module and its stylesheet, sharing the console's React and design system.",
   "scripts": {
-    "build": "tsc --noEmit -p . && vite build",
-    "test": "vitest run --passWithNoTests"
+    "build": "tsc --noEmit -p . && vite build"
   },
   "dependencies": {
     "@dcms/plugin-ui": "workspace:*",
@@ -19,7 +18,6 @@
   "devDependencies": {
     "@types/react": "^19",
     "typescript": "^5",
-    "vite": "^7",
-    "vitest": "^4"
+    "vite": "^7"
   }
 }

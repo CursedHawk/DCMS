@@ -54,7 +54,7 @@ public sealed class InvitationExpiryWorker(
         using var rls = RlsScope.Platform();
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
-        var publisher = scope.ServiceProvider.GetRequiredService<INotificationPublisher>();
+        var publisher = scope.ServiceProvider.GetRequiredService<NotificationPublisher>();
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 

@@ -11,9 +11,6 @@ public sealed class ObservabilityOptions
 
     public string PrometheusUrl { get; set; } = "http://prometheus:9090";
     public string LokiUrl { get; set; } = "http://loki:3100";
-    public string TempoUrl { get; set; } = "http://tempo:3200";
-    public string NatsMonitoringUrl { get; set; } = "http://nats:8222";
-    public string VaultUrl { get; set; } = "http://vault:8200";
 
     /// <summary>
     /// The log-janitor sidecar, which truncates Docker's json log files.

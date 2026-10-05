@@ -52,7 +52,7 @@ public static class MetaOAuthEndpoints
 
             // The token goes in the URL; only its hash is persisted, so a database leak does
             // not let anyone complete a pending consent.
-            var stateToken = Base64Url(RandomNumberGenerator.GetBytes(32));
+            var stateToken = System.Buffers.Text.Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
 
             db.OAuthStates.Add(new MetaOAuthState
             {
@@ -278,7 +278,4 @@ public static class MetaOAuthEndpoints
 
     private static string Sha256Hex(string value) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
-
-    private static string Base64Url(byte[] bytes) =>
-        Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 }

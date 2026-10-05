@@ -84,14 +84,9 @@ public sealed class PlatformHub(
 /// <summary>
 /// Tells every open console that a class of platform data changed.
 /// </summary>
-public interface IPlatformChangePublisher
-{
-    Task PublishAsync(string tag, string? id = null, CancellationToken ct = default);
-}
-
 public sealed class PlatformChangePublisher(
     IHubContext<PlatformHub> hub,
-    ILogger<PlatformChangePublisher> logger) : IPlatformChangePublisher
+    ILogger<PlatformChangePublisher> logger)
 {
     public async Task PublishAsync(string tag, string? id = null, CancellationToken ct = default)
     {

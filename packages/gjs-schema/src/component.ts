@@ -200,15 +200,6 @@ export function componentClassOf(name: string): string {
   return `dcms-c-${name}`;
 }
 
-/** True when this definition fetches content rather than expanding in place. */
-export function isDynamic(definition: ComponentDefinition): boolean {
-  return definition.source !== undefined;
-}
-
-export function parseComponentDefinition(input: unknown): ComponentDefinition {
-  return componentDefinitionSchema.parse(input);
-}
-
 export function safeParseComponentDefinition(input: unknown) {
   return componentDefinitionSchema.safeParse(input);
 }

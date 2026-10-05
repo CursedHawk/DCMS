@@ -12,33 +12,18 @@ namespace Dcms.Plugins.Analytics;
 public sealed record RequestFacts(string? Device, string? Browser, string? Os, string? Country);
 
 /// <summary>
-/// Resolves a country from the client's IP.
-///
-/// An interface rather than a hard dependency on a GeoIP database because the
-/// answer differs per deployment: behind Cloudflare (or any edge that stamps a
-/// country header) the work is already done, and a self-hosted edge needs a local
-/// database file. <see cref="HeaderGeoIpResolver"/> covers the former; a MaxMind or
-/// DB-IP backed implementation can be registered in its place without touching the
-/// ingest path.
-/// </summary>
-public interface IGeoIpResolver
-{
-    /// <summary>ISO 3166-1 alpha-2, or null when the country is unknown.</summary>
-    string? ResolveCountry(HttpContext context);
-}
-
-/// <summary>
-/// Reads the country from a header set by the edge — <c>CF-IPCountry</c> by default
+/// Resolves a client's country from a header set by the edge — <c>CF-IPCountry</c> by default
 /// (Cloudflare), configurable via <c>Analytics:CountryHeader</c>.
 ///
 /// Trusting a request header is only safe because the header is set by *our* edge
 /// and content-api is not reachable except through it. If that ever stops being
 /// true, this must go behind a real GeoIP lookup rather than gain an allow-list.
 /// </summary>
-public sealed class HeaderGeoIpResolver(IConfiguration configuration) : IGeoIpResolver
+public sealed class HeaderGeoIpResolver(IConfiguration configuration)
 {
     private readonly string _header = configuration["Analytics:CountryHeader"] ?? "CF-IPCountry";
 
+    /// <summary>ISO 3166-1 alpha-2, or null when the country is unknown.</summary>
     public string? ResolveCountry(HttpContext context)
     {
         if (!context.Request.Headers.TryGetValue(_header, out var values))

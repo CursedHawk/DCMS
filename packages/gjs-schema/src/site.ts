@@ -176,10 +176,6 @@ export function homePage(manifest: SiteManifest): PageEntry {
   return manifest.pages.find((p) => p.home) ?? manifest.pages.find((p) => p.path === '/') ?? manifest.pages[0];
 }
 
-export function findPageBySlug(manifest: SiteManifest, slug: string): PageEntry | undefined {
-  return manifest.pages.find((p) => p.slug === slug);
-}
-
 /** Every file this manifest expects to exist, for load-time validation. */
 export function expectedFiles(manifest: SiteManifest): string[] {
   return [
@@ -223,10 +219,6 @@ export function regionsForPage(
     before: chosen.filter((r) => r.placement === 'before'),
     after: chosen.filter((r) => r.placement === 'after'),
   };
-}
-
-export function findRegionBySlug(manifest: SiteManifest, slug: string): RegionEntry | undefined {
-  return manifest.regions.find((r) => r.slug === slug);
 }
 
 /** Build a region entry with a slug unique within the manifest. */

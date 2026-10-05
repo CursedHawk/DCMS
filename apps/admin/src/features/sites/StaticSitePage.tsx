@@ -24,6 +24,7 @@ import {
 } from '@dcms/ui';
 import { ResourceHistory } from '../audit/ResourceHistory';
 import { api } from '../../lib/api';
+import { formatSize } from '../media/api';
 interface StaticBundle {
   name?: string;
   size?: number;
@@ -47,13 +48,6 @@ interface SiteBuild {
 }
 
 const sitesPath: string = '/sites';
-
-function formatBytes(n?: number): string {
-  if (!n) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
-  return `${(n / 1024 ** i).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
 
 export function StaticSitePage({ siteId }: { siteId: string }) {
   const { t } = useTranslation();
@@ -215,7 +209,7 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
                 <p className="text-xs text-muted-foreground">
                   {t('sites.bundleSummary', {
                     count: bundle.fileCount ?? 0,
-                    size: formatBytes(bundle.size),
+                    size: formatSize(bundle.size ?? 0),
                   })}
                 </p>
               </div>

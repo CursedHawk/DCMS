@@ -8,8 +8,8 @@ using Dcms.Shared.Data.Notifications;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
-using IPlatformNotificationPublisher =
-    AdminApiApp::Dcms.AdminApi.Notifications.IPlatformNotificationPublisher;
+using PlatformNotificationPublisher =
+    AdminApiApp::Dcms.AdminApi.Notifications.PlatformNotificationPublisher;
 using PlatformNotificationRequest =
     AdminApiApp::Dcms.AdminApi.Notifications.PlatformNotificationRequest;
 
@@ -181,7 +181,7 @@ public class ConsoleServiceCallerTests(AdminApiFixture fixture)
     private async Task RaiseAsync(CancellationToken ct)
     {
         using var scope = fixture.Factory.Services.CreateScope();
-        var publisher = scope.ServiceProvider.GetRequiredService<IPlatformNotificationPublisher>();
+        var publisher = scope.ServiceProvider.GetRequiredService<PlatformNotificationPublisher>();
 
         var raised = await publisher.RaiseAsync(
             new PlatformNotificationRequest(

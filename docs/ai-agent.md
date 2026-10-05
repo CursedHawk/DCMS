@@ -410,8 +410,34 @@ the mocked harness, so every build fails and the build gate correctly retries th
 times and gives up. That is the gate working, and it is not what those tests are
 about.
 
+## Locked decisions
+
+Settled during the rework; not up for re-litigation without a new ADR.
+
+- **D1 — The agent loop runs in the browser.** A shared `AgentRuntime` module, not a server
+  service. Consequence: a closed tab ends the run; the transcript survives (Phase 8), the run
+  does not. Accepted.
+- **D2 — Two surfaces, one runtime.** The assistant dock and the IDE agent panel stay distinct
+  UIs backed by one runtime, one tool registry, one mode/risk model.
+- **D3 — `AgentWorkspace` is the only door to site files.** No tool touches the zustand store,
+  the draft REST API or git directly.
+- **D4 — One agent, not a swarm.**
+- **D5 — Anthropic Messages stays the wire format**; `ai-gateway` keeps translating
+  ([`AnthropicOpenAiBridge`](../src/Services/Dcms.AiGateway/Providers/AnthropicOpenAiBridge.cs)).
+- **D6 — Patch-first editing.** Whole-file writes only for new files and genuine rewrites.
+- **D7 — The existing four-mode risk model is the base** (`features/assistant/modes.ts`);
+  the IDE's `auto`/`manual` pair is retired into it.
+- **D8 — No unrestricted shell.** Curated tools; sandboxed execution is specific tools.
+- **D9 — Sandbox = preview sandbox + real SiteBuilder build.** The agent can exercise tenant
+  APIs against `X-Dcms-Sandbox` and trigger a real sandboxed build and read its log. No scratch
+  branch — it works on the user's draft like the user does.
+- **D10 — All `refetchInterval` polling goes.** The hub plus a refetch on reconnect and on window
+  focus replaces it, everywhere including `apps/platform`.
+- **D11 — The index is a browser worker.** Hand-rolled TS/TSX scanner (imports, exports,
+  components, routes, CSS classes/vars), no new dependency; it runs next to the existing esbuild
+  worker.
+
 ## Related
 
 - [ADR 0006](adr/0006-mode-a-html-css-in-git.md) — Mode A sites in git
 - [`docs/mode-a-builder.md`](mode-a-builder.md) — the visual builder
-- `AI AGENT PROGRESS.md` (repo root) — the rework plan and its locked decisions

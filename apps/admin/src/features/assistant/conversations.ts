@@ -122,21 +122,6 @@ export function useConversation(id: string | null) {
   });
 }
 
-export function useCreateConversation() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (body: {
-      title: string;
-      mode: AiMode;
-      pageArea?: string | null;
-      surface?: AiSurface;
-      siteId?: string | null;
-      branch?: string | null;
-    }) => api.post<{ id: string; title: string }>('/admin/ai/conversations', body),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: [KEY] }),
-  });
-}
-
 export function useUpdateConversation() {
   const queryClient = useQueryClient();
   return useMutation({

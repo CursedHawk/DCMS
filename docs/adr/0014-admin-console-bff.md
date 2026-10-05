@@ -3,7 +3,7 @@
 **Status:** accepted (2026-09-21) — **complete**. All five phases landed; the soak between 4
 and 5 found and fixed one bug (see phase 4). The admin console holds no credential, and no
 browser client can obtain one for admin-api. Closes the SEC-10 residual from
-`AUDIT_REPORT.md`. Builds on [ADR 0010](0010-yarp-edge.md).
+the 2026-09 repository audit. Builds on [ADR 0010](0010-yarp-edge.md).
 
 ## Context
 

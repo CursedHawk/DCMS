@@ -38,7 +38,7 @@ internal static class AnalyticsIngestEndpoints
     {
         endpoints.MapPost("/collect", async (
             CollectRequest body, HttpContext http, IPluginContext context, ISandboxContext sandbox,
-            IEventPublisher events, IGeoIpResolver geo, CancellationToken ct) =>
+            IEventPublisher events, HeaderGeoIpResolver geo, CancellationToken ct) =>
         {
             // Preview sandbox: swallow the beacon so real analytics stay clean.
             if (!sandbox.IsSandbox)
@@ -57,7 +57,7 @@ internal static class AnalyticsIngestEndpoints
         // client-side error.
         app.MapPost("/api/collect", async (
             CollectRequest body, HttpContext http, ITenantContext tenant, ISandboxContext sandbox,
-            CmsDbContext cms, IEventPublisher events, IGeoIpResolver geo, CancellationToken ct) =>
+            CmsDbContext cms, IEventPublisher events, HeaderGeoIpResolver geo, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
             {
@@ -99,7 +99,7 @@ internal static class AnalyticsIngestEndpoints
         cms.PluginInstances.AsNoTracking().AnyAsync(p => p.PluginId == AnalyticsPlugin.PluginId && p.Enabled, ct);
 
     private static ValueTask PublishAsync(
-        IEventPublisher events, Guid tenantId, CollectRequest body, HttpContext http, IGeoIpResolver geo, CancellationToken ct)
+        IEventPublisher events, Guid tenantId, CollectRequest body, HttpContext http, HeaderGeoIpResolver geo, CancellationToken ct)
     {
         // Device/browser/OS and country are derived from the request, not read from the
         // payload: a page can claim to be anything, and it cannot see its own IP.

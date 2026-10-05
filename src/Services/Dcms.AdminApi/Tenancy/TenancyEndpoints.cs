@@ -373,7 +373,7 @@ public static class TenancyEndpoints
         app.MapPost("/api/admin/members/{membershipId:guid}/roles", async (
             Guid membershipId, AssignRoleRequest body, TenancyDbContext db, ITenantContext tenant,
             IEventPublisher events, TenancyPermissionResolver permissions, CurrentUser me,
-            INotificationPublisher notifications,
+            NotificationPublisher notifications,
             Dcms.AdminApi.Sites.Git.RepoAccessReconciler repoAccess, CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;
@@ -428,7 +428,7 @@ public static class TenancyEndpoints
         app.MapDelete("/api/admin/members/{membershipId:guid}/roles/{roleId:guid}", async (
             Guid membershipId, Guid roleId, TenancyDbContext db, ITenantContext tenant,
             IEventPublisher events, TenancyPermissionResolver permissions, CurrentUser me,
-            INotificationPublisher notifications,
+            NotificationPublisher notifications,
             Dcms.AdminApi.Sites.Git.RepoAccessReconciler repoAccess, CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;

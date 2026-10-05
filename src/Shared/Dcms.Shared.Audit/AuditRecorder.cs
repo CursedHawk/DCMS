@@ -17,7 +17,7 @@ public sealed class AuditRecorder(
     IAuditSink sink,
     ICurrentActor actor,
     ITenantContext tenantContext,
-    IClock clock,
+    TimeProvider clock,
     AuditMetrics metrics,
     ILogger<AuditRecorder> logger) : IAuditRecorder
 {
@@ -123,7 +123,7 @@ public sealed class AuditRecorder(
         return new AuditEvent
         {
             EventId = entry.EventId,
-            OccurredAt = entry.OccurredAt ?? clock.UtcNow,
+            OccurredAt = entry.OccurredAt ?? clock.GetUtcNow(),
 
             // Explicit entry tenant wins; then the scope (set by consumers from the message);
             // then the ambient HTTP tenant. Guid.Empty is the platform-scope sentinel, and is

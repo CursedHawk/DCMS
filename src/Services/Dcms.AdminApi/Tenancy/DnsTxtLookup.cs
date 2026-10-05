@@ -3,12 +3,7 @@ using DnsClient;
 namespace Dcms.AdminApi.Tenancy;
 
 /// <summary>Resolves TXT records for domain-ownership verification.</summary>
-public interface IDnsTxtLookup
-{
-    Task<IReadOnlyList<string>> GetTxtRecordsAsync(string name, CancellationToken ct = default);
-}
-
-public sealed class DnsTxtLookup : IDnsTxtLookup
+public sealed class DnsTxtLookup
 {
     private readonly LookupClient _client = new();
 

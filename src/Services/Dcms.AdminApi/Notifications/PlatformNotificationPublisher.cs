@@ -22,19 +22,6 @@ public sealed record PlatformNotificationRequest(
     string? ResourceType = null,
     Guid? ResourceId = null);
 
-public interface IPlatformNotificationPublisher
-{
-    /// <summary>
-    /// Records a notification for the platform's operators. True when it was new, false when it
-    /// had already been raised or could not be written.
-    ///
-    /// <para>Never throws for an ordinary failure: a notification is a courtesy on top of
-    /// something that has already happened, and losing the courtesy must not take the caller's
-    /// real work with it.</para>
-    /// </summary>
-    Task<bool> RaiseAsync(PlatformNotificationRequest request, CancellationToken ct = default);
-}
-
 /// <summary>
 /// Writes platform notifications.
 ///
@@ -47,8 +34,16 @@ public interface IPlatformNotificationPublisher
 public sealed class PlatformNotificationPublisher(
     NotificationsDbContext db,
     IEventPublisher events,
-    ILogger<PlatformNotificationPublisher> logger) : IPlatformNotificationPublisher
+    ILogger<PlatformNotificationPublisher> logger)
 {
+    /// <summary>
+    /// Records a notification for the platform's operators. True when it was new, false when it
+    /// had already been raised or could not be written.
+    ///
+    /// <para>Never throws for an ordinary failure: a notification is a courtesy on top of
+    /// something that has already happened, and losing the courtesy must not take the caller's
+    /// real work with it.</para>
+    /// </summary>
     public async Task<bool> RaiseAsync(PlatformNotificationRequest request, CancellationToken ct = default)
     {
         try

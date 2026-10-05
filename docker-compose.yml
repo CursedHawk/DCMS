@@ -900,9 +900,6 @@ services:
       # host port in production, so the compose network is the only way to reach them.
       Observability__PrometheusUrl: "http://prometheus:9090"
       Observability__LokiUrl: "http://loki:3100"
-      Observability__TempoUrl: "http://tempo:3200"
-      Observability__NatsMonitoringUrl: "http://nats:8222"
-      Observability__VaultUrl: "http://vault:8200"
       # The URL is not a secret and stays here; the SECRET comes from
       # secret/dcms/platform-api. Empty URL disables container-log truncation in the console,
       # which is the default: the janitor only exists when the `logjanitor` profile is up.

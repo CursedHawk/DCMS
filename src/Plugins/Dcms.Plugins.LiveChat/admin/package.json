@@ -6,8 +6,7 @@
   "description": "The AI Chatbot plugin's admin screens: the live chat console.",
   "main": "src/index.tsx",
   "scripts": {
-    "build": "tsc --noEmit -p .",
-    "test": "vitest run --passWithNoTests"
+    "build": "tsc --noEmit -p ."
   },
   "dependencies": {
     "@dcms/plugin-ui": "workspace:*",
@@ -20,7 +19,6 @@
   },
   "devDependencies": {
     "@types/react": "^19",
-    "typescript": "^5",
-    "vitest": "^4"
+    "typescript": "^5"
   }
 }

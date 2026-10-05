@@ -26,7 +26,7 @@ public static class EmailServiceCollectionExtensions
     public static IServiceCollection AddDcmsEmailSender(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<EmailOptions>(configuration.GetSection(EmailOptions.SectionName));
-        services.TryAddSingleton<IEmailSender, SmtpEmailSender>();
+        services.TryAddSingleton<SmtpEmailSender>();
         return services;
     }
 }

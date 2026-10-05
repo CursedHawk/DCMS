@@ -14,8 +14,6 @@ import { cn } from '../cn';
  * detail panel that slides in beside a table. They differ only in side and width.
  */
 export const Sheet = DialogPrimitive.Root;
-export const SheetTrigger = DialogPrimitive.Trigger;
-export const SheetClose = DialogPrimitive.Close;
 
 const sides = {
   left: 'inset-y-0 left-0 h-full border-r dcms-sheet-left',

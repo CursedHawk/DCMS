@@ -31,7 +31,7 @@ public sealed class AuditChangeCaptureTests : IDisposable
             _sink,
             new TestActor(),
             new TestTenant(),
-            new SystemClock(),
+            TimeProvider.System,
             new AuditMetrics(new TestMeterFactory()),
             NullLogger<AuditRecorder>.Instance);
 

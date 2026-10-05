@@ -28,7 +28,7 @@ namespace Dcms.PlatformApi.Realtime;
 /// </summary>
 public sealed class PlatformLiveUpdates(
     INatsJSContext jetStream,
-    IPlatformChangePublisher changes,
+    PlatformChangePublisher changes,
     ILogger<PlatformLiveUpdates> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

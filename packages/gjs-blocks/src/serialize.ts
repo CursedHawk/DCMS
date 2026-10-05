@@ -17,8 +17,3 @@ export function pageBodyOf(html: string): string {
   const match = WRAPPER.exec(html);
   return match ? match[1] : html;
 }
-
-/** True when the markup is a GrapesJS wrapper rather than a bare page body. */
-export function isWrapped(html: string): boolean {
-  return WRAPPER.test(html);
-}

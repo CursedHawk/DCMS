@@ -116,14 +116,14 @@ public sealed class CertificateNotificationWorker(
 
         using var scope = services.CreateScope();
         var edge = scope.ServiceProvider.GetRequiredService<EdgeDbContext>();
-        var publisher = scope.ServiceProvider.GetRequiredService<IPlatformNotificationPublisher>();
+        var publisher = scope.ServiceProvider.GetRequiredService<PlatformNotificationPublisher>();
 
         await RaiseAttemptOutcomesAsync(edge, publisher, ct);
         await RaiseExpiryWarningsAsync(edge, publisher, ct);
     }
 
     private async Task RaiseAttemptOutcomesAsync(
-        EdgeDbContext edge, IPlatformNotificationPublisher publisher, CancellationToken ct)
+        EdgeDbContext edge, PlatformNotificationPublisher publisher, CancellationToken ct)
     {
         var since = clock.GetUtcNow() - lookback;
 
@@ -169,7 +169,7 @@ public sealed class CertificateNotificationWorker(
     }
 
     private async Task RaiseExpiryWarningsAsync(
-        EdgeDbContext edge, IPlatformNotificationPublisher publisher, CancellationToken ct)
+        EdgeDbContext edge, PlatformNotificationPublisher publisher, CancellationToken ct)
     {
         var now = clock.GetUtcNow();
         var threshold = now.AddDays(warnWithinDays);

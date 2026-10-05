@@ -6,7 +6,9 @@ namespace Dcms.AdminApi.Notifications;
 /// Tells every console open on a tenant that a class of data has changed, so it can refetch.
 /// See <see cref="ResourceTags"/> for what a tag means and why this is not a notification.
 /// </summary>
-public interface IResourceChangePublisher
+public sealed class ResourceChangePublisher(
+    IHubContext<NotificationHub> hub,
+    ILogger<ResourceChangePublisher> logger)
 {
     /// <param name="tenantId">The tenant whose consoles should refetch.</param>
     /// <param name="tag">One of <see cref="ResourceTags"/>.</param>
@@ -15,13 +17,6 @@ public interface IResourceChangePublisher
     /// ignore it: a list view refetches the list either way, and only a detail view open on
     /// precisely that row can do anything cheaper with it.
     /// </param>
-    Task PublishAsync(Guid tenantId, string tag, string? id = null, CancellationToken ct = default);
-}
-
-public sealed class ResourceChangePublisher(
-    IHubContext<NotificationHub> hub,
-    ILogger<ResourceChangePublisher> logger) : IResourceChangePublisher
-{
     public async Task PublishAsync(
         Guid tenantId, string tag, string? id = null, CancellationToken ct = default)
     {

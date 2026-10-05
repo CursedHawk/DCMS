@@ -67,10 +67,15 @@ public sealed record DraftUpdate(
 /// state that is already committed and already readable over REST — losing one costs a refresh,
 /// and letting one fail a publish would trade a real operation for a cosmetic one.</para>
 /// </summary>
-public interface ISiteLiveUpdates
+public sealed class SiteLiveUpdates(
+    IHubContext<SiteHub> hub,
+    ILogger<SiteLiveUpdates> logger)
 {
-    Task BuildChangedAsync(Guid tenantId, BuildUpdate build, CancellationToken ct = default);
-    Task CommitPushedAsync(Guid tenantId, CommitUpdate commit, CancellationToken ct = default);
+    public Task BuildChangedAsync(Guid tenantId, BuildUpdate build, CancellationToken ct = default) =>
+        SendAsync(tenantId, build.SiteId, "BuildChanged", build, ct);
+
+    public Task CommitPushedAsync(Guid tenantId, CommitUpdate commit, CancellationToken ct = default) =>
+        SendAsync(tenantId, commit.SiteId, "CommitPushed", commit, ct);
 
     /// <summary>
     /// Announces a write to the shared working draft.
@@ -85,25 +90,10 @@ public interface ISiteLiveUpdates
     /// they are doing. The author of the write is named so the editor can ignore its own
     /// echo — every save this session would otherwise announce itself back.</para>
     /// </summary>
-    Task DraftChangedAsync(Guid tenantId, DraftUpdate draft, CancellationToken ct = default);
-
-    /// <summary>Announces a build row exactly as it was just created (always <c>Queued</c>).</summary>
-    Task BuildQueuedAsync(Guid tenantId, SiteBuild build, Guid? actorUserId, CancellationToken ct = default);
-}
-
-public sealed class SiteLiveUpdates(
-    IHubContext<SiteHub> hub,
-    ILogger<SiteLiveUpdates> logger) : ISiteLiveUpdates
-{
-    public Task BuildChangedAsync(Guid tenantId, BuildUpdate build, CancellationToken ct = default) =>
-        SendAsync(tenantId, build.SiteId, "BuildChanged", build, ct);
-
-    public Task CommitPushedAsync(Guid tenantId, CommitUpdate commit, CancellationToken ct = default) =>
-        SendAsync(tenantId, commit.SiteId, "CommitPushed", commit, ct);
-
     public Task DraftChangedAsync(Guid tenantId, DraftUpdate draft, CancellationToken ct = default) =>
         SendAsync(tenantId, draft.SiteId, "DraftChanged", draft, ct);
 
+    /// <summary>Announces a build row exactly as it was just created (always <c>Queued</c>).</summary>
     public Task BuildQueuedAsync(Guid tenantId, SiteBuild build, Guid? actorUserId, CancellationToken ct = default) =>
         BuildChangedAsync(tenantId, new BuildUpdate(
             SiteId: build.SiteId,

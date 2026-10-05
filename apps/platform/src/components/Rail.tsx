@@ -67,35 +67,3 @@ export function Rail({
     </div>
   );
 }
-
-/**
- * A rail for a plain count against a ceiling — tenants against a licence, say. Same mark, no
- * byte formatting.
- */
-export function CountRail({
-  label, used, limit, unit, className,
-}: { label: string; used: number; limit: number; unit?: string; className?: string }) {
-  const fraction = limit > 0 ? Math.min(used / limit, 1) : 0;
-  return (
-    <div
-      className={cn(
-        'grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1',
-        'sm:grid-cols-[minmax(6rem,9rem)_1fr_auto]',
-        className,
-      )}
-    >
-      <span className="truncate text-sm text-foreground">{label}</span>
-      <div
-        className="rail order-last col-span-2 sm:order-none sm:col-span-1"
-        role="meter"
-        aria-label={label}
-        aria-valuenow={Math.round(fraction * 100)}
-      >
-        <div className="rail-fill" data-state={railState(fraction)} style={{ width: `${fraction * 100}%` }} />
-      </div>
-      <span className="font-mono text-sm text-foreground">
-        {used} / {limit}{unit ? ` ${unit}` : ''}
-      </span>
-    </div>
-  );
-}

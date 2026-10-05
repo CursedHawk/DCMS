@@ -26,7 +26,7 @@ namespace Dcms.PlatformApi.Realtime;
 /// fact.</para>
 /// </summary>
 public sealed class PlatformSampleBroadcaster(
-    IPlatformChangePublisher changes,
+    PlatformChangePublisher changes,
     ILogger<PlatformSampleBroadcaster> logger) : BackgroundService
 {
     /// <summary>

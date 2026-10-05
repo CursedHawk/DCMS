@@ -249,17 +249,6 @@ function writeProject(before: Project, after: Project): void {
 }
 
 /**
- * Push a whole project into the draft, including files that are byte-identical.
- * Used once after seeding a starter, where nothing exists server-side yet.
- */
-export function writeWholeProject(project: Project): void {
-  const vfs = useVfs.getState();
-  for (const [path, content] of Object.entries(projectFiles(project))) {
-    vfs.writeFile(path, content);
-  }
-}
-
-/**
  * Files the builder rewrites on every save: the theme stylesheet, derived from
  * site.json, and the AI authoring contract, derived from the catalogue. Both are
  * shown read-only, because an edit here would be silently overwritten.

@@ -172,19 +172,6 @@ interface VfsState {
   endAgentRun: () => void;
 }
 
-/** Parse the backend `definition` into a flat file map (tolerates an empty/new site). */
-export function filesFromDefinition(definition: unknown): Record<string, string> {
-  const files = (definition as { files?: unknown })?.files;
-  if (files && typeof files === 'object' && !Array.isArray(files)) {
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(files as Record<string, unknown>)) {
-      out[k] = typeof v === 'string' ? v : String(v ?? '');
-    }
-    return out;
-  }
-  return {};
-}
-
 /**
  * Normalize a folder path. Folders are not stored — they exist only as shared
  * prefixes of file paths — so this is the file rule with a tolerated trailing

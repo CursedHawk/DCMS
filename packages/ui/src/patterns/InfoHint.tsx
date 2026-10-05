@@ -57,32 +57,3 @@ export function InfoHint({
     </Popover>
   );
 }
-
-/**
- * A label with a hint attached — the shape this is used in nine times out of ten.
- *
- * Exists so the hint sits in a consistent place relative to its label, and so the two are one
- * thing to align in a form row rather than two.
- */
-export function LabelWithHint({
-  children,
-  hint,
-  hintTitle,
-  hintLabel,
-  className,
-}: {
-  children: React.ReactNode;
-  hint: React.ReactNode;
-  hintTitle?: string;
-  hintLabel?: string;
-  className?: string;
-}) {
-  return (
-    <span className={cn('inline-flex items-center gap-1.5', className)}>
-      {children}
-      <InfoHint title={hintTitle} label={hintLabel}>
-        {hint}
-      </InfoHint>
-    </span>
-  );
-}

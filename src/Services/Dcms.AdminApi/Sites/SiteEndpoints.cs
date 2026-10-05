@@ -363,7 +363,7 @@ public static class SiteEndpoints
         app.MapPatch("/api/admin/sites/{id:guid}/ide/files", async (
             Guid id, string? branch, SaveFilesRequest body,
             SitesDbContext db, ITenantContext tenant, CurrentUser user,
-            ISiteLiveUpdates live, CancellationToken ct) =>
+            SiteLiveUpdates live, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
@@ -450,7 +450,7 @@ public static class SiteEndpoints
         app.MapPost("/api/admin/sites/{id:guid}/publish", async (
             Guid id, string? branch, SitesDbContext db, CmsDbContext cms, ITenantContext tenant,
             IEventPublisher events, CurrentUser user, Dcms.AdminApi.Sites.Git.SiteGitService git,
-            ISiteLiveUpdates live, CancellationToken ct) =>
+            SiteLiveUpdates live, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null)
@@ -705,7 +705,7 @@ public static class SiteEndpoints
         // is planned).
         app.MapPost("/api/admin/sites/{id:guid}/git/commit", async (
             Guid id, CommitRequest body, SitesDbContext db, ITenantContext tenant, CurrentUser user,
-            Dcms.AdminApi.Sites.Git.SiteGitService git, ISiteLiveUpdates live, CancellationToken ct) =>
+            Dcms.AdminApi.Sites.Git.SiteGitService git, SiteLiveUpdates live, CancellationToken ct) =>
         {
             if (!git.Enabled) return Results.Problem("Git backend is not configured.", statusCode: 503);
             if (string.IsNullOrWhiteSpace(body.Message))
@@ -861,7 +861,7 @@ public static class SiteEndpoints
         // releaseContent (base/ours), branchContent (incoming/theirs), baseContent }] }.
         app.MapPost("/api/admin/sites/{id:guid}/git/merge", async (
             Guid id, MergeRequest body, SitesDbContext db, CurrentUser user,
-            Dcms.AdminApi.Sites.Git.SiteGitService git, ISiteLiveUpdates live, CancellationToken ct) =>
+            Dcms.AdminApi.Sites.Git.SiteGitService git, SiteLiveUpdates live, CancellationToken ct) =>
         {
             if (!git.Enabled) return Results.Problem("Git backend is not configured.", statusCode: 503);
             if (string.IsNullOrWhiteSpace(body.Head))
@@ -903,7 +903,7 @@ public static class SiteEndpoints
         // merge (→ build when base is release). A null resolution value deletes the file.
         app.MapPost("/api/admin/sites/{id:guid}/git/merge/resolve", async (
             Guid id, ResolveMergeRequest body, SitesDbContext db, CurrentUser user,
-            Dcms.AdminApi.Sites.Git.SiteGitService git, ISiteLiveUpdates live, CancellationToken ct) =>
+            Dcms.AdminApi.Sites.Git.SiteGitService git, SiteLiveUpdates live, CancellationToken ct) =>
         {
             if (!git.Enabled) return Results.Problem("Git backend is not configured.", statusCode: 503);
             if (string.IsNullOrWhiteSpace(body.Head))
@@ -974,7 +974,7 @@ public static class SiteEndpoints
         // external `git push`); pushes to feature/dev branches never build.
         app.MapPost("/api/internal/git/webhook", async (
             HttpRequest request, SitesDbContext db, CmsDbContext cms, IEventPublisher events,
-            Dcms.AdminApi.Sites.Git.SiteGitService git, ISiteLiveUpdates live,
+            Dcms.AdminApi.Sites.Git.SiteGitService git, SiteLiveUpdates live,
             IOptions<Dcms.AdminApi.Sites.Git.ForgejoOptions> gitOptions,
             IAuditRecorder audit, AuditScope scope,
             ILoggerFactory loggerFactory, CancellationToken ct) =>
@@ -1136,7 +1136,7 @@ public static class SiteEndpoints
         // in the normal push path can't otherwise re-trigger).
         app.MapPost("/api/admin/sites/{id:guid}/builds", async (
             Guid id, SitesDbContext db, CmsDbContext cms, IEventPublisher events, CurrentUser user,
-            Dcms.AdminApi.Sites.Git.SiteGitService git, ISiteLiveUpdates live, CancellationToken ct) =>
+            Dcms.AdminApi.Sites.Git.SiteGitService git, SiteLiveUpdates live, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
@@ -1156,12 +1156,12 @@ public static class SiteEndpoints
     /// commit that does not exist would put a phantom row in every open editor's history.</para>
     /// </summary>
     private static Task AnnounceCommitAsync(
-        ISiteLiveUpdates live, Site site, string branch, string? sha, string? message,
+        SiteLiveUpdates live, Site site, string branch, string? sha, string? message,
         CurrentUser user, CancellationToken ct) =>
         AnnounceCommitAsync(live, site, branch, sha, message, user.Name ?? user.Email, user.UserId, ct);
 
     private static async Task AnnounceCommitAsync(
-        ISiteLiveUpdates live, Site site, string branch, string? sha, string? message,
+        SiteLiveUpdates live, Site site, string branch, string? sha, string? message,
         string? author, Guid? actorUserId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(sha)) return;
@@ -1194,7 +1194,7 @@ public static class SiteEndpoints
     /// stale in-flight builds first so a wedged queue can't block the new one.</summary>
     private static async Task<Guid> EnqueueReleaseBuildAsync(
         SitesDbContext db, CmsDbContext cms, IEventPublisher events,
-        Dcms.AdminApi.Sites.Git.SiteGitService git, Site site, ISiteLiveUpdates live,
+        Dcms.AdminApi.Sites.Git.SiteGitService git, Site site, SiteLiveUpdates live,
         Guid? actorUserId, CancellationToken ct)
     {
         await ReapStaleBuildsAsync(db, site.Id, ct);
@@ -1272,7 +1272,7 @@ public static class SiteEndpoints
 
             var cms = scope.GetRequiredService<CmsDbContext>();
             var events = scope.GetRequiredService<IEventPublisher>();
-            var live = scope.GetRequiredService<ISiteLiveUpdates>();
+            var live = scope.GetRequiredService<SiteLiveUpdates>();
             var buildId = await EnqueueReleaseBuildAsync(db, cms, events, git, site, live, null, ct);
 
             scope.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(SiteEndpoints)).LogInformation(

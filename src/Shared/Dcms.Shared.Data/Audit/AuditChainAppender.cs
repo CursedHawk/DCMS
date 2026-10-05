@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Dcms.Shared.Audit;
-using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.Shared.Data.Audit;
@@ -25,7 +24,7 @@ namespace Dcms.Shared.Data.Audit;
 public sealed class AuditChainAppender(
     AuditDbContext db,
     IAuditChainKeyProvider keys,
-    IClock clock)
+    TimeProvider clock)
 {
     /// <summary>
     /// Appends a batch in one transaction, skipping any record already present.
@@ -103,7 +102,7 @@ public sealed class AuditChainAppender(
 
         head.Seq = row.Seq;
         head.LastHash = row.Hash;
-        head.UpdatedAt = clock.UtcNow;
+        head.UpdatedAt = clock.GetUtcNow();
 
         return true;
     }
@@ -133,7 +132,7 @@ public sealed class AuditChainAppender(
             Period = period,
             Seq = 0,
             LastHash = [],
-            UpdatedAt = clock.UtcNow,
+            UpdatedAt = clock.GetUtcNow(),
         };
         db.ChainHeads.Add(head);
         await db.SaveChangesAsync(cancellationToken);
