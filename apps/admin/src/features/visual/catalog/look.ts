@@ -5,11 +5,14 @@ import {
   Columns2,
   FileCode,
   FileText,
+  Frame,
   Heading,
   Image,
+  Images,
   LayoutGrid,
   LayoutList,
   ListChecks,
+  MapPin,
   Menu,
   Minus,
   PanelsTopLeft,
@@ -22,6 +25,7 @@ import {
   Puzzle,
   Rows3,
   Square,
+  SquarePlay,
   SquareStack,
   TextCursorInput,
   ClipboardList,
@@ -65,6 +69,10 @@ export const COMPONENT_LOOKS: Readonly<Record<string, ComponentLook>> = {
   'dcms.list': { icon: ListChecks, archetype: 'list' },
   'dcms.divider': { icon: Minus, archetype: 'divider' },
   'dcms.quote': { icon: Quote, archetype: 'quote' },
+  'dcms.video': { icon: SquarePlay, archetype: 'media' },
+  'dcms.gallery': { icon: Images, archetype: 'gallery' },
+  'dcms.map': { icon: MapPin, archetype: 'map' },
+  'dcms.embed': { icon: Frame, archetype: 'embed' },
 };
 
 const TENANT: ComponentLook = { icon: Puzzle, archetype: 'card' };

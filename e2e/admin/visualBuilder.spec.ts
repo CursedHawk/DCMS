@@ -530,3 +530,18 @@ test('an icon is added from the palette and its symbol picked by sight', async (
   await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"icon": "phone"');
   await expect(frame.locator('[data-dcms-type="dcms.icon"] svg')).toBeVisible();
 });
+
+test('a video takes a pasted YouTube link and shows a still on the canvas; settings that do not apply hide', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  await frame.locator('[data-dcms-node="h"] h1').click();
+  await page.getByPlaceholder('Search components').fill('youtube');
+  await page.getByRole('button', { name: 'Video', exact: true }).click();
+  // A link source: the link field, no file picker.
+  await expect(page.getByLabel('Video file', { exact: true })).toHaveCount(0);
+  const link = page.getByLabel('Video link', { exact: true });
+  await link.fill('https://youtu.be/dQw4w9WgXcQ');
+  await link.press('Enter');
+  await expect(frame.locator('.dcms-video-still')).toBeVisible();
+  await expect(frame.locator('[data-dcms-type="dcms.video"] iframe')).toHaveCount(0);
+  await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"url": "https://youtu.be/dQw4w9WgXcQ"');
+});

@@ -5,6 +5,7 @@ import { choice, responsiveSelect, select, text, variants, type Props } from './
 import { createRegistry, type ComponentDefinition, type ComponentRenderProps } from './registry';
 import { useRenderMode } from './renderMode';
 import { CONTENT_COMPONENTS } from './contentComponents';
+import { MEDIA_COMPONENTS } from './mediaComponents';
 import { Collection, Form, FormField, Modal, RichText, runAction } from './dataComponents';
 import { SiteLink, useSite } from './site';
 import { PageStateContext } from './state';
@@ -443,6 +444,7 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
         name: 'moreLabel',
         label: '“Load more” label',
         maxLength: 40,
+        showIf: { prop: 'paging', is: ['more'] },
         group: 'content',
         description: 'The text on the “Load more” button.',
       },
@@ -723,6 +725,7 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
     ],
   },
   ...CONTENT_COMPONENTS,
+  ...MEDIA_COMPONENTS,
 ];
 
 export const builtinRegistry = createRegistry(BUILTIN_COMPONENTS);

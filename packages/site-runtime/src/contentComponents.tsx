@@ -245,7 +245,7 @@ export const CONTENT_COMPONENTS: readonly ComponentDefinition[] = [
         group: 'style',
         description: 'What sits in front of each point.',
       }),
-      { ...iconProp('icon', 'Marker icon', 'The icon in front of each point, when the marker is “An icon”.', 'arrow-right'), group: 'style' },
+      { ...iconProp('icon', 'Marker icon', 'The icon in front of each point.', 'arrow-right'), group: 'style', showIf: { prop: 'marker', is: ['icon'] } },
       select('gap', 'Space between', LIST_GAPS, 'sm', { sm: 'Small', md: 'Medium', lg: 'Large' }, {
         group: 'layout',
         description: 'Room between the points.',

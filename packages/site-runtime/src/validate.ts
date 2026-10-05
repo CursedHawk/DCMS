@@ -1,3 +1,4 @@
+import { EMBED_SERVICES, embedUrl, videoTarget } from './mediaComponents';
 import { codeContractOf, codeContractPath, codeDefinitions, codeSourceOf, codeSourcePath, readCodeContracts, type CodeContract } from './code';
 import { BUILTIN_COMPONENTS } from './components';
 import { BINDABLE, isConnectionSource, sourceSchema, type Source } from './data';
@@ -163,6 +164,20 @@ function checkTree(
 
     if (node.action && !definition.actions?.includes(node.action.type)) {
       problem('warning', `${definition.label} does not run “${node.action.type}” actions; it is ignored.`, node.id);
+    }
+
+    // Third-party players: only from the allow-list, and a link that is not a video says so.
+    if (node.type === 'dcms.embed' && typeof node.props?.url === 'string' && node.props.url.trim() && !embedUrl(node.props.url)) {
+      problem('error', `The embed link is not from an allowed service (${EMBED_SERVICES.join(', ')}); it will show nothing.`, node.id);
+    }
+    if (
+      node.type === 'dcms.video' &&
+      node.props?.source !== 'file' &&
+      typeof node.props?.url === 'string' &&
+      node.props.url.trim() &&
+      !videoTarget('link', undefined, node.props.url)
+    ) {
+      problem('warning', 'The video link is not a YouTube or Vimeo video; it will show nothing.', node.id);
     }
 
     if (node.type === 'dcms.collection' && content) {

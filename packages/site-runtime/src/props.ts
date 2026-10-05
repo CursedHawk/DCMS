@@ -25,6 +25,8 @@ const base = {
   /** One or two plain sentences: what this setting changes. The inspector's help text. */
   description: z.string().max(300).optional(),
   group: z.enum(PROP_GROUPS).optional(),
+  /** Shown in the inspector only while another setting of the same component has one of these values. */
+  showIf: z.strictObject({ prop: z.string().regex(NAME), is: z.array(z.string()).min(1) }).optional(),
   required: z.boolean().optional(),
   /** Whether tablet and mobile may override the desktop value. */
   responsive: z.boolean().optional(),
@@ -59,7 +61,8 @@ export const propDefinitionSchema = z.discriminatedUnion('kind', [
   }),
   z.strictObject({ kind: z.literal('token'), ...base, group: z.enum(TOKEN_GROUPS), default: z.string().optional() }),
   z.strictObject({ kind: z.literal('color'), ...base, default: z.string().optional() }),
-  z.strictObject({ kind: z.literal('media'), ...base }),
+  /** `accept` narrows the media picker: pictures (the default) or videos. */
+  z.strictObject({ kind: z.literal('media'), ...base, accept: z.enum(['image', 'video']).optional() }),
   z.strictObject({ kind: z.literal('url'), ...base, default: z.string().optional() }),
   z.strictObject({ kind: z.literal('contentRef'), ...base, contentType: z.string().optional() }),
   z.strictObject({ kind: z.literal('date'), ...base, default: z.string().optional() }),

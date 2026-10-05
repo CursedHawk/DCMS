@@ -160,7 +160,14 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
   // Settings in the order an author thinks about them: what it says, how it looks, how it is
   // laid out, what it does, where its content comes from. A setting with no group (a site's own
   // component made before groups existed) is content.
-  const groups = PROP_GROUPS.map((group) => ({ group, props: definition.props.filter((p) => (p.group ?? 'content') === group) }));
+  // A setting that only matters for one choice of another (a video's link vs its file) hides otherwise.
+  const shown = (p: PropDefinition) => {
+    if (!p.showIf) return true;
+    const other = definition.props.find((o) => o.name === p.showIf!.prop);
+    const current = props[p.showIf.prop] ?? (other && 'default' in other ? other.default : undefined);
+    return p.showIf.is.includes(String(current));
+  };
+  const groups = PROP_GROUPS.map((group) => ({ group, props: definition.props.filter((p) => (p.group ?? 'content') === group && shown(p)) }));
   const Icon = lookOf(definition).icon;
 
   return (
@@ -387,7 +394,7 @@ function PropField({
         <div className="space-y-2">
           <MediaPicker
             value={assetIdFrom(url)}
-            category={'Image' as never}
+            category={(prop.accept === 'video' ? 'Video' : 'Image') as never}
             onChange={(assetId) => commit(assetId ? mediaUrlFor(assetId) : undefined)}
           />
           <TextField id={id} value={url} placeholder={t('visual.mediaUrlPlaceholder')} onCommit={(raw) => commit(raw)} />
