@@ -1,6 +1,7 @@
 import {
   BINDABLE,
   CODE_PREFIX,
+  PROP_GROUPS,
   codeSourcePath,
   nodeCssSchema,
   actionSchema,
@@ -16,12 +17,13 @@ import {
 } from '@dcms/site-runtime';
 import type { ContentField } from '@dcms/gjs-blocks';
 import type { Component, Editor } from 'grapesjs';
-import { FileCode, RotateCcw } from 'lucide-react';
+import { AlignCenter, AlignLeft, AlignRight, FileCode, Info, RotateCcw, type LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
   Button,
+  Hint,
   Input,
   Label,
   Select,
@@ -39,7 +41,11 @@ import { EXTRA, ID, PROPS, type NodeExtra } from './canvas/tree';
 import { ExposePanel, InstanceVersion } from './ExposePanel';
 import { META_BINDABLE, scopeOf, useContentCatalog } from './data';
 import { parseStateValue, readPage } from './documents';
-import { useVisual } from './store';
+import { useVisual, type CanvasTarget } from './store';
+import { lookOf } from './catalog/look';
+import { Group } from './inspector/Group';
+import { Segmented } from './inspector/Segmented';
+import { Swatches, hasSwatches } from './inspector/Swatches';
 import { useVfs } from '../site-source/vfs';
 
 /**
@@ -94,6 +100,7 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
     selected.set(EXTRA, next);
   };
   const overrides = device === 'desktop' ? undefined : extra.responsive?.[device];
+  const hasPageState = Object.keys(pageStateOf(target) ?? {}).length > 0 || !!extra.when;
 
   const writeProp = (prop: PropDefinition, value: unknown) => {
     if (device !== 'desktop' && prop.responsive) {
@@ -114,93 +121,125 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
     selected.set(PROPS, next);
   };
 
+  const renderProp = (prop: PropDefinition) => {
+    const overridden = overrides?.[prop.name] !== undefined && prop.responsive;
+    const value = overridden ? overrides![prop.name] : props[prop.name];
+    return (
+      <PropField
+        key={`${selected.cid}:${device}:${prop.name}`}
+        component={selected}
+        prop={prop}
+        value={value}
+        sources={catalog.sources}
+        binding={
+          scope && device === 'desktop' && BINDABLE[prop.kind]
+            ? {
+                fields: fields.filter((f) => BINDABLE[prop.kind]!.includes(f.kind)),
+                path: extra.bind?.[prop.name],
+                unknownSource: !scopeSource,
+                onBind: (path) => writeBind(prop.name, path),
+              }
+            : undefined
+        }
+        deviceNote={
+          device !== 'desktop'
+            ? prop.responsive
+              ? overridden
+                ? { kind: 'override', onReset: () => writeProp(prop, undefined) }
+                : { kind: 'inherits' }
+              : { kind: 'desktopOnly' }
+            : undefined
+        }
+        onCommit={(next) => writeProp(prop, next)}
+      />
+    );
+  };
+
+  // Settings in the order an author thinks about them: what it says, how it looks, how it is
+  // laid out, what it does, where its content comes from. A setting with no group (a site's own
+  // component made before groups existed) is content.
+  const groups = PROP_GROUPS.map((group) => ({ group, props: definition.props.filter((p) => (p.group ?? 'content') === group) }));
+  const Icon = lookOf(definition).icon;
+
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       <div className="border-b px-4 py-3">
-        <div className="text-sm font-medium">{definition.label}</div>
-        {definition.description && <p className="mt-0.5 text-xs text-muted-foreground">{definition.description}</p>}
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            <Icon className="h-4 w-4" />
+          </span>
+          <div className="min-w-0 text-sm font-medium">{definition.label}</div>
+        </div>
+        {definition.description && <p className="mt-1.5 text-xs text-muted-foreground">{definition.description}</p>}
         {device !== 'desktop' && (
           <p className="mt-2 rounded bg-primary/10 px-2 py-1 text-xs text-primary">
             {t('visual.editingDevice', { device: t(`visual.devices.${device}`) })}
           </p>
         )}
       </div>
-      <div className="space-y-4 p-4">
-        {latest && <InstanceVersion selected={selected} latest={latest} />}
-        {definition.type.startsWith(CODE_PREFIX) && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="w-full"
-            onClick={() => {
-              useVisual.getState().setView('split');
-              useVfs.getState().open(codeSourcePath(definition.type.slice(CODE_PREFIX.length)));
-            }}
-          >
-            <FileCode className="h-4 w-4" /> {t('visual.mine.editSource')}
-          </Button>
-        )}
-        {definition.props.length === 0 && !definition.actions?.length && (
-          <p className="text-sm text-muted-foreground">{t('visual.noProps')}</p>
-        )}
-        {definition.props.map((prop) => {
-          const overridden = overrides?.[prop.name] !== undefined && prop.responsive;
-          const value = overridden ? overrides![prop.name] : props[prop.name];
-          return (
-            <PropField
-              key={`${selected.cid}:${device}:${prop.name}`}
-              component={selected}
-              prop={prop}
-              value={value}
-              sources={catalog.sources}
-              binding={
-                scope && device === 'desktop' && BINDABLE[prop.kind]
-                  ? {
-                      fields: fields.filter((f) => BINDABLE[prop.kind]!.includes(f.kind)),
-                      path: extra.bind?.[prop.name],
-                      unknownSource: !scopeSource,
-                      onBind: (path) => writeBind(prop.name, path),
-                    }
-                  : undefined
-              }
-              deviceNote={
-                device !== 'desktop'
-                  ? prop.responsive
-                    ? overridden
-                      ? { kind: 'override', onReset: () => writeProp(prop, undefined) }
-                      : { kind: 'inherits' }
-                    : { kind: 'desktopOnly' }
-                  : undefined
-              }
-              onCommit={(next) => writeProp(prop, next)}
+      {(latest?.template || definition.type.startsWith(CODE_PREFIX)) && (
+        <div className="space-y-2 border-b p-4">
+          {latest && <InstanceVersion selected={selected} latest={latest} />}
+          {definition.type.startsWith(CODE_PREFIX) && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                useVisual.getState().setView('split');
+                useVfs.getState().open(codeSourcePath(definition.type.slice(CODE_PREFIX.length)));
+              }}
+            >
+              <FileCode className="h-4 w-4" /> {t('visual.mine.editSource')}
+            </Button>
+          )}
+        </div>
+      )}
+      {definition.props.length === 0 && !definition.actions?.length && (
+        <p className="border-b p-4 text-sm text-muted-foreground">{t('visual.noProps')}</p>
+      )}
+      {groups.map(({ group, props: inGroup }) => {
+        const behaviour = group === 'behaviour';
+        if (!inGroup.length && !behaviour) return null;
+        const extras = behaviour ? (
+          <>
+            {definition.actions?.length ? (
+              <ActionField
+                key={`${selected.cid}:action`}
+                editor={editor}
+                inItem={!!scope}
+                definition={definition}
+                action={extra.action}
+                onCommit={(action) => {
+                  const next: NodeExtra = { ...extra, action };
+                  if (!action) delete next.action;
+                  selected.set(EXTRA, next);
+                }}
+              />
+            ) : null}
+            <ShowWhenField
+              key={`${selected.cid}:when`}
+              when={extra.when}
+              onCommit={(when) => {
+                const next: NodeExtra = { ...extra, when };
+                if (!when) delete next.when;
+                selected.set(EXTRA, next);
+              }}
             />
-          );
-        })}
-        {definition.actions?.length ? (
-          <ActionField
-            key={`${selected.cid}:action`}
-            editor={editor}
-            inItem={!!scope}
-            definition={definition}
-            action={extra.action}
-            onCommit={(action) => {
-              const next: NodeExtra = { ...extra, action };
-              if (!action) delete next.action;
-              selected.set(EXTRA, next);
-            }}
-          />
-        ) : null}
-        <ShowWhenField
-          key={`${selected.cid}:when`}
-          when={extra.when}
-          onCommit={(when) => {
-            const next: NodeExtra = { ...extra, when };
-            if (!when) delete next.when;
-            selected.set(EXTRA, next);
-          }}
-        />
-        <ExposePanel selected={selected} definition={definition} />
-        {/* Out of the way on purpose: the design kit stays authoritative for everyone else. */}
+          </>
+        ) : null;
+        // Behaviour shows only when there is something in it: an action, page state, a setting.
+        if (behaviour && !inGroup.length && !definition.actions?.length && !hasPageState) return null;
+        return (
+          <Group key={group} id={group} title={t(`visual.groups.${group}`)}>
+            {inGroup.map(renderProp)}
+            {extras}
+          </Group>
+        );
+      })}
+      <ExposePanel selected={selected} definition={definition} />
+      {/* Out of the way on purpose: the design kit stays authoritative for everyone else. */}
+      <div className="p-4">
         <details className="rounded-md border px-3 py-2" open={!!extra.css}>
           <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('visual.css.advanced')}</summary>
           <div className="mt-2 space-y-1">
@@ -227,6 +266,13 @@ export function PropsPanel({ editor, registry }: { editor: Editor | null; regist
     </div>
   );
 }
+
+/** Choices short enough to show whole: up to four options with labels that fit a segment. */
+function segmentable(prop: Extract<PropDefinition, { kind: 'select' }>): boolean {
+  return prop.options.length <= 4 && prop.options.every((o) => o.label.length <= 14);
+}
+
+const ALIGN_ICONS: Record<string, LucideIcon | undefined> = { start: AlignLeft, center: AlignCenter, end: AlignRight };
 
 type DeviceNote = { kind: 'override'; onReset: () => void } | { kind: 'inherits' } | { kind: 'desktopOnly' };
 
@@ -292,7 +338,18 @@ function PropField({
       break;
     }
     case 'select':
-      control = (
+      // A short choice is shown whole (segmented); a long one stays a dropdown.
+      control = hasSwatches(prop.name, prop.options.map((o) => o.value)) ? (
+        <Swatches id={id} label={prop.label} value={typeof value === 'string' ? value : (prop.default ?? '')} options={prop.options} onChange={commit} />
+      ) : segmentable(prop) ? (
+        <Segmented
+          id={id}
+          label={prop.label}
+          value={typeof value === 'string' ? value : (prop.default ?? '')}
+          options={prop.options.map((o) => ({ ...o, icon: ALIGN_ICONS[prop.name === 'align' ? o.value : ''] }))}
+          onChange={commit}
+        />
+      ) : (
         <Select value={typeof value === 'string' ? value : (prop.default ?? '')} onValueChange={commit}>
           <SelectTrigger id={id}>
             <SelectValue />
@@ -353,6 +410,13 @@ function PropField({
         <Label htmlFor={id} className="min-w-0 flex-1">
           {prop.label}
         </Label>
+        {prop.description && (
+          <Hint label={prop.description}>
+            <button type="button" className="rounded text-muted-foreground hover:text-foreground" aria-label={t('visual.helpFor', { prop: prop.label })}>
+              <Info className="h-3.5 w-3.5" />
+            </button>
+          </Hint>
+        )}
         {deviceNote?.kind === 'override' && (
           <button
             type="button"
@@ -392,12 +456,10 @@ function PropField({
         control
       )}
       {binding?.unknownSource && <p className="text-xs text-muted-foreground">{t('visual.data.noSourceYet')}</p>}
-      {error ? (
+      {error && (
         <p className="text-xs text-destructive" role="alert">
           {error}
         </p>
-      ) : (
-        prop.description && <p className="text-xs text-muted-foreground">{prop.description}</p>
       )}
     </div>
   );
@@ -408,6 +470,10 @@ function PropField({
  * the same `actionSchema` the site loads with, so a `javascript:` link cannot be saved.
  */
 /** The state the open page declares — null on the shell or a component, which have none. */
+function pageStateOf(target: CanvasTarget | null): Record<string, boolean | number | string> | null {
+  return target?.kind === 'page' ? (readPage(target.id)?.state ?? {}) : null;
+}
+
 function usePageState(): Record<string, boolean | number | string> | null {
   const target = useVisual((s) => s.target);
   useVfs((s) => (target?.kind === 'page' ? s.files[`dcms/pages/${target.id}.json`] : undefined));

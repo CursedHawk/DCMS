@@ -43,7 +43,7 @@ test('a developer component is a placeholder on the canvas, configured by its co
 
   // Its contract's props are edited like any other component's.
   await placeholder.click();
-  const until = page.getByLabel('Until');
+  const until = page.getByLabel('Until', { exact: true });
   await expect(until).toHaveValue('Friday');
   await until.fill('Monday');
   await until.press('Enter');

@@ -1652,7 +1652,15 @@
       "notDetail": "Není stránka detailu",
       "detailHint": "Zobrazí položku, jejíž slug je v adrese (:{{param}}).",
       "needsParam": "Přidejte do adresy část :slug (např. /akce/:slug), aby to byla stránka detailu."
-    }
+    },
+    "groups": {
+      "content": "Obsah",
+      "style": "Vzhled",
+      "layout": "Rozvržení",
+      "behaviour": "Chování",
+      "data": "Data"
+    },
+    "helpFor": "Co dělá „{{prop}}“"
   },
   "connections": {
     "title": "Propojení",

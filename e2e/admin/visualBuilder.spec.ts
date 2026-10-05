@@ -218,8 +218,8 @@ test('the app shell draws the site’s menu and saves into app.json', async ({ p
   await expect(frame.getByText('Page content')).toBeVisible();
 
   await frame.locator('[data-dcms-type="dcms.section"]').first().click({ position: { x: 5, y: 5 } });
-  await page.getByRole('combobox', { name: 'Vertical spacing' }).click();
-  await page.getByRole('option', { name: 'Large', exact: true }).click();
+  // A short choice is shown whole: one click, no dropdown.
+  await page.getByRole('radiogroup', { name: 'Vertical spacing' }).getByRole('radio', { name: 'Large' }).click();
 
   await expect.poll(() => saved(api, 'dcms/app.json') ?? '', { timeout: 15000 }).toContain('"shell"');
   const app = JSON.parse(saved(api, 'dcms/app.json')!);
@@ -310,7 +310,7 @@ test('a selection becomes a component; editing it starts v2; an exposed setting 
   await page.getByRole('button', { name: /^Home/ }).click();
   await frame.locator('[data-dcms-node="h"] h1').click();
   await page.getByRole('button', { name: 'Update to v2' }).click();
-  const field = page.getByLabel('Heading: Text');
+  const field = page.getByLabel('Heading: Text', { exact: true });
   await field.fill('Hello from a component');
   await field.press('Enter');
 
@@ -460,4 +460,49 @@ test('page state: declared in Pages, set by a button, shown when — on the site
   await expect(preview.getByText('The details')).toBeVisible();
   await preview.getByRole('button', { name: 'More' }).click();
   await expect(preview.getByText('The details')).toHaveCount(0);
+});
+
+test('the inspector groups settings and shows short choices whole: swatches, segments, icons', async ({ page, api }) => {
+  const frame = await open(page, api, {
+    ...twoPages,
+    'dcms/pages/home.json': doc({
+      schemaVersion: 1,
+      id: 'home',
+      title: 'Home',
+      root: {
+        id: 'r',
+        type: 'dcms.page',
+        slots: {
+          default: [
+            {
+              id: 'band',
+              type: 'dcms.section',
+              slots: { default: [{ id: 'h', type: 'dcms.heading', props: { text: 'Hello', level: '1' } }, { id: 'row', type: 'dcms.stack', props: { direction: 'horizontal' } }] },
+            },
+          ],
+        },
+      },
+    }),
+  });
+
+  // Heading: alignment as icon buttons.
+  await frame.locator('[data-dcms-node="h"] h1').click();
+  await expect(page.getByRole('button', { name: 'Content', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await page.getByRole('radiogroup', { name: 'Alignment' }).getByRole('radio', { name: 'Centre' }).click();
+  await expect(frame.locator('[data-dcms-node="h"] h1')).toHaveClass(/dcms-text-center/);
+
+  // A section's background is chosen by its colour.
+  await frame.locator('[data-dcms-node="band"]').click({ position: { x: 5, y: 5 } });
+  await page.getByRole('radiogroup', { name: 'Background' }).getByRole('radio', { name: 'Dark' }).click();
+  await expect(frame.locator('[data-dcms-node="band"] section')).toHaveClass(/dcms-bg-inverse/);
+
+  // Help is one hover away instead of a paragraph under every field.
+  await frame.locator('[data-dcms-node="row"]').click();
+  await expect(page.getByRole('combobox', { name: 'Space between' })).toBeVisible();
+  await expect(page.getByText('The gap between neighbouring items.')).toHaveCount(0);
+  await page.getByRole('button', { name: 'What “Space between” does' }).hover();
+  await expect(page.getByRole('tooltip')).toContainText('The gap between neighbouring items.');
+
+  await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"background": "inverse"');
+  expect(saved(api, HOME)).toContain('"align": "center"');
 });

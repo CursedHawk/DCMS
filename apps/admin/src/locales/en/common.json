@@ -1613,7 +1613,15 @@
       "notDetail": "Not a detail page",
       "detailHint": "Shows the item whose slug is in the address (:{{param}}).",
       "needsParam": "Give the address a :slug part (e.g. /events/:slug) to make this a detail page."
-    }
+    },
+    "groups": {
+      "content": "Content",
+      "style": "Style",
+      "layout": "Layout",
+      "behaviour": "Behaviour",
+      "data": "Data"
+    },
+    "helpFor": "What “{{prop}}” does"
   },
   "connections": {
     "title": "Connections",
