@@ -60,7 +60,9 @@ const WRAPPERS = ['dcms.section', 'dcms.container', 'dcms.stack', 'dcms.card'];
  */
 export function CanvasMenu({ editor, registry }: { editor: Editor | null; registry: Registry }) {
   const { t } = useTranslation();
-  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  // Kept after closing: the menu fades out where it was, not from the window's corner.
+  const [at, setAt] = useState({ x: 0, y: 0 });
+  const [open, setOpen] = useState(false);
   const selected = useSelected(editor);
 
   useEffect(() => {
@@ -74,6 +76,7 @@ export function CanvasMenu({ editor, registry }: { editor: Editor | null; regist
       editor.select(component);
       const frame = editor.Canvas.getFrameEl()?.getBoundingClientRect();
       setAt({ x: (frame?.left ?? 0) + e.clientX, y: (frame?.top ?? 0) + e.clientY });
+      setOpen(true);
     };
     const attach = () => {
       doc?.removeEventListener('contextmenu', onMenu);
@@ -102,9 +105,9 @@ export function CanvasMenu({ editor, registry }: { editor: Editor | null; regist
   const name = selected ? (registry.get(selected.get('type') as string)?.label ?? selected.getName()) : '';
 
   return (
-    <DropdownMenu open={!!at} onOpenChange={(open) => !open && setAt(null)} modal={false}>
+    <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
       <DropdownMenuTrigger asChild>
-        <span aria-hidden className="pointer-events-none fixed h-px w-px" style={{ left: at?.x ?? 0, top: at?.y ?? 0 }} />
+        <span aria-hidden className="pointer-events-none fixed h-px w-px" style={{ left: at.x, top: at.y }} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={2} aria-label={t('visual.menu.label', { name })} className="min-w-56">
         {item(t('visual.menu.selectParent'), () => run(selectParent(editor)), 'Esc')}

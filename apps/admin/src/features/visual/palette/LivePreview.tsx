@@ -30,7 +30,20 @@ const LAYOUT_WIDTH = 760;
  * the runtime draws (tenant components, section templates); developer components are
  * placeholders here as on the canvas.
  */
-export function LivePreview({ node, registry, app, mode = 'live' }: { node: Node; registry: Registry; app: App | null; mode?: 'live' | 'edit' }) {
+export function LivePreview({
+  node,
+  registry,
+  app,
+  mode = 'live',
+  layoutWidth = LAYOUT_WIDTH,
+}: {
+  node: Node;
+  registry: Registry;
+  app: App | null;
+  mode?: 'live' | 'edit';
+  /** The width it is laid out at before being scaled to fit — a phone's, to see it as on a phone. */
+  layoutWidth?: number;
+}) {
   const host = useRef<HTMLDivElement>(null);
   const root = useRef<Root | null>(null);
   const frame = useRef<HTMLDivElement | null>(null);
@@ -44,16 +57,22 @@ export function LivePreview({ node, registry, app, mode = 'live' }: { node: Node
       const style = document.createElement('style');
       style.dataset.role = 'theme';
       const container = document.createElement('div');
-      container.style.cssText = `width:${LAYOUT_WIDTH}px;transform-origin:top left;background:var(--dcms-color-surface,#fff);pointer-events:none;`;
+      container.style.cssText = `width:${layoutWidth}px;transform-origin:top left;background:var(--dcms-color-surface,#fff);pointer-events:none;`;
+      container.dataset.width = String(layoutWidth);
       shadow.append(style, container);
       frame.current = container;
       root.current = createRoot(container);
       // Scale the layout width down to the card's.
       const fit = () => {
-        container.style.transform = `scale(${el.clientWidth / LAYOUT_WIDTH})`;
+        container.style.transform = `scale(${el.clientWidth / Number(container.dataset.width)})`;
       };
       fit();
       new ResizeObserver(fit).observe(el);
+    }
+    if (frame.current && frame.current.dataset.width !== String(layoutWidth)) {
+      frame.current.dataset.width = String(layoutWidth);
+      frame.current.style.width = `${layoutWidth}px`;
+      frame.current.style.transform = `scale(${el.clientWidth / layoutWidth})`;
     }
     let theme = '';
     try {
@@ -72,7 +91,7 @@ export function LivePreview({ node, registry, app, mode = 'live' }: { node: Node
         </SiteContext.Provider>
       </RenderModeContext.Provider>,
     );
-  }, [node, registry, app, themeText, mode]);
+  }, [node, registry, app, themeText, mode, layoutWidth]);
 
   useEffect(
     () => () => {

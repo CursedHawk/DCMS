@@ -47,6 +47,7 @@ import { useAuth } from '../../useAuth';
 import { MediaBridge } from '../builder/panels/MediaBridge';
 import { VisualPalette } from './palette/VisualPalette';
 import { CanvasMenu, CanvasShortcuts, DragNote, SelectionTrail } from './CanvasTools';
+import { StudioBar, StudioPanel } from './studio/Studio';
 import { LayersPanel } from '../builder/panels/LayersPanel';
 import { useGeneratedApi } from '../ide/generated/useGeneratedApi';
 import {
@@ -408,6 +409,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
         </Button>
       </div>
 
+      {target?.kind === 'component' && <StudioBar />}
       <MediaBridge editor={editor} />
       <Dialog open={apiOpen} onOpenChange={setApiOpen}>
         <DialogContent className="h-[85vh] max-w-6xl overflow-hidden p-0">
@@ -545,7 +547,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
           <>
             <Resizer onDelta={(dx) => setInspectorWidth(inspectorWidth - dx)} onReset={resetInspectorWidth} />
             <div style={{ width: inspectorWidth }} className="min-w-0 shrink-0 border-l bg-card">
-              <PropsPanel editor={editor} registry={registry} />
+              {target?.kind === 'component' ? <StudioPanel editor={editor} registry={registry} /> : <PropsPanel editor={editor} registry={registry} />}
             </div>
           </>
         )}

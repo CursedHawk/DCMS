@@ -8,12 +8,7 @@ import { useVfs } from '../site-source';
 import { EXTRA, ID, PROPS, SLOT, SLOT_TYPE, fromGrapes, type NodeExtra } from './canvas/tree';
 import { migrateInstance, readComponent, updateComponent, versionChanges } from './documents';
 import { useVisual } from './store';
-
-function uniqueName(base: string, taken: ReadonlySet<string>): string {
-  let name = base;
-  for (let n = 2; taken.has(name); n++) name = `${base}${n}`;
-  return name;
-}
+import { exposeLink, exposeProp, exposeSlot, exposedAs, linkExposedAs, slotExposedAs, unexpose, unexposeSlot } from './studio/model';
 
 /**
  * Composer controls for the node selected inside a component's template: which of its settings,
@@ -35,40 +30,24 @@ export function ExposePanel({ selected, definition }: { selected: Component; def
     if (!result.ok) toast.error(result.error);
   };
 
-  const exposedAs = (prop: string) =>
-    Object.entries(doc.bindings).find(([, ts]) => ts.some((b) => b.node === nodeId && 'prop' in b && b.prop === prop))?.[0];
-  const linkExposedAs = Object.entries(doc.bindings).find(([, ts]) => ts.some((b) => b.node === nodeId && 'action' in b))?.[0];
-
-  const expose = (prop: PropDefinition) =>
-    change((d) => {
-      const name = uniqueName(prop.name, new Set(d.props.map((p) => p.name)));
-      const current = props[prop.name];
-      const exposed = { ...prop, name, label: `${definition.label}: ${prop.label}` } as PropDefinition;
-      if (current !== undefined && 'default' in exposed) (exposed as { default?: unknown }).default = current;
-      return { ...d, props: [...d.props, exposed], bindings: { ...d.bindings, [name]: [{ node: nodeId, prop: prop.name }] } };
-    });
-  const unexpose = (name: string) =>
-    change((d) => {
-      const bindings = { ...d.bindings };
-      delete bindings[name];
-      return { ...d, props: d.props.filter((p) => p.name !== name), bindings };
-    });
+  const exposed = (prop: string) => exposedAs(doc, nodeId, prop);
+  const link = linkExposedAs(doc, nodeId);
+  const expose = (prop: PropDefinition) => change((d) => exposeProp(d, nodeId, definition, prop, props[prop.name]));
+  const drop = (name: string) => change((d) => unexpose(d, name));
 
   const emptySlots = (definition.slots ?? []).filter((slot) => {
     const slotModel = selected.components().models.find((c) => c.get('type') === SLOT_TYPE && c.get(SLOT) === slot.name);
     return slotModel && slotModel.components().length === 0;
   });
-  const slotExposedAs = (slot: string) =>
-    Object.entries(doc.slotTargets).find(([, s]) => s.node === nodeId && s.slot === slot)?.[0];
 
   return (
     <div className="space-y-2 border-t pt-4">
       <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('visual.expose.title')}</div>
       <p className="text-xs text-muted-foreground">{t('visual.expose.hint', { label: doc.label })}</p>
       {definition.props.map((prop) => {
-        const as = exposedAs(prop.name);
+        const as = exposed(prop.name);
         return (
-          <Button key={prop.name} size="sm" variant={as ? 'secondary' : 'ghost'} className="w-full justify-start" onClick={() => (as ? unexpose(as) : expose(prop))}>
+          <Button key={prop.name} size="sm" variant={as ? 'secondary' : 'ghost'} className="w-full justify-start" onClick={() => (as ? drop(as) : expose(prop))}>
             {as ? <PlugZap className="h-4 w-4" /> : <Plug className="h-4 w-4" />}
             {as ? t('visual.expose.exposedAs', { prop: prop.label, name: as }) : t('visual.expose.prop', { prop: prop.label })}
           </Button>
@@ -77,47 +56,22 @@ export function ExposePanel({ selected, definition }: { selected: Component; def
       {definition.actions?.includes('navigate') && (
         <Button
           size="sm"
-          variant={linkExposedAs ? 'secondary' : 'ghost'}
+          variant={link ? 'secondary' : 'ghost'}
           className="w-full justify-start"
-          onClick={() =>
-            linkExposedAs
-              ? unexpose(linkExposedAs)
-              : change((d) => {
-                  const name = uniqueName('link', new Set(d.props.map((p) => p.name)));
-                  return {
-                    ...d,
-                    props: [...d.props, { kind: 'url', name, label: `${definition.label}: ${t('visual.expose.link')}` }],
-                    bindings: { ...d.bindings, [name]: [{ node: nodeId, action: 'link' }] },
-                  };
-                })
-          }
+          onClick={() => (link ? drop(link) : change((d) => exposeLink(d, nodeId, `${definition.label}: ${t('visual.expose.link')}`)))}
         >
-          <Link2 className="h-4 w-4" /> {linkExposedAs ? t('visual.expose.linkExposed') : t('visual.expose.exposeLink')}
+          <Link2 className="h-4 w-4" /> {link ? t('visual.expose.linkExposed') : t('visual.expose.exposeLink')}
         </Button>
       )}
       {emptySlots.map((slot) => {
-        const as = slotExposedAs(slot.name);
+        const as = slotExposedAs(doc, nodeId, slot.name);
         return (
           <Button
             key={slot.name}
             size="sm"
             variant={as ? 'secondary' : 'ghost'}
             className="w-full justify-start"
-            onClick={() =>
-              change((d) => {
-                if (as) {
-                  const slotTargets = { ...d.slotTargets };
-                  delete slotTargets[as];
-                  return { ...d, slots: d.slots.filter((s) => s.name !== as), slotTargets };
-                }
-                const name = uniqueName(slot.name === 'default' ? 'content' : slot.name, new Set(d.slots.map((s) => s.name)));
-                return {
-                  ...d,
-                  slots: [...d.slots, { name, label: slot.label ?? slot.name }],
-                  slotTargets: { ...d.slotTargets, [name]: { node: nodeId, slot: slot.name } },
-                };
-              })
-            }
+            onClick={() => change((d) => (as ? unexposeSlot(d, as) : exposeSlot(d, nodeId, slot.name, slot.label ?? slot.name)))}
           >
             <SquareDashed className="h-4 w-4" />
             {as ? t('visual.expose.slotExposed', { slot: slot.label ?? slot.name }) : t('visual.expose.slot', { slot: slot.label ?? slot.name })}

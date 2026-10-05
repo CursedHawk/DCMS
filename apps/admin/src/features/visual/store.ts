@@ -49,6 +49,15 @@ interface VisualState {
   setBlockedTypes: (types: ReadonlySet<string>) => void;
   setContentSchema: (schema: ContentSchema | undefined) => void;
   setTarget: (target: CanvasTarget) => void;
+  /**
+   * Where the component studio returns to: the page (or shell) it was opened from, and the
+   * node to select there — the instance the studio was opened for.
+   */
+  studioReturn: { target: CanvasTarget; select: string | null } | null;
+  /** Select this node once the canvas next loads a document (consumed by the canvas). */
+  pendingSelect: string | null;
+  /** Leave the studio for where it was opened from. */
+  leaveStudio: () => void;
   setDevice: (device: DeviceId) => void;
   setView: (view: VisualView) => void;
   syncApp: (text: string | undefined) => void;
@@ -78,7 +87,25 @@ export const useVisual = create<VisualState>((set, get) => ({
   setRegistry: (registry) => set({ registry }),
   setBlockedTypes: (blockedTypes) => set({ blockedTypes }),
   setContentSchema: (contentSchema) => set({ contentSchema }),
-  setTarget: (target) => set({ target }),
+  setTarget: (target) => {
+    const current = get().target;
+    // Entering the studio from a page or the shell remembers the way back.
+    if (target.kind === 'component' && current && current.kind !== 'component') {
+      set({ target, studioReturn: { target: current, select: get().selectedNodeId() } });
+    } else if (target.kind !== 'component') {
+      set({ target, studioReturn: null });
+    } else {
+      set({ target });
+    }
+  },
+  studioReturn: null,
+  pendingSelect: null,
+  leaveStudio: () => {
+    const back = get().studioReturn;
+    if (!back) return;
+    get().flushCanvas();
+    set({ target: back.target, studioReturn: null, pendingSelect: back.select });
+  },
   setDevice: (device) => set({ device }),
   setView: (view) => set({ view }),
   syncApp: (text) => {

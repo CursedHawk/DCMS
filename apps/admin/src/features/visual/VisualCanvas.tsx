@@ -159,7 +159,9 @@ export function VisualCanvas({
       editor.UndoManager.start();
     }
     editor.UndoManager.clear();
-    editor.select(keep ? findNode(editor, keep) : undefined);
+    const pending = useVisual.getState().pendingSelect;
+    if (pending) useVisual.setState({ pendingSelect: null });
+    editor.select(keep || pending ? findNode(editor, (keep ?? pending)!) : undefined);
     // A component's template root stays put: it is what the component *is*.
     if (target.kind === 'component') editor.getWrapper()?.components().at(0)?.set({ removable: false, draggable: false, copyable: false });
     loaded.current = { path, doc, text: fileText!, generation };

@@ -11,7 +11,10 @@ export function canMakeReusable(selected: Component | undefined): selected is Co
   return !!selected && selected.get('type') !== SLOT_TYPE && !!selected.parent() && useVisual.getState().target?.kind !== 'component';
 }
 
-/** Make the selection a component: v1 is written and the selection replaced by an instance of it. */
+/**
+ * Make the selection a component: v1 is written, the selection replaced by an instance of it,
+ * and the studio opened on it.
+ */
 export function makeReusable(selected: Component, t: TFunction): void {
   const target = useVisual.getState().target;
   if (!target) return;
@@ -25,4 +28,6 @@ export function makeReusable(selected: Component, t: TFunction): void {
   if (!result.ok) return void toast.error(result.error);
   replaceNodeInFile(targetPath(target), node.id, { id: node.id, type: tenantType(result.name!), version: 1 });
   toast.success(t('visual.mine.made', { label: name.trim() }));
+  // Straight into the studio, to decide what pages may change; Done comes back to the instance.
+  useVisual.getState().setTarget({ kind: 'component', name: result.name!, version: 1 });
 }

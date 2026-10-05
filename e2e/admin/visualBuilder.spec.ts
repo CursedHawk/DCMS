@@ -295,39 +295,45 @@ test('publishing is refused while the site has errors, and says where they are',
   expect(api.requestsTo('POST', `/api/admin/sites/${SITE}/git/commit`)).toHaveLength(0);
 });
 
-test('a selection becomes a component; editing it starts v2; an exposed setting reaches the page after updating', async ({ page, api }) => {
+test('a selection becomes a component in the studio; editing it starts v2; a setting reaches the page after updating', async ({ page, api }) => {
   const frame = await open(page, api, twoPages);
   page.on('dialog', (d) => void d.accept('Welcome title'));
 
-  // Make the heading a component: v1 is written and the heading is replaced by an instance of it.
-  await frame.locator('[data-dcms-node="h"] h1').click();
-  await page.getByRole('tab', { name: 'My components' }).click();
-  await page.getByRole('button', { name: 'Make the selection a component' }).click();
-
-  await expect.poll(() => saved(api, 'dcms/components/welcome-title/v1.json') ?? '', { timeout: 15000 }).toContain('"label": "Welcome title"');
+  // Make the heading a component: v1 is written, the heading replaced by an instance, and the
+  // studio opens on the component.
+  await frame.locator('[data-dcms-node="h"] h1').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Make reusable…' }).click();
+  const studio = page.getByRole('region', { name: 'Component studio' });
+  await expect(studio).toBeVisible();
+  await expect(studio.getByLabel('Component name')).toHaveValue('Welcome title');
   await expect.poll(() => saved(api, 'dcms/pages/home.json') ?? '', { timeout: 15000 }).toContain('"type": "tenant.welcome-title"');
-  const instance = JSON.parse(saved(api, 'dcms/pages/home.json')!).root.slots.default[0];
-  expect(instance).toEqual({ id: 'h', type: 'tenant.welcome-title', version: 1 });
-  // The instance draws the template: same heading, now coming from the component.
+  expect(JSON.parse(saved(api, 'dcms/pages/home.json')!).root.slots.default[0]).toEqual({ id: 'h', type: 'tenant.welcome-title', version: 1 });
+
+  // Done: back on the page with the instance selected — it draws the template.
+  await studio.getByRole('button', { name: 'Done' }).click();
+  await expect(studio).toHaveCount(0);
   await expect(frame.locator('[data-dcms-node="h"][data-dcms-type="tenant.welcome-title"] h1')).toHaveText('Welcome home');
+  await expect(page.getByRole('navigation', { name: 'Selected part and the parts around it' }).getByRole('button').last()).toHaveText('Welcome title');
 
   // The page uses v1, so editing starts v2.
+  await page.getByRole('tab', { name: 'My components' }).click();
   await page.getByRole('button', { name: 'Edit' }).click();
   await expect.poll(() => saved(api, 'dcms/components/welcome-title/v2.json') ?? '', { timeout: 15000 }).toContain('"version": 2');
 
-  // In the composer: expose the heading's text as a setting of the component.
-  await frame.locator('h1').first().click();
-  await page.getByRole('button', { name: 'Expose “Text”' }).click();
+  // In the studio's Settings tab: offer the heading's text to pages, under a friendlier label.
+  await page.getByRole('tab', { name: 'Settings' }).click();
+  await page.getByRole('button', { name: 'Text', exact: true }).click();
   await expect.poll(() => saved(api, 'dcms/components/welcome-title/v2.json') ?? '', { timeout: 15000 }).toContain('"name": "text"');
-  const v2 = JSON.parse(saved(api, 'dcms/components/welcome-title/v2.json')!);
-  expect(v2.props[0]).toMatchObject({ kind: 'text', name: 'text', default: 'Welcome home' });
+  const label = page.getByRole('group', { name: 'Heading: Text' }).getByLabel('Label');
+  await label.fill('Title');
+  await label.press('Enter');
+  await expect.poll(() => saved(api, 'dcms/components/welcome-title/v2.json') ?? '', { timeout: 15000 }).toContain('"label": "Title"');
+  expect(JSON.parse(saved(api, 'dcms/components/welcome-title/v2.json')!).props[0]).toMatchObject({ kind: 'text', name: 'text', default: 'Welcome home' });
 
   // Back on the page, the instance is still v1 — until it is updated.
-  await page.getByRole('tab', { name: 'Pages' }).click();
-  await page.getByRole('button', { name: /^Home/ }).click();
-  await frame.locator('[data-dcms-node="h"] h1').click();
+  await page.getByRole('button', { name: 'Done' }).click();
   await page.getByRole('button', { name: 'Update to v2' }).click();
-  const field = page.getByLabel('Heading: Text', { exact: true });
+  const field = page.getByLabel('Title', { exact: true });
   await field.fill('Hello from a component');
   await field.press('Enter');
 
@@ -338,6 +344,37 @@ test('a selection becomes a component; editing it starts v2; an exposed setting 
     version: 2,
     props: { text: 'Hello from a component' },
   });
+});
+
+test('the studio turns an empty area into a slot, previews an instance and lists versions', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  page.on('dialog', (d) => void d.accept('Promo'));
+  await frame.locator('[data-dcms-node="go"]').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Wrap in a Card' }).click();
+  // The card has empty media and footer areas; make it a component.
+  // Its corner, not its middle: the middle is the button inside.
+  await frame.locator('[data-dcms-type="dcms.card"]').first().click({ button: 'right', position: { x: 3, y: 3 } });
+  await page.getByRole('menuitem', { name: 'Make reusable…' }).click();
+  await expect(page.getByRole('region', { name: 'Component studio' })).toBeVisible();
+
+  await page.getByRole('tab', { name: 'Slots' }).click();
+  await page.getByText('Card › Bottom').locator('..').getByRole('button', { name: 'Let pages fill' }).click();
+  await expect.poll(() => saved(api, 'dcms/components/promo/v1.json') ?? '', { timeout: 15000 }).toContain('"slotTargets"');
+  expect(JSON.parse(saved(api, 'dcms/components/promo/v1.json')!).slots).toEqual([{ name: 'footer', label: 'Bottom' }]);
+  // A filled area cannot become a slot, and says why.
+  await expect(page.getByText('Card › Content').locator('..')).toContainText('Has parts');
+
+  await page.getByRole('tab', { name: 'Preview' }).click();
+  await page.getByRole('button', { name: 'Show the preview' }).click();
+  const preview = page.getByRole('dialog', { name: 'Preview of “Promo”' });
+  const mobile = preview.getByTitle('Mobile');
+  await mobile.click();
+  await expect(mobile).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('tab', { name: 'Versions' }).click();
+  await expect(page.getByRole('list', { name: 'Versions' }).getByRole('listitem')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: /^Start version 2/ })).toBeVisible();
 });
 
 const POSTS = [

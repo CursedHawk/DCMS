@@ -337,6 +337,17 @@ export function versionToEdit(name: string): { version: number; created: boolean
   return { version: next.version, created: true };
 }
 
+/** Delete one version nothing uses — never the only one left. */
+export function deleteComponentVersion(name: string, version: number): Result {
+  const info = listComponents().find((c) => c.name === name);
+  if (!info?.versions.includes(version)) return { ok: false, error: `There is no version ${version}.` };
+  if (info.versions.length === 1) return { ok: false, error: 'It is the only version; delete the component instead.' };
+  const used = componentUsage(name).get(version) ?? 0;
+  if (used > 0) return { ok: false, error: `Version ${version} is used ${used} times. Update those first.` };
+  useVfs.getState().deleteFile(componentPath(name, version));
+  return { ok: true };
+}
+
 /** Delete every version of a component nothing uses. */
 export function deleteComponent(name: string): Result {
   const used = [...componentUsage(name).values()].reduce((a, b) => a + b, 0);
