@@ -5,6 +5,7 @@ import i18n from '../../../lib/i18n';
 import { thumbnailOf } from '../catalog/look';
 import { CanvasNode } from './CanvasNode';
 import { registerCanvasCommands } from './commands';
+import { startInlineEdit } from './inlineEdit';
 import { useVisual } from '../store';
 import { applyLayout, type SlotViewState } from './slots';
 import { EXTRA, ID, PROPS, RAW, SLOT, SLOT_TYPE, UNKNOWN_TYPE, newNodeId, nodeFromStarter, toGrapes } from './tree';
@@ -140,6 +141,16 @@ export function registerVisualTypes(editor: Editor, registry: Registry): void {
         },
       },
       view: {
+        events: () => ({ dblclick: 'onActive' }),
+        onActive(this: NodeViewState, ev: MouseEvent) {
+          const started = startInlineEdit(editor, this.model, this.el, () => {
+            this.root?.unmount();
+            this.root = createRoot(this.el);
+            this.root.render(<CanvasNode model={this.model} definition={definition} />);
+          });
+          // The innermost part takes the double-click; the containers around it do not.
+          if (started) ev.stopPropagation();
+        },
         init(this: NodeViewState & { listenTo: (o: Component, e: string, f: () => void) => void }) {
           this.listenTo(this.model, `change:${PROPS} change:${EXTRA}`, () => this.renderReact());
         },

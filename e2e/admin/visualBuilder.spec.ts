@@ -580,6 +580,30 @@ test('the keyboard moves, duplicates and walks up; ? lists the keys', async ({ p
   await expect(page.getByRole('dialog', { name: 'Keyboard shortcuts' })).toContainText('Move earlier or later');
 });
 
+test('a double-click types straight into a heading; Escape drops it, Enter keeps it, and it undoes', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  const heading = frame.locator('[data-dcms-node="h"] h1');
+  await heading.dblclick();
+  await page.keyboard.type('Never mind');
+  await page.keyboard.press('Escape');
+  await expect(heading).toHaveText('Welcome home');
+
+  await heading.dblclick();
+  await page.keyboard.type('Hello there');
+  await page.keyboard.press('Enter');
+  await expect(heading).toHaveText('Hello there');
+  await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"text": "Hello there"');
+  // The inspector shows the new text, and the button's label edits the same way.
+  await expect(page.getByLabel('Text', { exact: true })).toHaveValue('Hello there');
+  await page.keyboard.press('Control+z');
+  await expect(heading).toHaveText('Welcome home');
+
+  await frame.locator('[data-dcms-node="go"]').getByText('Read about us').dblclick();
+  await page.keyboard.type('Meet us');
+  await frame.locator('[data-dcms-node="h"]').click();
+  await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"label": "Meet us"');
+});
+
 test('an icon is added from the palette and its symbol picked by sight', async ({ page, api }) => {
   const frame = await open(page, api, twoPages);
   await frame.locator('[data-dcms-node="h"] h1').click();
