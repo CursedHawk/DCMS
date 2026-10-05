@@ -617,6 +617,24 @@ test('a double-click types straight into a heading; Escape drops it, Enter keeps
   await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"label": "Meet us"');
 });
 
+test('a design kit is adjusted — corners, colour — live on the canvas, and resets exactly', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  await page.getByRole('tab', { name: 'Theme' }).click();
+  await page.getByRole('button', { name: /^Studio/ }).click();
+  await page.getByRole('radio', { name: 'Square' }).click();
+  await expect.poll(() => saved(api, 'dcms/theme.json') ?? '', { timeout: 15000 }).toContain('"roundness": 0');
+  expect(JSON.parse(saved(api, 'dcms/theme.json')!)).toMatchObject({ kit: 'studio', radius: '0rem' });
+  await expect(frame.locator('[data-dcms-node="go"] .dcms-button')).toHaveCSS('border-radius', '0px');
+
+  await page.getByLabel('Brand colour').fill('#fde047');
+  await expect.poll(() => JSON.parse(saved(api, 'dcms/theme.json') ?? '{}').colors?.['brand-contrast'], { timeout: 15000 }).toBe('#111827');
+  await expect(page.getByText(/Hard to read as text on the page background/)).toBeVisible();
+
+  await page.getByRole('button', { name: 'Reset to kit' }).click();
+  await expect.poll(() => saved(api, 'dcms/theme.json') ?? '', { timeout: 15000 }).not.toContain('tuning');
+  expect(JSON.parse(saved(api, 'dcms/theme.json')!).radius).toBe('0.625rem');
+});
+
 test('an icon is added from the palette and its symbol picked by sight', async ({ page, api }) => {
   const frame = await open(page, api, twoPages);
   await frame.locator('[data-dcms-node="h"] h1').click();

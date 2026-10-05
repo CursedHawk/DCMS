@@ -43,6 +43,23 @@ export const themeTokensSchema = z.object({
   radius: z.string().optional(),
   /** Escape hatch: raw custom properties merged into `:root` verbatim. */
   custom: z.record(z.string(), z.string()).default({}),
+  /**
+   * Mode D's theme panel: the design kit these tokens started from and the adjustments made to
+   * it, so the panel can show them and "reset to kit" is exact. Not tokens — nothing reads them
+   * as CSS.
+   */
+  kit: z.string().optional(),
+  tuning: z
+    .object({
+      brand: z.string().optional(),
+      accent: z.string().optional(),
+      headingFont: z.string().optional(),
+      bodyFont: z.string().optional(),
+      roundness: z.number().optional(),
+      density: z.number().optional(),
+      shadow: z.number().optional(),
+    })
+    .optional(),
 });
 
 export type ThemeTokens = z.infer<typeof themeTokensSchema>;

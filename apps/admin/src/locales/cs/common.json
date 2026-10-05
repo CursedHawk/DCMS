@@ -1557,7 +1557,21 @@
     },
     "theme": {
       "title": "Vzhled",
-      "hint": "Návrhová sada nastaví barvy, písmo, rozestupy a zaoblení pro celý web najednou."
+      "hint": "Návrhová sada nastaví barvy, písmo, rozestupy a zaoblení pro celý web najednou.",
+      "tune": "Upravit {{kit}}",
+      "reset": "Vrátit sadu",
+      "brand": "Barva značky",
+      "accent": "Doplňková barva",
+      "lowContrast": "Na pozadí stránky špatně čitelné — zvolte tmavší nebo sytější barvu.",
+      "headingFont": "Písmo nadpisů",
+      "bodyFont": "Písmo textu",
+      "kitFont": "Podle sady",
+      "roundness": "Rohy",
+      "roundnessSteps": "Hranaté|Mírné|Sada|Kulaté",
+      "density": "Prostor",
+      "densitySteps": "Hutný|Sada|Vzdušný",
+      "shadow": "Stíny",
+      "shadowSteps": "Žádné|Jemné|Sada|Výrazné"
     },
     "problems": {
       "title": "Problémy",

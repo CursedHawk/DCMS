@@ -1525,7 +1525,21 @@
     },
     "theme": {
       "title": "Theme",
-      "hint": "A design kit sets colours, type, spacing and corners for the whole site at once."
+      "hint": "A design kit sets colours, type, spacing and corners for the whole site at once.",
+      "tune": "Adjust {{kit}}",
+      "reset": "Reset to kit",
+      "brand": "Brand colour",
+      "accent": "Accent colour",
+      "lowContrast": "Hard to read as text on the page background — pick a darker or stronger colour.",
+      "headingFont": "Heading font",
+      "bodyFont": "Text font",
+      "kitFont": "As the kit has it",
+      "roundness": "Corners",
+      "roundnessSteps": "Square|Slight|Kit|Round",
+      "density": "Space",
+      "densitySteps": "Compact|Kit|Airy",
+      "shadow": "Shadows",
+      "shadowSteps": "None|Soft|Kit|Strong"
     },
     "problems": {
       "title": "Problems",
