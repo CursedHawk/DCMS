@@ -518,3 +518,15 @@ test('clicking a palette card adds it after the selection and selects it', async
   expect(home.root.slots.default.map((n: { type: string }) => n.type)).toEqual(['dcms.heading', 'dcms.text', 'dcms.stack']);
   await expect(page.getByRole('combobox', { name: 'Tone' }).or(page.getByRole('radiogroup', { name: 'Tone' }))).toBeVisible();
 });
+
+test('an icon is added from the palette and its symbol picked by sight', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  await frame.locator('[data-dcms-node="h"] h1').click();
+  await page.getByPlaceholder('Search components').fill('symbol');
+  await page.getByRole('button', { name: 'Icon', exact: true }).click();
+  await page.getByRole('button', { name: /^Icon: star/ }).click();
+  await page.getByLabel('Search icons').fill('phone');
+  await page.getByRole('option', { name: 'phone', exact: true }).click();
+  await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"icon": "phone"');
+  await expect(frame.locator('[data-dcms-type="dcms.icon"] svg')).toBeVisible();
+});

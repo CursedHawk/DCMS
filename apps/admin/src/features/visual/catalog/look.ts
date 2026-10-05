@@ -9,7 +9,13 @@ import {
   Image,
   LayoutGrid,
   LayoutList,
+  ListChecks,
   Menu,
+  Minus,
+  PanelsTopLeft,
+  Quote,
+  Shapes,
+  Tag,
   MousePointerClick,
   MoveVertical,
   Pilcrow,
@@ -53,6 +59,12 @@ export const COMPONENT_LOOKS: Readonly<Record<string, ComponentLook>> = {
   'dcms.text': { icon: Pilcrow, archetype: 'text' },
   'dcms.image': { icon: Image, archetype: 'image' },
   'dcms.button': { icon: MousePointerClick, archetype: 'button' },
+  'dcms.card': { icon: PanelsTopLeft, archetype: 'card' },
+  'dcms.icon': { icon: Shapes, archetype: 'icon' },
+  'dcms.badge': { icon: Tag, archetype: 'badge' },
+  'dcms.list': { icon: ListChecks, archetype: 'list' },
+  'dcms.divider': { icon: Minus, archetype: 'divider' },
+  'dcms.quote': { icon: Quote, archetype: 'quote' },
 };
 
 const TENANT: ComponentLook = { icon: Puzzle, archetype: 'card' };

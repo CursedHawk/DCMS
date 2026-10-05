@@ -1635,6 +1635,12 @@
         "developer": "Developer components appear here once you add one."
       },
       "hint": "Drag a card onto the page, or click it to add it after what is selected."
+    },
+    "icons": {
+      "none": "none",
+      "choose": "Choose an icon",
+      "search": "Search icons",
+      "noMatch": "No icon matches."
     }
   },
   "connections": {

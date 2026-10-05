@@ -1674,6 +1674,12 @@
         "developer": "Vývojářské komponenty se tu objeví, až nějakou přidáte."
       },
       "hint": "Kartu přetáhněte na stránku, nebo na ni klikněte a přidá se za výběr."
+    },
+    "icons": {
+      "none": "žádná",
+      "choose": "Vyberte ikonu",
+      "search": "Hledat ikony",
+      "noMatch": "Žádná ikona neodpovídá."
     }
   },
   "connections": {

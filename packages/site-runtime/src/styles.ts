@@ -76,6 +76,10 @@ const RESPONSIVE_RULES: readonly (readonly [string, string])[] = [
   ['dcms-spacer-md', 'height: var(--dcms-space-md, 1rem);'],
   ['dcms-spacer-lg', 'height: var(--dcms-space-lg, 2rem);'],
   ['dcms-spacer-xl', 'height: var(--dcms-space-xl, 4rem);'],
+  ['dcms-icon-sm', '--dcms-icon-size: 1rem;'],
+  ['dcms-icon-md', '--dcms-icon-size: 1.5rem;'],
+  ['dcms-icon-lg', '--dcms-icon-size: 2.25rem;'],
+  ['dcms-icon-xl', '--dcms-icon-size: 3.5rem;'],
 ];
 
 const STATIC_CSS = `
@@ -191,6 +195,63 @@ body { margin: 0; }
 .dcms-toast { padding: 0.75rem 1rem; border-radius: var(--dcms-radius-sm, 0.375rem); background: var(--dcms-color-inverse, #0f172a); color: var(--dcms-color-inverse-text, #fff); font: 0.875rem system-ui, sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
 .dcms-toast-success { background: var(--dcms-color-success, #16a34a); }
 .dcms-toast-error { background: var(--dcms-color-danger, #dc2626); }
+
+/* Content primitives (U1.1) */
+.dcms-pad-sm { padding: var(--dcms-space-sm, 0.75rem); }
+.dcms-pad-md { padding: var(--dcms-space-md, 1rem) var(--dcms-space-lg, 1.5rem); }
+.dcms-pad-lg { padding: var(--dcms-space-lg, 2rem); }
+.dcms-card { position: relative; display: flex; flex-direction: column; overflow: hidden; height: 100%; border-radius: var(--dcms-radius, 0.625rem); background: var(--dcms-color-surface, #fff); color: var(--dcms-color-text, inherit); }
+.dcms-card-outline { border: var(--dcms-border-width, 1px) solid var(--dcms-color-border, #e2e8f0); }
+.dcms-card-raised { box-shadow: var(--dcms-shadow-md, 0 4px 16px rgb(15 23 42 / 10%)); }
+.dcms-card-filled { background: var(--dcms-color-surface-alt, #f8fafc); }
+.dcms-card-plain { background: transparent; border-radius: 0; }
+.dcms-card-media img { display: block; width: 100%; }
+.dcms-card-body { flex: 1; }
+.dcms-card-content { display: flex; flex-direction: column; gap: var(--dcms-space-sm, 0.75rem); }
+.dcms-card-footer { display: flex; flex-wrap: wrap; gap: var(--dcms-space-sm, 0.75rem); padding-top: 0; }
+.dcms-card-linked { transition: transform var(--dcms-transition, 160ms ease), box-shadow var(--dcms-transition, 160ms ease); }
+.dcms-card-linked:hover { transform: translateY(-2px); box-shadow: var(--dcms-shadow-lg, 0 12px 32px rgb(15 23 42 / 14%)); }
+.dcms-card-cover { position: absolute; inset: 0; z-index: 0; }
+.dcms-card-cover:focus-visible { outline: 2px solid var(--dcms-color-brand, #4f46e5); outline-offset: -2px; }
+.dcms-card-linked .dcms-button { position: relative; z-index: 1; }
+.dcms-icon { display: inline-flex; align-items: center; justify-content: center; line-height: 0; --dcms-icon-size: 1.5rem; }
+.dcms-icon svg { width: var(--dcms-icon-size); height: var(--dcms-icon-size); }
+.dcms-icon-tone-brand { color: var(--dcms-color-brand, #4f46e5); }
+.dcms-icon-tone-muted { color: var(--dcms-color-muted, #64748b); }
+.dcms-icon-shape-circle, .dcms-icon-shape-square { padding: calc(var(--dcms-icon-size) * 0.45); background: var(--dcms-color-brand-soft, #eef2ff); }
+.dcms-icon-shape-circle { border-radius: 999px; }
+.dcms-icon-shape-square { border-radius: var(--dcms-radius, 0.625rem); }
+.dcms-badge { display: inline-flex; align-items: center; padding: 0.15em 0.65em; border-radius: var(--dcms-radius-pill, 999px); font-size: var(--dcms-text-sm, 0.875rem); font-weight: 600; letter-spacing: var(--dcms-tracking-label, 0.02em); line-height: 1.5; width: fit-content; }
+.dcms-badge-brand { background: var(--dcms-color-brand-soft, #eef2ff); color: var(--dcms-color-brand-strong, #4338ca); }
+.dcms-badge-neutral { background: var(--dcms-color-surface-sunken, #f1f5f9); color: var(--dcms-color-text, #1e293b); }
+.dcms-badge-success { background: color-mix(in srgb, var(--dcms-color-success, #16a34a) 15%, transparent); color: var(--dcms-color-success, #16a34a); }
+.dcms-badge-warning { background: color-mix(in srgb, var(--dcms-color-warning, #d97706) 15%, transparent); color: var(--dcms-color-warning, #d97706); }
+.dcms-badge-danger { background: color-mix(in srgb, var(--dcms-color-danger, #dc2626) 15%, transparent); color: var(--dcms-color-danger, #dc2626); }
+.dcms-list { margin: 0; padding-left: 1.4em; display: flex; flex-direction: column; font-family: var(--dcms-font-body, inherit); line-height: var(--dcms-leading-body, 1.6); }
+.dcms-list-gap-sm { gap: var(--dcms-space-xs, 0.5rem); }
+.dcms-list-gap-md { gap: var(--dcms-space-sm, 0.75rem); }
+.dcms-list-gap-lg { gap: var(--dcms-space-md, 1rem); }
+.dcms-list-check, .dcms-list-icon, .dcms-list-none { list-style: none; padding-left: 0; }
+.dcms-list-check li, .dcms-list-icon li { display: flex; gap: 0.6em; align-items: flex-start; }
+.dcms-list-marker { flex: none; width: 1.15em; height: 1.15em; margin-top: 0.2em; color: var(--dcms-color-brand, #4f46e5); }
+.dcms-divider { border: 0; border-top: var(--dcms-border-width, 1px) solid var(--dcms-color-border, #e2e8f0); width: 100%; margin-inline: 0; }
+.dcms-divider-dashed { border-top-style: dashed; }
+.dcms-divider-dotted { border-top-style: dotted; border-top-width: 3px; }
+.dcms-divider-short { width: 4rem; border-top-width: 3px; border-top-color: var(--dcms-color-brand, #4f46e5); }
+.dcms-divider-space-sm { margin-block: var(--dcms-space-sm, 0.75rem); }
+.dcms-divider-space-md { margin-block: var(--dcms-space-lg, 2rem); }
+.dcms-divider-space-lg { margin-block: var(--dcms-space-xl, 4rem); }
+.dcms-quote { margin: 0; }
+.dcms-quote blockquote { margin: 0; }
+.dcms-quote p { margin: 0; font-family: var(--dcms-font-heading, inherit); color: var(--dcms-color-heading, inherit); }
+.dcms-quote p::before { content: '“'; }
+.dcms-quote p::after { content: '”'; }
+.dcms-quote figcaption { margin-top: var(--dcms-space-sm, 0.75rem); color: var(--dcms-color-muted, #64748b); font-size: var(--dcms-text-sm, 0.875rem); }
+.dcms-quote figcaption::before { content: '— '; }
+.dcms-quote-plain p { font-size: var(--dcms-text-lg, 1.25rem); font-style: italic; }
+.dcms-quote-large p { font-size: var(--dcms-text-2xl, 1.75rem); line-height: 1.3; }
+.dcms-quote-card { padding: var(--dcms-space-lg, 2rem); border-radius: var(--dcms-radius, 0.625rem); background: var(--dcms-color-surface-alt, #f8fafc); }
+.dcms-quote-card p { font-size: var(--dcms-text-lg, 1.25rem); }
 
 .dcms-problem {
   padding: 0.75rem; border: 1px dashed #dc2626; border-radius: 0.375rem;

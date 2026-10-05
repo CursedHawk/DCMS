@@ -2,6 +2,8 @@ export * from './actions';
 export * from './app';
 export * from './code';
 export * from './components';
+export * from './contentComponents';
+export * from './icons';
 export * from './data';
 export * from './dataComponents';
 export * from './document';

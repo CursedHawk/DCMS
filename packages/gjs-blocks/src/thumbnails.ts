@@ -388,6 +388,8 @@ const ART: Record<string, () => string> = {
 
   badge: () => rect({ x: W / 2 - 13, y: H / 2 - 5, w: 26, h: 10, r: 5, accent: true }),
 
+  icon: () => circle(W / 2, H / 2, 13, false, 0.12) + rect({ x: W / 2 - 6, y: H / 2 - 6, w: 12, h: 12, r: 3, accent: true }),
+
   card: () => card(24, 8, 48, 44),
 
   person: () => circle(W / 2, 22, 10) + heading(W / 2 - 12, 38, 24, 4) + lines(W / 2 - 8, 47, 16, 1, 4),

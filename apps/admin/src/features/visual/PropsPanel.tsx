@@ -44,6 +44,7 @@ import { parseStateValue, readPage } from './documents';
 import { useVisual, type CanvasTarget } from './store';
 import { lookOf } from './catalog/look';
 import { Group } from './inspector/Group';
+import { IconPicker } from './inspector/IconPicker';
 import { Segmented } from './inspector/Segmented';
 import { Swatches } from './inspector/Swatches';
 import { hasSwatches } from './inspector/backgrounds';
@@ -394,6 +395,9 @@ function PropField({
       );
       break;
     }
+    case 'icon':
+      control = <IconPicker id={id} label={prop.label} value={typeof value === 'string' ? value : (prop.default ?? '')} onChange={commit} />;
+      break;
     default:
       control = (
         <TextField
