@@ -1738,6 +1738,143 @@
       "removed": "Removed: {{names}}",
       "showPreview": "Show the preview",
       "previewTitle": "Preview of “{{label}}”"
+    },
+    "help": {
+      "title": "Help",
+      "builderTour": "Show me around the builder",
+      "tasks": "Show me how to…"
+    },
+    "tour": {
+      "builder": {
+        "palette": {
+          "title": "Parts and sections",
+          "body": "Everything you can put on a page. Drag a part onto the page, or click it to add it after what is selected. Sections are ready-made blocks — a hero, prices, a contact form — to start from."
+        },
+        "canvas": {
+          "title": "Your page",
+          "body": "Click a part to select it, double-click a text to type into it, right-click for more. The + on a selected part adds a section below it. Press ? for the keys."
+        },
+        "inspector": {
+          "title": "Settings of what is selected",
+          "body": "What the selected part shows and how it looks, grouped into Content, Style, Layout and more. The ⓘ next to a setting says what it does."
+        },
+        "views": {
+          "title": "Design, code or preview",
+          "body": "Design is the canvas. Split and Code show the same page as its file. Preview runs the site as a visitor sees it — links and buttons work."
+        },
+        "devices": {
+          "title": "Computer, tablet, phone",
+          "body": "See the page at each width. A setting changed while a tablet or phone is chosen applies only from that width down."
+        },
+        "pages": {
+          "title": "Pages and menu",
+          "body": "Add pages and give them addresses, choose which go in the main menu, and edit the header and footer around every page."
+        },
+        "theme": {
+          "title": "The look of the whole site",
+          "body": "Pick a design kit, then adjust its colours, fonts, corners, spacing and shadows. Every part follows."
+        },
+        "mine": {
+          "title": "Your own components",
+          "body": "A section you build once and reuse on many pages. Change it in one place, and every page that uses it can follow."
+        },
+        "agent": {
+          "title": "Ask the assistant",
+          "body": "Describe what you want — a page, a section, a change — and the assistant builds it here, for you to review."
+        },
+        "publish": {
+          "title": "Publish",
+          "body": "When it looks right, publish: the site is built and goes live. Problems that would break it are listed first."
+        },
+        "help": {
+          "title": "Help is here",
+          "body": "This tour again, short tours of single tasks, and the keyboard shortcuts."
+        }
+      },
+      "firstPage": {
+        "name": "Build your first page",
+        "section": {
+          "title": "Add a section",
+          "body": "Open Sections and click one — a hero is a good start. It is added to the page."
+        },
+        "text": {
+          "title": "Change the words",
+          "body": "Double-click a heading or a text on the page and type. Click outside when you are done."
+        },
+        "picture": {
+          "title": "Swap the picture",
+          "body": "Click a picture on the page. Here, under Content, choose another from your media library."
+        },
+        "preview": {
+          "title": "See it as a visitor",
+          "body": "Press Preview to try the page with working links and buttons."
+        }
+      },
+      "content": {
+        "name": "Show content from a plugin",
+        "collection": {
+          "title": "Add a collection",
+          "body": "In Components, search for Collection and add it. It repeats one design for every item — every event, article or product."
+        },
+        "source": {
+          "title": "Choose what it lists",
+          "body": "With the collection selected, choose its content here, and how many items to show."
+        },
+        "fields": {
+          "title": "Show the item’s fields",
+          "body": "Put a heading, text or picture into the collection’s item. In their settings, choose which field of the item each one shows."
+        },
+        "detail": {
+          "title": "A page for each item",
+          "body": "In Pages, give a page an address like /events/:slug and choose its content: it becomes the detail page every item can link to."
+        }
+      },
+      "reusable": {
+        "name": "Make a reusable component",
+        "mine": {
+          "title": "Your components",
+          "body": "Components you have made are here, ready to add and to open again."
+        },
+        "make": {
+          "title": "Make one from a section",
+          "body": "Right-click a section on the page and choose Make reusable… The component studio opens — the tour goes on there."
+        },
+        "settings": {
+          "title": "What pages may change",
+          "body": "Choose which settings each page gets — a title, a picture, a link — and how they are labelled."
+        },
+        "slots": {
+          "title": "Where pages add their own parts",
+          "body": "Turn an empty area into a slot: each page fills it with its own content."
+        },
+        "preview": {
+          "title": "Try it",
+          "body": "See the component with sample values on a computer, tablet and phone."
+        },
+        "versions": {
+          "title": "Versions",
+          "body": "Pages keep the version they use. Start a new version to change the component without surprising them, then update them when you are ready."
+        },
+        "done": {
+          "title": "Back to the page",
+          "body": "Done takes you back to the page, with your component in place."
+        }
+      },
+      "publish": {
+        "name": "Publish the site",
+        "problems": {
+          "title": "Fix what would break",
+          "body": "Problems lists what would break the site — a missing page, a picture without a description. Click one to go to it. Errors must be fixed before publishing."
+        },
+        "publish": {
+          "title": "Publish",
+          "body": "Publish saves your work and builds the site. From a draft branch you choose what to take into the release."
+        },
+        "deploy": {
+          "title": "Watch it go live",
+          "body": "Deployments shows each build and when it is live, and lets you go back to an earlier one."
+        }
+      }
     }
   },
   "connections": {

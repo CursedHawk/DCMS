@@ -41,7 +41,7 @@ import {
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button, CenteredSpinner, Dialog, DialogContent, DialogTitle, cn } from '@dcms/ui';
+import { Button, CenteredSpinner, Dialog, DialogContent, DialogTitle, TourTarget, cn, usePageTour, useTour } from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
 import { useAuth } from '../../useAuth';
 import { MediaBridge } from '../builder/panels/MediaBridge';
@@ -76,6 +76,9 @@ import { SandboxPreview } from './SandboxPreview';
 
 const ApiExplorer = lazy(() => import('./ApiExplorer'));
 import { VISUAL_DEVICES, type DeviceId } from './canvas/editor';
+import { SHOW_SHORTCUTS } from './canvas/commands';
+import { HelpMenu } from './help/HelpMenu';
+import { builderTour, miniTour, type MiniTour } from './help/tours';
 import { ADD_SECTION } from './canvas/types';
 import { starterFiles } from './starter';
 import { useVisual, type VisualView } from './store';
@@ -168,6 +171,38 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
     onDraftChanged: (d) => setDraftMovedPaths(d.paths),
   });
   useEffect(() => setBranchMoved(false), [branch]);
+
+  // The builder's tour. Unlike other pages' tours it starts by itself — once, on a user's first
+  // visit: a canvas, a rail of panels and an inspector are not something to work out alone.
+  const { start: startTour } = useTour();
+  const tourSteps = useMemo(() => builderTour(t), [t]);
+  usePageTour(tourSteps);
+  useEffect(() => {
+    const sub = user?.profile.sub;
+    if (!editor || !sub) return;
+    const key = `dcms.visual.toured.${sub}`;
+    try {
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, '1');
+    } catch {
+      return; // No storage, no memory of having shown it: better never than on every visit.
+    }
+    startTour();
+  }, [editor, user, startTour]);
+  // "Make a reusable component" started on a page goes on in the studio once it opens.
+  const [studioTour, setStudioTour] = useState(false);
+  useEffect(() => {
+    if (!studioTour || target?.kind !== 'component') return;
+    setStudioTour(false);
+    startTour(miniTour(t, 'reusable', null, true, () => {}));
+  }, [studioTour, target, t, startTour]);
+  const runTour = (which: MiniTour | null) => {
+    // Every tour points at the palette or the inspector, which the other panels and Preview hide.
+    setSidebar('components');
+    if (useVisual.getState().view === 'preview') useVisual.getState().setView('design');
+    if (!which) return startTour();
+    startTour(miniTour(t, which, editor, target?.kind === 'component', () => setStudioTour(true)));
+  };
 
   // The app document, for menus on the canvas and the panels that edit it.
   useEffect(() => useVisual.getState().syncApp(files[APP_JSON]), [files]);
@@ -364,24 +399,28 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
           </button>
         )}
 
-        <Segmented label={t('visual.view')}>
-          {VIEWS.map(({ id, icon: Icon, labelKey }) => (
-            <SegmentButton key={id} active={view === id} title={t(labelKey)} onClick={() => useVisual.getState().setView(id)}>
-              <Icon className="h-4 w-4" />
-            </SegmentButton>
-          ))}
-        </Segmented>
-
-        <Segmented label={t('visual.device')}>
-          {VISUAL_DEVICES.map(({ id }) => {
-            const Icon = DEVICE_ICONS[id];
-            return (
-              <SegmentButton key={id} active={device === id} title={t(`visual.devices.${id}`)} onClick={() => chooseDevice(id)}>
+        <TourTarget id="visual.views">
+          <Segmented label={t('visual.view')}>
+            {VIEWS.map(({ id, icon: Icon, labelKey }) => (
+              <SegmentButton key={id} active={view === id} title={t(labelKey)} onClick={() => useVisual.getState().setView(id)}>
                 <Icon className="h-4 w-4" />
               </SegmentButton>
-            );
-          })}
-        </Segmented>
+            ))}
+          </Segmented>
+        </TourTarget>
+
+        <TourTarget id="visual.devices">
+          <Segmented label={t('visual.device')}>
+            {VISUAL_DEVICES.map(({ id }) => {
+              const Icon = DEVICE_ICONS[id];
+              return (
+                <SegmentButton key={id} active={device === id} title={t(`visual.devices.${id}`)} onClick={() => chooseDevice(id)}>
+                  <Icon className="h-4 w-4" />
+                </SegmentButton>
+              );
+            })}
+          </Segmented>
+        </TourTarget>
 
         <Button size="icon" variant="ghost" disabled={!canUndo} onClick={() => editor?.UndoManager.undo()} title={t('actions.undo')}>
           <Undo2 className="h-4 w-4" />
@@ -404,9 +443,14 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
         <span className="text-xs text-muted-foreground">
           {branch} · {dirty ? t('common.saving') : session.status}
         </span>
-        <Button onClick={startPublish} disabled={publish.isPending || !!conflict || session.switching}>
-          <Rocket className="h-4 w-4" /> {t('ide.git.publishToRelease')}
-        </Button>
+        <TourTarget id="visual.help">
+          <HelpMenu onTour={runTour} onShortcuts={() => editor?.trigger(SHOW_SHORTCUTS)} />
+        </TourTarget>
+        <TourTarget id="visual.publish">
+          <Button onClick={startPublish} disabled={publish.isPending || !!conflict || session.switching}>
+            <Rocket className="h-4 w-4" /> {t('ide.git.publishToRelease')}
+          </Button>
+        </TourTarget>
       </div>
 
       {target?.kind === 'component' && <StudioBar />}
@@ -463,21 +507,23 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
         <div style={{ width: sidebarWidth }} className="flex min-w-0 shrink-0 border-r bg-card">
           <div className="flex w-11 shrink-0 flex-col items-center gap-1 border-r py-2" role="tablist" aria-orientation="vertical">
             <Rail active={sidebar === 'components'} label={t('visual.components')} onClick={() => setSidebar('components')}><Blocks className="h-5 w-5" /></Rail>
-            <Rail active={sidebar === 'mine'} label={t('visual.mine.title')} onClick={() => setSidebar('mine')}><Puzzle className="h-5 w-5" /></Rail>
+            <TourTarget id="visual.rail.mine"><Rail active={sidebar === 'mine'} label={t('visual.mine.title')} onClick={() => setSidebar('mine')}><Puzzle className="h-5 w-5" /></Rail></TourTarget>
             <Rail active={sidebar === 'layers'} label={t('builder.layers')} onClick={() => setSidebar('layers')}><Layers className="h-5 w-5" /></Rail>
-            <Rail active={sidebar === 'pages'} label={t('builder.pages')} onClick={() => setSidebar('pages')}><FileText className="h-5 w-5" /></Rail>
-            <Rail active={sidebar === 'theme'} label={t('visual.theme.title')} onClick={() => setSidebar('theme')}><Palette className="h-5 w-5" /></Rail>
+            <TourTarget id="visual.rail.pages"><Rail active={sidebar === 'pages'} label={t('builder.pages')} onClick={() => setSidebar('pages')}><FileText className="h-5 w-5" /></Rail></TourTarget>
+            <TourTarget id="visual.rail.theme"><Rail active={sidebar === 'theme'} label={t('visual.theme.title')} onClick={() => setSidebar('theme')}><Palette className="h-5 w-5" /></Rail></TourTarget>
             <Rail active={sidebar === 'scm'} label={t('ide.git.title')} onClick={() => setSidebar('scm')} badge={changes.data?.length ?? 0}><GitBranch className="h-5 w-5" /></Rail>
-            <Rail active={sidebar === 'deploy'} label={t('ide.deploy.title')} onClick={() => setSidebar('deploy')}><Rocket className="h-5 w-5" /></Rail>
-            <Rail active={sidebar === 'problems'} label={t('visual.problems.title')} onClick={() => setSidebar('problems')} badge={errors}><AlertCircle className="h-5 w-5" /></Rail>
-            <Rail active={sidebar === 'agent'} label={t('ide.agent.title')} onClick={() => setSidebar('agent')}><Sparkles className="h-5 w-5" /></Rail>
+            <TourTarget id="visual.rail.deploy"><Rail active={sidebar === 'deploy'} label={t('ide.deploy.title')} onClick={() => setSidebar('deploy')}><Rocket className="h-5 w-5" /></Rail></TourTarget>
+            <TourTarget id="visual.rail.problems"><Rail active={sidebar === 'problems'} label={t('visual.problems.title')} onClick={() => setSidebar('problems')} badge={errors}><AlertCircle className="h-5 w-5" /></Rail></TourTarget>
+            <TourTarget id="visual.rail.agent"><Rail active={sidebar === 'agent'} label={t('ide.agent.title')} onClick={() => setSidebar('agent')}><Sparkles className="h-5 w-5" /></Rail></TourTarget>
             <Rail active={apiOpen} label={t('visual.api.title')} onClick={() => setApiOpen(true)}><Braces className="h-5 w-5" /></Rail>
           </div>
           <div className="min-w-0 flex-1 overflow-hidden">
             {/* The palette stays mounted: its payload arrives once, at editor creation. */}
-            <div className={cn('h-full overflow-y-auto', sidebar !== 'components' && 'hidden')}>
-              <VisualPalette editor={editor} />
-            </div>
+            <TourTarget id="visual.palette">
+              <div className={cn('h-full overflow-y-auto', sidebar !== 'components' && 'hidden')}>
+                <VisualPalette editor={editor} />
+              </div>
+            </TourTarget>
             {sidebar === 'mine' && <ComponentsPanel editor={editor} />}
             {sidebar === 'layers' && <LayersPanel editor={editor} />}
             {sidebar === 'pages' && <PagesPanel />}
@@ -507,16 +553,18 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
             {target ? (
               <>
                 <SelectionTrail editor={editor} registry={registry} />
-                <div className="relative min-h-0 flex-1">
-                  <DragNote editor={editor} />
-                  <VisualCanvas
-                    target={target}
-                    registry={registry}
-                    onReady={onEditorReady}
-                    onTeardown={() => setEditor(null)}
-                    onPageError={setPageError}
-                  />
-                </div>
+                <TourTarget id="visual.canvas">
+                  <div className="relative min-h-0 flex-1">
+                    <DragNote editor={editor} />
+                    <VisualCanvas
+                      target={target}
+                      registry={registry}
+                      onReady={onEditorReady}
+                      onTeardown={() => setEditor(null)}
+                      onPageError={setPageError}
+                    />
+                  </div>
+                </TourTarget>
                 <CanvasMenu editor={editor} registry={registry} />
                 <CanvasShortcuts editor={editor} />
               </>
@@ -546,9 +594,11 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
         {view !== 'preview' && (
           <>
             <Resizer onDelta={(dx) => setInspectorWidth(inspectorWidth - dx)} onReset={resetInspectorWidth} />
-            <div style={{ width: inspectorWidth }} className="min-w-0 shrink-0 border-l bg-card">
-              {target?.kind === 'component' ? <StudioPanel editor={editor} registry={registry} /> : <PropsPanel editor={editor} registry={registry} />}
-            </div>
+            <TourTarget id="visual.inspector">
+              <div style={{ width: inspectorWidth }} className="min-w-0 shrink-0 border-l bg-card">
+                {target?.kind === 'component' ? <StudioPanel editor={editor} registry={registry} /> : <PropsPanel editor={editor} registry={registry} />}
+              </div>
+            </TourTarget>
           </>
         )}
       </div>

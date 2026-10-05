@@ -40,6 +40,8 @@ export interface EdgeOptions {
   tenantSlug?: string;
   /** Off for the one spec that is about the storage notice itself. */
   dismissStorageNotice?: boolean;
+  /** Off for the specs about a tour that starts by itself on a first visit. */
+  toursSeen?: boolean;
 }
 
 /**
@@ -54,17 +56,22 @@ export async function useBffMode(page: Page, options: EdgeOptions = {}): Promise
   const issueCsrf = options.issueCsrf ?? true;
   const tenantSlug = options.tenantSlug ?? 'acme';
   const dismissNotice = options.dismissStorageNotice ?? true;
+  const toursSeen = options.toursSeen ?? true;
 
   // Tenant selection stays in localStorage — it names a workspace rather than carrying a
   // credential — so it is seeded here. Written only when nothing has chosen one: an init script
   // re-runs on every navigation, and the workspace switcher reloads the page deliberately, so
   // writing unconditionally would put the original workspace back and undo the switch.
-  await page.addInitScript(([slug, dismiss]) => {
+  //
+  // The visual builder's tour starts by itself on a user's first visit and dims everything
+  // around what it explains; seen already here, so only the spec about the tour meets it.
+  await page.addInitScript(([slug, dismiss, sub]) => {
     if (slug && !window.localStorage.getItem('dcms.tenant')) {
       window.localStorage.setItem('dcms.tenant', slug as string);
     }
     if (dismiss) window.localStorage.setItem('dcms.storage-notice', '1');
-  }, [tenantSlug, dismissNotice ? '1' : ''] as const);
+    if (sub) window.localStorage.setItem(`dcms.visual.toured.${sub}`, '1');
+  }, [tenantSlug, dismissNotice ? '1' : '', toursSeen ? (session?.sub ?? '') : ''] as const);
 
   // The entrypoint's substitution, done here.
   //

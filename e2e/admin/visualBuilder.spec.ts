@@ -741,3 +741,50 @@ test('on a phone the menu folds behind a button that opens it; the current page 
   await menu.click();
   await expect(preview.getByRole('link', { name: 'About', exact: true })).toHaveAttribute('aria-current', 'page');
 });
+
+test.describe('on a first visit', () => {
+  test.use({ toursSeen: false });
+
+  test('the builder tour starts by itself, and only then', async ({ page, api }) => {
+    await open(page, api, twoPages);
+    const tour = page.getByRole('dialog', { name: 'Page tour' });
+    await expect(tour.getByRole('heading', { name: 'Parts and sections' })).toBeVisible();
+    await tour.getByRole('button', { name: 'Next' }).click();
+    await expect(tour.getByRole('heading', { name: 'Your page' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(tour).toHaveCount(0);
+
+    await page.reload();
+    await expect(page.frameLocator('iframe.gjs-frame').locator('[data-dcms-type="dcms.heading"]').first()).toBeVisible({ timeout: 30000 });
+    await page.waitForTimeout(500);
+    await expect(tour).toHaveCount(0);
+    // Help shows it again.
+    await page.getByRole('button', { name: 'Help', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Show me around the builder' }).click();
+    await expect(tour.getByRole('heading', { name: 'Parts and sections' })).toBeVisible();
+  });
+});
+
+test('a task tour waits for what its step asks, and carries on into the studio', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  const tour = page.getByRole('dialog', { name: 'Page tour' });
+  await page.getByRole('button', { name: 'Help', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Build your first page' }).click();
+  await expect(tour.getByRole('heading', { name: 'Add a section' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Sections' }).click();
+  await page.getByPlaceholder('Search components').fill('prices');
+  await page.getByRole('button', { name: /^Pricing/ }).click();
+  await expect(tour.getByRole('heading', { name: 'Change the words' })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  page.on('dialog', (d) => void d.accept('Welcome title'));
+  await page.getByRole('button', { name: 'Help', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Make a reusable component' }).click();
+  await expect(tour.getByRole('heading', { name: 'Your components' })).toBeVisible();
+  await tour.getByRole('button', { name: 'Next' }).click();
+  await expect(tour.getByRole('heading', { name: 'Make one from a section' })).toBeVisible();
+  await frame.locator('[data-dcms-node="h"] h1').click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Make reusable…' }).click();
+  await expect(page.getByRole('region', { name: 'Component studio' })).toBeVisible();
+  await expect(tour.getByRole('heading', { name: 'What pages may change' })).toBeVisible();
+});

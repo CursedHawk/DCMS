@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { TooltipProvider } from '../ui/tooltip';
 import { user } from '../test/user';
 import { TourButton } from './TourButton';
@@ -145,5 +145,53 @@ describe('TourProvider', () => {
 
   it('refuses to be used outside a provider rather than silently doing nothing', () => {
     expect(() => render(<TourButton />)).toThrow(/TourProvider/);
+  });
+});
+
+function TaskTour({ steps }: { steps: TourStep[] }) {
+  const { start } = useTour();
+  return <button onClick={() => start(steps)}>Task tour</button>;
+}
+
+describe('a one-off tour', () => {
+  const TASK: TourStep[] = [{ target: 'two', title: 'Only the second', body: 'A task.' }];
+
+  it('runs its own steps, then gives the page its tour back', async () => {
+    render(
+      <TooltipProvider>
+        <TourProvider>
+          <Page />
+          <TaskTour steps={TASK} />
+          <TourOverlay />
+          <Probe />
+        </TourProvider>
+      </TooltipProvider>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Task tour' }));
+    expect(screen.getByText('Only the second')).toBeInTheDocument();
+    expect(screen.getByText('1 of 1')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.getByTestId('count')).toHaveTextContent('2');
+  });
+
+  it('moves on by itself once the reader has done what a step asks', async () => {
+    let done: () => void = () => {};
+    const steps: TourStep[] = [
+      { target: 'one', title: 'Do it', body: 'Press one.', until: (d) => ((done = d), () => {}) },
+      { target: 'two', title: 'Done it', body: 'Next.' },
+    ];
+    render(
+      <TooltipProvider>
+        <TourProvider>
+          <Page />
+          <TaskTour steps={steps} />
+          <TourOverlay />
+        </TourProvider>
+      </TooltipProvider>,
+    );
+    await user.click(screen.getByRole('button', { name: 'Task tour' }));
+    expect(screen.getByText('Do it')).toBeInTheDocument();
+    await act(async () => done());
+    expect(screen.getByText('Done it')).toBeInTheDocument();
   });
 });

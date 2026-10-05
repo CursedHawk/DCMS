@@ -1778,6 +1778,143 @@
       "removed": "Odebráno: {{names}}",
       "showPreview": "Zobrazit náhled",
       "previewTitle": "Náhled „{{label}}“"
+    },
+    "help": {
+      "title": "Nápověda",
+      "builderTour": "Provést mě editorem",
+      "tasks": "Ukažte mi, jak…"
+    },
+    "tour": {
+      "builder": {
+        "palette": {
+          "title": "Části a sekce",
+          "body": "Všechno, co můžete dát na stránku. Přetáhněte část na stránku, nebo na ni klikněte a přidá se za vybranou. Sekce jsou hotové bloky — úvodní pás, ceník, kontaktní formulář — od kterých můžete začít."
+        },
+        "canvas": {
+          "title": "Vaše stránka",
+          "body": "Kliknutím část vyberete, dvojklikem na text do něj píšete, pravým tlačítkem otevřete další možnosti. Tlačítko + u vybrané části přidá sekci pod ni. Klávesu ? stiskněte pro zkratky."
+        },
+        "inspector": {
+          "title": "Nastavení vybrané části",
+          "body": "Co vybraná část ukazuje a jak vypadá, rozdělené do skupin Obsah, Styl, Rozvržení a dalších. Ikona ⓘ u nastavení vysvětlí, co dělá."
+        },
+        "views": {
+          "title": "Návrh, kód, nebo náhled",
+          "body": "Návrh je plátno. Rozdělení a Kód ukazují tutéž stránku jako soubor. Náhled spustí web tak, jak ho uvidí návštěvník — odkazy a tlačítka fungují."
+        },
+        "devices": {
+          "title": "Počítač, tablet, telefon",
+          "body": "Prohlédněte si stránku v každé šířce. Nastavení změněné při zvoleném tabletu nebo telefonu platí jen od té šířky dolů."
+        },
+        "pages": {
+          "title": "Stránky a menu",
+          "body": "Přidávejte stránky a dávejte jim adresy, vyberte, které budou v hlavním menu, a upravte záhlaví a zápatí kolem všech stránek."
+        },
+        "theme": {
+          "title": "Vzhled celého webu",
+          "body": "Vyberte designovou sadu a pak upravte její barvy, písma, zaoblení, rozestupy a stíny. Řídí se jí každá část."
+        },
+        "mine": {
+          "title": "Vaše vlastní komponenty",
+          "body": "Sekce, kterou postavíte jednou a použijete na mnoha stránkách. Změníte ji na jednom místě a každá stránka, která ji používá, ji může převzít."
+        },
+        "agent": {
+          "title": "Zeptejte se asistenta",
+          "body": "Popište, co chcete — stránku, sekci, změnu — a asistent to tady postaví, abyste to mohli zkontrolovat."
+        },
+        "publish": {
+          "title": "Publikovat",
+          "body": "Až to vypadá dobře, publikujte: web se sestaví a spustí. Problémy, které by ho rozbily, se ukážou předem."
+        },
+        "help": {
+          "title": "Nápověda je tady",
+          "body": "Tahle prohlídka znovu, krátké prohlídky jednotlivých úkolů a klávesové zkratky."
+        }
+      },
+      "firstPage": {
+        "name": "Postavit první stránku",
+        "section": {
+          "title": "Přidejte sekci",
+          "body": "Otevřete Sekce a na jednu klikněte — dobrý začátek je úvodní pás. Přidá se na stránku."
+        },
+        "text": {
+          "title": "Změňte texty",
+          "body": "Dvakrát klikněte na nadpis nebo text na stránce a pište. Až budete hotovi, klikněte jinam."
+        },
+        "picture": {
+          "title": "Vyměňte obrázek",
+          "body": "Klikněte na obrázek na stránce. Tady v části Obsah vyberte jiný z knihovny médií."
+        },
+        "preview": {
+          "title": "Podívejte se jako návštěvník",
+          "body": "Stiskněte Náhled a vyzkoušejte stránku s fungujícími odkazy a tlačítky."
+        }
+      },
+      "content": {
+        "name": "Zobrazit obsah z pluginu",
+        "collection": {
+          "title": "Přidejte Collection",
+          "body": "V Komponentách vyhledejte Collection a přidejte ji. Opakuje jeden návrh pro každou položku — každou událost, článek nebo produkt."
+        },
+        "source": {
+          "title": "Vyberte, co vypisuje",
+          "body": "Se zvolenou kolekcí tady vyberte její obsah a kolik položek ukázat."
+        },
+        "fields": {
+          "title": "Ukažte pole položky",
+          "body": "Vložte do položky kolekce nadpis, text nebo obrázek. V jejich nastavení vyberte, které pole položky každý z nich ukazuje."
+        },
+        "detail": {
+          "title": "Stránka pro každou položku",
+          "body": "V Stránkách dejte stránce adresu jako /udalosti/:slug a vyberte její obsah: stane se detailní stránkou, na kterou může každá položka odkazovat."
+        }
+      },
+      "reusable": {
+        "name": "Vytvořit znovupoužitelnou komponentu",
+        "mine": {
+          "title": "Vaše komponenty",
+          "body": "Komponenty, které jste vytvořili, jsou tady — připravené k přidání i k dalším úpravám."
+        },
+        "make": {
+          "title": "Vytvořte ji ze sekce",
+          "body": "Klikněte pravým tlačítkem na sekci na stránce a vyberte Udělat znovupoužitelné… Otevře se studio komponent a prohlídka pokračuje tam."
+        },
+        "settings": {
+          "title": "Co mohou stránky měnit",
+          "body": "Vyberte, která nastavení každá stránka dostane — nadpis, obrázek, odkaz — a jak se budou jmenovat."
+        },
+        "slots": {
+          "title": "Kam stránky přidají vlastní části",
+          "body": "Z prázdné oblasti udělejte slot: každá stránka ho vyplní vlastním obsahem."
+        },
+        "preview": {
+          "title": "Vyzkoušejte ji",
+          "body": "Podívejte se na komponentu s ukázkovými hodnotami na počítači, tabletu i telefonu."
+        },
+        "versions": {
+          "title": "Verze",
+          "body": "Stránky si drží verzi, kterou používají. Založte novou verzi, abyste komponentu mohli změnit bez překvapení, a stránky aktualizujte, až budete připraveni."
+        },
+        "done": {
+          "title": "Zpět na stránku",
+          "body": "Hotovo vás vrátí na stránku s komponentou na místě."
+        }
+      },
+      "publish": {
+        "name": "Publikovat web",
+        "problems": {
+          "title": "Opravte, co by se rozbilo",
+          "body": "Problémy ukazují, co by web rozbilo — chybějící stránku, obrázek bez popisu. Kliknutím na problém na něj přejdete. Chyby je nutné opravit před publikováním."
+        },
+        "publish": {
+          "title": "Publikovat",
+          "body": "Publikování uloží vaši práci a sestaví web. Z pracovní větve vyberete, co převzít do vydání."
+        },
+        "deploy": {
+          "title": "Sledujte spuštění",
+          "body": "Nasazení ukazují každé sestavení, kdy je živé, a umožní vrátit se k dřívějšímu."
+        }
+      }
     }
   },
   "connections": {

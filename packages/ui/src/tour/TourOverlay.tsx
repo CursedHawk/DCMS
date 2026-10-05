@@ -52,6 +52,11 @@ export function TourOverlay() {
   }, [active, step, nodeFor, index]);
 
   useEffect(() => {
+    if (!active || !step?.until) return;
+    return step.until(next);
+  }, [active, step, next]);
+
+  useEffect(() => {
     if (!active) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') stop();

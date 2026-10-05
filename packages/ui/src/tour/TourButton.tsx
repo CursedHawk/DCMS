@@ -17,7 +17,7 @@ export function TourButton() {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={labels.start} onClick={start}>
+        <Button variant="ghost" size="icon" aria-label={labels.start} onClick={() => start()}>
           <Compass className="h-4 w-4" aria-hidden />
         </Button>
       </TooltipTrigger>

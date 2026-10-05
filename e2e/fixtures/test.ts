@@ -22,6 +22,7 @@ interface ConsoleFixtures {
   tenantSlug: string;
   /** Off for the one spec that is about the notice itself. */
   dismissStorageNotice: boolean;
+  toursSeen: boolean;
   api: MockApi;
   hub: HubMock;
 }
@@ -50,12 +51,13 @@ export const test = base.extend<ConsoleFixtures>({
   superAdmin: [false, { option: true }],
   tenantSlug: [data.TENANT.slug, { option: true }],
   dismissStorageNotice: [true, { option: true }],
+  toursSeen: [true, { option: true }],
 
   api: [
-    async ({ page, grants, superAdmin, tenantSlug, dismissStorageNotice }, use) => {
+    async ({ page, grants, superAdmin, tenantSlug, dismissStorageNotice, toursSeen }, use) => {
       const api = adminApi({ permissions: grants ?? undefined, isSuperAdmin: superAdmin });
       await api.install(page);
-      await useBffMode(page, { tenantSlug, dismissStorageNotice });
+      await useBffMode(page, { tenantSlug, dismissStorageNotice, toursSeen });
       await use(api);
       api.expectNoMissingRoutes();
     },
@@ -76,6 +78,7 @@ export const platformTest = base.extend<ConsoleFixtures>({
   superAdmin: [false, { option: true }],
   tenantSlug: ['', { option: true }],
   dismissStorageNotice: [true, { option: true }],
+  toursSeen: [true, { option: true }],
 
   api: [
     async ({ page, grants, superAdmin }, use) => {

@@ -5,6 +5,12 @@ export interface TourStep {
   body: React.ReactNode;
   /** Where the card sits relative to the target. Falls back automatically when it will not fit. */
   placement?: 'top' | 'right' | 'bottom' | 'left';
+  /**
+   * A step that asks the reader to do something moves on by itself once they have: called
+   * with `done` when the step opens, it returns the unsubscribe. Next stays, so a step the
+   * reader would rather not do never traps them.
+   */
+  until?: (done: () => void) => () => void;
 }
 
 export interface TourLabels {

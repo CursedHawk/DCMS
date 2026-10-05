@@ -10,7 +10,11 @@ interface TourContextValue {
   nodeFor: (id: string) => HTMLElement | null;
   active: boolean;
   index: number;
-  start: () => void;
+  /**
+   * Starts the page's tour — or, given steps, a one-off tour of those instead: a short tour of
+   * one task, started from the page's own control. The page's tour is back once it ends.
+   */
+  start: (only?: readonly TourStep[]) => void;
   stop: () => void;
   next: () => void;
   back: () => void;
@@ -24,8 +28,9 @@ const TourContext = createContext<TourContextValue | null>(null);
  *
  * <p><b>Never starts by itself.</b> A tour that opens over the page somebody navigated to is an
  * obstacle between them and their work, and the second time it happens they learn to dismiss
- * the product rather than read it. It starts when the reader presses the launcher, and that is
- * the only way it starts.</p>
+ * the product rather than read it. It starts when the reader presses the launcher — or once,
+ * on someone's very first visit, on a page that cannot be used without it (the visual builder,
+ * which remembers that it has). Never on every visit.</p>
  *
  * <p>Steps are declared by the page rather than centrally, because the thing a tour explains is
  * a specific control in a specific layout — a central list would drift from the screens the
@@ -47,6 +52,7 @@ export function TourProvider({
   labels?: Partial<TourLabels>;
 }) {
   const [steps, setStepsState] = useState<readonly TourStep[]>([]);
+  const [only, setOnly] = useState<readonly TourStep[] | null>(null);
   const [active, setActive] = useState(false);
   const [index, setIndex] = useState(0);
   const nodes = useRef(new Map<string, HTMLElement>());
@@ -60,6 +66,7 @@ export function TourProvider({
 
   const setSteps = useCallback((next: readonly TourStep[]) => {
     setStepsState(next);
+    setOnly(null);
     // A route change replaces the steps; a tour still running would be narrating the previous
     // page over the new one.
     setActive(false);
@@ -68,29 +75,26 @@ export function TourProvider({
 
   /** Only steps whose target is actually on the page. */
   const present = useMemo(
-    () => steps.filter((step) => nodes.current.has(step.target)),
+    () => (only ?? steps).filter((step) => nodes.current.has(step.target)),
     // Recomputed whenever the tour opens or moves, because registration happens during render
     // of the page and this provider does not re-render when a target mounts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [steps, active, index],
+    [steps, only, active, index],
   );
 
-  const start = useCallback(() => {
+  const start = useCallback((tour?: readonly TourStep[]) => {
+    setOnly(tour ?? null);
     setIndex(0);
     setActive(true);
   }, []);
-  const stop = useCallback(() => setActive(false), []);
-  const next = useCallback(
-    () =>
-      setIndex((current) => {
-        if (current + 1 >= present.length) {
-          setActive(false);
-          return current;
-        }
-        return current + 1;
-      }),
-    [present.length],
-  );
+  const stop = useCallback(() => {
+    setActive(false);
+    setOnly(null);
+  }, []);
+  const next = useCallback(() => {
+    if (index + 1 >= present.length) stop();
+    else setIndex(index + 1);
+  }, [index, present.length, stop]);
   const back = useCallback(() => setIndex((current) => Math.max(0, current - 1)), []);
 
   const value = useMemo<TourContextValue>(

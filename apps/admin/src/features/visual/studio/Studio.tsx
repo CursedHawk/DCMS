@@ -3,7 +3,7 @@ import type { Editor } from 'grapesjs';
 import { Check, Puzzle } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Input, cn } from '@dcms/ui';
+import { Button, Input, TourTarget, cn } from '@dcms/ui';
 import { PropsPanel } from '../PropsPanel';
 import { componentUsage, readApp } from '../documents';
 import { useVisual } from '../store';
@@ -38,9 +38,11 @@ export function StudioBar() {
         v{version} · {used ? t('visual.mine.used', { count: used }) : t('visual.studio.unused')}
       </span>
       <div className="flex-1" />
-      <Button size="sm" onClick={done}>
-        <Check className="h-4 w-4" /> {back ? t('visual.studio.done') : t('visual.studio.close')}
-      </Button>
+      <TourTarget id="studio.done">
+        <Button size="sm" onClick={done}>
+          <Check className="h-4 w-4" /> {back ? t('visual.studio.done') : t('visual.studio.close')}
+        </Button>
+      </TourTarget>
     </div>
   );
 }
@@ -89,16 +91,17 @@ export function StudioPanel({ editor, registry }: { editor: Editor | null; regis
     <div className="flex h-full flex-col">
       <div role="tablist" aria-label={t('visual.studio.title')} className="flex shrink-0 border-b px-1">
         {TABS.map((k) => (
-          <button
-            key={k}
-            type="button"
-            role="tab"
-            aria-selected={tab === k}
-            onClick={() => setTab(k)}
-            className={cn('-mb-px border-b-2 px-2 py-2 text-xs', tab === k ? 'border-primary font-medium' : 'border-transparent text-muted-foreground hover:text-foreground')}
-          >
-            {t(`visual.studio.tabs.${k}`)}
-          </button>
+          <TourTarget key={k} id={`studio.tab.${k}`}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === k}
+              onClick={() => setTab(k)}
+              className={cn('-mb-px border-b-2 px-2 py-2 text-xs', tab === k ? 'border-primary font-medium' : 'border-transparent text-muted-foreground hover:text-foreground')}
+            >
+              {t(`visual.studio.tabs.${k}`)}
+            </button>
+          </TourTarget>
         ))}
       </div>
       <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto">
