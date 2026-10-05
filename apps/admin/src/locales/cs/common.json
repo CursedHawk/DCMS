@@ -1711,6 +1711,12 @@
       "copyPaste": "Kopírovat a vložit část",
       "style": "Kopírovat a vložit její styl",
       "undo": "Zpět a znovu"
+    },
+    "drag": {
+      "loop": "Komponenta nemůže být sama v sobě.",
+      "into": "Pustit do: {{slot}}",
+      "empty": "Sem přetáhněte části — nebo toto vyberte a klikněte na kartu vlevo",
+      "emptyOnly": "Přijímá: {{what}} — přetáhněte sem"
     }
   },
   "connections": {

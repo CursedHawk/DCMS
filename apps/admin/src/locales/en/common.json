@@ -1672,6 +1672,12 @@
       "copyPaste": "Copy and paste a part",
       "style": "Copy and paste its style",
       "undo": "Undo and redo"
+    },
+    "drag": {
+      "loop": "A component cannot go inside itself.",
+      "into": "Drop into {{slot}}",
+      "empty": "Drop parts here — or select this and click a card on the left",
+      "emptyOnly": "Takes {{what}} — drag one here"
     }
   },
   "connections": {

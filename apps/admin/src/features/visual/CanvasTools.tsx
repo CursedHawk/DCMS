@@ -11,6 +11,7 @@ import { ShortcutSheet } from '../ide/ShortcutSheet';
 import { SHOW_SHORTCUTS } from './canvas/commands';
 import { canPasteStyle, copyStyle, duplicate, findNode, move, pasteStyle, remove, selectParent, trail, unwrap, wrap, type Outcome } from './canvas/operations';
 import { canMakeReusable, makeReusable } from './makeReusable';
+import { useVisual } from './store';
 
 /**
  * Where the selection sits, as clickable steps (Page › Section › Stack › Heading): the way to
@@ -168,5 +169,35 @@ export function CanvasShortcuts({ editor }: { editor: Editor | null }) {
         { title: t('ide.shortcuts.help'), rows: [{ keys: '?', label: t('ide.shortcuts.title') }] },
       ]}
     />
+  );
+}
+
+/**
+ * While a part is dragged: where it would land, or — in red — why it cannot go where the pointer
+ * is, so a drop that does not happen is never a mystery.
+ */
+export function DragNote({ editor }: { editor: Editor | null }) {
+  const note = useVisual((s) => s.dragNote);
+  useEffect(() => {
+    if (!editor) return;
+    const clear = () => useVisual.setState({ dragNote: null });
+    const events = 'block:drag:start block:drag:stop component:drag:start component:drag:end';
+    editor.on(events, clear);
+    return () => {
+      editor.off(events, clear);
+    };
+  }, [editor]);
+  if (!note) return null;
+  return (
+    <div
+      role="status"
+      className={
+        note.ok
+          ? 'pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs text-primary-foreground shadow'
+          : 'pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-destructive px-3 py-1 text-xs text-destructive-foreground shadow'
+      }
+    >
+      {note.text}
+    </div>
   );
 }

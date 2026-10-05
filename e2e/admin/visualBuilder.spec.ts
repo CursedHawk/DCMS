@@ -32,7 +32,7 @@ function savedHome(api: MockApi): string | null {
  * canvas frame and decides the drop position as it goes; `locator.dragTo` jumps straight to the
  * target and the sorter never sees it arrive (and synthetic DragEvents never start it at all).
  */
-async function dragWithMouse(page: Page, from: Locator, to: Locator) {
+async function dragWithMouse(page: Page, from: Locator, to: Locator, whileOver?: () => Promise<void>) {
   const a = (await from.boundingBox())!;
   const b = (await to.boundingBox())!;
   const start = { x: a.x + a.width / 2, y: a.y + a.height / 2 };
@@ -47,6 +47,7 @@ async function dragWithMouse(page: Page, from: Locator, to: Locator) {
   // The sorter places its marker on an animation frame; releasing before it has is a drop
   // onto nothing.
   await page.waitForTimeout(250);
+  await whileOver?.();
   await page.mouse.up();
 }
 
@@ -99,7 +100,9 @@ test('a component dragged from the palette lands in the slot it is dropped on', 
   await page.getByPlaceholder('Search components').fill('photo');
   const block = page.getByText('Image', { exact: true }).first();
   const target = frame.locator('.dcms-node[data-dcms-node="hero"] .dcms-slot').first();
-  await dragWithMouse(page, block, target);
+  // While over the hero, the builder says where it would land.
+  await dragWithMouse(page, block, target, () => expect(page.getByRole('status').filter({ hasText: 'Drop into Section' })).toBeVisible());
+  await expect(page.getByRole('status').filter({ hasText: 'Drop into' })).toHaveCount(0);
 
   // GrapesJS's sorter, gated by canPlace, put it in the hero's slot; the save carries it.
   await expect(frame.locator('[data-dcms-node="hero"] [data-dcms-type="dcms.image"]')).toBeVisible();
@@ -519,6 +522,16 @@ test('the inspector groups settings and shows short choices whole: swatches, seg
 
   await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"background": "inverse"');
   expect(saved(api, HOME)).toContain('"align": "center"');
+});
+
+test('an empty container says what it takes', async ({ page, api }) => {
+  const frame = await open(page, api, twoPages);
+  await frame.locator('[data-dcms-node="h"] h1').click();
+  await page.getByRole('button', { name: 'Stack', exact: true }).click();
+  await expect(frame.locator('[data-dcms-type="dcms.stack"]').last().locator('.dcms-slot').first()).toHaveAttribute('data-hint', /^Drop parts here/);
+  await page.getByPlaceholder('Search components').fill('gallery');
+  await page.getByRole('button', { name: 'Gallery', exact: true }).click();
+  await expect(frame.locator('[data-dcms-type="dcms.gallery"] .dcms-slot').first()).toHaveAttribute('data-hint', 'Takes Image — drag one here');
 });
 
 test('clicking a palette card adds it after the selection and selects it', async ({ page, api }) => {

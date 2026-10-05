@@ -39,6 +39,14 @@ interface NodeViewState {
   renderReact(): void;
 }
 
+/** “Section › Content”: a slot as the author knows it. */
+function slotLabel(registry: Registry, parent: Component, slot: Component): string {
+  const def = registry.get(parent.get('type') as string);
+  const name = slot.get(SLOT) as string;
+  const label = def?.slots?.find((s) => s.name === name)?.label;
+  return def?.slots && def.slots.length > 1 ? `${def.label} › ${label ?? name}` : (def?.label ?? name);
+}
+
 /** Command and editor event: open the Sections palette to add a section below the selection. */
 export const ADD_SECTION = 'dcms:add-section';
 
@@ -73,16 +81,33 @@ export function registerVisualTypes(editor: Editor, registry: Registry): void {
         droppable: (source: Component, target: Component) => {
           const parent = target.parent();
           if (!parent) return false;
-          if (useVisual.getState().blockedTypes.has(source.get('type') ?? '')) return false;
+          const type = (source.get('type') ?? '') as string;
+          if (useVisual.getState().blockedTypes.has(type)) {
+            useVisual.setState({ dragNote: { ok: false, text: i18n.t('visual.drag.loop') } });
+            return false;
+          }
           const siblings = target.components().models.filter((c) => c !== source).length;
-          return canPlace(registry, parent.get('type') ?? '', target.get(SLOT), source.get('type') ?? '', siblings).ok;
+          const placement = canPlace(registry, parent.get('type') ?? '', target.get(SLOT), type, siblings);
+          // Said while dragging, so a drop that will not happen is never a mystery.
+          useVisual.setState({ dragNote: placement.ok ? { ok: true, text: i18n.t('visual.drag.into', { slot: slotLabel(registry, parent, target) }) } : { ok: false, text: placement.reason } });
+          return placement.ok;
         },
       },
     },
     view: {
-      updateAttributes(this: SlotViewState) {
+      updateAttributes(this: SlotViewState & { model: Component }) {
         base.updateAttributes.call(this);
         applyLayout(this);
+        // What an empty slot says it takes (the canvas stylesheet shows it while it is empty).
+        const parent = this.model.parent();
+        const slot = parent && registry.get(parent.get('type') as string)?.slots?.find((s) => s.name === this.model.get(SLOT));
+        if (slot) {
+          const allowed = slot.allowed?.map((t) => registry.get(t)?.label ?? t);
+          this.el.setAttribute(
+            'data-hint',
+            allowed?.length ? i18n.t('visual.drag.emptyOnly', { what: allowed.join(', ') }) : i18n.t('visual.drag.empty'),
+          );
+        }
       },
       updateClasses(this: SlotViewState) {
         base.updateClasses.call(this);

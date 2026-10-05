@@ -46,7 +46,7 @@ import { ApiError, api } from '../../lib/api';
 import { useAuth } from '../../useAuth';
 import { MediaBridge } from '../builder/panels/MediaBridge';
 import { VisualPalette } from './palette/VisualPalette';
-import { CanvasMenu, CanvasShortcuts, SelectionTrail } from './CanvasTools';
+import { CanvasMenu, CanvasShortcuts, DragNote, SelectionTrail } from './CanvasTools';
 import { LayersPanel } from '../builder/panels/LayersPanel';
 import { useGeneratedApi } from '../ide/generated/useGeneratedApi';
 import {
@@ -505,7 +505,8 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
             {target ? (
               <>
                 <SelectionTrail editor={editor} registry={registry} />
-                <div className="min-h-0 flex-1">
+                <div className="relative min-h-0 flex-1">
+                  <DragNote editor={editor} />
                   <VisualCanvas
                     target={target}
                     registry={registry}

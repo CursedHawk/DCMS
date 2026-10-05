@@ -24,7 +24,10 @@ const THEME_STYLE_ID = 'dcms-theme';
 const EDIT_CSS = `
 html, body { min-height: 100%; }
 .dcms-slot:empty { min-height: 3rem; outline: 1px dashed rgba(100,116,139,.55); outline-offset: -2px; }
-.dcms-slot:empty::before { content: ''; display: block; min-height: 3rem; }
+.dcms-slot:empty::before {
+  content: attr(data-hint); display: flex; align-items: center; justify-content: center; min-height: 3rem;
+  padding: 0 .75rem; text-align: center; font: 12px/1.3 system-ui, sans-serif; color: rgba(100,116,139,.95);
+}
 html { scrollbar-width: thin; scrollbar-color: rgba(100,116,139,.5) transparent; }
 `;
 

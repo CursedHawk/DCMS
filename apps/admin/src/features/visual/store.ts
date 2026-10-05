@@ -28,6 +28,8 @@ interface VisualState {
    * composer, itself and every component that already contains it (a loop would render forever).
    */
   blockedTypes: ReadonlySet<string>;
+  /** While dragging: where the part would land, or why it may not go where the pointer is. */
+  dragNote: { ok: boolean; text: string } | null;
   /** The tenant's content types and fields, once known — what bindings are checked against. */
   contentSchema: ContentSchema | undefined;
   /** How the canvas and preview read content: the admin's preview proxy for this site. */
@@ -59,6 +61,7 @@ export const useVisual = create<VisualState>((set, get) => ({
   app: null,
   registry: builtinRegistry,
   blockedTypes: new Set(),
+  dragNote: null,
   contentSchema: undefined,
   dataClient: fetchDataClient,
   previewItems: {},
