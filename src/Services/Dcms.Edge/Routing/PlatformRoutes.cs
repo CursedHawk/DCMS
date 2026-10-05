@@ -32,6 +32,7 @@ public static class PlatformRoutes
     public const string SiteHost = "site-host";
     public const string AdminSpa = "admin-spa";
     public const string PlatformSpa = "platform-spa";
+    public const string LandingSpa = "landing-spa";
     public const string Grafana = "grafana";
     public const string Forgejo = "forgejo";
 
@@ -175,6 +176,8 @@ public static class PlatformRoutes
         // ---- Static SPAs and the two third-party consoles (nginx does SPA fallback) ----
         routes.Add(CatchAll("platform-spa", [platform], PlatformSpa, order: 50));
         routes.Add(CatchAll("admin-spa", [admin], AdminSpa, order: 50));
+        // Static, prerendered and anonymous: no API, no auth, nothing to carve out ahead of it.
+        routes.Add(CatchAll("landing-spa", [options.LandingHost], LandingSpa, order: 50));
 
         // ---- Grafana: gated at the edge, and signed in by header ----
         //
@@ -249,6 +252,7 @@ public static class PlatformRoutes
             Cluster(SiteHost, u.SiteHost),
             Cluster(AdminSpa, u.AdminSpa),
             Cluster(PlatformSpa, u.PlatformSpa),
+            Cluster(LandingSpa, u.LandingSpa),
             Cluster(Grafana, u.Grafana),
             Cluster(Forgejo, u.Forgejo),
         ];

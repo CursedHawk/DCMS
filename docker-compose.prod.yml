@@ -477,6 +477,7 @@ services:
       Edge__AuthHost: "${AUTH_HOST:-auth.highgeek.eu}"
       Edge__GrafanaHost: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
       Edge__GitHost: "${GIT_HOST:-git.highgeek.eu}"
+      Edge__LandingHost: "${LANDING_HOST:-highgeek.eu}"
       # THE EDGE TERMINATES TLS, and is the only thing that does. It issues, renews and serves
       # every certificate itself; there is no second proxy to hand the ports back to.
       Edge__Certificates__TlsEnabled: "${EDGE_TLS_ENABLED:-true}"

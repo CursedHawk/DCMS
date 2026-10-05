@@ -54,7 +54,7 @@ REPO_ROOT=$(pwd)
 # Built from this repo, in dependency-ish order. Serial builds follow this order.
 APP_SERVICES=(
   identity admin-api content-api ai-gateway platform-api
-  media-worker email-worker site-builder site-host edge admin-spa platform-spa
+  media-worker email-worker site-builder site-host edge admin-spa platform-spa landing-spa
 )
 
 # Configuration arrives as a bind-mounted file. These must be force-recreated
@@ -75,7 +75,7 @@ CONFIG_MOUNTED_SERVICES=(alloy prometheus loki tempo pyroscope grafana nats vaul
 HEALTH_GATED_SERVICES=(
   identity admin-api content-api ai-gateway platform-api
   media-worker email-worker site-builder site-host edge
-  admin-spa platform-spa forgejo
+  admin-spa platform-spa landing-spa forgejo
 )
 
 DEPLOY_STATE_DIR="${DCMS_DEPLOY_STATE_DIR:-$REPO_ROOT/.deploy}"

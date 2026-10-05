@@ -689,6 +689,7 @@ services:
       Edge__AuthHost: "${AUTH_HOST:-auth.highgeek.eu}"
       Edge__GrafanaHost: "${GRAFANA_DOMAIN:-grafana.highgeek.eu}"
       Edge__GitHost: "${GIT_HOST:-git.highgeek.eu}"
+      Edge__LandingHost: "${LANDING_HOST:-highgeek.eu}"
       # Off in dev, where nothing here owns a public name a CA would answer for. Everything
       # below it -- ACME, the certificate store, the renewal sweep -- is inert while false.
       Edge__Certificates__TlsEnabled: "${EDGE_TLS_ENABLED:-false}"
@@ -969,6 +970,22 @@ services:
     depends_on:
       admin-api:
         condition: service_started
+
+  # The public site at the apex (apps/landing): prerendered static pages, no runtime
+  # configuration and no backend, so nothing to depend on and almost no memory.
+  landing-spa:
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    build:
+      context: .
+      dockerfile: apps/landing/Dockerfile
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 32m
 
 
   # ---------- observability ----------

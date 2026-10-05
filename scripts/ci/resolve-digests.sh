@@ -50,6 +50,7 @@ platform-api:platform-api
 edge:edge
 admin-spa:admin-spa
 platform-spa:platform-spa
+landing-spa:landing-spa
 log-janitor:log-janitor
 "
 

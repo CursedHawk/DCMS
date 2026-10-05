@@ -1,0 +1,280 @@
+@import 'tailwindcss';
+@import '@dcms/ui/fonts.css';
+@import '@dcms/ui/theme.css';
+
+/* The admin console's palette (apps/admin/src/index.css), so the site and the product match. */
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+  --card: 220 33% 98%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 243 75% 59%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 222 47% 11%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 9% 40%;
+  --accent: 243 75% 96%;
+  --accent-foreground: 243 75% 40%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 142 71% 36%;
+  --warning: 38 92% 50%;
+  --border: 220 13% 89%;
+  --input: 220 13% 91%;
+  --ring: 243 75% 59%;
+  --radius: 0.65rem;
+  --sidebar: 222 47% 11%;
+  --sidebar-foreground: 220 14% 96%;
+  --sidebar-muted: 220 9% 60%;
+  --sidebar-accent: 243 75% 59%;
+
+  /* A marketing page reads at body size, not the console's 14px. */
+  --dcms-text-base: 1.0625rem;
+}
+
+.dark {
+  --background: 222 47% 6%;
+  --foreground: 210 20% 96%;
+  --card: 222 40% 9%;
+  --card-foreground: 210 20% 96%;
+  --popover: 222 40% 10%;
+  --popover-foreground: 210 20% 96%;
+  --primary: 243 75% 68%;
+  --primary-foreground: 222 47% 7%;
+  --secondary: 217 33% 17%;
+  --secondary-foreground: 210 20% 96%;
+  --muted: 217 33% 15%;
+  --muted-foreground: 217 15% 68%;
+  --accent: 243 40% 20%;
+  --accent-foreground: 243 75% 85%;
+  --destructive: 0 63% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 142 64% 52%;
+  --warning: 38 92% 55%;
+  --border: 217 33% 18%;
+  --input: 217 33% 22%;
+  --ring: 243 75% 68%;
+  --sidebar: 222 47% 4%;
+  --sidebar-foreground: 210 20% 96%;
+  --sidebar-muted: 217 11% 55%;
+  --sidebar-accent: 243 75% 68%;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 5rem;
+  }
+  html,
+  body,
+  #root {
+    height: auto;
+  }
+  body {
+    line-height: 1.6;
+    text-rendering: optimizeLegibility;
+  }
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.25);
+  }
+}
+
+/* Faint dot grid behind the hero. Static on purpose: the demo is the only thing that moves. */
+.dot-grid {
+  background-image: radial-gradient(hsl(var(--foreground) / 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 70% 60% at 60% 40%, #000 30%, transparent 75%);
+}
+
+/* ---- Hero publish sequence ------------------------------------------------------------- */
+/*
+ * One orchestrated run on load: blocks drop into the canvas, the change is committed, the
+ * build runs, the certificate is issued, and the address bar flips to the live domain. Every
+ * step is an `animation-delay` on the same clock (--t), so retiming means changing one number.
+ * Ends on its final frame; the Replay button remounts it.
+ */
+.demo {
+  --t: calc(1s * var(--motion));
+}
+.demo .step {
+  opacity: 0;
+  animation: demo-in calc(var(--t) * 0.45) cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  animation-delay: calc(var(--t) * var(--at));
+}
+.demo .drop {
+  opacity: 0;
+  animation: demo-drop calc(var(--t) * 0.6) cubic-bezier(0.2, 0.9, 0.25, 1.15) forwards;
+  animation-delay: calc(var(--t) * var(--at));
+}
+.demo .out {
+  animation: demo-out calc(var(--t) * 0.3) ease-in forwards;
+  animation-delay: calc(var(--t) * var(--at));
+}
+.demo .pick {
+  animation: demo-pick calc(var(--t) * 0.6) ease-out;
+  animation-delay: calc(var(--t) * var(--at));
+}
+.demo .bar {
+  transform-origin: left;
+  transform: scaleX(0);
+  animation: demo-bar calc(var(--t) * 1.6) cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation-delay: calc(var(--t) * var(--at));
+}
+.demo .pulse {
+  animation: demo-pulse 2.4s ease-out infinite;
+  animation-delay: calc(var(--t) * var(--at));
+}
+@keyframes demo-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes demo-drop {
+  from {
+    opacity: 0;
+    transform: translate(-28px, -10px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes demo-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes demo-pick {
+  0%,
+  100% {
+    background: transparent;
+  }
+  30% {
+    background: hsl(var(--primary) / 0.18);
+  }
+}
+@keyframes demo-bar {
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes demo-pulse {
+  0% {
+    box-shadow: 0 0 0 0 hsl(var(--success) / 0.55);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 8px hsl(var(--success) / 0);
+  }
+}
+
+/* Reduced motion: show the finished state at once instead of an imperceptibly fast run. */
+@media (prefers-reduced-motion: reduce) {
+  .demo .step,
+  .demo .drop {
+    opacity: 1;
+    animation: none;
+  }
+  .demo .out {
+    opacity: 0;
+    animation: none;
+  }
+  .demo .bar {
+    transform: none;
+    animation: none;
+  }
+}
+
+/* ---- Legal pages: long-form prose without a typography plugin ---- */
+.legal h2 {
+  margin-top: 3.5rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+.legal h3 {
+  margin-top: 2rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.legal p,
+.legal ul,
+.legal ol,
+.legal table {
+  margin-top: 1rem;
+}
+.legal p,
+.legal li {
+  color: hsl(var(--foreground) / 0.86);
+}
+.legal ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.legal ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+.legal li + li {
+  margin-top: 0.4rem;
+}
+.legal a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.legal strong {
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+.legal table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+.legal th,
+.legal td {
+  border-bottom: 1px solid hsl(var(--border));
+  padding: 0.65rem 1rem 0.65rem 0;
+  text-align: left;
+  vertical-align: top;
+}
+.legal th {
+  font-weight: 600;
+}
+.legal code {
+  font-size: 0.85em;
+  background: hsl(var(--secondary));
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  overflow-wrap: anywhere;
+}
+/* Narrow screens: scroll a wide table sideways rather than break cookie names mid-word. */
+@media (max-width: 40rem) {
+  .legal table {
+    display: block;
+    overflow-x: auto;
+  }
+  .legal th,
+  .legal td {
+    min-width: 8rem;
+  }
+  .legal td code {
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+}

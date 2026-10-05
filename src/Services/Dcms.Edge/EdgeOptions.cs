@@ -4,10 +4,11 @@ namespace Dcms.Edge;
 /// The platform-plane edge configuration: the hostnames DCMS owns and the internal address of
 /// every service behind the edge.
 ///
-/// <para>Four of these come from the environment
-/// (<c>ADMIN_HOST</c>, <c>PLATFORM_HOST</c>, <c>GRAFANA_DOMAIN</c>, <c>GIT_HOST</c>), and they
-/// carry the same defaults for the same reason: dev and production deploy the same image, so a
-/// hostname baked in here would make the dev edge answer for production's name.</para>
+/// <para>Five of these come from the environment
+/// (<c>ADMIN_HOST</c>, <c>PLATFORM_HOST</c>, <c>GRAFANA_DOMAIN</c>, <c>GIT_HOST</c>,
+/// <c>LANDING_HOST</c>), and they carry the same defaults for the same reason: dev and
+/// production deploy the same image, so a hostname baked in here would make the dev edge
+/// answer for production's name.</para>
 ///
 /// <para>Bound from the <c>Edge</c> configuration section. Everything not named here — tenant
 /// custom domains — is served by the catch-all route to site-host, which resolves the tenant
@@ -21,6 +22,13 @@ public sealed class EdgeOptions
     public string PlatformHost { get; set; } = "platform.highgeek.eu";
     public string GrafanaHost { get; set; } = "grafana.highgeek.eu";
     public string GitHost { get; set; } = "git.highgeek.eu";
+
+    /// <summary>
+    /// The public marketing site and legal pages (apps/landing). The apex by default: it is the
+    /// address people type, and the platform's managed certificate already names it, so the
+    /// sweep orders nothing extra for it.
+    /// </summary>
+    public string LandingHost { get; set; } = "highgeek.eu";
 
     /// <summary>
     /// The authentication host. Everything identity serves lives here and nowhere else: the
@@ -51,6 +59,7 @@ public sealed class EdgeOptions
             yield return AuthHost;
             yield return GrafanaHost;
             yield return GitHost;
+            yield return LandingHost;
         }
     }
 
@@ -70,6 +79,7 @@ public sealed class EdgeUpstreams
     public string SiteHost { get; set; } = "http://site-host:8080";
     public string AdminSpa { get; set; } = "http://admin-spa:80";
     public string PlatformSpa { get; set; } = "http://platform-spa:80";
+    public string LandingSpa { get; set; } = "http://landing-spa:80";
     public string Grafana { get; set; } = "http://grafana:3000";
     public string Forgejo { get; set; } = "http://forgejo:3000";
 }

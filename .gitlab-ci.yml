@@ -281,6 +281,11 @@ build-image:
       - SERVICE: platform-spa
         LANE: b
         DOCKERFILE: apps/platform/Dockerfile
+      # Lane c: the .NET lane's later images are nearly free (shared SDK layers), so a third
+      # node build fits there without making either SPA lane wait on it.
+      - SERVICE: landing-spa
+        LANE: c
+        DOCKERFILE: apps/landing/Dockerfile
       # Built even though it is off by default. The deploy pulls images and never builds on the
       # host, so an operator who turns on the `logjanitor` profile there would otherwise hit a
       # compose file that wants a build context vps1 does not have. A 60 MB image that nothing
@@ -316,7 +321,7 @@ promote-images:
       set -e
       for SERVICE in identity admin-api content-api media-worker email-worker \
                      site-builder site-build-sandbox site-host ai-gateway platform-api \
-                     edge admin-spa platform-spa log-janitor; do
+                     edge admin-spa platform-spa landing-spa log-janitor; do
         IMAGE="$CI_REGISTRY_IMAGE/$SERVICE"
         if ! docker buildx imagetools inspect "$IMAGE:$CI_COMMIT_SHORT_SHA" >/dev/null 2>&1; then
           echo "No image at $IMAGE:$CI_COMMIT_SHORT_SHA."

@@ -26,6 +26,7 @@ public class PlatformRouteTableTests
     private const string Auth = "auth.example.test";
     private const string Grafana = "grafana.example.test";
     private const string Git = "git.example.test";
+    private const string Landing = "example.test";
 
     private static readonly EdgeOptions Options = new()
     {
@@ -34,6 +35,7 @@ public class PlatformRouteTableTests
         AuthHost = Auth,
         GrafanaHost = Grafana,
         GitHost = Git,
+        LandingHost = Landing,
     };
 
     private static readonly IReadOnlyList<RouteConfig> Routes = PlatformRoutes.Build(Options).Routes;
@@ -63,6 +65,12 @@ public class PlatformRouteTableTests
     // ---- The two third-party consoles ----
     [InlineData(Grafana, "/d/abc/dashboard", PlatformRoutes.Grafana)]
     [InlineData(Git, "/dcms/site-1.git/info/refs", PlatformRoutes.Forgejo)]
+    // ---- The public landing site, on the apex ----
+    [InlineData(Landing, "/", PlatformRoutes.LandingSpa)]
+    [InlineData(Landing, "/privacy-policy", PlatformRoutes.LandingSpa)]
+    [InlineData(Landing, "/terms-of-service", PlatformRoutes.LandingSpa)]
+    // A subdomain of the apex is not the apex: it stays a tenant's.
+    [InlineData("www.example.test", "/", PlatformRoutes.SiteHost)]
     // ---- Tenant custom domains: anything not named above ----
     [InlineData("shop.tenant.example", "/", PlatformRoutes.SiteHost)]
     [InlineData("shop.tenant.example", "/api/content/pages", PlatformRoutes.SiteHost)]
@@ -104,7 +112,7 @@ public class PlatformRouteTableTests
     [Fact]
     public void Tenant_catch_all_never_wins_on_a_platform_host()
     {
-        foreach (var host in new[] { Admin, Platform, Grafana, Git })
+        foreach (var host in new[] { Admin, Platform, Grafana, Git, Landing })
         {
             ResolveCluster(host, "/anything/at/all").Should().NotBe(PlatformRoutes.SiteHost,
                 $"{host} is a platform-owned host");

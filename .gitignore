@@ -81,3 +81,4 @@ __pycache__/
 # Operator-installed plugins are deployment state, not source (plugins/README.md).
 plugins/*
 !plugins/README.md
+dist-ssr/
