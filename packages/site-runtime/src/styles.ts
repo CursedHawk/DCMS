@@ -180,11 +180,16 @@ body { margin: 0; }
 .dcms-form { display: flex; flex-direction: column; gap: var(--dcms-space-md, 1rem); align-items: flex-start; }
 .dcms-form-fields { display: flex; flex-direction: column; gap: var(--dcms-space-sm, 0.75rem); align-self: stretch; }
 .dcms-field { display: flex; flex-direction: column; gap: 0.25rem; font-family: var(--dcms-font-body, inherit); }
-.dcms-field input, .dcms-field textarea {
+.dcms-field input, .dcms-field textarea, .dcms-field select {
   font: inherit; padding: 0.5rem 0.75rem; border: var(--dcms-border-width, 1px) solid var(--dcms-color-border, #cbd5e1);
   border-radius: var(--dcms-radius-sm, 0.375rem); background: var(--dcms-color-surface, #fff); color: inherit;
 }
-.dcms-field-check { flex-direction: row; align-items: center; gap: 0.5rem; }
+.dcms-field-check { display: flex; flex-direction: row; align-items: center; gap: 0.5rem; }
+.dcms-field-check input { padding: 0; width: 1.05rem; height: 1.05rem; accent-color: var(--dcms-color-brand, #4f46e5); }
+.dcms-field-group { border: 0; margin: 0; padding: 0; gap: 0.4rem; }
+.dcms-field-group legend { padding: 0; margin-bottom: 0.35rem; }
+.dcms-field-help { margin: 0; font-size: var(--dcms-text-sm, 0.875rem); color: var(--dcms-color-muted, #64748b); }
+.dcms-field input:focus-visible, .dcms-field textarea:focus-visible, .dcms-field select:focus-visible { outline: 2px solid var(--dcms-color-brand, #4f46e5); outline-offset: 1px; }
 .dcms-form-error { color: var(--dcms-color-danger, #dc2626); }
 .dcms-modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 1rem; background: rgba(15, 23, 42, 0.55); }
 .dcms-modal-scrim { position: absolute; inset: 0; border: 0; background: transparent; cursor: default; }

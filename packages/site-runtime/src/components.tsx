@@ -7,7 +7,7 @@ import { useRenderMode } from './renderMode';
 import { CONTENT_COMPONENTS } from './contentComponents';
 import { INTERACTIVE_COMPONENTS } from './interactiveComponents';
 import { MEDIA_COMPONENTS } from './mediaComponents';
-import { Collection, Form, FormField, Modal, RichText, runAction } from './dataComponents';
+import { Collection, FIELD_TYPES, Form, FormField, Modal, RichText, runAction } from './dataComponents';
 import { SiteLink, useSite } from './site';
 import { PageStateContext } from './state';
 
@@ -523,14 +523,21 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
       },
     ],
     slots: [{ name: 'fields', label: 'Fields' }],
+    starter: {
+      fields: [
+        { type: 'dcms.field', props: { name: 'name', label: 'Your name', required: true } },
+        { type: 'dcms.field', props: { name: 'email', label: 'Email', type: 'email', required: true } },
+        { type: 'dcms.field', props: { name: 'message', label: 'Message', type: 'textarea' } },
+      ],
+    },
   },
   {
     type: 'dcms.field',
     version: 1,
     label: 'Form field',
-    description: 'One question in a form — a name, an email, a message, a checkbox.',
+    description: 'One question in a form — a name, an email, a message, a choice from a list.',
     category: 'Forms',
-    keywords: ['input', 'question', 'textbox', 'email', 'checkbox'],
+    keywords: ['input', 'question', 'textbox', 'email', 'checkbox', 'dropdown', 'select', 'radio', 'date'],
     component: FormField,
     props: [
       {
@@ -542,24 +549,48 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
         group: 'content',
         description: 'The question visitors see above the field.',
       },
-      select('type', 'Type', ['text', 'email', 'tel', 'number', 'textarea', 'checkbox'] as const, 'text', {
+      select('type', 'Type', FIELD_TYPES, 'text', {
         text: 'Short text',
         email: 'Email address',
         tel: 'Phone number',
         number: 'Number',
         textarea: 'Long text',
-        checkbox: 'Checkbox',
+        date: 'Date',
+        select: 'Dropdown',
+        radio: 'One of several',
+        checkboxes: 'Any of several',
+        checkbox: 'Yes / no checkbox',
       }, {
         group: 'content',
         description: 'What kind of answer it takes. Email and phone fields bring the right keyboard on phones.',
       }),
       {
         kind: 'text',
+        name: 'options',
+        label: 'Options',
+        default: 'First option\nSecond option\nThird option',
+        multiline: true,
+        maxLength: 4000,
+        showIf: { prop: 'type', is: ['select', 'radio', 'checkboxes'] },
+        group: 'content',
+        description: 'The choices, one per line.',
+      },
+      {
+        kind: 'text',
         name: 'placeholder',
         label: 'Placeholder',
         maxLength: 120,
+        showIf: { prop: 'type', is: ['text', 'email', 'tel', 'number', 'textarea', 'select'] },
         group: 'content',
         description: 'A greyed-out example shown inside the field until visitors type.',
+      },
+      {
+        kind: 'text',
+        name: 'help',
+        label: 'Help text',
+        maxLength: 300,
+        group: 'content',
+        description: 'A line under the field that explains what to enter or why you ask.',
       },
       {
         kind: 'boolean',
@@ -568,6 +599,28 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
         default: false,
         group: 'behaviour',
         description: 'The form will not send until this field is filled in.',
+      },
+      {
+        kind: 'number',
+        name: 'minLength',
+        label: 'At least (characters)',
+        min: 0,
+        max: 10000,
+        step: 1,
+        showIf: { prop: 'type', is: ['text', 'textarea'] },
+        group: 'behaviour',
+        description: 'The shortest answer accepted.',
+      },
+      {
+        kind: 'number',
+        name: 'maxLength',
+        label: 'At most (characters)',
+        min: 1,
+        max: 10000,
+        step: 1,
+        showIf: { prop: 'type', is: ['text', 'textarea'] },
+        group: 'behaviour',
+        description: 'The longest answer accepted.',
       },
       {
         kind: 'text',

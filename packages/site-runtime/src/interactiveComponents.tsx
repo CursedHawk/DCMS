@@ -88,7 +88,7 @@ function Tabs({ props, slot }: ComponentRenderProps<Props>) {
 
   const pick = (i: number) => {
     setActive(i);
-    box.current?.querySelector<HTMLButtonElement>(`#${CSS.escape(`${id}-tab-${i}`)}`)?.focus();
+    box.current?.ownerDocument.getElementById(`${id}-tab-${i}`)?.focus();
   };
 
   return (

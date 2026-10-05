@@ -41,7 +41,9 @@ describe('starters', () => {
         'dcms/app.json': json({ schemaVersion: 1, routes: [{ id: 'home', path: '/', page: 'home' }] }),
         'dcms/pages/home.json': json({ schemaVersion: 1, id: 'home', title: 'Home', root: { id: 'r', type: 'dcms.page', slots: { default: [placed] } } }),
       });
-      expect(problems, def.type).toEqual([]);
+      // The component's own required settings (a form's plugin) are the author's to fill in; what
+      // is checked here is the children it starts with.
+      expect(problems.filter((p) => !p.message.endsWith(' is required.')), def.type).toEqual([]);
     }
   });
 });

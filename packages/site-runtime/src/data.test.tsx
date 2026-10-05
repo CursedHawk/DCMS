@@ -313,3 +313,65 @@ describe('collection paging', () => {
     expect(data.calls).toEqual(['/api/connections/tickets/events']);
   });
 });
+
+describe('form fields', () => {
+  it('offers choices as a dropdown, radios or a checkbox group, and posts a group as a list', async () => {
+    const posted: unknown[] = [];
+    const data: DataClient = { get: async () => ({}), post: async (_p, body) => (posted.push(body), { ok: true }) };
+    const form: Node = {
+      id: 'f',
+      type: 'dcms.form',
+      props: { instance: 'forms', form: 'survey' },
+      slots: {
+        fields: [
+          { id: 'a', type: 'dcms.field', props: { name: 'size', label: 'Size', type: 'select', options: 'S\nM\nL' } },
+          { id: 'b', type: 'dcms.field', props: { name: 'days', label: 'Days', type: 'checkboxes', options: 'Mon\nTue\nWed' } },
+          { id: 'c', type: 'dcms.field', props: { name: 'ok', label: 'OK', type: 'checkbox' } },
+        ],
+      },
+    };
+    const el = await render(<RenderNode node={form} registry={builtinRegistry} />, data);
+    expect([...el.querySelectorAll('select option')].map((o) => o.textContent)).toEqual(['Choose…', 'S', 'M', 'L']);
+    (el.querySelector('select') as HTMLSelectElement).value = 'M';
+    const boxes = el.querySelectorAll<HTMLInputElement>('fieldset input[type="checkbox"]');
+    boxes[0]!.checked = true;
+    boxes[2]!.checked = true;
+    await act(async () => {
+      el.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(posted).toEqual([{ size: 'M', days: ['Mon', 'Wed'], ok: false }]);
+  });
+
+  it('is checked: one name per field in a form, and choices that have options', () => {
+    const json = (v: unknown) => `${JSON.stringify(v)}\n`;
+    const problems = checkVisualSite({
+      'dcms/app.json': json({ schemaVersion: 1, routes: [{ id: 'home', path: '/', page: 'home' }] }),
+      'dcms/pages/home.json': json({
+        schemaVersion: 1,
+        id: 'home',
+        title: 'Home',
+        root: {
+          id: 'r',
+          type: 'dcms.page',
+          slots: {
+            default: [
+              {
+                id: 'f',
+                type: 'dcms.form',
+                props: { instance: 'forms', form: 'x' },
+                slots: { fields: [{ id: 'a', type: 'dcms.field', props: { name: 'email' } }, { id: 'b', type: 'dcms.field', props: { name: 'email', type: 'radio', options: ' ' } }] },
+              },
+            ],
+          },
+        },
+      }),
+    }).map((p) => p.message);
+    expect(problems).toEqual(
+      expect.arrayContaining([
+        '2 fields of this form are named “email”; each needs its own name, or one answer overwrites the other.',
+        'This choice field has no options to choose from.',
+      ]),
+    );
+  });
+});

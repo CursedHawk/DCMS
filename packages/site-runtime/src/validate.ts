@@ -1,3 +1,4 @@
+import { CHOICE_FIELDS, fieldOptions } from './dataComponents';
 import { EMBED_SERVICES, embedUrl, videoTarget } from './mediaComponents';
 import { codeContractOf, codeContractPath, codeDefinitions, codeSourceOf, codeSourcePath, readCodeContracts, type CodeContract } from './code';
 import { BUILTIN_COMPONENTS } from './components';
@@ -164,6 +165,22 @@ function checkTree(
 
     if (node.action && !definition.actions?.includes(node.action.type)) {
       problem('warning', `${definition.label} does not run “${node.action.type}” actions; it is ignored.`, node.id);
+    }
+
+    // A form's answers are stored by field name: two fields with one name lose one of them.
+    if (node.type === 'dcms.form') {
+      const seen = new Map<string, number>();
+      for (const field of walk(node)) {
+        if (field.type !== 'dcms.field') continue;
+        const name = typeof field.props?.name === 'string' && field.props.name ? field.props.name : 'name';
+        seen.set(name, (seen.get(name) ?? 0) + 1);
+      }
+      for (const [name, count] of seen) {
+        if (count > 1) problem('error', `${count} fields of this form are named “${name}”; each needs its own name, or one answer overwrites the other.`, node.id);
+      }
+    }
+    if (node.type === 'dcms.field' && CHOICE_FIELDS.includes(String(node.props?.type)) && fieldOptions(node.props?.options).length === 0) {
+      problem('warning', 'This choice field has no options to choose from.', node.id);
     }
 
     // Third-party players: only from the allow-list, and a link that is not a video says so.

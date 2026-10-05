@@ -195,7 +195,13 @@ export function Form({ props, slot }: ComponentRenderProps<Props>) {
     if (mode === 'edit' || !instance || !form) return;
     const values: Record<string, unknown> = {};
     for (const [key, value] of new FormData(element).entries()) values[key] = typeof value === 'string' ? value : value.name;
-    for (const box of Array.from(element.querySelectorAll<HTMLInputElement>('input[type="checkbox"][name]'))) values[box.name] = box.checked;
+    // A single checkbox is yes/no; a group of them is the list of what was ticked.
+    for (const box of Array.from(element.querySelectorAll<HTMLInputElement>('input[type="checkbox"][name]'))) {
+      if (box.hasAttribute('data-group')) {
+        const ticked = (values[box.name] = Array.isArray(values[box.name]) ? values[box.name] : []) as string[];
+        if (box.checked) ticked.push(box.value);
+      } else values[box.name] = box.checked;
+    }
     setState('sending');
     setMessage(null);
     try {
@@ -232,7 +238,17 @@ export function Form({ props, slot }: ComponentRenderProps<Props>) {
   );
 }
 
-const FIELD_TYPES = ['text', 'email', 'tel', 'number', 'textarea', 'checkbox'] as const;
+export const FIELD_TYPES = ['text', 'email', 'tel', 'number', 'textarea', 'date', 'select', 'radio', 'checkboxes', 'checkbox'] as const;
+/** The field types that offer a list of options. */
+export const CHOICE_FIELDS: readonly string[] = ['select', 'radio', 'checkboxes'];
+
+/** A choice field's options: one per line, blanks dropped. */
+export function fieldOptions(value: unknown): string[] {
+  return text(value)
+    .split('\n')
+    .map((o) => o.trim())
+    .filter(Boolean);
+}
 
 export function FormField({ props }: ComponentRenderProps<Props>) {
   const id = useId();
@@ -241,11 +257,49 @@ export function FormField({ props }: ComponentRenderProps<Props>) {
   const type = (FIELD_TYPES as readonly string[]).includes(text(props.type)) ? text(props.type) : 'text';
   const required = props.required === true;
   const placeholder = text(props.placeholder) || undefined;
+  const help = text(props.help).trim();
+  const helpId = help ? `${id}-help` : undefined;
+  const min = typeof props.minLength === 'number' ? props.minLength : undefined;
+  const max = typeof props.maxLength === 'number' ? props.maxLength : undefined;
+  const options = fieldOptions(props.options);
+  const hint = help ? (
+    <p id={helpId} className="dcms-field-help">
+      {help}
+    </p>
+  ) : null;
+
   if (type === 'checkbox') {
     return (
-      <label className="dcms-field dcms-field-check" htmlFor={id}>
-        <input id={id} name={name} type="checkbox" required={required} /> {label}
-      </label>
+      <div className="dcms-field">
+        <label className="dcms-field-check" htmlFor={id}>
+          <input id={id} name={name} type="checkbox" required={required} aria-describedby={helpId} /> {label}
+        </label>
+        {hint}
+      </div>
+    );
+  }
+  if (type === 'radio' || type === 'checkboxes') {
+    // A group: the legend is the question, each option its own labelled input.
+    return (
+      <fieldset className="dcms-field dcms-field-group" aria-describedby={helpId}>
+        <legend>
+          {label}
+          {required ? ' *' : ''}
+        </legend>
+        {options.map((option, i) => (
+          <label key={i} className="dcms-field-check">
+            <input
+              type={type === 'radio' ? 'radio' : 'checkbox'}
+              name={name}
+              value={option}
+              data-group={type === 'checkboxes' ? '' : undefined}
+              required={required && type === 'radio'}
+            />{' '}
+            {option}
+          </label>
+        ))}
+        {hint}
+      </fieldset>
     );
   }
   return (
@@ -255,10 +309,31 @@ export function FormField({ props }: ComponentRenderProps<Props>) {
         {required ? ' *' : ''}
       </label>
       {type === 'textarea' ? (
-        <textarea id={id} name={name} required={required} placeholder={placeholder} rows={4} />
+        <textarea id={id} name={name} required={required} placeholder={placeholder} rows={4} minLength={min} maxLength={max} aria-describedby={helpId} />
+      ) : type === 'select' ? (
+        <select id={id} name={name} required={required} defaultValue="" aria-describedby={helpId}>
+          <option value="" disabled>
+            {placeholder ?? 'Choose…'}
+          </option>
+          {options.map((option, i) => (
+            <option key={i} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
       ) : (
-        <input id={id} name={name} type={type} required={required} placeholder={placeholder} />
+        <input
+          id={id}
+          name={name}
+          type={type}
+          required={required}
+          placeholder={placeholder}
+          minLength={type === 'text' || type === 'email' || type === 'tel' ? min : undefined}
+          maxLength={type === 'text' || type === 'email' || type === 'tel' ? max : undefined}
+          aria-describedby={helpId}
+        />
       )}
+      {hint}
     </div>
   );
 }
