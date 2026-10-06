@@ -11,6 +11,7 @@ using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Shared.Data.DynamicApps;
+using Dcms.Shared.Security;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.DynamicApps.Automation;
@@ -300,7 +301,12 @@ internal sealed class EmailSendAction : FlowAction<EmailInput>
         {
             throw new FlowFatalException("dcms.email.send needs 1 to 20 recipients.");
         }
-        var html = input.Html ?? WebUtility.HtmlEncode(input.Text ?? "").Replace("\n", "<br>", StringComparison.Ordinal);
+        // Template values are already encoded; the whole body is then sanitized too, because
+        // encoding alone does not make every context safe (an unquoted attribute, a
+        // javascript: link) and the tenant's own markup is mail sent in its name all the same.
+        var html = input.Html is { } markup
+            ? HtmlContentSanitizer.Sanitize(markup) ?? ""
+            : WebUtility.HtmlEncode(input.Text ?? "").Replace("\n", "<br>", StringComparison.Ordinal);
         var queued = await context.Plugin.Contracts.Get<IPluginEmail>().SendAsync(
             new EmailSend(to, input.Subject, html, input.ReplyTo, context.IdempotencyKey), ct);
         return new JsonObject { ["recipients"] = queued.Recipients };

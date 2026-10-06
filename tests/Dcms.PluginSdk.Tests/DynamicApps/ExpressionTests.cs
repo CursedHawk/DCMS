@@ -129,6 +129,66 @@ public sealed class ExpressionTests
     }
 
     [Fact]
+    public void Containers_are_not_compared_or_rendered_past_the_string_limit()
+    {
+        var huge = new JsonObject();
+        for (var i = 0; i < 2_000; i++)
+        {
+            huge[$"k{i}"] = new string('x', 100);
+        }
+        var data = new Dictionary<string, JsonNode?> { ["q"] = huge, ["tags"] = JsonNode.Parse("""["a", {"b": 1}]""") };
+
+        var compare = () => Expressions.Evaluate("q == q", data, Now);
+        compare.Should().Throw<ExpressionException>().Which.Message.Should().Contain("plain values");
+        var render = () => Expressions.Evaluate("string(q)", data, Now);
+        render.Should().Throw<ExpressionException>().Which.Message.Should().Contain("longer than");
+        Expressions.Evaluate("len(q)", data, Now)!.GetValue<decimal>().Should().Be(2_000, "counted, not serialized");
+        Expressions.Evaluate("'a' in tags", data, Now)!.GetValue<bool>().Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Email_html_is_sanitized_whatever_the_template_wrote()
+    {
+        var email = new CapturingEmail();
+        var context = new FlowActionContext(null!, new OnlyEmail(email), new Dcms.Shared.Data.DynamicApps.FlowRun { Id = Guid.NewGuid() }, "mail");
+
+        var input = JsonNode.Parse("""
+            { "to": "a@b.test", "subject": "Hi",
+              "html": "<p onclick=\"steal()\">Hi <a href=javascript:alert(1)>there</a><script>alert(2)</script><a href=https://ok.test>ok</a></p>" }
+            """)!.AsObject();
+        await ActionCatalog.Find("dcms.email.send@1")!.RunAsync(context, input, TestContext.Current.CancellationToken);
+
+        email.Sent!.HtmlBody.Should().NotContain("onclick").And.NotContain("javascript:").And.NotContain("<script")
+            .And.Contain("https://ok.test").And.Contain("there");
+        email.Sent.DedupeKey.Should().EndWith(":mail", "a retried step sends once");
+    }
+
+    private sealed class CapturingEmail : Dcms.PluginSdk.Abstractions.Platform.IPluginEmail
+    {
+        public Dcms.PluginSdk.Abstractions.Platform.EmailSend? Sent { get; private set; }
+
+        public Task<Dcms.PluginSdk.Abstractions.Platform.EmailQueued> SendAsync(Dcms.PluginSdk.Abstractions.Platform.EmailSend input, CancellationToken ct)
+        {
+            Sent = input;
+            return Task.FromResult(new Dcms.PluginSdk.Abstractions.Platform.EmailQueued(input.To.Count));
+        }
+    }
+
+    private sealed class OnlyEmail(Dcms.PluginSdk.Abstractions.Platform.IPluginEmail email)
+        : Dcms.PluginSdk.Abstractions.Contracts.IPluginContext, Dcms.PluginSdk.Abstractions.Contracts.IPluginContracts
+    {
+        public Guid TenantId => Guid.Empty;
+        public string PluginId => "dynamic-apps";
+        public Dcms.PluginSdk.Abstractions.PluginInstanceContext? Instance => null;
+        public Dcms.PluginSdk.Abstractions.Contracts.PluginActor Actor => Dcms.PluginSdk.Abstractions.Contracts.PluginActor.System;
+        public Dcms.PluginSdk.Abstractions.Contracts.IPluginContracts Contracts => this;
+        public Dcms.PluginSdk.Abstractions.Contracts.IPluginHooks Hooks => throw new NotSupportedException();
+        public T Get<T>(Guid? providerInstanceId = null) where T : class => (T)email;
+        public T? TryGet<T>(Guid? providerInstanceId = null) where T : class => email as T;
+        public IReadOnlyList<T> GetAll<T>() where T : class => [];
+    }
+
+    [Fact]
     public void Templates_keep_types_for_a_whole_value_and_interpolate_otherwise()
     {
         var input = JsonNode.Parse("""

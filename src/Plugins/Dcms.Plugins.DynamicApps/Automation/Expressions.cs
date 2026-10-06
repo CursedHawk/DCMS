@@ -432,6 +432,14 @@ public static class Expressions
             _ => throw new ExpressionException("A list written in an expression holds plain values (text, numbers, true/false, null)", at.Position),
         };
 
+        /// <summary>
+        /// Comparisons take plain values: a deep comparison of two large objects is work the
+        /// evaluation's step limit does not see, so it is not offered.
+        /// </summary>
+        private static JsonNode? Scalar(JsonNode? value, Node at) => value is null or JsonValue
+            ? value
+            : throw new ExpressionException("Comparisons take plain values (text, numbers, true/false, null); compare a field instead", at.Position);
+
         private static JsonNode? IndexOf(JsonNode? target, JsonNode? key) => (target, key) switch
         {
             (JsonArray a, JsonValue k) when TryNumber(k, out var i) && i >= 0 && i < a.Count && i == decimal.Truncate(i) => a[(int)i],
@@ -443,12 +451,15 @@ public static class Expressions
         {
             switch (b.Op)
             {
-                case "==": return Same(left, right);
-                case "!=": return !Same(left, right);
+                case "==": return Same(Scalar(left, b), Scalar(right, b));
+                case "!=": return !Same(Scalar(left, b), Scalar(right, b));
                 case "in":
+                    Scalar(left, b);
                     return right switch
                     {
-                        JsonArray list => list.Any(item => Same(item, left)),
+                        // Containers in the list never equal a plain value; skipping them keeps
+                        // the check a scan of the list, not a deep comparison of each item.
+                        JsonArray list => list.Any(item => item is null or JsonValue && Same(item, left)),
                         JsonObject obj => Text(left) is { } key && obj.ContainsKey(key),
                         _ => Text(right) is { } text && Text(left) is { } part && text.Contains(part, StringComparison.Ordinal),
                     };
@@ -497,6 +508,7 @@ public static class Expressions
                         JsonArray a => (decimal)a.Count,
                         JsonObject o => (decimal)o.Count,
                         null => 0m,
+                        JsonValue v when v.TryGetValue<string>(out var text) => (decimal)text.Length,
                         var v => (decimal)Display(v).Length,
                     };
                 case "lower": Arity(1, 1); return Text(Arg(0))?.ToLowerInvariant();
@@ -507,7 +519,7 @@ public static class Expressions
                 case "endsWith": Arity(2, 2); return Text(Arg(0)) is { } s2 && Text(Arg(1)) is { } p2 && s2.EndsWith(p2, StringComparison.OrdinalIgnoreCase);
                 case "coalesce":
                     Arity(1, 16);
-                    return args.FirstOrDefault(a => a is not null)?.DeepClone();
+                    return args.FirstOrDefault(a => a is not null);
                 case "string": Arity(1, 1); return Arg(0) is null ? null : Bounded(Display(Arg(0)));
                 case "number":
                     Arity(1, 1);
@@ -544,7 +556,25 @@ public static class Expressions
                 }
                 case "join":
                     Arity(1, 2);
-                    return Arg(0) is JsonArray items ? Bounded(string.Join(Text(Arg(1)) ?? ", ", items.Select(Display))) : null;
+                    if (Arg(0) is not JsonArray items)
+                    {
+                        return null;
+                    }
+                    var separator = Text(Arg(1)) ?? ", ";
+                    var joined = new StringBuilder();
+                    foreach (var item in items)
+                    {
+                        if (joined.Length > 0)
+                        {
+                            joined.Append(separator);
+                        }
+                        joined.Append(Display(item));
+                        if (joined.Length > MaxStringChars)
+                        {
+                            throw new ExpressionException($"A string is longer than {MaxStringChars} characters.");
+                        }
+                    }
+                    return joined.ToString();
                 default:
                     throw new ExpressionException($"Unknown function '{call.Name}'", call.Position);
             }
@@ -564,8 +594,56 @@ public static class Expressions
             null => "",
             JsonValue v when v.TryGetValue<string>(out var s) => s,
             JsonValue v when TryNumber(v, out var d) => d.ToString(CultureInfo.InvariantCulture),
-            _ => value.ToJsonString(),
+            JsonValue v => v.ToJsonString(),
+            _ => BoundedJson(value),
         };
+
+        public static string Json(JsonNode node) => BoundedJson(node);
+
+        /// <summary>
+        /// An object or list as JSON text, stopping as soon as it passes the string limit — never
+        /// the whole of a large query result serialized only to be refused afterwards.
+        /// </summary>
+        private static string BoundedJson(JsonNode node)
+        {
+            var text = new StringBuilder();
+            Write(node);
+            return text.ToString();
+
+            void Write(JsonNode? n)
+            {
+                switch (n)
+                {
+                    case JsonObject o:
+                        text.Append('{');
+                        var first = true;
+                        foreach (var (key, child) in o)
+                        {
+                            text.Append(first ? "" : ",").Append(JsonValue.Create(key).ToJsonString()).Append(':');
+                            first = false;
+                            Write(child);
+                        }
+                        text.Append('}');
+                        break;
+                    case JsonArray a:
+                        text.Append('[');
+                        for (var i = 0; i < a.Count; i++)
+                        {
+                            text.Append(i == 0 ? "" : ",");
+                            Write(a[i]);
+                        }
+                        text.Append(']');
+                        break;
+                    default:
+                        text.Append(n?.ToJsonString() ?? "null");
+                        break;
+                }
+                if (text.Length > MaxStringChars)
+                {
+                    throw new ExpressionException($"A string is longer than {MaxStringChars} characters.");
+                }
+            }
+        }
 
         private static JsonNode Bounded(string text) =>
             text.Length <= MaxStringChars ? text : throw new ExpressionException($"A string is longer than {MaxStringChars} characters.");
@@ -575,7 +653,8 @@ public static class Expressions
             {
                 (null, null) => true,
                 (JsonValue x, JsonValue y) when TryNumber(x, out var m) && TryNumber(y, out var n) => m == n,
-                _ => JsonNode.DeepEquals(a, b),
+                (JsonValue x, JsonValue y) => JsonNode.DeepEquals(x, y),
+                _ => false,
             };
 
         private static int? Compare(JsonNode? a, JsonNode? b)
@@ -670,7 +749,8 @@ public static class Expressions
             {
                 null => "",
                 JsonValue v when v.TryGetValue<string>(out var s) => s,
-                _ => value.ToJsonString(),
+                JsonValue v => v.ToJsonString(),
+                _ => Evaluator.Json(value),
             };
             result.Append(html ? System.Net.WebUtility.HtmlEncode(piece) : piece);
             at = hole.End;
