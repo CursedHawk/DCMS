@@ -78,6 +78,49 @@ frontend:
       when: never
     - when: on_success
 
+# qlty (https://qlty.sh) linters + smells, published as a GitLab Code Quality report: the MR
+# widget shows new/resolved issues, the pipeline's Code Quality tab the full list. Linters and
+# their settings live in .qlty/qlty.toml.
+#
+# In `build` so it runs beside dotnet/frontend, and it gates nothing: issues never fail it
+# (--no-fail) and the job is allow_failure. A linter that ERRORS does fail it -- orange, not red
+# -- so a broken linter is noticed rather than quietly reporting nothing; the report is still
+# written from whatever did run.
+#
+# qlty only speaks SARIF; sarif-to-codequality.py turns it into the Code Climate JSON GitLab
+# reads. No `cache:` -- qlty's tool cache is ~1.5 GB under $HOME, and the runner disks have
+# filled up before; downloading the linters costs about a minute.
+code-quality:
+  stage: build
+  # Has curl, git, xz and python3, all of which the job needs; qlty fetches its own node/python
+  # runtimes for the linters.
+  image: python:3.13-bookworm
+  variables:
+    QLTY_VERSION: "0.651.0"
+    QLTY_SHA256: "b96eaea35490573985fc98b4847e756dc591ea2b8f8de1777108a598fd6f55be"
+    QLTY_TELEMETRY: "off"
+  script:
+    - curl -fsSL "https://qlty-releases.s3.amazonaws.com/qlty/v$QLTY_VERSION/qlty-x86_64-unknown-linux-gnu.tar.xz" -o /tmp/qlty.tar.xz
+    - echo "$QLTY_SHA256  /tmp/qlty.tar.xz" | sha256sum -c -
+    - tar -xJf /tmp/qlty.tar.xz -C /usr/local/bin --strip-components=1 --wildcards '*/qlty'
+    - rc=0
+    - qlty check --all --sarif --no-fail --no-progress --no-upgrade-check > qlty-check.sarif || rc=$?
+    - qlty smells --all --sarif --no-upgrade-check > qlty-smells.sarif || rc=$?
+    - python3 scripts/ci/sarif-to-codequality.py qlty-check.sarif qlty-smells.sarif > gl-code-quality-report.json
+    - exit $rc
+  allow_failure: true
+  interruptible: true
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json
+    expire_in: 1 week
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
 # Integration tests need Docker-in-Docker (Testcontainers); enabled on runners
 # that support it.
 integration:
