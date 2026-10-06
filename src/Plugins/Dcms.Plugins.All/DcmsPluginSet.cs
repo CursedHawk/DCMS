@@ -4,6 +4,7 @@ using Dcms.Plugins.AudioLibrary;
 using Dcms.Plugins.Blog;
 using Dcms.Plugins.Branding;
 using Dcms.Plugins.Carousel;
+using Dcms.Plugins.DynamicApps;
 using Dcms.Plugins.Events;
 using Dcms.Plugins.Facebook;
 using Dcms.Plugins.FileDownloads;
@@ -30,6 +31,7 @@ public static class DcmsPluginSet
         .Add<BlogPlugin>()
         .Add<BrandingPlugin>()
         .Add<CarouselPlugin>()
+        .Add<DynamicAppsPlugin>()
         .Add<EventsPlugin>()
         .Add<FacebookPlugin>()
         .Add<FileDownloadsPlugin>()

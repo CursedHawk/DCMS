@@ -95,6 +95,10 @@ public static class RlsConfigurator
         // chain_anchors, audit_outbox) are deliberately excluded — cross-tenant scan tables,
         // same rationale as content_outbox above.
         ("audit", "audit_events"),
+        // Dynamic Apps (ADR 0021): each tenant's application configuration and its history.
+        ("apps", "apps"),
+        ("apps", "revisions"),
+        ("apps", "changes"),
     ];
 
     /// <summary>

@@ -25,7 +25,7 @@ PW="${APP_DB_PASSWORD:-dcms-app-dev}"
 # of those three carries a tenant column, so no policy applies to them; leaving them out would
 # not have narrowed anything, it would have broken the service at the first cookie or
 # certificate read. NOT identity, which is identity's alone, and NOT obs.
-SCHEMAS="tenancy plugins cms media sites search analytics chat visitors ai forms audit social notifications dataprotection edge platform"
+SCHEMAS="tenancy plugins cms media sites search analytics chat visitors ai forms audit social notifications apps dataprotection edge platform"
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
   --set=app_pw="$PW" --set=owner="$POSTGRES_USER" <<'SQL'

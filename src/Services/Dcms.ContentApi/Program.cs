@@ -11,6 +11,7 @@ using Dcms.Shared.Hosting;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.DataProtection;
+using Dcms.Shared.Data.DynamicApps;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Search;
@@ -41,6 +42,7 @@ builder.Services.AddDcmsRlsEnforcement(builder.Configuration);
 builder.Services.AddDcmsCmsData(builder.Configuration);
 builder.Services.AddDcmsMediaData(builder.Configuration);
 builder.Services.AddDcmsFormsData(builder.Configuration);
+builder.Services.AddDcmsAppsData(builder.Configuration);
 
 // Optional per-form email notifications. Rendered here, delivered by email-worker
 // off the EMAIL work queue — content-api never touches SMTP.

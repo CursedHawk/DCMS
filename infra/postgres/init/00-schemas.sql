@@ -15,6 +15,8 @@ CREATE SCHEMA IF NOT EXISTS ai;
 CREATE SCHEMA IF NOT EXISTS audit;
 CREATE SCHEMA IF NOT EXISTS social;
 CREATE SCHEMA IF NOT EXISTS notifications;
+-- Dynamic Apps (ADR 0021): tenant-defined application configuration, records and flows.
+CREATE SCHEMA IF NOT EXISTS apps;
 -- TLS certificates, the ACME account, and the edge's route overlay. No tenant column on any of
 -- them: a certificate belongs to a hostname, and which tenant owns that hostname is already
 -- recorded (and already tenant-filtered) in tenancy.domains.

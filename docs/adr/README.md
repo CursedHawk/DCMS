@@ -27,3 +27,4 @@ as their implementation phase lands.
 - [0018](0018-plugin-admin-pages.md) — A page per plugin instance; plugins describe data sets, the console renders them
 - [0019](0019-plugin-screens.md) — Plugins ship their own admin screens and menu entries; permissions are theirs to add
 - [0020](0020-mode-d-react-visual-builder.md) — Mode D: a visual builder whose output is a real React application
+- [0021](0021-dynamic-apps.md) — Dynamic Apps: a tenant-defined application runtime inside the plugin boundary

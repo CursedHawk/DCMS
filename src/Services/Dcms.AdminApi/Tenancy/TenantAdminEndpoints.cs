@@ -8,6 +8,7 @@ using Dcms.Shared.Data.Ai;
 using Dcms.Shared.Data.Analytics;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
+using Dcms.Shared.Data.DynamicApps;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Notifications;
@@ -253,6 +254,7 @@ public sealed class TenantDeleter(
     CmsDbContext cms,
     MediaDbContext media,
     FormsDbContext forms,
+    AppsDbContext apps,
     SearchDbContext search,
     AnalyticsDbContext analytics,
     ChatDbContext chat,
@@ -330,6 +332,13 @@ public sealed class TenantDeleter(
 
         await SweepAsync(forms, manifest, ct,
             ("forms.Submissions", () => forms.Submissions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+
+        // Dynamic Apps: every application's configuration history (ADR 0021). Changes before the
+        // revisions they belong to, revisions before the app rows that point at them.
+        await SweepAsync(apps, manifest, ct,
+            ("apps.Changes", () => apps.Changes.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.Revisions", () => apps.Revisions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.Apps", () => apps.Apps.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         await SweepAsync(search, manifest, ct,
             ("search.Documents", () => search.Documents.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
