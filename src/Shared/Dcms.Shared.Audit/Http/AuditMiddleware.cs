@@ -88,18 +88,29 @@ public sealed class AuditMiddleware(RequestDelegate next)
             return;
         }
 
+        var threw = false;
         try
         {
             await next(context);
+        }
+        catch
+        {
+            threw = true;
+            throw;
         }
         finally
         {
             scope.Permission = FindPermission(context);
             scope.Http = AuditHttpInfoFactory.Build(context, includeStatus: true);
+            // The exception handler sits outside this middleware, so while an exception is in
+            // flight the response still says 200. It is going to be a 500.
+            if (threw) scope.Http = scope.Http with { StatusCode = StatusCodes.Status500InternalServerError };
+            var status = scope.Http.StatusCode ?? context.Response.StatusCode;
 
-            WithdrawUnfulfilledDeclaration(context, recorder, scope);
+            RecordServerFailure(status, recorder, scope);
+            WithdrawUnfulfilledDeclaration(status, recorder, scope);
             RecordDenial(context, recorder, scope);
-            RecordFallback(context, recorder, scope);
+            RecordFallback(context, status, recorder, scope);
 
             await recorder.FlushAsync(context.RequestAborted);
         }
@@ -116,24 +127,59 @@ public sealed class AuditMiddleware(RequestDelegate next)
     /// something that demonstrably did not happen, and only then does the response status
     /// decide.</para>
     ///
-    /// <para>Only 4xx and 5xx withdraw. A 2xx with no database write is still an action — an
-    /// object-store put, a git push, a DNS record — and so is a 3xx, which on this platform is
-    /// how a successful form post answers: the sign-in that redirects to the dashboard is the
+    /// <para>Only 4xx withdraws — a request the caller got wrong, which changed nothing. A 5xx
+    /// is <see cref="RecordServerFailure"/>'s. A 2xx with no database write is still an action —
+    /// an object-store put, a git push, a DNS record — and so is a 3xx, which on this platform
+    /// is how a successful form post answers: the sign-in that redirects to the dashboard is the
     /// most consequential redirect there is.</para>
     /// </summary>
-    private static void WithdrawUnfulfilledDeclaration(HttpContext context, IAuditRecorder recorder, AuditScope scope)
+    private static void WithdrawUnfulfilledDeclaration(int status, IAuditRecorder recorder, AuditScope scope)
     {
         if (scope.Declared is not { } declared || !recorder.Pending.Contains(declared))
         {
             return;
         }
 
-        if (context.Response.StatusCode < StatusCodes.Status400BadRequest)
+        if (status is < StatusCodes.Status400BadRequest or >= StatusCodes.Status500InternalServerError)
         {
             return;
         }
 
         recorder.Discard(declared);
+    }
+
+    /// <summary>
+    /// A request that ended in a 5xx is never left on record as a success.
+    ///
+    /// <para>The declared entry is still buffered when nothing was saved: it becomes the
+    /// failure record. It has already been written when the handler saved and then failed —
+    /// it committed with that save, or rolled back with it, and the chain is append-only, so
+    /// it cannot be corrected in place. Then the failure is a record of its own, under the same
+    /// action, resource and correlation id, so the request never reads as a bare success.
+    /// That is the 2026-10-06 case: a Drive import saved its row, the processing job was
+    /// refused, the caller got a 500 and the log said "media.imported: success".</para>
+    /// </summary>
+    private static void RecordServerFailure(int status, IAuditRecorder recorder, AuditScope scope)
+    {
+        if (status < StatusCodes.Status500InternalServerError || scope.Declared is not { } declared)
+        {
+            return;
+        }
+
+        var reason = $"The request failed with status {status}.";
+        if (recorder.Pending.Contains(declared))
+        {
+            declared.Failed(reason);
+            return;
+        }
+
+        var failure = recorder.Record(declared.Action);
+        failure.Category = declared.Category;
+        failure.TenantId = declared.TenantId;
+        failure.ResourceType = declared.ResourceType;
+        failure.ResourceId = declared.ResourceId;
+        failure.ResourceLabel = declared.ResourceLabel;
+        failure.Failed(reason);
     }
 
     /// <summary>
@@ -175,7 +221,7 @@ public sealed class AuditMiddleware(RequestDelegate next)
     /// action name with no change to the handler, and recording explicitly in the handler adds
     /// the resource label, counts and field diffs.</para>
     /// </summary>
-    private static void RecordFallback(HttpContext context, IAuditRecorder recorder, AuditScope scope)
+    private static void RecordFallback(HttpContext context, int status, IAuditRecorder recorder, AuditScope scope)
     {
         if (scope.HasExplicitRecord || scope.SuppressFallback)
         {
@@ -194,7 +240,7 @@ public sealed class AuditMiddleware(RequestDelegate next)
         // Only requests that got somewhere. A 4xx that is not a refusal changed nothing, and
         // refusals already have their own record from RecordDenial. Redirects count: a form
         // post that answers with one has done its work.
-        if (context.Response.StatusCode >= StatusCodes.Status400BadRequest)
+        if (status >= StatusCodes.Status400BadRequest)
         {
             return;
         }

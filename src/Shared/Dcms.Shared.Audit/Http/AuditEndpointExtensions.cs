@@ -90,6 +90,10 @@ public static class AuditEndpointExtensions
 
         var entry = recorder.Record(declared.Action);
         entry.Category = declared.Category;
+        // Pinned now, while the request's tenant is resolved. An entry the middleware writes at
+        // the end — a failure, after the pipeline has unwound — would otherwise land on the
+        // platform tenant. A handler that names a tenant itself (InTenant, Platform) still wins.
+        entry.TenantId = http.RequestServices.GetService<Dcms.Shared.Kernel.Abstractions.ITenantContext>()?.TenantId;
         if (declared.ResourceType is { } type)
         {
             entry.ResourceType = type;

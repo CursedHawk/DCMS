@@ -209,15 +209,36 @@ public sealed class MediaIngestService(
             Status = needsProcessing ? MediaStatus.Processing : MediaStatus.Ready,
             CreatedBy = createdBy,
         };
+        // The row and its processing job stand or fall together. Committed first and published
+        // second, a refused publish (JetStream full, 2026-10-06) left a row stuck in Processing
+        // forever, a 500 for the caller — and a "media.imported: success" audit record, because
+        // that record commits with the row. Now the publish happens inside the transaction: if
+        // it is refused, the row and its audit record roll back together and the stored object
+        // is removed. The worker may see the job a moment before the commit lands; the image
+        // consumer, the only one that reads the row first, waits for it.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
         db.Assets.Add(asset);
         await db.SaveChangesAsync(ct);
 
         if (needsProcessing && !string.IsNullOrEmpty(subject))
         {
-            await events.PublishAsync(subject, new MediaProcessRequested(
-                Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, assetId, sniff.Category, key, sniff.ContentType), ct);
+            try
+            {
+                await events.PublishAsync(subject, new MediaProcessRequested(
+                    Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, assetId, sniff.Category, key, sniff.ContentType), ct);
+            }
+            catch
+            {
+                await tx.RollbackAsync(CancellationToken.None);
+                // An object left behind costs bytes; masking why the publish failed costs the
+                // diagnosis. The publish error is the one that propagates.
+                try { await storage.DeleteAsync(storageOptions.Value.MediaBucket, key, CancellationToken.None); }
+                catch { /* orphaned original; nothing references it */ }
+                throw;
+            }
         }
 
+        await tx.CommitAsync(ct);
         return new Result(assetId, sniff.Category, sniff.ContentType, asset.Status, null);
     }
 

@@ -197,7 +197,8 @@ no secret is configured at all, and an audit record
 | Tempo | 7 d | ~4 GB | `block_retention: 168h` |
 | Docker json logs | 3 × 50 MB per container | ~3 GB | the `x-logging` anchor |
 
-Plus: the `AUDIT` stream gains `--max-age 720h` for fresh clusters (keeping
+Plus: the `AUDIT` stream gains `--max-age 720h` (fresh clusters at creation; an existing
+never-expiring stream is converged by the deploy since 2026-10-06) (keeping
 `--discard new`, which is deliberate — an audit publisher must see an error,
 never a silent trim); and `analytics.events`, which had no retention at all,
 gains a 90-day pass in `AnalyticsRetentionWorker` while `analytics.daily_rollups`

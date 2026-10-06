@@ -49,8 +49,16 @@ public sealed class ImageProcessingConsumer(
         // rls: job tenant. MediaConsumerBase acts as the job's tenant around ProcessAsync (ADR 0015),
         // so this lookup by id alone cannot reach another tenant's asset.
         var db = scope.ServiceProvider.GetRequiredService<MediaDbContext>();
-        var asset = await db.Assets.IgnoreQueryFilters().FirstOrDefaultAsync(a => a.Id == job.AssetId, ct)
-                    ?? throw new InvalidOperationException($"Media asset {job.AssetId} no longer exists.");
+        // admin-api publishes inside the transaction that inserts the row, so a job can arrive
+        // a moment before its row is visible. Waiting a few seconds covers that commit; a row
+        // still missing after it really is gone.
+        MediaAsset? asset = null;
+        for (var attempt = 0; asset is null && attempt < 5; attempt++)
+        {
+            if (attempt > 0) await Task.Delay(TimeSpan.FromSeconds(1), ct);
+            asset = await db.Assets.IgnoreQueryFilters().FirstOrDefaultAsync(a => a.Id == job.AssetId, ct);
+        }
+        if (asset is null) throw new InvalidOperationException($"Media asset {job.AssetId} no longer exists.");
 
         await using var originalStream = await Storage.GetAsync(Bucket, job.OriginalObjectKey, ct);
         using var memory = new MemoryStream();

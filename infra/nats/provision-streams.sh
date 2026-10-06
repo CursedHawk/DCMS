@@ -126,10 +126,11 @@ ensure_stream() {
 # fan-out to sinks outside the platform, and a sink that has been offline for a
 # month has a bigger problem than a gap.
 #
-# ensure_audit_stream never reconfigures an existing stream, so on vps1 this takes
-# effect only after an explicit `nats stream edit AUDIT --max-age=720h`. That is
-# deliberate: it is a policy change to an audit component and should be a decision
-# somebody makes, not something a deploy does to them. See the runbook.
+# An existing stream with NO age limit is brought to AUDIT_MAX_AGE by the deploy. This
+# used to be left to a hand-run `nats stream edit`, on the grounds that it is a policy
+# decision; nobody ran it, and on 2026-10-06 the unbounded AUDIT stream (615 MB, every
+# record since August) filled JetStream's store and every publish on the platform was
+# refused. Only "never expire" is converged: an age somebody set deliberately is left alone.
 # ----------------------------------------------------------------------------
 AUDIT_MAX_AGE="${AUDIT_MAX_AGE:-720h}"
 
@@ -137,10 +138,16 @@ ensure_audit_stream() {
   if nats --server "$NATS_URL" stream info AUDIT >/dev/null 2>&1; then
     echo "stream AUDIT exists"
     converge_subjects AUDIT "audit.>"
-    # Subjects converge; retention, max-age and discard policy do not. For AUDIT that is the
-    # whole point -- they are compliance properties, and a stream created with the wrong ones
-    # has to be edited by hand. check_retention reports it. See the runbook.
+    # Subjects converge; retention and discard policy do not. For AUDIT that is the whole
+    # point -- they are compliance properties, and a stream created with the wrong ones has
+    # to be edited by hand. check_retention reports it. See the runbook.
     check_retention AUDIT limits
+    # max_age is in nanoseconds; 0 is "never expire" -- see AUDIT_MAX_AGE above.
+    if command -v jq >/dev/null 2>&1 \
+      && [ "$(nats --server "$NATS_URL" stream info AUDIT -j | jq -r '.config.max_age')" = "0" ]; then
+      echo "  AUDIT never expires; setting max-age $AUDIT_MAX_AGE"
+      nats --server "$NATS_URL" stream edit AUDIT --max-age "$AUDIT_MAX_AGE" -f
+    fi
     return
   fi
   nats --server "$NATS_URL" stream add AUDIT \

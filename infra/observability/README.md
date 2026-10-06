@@ -397,10 +397,10 @@ Three things that grew without bound and no longer do:
   platform-wide. Now capped for every service, not only the new ones.
 - **The `AUDIT` JetStream stream** was `--max-age 0 --discard new` — never
   expires, then starts refusing audit publishes. `provision-streams.sh` now
-  creates it with `720h`. **An existing cluster is not changed by that script**;
-  `nats stream edit AUDIT --max-age=720h` is an operator decision, and
-  `--discard new` must stay (an audit publisher has to see an error, never a
-  silent trim).
+  creates it with `720h`, and since 2026-10-06 also brings an existing stream
+  that never expires to `720h` (the manual edit was never run, and the unbounded
+  stream filled JetStream's store). `--discard new` must stay (an audit
+  publisher has to see an error, never a silent trim).
 - **`analytics.events`** had no retention at all. `AnalyticsRetentionWorker`
   prunes past `Analytics:RetentionDays` (90) in 10 000-row batches;
   `analytics.daily_rollups` is kept forever.
