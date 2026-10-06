@@ -409,7 +409,7 @@ public static class Expressions
                 Var v => scope.TryGetValue(v.Name, out var value) ? value : throw new ExpressionException($"Unknown name '{v.Name}'", v.Position),
                 Member m => Eval(m.Target, depth + 1) is JsonObject o ? o[m.Name] : null,
                 Index i => IndexOf(Eval(i.Target, depth + 1), Eval(i.Key, depth + 1)),
-                ListLit l => new JsonArray(l.Items.Select(x => Eval(x, depth + 1)?.DeepClone()).ToArray()),
+                ListLit l => new JsonArray(l.Items.Select(x => Plain(Eval(x, depth + 1), x)).ToArray()),
                 Unary { Op: "!" } u => !Truthy(Eval(u.Operand, depth + 1)),
                 Unary u => Number(Eval(u.Operand, depth + 1), u) is { } n ? -n : null,
                 Conditional c => Truthy(Eval(c.Test, depth + 1)) ? Eval(c.Then, depth + 1) : Eval(c.Else, depth + 1),
@@ -420,6 +420,17 @@ public static class Expressions
                 _ => throw new ExpressionException("Unsupported expression", node.Position),
             };
         }
+
+        /// <summary>
+        /// A list literal holds plain values only. Copying an object or a list into one would let
+        /// <c>[steps.q, steps.q, …]</c> multiply a large query result hundreds of times over.
+        /// </summary>
+        private static JsonNode? Plain(JsonNode? value, Node at) => value switch
+        {
+            null => null,
+            JsonValue v => v.DeepClone(),
+            _ => throw new ExpressionException("A list written in an expression holds plain values (text, numbers, true/false, null)", at.Position),
+        };
 
         private static JsonNode? IndexOf(JsonNode? target, JsonNode? key) => (target, key) switch
         {
@@ -595,23 +606,29 @@ public static class Expressions
     /// <summary>The most one rendered input may come to, in serialized characters.</summary>
     public const int MaxRenderedChars = 256_000;
 
-    public static JsonNode? Render(JsonNode? template, IReadOnlyDictionary<string, JsonNode?> scope, DateTimeOffset now)
+    /// <param name="htmlKeys">
+    /// Top-level input keys that are HTML (an email's body): what a hole puts there is
+    /// HTML-encoded, so a record's text — possibly a site visitor's — cannot become markup in
+    /// mail the tenant sends. The template's own markup is kept.
+    /// </param>
+    public static JsonNode? Render(JsonNode? template, IReadOnlyDictionary<string, JsonNode?> scope, DateTimeOffset now,
+        IReadOnlySet<string>? htmlKeys = null)
     {
         var budget = new[] { MaxRenderedChars };
-        return Render(template, scope, now, budget);
+        if (template is JsonObject root && htmlKeys is { Count: > 0 })
+        {
+            return new JsonObject(root.Select(p => KeyValuePair.Create(p.Key, Render(p.Value, scope, now, budget, html: htmlKeys.Contains(p.Key)))));
+        }
+        return Render(template, scope, now, budget, html: false);
     }
 
-    private static JsonNode? Render(JsonNode? template, IReadOnlyDictionary<string, JsonNode?> scope, DateTimeOffset now, int[] budget)
+    private static JsonNode? Render(JsonNode? template, IReadOnlyDictionary<string, JsonNode?> scope, DateTimeOffset now, int[] budget, bool html) => template switch
     {
-        var rendered = template switch
-        {
-            JsonObject o => new JsonObject(o.Select(p => KeyValuePair.Create(p.Key, Render(p.Value, scope, now, budget)))),
-            JsonArray a => new JsonArray(a.Select(i => Render(i, scope, now, budget)).ToArray()),
-            JsonValue v when v.TryGetValue<string>(out var s) && s.Contains("{{", StringComparison.Ordinal) => Spend(RenderString(s, scope, now), budget),
-            _ => template?.DeepClone(),
-        };
-        return rendered;
-    }
+        JsonObject o => new JsonObject(o.Select(p => KeyValuePair.Create(p.Key, Render(p.Value, scope, now, budget, html)))),
+        JsonArray a => new JsonArray(a.Select(i => Render(i, scope, now, budget, html)).ToArray()),
+        JsonValue v when v.TryGetValue<string>(out var s) && s.Contains("{{", StringComparison.Ordinal) => Spend(RenderString(s, scope, now, html), budget),
+        _ => template?.DeepClone(),
+    };
 
     /// <summary>Counts what a hole produced against the input's budget, so many holes cannot add up to an unbounded input.</summary>
     private static JsonNode? Spend(JsonNode? value, int[] budget)
@@ -636,10 +653,10 @@ public static class Expressions
         _ => [],
     };
 
-    private static JsonNode? RenderString(string text, IReadOnlyDictionary<string, JsonNode?> scope, DateTimeOffset now)
+    private static JsonNode? RenderString(string text, IReadOnlyDictionary<string, JsonNode?> scope, DateTimeOffset now, bool html)
     {
         var holes = Holes(text).ToList();
-        if (holes.Count == 1 && holes[0].Start == 0 && holes[0].End == text.Length)
+        if (!html && holes.Count == 1 && holes[0].Start == 0 && holes[0].End == text.Length)
         {
             return Evaluate(holes[0].Expression, scope, now);
         }
@@ -649,12 +666,13 @@ public static class Expressions
         {
             result.Append(text, at, hole.Start - at);
             var value = Evaluate(hole.Expression, scope, now);
-            result.Append(value switch
+            var piece = value switch
             {
                 null => "",
                 JsonValue v when v.TryGetValue<string>(out var s) => s,
                 _ => value.ToJsonString(),
-            });
+            };
+            result.Append(html ? System.Net.WebUtility.HtmlEncode(piece) : piece);
             at = hole.End;
             if (result.Length > MaxStringChars)
             {

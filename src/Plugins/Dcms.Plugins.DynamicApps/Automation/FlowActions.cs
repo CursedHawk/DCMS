@@ -59,6 +59,11 @@ public interface IFlowAction
 
     OpRisk Risk { get; }
 
+    /// <summary>Inputs that are HTML: template holes in them are HTML-encoded before the action sees them.</summary>
+    IReadOnlySet<string> HtmlInputs => NoInputs;
+
+    static readonly IReadOnlySet<string> NoInputs = new HashSet<string>();
+
     Task<JsonNode?> RunAsync(FlowActionContext context, JsonObject input, CancellationToken ct);
 }
 
@@ -111,6 +116,10 @@ internal abstract partial class FlowAction<TInput> : IFlowAction
     public abstract OpRisk Risk { get; }
     public JsonObject InputSchema => JsonNode.Parse(Schema)!.AsObject();
     protected abstract string Schema { get; }
+
+    // Declared here, on the class that implements IFlowAction, so an override is what the
+    // interface sees; a member declared only in a derived class would not replace the default.
+    public virtual IReadOnlySet<string> HtmlInputs { get; } = new HashSet<string>();
 
     public async Task<JsonNode?> RunAsync(FlowActionContext context, JsonObject input, CancellationToken ct)
     {
@@ -271,7 +280,10 @@ internal sealed record NotifyInput(string Title, string Body, string? Severity =
 internal sealed class EmailSendAction : FlowAction<EmailInput>
 {
     public override string Id => "dcms.email.send";
-    public override string Description => "Send an email through the platform's queue (at most 20 recipients). Text is escaped; html is sent as written. Output: { recipients }.";
+
+    // The body is HTML the tenant wrote; what a template puts into it is data, never markup.
+    public override IReadOnlySet<string> HtmlInputs { get; } = new HashSet<string> { "html" };
+    public override string Description => "Send an email through the platform's queue (at most 20 recipients). Text is escaped; in html, the template's own markup is kept and every {{ }} value is escaped. Output: { recipients }.";
     public override OpRisk Risk => OpRisk.Safe;
     protected override string Schema => """{"type":"object","required":["to","subject"],"properties":{"to":{"oneOf":[{"type":"string"},{"type":"array","items":{"type":"string"},"maxItems":20}]},"subject":{"type":"string"},"text":{"type":"string"},"html":{"type":"string"},"replyTo":{"type":"string"}}}""";
 

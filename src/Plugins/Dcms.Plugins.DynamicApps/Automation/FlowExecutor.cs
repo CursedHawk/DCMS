@@ -178,7 +178,7 @@ public sealed class FlowExecutor(
                 return null;
             }
             var action = ActionCatalog.Find(step.Action) ?? throw new FlowFatalException($"There is no action '{step.Action}'.");
-            var input = Expressions.Render(step.Input, scope, now) as JsonObject ?? [];
+            var input = Expressions.Render(step.Input, scope, now, action.HtmlInputs) as JsonObject ?? [];
             row.InputJson = Bounded(input);
 
             var output = await action.RunAsync(new FlowActionContext(services, context, run, step.Id), input, ct);

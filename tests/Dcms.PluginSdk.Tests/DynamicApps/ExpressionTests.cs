@@ -106,6 +106,29 @@ public sealed class ExpressionTests
     }
 
     [Fact]
+    public void Values_put_into_html_are_escaped_and_the_template_markup_kept()
+    {
+        var data = new Dictionary<string, JsonNode?> { ["row"] = JsonNode.Parse("""{ "name": "<a href=\"https://evil.test\">Click</a>" }""") };
+        var input = JsonNode.Parse("""{ "html": "<p>Hello <b>{{ row.name }}</b></p>", "whole": "{{ row.name }}", "subject": "Hi {{ row.name }}" }""");
+
+        var rendered = Expressions.Render(input, data, Now, new HashSet<string> { "html", "whole" })!;
+
+        rendered["html"]!.GetValue<string>().Should().Be("<p>Hello <b>&lt;a href=&quot;https://evil.test&quot;&gt;Click&lt;/a&gt;</b></p>");
+        rendered["whole"]!.GetValue<string>().Should().StartWith("&lt;a", "a whole-value hole in html is escaped too");
+        rendered["subject"]!.GetValue<string>().Should().Contain("<a href", "only the keys named as html are escaped");
+        ActionCatalog.Find("dcms.email.send@1")!.HtmlInputs.Should().Contain("html");
+    }
+
+    [Fact]
+    public void A_list_literal_holds_plain_values_so_it_cannot_multiply_a_large_value()
+    {
+        var data = new Dictionary<string, JsonNode?> { ["big"] = new JsonArray(Enumerable.Range(0, 1000).Select(i => (JsonNode)i).ToArray()) };
+        var act = () => Expressions.Evaluate("[big, big, big]", data, Now);
+        act.Should().Throw<ExpressionException>().Which.Message.Should().Contain("plain values");
+        Expressions.Evaluate("[1, 'a', null, true]", data, Now)!.AsArray().Should().HaveCount(4);
+    }
+
+    [Fact]
     public void Templates_keep_types_for_a_whole_value_and_interpolate_otherwise()
     {
         var input = JsonNode.Parse("""
