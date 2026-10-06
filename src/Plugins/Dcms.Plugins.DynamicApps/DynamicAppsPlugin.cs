@@ -79,6 +79,7 @@ public sealed class DynamicAppsPlugin : IPlugin
     {
         services.AddMemoryCache();
         services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<AppEventLog>();
         services.AddScoped<ConfigurationService>();
         services.AddScoped<RuntimeModelProvider>();
         services.AddScoped<RecordService>();

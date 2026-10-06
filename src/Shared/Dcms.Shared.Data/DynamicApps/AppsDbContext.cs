@@ -188,6 +188,30 @@ public sealed class AppUniqueKey : TenantEntity
     public string Key { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// A runtime event (row created, record linked, revision published…) waiting to be routed to
+/// the application's automations. Written in the transaction of the change it describes, so an
+/// event exists exactly when its change does; drained by the plugin's dispatcher.
+/// </summary>
+// Transport for changes the same transaction already audits.
+[AuditIgnore]
+public sealed class AppOutboxMessage : TenantEntity
+{
+    public Guid InstanceId { get; set; }
+    public string EventName { get; set; } = string.Empty;
+
+    /// <summary>The whole <c>AppEvent</c> envelope.</summary>
+    public string Envelope { get; set; } = "{}";
+
+    public DateTimeOffset OccurredAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? SentAt { get; set; }
+    public int Attempts { get; set; }
+    public string? LastError { get; set; }
+
+    /// <summary>The audit context of the request that wrote it, so what it sets off still names that person.</summary>
+    public string? ContextJson { get; set; }
+}
+
 /// <summary>Owns the "apps" schema: the Dynamic Apps plugin's applications (ADR 0021).</summary>
 public class AppsDbContext(DbContextOptions<AppsDbContext> options, ITenantContext tenantContext) : DbContext(options)
 {
@@ -202,6 +226,7 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options, ITenantConte
     public DbSet<AppRecord> Records => Set<AppRecord>();
     public DbSet<AppRelationLink> RelationLinks => Set<AppRelationLink>();
     public DbSet<AppUniqueKey> UniqueKeys => Set<AppUniqueKey>();
+    public DbSet<AppOutboxMessage> Outbox => Set<AppOutboxMessage>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -271,6 +296,19 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options, ITenantConte
             e.HasIndex(l => new { l.TenantId, l.InstanceId, l.RelationshipId, l.SourceId, l.TargetId }).IsUnique();
             e.HasIndex(l => new { l.TenantId, l.InstanceId, l.RelationshipId, l.TargetId });
             e.HasQueryFilter(l => l.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<AppOutboxMessage>(e =>
+        {
+            // Not tenant-filtered: the dispatcher drains every tenant's events, and each carries
+            // its own tenant. RlsConfigurator.ExemptTables says so too.
+            e.ToTable("outbox");
+            e.HasKey(m => m.Id);
+            e.Property(m => m.EventName).HasMaxLength(128);
+            e.Property(m => m.Envelope).HasColumnType("jsonb");
+            e.Property(m => m.LastError).HasMaxLength(2000);
+            e.HasIndex(m => m.OccurredAt).HasFilter("\"SentAt\" IS NULL");
+            e.HasIndex(m => m.SentAt);
         });
 
         builder.Entity<AppUniqueKey>(e =>

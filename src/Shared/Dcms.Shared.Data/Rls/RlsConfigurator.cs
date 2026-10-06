@@ -118,6 +118,7 @@ public static class RlsConfigurator
         ("audit", "audit_outbox"),        // same, and mapped into every business context
         ("audit", "chain_heads"),         // one row per chain; the verifier walks all of them
         ("audit", "chain_anchors"),
+        ("apps", "outbox"),               // Dynamic Apps events, drained by a cross-tenant dispatcher
     ];
 
     /// <summary>

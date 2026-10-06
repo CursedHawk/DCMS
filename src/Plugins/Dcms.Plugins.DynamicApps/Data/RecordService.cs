@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json.Nodes;
+using Dcms.Plugins.DynamicApps.Api;
 using Dcms.Plugins.DynamicApps.Api.Model;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -27,6 +28,7 @@ public sealed class RecordService(
     AppsDbContext db,
     IPluginContext context,
     RuntimeModelProvider models,
+    AppEventLog events,
     IAuditRecorder audit,
     TimeProvider clock)
 {
@@ -162,6 +164,8 @@ public sealed class RecordService(
         };
         db.Records.Add(record);
         await ClaimKeysAsync(table, record.Id, write.Data, ct);
+        events.Add(db, model.Revision.Number, AppEvent.RowCreated, Entity(table, record.Id),
+            new JsonObject { ["record"] = RecordCodec.Read(table, record, RecordPlane.System) });
 
         Declare("record.created", table, record.Id);
         await SaveAsync(ct);
@@ -284,6 +288,8 @@ public sealed class RecordService(
                 TargetId = target,
                 CreatedAt = clock.GetUtcNow(),
             });
+            events.Add(db, model.Revision.Number, AppEvent.RelationCreated, Entity(table, id),
+                Link(model, nav, source, target));
             Declare("relation.linked", table, id).With("relationship", nav.Relationship.ApiName).With("target", targetId);
             await SaveAsync(ct);
         }
@@ -294,15 +300,23 @@ public sealed class RecordService(
     public async Task<bool> UnlinkAsync(string tableName, Guid id, string navigation, Guid targetId, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
-        var (_, table) = await TableAsync(tableName, ct);
+        var (model, table) = await TableAsync(tableName, ct);
         var nav = ManyToMany(table, navigation);
         var (source, target) = nav.FromSource ? (id, targetId) : (targetId, id);
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
         Declare("relation.unlinked", table, id).With("relationship", nav.Relationship.ApiName).With("target", targetId);
         // Set-based, and recorded: the declared entry above names the link that goes.
         var removed = await db.RelationLinks
             .Where(l => l.InstanceId == InstanceId && l.RelationshipId == nav.Relationship.Id && l.SourceId == source && l.TargetId == target)
             .ExecuteDeleteAsync(ct);
-        return removed > 0;
+        if (removed == 0)
+        {
+            return false;
+        }
+        events.Add(db, model.Revision.Number, AppEvent.RelationDeleted, Entity(table, id), Link(model, nav, source, target));
+        await SaveAsync(ct);
+        await tx.CommitAsync(ct);
+        return true;
     }
 
     // ------------------------------------------------------------------ internals
@@ -325,6 +339,15 @@ public sealed class RecordService(
         record.UpdatedAt = clock.GetUtcNow();
         record.UpdatedBy = Actor;
         await ClaimKeysAsync(table, record.Id, write.Data, ct);
+
+        var previous = new JsonObject();
+        foreach (var name in write.Changed)
+        {
+            previous[name] = existing[table.ByName[name].Key]?.DeepClone();
+        }
+        events.Add(db, model.Revision.Number, AppEvent.RowUpdated, Entity(table, record.Id),
+            new JsonObject { ["record"] = RecordCodec.Read(table, record, RecordPlane.System), ["previous"] = previous },
+            write.Changed);
     }
 
     /// <summary>
@@ -368,11 +391,19 @@ public sealed class RecordService(
                     foreach (var r in pointing)
                     {
                         var data = JsonNode.Parse(r.Data)!.AsObject();
+                        var was = data[relationship.Id.ToString()]?.DeepClone();
                         data.Remove(relationship.Id.ToString());
                         r.Data = data.ToJsonString();
                         r.Version++;
                         r.UpdatedAt = clock.GetUtcNow();
                         r.UpdatedBy = Actor;
+                        events.Add(db, model.Revision.Number, AppEvent.RowUpdated, Entity(source, r.Id),
+                            new JsonObject
+                            {
+                                ["record"] = RecordCodec.Read(source, r, RecordPlane.System),
+                                ["previous"] = new JsonObject { [relationship.ApiName] = was },
+                            },
+                            [relationship.ApiName]);
                     }
                     break;
                 default:
@@ -384,6 +415,8 @@ public sealed class RecordService(
             }
         }
 
+        events.Add(db, model.Revision.Number, AppEvent.RowDeleted, Entity(table, record.Id),
+            new JsonObject { ["record"] = RecordCodec.Read(table, record, RecordPlane.System) });
         db.Records.Remove(record);
         // Set-based, under the record.deleted entry the caller declares.
         await db.UniqueKeys.Where(k => k.InstanceId == InstanceId && k.RecordId == record.Id).ExecuteDeleteAsync(ct);
@@ -498,6 +531,17 @@ public sealed class RecordService(
         Navigation(table, name) is { Kind: NavigationKind.ManyToMany } nav
             ? nav
             : throw new ContractValidationException($"'{name}' is a lookup; set it on the record instead of linking.");
+
+    private static AppEventEntity Entity(RuntimeTable table, Guid id) => new(table.ApiName, id);
+
+    private static JsonObject Link(RuntimeModel model, RuntimeNavigation nav, Guid source, Guid target) => new()
+    {
+        ["relationship"] = nav.Relationship.ApiName,
+        ["sourceTable"] = model.ById.GetValueOrDefault(nav.Relationship.SourceTableId)?.ApiName,
+        ["sourceId"] = source.ToString(),
+        ["targetTable"] = model.ById.GetValueOrDefault(nav.Relationship.TargetTableId)?.ApiName,
+        ["targetId"] = target.ToString(),
+    };
 
     private static string Pointer(Guid relationshipId, Guid target) =>
         new JsonObject { [relationshipId.ToString()] = target.ToString() }.ToJsonString();

@@ -80,6 +80,27 @@ public sealed class AppHarness(ContentFlowFixture fixture, HttpClient admin, Gui
         return member;
     }
 
+    /// <summary>This tenant's outbox, oldest first: event name and envelope.</summary>
+    public async Task<List<(string Name, JsonElement Envelope)>> OutboxAsync(CancellationToken ct)
+    {
+        await using var conn = new Npgsql.NpgsqlConnection(fixture.PostgresConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT "EventName", "Envelope"::text FROM apps.outbox
+            WHERE "TenantId" = (SELECT "Id"::uuid FROM tenancy.tenants WHERE "Identifier" = @slug)
+            ORDER BY "OccurredAt", "Id"
+            """;
+        cmd.Parameters.AddWithValue("slug", tenant);
+        var rows = new List<(string, JsonElement)>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add((reader.GetString(0), JsonDocument.Parse(reader.GetString(1)).RootElement.Clone()));
+        }
+        return rows;
+    }
+
     public static HttpRequestMessage Req(HttpMethod method, string url, Guid sub, string slug, string roles = "", object? body = null)
     {
         var req = new HttpRequestMessage(method, url);

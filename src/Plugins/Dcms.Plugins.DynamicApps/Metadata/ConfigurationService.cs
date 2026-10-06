@@ -27,6 +27,7 @@ public sealed class ConfigurationService(
     IPluginContext context,
     IAuditRecorder audit,
     IMemoryCache cache,
+    Data.AppEventLog events,
     TimeProvider clock)
 {
     private const string ResourceType = "app_revision";
@@ -248,6 +249,7 @@ public sealed class ConfigurationService(
         draft.ValidatedHash = draft.Hash;
         app.PublishedRevisionId = draft.Id;
         app.DraftRevisionId = null;
+        Published(app, draft, previous);
 
         Declare(draft, "revision.published").With("previous", previous?.Number);
         await db.SaveChangesAsync(ct);
@@ -324,6 +326,7 @@ public sealed class ConfigurationService(
         await SupersedeAsync(app, AppRevisionStatus.RolledBack, ct);
         app.PublishedRevisionId = revision.Id;
         await RecordChangesAsync(revision, ConfigDiff.Between(liveConfig, config), source, ct);
+        Published(app, revision, live);
 
         Declare(revision, "revision.rolled_back").With("from", live.Number).With("to", target.Number);
         await db.SaveChangesAsync(ct);
@@ -490,6 +493,15 @@ public sealed class ConfigurationService(
         app.DraftRevisionId = draft.Id;
         return draft;
     }
+
+    /// <summary>The <c>revision.published</c> event, in the publish's own transaction.</summary>
+    private void Published(DynamicApp app, AppRevision revision, AppRevision? previous) =>
+        events.Add(db, revision.Number, Api.AppEvent.RevisionPublished, new Api.AppEventEntity("app", app.Id), new JsonObject
+        {
+            ["number"] = revision.Number,
+            ["hash"] = revision.Hash,
+            ["previous"] = previous?.Number,
+        });
 
     private async Task<AppRevision> DraftAsync(DynamicApp app, CancellationToken ct) =>
         app.DraftRevisionId is { } id ? await db.Revisions.FirstAsync(r => r.Id == id, ct) : throw NoDraft();
