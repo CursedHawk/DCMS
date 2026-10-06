@@ -48,7 +48,8 @@ export interface PreviewFetchResult {
   status: number;
   statusText: string;
   headers: Record<string, string>;
-  body: string;
+  /** Bytes, not text: an image decoded as a string would arrive corrupted. */
+  body: ArrayBuffer | string;
 }
 
 /**
@@ -168,6 +169,39 @@ export const BRIDGE_SCRIPT = `
       throw err;
     });
   };
+  // An <img src="/api/media/..."> never reaches the fetch above: the browser loads it against
+  // the admin origin with no token, and it breaks. So such sources are fetched through the proxy
+  // and swapped for a blob: URL made here, in the preview's own origin.
+  var mediaCache = {};
+  var viaProxy = function (u) {
+    if (!mediaCache[u]) {
+      mediaCache[u] = window.fetch(u).then(function (r) {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.blob();
+      }).then(function (b) { return URL.createObjectURL(b); });
+    }
+    return mediaCache[u];
+  };
+  var swapMedia = function (el) {
+    ['src', 'poster'].forEach(function (attr) {
+      var v = el.getAttribute(attr);
+      if (!v || v.indexOf('/api/') !== 0) return;
+      viaProxy(v).then(function (blobUrl) {
+        if (el.getAttribute(attr) !== v) return;
+        // A srcset wins over src and is not proxied candidate by candidate: the one picture
+        // stands in for the whole ladder. Replaced rather than removed — without one, Chrome
+        // keeps the density of the candidate it had picked and draws the picture undersized.
+        if ((el.getAttribute('srcset') || '').indexOf('/api/') !== -1) el.setAttribute('srcset', blobUrl);
+        el.setAttribute(attr, blobUrl);
+      }, function () {});
+    });
+  };
+  var scanMedia = function () {
+    Array.prototype.forEach.call(document.querySelectorAll('img, source, video'), swapMedia);
+  };
+  new MutationObserver(scanMedia).observe(document.documentElement, {
+    subtree: true, childList: true, attributes: true, attributeFilter: ['src', 'srcset', 'poster'],
+  });
   window.addEventListener('message', function (ev) {
     // Only our host (the parent that injected this) may answer a proxy request or ask a query.
     // A real message always carries its source, so this keeps another frame from feeding the

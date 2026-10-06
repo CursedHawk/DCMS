@@ -64,7 +64,7 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
       const headers: Record<string, string> = {};
       const responseType = res.headers.get('content-type');
       if (responseType) headers['content-type'] = responseType;
-      return { status: res.status, statusText: res.statusText, headers, body: await res.text() };
+      return { status: res.status, statusText: res.statusText, headers, body: await res.arrayBuffer() };
     },
     [siteId],
   );

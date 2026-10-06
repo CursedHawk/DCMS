@@ -17,6 +17,14 @@ describe('previewProxyTarget', () => {
     );
   });
 
+  it('maps the site API as the live host serves it into the subtree', () => {
+    expect(previewProxyTarget('/api/media/0b6c/webp-640', PREFIX, ORIGIN)).toBe(
+      '/api/admin/sites/abc/preview/api/media/0b6c/webp-640',
+    );
+    // Dot segments are collapsed before the mapping, so they cannot reach an admin route.
+    expect(previewProxyTarget('/api/media/../admin/tenants', PREFIX, ORIGIN)).toBeNull();
+  });
+
   it('refuses a dot-segment traversal that would escape the subtree', () => {
     // The confused deputy: this starts with the prefix as a string, but resolves to
     // /api/admin/tenants — which would otherwise be fetched with the admin token.

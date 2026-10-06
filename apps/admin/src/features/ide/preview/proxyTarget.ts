@@ -15,6 +15,10 @@
  * left intact (the browser does not collapse them either): they stay inside the preview subtree as
  * literal path characters and reach only content-api behind the tenant-scoped proxy, never a
  * different admin route.</p>
+ *
+ * <p>A bare <c>/api/...</c> outside <c>/api/admin/</c> is the site's own API as the live tenant
+ * host serves it — site-runtime's <c>mediaUrl</c> writes <c>/api/media/{id}/{variant}</c> with no
+ * base — so it is mapped into the preview subtree, which proxies to the same content-api.</p>
  */
 export function previewProxyTarget(rawUrl: string, prefix: string, origin: string): string | null {
   let resolved: URL;
@@ -23,8 +27,9 @@ export function previewProxyTarget(rawUrl: string, prefix: string, origin: strin
   } catch {
     return null;
   }
-  if (resolved.origin !== origin || !resolved.pathname.startsWith(prefix)) {
-    return null;
-  }
-  return `${resolved.pathname}${resolved.search}`;
+  if (resolved.origin !== origin) return null;
+  let path = resolved.pathname;
+  if (path.startsWith('/api/') && !path.startsWith('/api/admin/')) path = `${prefix}${path.slice(1)}`;
+  if (!path.startsWith(prefix)) return null;
+  return `${path}${resolved.search}`;
 }

@@ -103,7 +103,25 @@ export function MonacoEditor() {
       },
     });
 
+    // Ctrl+F means "find in the open file" wherever focus is. Monaco only hears keys pressed
+    // inside its own DOM, and opening a file from the tree or a tab leaves focus on that
+    // button — so the next Ctrl+F went to the browser's find bar, and it looked like find
+    // "sometimes stops working". Bubble phase: a key Monaco handled itself never gets here.
+    // Not from another editor (the diff view) or a dialog, and not while this one is hidden.
+    const onFindKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.altKey) return;
+      if (event.key.toLowerCase() !== 'f' || event.defaultPrevented) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('.monaco-editor, [role="dialog"]')) return;
+      if (!editor.getModel() || !hostRef.current?.getClientRects().length) return;
+      event.preventDefault();
+      editor.focus();
+      void editor.getAction('actions.find')?.run();
+    };
+    document.addEventListener('keydown', onFindKey);
+
     return () => {
+      document.removeEventListener('keydown', onFindKey);
       sub.dispose();
       opener.dispose();
       editor.dispose();
