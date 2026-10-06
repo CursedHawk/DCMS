@@ -44,6 +44,20 @@ public static class ConfigJson
         }
     }
 
+    /// <summary>Checks that one resource has its type's shape.</summary>
+    /// <exception cref="ContractValidationException">It does not.</exception>
+    public static void FromNode(JsonNode node, Type shape)
+    {
+        try
+        {
+            node.Deserialize(shape, Options);
+        }
+        catch (JsonException e)
+        {
+            throw new ContractValidationException(Describe(e));
+        }
+    }
+
     public static AppConfig Parse(string json) => FromNode(JsonNode.Parse(json)!);
 
     public static string Canonical(AppConfig config) => Sorted(ToNode(config))!.ToJsonString();

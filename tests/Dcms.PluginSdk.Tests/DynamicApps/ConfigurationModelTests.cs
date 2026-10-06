@@ -142,6 +142,37 @@ public sealed class ConfigurationModelTests
         again.Should().Throw<ContractValidationException>().Which.Message.Should().Contain("already in use");
     }
 
+    // ------------------------------------------------------------------ bounded work
+
+    private static string BigTable(string apiName, int fields) =>
+        $$"""[ { "op": "create", "type": "table", "value": { "apiName": "{{apiName}}", "displayName": "Big", "fields": [ {{string.Join(",",
+            Enumerable.Range(0, fields).Select(i => $$"""{ "apiName": "f{{i}}", "displayName": "Field {{i}}" }"""))}} ] } } ]""";
+
+    [Fact]
+    public void Assigning_thousands_of_ids_in_one_operation_is_linear()
+    {
+        // Each new id used to be checked by walking the whole document: 5,000 inline fields took
+        // 12.5 million node visits. A regression here is a request that pins a CPU.
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var config = Build(BigTable("big", 5_000));
+        watch.Stop();
+
+        config.Tables.Single().Fields.Should().HaveCount(5_000);
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
+    public void A_change_set_or_a_document_beyond_the_size_cap_is_refused()
+    {
+        var tooBig = () => Build(BigTable("big", 25_000));
+        tooBig.Should().Throw<ContractValidationException>().Which.Message.Should().Contain("at most");
+
+        // Each half fits; together they would not.
+        var half = Build(BigTable("first", 15_000));
+        var both = () => Build(BigTable("second", 15_000), half);
+        both.Should().Throw<ContractValidationException>().Which.Message.Should().Contain("would exceed");
+    }
+
     // ------------------------------------------------------------------ canonical form and hash
 
     [Fact]

@@ -22,6 +22,14 @@ public static class ChangeApplier
     private static readonly string[] Ops = ["create", "update", "delete"];
     private static readonly string[] Types = ["settings", "table", "field", "index", "relationship", "choiceSet", "view"];
 
+    /// <summary>
+    /// The most a change set may carry, and the largest configuration document, in serialized
+    /// characters. Every cost below is linear in these, so they bound the work a request can ask
+    /// for. The document cap clears the validator's own limits (100 tables of 200 fields).
+    /// </summary>
+    public const int MaxChangeSetChars = 1_000_000;
+    public const int MaxDocumentChars = 4_000_000;
+
     /// <exception cref="ContractValidationException">An operation is malformed or names something that does not exist.</exception>
     public static AppConfig Apply(AppConfig config, IReadOnlyList<ChangeOperation> operations)
     {
@@ -33,15 +41,25 @@ public static class ChangeApplier
         {
             throw new ContractValidationException($"A change set may hold at most {MaxOperations} operations; split it.");
         }
+        if (operations.Sum(o => o.Value?.ToJsonString().Length ?? 0) > MaxChangeSetChars)
+        {
+            throw new ContractValidationException($"A change set may carry at most {MaxChangeSetChars:N0} characters of values; split it.");
+        }
 
         var doc = ConfigJson.ToNode(config);
+        var session = new Session(doc);
         for (var i = 0; i < operations.Count; i++)
         {
             var op = operations[i];
             try
             {
-                new Session(doc).Apply(op);
-                ConfigJson.FromNode(doc);
+                // Shape-checks just what this operation wrote, so a bad property is reported
+                // against the operation that introduced it without re-reading the whole document
+                // once per operation.
+                if (session.Apply(op) is { } touched)
+                {
+                    ConfigJson.FromNode(touched.Node, touched.Shape);
+                }
             }
             catch (ContractValidationException e)
             {
@@ -49,17 +67,26 @@ public static class ChangeApplier
                 throw new ContractValidationException($"Operation {i + 1} ({op.Op} {op.Type}{target}): {e.Message}");
             }
         }
+        if (doc.ToJsonString().Length > MaxDocumentChars)
+        {
+            throw new ContractValidationException(
+                $"The configuration would exceed {MaxDocumentChars:N0} characters. Remove what is unused, or split the application.");
+        }
         return ConfigJson.FromNode(doc);
     }
 
     private sealed class Session(JsonObject doc)
     {
+        /// <summary>Every id in the document, collected once: checking each new id against a fresh walk was quadratic.</summary>
+        private readonly HashSet<Guid> _ids = AllIds(doc).ToHashSet();
+
         private JsonArray Tables => Array(doc, "tables");
         private JsonArray Relationships => Array(doc, "relationships");
         private JsonArray ChoiceSets => Array(doc, "choiceSets");
         private JsonArray Views => Array(doc, "views");
 
-        public void Apply(ChangeOperation op)
+        /// <summary>Applies one operation; returns what it created or patched, and the shape that must still hold.</summary>
+        public (JsonObject Node, Type Shape)? Apply(ChangeOperation op)
         {
             if (!Ops.Contains(op.Op))
             {
@@ -72,20 +99,29 @@ public static class ChangeApplier
             switch (op.Op)
             {
                 case "create":
-                    Create(op.Type, op.Target, op.Value ?? throw Invalid("create needs a value."));
-                    break;
+                    return (Create(op.Type, op.Target, op.Value ?? throw Invalid("create needs a value.")), Shapes[op.Type]);
                 case "update":
-                    Update(op.Type, op.Target, op.Value ?? throw Invalid("update needs a value (a merge patch)."));
-                    break;
+                    return (Update(op.Type, op.Target, op.Value ?? throw Invalid("update needs a value (a merge patch).")), Shapes[op.Type]);
                 default:
                     Delete(op.Type, op.Target ?? throw Invalid("delete needs a target."));
-                    break;
+                    return null;
             }
         }
 
+        private static readonly Dictionary<string, Type> Shapes = new()
+        {
+            ["settings"] = typeof(AppSettings),
+            ["table"] = typeof(TableDef),
+            ["field"] = typeof(FieldDef),
+            ["index"] = typeof(IndexDef),
+            ["relationship"] = typeof(RelationshipDef),
+            ["choiceSet"] = typeof(ChoiceSetDef),
+            ["view"] = typeof(ViewDef),
+        };
+
         // ---------------------------------------------------------------- create
 
-        private void Create(string type, string? target, JsonObject source)
+        private JsonObject Create(string type, string? target, JsonObject source)
         {
             var value = source.DeepClone().AsObject();
             switch (type)
@@ -140,11 +176,12 @@ public static class ChangeApplier
                 default:
                     throw Invalid("settings always exist; update them instead.");
             }
+            return value;
         }
 
         // ---------------------------------------------------------------- update
 
-        private void Update(string type, string? target, JsonObject source)
+        private JsonObject Update(string type, string? target, JsonObject source)
         {
             var patch = source.DeepClone().AsObject();
             if (patch.ContainsKey("id"))
@@ -193,6 +230,7 @@ public static class ChangeApplier
                     break;
             }
             MergePatch(existing, patch);
+            return existing;
         }
 
         // ---------------------------------------------------------------- delete
@@ -427,11 +465,13 @@ public static class ChangeApplier
         {
             if (value["id"] is null)
             {
-                value["id"] = Guid.NewGuid().ToString();
+                var fresh = Guid.NewGuid();
+                _ids.Add(fresh);
+                value["id"] = fresh.ToString();
                 return;
             }
             var id = AsGuid(value["id"]) ?? throw Invalid("id must be a uuid.");
-            if (AllIds(doc).Contains(id))
+            if (!_ids.Add(id))
             {
                 throw Invalid($"id {id} is already in use.");
             }
