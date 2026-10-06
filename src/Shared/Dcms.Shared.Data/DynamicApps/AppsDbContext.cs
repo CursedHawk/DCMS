@@ -132,6 +132,62 @@ public sealed class AppChange : TenantEntity
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+/// <summary>
+/// One record of a tenant-defined table. Values live in <see cref="Data"/> keyed by field id
+/// (lookups by relationship id), never by api name: a deleted field's values can then never
+/// resurface under a new field that reuses its name. Read through the published model only.
+/// </summary>
+public sealed class AppRecord : TenantEntity
+{
+    public Guid InstanceId { get; set; }
+    public Guid TableId { get; set; }
+
+    /// <summary>Bumped on every write; the optimistic-concurrency token.</summary>
+    public int Version { get; set; } = 1;
+
+    // Field names only would say "Data changed" on every edit; the record's own audit entry
+    // names the record, and its values are the tenant's business data.
+    [AuditIgnore]
+    public string Data { get; set; } = "{}";
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public string? CreatedBy { get; set; }
+    public string? UpdatedBy { get; set; }
+
+    /// <summary>The site visitor who created it from the public site, for "own records" access.</summary>
+    public Guid? OwnerVisitorId { get; set; }
+}
+
+/// <summary>One link of a many-to-many relationship.</summary>
+public sealed class AppRelationLink : TenantEntity
+{
+    public Guid InstanceId { get; set; }
+    public Guid RelationshipId { get; set; }
+    public Guid SourceId { get; set; }
+    public Guid TargetId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// A value that must be unique, claimed by a record: a unique field's value, a unique index's
+/// tuple, a one-to-one lookup's target. The database's unique index is what refuses a second
+/// claim, so two concurrent writers cannot both win.
+/// </summary>
+[AuditIgnore]
+public sealed class AppUniqueKey : TenantEntity
+{
+    public Guid InstanceId { get; set; }
+
+    /// <summary>The field, index or relationship the constraint belongs to.</summary>
+    public Guid ConstraintId { get; set; }
+
+    public Guid RecordId { get; set; }
+
+    /// <summary>The normalized value, or a SHA-256 of it when long.</summary>
+    public string Key { get; set; } = string.Empty;
+}
+
 /// <summary>Owns the "apps" schema: the Dynamic Apps plugin's applications (ADR 0021).</summary>
 public class AppsDbContext(DbContextOptions<AppsDbContext> options, ITenantContext tenantContext) : DbContext(options)
 {
@@ -143,6 +199,9 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options, ITenantConte
     public DbSet<DynamicApp> Apps => Set<DynamicApp>();
     public DbSet<AppRevision> Revisions => Set<AppRevision>();
     public DbSet<AppChange> Changes => Set<AppChange>();
+    public DbSet<AppRecord> Records => Set<AppRecord>();
+    public DbSet<AppRelationLink> RelationLinks => Set<AppRelationLink>();
+    public DbSet<AppUniqueKey> UniqueKeys => Set<AppUniqueKey>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -189,6 +248,39 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options, ITenantConte
             e.Property(c => c.ToolCallId).HasMaxLength(128);
             e.HasIndex(c => new { c.TenantId, c.RevisionId, c.Seq }).IsUnique();
             e.HasQueryFilter(c => c.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<AppRecord>(e =>
+        {
+            e.ToTable("records");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Data).HasColumnType("jsonb");
+            e.Property(r => r.Version).IsConcurrencyToken();
+            e.Property(r => r.CreatedBy).HasMaxLength(128);
+            e.Property(r => r.UpdatedBy).HasMaxLength(128);
+            e.HasIndex(r => new { r.TenantId, r.InstanceId, r.TableId, r.CreatedAt });
+            // Lookups and filters by containment: Data @> {"<relationshipId>": "<targetId>"}.
+            e.HasIndex(r => r.Data).HasMethod("gin").HasOperators("jsonb_path_ops");
+            e.HasQueryFilter(r => r.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<AppRelationLink>(e =>
+        {
+            e.ToTable("relation_links");
+            e.HasKey(l => l.Id);
+            e.HasIndex(l => new { l.TenantId, l.InstanceId, l.RelationshipId, l.SourceId, l.TargetId }).IsUnique();
+            e.HasIndex(l => new { l.TenantId, l.InstanceId, l.RelationshipId, l.TargetId });
+            e.HasQueryFilter(l => l.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<AppUniqueKey>(e =>
+        {
+            e.ToTable("unique_keys");
+            e.HasKey(k => k.Id);
+            e.Property(k => k.Key).HasMaxLength(256);
+            e.HasIndex(k => new { k.TenantId, k.InstanceId, k.ConstraintId, k.Key }).IsUnique();
+            e.HasIndex(k => new { k.TenantId, k.RecordId });
+            e.HasQueryFilter(k => k.TenantId == CurrentTenantId);
         });
     }
 

@@ -227,7 +227,12 @@ public sealed class ConfigurationService(
         }
 
         var config = ConfigJson.Parse(draft.Snapshot);
-        var issues = ConfigValidator.Validate(config, await PublishedConfigAsync(app, ct));
+        var liveConfig = await PublishedConfigAsync(app, ct);
+        var issues = ConfigValidator.Validate(config, liveConfig).ToList();
+        if (!issues.Any(i => i.Severity == IssueSeverity.Error))
+        {
+            issues.AddRange(await ReconcileDataAsync(liveConfig, config, ct));
+        }
         if (issues.Any(i => i.Severity == IssueSeverity.Error))
         {
             Declare(draft, "revision.published").Failed("validation").With("issues", issues.Count);
@@ -283,7 +288,11 @@ public sealed class ConfigurationService(
 
         var liveConfig = ConfigJson.Parse(live.Snapshot);
         var config = ConfigJson.Parse(target.Snapshot);
-        var issues = ConfigValidator.Validate(config, liveConfig);
+        var issues = ConfigValidator.Validate(config, liveConfig).ToList();
+        if (!issues.Any(i => i.Severity == IssueSeverity.Error))
+        {
+            issues.AddRange(await ReconcileDataAsync(liveConfig, config, ct));
+        }
         if (issues.Any(i => i.Severity == IssueSeverity.Error))
         {
             audit.Declared?.For(ResourceType, target.Id, $"r{target.Number}").Failed("validation");
@@ -342,6 +351,95 @@ public sealed class ConfigurationService(
     }
 
     // ------------------------------------------------------------------ internals
+
+    /// <summary>The most records a table may hold for a new unique rule to be checked against them at publish.</summary>
+    public const int MaxRecordsForNewUnique = 200_000;
+
+    /// <summary>
+    /// Brings the records in line with the configuration about to go live, inside the publish
+    /// transaction: a new required field must already have a value in every record, and a unique
+    /// rule that is new or changed has its keys claimed from the records that exist — a
+    /// duplicate among them refuses the publish. Keys of rules that are gone are released.
+    /// </summary>
+    private async Task<IReadOnlyList<ConfigIssue>> ReconcileDataAsync(AppConfig? live, AppConfig next, CancellationToken ct)
+    {
+        var issues = new List<ConfigIssue>();
+        var instanceId = InstanceId;
+        var populated = (await db.Records.Where(r => r.InstanceId == instanceId).Select(r => r.TableId).Distinct().ToListAsync(ct)).ToHashSet();
+        var liveTables = (live?.Tables ?? []).Where(t => t.Enabled).ToDictionary(t => t.Id, t => new Data.RuntimeTable(t, live!));
+        var nextTables = next.Tables.Where(t => t.Enabled).Select(t => new Data.RuntimeTable(t, next)).ToList();
+
+        // Released: unique rules the next model no longer has.
+        var kept = nextTables.SelectMany(t => t.Uniques).Select(u => u.Id).ToHashSet();
+        var released = liveTables.Values.SelectMany(t => t.Uniques).Select(u => u.Id).Where(id => !kept.Contains(id)).ToList();
+        if (released.Count > 0)
+        {
+            // Set-based, under the revision.published entry the caller declares.
+            await db.UniqueKeys.Where(k => k.InstanceId == instanceId && released.Contains(k.ConstraintId)).ExecuteDeleteAsync(ct);
+        }
+
+        foreach (var table in nextTables.Where(t => populated.Contains(t.Id)))
+        {
+            var was = liveTables.GetValueOrDefault(table.Id);
+            var records = db.Records.Where(r => r.InstanceId == instanceId && r.TableId == table.Id);
+
+            foreach (var member in table.Members.Where(m => m.Required && m.Field?.Default is null))
+            {
+                if (was?.ById.GetValueOrDefault(member.Id) is { Required: true })
+                {
+                    continue;
+                }
+                var missing = await records.CountAsync(r => !EF.Functions.JsonExists(r.Data, member.Key), ct);
+                if (missing > 0)
+                {
+                    issues.Add(new ConfigIssue(IssueSeverity.Error, "required-without-data", $"{table.ApiName}.{member.ApiName}",
+                        $"{missing} existing record(s) have no value for it. Give it a default, fill it in first, or leave it optional."));
+                }
+            }
+
+            var liveSignatures = was?.Uniques.ToDictionary(u => u.Id, u => u.Signature) ?? [];
+            var rebuild = table.Uniques
+                .Where(u => !liveSignatures.TryGetValue(u.Id, out var signature) || signature != u.Signature)
+                .Select(u => u.Id).ToHashSet();
+            if (rebuild.Count == 0)
+            {
+                continue;
+            }
+            if (await records.CountAsync(ct) > MaxRecordsForNewUnique)
+            {
+                issues.Add(new ConfigIssue(IssueSeverity.Error, "unique-too-large", table.ApiName,
+                    $"A new unique rule is checked against every record, and this table has more than {MaxRecordsForNewUnique:N0}."));
+                continue;
+            }
+            await db.UniqueKeys.Where(k => k.InstanceId == instanceId && rebuild.Contains(k.ConstraintId)).ExecuteDeleteAsync(ct);
+            var claimed = new Dictionary<(Guid, string), Guid>();
+            var clashes = new HashSet<Guid>();
+            await foreach (var record in records.AsNoTracking().AsAsyncEnumerable().WithCancellation(ct))
+            {
+                var data = JsonNode.Parse(record.Data) as JsonObject ?? [];
+                foreach (var key in Data.RecordCodec.UniqueKeys(table, data).Where(k => rebuild.Contains(k.ConstraintId)))
+                {
+                    if (!claimed.TryAdd(key, record.Id))
+                    {
+                        clashes.Add(key.ConstraintId);
+                    }
+                }
+            }
+            foreach (var constraint in table.Uniques.Where(u => clashes.Contains(u.Id)))
+            {
+                issues.Add(new ConfigIssue(IssueSeverity.Error, "unique-violated-by-data", table.ApiName,
+                    $"Existing records share the same {string.Join(" + ", constraint.Members.Select(m => m.ApiName))}; make them distinct before requiring it."));
+            }
+            if (clashes.Count == 0)
+            {
+                db.UniqueKeys.AddRange(claimed.Select(c => new AppUniqueKey
+                {
+                    Id = Guid.NewGuid(), InstanceId = instanceId, ConstraintId = c.Key.Item1, Key = c.Key.Item2, RecordId = c.Value,
+                }));
+            }
+        }
+        return issues;
+    }
 
     /// <summary>
     /// The app row, created on first use and locked for the rest of the transaction: every write

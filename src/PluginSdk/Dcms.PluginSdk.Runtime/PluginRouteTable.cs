@@ -58,6 +58,7 @@ internal sealed class RecordingEndpointBuilder : IPluginEndpointBuilder
     public RouteHandlerBuilder MapPost(string pattern, Delegate handler) => Inert();
     public RouteHandlerBuilder MapPut(string pattern, Delegate handler) => Inert();
     public RouteHandlerBuilder MapDelete(string pattern, Delegate handler) => Inert();
+    public RouteHandlerBuilder MapPatch(string pattern, Delegate handler) => Inert();
 
     private static RouteHandlerBuilder Inert() => new(Array.Empty<IEndpointConventionBuilder>());
 

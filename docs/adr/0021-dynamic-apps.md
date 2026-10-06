@@ -45,7 +45,7 @@ audit outbox) and adds a second pool, with no isolation gain over RLS.
 **Control plane and data plane are separate tables.** Each capability adds its own tables in its
 own migration:
 - configuration: `apps`, `revisions`, `changes`;
-- records: `records`, `relation_values`, `field_index`;
+- records: `records`, `relation_links`, `unique_keys`;
 - automation: `outbox`, `flow_runs`, `flow_run_steps`, `schedules`.
 
 ### Configuration revisions: one canonical jsonb snapshot per revision
@@ -80,11 +80,16 @@ the assistant and a person editing in parallel should see the same state.
 
 ### Records: jsonb canonical store, not EAV, not a table per tenant table
 
-- Each record is one row with a jsonb `Data` column, validated against a JSON Schema generated from the published model.
-- N:N relations are rows. N:1 is a lookup field.
-- `field_index` holds unique keys and lookup values only.
-- Queries are a validated logical AST compiled to parameterized SQL. Field names are parameters, never interpolated, and arbitrary SQL is never accepted.
-- Draft metadata never reaches the data plane: the runtime, the public API and OpenAPI read the **published** revision only.
+- **Storage.** Each record is one row with a jsonb `Data` column whose values are keyed by **field id** (a lookup by its relationship id), never by api name. A deleted field's values can therefore never resurface under a new field that reuses the name, and a rollback restores access to them.
+- **Validation.** Every write goes through one codec on every plane (admin, public site, assistant, automation). It validates and normalizes each value by type: trimmed emails, dates and times in one fixed-width UTC form, choices from their set.
+- **Relationships.** N:N links are rows. A lookup is a value in `Data`, found by jsonb containment on a GIN index.
+- **Uniqueness.** It is a claim in `unique_keys`: a unique field's value, a unique index's tuple, or a one-to-one target. The database refuses a second claim, so concurrent writers cannot both win.
+- **Queries.** They are a validated logical AST compiled to SQL. Field keys and values are all parameters, never interpolated, and arbitrary SQL is never accepted. The AST is bounded: predicates, nesting, one lookup hop, list sizes, page size and depth.
+- **Versioning.** Each record carries a version; naming a stale one is a 409.
+- **Deletes.** A delete follows each lookup's `onDelete` (restrict, set null, cascade up to 500 records).
+- **Publish checks against existing data.** A new required field must already have a value in every existing record. A new unique rule claims keys from the records that exist, and a duplicate refuses the publish.
+- **Routes.** Admin routes live at `/_records/{table}` (`_data` is the platform's data-set surface, ADR 0018).
+- **Published model only.** Draft metadata never reaches the data plane: the runtime, the public API and OpenAPI read the **published** revision only.
 
 ### Automation: data, executed by the plugin's own engine jobs
 

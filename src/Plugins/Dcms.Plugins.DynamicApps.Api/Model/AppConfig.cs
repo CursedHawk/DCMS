@@ -42,6 +42,10 @@ public sealed record TableDef
     public Guid? PrimaryFieldId { get; init; }
 
     public bool Enabled { get; init; } = true;
+
+    /// <summary>What the public site may do with this table's records. Nothing, by default.</summary>
+    public PublicAccess Public { get; init; } = new();
+
     public IReadOnlyList<FieldDef> Fields { get; init; } = [];
     public IReadOnlyList<IndexDef> Indexes { get; init; } = [];
 }
@@ -85,6 +89,12 @@ public sealed record FieldDef
     /// <summary>Hidden from new forms and the generated API's writes; existing values are kept.</summary>
     public bool Deprecated { get; init; }
 
+    /// <summary>Only automations write it; every API refuses a value for it.</summary>
+    public bool ReadOnly { get; init; }
+
+    /// <summary>Never served on the public site, whatever the table's public access.</summary>
+    public bool HiddenFromPublic { get; init; }
+
     /// <summary>A literal of the field's type, used when a new record leaves it out.</summary>
     public JsonNode? Default { get; init; }
 
@@ -105,6 +115,36 @@ public sealed record IndexDef
     public string ApiName { get; init; } = string.Empty;
     public IReadOnlyList<Guid> FieldIds { get; init; } = [];
     public bool Unique { get; init; }
+}
+
+[JsonConverter(typeof(CamelCaseEnumConverter<PublicRead>))]
+public enum PublicRead
+{
+    None,
+
+    /// <summary>Every record.</summary>
+    All,
+
+    /// <summary>The signed-in site visitor's own records only.</summary>
+    Own,
+}
+
+/// <summary>
+/// The public site's access to one table, served at <c>/api/{slug}/{table}</c>. The admin and
+/// the automations are governed by the plugin's permissions instead.
+/// </summary>
+public sealed record PublicAccess
+{
+    public PublicRead Read { get; init; } = PublicRead.None;
+
+    /// <summary>Visitors may create records; a signed-in visitor becomes the record's owner.</summary>
+    public bool Create { get; init; }
+
+    /// <summary>A signed-in visitor may change their own records.</summary>
+    public bool UpdateOwn { get; init; }
+
+    /// <summary>A signed-in visitor may delete their own records.</summary>
+    public bool DeleteOwn { get; init; }
 }
 
 [JsonConverter(typeof(CamelCaseEnumConverter<RelationshipKind>))]

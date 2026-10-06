@@ -99,6 +99,10 @@ public static class RlsConfigurator
         ("apps", "apps"),
         ("apps", "revisions"),
         ("apps", "changes"),
+        // The tenant's own business data: every record of every table they defined.
+        ("apps", "records"),
+        ("apps", "relation_links"),
+        ("apps", "unique_keys"),
     ];
 
     /// <summary>

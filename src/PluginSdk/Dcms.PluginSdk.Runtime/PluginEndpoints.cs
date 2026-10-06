@@ -92,6 +92,7 @@ public static class PluginEndpoints
         public RouteHandlerBuilder MapPost(string pattern, Delegate handler) => Add("POST", pattern, () => group.MapPost(pattern, handler));
         public RouteHandlerBuilder MapPut(string pattern, Delegate handler) => Add("PUT", pattern, () => group.MapPut(pattern, handler));
         public RouteHandlerBuilder MapDelete(string pattern, Delegate handler) => Add("DELETE", pattern, () => group.MapDelete(pattern, handler));
+        public RouteHandlerBuilder MapPatch(string pattern, Delegate handler) => Add("PATCH", pattern, () => group.MapPatch(pattern, handler));
 
         private RouteHandlerBuilder Add(string method, string pattern, Func<RouteHandlerBuilder> map)
         {

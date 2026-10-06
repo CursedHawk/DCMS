@@ -1,4 +1,5 @@
 using Dcms.Plugins.DynamicApps.Api;
+using Dcms.Plugins.DynamicApps.Data;
 using Dcms.Plugins.DynamicApps.Endpoints;
 using Dcms.Plugins.DynamicApps.Metadata;
 using Dcms.PluginSdk.Abstractions;
@@ -79,8 +80,14 @@ public sealed class DynamicAppsPlugin : IPlugin
         services.AddMemoryCache();
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<ConfigurationService>();
+        services.AddScoped<RuntimeModelProvider>();
+        services.AddScoped<RecordService>();
     }
 
-    /// <summary>Admin plane, <c>/api/admin/plugins/{slug}/…</c>: the control plane.</summary>
-    public void MapAdminEndpoints(IPluginEndpointBuilder endpoints) => ModelEndpoints.Map(endpoints);
+    /// <summary>Admin plane, <c>/api/admin/plugins/{slug}/…</c>: the configuration and the records.</summary>
+    public void MapAdminEndpoints(IPluginEndpointBuilder endpoints)
+    {
+        ModelEndpoints.Map(endpoints);
+        RecordEndpoints.Map(endpoints);
+    }
 }

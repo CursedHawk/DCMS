@@ -24,6 +24,9 @@ public interface IPluginEndpointBuilder
     RouteHandlerBuilder MapPut(string pattern, Delegate handler);
 
     RouteHandlerBuilder MapDelete(string pattern, Delegate handler);
+
+    /// <summary>A partial update: the body carries only what changes.</summary>
+    RouteHandlerBuilder MapPatch(string pattern, Delegate handler);
 }
 
 public sealed class ContentQueryOptions
