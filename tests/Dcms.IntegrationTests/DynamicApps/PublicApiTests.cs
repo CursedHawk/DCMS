@@ -142,6 +142,12 @@ public sealed class PublicApiTests(ContentFlowFixture fixture)
             last = (await app.SiteAsync(HttpMethod.Post, "/api/crm/data/leads", ct, new { email = $"lead{i}@example.com" })).StatusCode;
         }
         last.Should().Be(HttpStatusCode.TooManyRequests);
+
+        // Signing in does not buy a fresh allowance from the same address.
+        await app.InstallAsync("visitor-auth", "members", "{}", ct);
+        var fresh = await app.VisitorAsync("fresh@example.com", ct);
+        (await app.SiteAsync(HttpMethod.Post, "/api/crm/data/leads", ct, new { email = "again@example.com" }, fresh))
+            .StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         (await app.JsonAsync(HttpMethod.Post, "/_records/leads", ct, new { email = "admin@example.com" }, HttpStatusCode.Created))
             .GetProperty("email").GetString().Should().Be("admin@example.com", "members in the admin are not throttled");
     }

@@ -115,10 +115,18 @@ internal static class PublicEndpoints
     private static Task<IResult> Write(RecordService records, IPluginContext context, HttpContext http, CancellationToken ct, Func<Task<IResult>> handler) =>
         Run(records, context, ct, async () =>
         {
-            var client = records.Visitor?.ToString("N") ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-            var used = await context.Contracts.Get<IPluginCache>()
-                .IncrementAsync(new CacheIncrement($"writes:{context.Instance!.InstanceId:N}:{client}", 1, 3600), ct);
-            return used.Value > PublicEndpointsLimits.MaxWritesPerHour
+            // Every write counts against the address it comes from, and a signed-in visitor's
+            // against them too; both must have room. Keyed by the visitor alone, one address
+            // could register accounts and multiply its allowance.
+            var cache = context.Contracts.Get<IPluginCache>();
+            var app = context.Instance!.InstanceId.ToString("N");
+            var address = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var used = (await cache.IncrementAsync(new CacheIncrement($"writes:{app}:ip:{address}", 1, 3600), ct)).Value;
+            if (records.Visitor is { } visitor)
+            {
+                used = Math.Max(used, (await cache.IncrementAsync(new CacheIncrement($"writes:{app}:visitor:{visitor:N}", 1, 3600), ct)).Value);
+            }
+            return used > PublicEndpointsLimits.MaxWritesPerHour
                 ? Results.Json(new { error = "Too many changes from here for now; try again within the hour." }, statusCode: 429)
                 : await handler();
         });

@@ -145,6 +145,13 @@ public sealed class QueryCompiler
             {
                 throw Invalid($"'{field[..dot]}' is not a lookup of {table.ApiName}.");
             }
+            // A filter through a lookup answers questions about the target's rows; on the public
+            // site that is only allowed into a table the site may read in full. Otherwise the
+            // matches would be an oracle for a private table, or for other visitors' own records.
+            if (_plane == RecordPlane.Public && target.Def.Public.Read != PublicRead.All)
+            {
+                throw Invalid($"{table.ApiName} has no field '{field}'.");
+            }
             var t = $"t{++_aliases}";
             var inner = Predicate(t, target, node with { Field = field[(dot + 1)..] }, depth + 1, allowHop: false);
             return $"""

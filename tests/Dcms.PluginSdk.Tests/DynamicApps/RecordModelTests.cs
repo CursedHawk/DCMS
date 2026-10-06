@@ -191,6 +191,16 @@ public sealed class RecordModelTests
     }
 
     [Fact]
+    public void The_public_site_cannot_filter_through_a_lookup_into_a_table_it_may_not_read()
+    {
+        // deals.company points at companies, which is private: a match would leak its rows.
+        var act = () => Compile("""{ "filter": { "field": "company.name", "op": "startsWith", "value": "A" } }""", RecordPlane.Public);
+        act.Should().Throw<ContractValidationException>().Which.Message.Should().Contain("no field 'company.name'");
+        Compile("""{ "filter": { "field": "company.name", "op": "startsWith", "value": "A" } }""").Where.Should().Contain("EXISTS",
+            "members in the admin may");
+    }
+
+    [Fact]
     public void The_public_site_cannot_filter_on_what_it_cannot_see()
     {
         var act = () => Compile("""{ "filter": { "field": "notes", "op": "isNull", "value": false } }""", RecordPlane.Public);
