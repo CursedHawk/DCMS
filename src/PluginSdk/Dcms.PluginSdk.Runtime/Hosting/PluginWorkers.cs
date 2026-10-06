@@ -124,19 +124,7 @@ public sealed class PluginEventConsumer(
         {
             try
             {
-                var config = new ConsumerConfig(durable)
-                {
-                    FilterSubject = subject,
-                    AckPolicy = ConsumerConfigAckPolicy.Explicit,
-                    AckWait = TimeSpan.FromMinutes(1),
-                    MaxDeliver = MaxDeliver,
-                };
-                // A subscription added today should not replay a week of history into its handler.
-                if (!await ExistsAsync(durable, stoppingToken))
-                {
-                    config.DeliverPolicy = ConsumerConfigDeliverPolicy.New;
-                }
-                var consumer = await jetStream.CreateOrUpdateConsumerAsync(Streams.PluginEvents, config, stoppingToken);
+                var consumer = await BindAsync(jetStream, durable, subject, stoppingToken);
 
                 await foreach (var msg in consumer.ConsumeAsync<PluginEventPublished>(cancellationToken: stoppingToken))
                 {
@@ -189,16 +177,37 @@ public sealed class PluginEventConsumer(
         where TEvent : IPluginEvent =>
         ((IPluginEventHandler<TEvent>)handler).HandleAsync((TEvent)payload, context, ct);
 
-    private async Task<bool> ExistsAsync(string durable, CancellationToken ct)
+    /// <summary>Creates the subscription's durable, or brings an existing one up to date.</summary>
+    internal static async Task<INatsJSConsumer> BindAsync(
+        INatsJSContext jetStream, string durable, string subject, CancellationToken ct)
+    {
+        var config = new ConsumerConfig(durable)
+        {
+            FilterSubject = subject,
+            AckPolicy = ConsumerConfigAckPolicy.Explicit,
+            AckWait = TimeSpan.FromMinutes(1),
+            MaxDeliver = MaxDeliver,
+            // A subscription added today should not replay a week of history into its handler.
+            // An existing durable keeps the policy it was created with: JetStream refuses to
+            // change it, and leaving it unset asks for the default (All) — so every restart
+            // after the first failed with "deliver policy can not be updated" and the
+            // subscription never consumed again (live-chat, until 2026-10-06).
+            DeliverPolicy = await ExistingDeliverPolicyAsync(jetStream, durable, ct) ?? ConsumerConfigDeliverPolicy.New,
+        };
+        return await jetStream.CreateOrUpdateConsumerAsync(Streams.PluginEvents, config, ct);
+    }
+
+    private static async Task<ConsumerConfigDeliverPolicy?> ExistingDeliverPolicyAsync(
+        INatsJSContext jetStream, string durable, CancellationToken ct)
     {
         try
         {
-            await jetStream.GetConsumerAsync(Streams.PluginEvents, durable, ct);
-            return true;
+            var existing = await jetStream.GetConsumerAsync(Streams.PluginEvents, durable, ct);
+            return existing.Info.Config.DeliverPolicy;
         }
         catch (NatsJSApiException)
         {
-            return false;
+            return null;
         }
     }
 }
