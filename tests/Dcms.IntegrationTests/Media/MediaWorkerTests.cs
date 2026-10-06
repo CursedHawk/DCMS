@@ -7,6 +7,7 @@ using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Storage;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Minio;
 using Minio.DataModel.Args;
@@ -184,6 +185,60 @@ public class MediaWorkerTests : IAsyncLifetime
         var kinds = await verify.Variants.IgnoreQueryFilters()
             .Where(v => v.AssetId == assetId).Select(v => v.Kind).ToListAsync(ct);
         kinds.Should().Contain(["webp-320", "webp-640", "thumb"]);
+    }
+
+    /// <summary>
+    /// Audio and video variants written before 2026-10-06 had no size: 0 B in the library and
+    /// nothing counted against the cap. The backfill measures them in storage — a rendition as
+    /// its playlist plus its segments — across every tenant.
+    /// </summary>
+    [DockerFact]
+    public async Task Variants_without_a_size_are_measured_in_storage()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var tenantId = Guid.NewGuid();
+        var assetId = Guid.NewGuid();
+        var minio = MinioClientFactory($"{_minio.Hostname}:{_minio.GetMappedPublicPort(9000)}",
+            _minio.GetAccessKey(), _minio.GetSecretKey());
+        async Task Put(string name, int bytes)
+        {
+            await using var ms = new MemoryStream(new byte[bytes]);
+            await minio.PutObjectAsync(new PutObjectArgs().WithBucket(Bucket)
+                .WithObject(StorageKeys.MediaVariant(tenantId, assetId, name)).WithStreamData(ms)
+                .WithObjectSize(bytes).WithContentType("application/octet-stream"), ct);
+        }
+        await Put("audio.m4a", 1234);
+        await Put("hls/r720.m3u8", 100);
+        await Put("hls/r720_000.ts", 4000);
+        await Put("hls/r720_001.ts", 3000);
+
+        await using (var db = NewDb(tenantId))
+        {
+            db.Assets.Add(new MediaAsset
+            {
+                Id = assetId, TenantId = tenantId, Category = MediaCategory.Audio, FileName = "t.wav",
+                ContentType = "audio/wav", OriginalKey = "x", Status = MediaStatus.Ready,
+                Variants =
+                [
+                    new MediaVariant { Id = Guid.NewGuid(), TenantId = tenantId, AssetId = assetId, Kind = "aac",
+                        ObjectKey = StorageKeys.MediaVariant(tenantId, assetId, "audio.m4a"), ContentType = "audio/mp4" },
+                    new MediaVariant { Id = Guid.NewGuid(), TenantId = tenantId, AssetId = assetId, Kind = "hls-720",
+                        ObjectKey = StorageKeys.MediaVariant(tenantId, assetId, "hls/r720.m3u8"),
+                        ContentType = "application/vnd.apple.mpegurl" },
+                ],
+            });
+            await db.SaveChangesAsync(ct);
+        }
+
+        var backfill = ActivatorUtilities.CreateInstance<MediaWorkerApp::Dcms.MediaWorker.VariantSizeBackfill>(_worker.Services);
+        await backfill.StartAsync(ct);
+        await backfill.ExecuteTask!;
+
+        await using var verify = NewDb(tenantId);
+        var sizes = await verify.Variants.IgnoreQueryFilters().Where(v => v.AssetId == assetId)
+            .ToDictionaryAsync(v => v.Kind, v => v.SizeBytes, ct);
+        sizes["aac"].Should().Be(1234);
+        sizes["hls-720"].Should().Be(7100, "a rendition is its playlist and its segments");
     }
 
     private MediaDbContext NewDb(Guid tenantId)

@@ -30,6 +30,7 @@ builder.Services.AddSingleton<AudioTranscoder>();
 builder.Services.AddHostedService<ImageProcessingConsumer>();
 builder.Services.AddHostedService<VideoProcessingConsumer>();
 builder.Services.AddHostedService<AudioProcessingConsumer>();
+builder.Services.AddHostedService<VariantSizeBackfill>();
 
 var app = builder.Build();
 // First in the pipeline, so an exception anywhere below it becomes a ProblemDetails

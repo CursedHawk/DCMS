@@ -32,6 +32,7 @@ public class SiteArtifactCacheTests
         public Task DeleteAsync(string bucket, string key, CancellationToken ct = default) => throw new NotSupportedException();
         public IAsyncEnumerable<string> ListKeysAsync(string bucket, string prefix, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<int> DeletePrefixAsync(string bucket, string prefix, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<long> SizeOfPrefixAsync(string bucket, string prefix, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     [Fact]

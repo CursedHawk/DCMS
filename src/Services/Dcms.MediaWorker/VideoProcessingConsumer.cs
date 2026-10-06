@@ -52,13 +52,19 @@ public sealed class VideoProcessingConsumer(
             await UploadFileAsync(posterKey, result.PosterPath, "image/jpeg", ct);
 
             // Record the playlists + poster as addressable variants (segments are
-            // served via the hls/ path, not individually tracked).
-            AddVariant(db, job, "hls-master", $"hls/master.m3u8", "application/vnd.apple.mpegurl");
+            // served via the hls/ path, not individually tracked). A rendition's size is its
+            // playlist plus its segments: the segments are the real bytes, and without them the
+            // library showed 0 B and the storage cap never counted a video's copies.
+            long SizeOf(Func<string, bool> name) =>
+                result.HlsFiles.Where(f => name(f.Name)).Sum(f => new FileInfo(f.LocalPath).Length);
+            AddVariant(db, job, "hls-master", $"hls/master.m3u8", "application/vnd.apple.mpegurl",
+                SizeOf(n => n == "master.m3u8"));
             foreach (var height in result.Renditions)
             {
-                AddVariant(db, job, $"hls-{height}", $"hls/r{height}.m3u8", "application/vnd.apple.mpegurl");
+                AddVariant(db, job, $"hls-{height}", $"hls/r{height}.m3u8", "application/vnd.apple.mpegurl",
+                    SizeOf(n => n == $"r{height}.m3u8" || n.StartsWith($"r{height}_", StringComparison.Ordinal)));
             }
-            AddVariant(db, job, "poster", "poster.jpg", "image/jpeg");
+            AddVariant(db, job, "poster", "poster.jpg", "image/jpeg", new FileInfo(result.PosterPath).Length);
             await db.SaveChangesAsync(ct);
 
             var kinds = new List<string> { "hls-master", "poster" };
@@ -72,9 +78,11 @@ public sealed class VideoProcessingConsumer(
         }
     }
 
-    private static void AddVariant(MediaDbContext db, MediaProcessRequested job, string kind, string relative, string contentType)
+    private static void AddVariant(
+        MediaDbContext db, MediaProcessRequested job, string kind, string relative, string contentType, long sizeBytes)
         => db.Variants.Add(new MediaVariant
         {
+            SizeBytes = sizeBytes,
             Id = Guid.NewGuid(),
             TenantId = job.TenantId,
             AssetId = job.AssetId,

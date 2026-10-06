@@ -233,6 +233,30 @@ test('the selection bar deletes only the originals that can go', async ({ page, 
   expect(api.requestsTo('POST', '/api/admin/media/delete-originals')[0].body).toEqual({ ids: [data.ASSET_LOGO] });
 });
 
+test('an audio file plays in the detail dialog, and its AAC copy downloads as .m4a', async ({ page, api }) => {
+  api.on('GET', '/api/admin/media/:id', {
+    id: data.ASSET_LOOSE, category: 'Audio', fileName: 'track.wav', contentType: 'audio/wav', status: 'Ready',
+    sizeBytes: 52_555_216, folderId: null, createdAt: '2026-10-06T12:32:14Z', originalDeletedAt: null,
+    canDeleteOriginal: true,
+    variants: [
+      { kind: 'peaks', sizeBytes: 3_200, contentType: 'application/json' },
+      { kind: 'aac', sizeBytes: 5_120_000, contentType: 'audio/mp4' },
+    ],
+  });
+  await page.goto('/media');
+  await page.locator('div.group').filter({ hasText: 'unfiled-shot.png' }).first().getByRole('button').nth(1).click();
+  const dialog = page.getByRole('dialog');
+
+  await expect(dialog.locator('audio')).toHaveCount(1);
+  // The waveform data is for the player, not a version anyone opens.
+  await expect(dialog.getByRole('cell', { name: 'peaks', exact: false })).toHaveCount(0);
+  await expect(dialog.getByRole('row').filter({ hasText: 'aac' })).toContainText('4.9 MB');
+
+  const download = page.waitForEvent('download');
+  await dialog.getByRole('row').filter({ hasText: 'aac' }).getByRole('button', { name: /download/i }).click();
+  expect((await download).suggestedFilename()).toBe('track-aac.m4a');
+});
+
 test.describe('a member who may only look', () => {
   test.use({ grants: ['media:read'] });
 

@@ -190,6 +190,7 @@ public IPluginHooks Hooks => throw new NotSupportedException();
         }
 
         public Task<int> DeletePrefixAsync(string bucket, string prefix, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<long> SizeOfPrefixAsync(string bucket, string prefix, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     private sealed class MemoryCache : ICacheService

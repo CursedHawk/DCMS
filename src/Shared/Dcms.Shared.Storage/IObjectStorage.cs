@@ -41,6 +41,9 @@ public interface IObjectStorage
     /// Best-effort and re-runnable: deleting an already-empty prefix is a no-op.
     /// </summary>
     Task<int> DeletePrefixAsync(string bucket, string prefix, CancellationToken ct = default);
+
+    /// <summary>Total bytes of every object whose key starts with <paramref name="prefix"/>.</summary>
+    Task<long> SizeOfPrefixAsync(string bucket, string prefix, CancellationToken ct = default);
 }
 
 /// <summary>What a HEAD on an object tells us: enough to answer a range request without
@@ -54,6 +57,10 @@ public static class StorageKeys
 
     public static string MediaVariant(Guid tenantId, Guid assetId, string variantFileName)
         => $"tenants/{tenantId}/{assetId}/{variantFileName}";
+
+    /// <summary>Everything stored for one asset: its original, its variants and its HLS tree.</summary>
+    public static string MediaAssetPrefix(Guid tenantId, Guid assetId)
+        => $"tenants/{tenantId}/{assetId}/";
 
     public static string SiteArtifact(Guid tenantId, Guid siteId, Guid buildId, string relativePath)
         => $"{tenantId}/{siteId}/{buildId}/{relativePath}";

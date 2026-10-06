@@ -45,8 +45,10 @@ public sealed class AudioProcessingConsumer(
             var peaksKey = StorageKeys.MediaVariant(job.TenantId, job.AssetId, "peaks.json");
             await UploadBytesAsync(peaksKey, result.PeaksJson, "application/json", ct);
 
-            db.Variants.Add(NewVariant(job, "aac", aacKey, "audio/mp4"));
-            db.Variants.Add(NewVariant(job, "peaks", peaksKey, "application/json"));
+            // Sizes recorded, not left at 0: they are what the library shows and what the storage
+            // cap counts.
+            db.Variants.Add(NewVariant(job, "aac", aacKey, "audio/mp4", new FileInfo(result.AacPath).Length));
+            db.Variants.Add(NewVariant(job, "peaks", peaksKey, "application/json", result.PeaksJson.Length));
             await db.SaveChangesAsync(ct);
 
             var metadata = JsonSerializer.Serialize(new { durationSeconds = result.Duration.TotalSeconds });
@@ -59,9 +61,10 @@ public sealed class AudioProcessingConsumer(
         }
     }
 
-    private static MediaVariant NewVariant(MediaProcessRequested job, string kind, string key, string contentType)
+    private static MediaVariant NewVariant(MediaProcessRequested job, string kind, string key, string contentType, long sizeBytes)
         => new()
         {
+            SizeBytes = sizeBytes,
             Id = Guid.NewGuid(),
             TenantId = job.TenantId,
             AssetId = job.AssetId,

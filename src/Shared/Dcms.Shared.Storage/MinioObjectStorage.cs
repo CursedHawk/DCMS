@@ -169,6 +169,17 @@ public sealed class MinioObjectStorage(IMinioClient client) : IObjectStorage
         return deleted;
     }
 
+    public async Task<long> SizeOfPrefixAsync(string bucket, string prefix, CancellationToken ct = default)
+    {
+        var args = new ListObjectsArgs().WithBucket(bucket).WithPrefix(prefix).WithRecursive(true);
+        long total = 0;
+        await foreach (var item in client.ListObjectsEnumAsync(args, ct).ConfigureAwait(false))
+        {
+            total += (long)item.Size;
+        }
+        return total;
+    }
+
     private Task RemoveBatchAsync(string bucket, List<string> keys, CancellationToken ct) =>
         client.RemoveObjectsAsync(
             new RemoveObjectsArgs().WithBucket(bucket).WithObjects(keys), ct);

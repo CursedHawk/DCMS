@@ -65,6 +65,8 @@ export function MediaDetailDialog({
   }, [detail.data]);
 
   const a = detail.data;
+  // "peaks" is the audio player's waveform data (JSON), not a version of the file to open.
+  const versions = (a?.variants ?? []).filter((v) => !HIDDEN_KINDS.has(v.kind));
 
   const saveName = () => {
     if (!a || !name.trim() || name.trim() === a.fileName) return;
@@ -144,6 +146,8 @@ export function MediaDetailDialog({
                 <div className="flex aspect-video items-center justify-center">
                   {a.category === 'Image' && a.status === 'Ready' ? (
                     <AuthedImage id={a.id} className="max-h-full max-w-full object-contain" />
+                  ) : a.category === 'Audio' && a.status === 'Ready' ? (
+                    <AuthedAudio id={a.id} variant={a.variants.some((v) => v.kind === 'aac') ? 'aac' : undefined} />
                   ) : (
                     <MediaThumb id={a.id} category={a.category} status={a.status} className="h-full w-full" />
                   )}
@@ -255,7 +259,7 @@ export function MediaDetailDialog({
                         )}
                       </td>
                     </tr>
-                    {a.variants.map((v) => {
+                    {versions.map((v) => {
                       const pct = a.sizeBytes > 0 ? Math.round((v.sizeBytes / a.sizeBytes) * 100) : 0;
                       return (
                         <tr key={v.kind}>
@@ -276,17 +280,20 @@ export function MediaDetailDialog({
                             {pct < 100 ? `−${100 - pct}%` : `${pct}%`}
                           </td>
                           <td className="px-3 py-2">
-                            <RowActions
-                              onOpen={() => openVariant(v.kind)}
-                              onDownload={() =>
-                                downloadVariant(v.kind, variantFileName(a.fileName, v.kind, v.contentType))
-                              }
-                            />
+                            {/* A playlist is text a browser cannot show; its segments play on the site. */}
+                            {isViewable(v.contentType) ? (
+                              <RowActions
+                                onOpen={() => openVariant(v.kind)}
+                                onDownload={() =>
+                                  downloadVariant(v.kind, variantFileName(a.fileName, v.kind, v.contentType))
+                                }
+                              />
+                            ) : null}
                           </td>
                         </tr>
                       );
                     })}
-                    {a.variants.length === 0 ? (
+                    {versions.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="px-3 py-3 text-center text-xs text-muted-foreground">
                           {a.status === 'Processing' || a.status === 'Uploaded'
@@ -339,10 +346,48 @@ function RowActions({ onOpen, onDownload }: { onOpen: () => void; onDownload: ()
   );
 }
 
+const HIDDEN_KINDS = new Set(['peaks']);
+
+/** Whether a browser tab can show this content type, so Open and Download make sense. */
+function isViewable(contentType: string): boolean {
+  return /^(image|audio|video)\//.test(contentType);
+}
+
+/** Extensions the content type's subtype does not spell: AAC audio lives in an .m4a, not an .mp4. */
+const EXTENSIONS: Record<string, string> = {
+  'audio/mp4': 'm4a',
+  'image/jpeg': 'jpg',
+  'application/vnd.apple.mpegurl': 'm3u8',
+};
+
 /** Suggests a download name for a variant, e.g. "photo.jpg" + "webp-640" → "photo-webp-640.webp". */
 function variantFileName(base: string, kind: string, contentType: string): string {
   const dot = base.lastIndexOf('.');
   const stem = dot > 0 ? base.slice(0, dot) : base;
-  const ext = contentType.split('/')[1]?.split(';')[0] || 'bin';
+  const type = contentType.split(';')[0].trim();
+  const ext = EXTENSIONS[type] ?? (type.split('/')[1] || 'bin');
   return `${stem}-${kind}.${ext}`;
+}
+
+/** Plays a track from the bearer-protected content endpoint (an <audio src> cannot send the token). */
+function AuthedAudio({ id, variant }: { id: string; variant?: string }) {
+  const [url, setUrl] = useState<string>();
+  useEffect(() => {
+    let active = true;
+    let obj: string | undefined;
+    fetchObjectUrl(mediaContentPath(id, variant))
+      .then((u) => {
+        if (active) {
+          obj = u;
+          setUrl(u);
+        } else URL.revokeObjectURL(u);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      if (obj) URL.revokeObjectURL(obj);
+    };
+  }, [id, variant]);
+  // eslint-disable-next-line jsx-a11y/media-has-caption -- a library preview of the tenant's own track
+  return url ? <audio controls src={url} className="w-[90%]" /> : <CenteredSpinner />;
 }

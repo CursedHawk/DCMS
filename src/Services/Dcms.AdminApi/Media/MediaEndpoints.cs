@@ -337,18 +337,18 @@ public static class MediaEndpoints
                 .Where(a => body.Ids.Contains(a.Id))
                 .ToListAsync(ct);
 
+            // The asset's whole prefix, not its recorded keys: a video's HLS segments are no
+            // variant's ObjectKey, and deleting key by key left every one of them behind.
             foreach (var asset in assets)
             {
-                foreach (var key in asset.Variants.Select(v => v.ObjectKey).Append(asset.OriginalKey))
+                var prefix = StorageKeys.MediaAssetPrefix(asset.TenantId, asset.Id);
+                try
                 {
-                    try
-                    {
-                        await storage.DeleteAsync(bucket, key, ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogWarning(ex, "Failed to delete media object {Key}", key);
-                    }
+                    await storage.DeletePrefixAsync(bucket, prefix, ct);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to delete media objects under {Prefix}", prefix);
                 }
             }
 
