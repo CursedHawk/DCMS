@@ -255,7 +255,9 @@ internal static class ObservabilityViews
             t."StorageQuotaBytes"                                     AS quota_bytes
         FROM tenancy.tenants t
         LEFT JOIN LATERAL (
-            SELECT sum(x."SizeBytes") AS original_bytes, count(*) AS asset_count
+            -- An original the tenant deleted (keeping its web copies) no longer takes space.
+            SELECT sum(x."SizeBytes") FILTER (WHERE x."OriginalDeletedAt" IS NULL) AS original_bytes,
+                   count(*) AS asset_count
             FROM media.media_assets x WHERE x."TenantId" = t."Id"::uuid
         ) a ON TRUE
         LEFT JOIN LATERAL (

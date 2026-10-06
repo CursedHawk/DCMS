@@ -28,6 +28,9 @@ public class HlsServingTests : IAsyncLifetime
     private const string Bucket = "dcms-media";
     private readonly Guid _tenantId = Guid.NewGuid();
     private readonly Guid _assetId = Guid.NewGuid();
+    /// <summary>A picture whose tenant deleted its original to free space.</summary>
+    private readonly Guid _pictureId = Guid.NewGuid();
+    private static readonly byte[] Large = "large webp"u8.ToArray();
     private const string Slug = "hls-tenant";
 
     /// <summary>A segment whose every slice is distinct (251 is prime, so no 256-byte repeat),
@@ -60,6 +63,19 @@ public class HlsServingTests : IAsyncLifetime
                 Id = _assetId, TenantId = _tenantId, Category = MediaCategory.Video,
                 FileName = "v.mp4", ContentType = "video/mp4", OriginalKey = "x", Status = MediaStatus.Ready,
             });
+            media.Assets.Add(new MediaAsset
+            {
+                Id = _pictureId, TenantId = _tenantId, Category = MediaCategory.Image,
+                FileName = "p.png", ContentType = "image/png", OriginalKey = "gone", Status = MediaStatus.Ready,
+                OriginalDeletedAt = DateTimeOffset.UtcNow,
+                Variants =
+                [
+                    new MediaVariant { AssetId = _pictureId, TenantId = _tenantId, Kind = "webp-320", Width = 320,
+                        ObjectKey = StorageKeys.MediaVariant(_tenantId, _pictureId, "webp-320.webp"), ContentType = "image/webp" },
+                    new MediaVariant { AssetId = _pictureId, TenantId = _tenantId, Kind = "webp-1280", Width = 1280,
+                        ObjectKey = StorageKeys.MediaVariant(_tenantId, _pictureId, "webp-1280.webp"), ContentType = "image/webp" },
+                ],
+            });
             await media.SaveChangesAsync();
         }
 
@@ -67,6 +83,8 @@ public class HlsServingTests : IAsyncLifetime
         await PutText(minio, "hls/master.m3u8", "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2800000\nr720.m3u8\n");
         await PutText(minio, "hls/r720.m3u8", "#EXTM3U\n#EXTINF:6.0,\nr720_000.ts\n#EXT-X-ENDLIST\n");
         await PutBytes(minio, "hls/r720_000.ts", Segment);
+        await PutBytes(minio, "webp-320.webp", "small webp"u8.ToArray(), _pictureId);
+        await PutBytes(minio, "webp-1280.webp", Large, _pictureId);
 
         _content = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
@@ -136,6 +154,19 @@ public class HlsServingTests : IAsyncLifetime
     }
 
     [DockerFact]
+    public async Task A_deleted_original_is_answered_by_the_largest_webp()
+    {
+        // Pages store /api/media/{id}/original; deleting the original to free space must not
+        // take the picture off them.
+        var ct = TestContext.Current.CancellationToken;
+        var res = await _content.CreateClient().SendAsync(Req($"/api/media/{_pictureId}/original"), ct);
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        res.Content.Headers.ContentType!.MediaType.Should().Be("image/webp");
+        (await res.Content.ReadAsByteArrayAsync(ct)).Should().Equal(Large);
+    }
+
+    [DockerFact]
     public async Task Storage_streams_exact_byte_ranges_from_minio()
     {
         // The primitive delivery is built on, against a real MinIO: a ranged GET must return
@@ -172,9 +203,9 @@ public class HlsServingTests : IAsyncLifetime
     private Task PutText(IMinioClient minio, string name, string content)
         => PutBytes(minio, name, System.Text.Encoding.UTF8.GetBytes(content));
 
-    private async Task PutBytes(IMinioClient minio, string name, byte[] data)
+    private async Task PutBytes(IMinioClient minio, string name, byte[] data, Guid? assetId = null)
     {
-        var key = StorageKeys.MediaVariant(_tenantId, _assetId, name);
+        var key = StorageKeys.MediaVariant(_tenantId, assetId ?? _assetId, name);
         using var ms = new MemoryStream(data);
         await minio.PutObjectAsync(new PutObjectArgs().WithBucket(Bucket).WithObject(key)
             .WithStreamData(ms).WithObjectSize(data.Length).WithContentType("application/octet-stream"));

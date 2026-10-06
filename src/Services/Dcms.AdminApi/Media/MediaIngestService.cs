@@ -253,7 +253,8 @@ public sealed class MediaIngestService(
         // filter and the database policy agree; IgnoreQueryFilters only drops the ambient filter
         // for the Meta-sync-style caller that names its tenant. tenancy.tenants carries no policy.
         var originals = await db.Assets.IgnoreQueryFilters()
-            .Where(a => a.TenantId == tenantId).SumAsync(a => (long?)a.SizeBytes, ct) ?? 0;
+            .Where(a => a.TenantId == tenantId && a.OriginalDeletedAt == null)
+            .SumAsync(a => (long?)a.SizeBytes, ct) ?? 0;
         var renditions = await db.Variants.IgnoreQueryFilters()
             .Where(v => v.TenantId == tenantId).SumAsync(v => (long?)v.SizeBytes, ct) ?? 0;
         return originals + renditions;

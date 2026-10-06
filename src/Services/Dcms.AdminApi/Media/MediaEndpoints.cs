@@ -108,6 +108,8 @@ public static class MediaEndpoints
                     // "Compressed" footprint: total bytes of derived renditions.
                     variantBytes = a.Variants.Sum(v => (long?)v.SizeBytes) ?? 0,
                     variantCount = a.Variants.Count,
+                    originalDeleted = a.OriginalDeletedAt != null,
+                    canDeleteOriginal = db.Assets.Where(MediaOriginals.Deletable).Any(d => d.Id == a.Id),
                     width = a.Variants.OrderByDescending(v => v.Width).Select(v => v.Width).FirstOrDefault(),
                     height = a.Variants.OrderByDescending(v => v.Width).Select(v => v.Height).FirstOrDefault(),
                 })
@@ -120,7 +122,9 @@ public static class MediaEndpoints
         app.MapGet("/api/admin/media/usage", async (
             MediaDbContext db, MediaIngestService ingest, ITenantContext tenant, CancellationToken ct) =>
         {
-            var originalBytes = await db.Assets.SumAsync(a => (long?)a.SizeBytes, ct) ?? 0;
+            // A deleted original (MediaOriginals) takes no space; its web copies are variants.
+            var originalBytes = await db.Assets.Where(a => a.OriginalDeletedAt == null)
+                .SumAsync(a => (long?)a.SizeBytes, ct) ?? 0;
             var variantBytes = await db.Variants.SumAsync(v => (long?)v.SizeBytes, ct) ?? 0;
             var assetCount = await db.Assets.CountAsync(ct);
             var folderCount = await db.Folders.CountAsync(ct);
@@ -131,7 +135,7 @@ public static class MediaEndpoints
                 {
                     category = g.Key.ToString(),
                     count = g.Count(),
-                    originalBytes = g.Sum(a => (long?)a.SizeBytes) ?? 0,
+                    originalBytes = g.Where(a => a.OriginalDeletedAt == null).Sum(a => (long?)a.SizeBytes) ?? 0,
                 })
                 .ToListAsync(ct);
 
@@ -262,6 +266,8 @@ public static class MediaEndpoints
                     sizeBytes = asset.SizeBytes,
                     folderId = asset.FolderId,
                     createdAt = asset.CreatedAt,
+                    originalDeletedAt = asset.OriginalDeletedAt,
+                    canDeleteOriginal = MediaOriginals.CanDelete(asset),
                     variants = asset.Variants
                         .OrderBy(v => v.SizeBytes)
                         .Select(v => new { v.Kind, v.Width, v.Height, v.SizeBytes, v.ContentType }),
@@ -351,6 +357,58 @@ public static class MediaEndpoints
             return Results.Ok(new { deleted = assets.Count });
         }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaDeleted, "media_asset");
 
+        // Delete the originals of one or many assets to free space, keeping the assets and the
+        // copies the worker made of them. Only what MediaOriginals allows; the rest is skipped and
+        // counted, so a mixed selection does what it can and says what it did not.
+        app.MapPost("/api/admin/media/delete-originals", async (
+            DeleteAssetsRequest body, MediaDbContext db, IObjectStorage storage,
+            IOptions<StorageOptions> storageOptions, IAuditRecorder audit, ILoggerFactory loggers, CancellationToken ct) =>
+        {
+            if (body.Ids is null || body.Ids.Count == 0)
+            {
+                return Results.BadRequest(new { error = "No assets specified." });
+            }
+            var assets = await db.Assets
+                .Where(a => body.Ids.Contains(a.Id))
+                .Where(MediaOriginals.Deletable)
+                .ToListAsync(ct);
+
+            var now = DateTimeOffset.UtcNow;
+            foreach (var asset in assets)
+            {
+                asset.OriginalDeletedAt = now;
+                asset.UpdatedAt = now;
+            }
+            var freedBytes = assets.Sum(a => a.SizeBytes);
+            audit.Declared?
+                .With("deleted", assets.Count)
+                .With("asset_ids", assets.Select(a => a.Id))
+                .With("freed_bytes", freedBytes);
+            await db.SaveChangesAsync(ct);
+
+            // After the commit, never before: an object nothing points to any more is only wasted
+            // bytes, while a row pointing at an object that is gone would serve nothing.
+            var logger = loggers.CreateLogger("MediaDeleteOriginals");
+            foreach (var asset in assets)
+            {
+                try
+                {
+                    await storage.DeleteAsync(storageOptions.Value.MediaBucket, asset.OriginalKey, ct);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to delete media original {Key}", asset.OriginalKey);
+                }
+            }
+
+            return Results.Ok(new
+            {
+                deleted = assets.Count,
+                skipped = body.Ids.Distinct().Count() - assets.Count,
+                freedBytes,
+            });
+        }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaOriginalsDeleted, "media_asset");
+
         // Streams the original (or a named variant, e.g. ?variant=thumb / webp-640)
         // so the admin SPA can render previews behind the bearer token. No public
         // MinIO; bytes flow through admin-api like the content-api delivery path.
@@ -399,8 +457,22 @@ public static class MediaEndpoints
                         new { error = asset.Error ?? "This asset could not be processed.", status = "Failed" },
                         statusCode: StatusCodes.Status409Conflict);
                 }
-                key = asset.OriginalKey;
-                contentType = asset.ContentType;
+                if (asset.OriginalDeletedAt is not null)
+                {
+                    // Deleted to free space: the copy that answers for it on the site, here too.
+                    var standIn = MediaOriginals.StandIn(asset.Category, asset.Variants);
+                    if (standIn is null)
+                    {
+                        return Results.NotFound();
+                    }
+                    key = standIn.ObjectKey;
+                    contentType = standIn.ContentType;
+                }
+                else
+                {
+                    key = asset.OriginalKey;
+                    contentType = asset.ContentType;
+                }
             }
 
             // Bytes are content-addressed by asset id (+ variant kind), so they're

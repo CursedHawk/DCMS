@@ -1,4 +1,4 @@
-import { Download, ExternalLink, FolderInput, Trash2 } from 'lucide-react';
+import { Download, ExternalLink, FileX, FolderInput, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -19,14 +19,17 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  useCan,
 } from '@dcms/ui';
 import { fetchObjectUrl, mediaContentPath } from '../../lib/api';
+import { Perm } from '../../lib/permissions';
 import { MediaThumb } from './MediaThumb';
 import {
   type MediaFolder,
   formatDate,
   formatSize,
   useDeleteAssets,
+  useDeleteOriginals,
   useMediaDetail,
   useMoveAssets,
   useRenameAsset,
@@ -53,6 +56,8 @@ export function MediaDetailDialog({
   const rename = useRenameAsset();
   const move = useMoveAssets();
   const del = useDeleteAssets();
+  const delOriginal = useDeleteOriginals();
+  const canWrite = useCan(Perm.MediaWrite);
 
   const [name, setName] = useState('');
   useEffect(() => {
@@ -81,6 +86,15 @@ export function MediaDetailDialog({
         onDeleted?.();
         onOpenChange(false);
       },
+      onError: () => toast.error(t('errors.generic')),
+    });
+  };
+
+  const removeOriginal = () => {
+    if (!a || !window.confirm(t('media.deleteOriginalConfirm', { name: a.fileName, size: formatSize(a.sizeBytes) })))
+      return;
+    delOriginal.mutate([a.id], {
+      onSuccess: (r) => toast.success(t('media.originalsDeleted', { count: r.deleted, size: formatSize(r.freedBytes) })),
       onError: () => toast.error(t('errors.generic')),
     });
   };
@@ -175,12 +189,23 @@ export function MediaDetailDialog({
                 </dl>
 
                 <div className="flex flex-wrap gap-2 pt-1">
-                  <Button size="sm" variant="outline" onClick={() => downloadVariant(undefined, a.fileName)}>
-                    <Download className="h-4 w-4" /> {t('media.detail.download')}
-                  </Button>
-                  <Button size="sm" variant="destructive" onClick={remove} disabled={del.isPending}>
-                    <Trash2 className="h-4 w-4" /> {t('common.delete')}
-                  </Button>
+                  {/* Once the original is gone there is nothing full-size to download; the
+                      versions below each still have their own. */}
+                  {a.originalDeletedAt ? null : (
+                    <Button size="sm" variant="outline" onClick={() => downloadVariant(undefined, a.fileName)}>
+                      <Download className="h-4 w-4" /> {t('media.detail.download')}
+                    </Button>
+                  )}
+                  {canWrite && a.canDeleteOriginal ? (
+                    <Button size="sm" variant="outline" onClick={removeOriginal} disabled={delOriginal.isPending}>
+                      <FileX className="h-4 w-4" /> {t('media.deleteOriginal')}
+                    </Button>
+                  ) : null}
+                  {canWrite ? (
+                    <Button size="sm" variant="destructive" onClick={remove} disabled={del.isPending}>
+                      <Trash2 className="h-4 w-4" /> {t('common.delete')}
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -208,13 +233,26 @@ export function MediaDetailDialog({
                         <span className="ml-1.5 text-xs text-muted-foreground">{t('media.detail.full')}</span>
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">—</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{formatSize(a.sizeBytes)}</td>
-                      <td className="px-3 py-2 text-right text-muted-foreground">100%</td>
+                      <td
+                        className={cn(
+                          'px-3 py-2 text-right tabular-nums',
+                          a.originalDeletedAt && 'text-muted-foreground line-through',
+                        )}
+                      >
+                        {formatSize(a.sizeBytes)}
+                      </td>
+                      <td className="px-3 py-2 text-right text-muted-foreground">
+                        {a.originalDeletedAt
+                          ? t('media.detail.originalDeleted', { date: formatDate(a.originalDeletedAt) })
+                          : '100%'}
+                      </td>
                       <td className="px-3 py-2">
-                        <RowActions
-                          onOpen={() => openVariant()}
-                          onDownload={() => downloadVariant(undefined, a.fileName)}
-                        />
+                        {a.originalDeletedAt ? null : (
+                          <RowActions
+                            onOpen={() => openVariant()}
+                            onDownload={() => downloadVariant(undefined, a.fileName)}
+                          />
+                        )}
                       </td>
                     </tr>
                     {a.variants.map((v) => {

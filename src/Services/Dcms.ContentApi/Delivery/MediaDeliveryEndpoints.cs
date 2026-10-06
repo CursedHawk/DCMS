@@ -28,7 +28,20 @@ public static class MediaDeliveryEndpoints
             string key;
             string contentType;
             var exact = true;
-            if (variant == "original")
+            if (variant == "original" && asset.OriginalDeletedAt is not null)
+            {
+                // The tenant deleted the original to free space (MediaOriginals). Pages still ask
+                // for it by this URL, so the copy that stands in for it answers.
+                var variants = await db.Variants.AsNoTracking().Where(x => x.AssetId == assetId).ToListAsync(ct);
+                var standIn = MediaOriginals.StandIn(asset.Category, variants);
+                if (standIn is null)
+                {
+                    return Results.NotFound();
+                }
+                key = standIn.ObjectKey;
+                contentType = standIn.ContentType;
+            }
+            else if (variant == "original")
             {
                 key = asset.OriginalKey;
                 contentType = asset.ContentType;

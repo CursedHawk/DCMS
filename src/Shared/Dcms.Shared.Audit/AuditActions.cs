@@ -99,6 +99,8 @@ public static class AuditActions
     public const string MediaUpdated = "media.updated";
     public const string MediaMoved = "media.moved";
     public const string MediaDeleted = "media.deleted";
+    /// <summary>Originals deleted to free space; the assets and their web copies remain.</summary>
+    public const string MediaOriginalsDeleted = "media.originals.deleted";
     public const string MediaDownloaded = "media.downloaded";
 
     /// <summary>The upload landed and the derivative work did not; the asset is unusable.</summary>

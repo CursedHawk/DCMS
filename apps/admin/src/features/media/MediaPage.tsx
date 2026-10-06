@@ -1,4 +1,5 @@
 import {
+  FileX,
   Folder,
   FolderInput,
   Image as ImageIcon,
@@ -44,6 +45,7 @@ import {
   formatDate,
   formatSize,
   useDeleteAssets,
+  useDeleteOriginals,
   useMedia,
   useMediaFolders,
   useMediaUsage,
@@ -73,6 +75,7 @@ export function MediaPage() {
   const usage = useMediaUsage();
   const move = useMoveAssets();
   const del = useDeleteAssets();
+  const delOriginals = useDeleteOriginals();
 
   const folderList = folders.data ?? [];
 
@@ -190,6 +193,29 @@ export function MediaPage() {
     });
   };
 
+  // Only what the server will take: the button counts the selected files whose originals have a
+  // web copy to stand in for them, and sends only those.
+  const originalsToDelete = useMemo(() => {
+    const picked = new Set(activeSelection);
+    return items.filter((a) => picked.has(a.id) && a.canDeleteOriginal);
+  }, [items, activeSelection]);
+
+  const bulkDeleteOriginals = () => {
+    if (originalsToDelete.length === 0) return;
+    const size = formatSize(originalsToDelete.reduce((sum, a) => sum + a.sizeBytes, 0));
+    if (!window.confirm(t('media.deleteOriginalsConfirm', { count: originalsToDelete.length, size }))) return;
+    delOriginals.mutate(
+      originalsToDelete.map((a) => a.id),
+      {
+        onSuccess: (r) => {
+          toast.success(t('media.originalsDeleted', { count: r.deleted, size: formatSize(r.freedBytes) }));
+          clearSelection();
+        },
+        onError: (e) => toastApiError(e, t),
+      },
+    );
+  };
+
   const currentFolderName =
     folder === undefined
       ? t('media.folders.all')
@@ -290,6 +316,11 @@ export function MediaPage() {
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
+                {canUpload && originalsToDelete.length > 0 ? (
+                  <Button size="sm" variant="outline" onClick={bulkDeleteOriginals} disabled={delOriginals.isPending}>
+                    <FileX className="h-4 w-4" /> {t('media.deleteOriginals', { count: originalsToDelete.length })}
+                  </Button>
+                ) : null}
                 <Button
                   size="sm"
                   variant="destructive"

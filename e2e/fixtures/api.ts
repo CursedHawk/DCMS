@@ -216,7 +216,7 @@ export function adminApi(
     .on('GET', '/api/admin/media/usage', data.MEDIA_USAGE)
     .on('GET', '/api/admin/media/:id', ({ params }) => {
       const asset = data.MEDIA_ASSETS.find((a) => a.id === params.id);
-      return { ...asset, contentType: 'image/png', variants: [] };
+      return { ...asset, contentType: 'image/png', originalDeletedAt: null, variants: [] };
     })
     .on('GET', '/api/admin/media/:id/content', async ({ route }) => {
       await route.fulfill({ status: 200, contentType: 'image/png', body: PNG });
@@ -229,6 +229,7 @@ export function adminApi(
     })
     .on('POST', '/api/admin/media/move', { moved: 1 })
     .on('POST', '/api/admin/media/delete', { deleted: 1 })
+    .on('POST', '/api/admin/media/delete-originals', { deleted: 1, skipped: 0, freedBytes: 20_480 })
     .on('POST', '/api/admin/media/folders', ({ body }) => ({
       id: 'bbbbbbbb-0000-0000-0000-00000000000f',
       name: (body as { name: string }).name,

@@ -200,6 +200,39 @@ test('a full library refuses an upload without sending it', async ({ page, api }
   expect(api.requestsTo('POST', '/api/admin/media')).toHaveLength(0);
 });
 
+test('the detail dialog deletes an original that has a web copy', async ({ page, api }) => {
+  await page.goto('/media');
+  await page.locator('div.group').filter({ hasText: 'logo.png' }).first().getByRole('button').nth(1).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: 'Delete original' })).toBeVisible();
+
+  page.once('dialog', (d) => void d.accept());
+  await dialog.getByRole('button', { name: 'Delete original' }).click();
+
+  await expect(page.getByText('Deleted 1 original, freed 20.0 KB')).toBeVisible();
+  expect(api.requestsTo('POST', '/api/admin/media/delete-originals').at(-1)?.body).toEqual({ ids: [data.ASSET_LOGO] });
+  // The asset itself stays: that is the whole difference from Delete.
+  expect(api.requestsTo('POST', '/api/admin/media/delete')).toEqual([]);
+});
+
+test('the selection bar deletes only the originals that can go', async ({ page, api }) => {
+  await page.goto('/media');
+  await expect(page.getByText('logo.png')).toBeVisible();
+
+  const checkboxes = page.getByRole('button', { name: 'Select' });
+  for (let i = 0; i < data.MEDIA_ASSETS.length; i++) await checkboxes.nth(i).click({ force: true });
+  await expect(page.getByText(`${data.MEDIA_ASSETS.length} selected`)).toBeVisible();
+
+  // Two selected, one of them still without a web copy: the action counts and sends one.
+  page.once('dialog', (d) => void d.accept());
+  await page.getByRole('button', { name: 'Delete original', exact: true }).click();
+
+  await expect
+    .poll(() => api.requestsTo('POST', '/api/admin/media/delete-originals').length)
+    .toBe(1);
+  expect(api.requestsTo('POST', '/api/admin/media/delete-originals')[0].body).toEqual({ ids: [data.ASSET_LOGO] });
+});
+
 test.describe('a member who may only look', () => {
   test.use({ grants: ['media:read'] });
 
@@ -211,5 +244,13 @@ test.describe('a member who may only look', () => {
 
     await expect(page.getByText('Drop files here or click to upload')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Upload files' })).toHaveCount(0);
+  });
+
+  test('is not offered deleting an original', async ({ page }) => {
+    await page.goto('/media');
+    await page.locator('div.group').filter({ hasText: 'logo.png' }).first().getByRole('button').nth(1).click();
+    await expect(page.getByRole('dialog').getByText('logo.png').first()).toBeVisible();
+
+    await expect(page.getByRole('button', { name: 'Delete original' })).toHaveCount(0);
   });
 });

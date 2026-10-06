@@ -109,11 +109,14 @@ export const MEDIA_ASSETS = [
     id: ASSET_LOGO, category: 'Image', fileName: 'logo.png', status: 'Ready',
     sizeBytes: 20_480, folderId: FOLDER_BRAND, createdAt: '2026-08-01T10:00:00Z',
     variantBytes: 4_096, variantCount: 2, width: 512, height: 512,
+    originalDeleted: false, canDeleteOriginal: true,
   },
   {
     id: ASSET_LOOSE, category: 'Image', fileName: 'unfiled-shot.png', status: 'Ready',
     sizeBytes: 51_200, folderId: null, createdAt: '2026-08-03T10:00:00Z',
     variantBytes: 8_192, variantCount: 2, width: 1024, height: 768,
+    // Not offered: say its copies are still being made. The bulk bar must not count it.
+    originalDeleted: false, canDeleteOriginal: false,
   },
 ];
 

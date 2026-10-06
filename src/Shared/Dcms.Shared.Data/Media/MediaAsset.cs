@@ -39,6 +39,14 @@ public sealed class MediaAsset : TenantEntity
     public long SizeBytes { get; set; }
     public string Sha256 { get; set; } = string.Empty;
     public string OriginalKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// When the tenant deleted the original to free space. The object at
+    /// <see cref="OriginalKey"/> is gone; "original" is then served by a stand-in variant
+    /// (<see cref="MediaOriginals"/>), and <see cref="SizeBytes"/> no longer counts toward the cap.
+    /// </summary>
+    public DateTimeOffset? OriginalDeletedAt { get; set; }
+
     public MediaStatus Status { get; set; } = MediaStatus.Uploaded;
     public string? Error { get; set; }
 

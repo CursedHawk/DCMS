@@ -18,6 +18,10 @@ export interface MediaAsset {
   /** Total bytes of derived renditions (the "compressed" footprint). */
   variantBytes: number;
   variantCount: number;
+  /** The original was deleted to free space; its web copies answer for it. */
+  originalDeleted: boolean;
+  /** Ready, with a web copy that can stand in for the original (pictures, audio). */
+  canDeleteOriginal: boolean;
   width?: number | null;
   height?: number | null;
 }
@@ -40,6 +44,8 @@ export interface MediaDetail {
   sizeBytes: number;
   folderId: string | null;
   createdAt: string;
+  originalDeletedAt: string | null;
+  canDeleteOriginal: boolean;
   variants: MediaVariant[];
 }
 
@@ -168,6 +174,16 @@ export function useDeleteAssets() {
   const invalidate = useInvalidateMedia();
   return useMutation({
     mutationFn: (ids: string[]) => api.post<{ deleted: number }>('/admin/media/delete', { ids }),
+    onSuccess: invalidate,
+  });
+}
+
+/** Deletes originals that have web copies to stand in for them; the server skips the rest. */
+export function useDeleteOriginals() {
+  const invalidate = useInvalidateMedia();
+  return useMutation({
+    mutationFn: (ids: string[]) =>
+      api.post<{ deleted: number; skipped: number; freedBytes: number }>('/admin/media/delete-originals', { ids }),
     onSuccess: invalidate,
   });
 }
