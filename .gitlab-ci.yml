@@ -104,6 +104,10 @@ code-quality:
     - echo "$QLTY_SHA256  /tmp/qlty.tar.xz" | sha256sum -c -
     - tar -xJf /tmp/qlty.tar.xz -C /usr/local/bin --strip-components=1 --wildcards '*/qlty'
     - rc=0
+    # Install every linter up front, one at a time, with one retry. Left to check/smells, qlty
+    # installs in parallel and can exec a binary another thread still holds open for writing
+    # ("hadolint: Text file busy"), which empties the SARIF.
+    - Q="qlty install --jobs 1 --no-progress --no-upgrade-check"; $Q || $Q || rc=$?
     - qlty check --all --sarif --no-fail --no-progress --no-upgrade-check > qlty-check.sarif || rc=$?
     - qlty smells --all --sarif --no-upgrade-check > qlty-smells.sarif || rc=$?
     - python3 scripts/ci/sarif-to-codequality.py qlty-check.sarif qlty-smells.sarif > gl-code-quality-report.json

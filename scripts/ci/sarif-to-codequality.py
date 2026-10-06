@@ -51,8 +51,13 @@ def convert(sarif_docs):
 if __name__ == "__main__":
     docs = []
     for p in sys.argv[1:]:
-        with open(p) as f:
-            docs.append(json.load(f))
+        # A qlty run that died writes an empty file. Report what the other run found rather
+        # than nothing; the job already fails on qlty's own exit code.
+        try:
+            with open(p) as f:
+                docs.append(json.load(f))
+        except (OSError, ValueError) as e:
+            print(f"skipping {p}: {e}", file=sys.stderr)
     issues = convert(docs)
     json.dump(issues, sys.stdout)
     # The job log's summary; the report itself is for GitLab.
