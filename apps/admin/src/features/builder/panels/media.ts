@@ -102,3 +102,12 @@ export function rewriteMediaUrls(html: string): { html: string; pending: string[
   });
   return { html: rewritten, pending: pendingUrls };
 }
+
+/**
+ * Audio blocks placed before tracks were linked by their AAC copy still point at the original —
+ * a WAV every visitor downloads whole. Rewritten when a page is opened, so the next save carries
+ * `/aac`; the delivery API serves the original for `/aac` until the copy exists.
+ */
+export function audioToAac(html: string): string {
+  return html.replace(/(<audio\b[^>]*?\ssrc=["'])(\/api\/media\/[0-9a-f-]{36})\/original(["'])/gi, '$1$2/aac$3');
+}

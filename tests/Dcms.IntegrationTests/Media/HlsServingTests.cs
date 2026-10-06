@@ -31,6 +31,9 @@ public class HlsServingTests : IAsyncLifetime
     /// <summary>A picture whose tenant deleted its original to free space.</summary>
     private readonly Guid _pictureId = Guid.NewGuid();
     private static readonly byte[] Large = "large webp"u8.ToArray();
+    /// <summary>A track whose AAC copy has not been made yet.</summary>
+    private readonly Guid _trackId = Guid.NewGuid();
+    private static readonly byte[] Wav = "RIFF wav bytes"u8.ToArray();
     private const string Slug = "hls-tenant";
 
     /// <summary>A segment whose every slice is distinct (251 is prime, so no 256-byte repeat),
@@ -76,6 +79,12 @@ public class HlsServingTests : IAsyncLifetime
                         ObjectKey = StorageKeys.MediaVariant(_tenantId, _pictureId, "webp-1280.webp"), ContentType = "image/webp" },
                 ],
             });
+            media.Assets.Add(new MediaAsset
+            {
+                Id = _trackId, TenantId = _tenantId, Category = MediaCategory.Audio, FileName = "t.wav",
+                ContentType = "audio/wav", OriginalKey = StorageKeys.MediaVariant(_tenantId, _trackId, "original.wav"),
+                Status = MediaStatus.Processing,
+            });
             await media.SaveChangesAsync();
         }
 
@@ -85,6 +94,7 @@ public class HlsServingTests : IAsyncLifetime
         await PutBytes(minio, "hls/r720_000.ts", Segment);
         await PutBytes(minio, "webp-320.webp", "small webp"u8.ToArray(), _pictureId);
         await PutBytes(minio, "webp-1280.webp", Large, _pictureId);
+        await PutBytes(minio, "original.wav", Wav, _trackId);
 
         _content = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
@@ -164,6 +174,18 @@ public class HlsServingTests : IAsyncLifetime
         res.StatusCode.Should().Be(HttpStatusCode.OK);
         res.Content.Headers.ContentType!.MediaType.Should().Be("image/webp");
         (await res.Content.ReadAsByteArrayAsync(ct)).Should().Equal(Large);
+    }
+
+    [DockerFact]
+    public async Task A_track_without_its_aac_copy_yet_plays_the_original()
+    {
+        // Audio blocks link /aac; a track uploaded a moment ago has no copy until the worker is done.
+        var ct = TestContext.Current.CancellationToken;
+        var res = await _content.CreateClient().SendAsync(Req($"/api/media/{_trackId}/aac"), ct);
+
+        res.StatusCode.Should().Be(HttpStatusCode.OK);
+        res.Content.Headers.ContentType!.MediaType.Should().Be("audio/wav");
+        (await res.Content.ReadAsByteArrayAsync(ct)).Should().Equal(Wav);
     }
 
     [DockerFact]

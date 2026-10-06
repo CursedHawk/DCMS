@@ -144,6 +144,14 @@ describe('previewBody', () => {
       expect(previewBody([track], { layout: 'audio' })).toContain('<audio');
     });
 
+    it('plays a library track from its AAC copy, not the original', () => {
+      const id = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+      const library = { data: { title: 'Song', source: `/api/media/${id}/original` } };
+      expect(previewBody([library], { layout: 'audio' })).toContain(`src="/api/media/${id}/aac"`);
+      // Video has no such copy; it keeps the original.
+      expect(previewBody([library], { layout: 'video' })).toContain(`src="/api/media/${id}/original"`);
+    });
+
     it('draws download links', () => {
       const html = previewBody([track], { layout: 'downloads' });
       expect(html).toContain('dcms-download');

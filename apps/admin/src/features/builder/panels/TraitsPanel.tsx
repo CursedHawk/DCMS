@@ -146,11 +146,14 @@ function TraitRow({ trait }: { trait: TraitModel }) {
   );
 }
 
-/** `/api/media/{id}/original` — the delivery URL the published page resolves. */
-const MEDIA_URL = /^\/api\/media\/([0-9a-f-]{36})\/original$/i;
+/**
+ * `/api/media/{id}/original` — the delivery URL the published page resolves. A track is linked
+ * by its AAC copy instead (`/aac`): an Audio block should not hand every visitor the WAV.
+ */
+const MEDIA_URL = /^\/api\/media\/([0-9a-f-]{36})\/(?:original|aac)$/i;
 
-export function mediaUrlFor(assetId: string): string {
-  return `/api/media/${assetId}/original`;
+export function mediaUrlFor(assetId: string, category?: string): string {
+  return `/api/media/${assetId}/${category === 'Audio' ? 'aac' : 'original'}`;
 }
 
 export function assetIdFrom(url: string): string | undefined {
@@ -176,7 +179,7 @@ function MediaTrait({ trait, category }: { trait: TraitModel; category?: string 
       <MediaPicker
         value={assetId}
         category={category as never}
-        onChange={(id) => trait.setValue(id ? mediaUrlFor(id) : '')}
+        onChange={(id) => trait.setValue(id ? mediaUrlFor(id, category) : '')}
       />
       <div className="flex items-center gap-1">
         <Input

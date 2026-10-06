@@ -421,6 +421,15 @@ function articleHtml(item: PreviewItem, props: PreviewProps): string {
   return out.join('');
 }
 
+/**
+ * A library track plays from its AAC copy, not the original: a WAV is ten times the bytes for the
+ * same listening. The delivery API serves the original until the copy exists. Mirrors playable()
+ * in hydrate.js.
+ */
+export function playable(url: string): string {
+  return url.replace(/^(\/api\/media\/[0-9a-f-]{36})\/original$/i, '$1/aac');
+}
+
 function playerHtml(item: PreviewItem, props: PreviewProps, tag: 'video' | 'audio'): string {
   const { title, media, meta, link } = slotsOf(item, props);
   const out = ['<div class="dcms-card" data-variant="outline"><div class="dcms-card-body">'];
@@ -431,7 +440,7 @@ function playerHtml(item: PreviewItem, props: PreviewProps, tag: 'video' | 'audi
   }
   if (meta) out.push(`<p class="dcms-card-meta">${escapeHtml(meta)}</p>`);
   if (media) {
-    out.push(`<${tag} class="dcms-media" controls preload="metadata" src="${escapeHtml(media)}"></${tag}>`);
+    out.push(`<${tag} class="dcms-media" controls preload="metadata" src="${escapeHtml(tag === 'audio' ? playable(media) : media)}"></${tag}>`);
   }
   out.push('</div></div>');
   return out.join('');

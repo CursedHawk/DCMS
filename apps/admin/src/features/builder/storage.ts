@@ -2,6 +2,7 @@ import { pageBodyOf } from '@dcms/gjs-blocks';
 import { GLOBAL_CSS, pageCssPath, renderThemeCss } from '@dcms/gjs-schema';
 import type { Editor } from 'grapesjs';
 import { SOURCE_PROP, applyThemeCss, cssHandoff, htmlHandoff } from './grapes';
+import { audioToAac } from './panels/media';
 import type { Project } from './project';
 import type { CanvasTarget } from './store';
 import { parseClient } from './workers/parseClient';
@@ -57,8 +58,9 @@ export async function loadTargetIntoEditor(
   project: Project,
   target: CanvasTarget,
 ): Promise<void> {
-  const doc = docFor(project, target);
-  if (!doc) return;
+  const found = docFor(project, target);
+  if (!found) return;
+  const doc = { ...found, html: audioToAac(found.html) };
 
   // Parse everything in the worker first, then hand the results to the
   // synchronous GrapesJS parser hooks (see ParseHandoff in grapes.ts).

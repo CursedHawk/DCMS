@@ -6,7 +6,7 @@ import { BIND_TARGETS, TEMPLATE_ATTRS, parseBind } from '@dcms/gjs-schema';
 import { describe, expect, it } from 'vitest';
 import { BLOCKS_CSS } from './blocks-css';
 import { HOME_LABEL_ATTR, NAV_ATTR, normalize } from './nav';
-import { PREVIEW_LAYOUTS, previewHtml, type PreviewItem } from './preview';
+import { PREVIEW_LAYOUTS, playable, previewHtml, type PreviewItem } from './preview';
 import { renderTemplate } from './render';
 import { navigationSpecs } from './specs';
 import {
@@ -75,6 +75,18 @@ describe('hydrate.js and the canvas preview', () => {
     ]) {
       expect(runtime, prop).toContain(`props.${prop}`);
     }
+  });
+
+  it('play a library track from the same copy', () => {
+    // Run the runtime's own playable() and compare it with the preview's on the same inputs.
+    const source = runtime.match(/var LIBRARY_ORIGINAL = [^\n]+\n\s*function playable\(url\) \{[^}]+\}/);
+    expect(source, 'hydrate.js no longer declares playable()').not.toBeNull();
+    const runtimePlayable = new Function(`${source![0]}; return playable;`)() as (url: string) => string;
+    const id = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+    for (const url of [`/api/media/${id}/original`, `/api/media/${id}/webp-640`, '/a.mp3', 'https://x.test/a.wav']) {
+      expect(runtimePlayable(url), url).toBe(playable(url));
+    }
+    expect(runtime).toContain("tag === 'audio' ? playable(s.media) : s.media");
   });
 
   it('build an item link from the same pattern', () => {

@@ -87,6 +87,14 @@
     return GUID.test(ref) ? '/api/media/' + ref + '/original' : ref;
   }
 
+  // A library track plays from its AAC copy, not the original: a WAV is ten times the bytes
+  // for the same listening. The delivery API serves the original until the copy exists.
+  // Mirrors playable() in preview.ts.
+  var LIBRARY_ORIGINAL = /^(\/api\/media\/[0-9a-f-]{36})\/original$/i;
+  function playable(url) {
+    return url.replace(LIBRARY_ORIGINAL, '$1/aac');
+  }
+
   // Read a field by path, following dots — mirrors readField() in preview.ts.
   //
   // Tenant-defined fields do not sit beside the plugin's own: a content type
@@ -404,7 +412,7 @@
       // an anchor makes every click a navigation. The title is the way through.
       if (s.title) out.push('<h3 class="dcms-card-title">' + linked(esc(s.title), s.link, 'dcms-card-link') + '</h3>');
       if (s.meta) out.push('<p class="dcms-card-meta">' + esc(s.meta) + '</p>');
-      if (s.media) out.push('<' + tag + ' class="dcms-media" controls preload="metadata" src="' + esc(s.media) + '"></' + tag + '>');
+      if (s.media) out.push('<' + tag + ' class="dcms-media" controls preload="metadata" src="' + esc(tag === 'audio' ? playable(s.media) : s.media) + '"></' + tag + '>');
       out.push('</div></div>');
       return out.join('');
     });

@@ -1,3 +1,4 @@
+using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Storage;
 using Microsoft.EntityFrameworkCore;
@@ -68,6 +69,14 @@ public static class MediaDeliveryEndpoints
                         return await ObjectStreaming.WriteObjectAsync(
                             http, storage, storageOptions.Value.MediaBucket, asset.OriginalKey, asset.ContentType, ct);
                     }
+                }
+                if (v is null && variant == "aac" && asset.Category == MediaCategory.Audio && asset.OriginalDeletedAt is null)
+                {
+                    // Audio blocks link the AAC copy, which only exists once the worker has made it.
+                    // Until then — or if it never could — the original is the track.
+                    http.Response.Headers.CacheControl = "public, max-age=300";
+                    return await ObjectStreaming.WriteObjectAsync(
+                        http, storage, storageOptions.Value.MediaBucket, asset.OriginalKey, asset.ContentType, ct);
                 }
                 if (v is null)
                 {
