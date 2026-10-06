@@ -1,5 +1,9 @@
 using Dcms.Plugins.DynamicApps.Api;
+using Dcms.Plugins.DynamicApps.Endpoints;
+using Dcms.Plugins.DynamicApps.Metadata;
 using Dcms.PluginSdk.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Dcms.Plugins.DynamicApps;
 
@@ -69,4 +73,14 @@ public sealed class DynamicAppsPlugin : IPlugin
         summary: "Your own tables, automations and API, versioned and AI-configurable.",
         iconName: "DatabaseZap",
         tags: ["data", "automation", "api", "low-code"]);
+
+    public void ConfigureServices(IServiceCollection services, PluginHost host)
+    {
+        services.AddMemoryCache();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<ConfigurationService>();
+    }
+
+    /// <summary>Admin plane, <c>/api/admin/plugins/{slug}/…</c>: the control plane.</summary>
+    public void MapAdminEndpoints(IPluginEndpointBuilder endpoints) => ModelEndpoints.Map(endpoints);
 }
