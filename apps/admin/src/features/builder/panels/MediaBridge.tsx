@@ -77,6 +77,9 @@ async function swap(doc: Document): Promise<boolean> {
     // resolves its own media. Two bridges rewriting the same element would each
     // undo the other on every pass.
     if (el.closest('[data-dcms-component]')) continue;
+    // A srcset (the site's WebP ladder) would win over the authenticated src swapped in below,
+    // and its addresses do not load here. The canvas needs one picture, not a ladder.
+    if (el.getAttribute('srcset')?.includes('/api/media/')) el.removeAttribute('srcset');
     for (const attr of URL_ATTRS) {
       const current = el.getAttribute(attr);
       if (!current) continue;

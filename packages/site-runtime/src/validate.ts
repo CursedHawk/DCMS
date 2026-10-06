@@ -155,7 +155,7 @@ function checkTree(
         problem('error', `${definition.label} › ${prop.label} cannot be bound to content.`, node.id);
       } else if (scope.kind === 'none') {
         problem('error', `${definition.label} › ${prop.label} shows “${path}”, but nothing around it provides an item — put it inside a collection, or on a detail page.`, node.id);
-      } else if (scope.kind === 'source' && content && !META.has(path) && !content.get(scope.key)?.has(path) && !content.get(scope.key)?.has('*')) {
+      } else if (scope.kind === 'source' && content && !META.has(path) && !content.get(scope.key)?.has(fieldOf(path)) && !content.get(scope.key)?.has('*')) {
         problem('error', `${definition.label} › ${prop.label} shows the field “${path}”, which ${scope.key} does not have.`, node.id);
       }
     }
@@ -419,4 +419,9 @@ export function formatProblems(problems: readonly SiteProblem[]): string {
   return problems
     .map((p) => `${p.severity}: ${p.file}${p.nodeId ? ` (node ${p.nodeId})` : ''} — ${p.message}`)
     .join('\n');
+}
+
+/** The field a path reads: `photos.0` (one of a list) is the field `photos`. */
+function fieldOf(path: string): string {
+  return path.replace(/(?:\.\d+)+$/, '');
 }

@@ -1628,7 +1628,8 @@
       "notDetail": "Not a detail page",
       "detailHint": "Shows the item whose slug is in the address (:{{param}}).",
       "needsParam": "Give the address a :slug part (e.g. /events/:slug) to make this a detail page.",
-      "noSources": "No content to show yet. Content comes from plugins with content — a blog, events, products — and from connections to other services."
+      "noSources": "No content to show yet. Content comes from plugins with content — a blog, events, products — and from connections to other services.",
+      "listOnlyBound": "Filled from content: inside a collection or on a detail page, choose which field’s pictures to show. Pictures placed below follow them."
     },
     "groups": {
       "content": "Content",

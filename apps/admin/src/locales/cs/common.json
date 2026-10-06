@@ -1667,7 +1667,8 @@
       "notDetail": "Není stránka detailu",
       "detailHint": "Zobrazí položku, jejíž slug je v adrese (:{{param}}).",
       "needsParam": "Přidejte do adresy část :slug (např. /akce/:slug), aby to byla stránka detailu.",
-      "noSources": "Zatím není co ukázat. Obsah pochází z pluginů s obsahem — blog, události, produkty — a z propojení s jinými službami."
+      "noSources": "Zatím není co ukázat. Obsah pochází z pluginů s obsahem — blog, události, produkty — a z propojení s jinými službami.",
+      "listOnlyBound": "Plní se z obsahu: v kolekci nebo na stránce detailu vyberte, čí obrázky se mají ukázat. Obrázky vložené níže následují za nimi."
     },
     "groups": {
       "content": "Obsah",

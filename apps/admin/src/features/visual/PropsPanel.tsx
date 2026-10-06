@@ -394,6 +394,11 @@ function PropField({
       );
       break;
     case 'media': {
+      // A list (a gallery's pictures from content) has no picker: it is filled by a binding.
+      if (prop.multiple) {
+        control = <p className="text-xs text-muted-foreground">{t('visual.data.listOnlyBound')}</p>;
+        break;
+      }
       // Stored as the published URL (/api/media/<id>/original), which the site resolves
       // same-origin; the canvas swaps in an authenticated copy (MediaBridge). See builder/panels/media.ts.
       const url = typeof value === 'string' ? value : '';

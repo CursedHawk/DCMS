@@ -89,6 +89,8 @@ function watchMedia(doc: Document): void {
     for (const img of Array.from(doc.querySelectorAll<HTMLImageElement>('img[src^="/api/media/"]'))) {
       const src = img.getAttribute('src')!;
       if (!assetIdOf(src)) continue;
+      // The WebP ladder's addresses do not load here either, and a srcset wins over src.
+      img.removeAttribute('srcset');
       void resolveMedia(src).then((url) => {
         if (img.getAttribute('src') === src) img.setAttribute('src', url);
       });

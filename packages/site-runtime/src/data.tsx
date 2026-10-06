@@ -279,6 +279,37 @@ export function mediaUrl(value: unknown): string | undefined {
   return undefined;
 }
 
+/** A list of media (a gallery's pictures, an event's photos) as URLs; one item is a list of one. */
+export function mediaList(value: unknown): string[] {
+  return (Array.isArray(value) ? value : [value]).map((v) => mediaUrl(v)).filter((u): u is string => !!u);
+}
+
+/** The widths of the WebP ladder the media worker makes of every picture (WebpLadderGenerator). */
+export const WEBP_WIDTHS = [320, 640, 1280, 1920] as const;
+export type WebpWidth = (typeof WEBP_WIDTHS)[number];
+const LIBRARY_ORIGINAL = /^\/api\/media\/([0-9a-f-]{36})\/original$/i;
+
+/**
+ * A picture from the media library as browsers should load it: WebP, at the width the layout
+ * needs (`srcSet`), `width` where there is no choice (a background, a poster). The server answers a
+ * width an asset was not made at with its nearest, and the original while it has none, so every
+ * candidate loads. Anything else — an explicitly chosen variant, an external address, a site
+ * file — is used as given.
+ */
+export function picture(value: unknown, width: WebpWidth = 1280): { src: string; srcSet?: string } | undefined {
+  const url = mediaUrl(value);
+  if (!url) return undefined;
+  const id = LIBRARY_ORIGINAL.exec(url)?.[1];
+  if (!id) return { src: url };
+  return { src: `/api/media/${id}/webp-${width}`, srcSet: WEBP_WIDTHS.map((w) => `/api/media/${id}/webp-${w} ${w}w`).join(', ') };
+}
+
+/**
+ * How wide a picture is drawn, for the browser to pick from its `srcSet`: the whole screen unless
+ * something narrower says otherwise — a gallery, by its columns.
+ */
+export const ImageSizesContext = createContext('100vw');
+
 /** A field's value converted to what a prop of this kind holds — or nothing, if it cannot be. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/;
@@ -306,6 +337,7 @@ export function coerce(prop: PropDefinition, value: unknown, locale?: string): u
   if (prop.kind === 'text' && typeof value === 'string') return formatDate(value, locale);
   switch (prop.kind) {
     case 'media':
+      if (prop.multiple) return mediaList(value);
       return mediaUrl(value);
     case 'number': {
       const n = typeof value === 'number' ? value : Number(value);

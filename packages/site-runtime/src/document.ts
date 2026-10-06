@@ -49,7 +49,8 @@ export interface Node {
 const propsSchema = z.record(z.string().regex(NAME), z.unknown());
 
 /** `title`, `values.colour`, or a meta field: `#slug`, `#id`, `#publishedAt`, `#index`, `#number`, `#count`. */
-export const FIELD_PATH = /^(?:#(?:slug|id|publishedAt|index|number|count)|[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)$/;
+/** `title`, `values.colour`, `photos.0` (an item of a list), or one of the item's own `#` fields. */
+export const FIELD_PATH = /^(?:#(?:slug|id|publishedAt|index|number|count)|[A-Za-z_][A-Za-z0-9_]*(?:\.(?:[A-Za-z_][A-Za-z0-9_]*|\d{1,4}))*)$/;
 
 /**
  * What an instance's CSS may not contain. Braces would end the rule it is scoped into and style

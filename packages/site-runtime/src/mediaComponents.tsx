@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react';
-import { mediaUrl } from './data';
+import { ImageSizesContext, mediaList, mediaUrl, picture } from './data';
 import { choice, responsiveSelect, select, text, variants, type Props } from './kit';
 import type { ComponentDefinition, ComponentRenderProps } from './registry';
 import { useRenderMode } from './renderMode';
@@ -42,7 +42,7 @@ function Video({ props, responsive }: ComponentRenderProps<Props>) {
   const ratio = variants(props, responsive)('ratio', VIDEO_RATIOS, '16-9', (x) => `dcms-ratio-${x}`);
   const title = text(props.title).trim() || 'Video';
   const target = videoTarget(choice(props.source, VIDEO_SOURCES, 'link'), props.file, text(props.url));
-  const poster = mediaUrl(props.poster);
+  const poster = picture(props.poster)?.src;
   const loop = props.loop === true;
   const muted = props.autoplay === true;
 
@@ -113,6 +113,11 @@ function Gallery({ props, responsive, slot }: ComponentRenderProps<Props>) {
   const mode = useRenderMode();
   const v = variants(props, responsive);
   const columns = v('columns', GALLERY_COLUMNS, '3', (x) => `dcms-cols-${x}`);
+  // Pictures from content (an event's photos), drawn before any placed by hand.
+  const listed = mediaList(props.images);
+  const alt = text(props.alt).trim();
+  // Each picture is a column wide: the browser loads the WebP that fits it, not the screen's.
+  const sizes = `(max-width: 640px) 50vw, ${Math.ceil(100 / Number(choice(props.columns, GALLERY_COLUMNS, '3')))}vw`;
   const gap = choice(props.gap, GALLERY_GAPS, 'sm');
   const shape = choice(props.shape, GALLERY_SHAPES, 'square');
   const lightbox = props.lightbox !== false && mode === 'live';
@@ -123,7 +128,7 @@ function Gallery({ props, responsive, slot }: ComponentRenderProps<Props>) {
   // keyboard-reachable button that opens the lightbox.
   useEffect(() => {
     if (!lightbox) return;
-    for (const img of box.current?.querySelectorAll<HTMLImageElement>('.dcms-slot img') ?? []) {
+    for (const img of box.current?.querySelectorAll<HTMLImageElement>('.dcms-grid img') ?? []) {
       img.tabIndex = 0;
       img.setAttribute('role', 'button');
       img.setAttribute('aria-label', `Open picture${img.alt ? `: ${img.alt}` : ''}`);
@@ -134,8 +139,8 @@ function Gallery({ props, responsive, slot }: ComponentRenderProps<Props>) {
     if (!lightbox || target.closest('.dcms-lightbox')) return;
     const img = target.closest('img');
     if (!img) return;
-    const all = [...e.currentTarget.querySelectorAll<HTMLImageElement>('.dcms-slot img')];
-    setOpen({ shots: all.map((i) => ({ src: i.currentSrc || i.src, alt: i.alt })), at: Math.max(0, all.indexOf(img)) });
+    const all = [...e.currentTarget.querySelectorAll<HTMLImageElement>('.dcms-grid img')];
+    setOpen({ shots: all.map((i) => ({ src: largest(i), alt: i.alt })), at: Math.max(0, all.indexOf(img)) });
   };
 
   return (
@@ -147,10 +152,30 @@ function Gallery({ props, responsive, slot }: ComponentRenderProps<Props>) {
       onClick={openAt}
       onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), openAt(e))}
     >
-      {slot('images', { className: `dcms-grid ${columns} dcms-gap-${gap === 'none' ? 'none' : gap}` })}
+      <ImageSizesContext.Provider value={sizes}>
+        {listed.length > 0 && (
+          <div className={`dcms-grid ${columns} dcms-gap-${gap === 'none' ? 'none' : gap}`}>
+            {listed.map((url, i) => {
+              const pic = picture(url)!;
+              return <img key={`${i}:${url}`} className="dcms-image" src={pic.src} srcSet={pic.srcSet} sizes={pic.srcSet ? sizes : undefined} alt={alt ? `${alt} (${i + 1}/${listed.length})` : ''} loading="lazy" />;
+            })}
+          </div>
+        )}
+        {slot('images', { className: `dcms-grid ${columns} dcms-gap-${gap === 'none' ? 'none' : gap}` })}
+      </ImageSizesContext.Provider>
       {open && <Lightbox shots={open.shots} at={open.at} onClose={() => setOpen(null)} />}
     </div>
   );
+}
+
+/**
+ * The sharpest copy of a gallery picture for the full-screen view: the widest of its WebP ladder.
+ * Where its address was swapped for a local copy (the admin's preview), that copy.
+ */
+function largest(img: HTMLImageElement): string {
+  const ladder = img.getAttribute('srcset');
+  if (!ladder || img.src.startsWith('blob:')) return img.currentSrc || img.src;
+  return ladder.split(',').at(-1)!.trim().split(/\s+/)[0]!;
 }
 
 function Lightbox({ shots, at, onClose }: { shots: Shot[]; at: number; onClose: () => void }) {
@@ -359,6 +384,22 @@ export const MEDIA_COMPONENTS: readonly ComponentDefinition[] = [
         description: 'Crop every picture to the same shape so the grid lines up.',
       }),
       { kind: 'boolean', name: 'lightbox', label: 'Open full-screen on click', default: true, group: 'behaviour', description: 'Visitors can click a picture to see it large and browse the rest.' },
+      {
+        kind: 'media',
+        name: 'images',
+        label: 'Pictures from content',
+        multiple: true,
+        group: 'data',
+        description: 'Inside a collection or on a detail page: show every picture of a content field, such as an event’s photos. Pictures placed by hand follow them.',
+      },
+      {
+        kind: 'text',
+        name: 'alt',
+        label: 'Description of the pictures',
+        maxLength: 200,
+        group: 'data',
+        description: 'What the pictures from content show — read out as “description (1/5)”. Bind it to the item’s title.',
+      },
     ],
     slots: [{ name: 'images', label: 'Pictures', allowed: ['dcms.image'] }],
   },

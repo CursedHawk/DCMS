@@ -88,6 +88,13 @@ export async function useBffMode(page: Page, options: EdgeOptions = {}): Promise
       await route.fallback();
       return;
     }
+    // A third party's page in an iframe (a Map's openstreetmap.org, a video player) is not the
+    // app's, and fetching it from the internet outlived the test that drew it — a stray
+    // "route.fetch: Test ended" failed the run. Specs never need it to load.
+    if (!['127.0.0.1', 'localhost'].includes(new URL(request.url()).hostname)) {
+      await route.abort();
+      return;
+    }
     const response = await route.fetch();
     const html = (await response.text()).replace('__DCMS_AUTH_MODE__', 'bff');
     await route.fulfill({

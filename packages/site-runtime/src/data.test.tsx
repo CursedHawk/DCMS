@@ -5,8 +5,8 @@ import { RouterProvider, createMemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { loadDocuments, siteRoutes } from './app';
 import { builtinRegistry } from './components';
-import { DataClientContext, mediaUrl, type ContentItem, type DataClient } from './data';
-import type { Node, Page } from './document';
+import { DataClientContext, mediaUrl, picture, type ContentItem, type DataClient } from './data';
+import { pageSchema, type Node, type Page } from './document';
 import { pageHead } from './head';
 import { RenderNode } from './render';
 import { checkVisualSite } from './validate';
@@ -75,7 +75,7 @@ describe('Collection', () => {
     const el = await render(<RenderNode node={collection()} registry={builtinRegistry} />, data);
     expect([...el.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Summer party', 'Winter ball']);
     expect([...el.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual(['/events/summer', '/events/winter']);
-    expect(el.querySelector('img')?.getAttribute('src')).toBe('/api/media/11111111-1111-1111-1111-111111111111/original');
+    expect(el.querySelector('img')?.getAttribute('src')).toBe('/api/media/11111111-1111-1111-1111-111111111111/webp-1280');
     expect(data.calls).toEqual(['/api/events/event?pageSize=2']);
   });
 
@@ -373,5 +373,63 @@ describe('form fields', () => {
         'This choice field has no options to choose from.',
       ]),
     );
+  });
+});
+
+describe('pictures', () => {
+  const A = '11111111-1111-1111-1111-111111111111';
+  const B = '22222222-2222-2222-2222-222222222222';
+
+  it('loads a library picture as WebP at the width the layout needs, anything else as given', () => {
+    expect(picture(A)).toEqual({
+      src: `/api/media/${A}/webp-1280`,
+      srcSet: [320, 640, 1280, 1920].map((w) => `/api/media/${A}/webp-${w} ${w}w`).join(', '),
+    });
+    expect(picture(`/api/media/${A}/original`, 1920)?.src).toBe(`/api/media/${A}/webp-1920`);
+    // A variant chosen on purpose, an external picture, a site file: untouched.
+    expect(picture(`/api/media/${A}/webp-640`)).toEqual({ src: `/api/media/${A}/webp-640` });
+    expect(picture('https://example.com/a.jpg')).toEqual({ src: 'https://example.com/a.jpg' });
+  });
+
+  it('an image keeps its original file when asked to', async () => {
+    const el = await render(<RenderNode node={{ id: 'i', type: 'dcms.image', props: { src: `/api/media/${A}/original`, alt: 'x', file: 'original' } }} registry={builtinRegistry} />, client({}));
+    expect(el.querySelector('img')?.getAttribute('src')).toBe(`/api/media/${A}/original`);
+    expect(el.querySelector('img')?.hasAttribute('srcset')).toBe(false);
+  });
+
+  it('a gallery on a detail page shows every photo of the item, sized to its columns', async () => {
+    const page: Page = {
+      schemaVersion: 1,
+      id: 'event',
+      title: 'Event',
+      data: { source: { instance: 'events', contentType: 'event' }, param: 'slug' },
+      root: {
+        id: 'r',
+        type: 'dcms.page',
+        slots: {
+          default: [
+            { id: 'g', type: 'dcms.gallery', props: { columns: '4' }, bind: { images: 'photos', alt: 'title' } },
+            // One photo of the list on its own, by its position.
+            { id: 'cover', type: 'dcms.image', bind: { src: 'photos.1' } },
+          ],
+        },
+      },
+    };
+    expect(pageSchema.safeParse(page).success).toBe(true);
+    // The validator knows `photos.1` is the field `photos`.
+    const files = { 'dcms/app.json': JSON.stringify({ schemaVersion: 1, routes: [{ id: 'event', path: '/events/:slug', page: 'event' }] }), 'dcms/pages/event.json': JSON.stringify(page) };
+    const known = new Map([['events/event', new Set(['title', 'photos'])]]);
+    expect(checkVisualSite(files, builtinRegistry, known).filter((p) => p.file.startsWith('dcms/pages'))).toEqual([]);
+    const documents = loadDocuments({
+      'dcms/app.json': { schemaVersion: 1, routes: [{ id: 'event', path: '/events/:slug', page: 'event' }] },
+      'dcms/pages/event.json': page,
+    });
+    const data = client({ '/api/events/event/summer': { id: '1', slug: 'summer', data: { title: 'Summer party', photos: [A, { id: B }] } } });
+    const el = await render(<RouterProvider router={createMemoryRouter(siteRoutes(documents), { initialEntries: ['/events/summer'] })} />, data);
+    const shots = [...el.querySelectorAll('.dcms-gallery img')];
+    expect(shots.map((i) => i.getAttribute('src'))).toEqual([`/api/media/${A}/webp-1280`, `/api/media/${B}/webp-1280`]);
+    expect(shots.map((i) => i.getAttribute('alt'))).toEqual(['Summer party (1/2)', 'Summer party (2/2)']);
+    expect(shots[0]!.getAttribute('sizes')).toBe('(max-width: 640px) 50vw, 25vw');
+    expect(el.querySelector('img.dcms-image:not(.dcms-gallery img)')?.getAttribute('src')).toBe(`/api/media/${B}/webp-1280`);
   });
 });

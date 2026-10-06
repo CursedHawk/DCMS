@@ -61,8 +61,11 @@ export const propDefinitionSchema = z.discriminatedUnion('kind', [
   }),
   z.strictObject({ kind: z.literal('token'), ...base, group: z.enum(TOKEN_GROUPS), default: z.string().optional() }),
   z.strictObject({ kind: z.literal('color'), ...base, default: z.string().optional() }),
-  /** `accept` narrows the media picker: pictures (the default) or videos. */
-  z.strictObject({ kind: z.literal('media'), ...base, accept: z.enum(['image', 'video']).optional() }),
+  /**
+   * `accept` narrows the media picker: pictures (the default) or videos. `multiple` holds a list
+   * (a gallery's pictures) — filled by binding it to a content field that is one.
+   */
+  z.strictObject({ kind: z.literal('media'), ...base, accept: z.enum(['image', 'video']).optional(), multiple: z.boolean().optional() }),
   z.strictObject({ kind: z.literal('url'), ...base, default: z.string().optional() }),
   z.strictObject({ kind: z.literal('contentRef'), ...base, contentType: z.string().optional() }),
   z.strictObject({ kind: z.literal('date'), ...base, default: z.string().optional() }),
@@ -106,7 +109,7 @@ export function propValueSchema(def: PropDefinition): z.ZodType {
     case 'color':
       return z.string().refine((v) => HEX_COLOR.test(v) || TOKEN.test(v), 'must be a theme colour or a #hex value');
     case 'media':
-      return z.string().min(1).max(2048);
+      return def.multiple ? z.array(z.string().min(1).max(2048)).max(200) : z.string().min(1).max(2048);
     case 'url':
       return z
         .string()

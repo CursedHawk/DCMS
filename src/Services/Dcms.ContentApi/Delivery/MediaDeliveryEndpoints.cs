@@ -27,6 +27,7 @@ public static class MediaDeliveryEndpoints
 
             string key;
             string contentType;
+            var exact = true;
             if (variant == "original")
             {
                 key = asset.OriginalKey;
@@ -36,6 +37,25 @@ public static class MediaDeliveryEndpoints
             {
                 var v = await db.Variants.AsNoTracking()
                     .FirstOrDefaultAsync(x => x.AssetId == assetId && x.Kind == variant, ct);
+                if (v is null && WebpLadder.WidthOf(variant) is not null)
+                {
+                    // A WebP width this asset was not made at: sites ask for the whole ladder in a
+                    // srcset, and a picture narrower than a width has no variant of it. Serve the
+                    // nearest instead, so every candidate loads.
+                    var ladder = await db.Variants.AsNoTracking()
+                        .Where(x => x.AssetId == assetId && x.Kind.StartsWith("webp-"))
+                        .ToListAsync(ct);
+                    v = ladder.FirstOrDefault(x => x.Kind == WebpLadder.Nearest(variant, ladder.Select(l => l.Kind)));
+                    exact = false;
+                    if (v is null && asset.ContentType.StartsWith("image/", StringComparison.Ordinal))
+                    {
+                        // No ladder at all — still being made, or a format the encoder cannot read
+                        // (SVG): the original is the picture.
+                        http.Response.Headers.CacheControl = "public, max-age=300";
+                        return await ObjectStreaming.WriteObjectAsync(
+                            http, storage, storageOptions.Value.MediaBucket, asset.OriginalKey, asset.ContentType, ct);
+                    }
+                }
                 if (v is null)
                 {
                     return Results.NotFound();
@@ -44,7 +64,8 @@ public static class MediaDeliveryEndpoints
                 contentType = v.ContentType;
             }
 
-            http.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+            // A stand-in may be replaced by the real thing once the media worker catches up.
+            http.Response.Headers.CacheControl = exact ? "public, max-age=31536000, immutable" : "public, max-age=3600";
             return await ObjectStreaming.WriteObjectAsync(
                 http, storage, storageOptions.Value.MediaBucket, key, contentType, ct);
         });

@@ -5,7 +5,7 @@ import { choice, responsiveSelect, select, text, variants, type Props } from './
 import { createRegistry, type ComponentDefinition, type ComponentRenderProps } from './registry';
 import { useRenderMode } from './renderMode';
 import { CONTENT_COMPONENTS, IconGlyph } from './contentComponents';
-import { mediaUrl } from './data';
+import { ImageSizesContext, mediaUrl, picture } from './data';
 import { INTERACTIVE_COMPONENTS } from './interactiveComponents';
 import { MEDIA_COMPONENTS } from './mediaComponents';
 import { NAV_COMPONENTS } from './navComponents';
@@ -53,9 +53,9 @@ function Section({ props, responsive, slot }: ComponentRenderProps<Props>) {
   const bg = choice(props.background, BACKGROUNDS, 'none');
   const py = v('spacing', SECTION_SPACES, 'md', (x) => `dcms-py-${x}`);
   const width = v('width', WIDTHS, 'normal', (x) => `dcms-width-${x}`);
-  // A background picture, behind a tint so text stays readable. The address goes through
-  // mediaUrl (site paths, http(s), asset ids) before it reaches the style.
-  const image = mediaUrl(props.image);
+  // A background picture, behind a tint so text stays readable: the widest WebP, since a band
+  // spans the screen. The address goes through mediaUrl (site paths, http(s), asset ids) first.
+  const image = picture(props.image, 1920)?.src;
   const overlay = choice(props.overlay, OVERLAYS, 'dark');
   return (
     <section
@@ -141,16 +141,19 @@ const RADII = ['none', 'sm', 'lg'] as const;
 
 function Image({ props, responsive }: ComponentRenderProps<Props>) {
   const mode = useRenderMode();
-  // ponytail: the value is used as a URL until media props resolve MediaRefs (P2.7).
-  const src = text(props.src);
+  const sizes = useContext(ImageSizesContext);
+  // WebP at the width the layout needs; the original file only when asked for (an animation).
+  const pic = props.file === 'original' ? (mediaUrl(props.src) ? { src: mediaUrl(props.src)! } : undefined) : picture(props.src);
+  const src = pic?.src;
   const ratio = variants(props, responsive)('ratio', RATIOS, 'auto', (x) => `dcms-ratio-${x}`);
   const fit = choice(props.fit, FITS, 'cover');
   const radius = choice(props.radius, RADII, 'none');
   const className = `dcms-image ${ratio} dcms-fit-${fit} dcms-radius-${radius}`;
   if (!src) return mode === 'edit' ? <div className={`${className} dcms-image-empty`}>Choose an image</div> : null;
-  return <img className={className} src={src} alt={text(props.alt)} loading="lazy" />;
+  return <img className={className} src={src} srcSet={pic?.srcSet} sizes={pic?.srcSet ? sizes : undefined} alt={text(props.alt)} loading="lazy" />;
 }
 
+const IMAGE_FILES = ['webp', 'original'] as const;
 const VARIANTS = ['primary', 'secondary', 'ghost'] as const;
 const BUTTON_SIZES = ['sm', 'md', 'lg'] as const;
 
@@ -821,6 +824,10 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
       select('radius', 'Corners', RADII, 'none', { none: 'Square', sm: 'Slightly rounded', lg: 'Rounded' }, {
         group: 'style',
         description: 'How rounded the corners are.',
+      }),
+      select('file', 'File', IMAGE_FILES, 'webp', { webp: 'Sized for the screen', original: 'Original file' }, {
+        group: 'behaviour',
+        description: 'Sized for the screen loads a light WebP copy as wide as the visitor’s screen needs. Choose the original file for an animated GIF or when every detail matters.',
       }),
     ],
   },

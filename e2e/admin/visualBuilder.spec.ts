@@ -826,3 +826,23 @@ test('an empty page says how to start', async ({ page, api }) => {
   await page.getByRole('button', { name: /^Pricing/ }).click();
   await expect(empty).toHaveCount(0);
 });
+
+test('a gallery on a detail page shows every picture of the item’s photo list', async ({ page, api }) => {
+  const photos = ['/e2e/one.png', '/e2e/two.png', '/e2e/three.png'];
+  api
+    .on('GET', '/api/admin/sites/:id/preview/api/press-room/post', { items: [{ ...POSTS[0], data: { ...POSTS[0]!.data, photos } }], totalCount: 1, page: 1, pageSize: 1 })
+    .on('GET', '/api/admin/sites/:id/preview/api/press-room/post/:slug', { ...POSTS[0], data: { ...POSTS[0]!.data, photos } });
+  const post = JSON.parse(dataSite['dcms/pages/post.json']);
+  post.root.slots.default.push({ id: 'g', type: 'dcms.gallery', bind: { images: 'photos', alt: 'title' } });
+  const frame = await open(page, api, { ...dataSite, 'dcms/pages/post.json': doc(post) });
+
+  await page.getByRole('tab', { name: 'Pages' }).click();
+  await page.getByRole('button', { name: /^Post/ }).first().click();
+  const shots = frame.locator('[data-dcms-node="g"] img');
+  await expect(shots).toHaveCount(3);
+  await expect(shots.first()).toHaveAttribute('alt', 'Hello world (1/3)');
+
+  // Selected, the inspector says where its pictures come from.
+  await shots.nth(1).click();
+  await expect(page.getByText('Shows the item’s Photos.')).toBeVisible();
+});
