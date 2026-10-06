@@ -48,8 +48,20 @@ public sealed class AudioTranscoder
             .CancellableThrough(ct)
             .ProcessAsynchronously();
 
-        var bytes = pcm.ToArray();
-        var sampleCount = bytes.Length / 2;
+        return PeaksOf(pcm.ToArray());
+    }
+
+    /// <summary>
+    /// Max amplitude per bucket, 0–1, from mono s16le PCM.
+    ///
+    /// <para>Widened to int before <see cref="Math.Abs(int)"/>: a full-scale negative sample is
+    /// -32768, which has no positive short, so <c>Math.Abs(short)</c> throws "Negating the minimum
+    /// value of a twos complement number is invalid" — and any loudly mastered track has one. That
+    /// failed whole WAV imports (2026-10-06).</para>
+    /// </summary>
+    public static float[] PeaksOf(byte[] pcm)
+    {
+        var sampleCount = pcm.Length / 2;
         if (sampleCount == 0)
         {
             return [];
@@ -59,7 +71,7 @@ public sealed class AudioTranscoder
         var perBucket = Math.Max(1, sampleCount / PeakBuckets);
         for (var i = 0; i < sampleCount; i++)
         {
-            var sample = Math.Abs(BitConverter.ToInt16(bytes, i * 2)) / 32768f;
+            var sample = Math.Abs((int)BitConverter.ToInt16(pcm, i * 2)) / 32768f;
             var bucket = Math.Min(PeakBuckets - 1, i / perBucket);
             if (sample > peaks[bucket])
             {
