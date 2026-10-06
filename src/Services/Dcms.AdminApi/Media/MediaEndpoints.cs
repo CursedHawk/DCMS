@@ -388,12 +388,16 @@ public static class MediaEndpoints
 
             // After the commit, never before: an object nothing points to any more is only wasted
             // bytes, while a row pointing at an object that is gone would serve nothing.
+            //
+            // Not cancellable by the caller. These bytes stopped counting toward the cap at the
+            // commit; a client that hung up right after it would otherwise keep them stored and
+            // uncounted, and doing that repeatedly is a way past the storage limit.
             var logger = loggers.CreateLogger("MediaDeleteOriginals");
             foreach (var asset in assets)
             {
                 try
                 {
-                    await storage.DeleteAsync(storageOptions.Value.MediaBucket, asset.OriginalKey, ct);
+                    await storage.DeleteAsync(storageOptions.Value.MediaBucket, asset.OriginalKey, CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
