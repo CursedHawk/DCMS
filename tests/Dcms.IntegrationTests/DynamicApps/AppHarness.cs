@@ -80,6 +80,32 @@ public sealed class AppHarness(ContentFlowFixture fixture, HttpClient admin, Gui
         return member;
     }
 
+    /// <summary>Adds another plugin instance to the tenant.</summary>
+    public async Task InstallAsync(string pluginId, string slug, string config, CancellationToken ct)
+    {
+        var res = await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", owner, tenant,
+            body: new { pluginId, slug, name = slug, config }), ct);
+        res.StatusCode.Should().Be(HttpStatusCode.Created, await res.Content.ReadAsStringAsync(ct));
+    }
+
+    /// <summary>A public-site request to content-api, optionally as a signed-in visitor.</summary>
+    public Task<HttpResponseMessage> SiteAsync(HttpMethod method, string url, CancellationToken ct, object? body = null, string? token = null)
+    {
+        var req = new HttpRequestMessage(method, url);
+        req.Headers.Add("X-Dcms-Tenant", tenant);
+        if (token is not null) req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        if (body is not null) req.Content = JsonContent.Create(body);
+        return fixture.Content.CreateClient().SendAsync(req, ct);
+    }
+
+    /// <summary>Registers a site visitor with the tenant's VisitorAuth instance at <c>/api/{members}</c>; returns their access token.</summary>
+    public async Task<string> VisitorAsync(string email, CancellationToken ct, string members = "members")
+    {
+        var res = await SiteAsync(HttpMethod.Post, $"/api/{members}/register", ct, new { email, password = "correct horse battery staple" });
+        res.StatusCode.Should().BeOneOf([HttpStatusCode.OK, HttpStatusCode.Created], await res.Content.ReadAsStringAsync(ct));
+        return (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("accessToken").GetString()!;
+    }
+
     /// <summary>This tenant's outbox, oldest first: event name and envelope.</summary>
     public async Task<List<(string Name, JsonElement Envelope)>> OutboxAsync(CancellationToken ct)
     {

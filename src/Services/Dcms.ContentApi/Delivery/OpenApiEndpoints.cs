@@ -24,7 +24,7 @@ public static class OpenApiEndpoints
         app.MapGet("/api/openapi.json", async (HttpContext http, ITenantContext tenant, CmsDbContext db,
             OpenApiAssembler assembler, ICacheService cache, CancellationToken ct) =>
         {
-            var built = await BuildAsync(tenant, db, assembler, cache, ct);
+            var built = await BuildAsync(tenant, db, assembler, cache, http.RequestServices, ct);
             if (built is null)
             {
                 return Results.NotFound();
@@ -40,7 +40,7 @@ public static class OpenApiEndpoints
         app.MapGet("/api/openapi.yaml", async (HttpContext http, ITenantContext tenant, CmsDbContext db,
             OpenApiAssembler assembler, ICacheService cache, CancellationToken ct) =>
         {
-            var built = await BuildAsync(tenant, db, assembler, cache, ct);
+            var built = await BuildAsync(tenant, db, assembler, cache, http.RequestServices, ct);
             if (built is null)
             {
                 return Results.NotFound();
@@ -56,7 +56,7 @@ public static class OpenApiEndpoints
     }
 
     private static async Task<(string Json, string Etag)?> BuildAsync(
-        ITenantContext tenant, CmsDbContext db, OpenApiAssembler assembler, ICacheService cache, CancellationToken ct)
+        ITenantContext tenant, CmsDbContext db, OpenApiAssembler assembler, ICacheService cache, IServiceProvider services, CancellationToken ct)
     {
         if (tenant.TenantId is not { } tenantId)
         {
@@ -72,7 +72,15 @@ public static class OpenApiEndpoints
         // the moment a tenant publishes its first tag, and a key that ignored it
         // would serve the pre-tag document for another 24 hours.
         var tagging = await TagDeliveryEndpoints.HasTagsAsync(tenantId, db, cache, ct);
-        var hash = PluginInstanceFingerprint.Of(instances) + (tagging ? "t" : "");
+        var contexts = instances.Select(p => new PluginInstanceContext(
+            p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description,
+            JsonDocument.Parse(string.IsNullOrWhiteSpace(p.ConfigJson) ? "{}" : p.ConfigJson))).ToList();
+
+        // A plugin whose API is runtime data (a published Dynamic Apps model) says so through
+        // its API version; without it a publish would keep serving the old document for a day.
+        var versions = await assembler.ApiVersionsAsync(contexts, services, ct);
+        var hash = PluginInstanceFingerprint.Of(instances) + (tagging ? "t" : "")
+                   + (versions.Length > 0 ? PluginInstanceFingerprint.Hash(versions)[..12] : "");
         var cacheKey = $"t:{tenantId}:openapi:{hash}";
         var cached = await cache.GetAsync<string>(cacheKey, ct);
         if (cached is not null)
@@ -80,11 +88,7 @@ public static class OpenApiEndpoints
             return (cached, Quote(hash));
         }
 
-        var contexts = instances.Select(p => new PluginInstanceContext(
-            p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description,
-            JsonDocument.Parse(string.IsNullOrWhiteSpace(p.ConfigJson) ? "{}" : p.ConfigJson))).ToList();
-
-        var doc = assembler.Build(tenant.TenantSlug ?? tenantId.ToString(), contexts, tagging: tagging);
+        var doc = await assembler.BuildAsync(tenant.TenantSlug ?? tenantId.ToString(), contexts, services, tagging: tagging, ct: ct);
         var json = doc.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         await cache.SetAsync(cacheKey, json, TimeSpan.FromHours(24), ct);
         return (json, Quote(hash));

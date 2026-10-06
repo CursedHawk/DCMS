@@ -36,6 +36,55 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
         IReadOnlyList<PluginInstanceContext> instances,
         IReadOnlyList<string>? serverUrls = null,
         bool tagging = false)
+        => Build(tenantName, instances, (plugin, instance) => plugin.BuildOpenApiFragment(instance), serverUrls, tagging);
+
+    /// <summary>
+    /// As <see cref="Build(string, IReadOnlyList{PluginInstanceContext}, IReadOnlyList{string}?, bool)"/>,
+    /// through each plugin's <see cref="IPlugin.BuildOpenApiFragmentAsync"/>: what the hosts
+    /// serve, so a plugin whose API is runtime data is described as it is now.
+    /// </summary>
+    public async Task<JsonObject> BuildAsync(
+        string tenantName,
+        IReadOnlyList<PluginInstanceContext> instances,
+        IServiceProvider services,
+        IReadOnlyList<string>? serverUrls = null,
+        bool tagging = false,
+        CancellationToken ct = default)
+    {
+        var fragments = new Dictionary<Guid, OpenApiFragment>();
+        foreach (var instance in instances)
+        {
+            if (registry.FindPlugin(instance.PluginId) is { } plugin)
+            {
+                fragments[instance.InstanceId] = await plugin.BuildOpenApiFragmentAsync(instance, services, ct);
+            }
+        }
+        return Build(tenantName, instances, (_, instance) => fragments[instance.InstanceId], serverUrls, tagging);
+    }
+
+    /// <summary>
+    /// The instances' API versions beyond their config (<see cref="IPlugin.ApiVersionAsync"/>), as
+    /// one string for a cache key; empty when no plugin has one.
+    /// </summary>
+    public async Task<string> ApiVersionsAsync(IReadOnlyList<PluginInstanceContext> instances, IServiceProvider services, CancellationToken ct)
+    {
+        var versions = new List<string>();
+        foreach (var instance in instances.OrderBy(i => i.Slug, StringComparer.Ordinal))
+        {
+            if (registry.FindPlugin(instance.PluginId) is { } plugin && await plugin.ApiVersionAsync(instance, services, ct) is { } version)
+            {
+                versions.Add($"{instance.Slug}={version}");
+            }
+        }
+        return string.Join(",", versions);
+    }
+
+    private JsonObject Build(
+        string tenantName,
+        IReadOnlyList<PluginInstanceContext> instances,
+        Func<IPlugin, PluginInstanceContext, OpenApiFragment> fragmentOf,
+        IReadOnlyList<string>? serverUrls,
+        bool tagging)
     {
         var paths = new JsonObject();
         var tags = new JsonArray();
@@ -49,7 +98,7 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
                 continue;
             }
 
-            var fragment = plugin.BuildOpenApiFragment(instance);
+            var fragment = fragmentOf(plugin, instance);
             tags.Add(new JsonObject { ["name"] = fragment.TagName, ["description"] = fragment.TagDescription });
 
             foreach (var path in fragment.Paths)

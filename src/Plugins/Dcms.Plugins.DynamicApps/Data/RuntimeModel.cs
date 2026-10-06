@@ -1,5 +1,9 @@
 using Dcms.Plugins.DynamicApps.Api.Model;
 using Dcms.Plugins.DynamicApps.Metadata;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.Shared.Data.DynamicApps;
+using Dcms.Shared.Data.Rls;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Dcms.Plugins.DynamicApps.Data;
@@ -119,19 +123,51 @@ public sealed class RuntimeTable
 }
 
 /// <summary>The published model of the instance being served, compiled once per revision.</summary>
-public sealed class RuntimeModelProvider(ConfigurationService configuration, IMemoryCache cache)
+public sealed class RuntimeModelProvider(AppsDbContext db, IMemoryCache cache, IPluginContext context)
 {
     /// <summary>Null when nothing has been published: the data plane has no tables yet.</summary>
-    public async Task<RuntimeModel?> GetAsync(CancellationToken ct)
+    public Task<RuntimeModel?> GetAsync(CancellationToken ct) =>
+        PublishedModels.LoadAsync(db, cache, context.TenantId,
+            context.Instance?.InstanceId ?? throw new InvalidOperationException("Dynamic Apps data is per instance; this context has none."), ct);
+}
+
+/// <summary>
+/// Reads an instance's published model from its tenant and instance ids alone — for the data
+/// plane, and for the OpenAPI hook, which runs outside any plugin context. A published revision
+/// never changes, so its compiled model is cached by revision id for good.
+/// </summary>
+public static class PublishedModels
+{
+    public static async Task<RuntimeModel?> LoadAsync(AppsDbContext db, IMemoryCache cache, Guid tenantId, Guid instanceId, CancellationToken ct)
     {
-        if (await configuration.GetPublishedAsync(ct) is not { } published)
+        using var rls = RlsScope.Tenant(tenantId);
+        var revision = await (
+                from app in db.Apps
+                where app.InstanceId == instanceId
+                join r in db.Revisions on app.PublishedRevisionId equals r.Id
+                select r)
+            .AsNoTracking().FirstOrDefaultAsync(ct);
+        if (revision is null)
         {
             return null;
         }
-        return await cache.GetOrCreateAsync(("dynamic-apps:model", published.Revision.Id), entry =>
+        return await cache.GetOrCreateAsync(("dynamic-apps:model", revision.Id), entry =>
         {
             entry.SlidingExpiration = TimeSpan.FromMinutes(30);
-            return Task.FromResult(RuntimeModel.Compile(published));
-        }) ?? RuntimeModel.Compile(published);
+            var info = new RevisionInfo { Id = revision.Id, Number = revision.Number, Hash = revision.Hash, Status = "published" };
+            return Task.FromResult(RuntimeModel.Compile(new RevisionDocument(info, ConfigJson.Parse(revision.Snapshot))));
+        });
+    }
+
+    /// <summary>The published revision's hash: what changes the generated API.</summary>
+    public static async Task<string?> HashAsync(AppsDbContext db, Guid tenantId, Guid instanceId, CancellationToken ct)
+    {
+        using var rls = RlsScope.Tenant(tenantId);
+        return await (
+                from app in db.Apps
+                where app.InstanceId == instanceId
+                join r in db.Revisions on app.PublishedRevisionId equals r.Id
+                select r.Hash)
+            .FirstOrDefaultAsync(ct);
     }
 }

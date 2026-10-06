@@ -1,0 +1,139 @@
+using System.Text.Json.Nodes;
+using Dcms.Plugins.DynamicApps.Api.Model;
+using Dcms.Plugins.DynamicApps.Data;
+using Dcms.Plugins.VisitorAuth.Api;
+using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.Shared.Kernel.Abstractions;
+using Microsoft.AspNetCore.Http;
+
+namespace Dcms.Plugins.DynamicApps.Endpoints;
+
+/// <summary>
+/// The application's public API, <c>/api/{slug}/data/{table}…</c> in content-api — under
+/// <c>data/</c> because content delivery owns <c>/api/{slug}/{contentType}</c> for every plugin
+/// instance — plus <c>/api/{slug}/_model</c>: the published tables the
+/// site may read or write, as each table's public access allows. Every route reaches
+/// <see cref="RecordService"/> on the public plane, which decides what this visitor may see and
+/// do; the routes only say who the visitor is. Unpublished configuration never reaches here.
+/// </summary>
+internal static class PublicEndpoints
+{
+    private const string Public = "The app's public API: what it allows is each table's public access, enforced per call.";
+
+    public static void Map(IPluginEndpointBuilder endpoints)
+    {
+        endpoints.MapGet("/_model", async (RuntimeModelProvider models, CancellationToken ct) =>
+                await models.GetAsync(ct) is { } model ? Results.Ok(PublicApi.Model(model)) : Results.NotFound(new { error = "Nothing is published yet." }))
+            .WithoutPermission(Public);
+
+        endpoints.MapGet("/data/{table}", (string table, int? page, int? pageSize, string? sort, string? search, string? select, string? expand,
+                RecordService records, IPluginContext context, CancellationToken ct) =>
+                Run(records, context, ct, async () => Results.Ok(await records.QueryAsync(table, new RecordQuery
+                {
+                    Page = page ?? 1,
+                    PageSize = pageSize ?? 50,
+                    Search = search,
+                    Select = List(select),
+                    Expand = List(expand),
+                    Sort = List(sort).Select(s => s.StartsWith('-') ? new RecordSort(s[1..], SortDirection.Desc) : new RecordSort(s)).ToList(),
+                }, RecordPlane.Public, ct))))
+            .WithoutPermission(Public);
+
+        endpoints.MapPost("/data/{table}/query", (string table, RecordQuery query, RecordService records, IPluginContext context, CancellationToken ct) =>
+                Run(records, context, ct, async () => Results.Ok(await records.QueryAsync(table, query, RecordPlane.Public, ct))))
+            .WithoutPermission(Public)
+            .SkipAudit("A read: the query travels in the body because a filter does not fit a URL.");
+
+        endpoints.MapGet("/data/{table}/{id:guid}", (string table, Guid id, string? expand, RecordService records, IPluginContext context, CancellationToken ct) =>
+                Run(records, context, ct, async () => await records.GetAsync(table, id, List(expand), RecordPlane.Public, ct) is { } record
+                    ? Results.Ok(record)
+                    : NotFound(table, id)))
+            .WithoutPermission(Public);
+
+        endpoints.MapGet("/data/{table}/{id:guid}/{navigation}", (string table, Guid id, string navigation, int? page, int? pageSize,
+                RecordService records, IPluginContext context, CancellationToken ct) =>
+                Run(records, context, ct, async () => await records.RelatedAsync(table, id, navigation, page ?? 1, pageSize ?? 50, RecordPlane.Public, ct) is { } related
+                    ? Results.Ok(related)
+                    : NotFound(table, id)))
+            .WithoutPermission(Public);
+
+        endpoints.MapPost("/data/{table}", (string table, JsonObject values, RecordService records, IPluginContext context, ISandboxContext sandbox,
+                HttpContext http, CancellationToken ct) =>
+                Write(records, context, http, ct, async () =>
+                {
+                    if (sandbox.IsSandbox)
+                    {
+                        return Preview();
+                    }
+                    var record = await records.CreateAsync(table, values, RecordPlane.Public, ct);
+                    return Results.Created($"data/{table}/{record["id"]}", record);
+                }))
+            .WithoutPermission(Public)
+            .AuditAs("record.created");
+
+        endpoints.MapPatch("/data/{table}/{id:guid}", (string table, Guid id, JsonObject values, RecordService records, IPluginContext context,
+                ISandboxContext sandbox, HttpContext http, CancellationToken ct) =>
+                Write(records, context, http, ct, async () => sandbox.IsSandbox
+                    ? Preview()
+                    : await records.UpdateAsync(table, id, values, RecordPlane.Public, ct) is { } record ? Results.Ok(record) : NotFound(table, id)))
+            .WithoutPermission(Public)
+            .AuditAs("record.updated");
+
+        endpoints.MapDelete("/data/{table}/{id:guid}", (string table, Guid id, int? version, RecordService records, IPluginContext context,
+                ISandboxContext sandbox, HttpContext http, CancellationToken ct) =>
+                Write(records, context, http, ct, async () => sandbox.IsSandbox
+                    ? Preview()
+                    : await records.DeleteAsync(table, id, version, RecordPlane.Public, ct) ? Results.NoContent() : NotFound(table, id)))
+            .WithoutPermission(Public)
+            .AuditAs("record.deleted");
+    }
+
+    /// <summary>Says who the visitor is (when VisitorAuth is on the site and someone is signed in), then runs the call.</summary>
+    private static async Task<IResult> Run(RecordService records, IPluginContext context, CancellationToken ct, Func<Task<IResult>> handler)
+    {
+        if (context.Contracts.TryGet<IVisitorIdentity>() is { } identity)
+        {
+            records.Visitor = (await identity.GetCurrentAsync(ct)).Visitor?.Id;
+        }
+        try
+        {
+            return await RecordEndpoints.Run(handler);
+        }
+        catch (PublicAccessException e)
+        {
+            return Results.Json(new { error = e.Message }, statusCode: e.Status);
+        }
+    }
+
+
+    /// <summary>
+    /// A public write, throttled: anyone may call these, and a table open for creation must not
+    /// be a way to fill a tenant's database from one address.
+    /// </summary>
+    private static Task<IResult> Write(RecordService records, IPluginContext context, HttpContext http, CancellationToken ct, Func<Task<IResult>> handler) =>
+        Run(records, context, ct, async () =>
+        {
+            var client = records.Visitor?.ToString("N") ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var used = await context.Contracts.Get<IPluginCache>()
+                .IncrementAsync(new CacheIncrement($"writes:{context.Instance!.InstanceId:N}:{client}", 1, 3600), ct);
+            return used.Value > PublicEndpointsLimits.MaxWritesPerHour
+                ? Results.Json(new { error = "Too many changes from here for now; try again within the hour." }, statusCode: 429)
+                : await handler();
+        });
+
+    // A preview of the site is not the site: its writes would land in the real application.
+    private static IResult Preview() => Results.Json(new { error = "A site preview cannot change the app's records." }, statusCode: 403);
+
+    private static IReadOnlyList<string> List(string? csv) =>
+        string.IsNullOrWhiteSpace(csv) ? [] : csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static IResult NotFound(string table, Guid id) => Results.NotFound(new { error = $"There is no {table} record {id}." });
+}
+
+public static class PublicEndpointsLimits
+{
+    /// <summary>Writes from the public site, per app and per client (a visitor, else an address), in an hour.</summary>
+    public const int MaxWritesPerHour = 120;
+}

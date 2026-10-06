@@ -60,4 +60,20 @@ public interface IPlugin
     /// </summary>
     OpenApiFragment BuildOpenApiFragment(PluginInstanceContext instance)
         => ContentApiFragment.ForContentTypes(instance, Manifest);
+
+    /// <summary>
+    /// The fragment for a plugin whose API is runtime data rather than instance config — tables a
+    /// tenant defined, read from the plugin's own storage. Gets the request's services (tenant
+    /// already resolved). By default, <see cref="BuildOpenApiFragment"/>.
+    /// </summary>
+    Task<OpenApiFragment> BuildOpenApiFragmentAsync(PluginInstanceContext instance, IServiceProvider services, CancellationToken ct)
+        => Task.FromResult(BuildOpenApiFragment(instance));
+
+    /// <summary>
+    /// What changes the instance's API besides its config, e.g. the hash of a published model.
+    /// Part of every cache key over the generated document and clients, so they are rebuilt the
+    /// moment it changes. Null (the default) when config is all there is.
+    /// </summary>
+    Task<string?> ApiVersionAsync(PluginInstanceContext instance, IServiceProvider services, CancellationToken ct)
+        => Task.FromResult<string?>(null);
 }

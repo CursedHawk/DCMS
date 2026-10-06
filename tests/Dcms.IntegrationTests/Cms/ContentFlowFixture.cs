@@ -108,6 +108,11 @@ public sealed class ContentFlowFixture : IAsyncLifetime
             b.UseSetting("Rls:Enforce", "true");
             b.ConfigureTestServices(services =>
             {
+                if (FileErrorSink.PathFromEnvironment is { } logPath)
+                {
+                    services.AddSingleton<Serilog.Core.ILogEventSink>(new FileErrorSink(logPath));
+                }
+
                 // There is no identity server in this fixture, and minting real OIDC tokens
                 // would test OpenIddict rather than the stories path.
                 services.AddSingleton<IServiceTokenProvider>(new StubServiceTokenProvider());

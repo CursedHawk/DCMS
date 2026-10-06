@@ -21,6 +21,12 @@ public enum RecordPlane
     System,
 }
 
+/// <summary>The public site may not do this: <see cref="Status"/> is the HTTP answer (401, 403 or 404).</summary>
+public sealed class PublicAccessException(int status, string message) : Exception(message)
+{
+    public int Status { get; } = status;
+}
+
 /// <summary>A record failed validation; <see cref="Errors"/> says why, per field.</summary>
 public sealed class RecordValidationException(IReadOnlyDictionary<string, string> errors)
     : Exception("The record is not valid: " + string.Join("; ", errors.Select(e => $"{e.Key}: {e.Value}")))

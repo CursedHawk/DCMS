@@ -80,7 +80,11 @@ public sealed class DynamicAppsPlugin : IPlugin
             ContractRequirement.Of<IPluginEmail>(),
             ContractRequirement.Of<IPluginNotifications>(),
             ContractRequirement.Of<IPluginContent>(),
+            // Throttles the public API's writes.
+            ContractRequirement.Of<IPluginCache>(),
             ContractRequirement.Of<IVisitorProfiles>(optional: true),
+            // Who the signed-in site visitor is, for tables with "own records" public access.
+            ContractRequirement.Of<IVisitorIdentity>(optional: true),
         ],
         category: "Content",
         summary: "Your own tables, automations and API, versioned and AI-configurable.",
@@ -103,6 +107,23 @@ public sealed class DynamicAppsPlugin : IPlugin
             services.AddHostedService<AutomationWorker>();
         }
     }
+
+    /// <summary>Site plane, <c>/api/{slug}/…</c>: the published tables, as each one's public access allows.</summary>
+    public void MapEndpoints(IPluginEndpointBuilder endpoints) => PublicEndpoints.Map(endpoints);
+
+    /// <summary>The OpenAPI of the published model — never the draft — for the tenant's document and generated client.</summary>
+    public async Task<OpenApiFragment> BuildOpenApiFragmentAsync(PluginInstanceContext instance, IServiceProvider services, CancellationToken ct)
+    {
+        var model = await PublishedModels.LoadAsync(services.GetRequiredService<Dcms.Shared.Data.DynamicApps.AppsDbContext>(),
+            services.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(), instance.TenantId, instance.InstanceId, ct);
+        return model is null
+            ? new OpenApiFragment(instance.Name, instance.Description ?? Manifest.Description, [], new Dictionary<string, System.Text.Json.Nodes.JsonNode>())
+            : PublicApi.Fragment(instance, model, Manifest);
+    }
+
+    /// <summary>The published revision's hash: a publish changes the API, so cached documents and clients are rebuilt.</summary>
+    public Task<string?> ApiVersionAsync(PluginInstanceContext instance, IServiceProvider services, CancellationToken ct) =>
+        PublishedModels.HashAsync(services.GetRequiredService<Dcms.Shared.Data.DynamicApps.AppsDbContext>(), instance.TenantId, instance.InstanceId, ct);
 
     /// <summary>Admin plane, <c>/api/admin/plugins/{slug}/…</c>: the configuration and the records.</summary>
     public void MapAdminEndpoints(IPluginEndpointBuilder endpoints)

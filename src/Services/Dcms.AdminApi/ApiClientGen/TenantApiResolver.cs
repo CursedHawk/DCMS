@@ -39,7 +39,8 @@ public sealed class TenantApiResolver(
     CmsDbContext db,
     TenancyDbContext tenancy,
     OpenApiAssembler assembler,
-    Dcms.PluginSdk.Abstractions.IPluginCatalog catalog)
+    Dcms.PluginSdk.Abstractions.IPluginCatalog catalog,
+    IServiceProvider services)
 {
     public async Task<TenantApiSnapshot?> ResolveAsync(CancellationToken ct)
     {
@@ -72,10 +73,11 @@ public sealed class TenantApiResolver(
             JsonDocument.Parse(string.IsNullOrWhiteSpace(p.ConfigJson) ? "{}" : p.ConfigJson))).ToList();
 
         var tenantSlug = tenant.TenantSlug ?? tenantId.ToString();
-        var document = assembler.Build(tenantSlug, contexts, servers, tagging);
+        var document = await assembler.BuildAsync(tenantSlug, contexts, services, servers, tagging, ct);
+        var versions = await assembler.ApiVersionsAsync(contexts, services, ct);
 
         var inputKey = PluginInstanceFingerprint.Hash(
-            $"{PluginInstanceFingerprint.Of(instances)}|servers:{string.Join(',', servers)}|tags:{tagging}|tenant:{tenantSlug}");
+            $"{PluginInstanceFingerprint.Of(instances)}|servers:{string.Join(',', servers)}|tags:{tagging}|tenant:{tenantSlug}|api:{versions}");
 
         return new TenantApiSnapshot(
             document,

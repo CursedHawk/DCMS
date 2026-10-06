@@ -114,6 +114,10 @@ internal static class RecordEndpoints
         {
             return Results.BadRequest(new { error = e.Message, fields = e.Errors });
         }
+        catch (PublicAccessException e)
+        {
+            return Results.Json(new { error = e.Message }, statusCode: e.Status);
+        }
         catch (ContractConflictException e)
         {
             return Results.Conflict(new { error = e.Message });

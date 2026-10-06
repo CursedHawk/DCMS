@@ -112,6 +112,22 @@ the assistant and a person editing in parallel should see the same state.
   Every cross-plugin call goes through the contract proxy. A change of meaning is a new major version alongside the old.
 - **Schedules** are rows rewritten at publish: an unchanged interval keeps its next due time. Missed ticks collapse into one.
 
+### The public API and its OpenAPI come from the published model only
+
+- **Routes.**
+  - Content-api serves `/api/{slug}/data/{table}[/{id}[/{navigation}]]` and `/api/{slug}/_model`.
+  - The literal `data/` segment is required: content delivery owns `/api/{slug}/{contentType}` for every plugin instance, and a bare `{table}` parameter there is ambiguous.
+  - Every call goes through `RecordService` on the public plane.
+- **Each table's `public` access decides what the site may do with it:**
+  - **Read: none.** The table does not exist for the site (404).
+  - **Read: own.** The call needs a signed-in visitor (401) and only ever sees that visitor's records.
+  - **Writes.** Creating needs `create`, and the visitor becomes the owner. Changing or deleting needs `updateOwn` / `deleteOwn` and only works on the visitor's own records.
+  - **Fields.** Hidden fields are never served, filtered or accepted, and read-only fields only by automations.
+- **Write safeguards.** Writes from a site preview are refused. Public writes are throttled, at 120 an hour per app and client.
+- **OpenAPI.** The tenant's OpenAPI document and generated TypeScript client describe exactly that surface, tagged with the model revision.
+  - The SDK gained `IPlugin.BuildOpenApiFragmentAsync` (an async, service-aware fragment) and `IPlugin.ApiVersionAsync` (here, the published revision's hash), which both hosts add to the document's and the client's cache keys. Publishing therefore rebuilds them at once.
+  - The document is descriptive: authorization is the routes' job.
+
 ### The assistant is a client of the same control plane
 
 Configuration and record operations are **contract operations exposed to `Ai`**
@@ -134,7 +150,8 @@ accepted for now.
 ## Consequences
 
 - **A new tenant table must still be hand-registered for RLS.** Every Dynamic Apps table goes through `RlsConfigurator.TenantTables` (or `ExemptTables` for the cross-tenant outbox and schedules) like any other.
-- **OpenAPI for a plugin can no longer be built from instance config alone.** The SDK gains an async fragment and an API-version hook so publishing invalidates cached documents and generated clients.
+- **OpenAPI for a plugin can no longer be built from instance config alone.** The SDK gained an async fragment and an API-version hook so publishing invalidates cached documents and generated clients.
+- **`data` and `_model` are now reserved as a plugin's second path segment.** Matching happens before the instance is known, so the literal routes outrank content delivery's `/api/{slug}/{contentType}/{itemSlug}` for every slug. A content type named `data` would be unreachable in any plugin; no built-in plugin has one.
 - **Some limits are known and accepted for now:**
   - Sorting on unindexed jsonb fields is unindexed.
   - Row and field policies are table-level exposure plus hidden/read-only fields.

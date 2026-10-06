@@ -39,6 +39,12 @@ public sealed class RecordService(
 
     private const int MaxCascadeDepth = 5;
 
+    /// <summary>
+    /// The signed-in site visitor, set by the public routes before they call: whose "own"
+    /// records the public plane sees and may change, and who owns what they create.
+    /// </summary>
+    public Guid? Visitor { get; set; }
+
     private Guid InstanceId => context.Instance?.InstanceId
         ?? throw new InvalidOperationException("Dynamic Apps records are per instance; this context has none.");
 
@@ -49,13 +55,13 @@ public sealed class RecordService(
     public async Task<RecordPage> QueryAsync(string tableName, RecordQuery query, RecordPlane plane, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
-        var (model, table) = await TableAsync(tableName, ct);
+        var (model, table) = await TableAsync(tableName, plane, PublicOp.Read, ct);
         using var activity = Span("dcms.dynamicapp.query", model, table);
 
         // Raw SQL by construction: QueryCompiler writes only its own identifiers and operators,
         // and every value — field keys included — is a parameter. Nothing the caller sent is in
         // these strings; the limit and offset are integers it validated.
-        var compiled = new QueryCompiler(model, table, plane).Compile(query, context.TenantId, InstanceId);
+        var compiled = new QueryCompiler(model, table, plane).Compile(query, context.TenantId, InstanceId, OwnerFilter(table, plane));
         var pageSql = $"""
             SELECT r.* FROM apps.records r WHERE {compiled.Where}
             ORDER BY {compiled.OrderBy} LIMIT {compiled.Limit} OFFSET {compiled.Offset}
@@ -77,7 +83,7 @@ public sealed class RecordService(
     public async Task<JsonObject?> GetAsync(string tableName, Guid id, IReadOnlyList<string> expand, RecordPlane plane, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
-        var (model, table) = await TableAsync(tableName, ct);
+        var (model, table) = await TableAsync(tableName, plane, PublicOp.Read, ct);
         foreach (var name in expand)
         {
             if (!table.ByName.TryGetValue(name, out var m) || !m.IsLookup || !RecordCodec.Visible(m, plane))
@@ -85,7 +91,7 @@ public sealed class RecordService(
                 throw new ContractValidationException($"'{name}' is not a lookup of {table.ApiName}; only lookups expand.");
             }
         }
-        var record = await Records(table).AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
+        var record = await Records(table, plane).AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
         if (record is null)
         {
             return null;
@@ -99,15 +105,17 @@ public sealed class RecordService(
     public async Task<RecordPage?> RelatedAsync(string tableName, Guid id, string navigation, int page, int pageSize, RecordPlane plane, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
-        var (model, table) = await TableAsync(tableName, ct);
+        var (model, table) = await TableAsync(tableName, plane, PublicOp.Read, ct);
         var nav = Navigation(table, navigation);
-        if (!model.ById.TryGetValue(nav.OtherTableId, out var other))
+        if (!model.ById.TryGetValue(nav.OtherTableId, out var other) || !Readable(other, plane))
         {
-            throw new ContractValidationException($"'{navigation}' leads to a table that is not enabled.");
+            throw plane == RecordPlane.Public
+                ? new PublicAccessException(404, $"{table.ApiName} has no relationship '{navigation}'.")
+                : new ContractValidationException($"'{navigation}' leads to a table that is not enabled.");
         }
         pageSize = Math.Clamp(pageSize, 1, QueryCompiler.MaxPageSize);
         page = Math.Max(page, 1);
-        var record = await Records(table).AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
+        var record = await Records(table, plane).AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
         if (record is null)
         {
             return null;
@@ -119,17 +127,17 @@ public sealed class RecordService(
             case NavigationKind.Lookup:
                 var target = (JsonNode.Parse(record.Data)?[nav.Relationship.Id.ToString()] as JsonValue)?.GetValue<string>();
                 var targetId = Guid.TryParse(target, out var t) ? t : Guid.Empty;
-                related = Records(other).Where(r => r.Id == targetId);
+                related = Records(other, plane).Where(r => r.Id == targetId);
                 break;
             case NavigationKind.Inverse:
-                related = Records(other).Where(r => EF.Functions.JsonContains(r.Data, Pointer(nav.Relationship.Id, id)));
+                related = Records(other, plane).Where(r => EF.Functions.JsonContains(r.Data, Pointer(nav.Relationship.Id, id)));
                 break;
             default:
                 var links = db.RelationLinks.Where(l => l.InstanceId == InstanceId && l.RelationshipId == nav.Relationship.Id);
                 var ids = nav.FromSource
                     ? links.Where(l => l.SourceId == id).Select(l => l.TargetId)
                     : links.Where(l => l.TargetId == id).Select(l => l.SourceId);
-                related = Records(other).Where(r => ids.Contains(r.Id));
+                related = Records(other, plane).Where(r => ids.Contains(r.Id));
                 break;
         }
         var total = await related.CountAsync(ct);
@@ -140,10 +148,10 @@ public sealed class RecordService(
 
     // ------------------------------------------------------------------ writes
 
-    public async Task<JsonObject> CreateAsync(string tableName, JsonObject values, RecordPlane plane, CancellationToken ct, Guid? ownerVisitorId = null)
+    public async Task<JsonObject> CreateAsync(string tableName, JsonObject values, RecordPlane plane, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
-        var (model, table) = await TableAsync(tableName, ct);
+        var (model, table) = await TableAsync(tableName, plane, PublicOp.Create, ct);
         using var activity = Span("dcms.dynamicapp.mutation", model, table, "create");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
@@ -160,7 +168,8 @@ public sealed class RecordService(
             UpdatedAt = now,
             CreatedBy = Actor,
             UpdatedBy = Actor,
-            OwnerVisitorId = ownerVisitorId,
+            // A record created from the site belongs to whoever is signed in there.
+            OwnerVisitorId = plane == RecordPlane.Public ? Visitor : null,
         };
         db.Records.Add(record);
         await ClaimKeysAsync(table, record.Id, write.Data, ct);
@@ -178,11 +187,11 @@ public sealed class RecordService(
     public async Task<JsonObject?> UpdateAsync(string tableName, Guid id, JsonObject values, RecordPlane plane, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
-        var (model, table) = await TableAsync(tableName, ct);
+        var (model, table) = await TableAsync(tableName, plane, PublicOp.Update, ct);
         using var activity = Span("dcms.dynamicapp.mutation", model, table, "update");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-        var record = await Records(table).FirstOrDefaultAsync(r => r.Id == id, ct);
+        var record = await Records(table, plane, owned: true).FirstOrDefaultAsync(r => r.Id == id, ct);
         if (record is null)
         {
             return null;
@@ -199,11 +208,11 @@ public sealed class RecordService(
     public async Task<bool> DeleteAsync(string tableName, Guid id, int? expectedVersion, RecordPlane plane, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
-        var (model, table) = await TableAsync(tableName, ct);
+        var (model, table) = await TableAsync(tableName, plane, PublicOp.Delete, ct);
         using var activity = Span("dcms.dynamicapp.mutation", model, table, "delete");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-        var record = await Records(table).FirstOrDefaultAsync(r => r.Id == id, ct);
+        var record = await Records(table, plane, owned: true).FirstOrDefaultAsync(r => r.Id == id, ct);
         if (record is null)
         {
             return false;
@@ -224,7 +233,7 @@ public sealed class RecordService(
     {
         Bounded(request.Ids);
         using var rls = RlsScope.Tenant(context.TenantId);
-        var (model, table) = await TableAsync(tableName, ct);
+        var (model, table) = await TableAsync(tableName, RecordPlane.Admin, PublicOp.Read, ct);
         using var activity = Span("dcms.dynamicapp.mutation", model, table, "bulk-update");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
@@ -244,7 +253,7 @@ public sealed class RecordService(
     {
         Bounded(request.Ids);
         using var rls = RlsScope.Tenant(context.TenantId);
-        var (model, table) = await TableAsync(tableName, ct);
+        var (model, table) = await TableAsync(tableName, RecordPlane.Admin, PublicOp.Read, ct);
         using var activity = Span("dcms.dynamicapp.mutation", model, table, "bulk-delete");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
@@ -266,7 +275,7 @@ public sealed class RecordService(
     public async Task<bool> LinkAsync(string tableName, Guid id, string navigation, Guid targetId, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
-        var (model, table) = await TableAsync(tableName, ct);
+        var (model, table) = await TableAsync(tableName, RecordPlane.Admin, PublicOp.Read, ct);
         var nav = ManyToMany(table, navigation);
         var other = model.ById.GetValueOrDefault(nav.OtherTableId)
                     ?? throw new ContractValidationException($"'{navigation}' leads to a table that is not enabled.");
@@ -300,7 +309,7 @@ public sealed class RecordService(
     public async Task<bool> UnlinkAsync(string tableName, Guid id, string navigation, Guid targetId, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
-        var (model, table) = await TableAsync(tableName, ct);
+        var (model, table) = await TableAsync(tableName, RecordPlane.Admin, PublicOp.Read, ct);
         var nav = ManyToMany(table, navigation);
         var (source, target) = nav.FromSource ? (id, targetId) : (targetId, id);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -493,13 +502,13 @@ public sealed class RecordService(
         foreach (var name in expand.Distinct())
         {
             var member = table.ByName[name];
-            if (!model.ById.TryGetValue(member.Lookup!.TargetTableId, out var target))
+            if (!model.ById.TryGetValue(member.Lookup!.TargetTableId, out var target) || !Readable(target, plane))
             {
-                continue;
+                continue; // left as the id: the site may not read that table
             }
             var ids = rows.Select(r => (JsonNode.Parse(r.Data)?[member.Key] as JsonValue)?.GetValue<string>())
                 .Where(s => s is not null).Select(s => Guid.Parse(s!)).Distinct().ToList();
-            var targets = await Records(target).AsNoTracking().Where(r => ids.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
+            var targets = await Records(target, plane).AsNoTracking().Where(r => ids.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
             foreach (var item in items)
             {
                 if (item[name] is JsonValue v && Guid.TryParse(v.GetValue<string>(), out var id) && targets.TryGetValue(id, out var hit))
@@ -510,18 +519,76 @@ public sealed class RecordService(
         }
     }
 
-    private async Task<(RuntimeModel Model, RuntimeTable Table)> TableAsync(string tableName, CancellationToken ct)
+    private async Task<(RuntimeModel Model, RuntimeTable Table)> TableAsync(string tableName, RecordPlane plane, PublicOp op, CancellationToken ct)
     {
-        var model = await models.GetAsync(ct)
-                    ?? throw new ContractValidationException("This application has no published tables yet.");
-        var table = model.Table(tableName) ?? throw new ContractValidationException($"There is no table '{tableName}'.");
-        return (model, table);
+        var model = await models.GetAsync(ct);
+        var table = model?.Table(tableName);
+        if (table is null)
+        {
+            throw plane == RecordPlane.Public
+                ? new PublicAccessException(404, $"There is no table '{tableName}'.")
+                : new ContractValidationException(model is null ? "This application has no published tables yet." : $"There is no table '{tableName}'.");
+        }
+        if (plane == RecordPlane.Public)
+        {
+            Allow(table, op);
+        }
+        return (model!, table);
     }
 
     private IQueryable<AppRecord> Records(RuntimeTable table)
     {
         var instanceId = InstanceId;
         return db.Records.Where(r => r.InstanceId == instanceId && r.TableId == table.Id);
+    }
+
+    /// <summary>The records the plane may see; on the public site with <paramref name="owned"/> (a change), only the visitor's own.</summary>
+    private IQueryable<AppRecord> Records(RuntimeTable table, RecordPlane plane, bool owned = false)
+    {
+        var records = Records(table);
+        if (plane == RecordPlane.Public && (owned || table.Def.Public.Read == PublicRead.Own))
+        {
+            var visitor = Visitor;
+            records = records.Where(r => visitor != null && r.OwnerVisitorId == visitor);
+        }
+        return records;
+    }
+
+    private Guid? OwnerFilter(RuntimeTable table, RecordPlane plane) =>
+        plane == RecordPlane.Public && table.Def.Public.Read == PublicRead.Own ? Visitor : null;
+
+    private static bool Readable(RuntimeTable table, RecordPlane plane) =>
+        plane != RecordPlane.Public || table.Def.Public.Read != PublicRead.None;
+
+    private enum PublicOp { Read, Create, Update, Delete }
+
+    /// <summary>
+    /// What the public site may do with a table, decided by its public access. A table it may
+    /// not read does not exist as far as the site can tell (404); one it may read but not write
+    /// says so (403); "own" access without a signed-in visitor asks for one (401).
+    /// </summary>
+    private void Allow(RuntimeTable table, PublicOp op)
+    {
+        var access = table.Def.Public;
+        var readable = access.Read != PublicRead.None;
+        var allowed = op switch
+        {
+            PublicOp.Read => readable,
+            PublicOp.Create => access.Create,
+            PublicOp.Update => access.UpdateOwn,
+            _ => access.DeleteOwn,
+        };
+        if (!allowed)
+        {
+            throw readable || access.Create
+                ? new PublicAccessException(403, $"The site may not {op.ToString().ToLowerInvariant()} {table.ApiName} records.")
+                : new PublicAccessException(404, $"There is no table '{table.ApiName}'.");
+        }
+        var needsVisitor = op is PublicOp.Update or PublicOp.Delete || (op == PublicOp.Read && access.Read == PublicRead.Own);
+        if (needsVisitor && Visitor is null)
+        {
+            throw new PublicAccessException(401, $"Sign in to {op.ToString().ToLowerInvariant()} your {table.ApiName} records.");
+        }
     }
 
     private static RuntimeNavigation Navigation(RuntimeTable table, string name) =>
