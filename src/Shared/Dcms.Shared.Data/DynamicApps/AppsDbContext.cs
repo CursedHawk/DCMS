@@ -212,6 +212,85 @@ public sealed class AppOutboxMessage : TenantEntity
     public string? ContextJson { get; set; }
 }
 
+public enum FlowRunStatus
+{
+    /// <summary>Waiting for a worker, or for its next retry.</summary>
+    Pending,
+    Running,
+    Succeeded,
+
+    /// <summary>The condition was false; nothing ran.</summary>
+    Skipped,
+
+    /// <summary>A step failed and its retries are spent.</summary>
+    Failed,
+
+    /// <summary>Stopped by a limit (depth, steps, writes, duration, cascade) or by hand.</summary>
+    Terminated,
+}
+
+/// <summary>
+/// One execution of a flow (ADR 0021), the source of truth for its state: the database is the
+/// queue — a worker claims a pending run with a lease — and the history. Pinned to the revision
+/// and flow hash it was created for, so a publish never changes what a queued run does.
+/// </summary>
+public sealed class FlowRun : TenantEntity
+{
+    public Guid InstanceId { get; set; }
+    public Guid FlowId { get; set; }
+    public string FlowApiName { get; set; } = string.Empty;
+    public int Revision { get; set; }
+    public string FlowHash { get; set; } = string.Empty;
+
+    /// <summary>The event that started it; with the flow and its hash, what makes a delivery idempotent.</summary>
+    public Guid TriggerEventId { get; set; }
+
+    // The trigger and run data hold tenant records; the run's own audit entry names it.
+    [AuditIgnore]
+    public string TriggerJson { get; set; } = "{}";
+
+    public FlowRunStatus Status { get; set; } = FlowRunStatus.Pending;
+    public int Attempts { get; set; }
+    public DateTimeOffset NextAttemptAt { get; set; } = DateTimeOffset.UtcNow;
+
+    /// <summary>While running: when the claiming worker's lease ends and another may take the run over.</summary>
+    public DateTimeOffset? LeaseUntil { get; set; }
+
+    public Guid CorrelationId { get; set; }
+    public Guid? CausationId { get; set; }
+    public int Depth { get; set; }
+    public int Writes { get; set; }
+    public string? Error { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? StartedAt { get; set; }
+    public DateTimeOffset? FinishedAt { get; set; }
+}
+
+/// <summary>One attempt at one step of a run: what went in, what came out, how long it took.</summary>
+[AuditIgnore]
+public sealed class FlowRunStep : TenantEntity
+{
+    public Guid RunId { get; set; }
+    public string StepId { get; set; } = string.Empty;
+    public int Attempt { get; set; }
+    public string Action { get; set; } = string.Empty;
+    public FlowRunStatus Status { get; set; }
+    public string? InputJson { get; set; }
+    public string? OutputJson { get; set; }
+    public string? Error { get; set; }
+    public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? FinishedAt { get; set; }
+}
+
+/// <summary>A scheduled flow's next due time; rewritten from the configuration at every publish.</summary>
+public sealed class FlowSchedule : TenantEntity
+{
+    public Guid InstanceId { get; set; }
+    public Guid FlowId { get; set; }
+    public int EveryMinutes { get; set; }
+    public DateTimeOffset NextRunAt { get; set; }
+}
+
 /// <summary>Owns the "apps" schema: the Dynamic Apps plugin's applications (ADR 0021).</summary>
 public class AppsDbContext(DbContextOptions<AppsDbContext> options, ITenantContext tenantContext) : DbContext(options)
 {
@@ -227,6 +306,9 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options, ITenantConte
     public DbSet<AppRelationLink> RelationLinks => Set<AppRelationLink>();
     public DbSet<AppUniqueKey> UniqueKeys => Set<AppUniqueKey>();
     public DbSet<AppOutboxMessage> Outbox => Set<AppOutboxMessage>();
+    public DbSet<FlowRun> FlowRuns => Set<FlowRun>();
+    public DbSet<FlowRunStep> FlowRunSteps => Set<FlowRunStep>();
+    public DbSet<FlowSchedule> FlowSchedules => Set<FlowSchedule>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -309,6 +391,46 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options, ITenantConte
             e.Property(m => m.LastError).HasMaxLength(2000);
             e.HasIndex(m => m.OccurredAt).HasFilter("\"SentAt\" IS NULL");
             e.HasIndex(m => m.SentAt);
+        });
+
+        builder.Entity<FlowRun>(e =>
+        {
+            e.ToTable("flow_runs");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.FlowApiName).HasMaxLength(64);
+            e.Property(r => r.FlowHash).HasMaxLength(64);
+            e.Property(r => r.TriggerJson).HasColumnType("jsonb");
+            e.Property(r => r.Status).HasConversion<string>().HasMaxLength(16);
+            e.Property(r => r.Error).HasMaxLength(4000);
+            e.HasIndex(r => new { r.TenantId, r.InstanceId, r.TriggerEventId, r.FlowId, r.FlowHash }).IsUnique();
+            e.HasIndex(r => new { r.TenantId, r.InstanceId, r.CreatedAt });
+            e.HasIndex(r => new { r.TenantId, r.CorrelationId });
+            // The worker's claim: runnable runs, oldest due first, across tenants.
+            e.HasIndex(r => r.NextAttemptAt).HasFilter("\"Status\" IN ('Pending', 'Running')");
+            e.HasQueryFilter(r => r.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<FlowRunStep>(e =>
+        {
+            e.ToTable("flow_run_steps");
+            e.HasKey(s => s.Id);
+            e.Property(s => s.StepId).HasMaxLength(64);
+            e.Property(s => s.Action).HasMaxLength(128);
+            e.Property(s => s.Status).HasConversion<string>().HasMaxLength(16);
+            e.Property(s => s.InputJson).HasColumnType("jsonb");
+            e.Property(s => s.OutputJson).HasColumnType("jsonb");
+            e.Property(s => s.Error).HasMaxLength(4000);
+            e.HasIndex(s => new { s.TenantId, s.RunId, s.StepId, s.Attempt }).IsUnique();
+            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<FlowSchedule>(e =>
+        {
+            e.ToTable("flow_schedules");
+            e.HasKey(s => s.Id);
+            e.HasIndex(s => new { s.TenantId, s.InstanceId, s.FlowId }).IsUnique();
+            e.HasIndex(s => s.NextRunAt);
+            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
         });
 
         builder.Entity<AppUniqueKey>(e =>

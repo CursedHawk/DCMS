@@ -22,6 +22,7 @@ public static partial class ConfigValidator
     public const int MaxIndexFields = 5;
     public const int MaxDisplayName = 120;
     public const int MaxTextLength = 100_000;
+    public const int MaxStepInputChars = 16_000;
 
     /// <summary>Names every record has, which a field or relationship may not take.</summary>
     public static readonly IReadOnlySet<string> ReservedNames = new HashSet<string>(StringComparer.Ordinal)
@@ -229,6 +230,8 @@ public static partial class ConfigValidator
             }
         }
 
+        CheckFlows(config, tables, Error);
+
         if (published is not null)
         {
             CheckAgainstPublished(config, published, Error, Warn);
@@ -239,6 +242,136 @@ public static partial class ConfigValidator
             .ThenBy(i => i.Path, StringComparer.Ordinal)
             .ThenBy(i => i.Code, StringComparer.Ordinal)
             .ToList();
+    }
+
+    /// <summary>What a flow's conditions and inputs may read.</summary>
+    public static readonly IReadOnlySet<string> FlowVariables = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "event", "row", "previous", "changedFields", "input", "steps", "run",
+    };
+
+    private static readonly string[] RowEvents = ["row.created", "row.updated", "row.deleted"];
+    private static readonly string[] RelationEvents = ["relation.created", "relation.deleted"];
+
+    [GeneratedRegex("^[a-z][a-z0-9_]{0,40}$")]
+    private static partial Regex StepIdPattern();
+
+    [GeneratedRegex("^flow\\.event\\.[a-z][a-z0-9_.-]{0,62}$")]
+    private static partial Regex FlowEventPattern();
+
+    private static void CheckFlows(AppConfig config, Dictionary<Guid, TableDef> tables, Action<string, string, string> error)
+    {
+        Duplicates(config.Flows.Select(f => f.ApiName), "flows", "flow", error);
+        var relationships = config.Relationships.DistinctBy(r => r.Id).ToDictionary(r => r.Id);
+        foreach (var flow in config.Flows)
+        {
+            var path = $"flows.{flow.ApiName}";
+            Name(flow.ApiName, path, error);
+            Label(flow.DisplayName, path, error);
+
+            var trigger = flow.Trigger;
+            var isRow = RowEvents.Contains(trigger.Event);
+            var isRelation = RelationEvents.Contains(trigger.Event);
+            var known = isRow || isRelation || trigger.Event is "revision.published" or "schedule" or "manual"
+                        || FlowEventPattern().IsMatch(trigger.Event);
+            if (!known)
+            {
+                error("invalid-trigger", path, $"'{trigger.Event}' is not a trigger: use row.created/updated/deleted, relation.created/deleted, revision.published, flow.event.<name>, schedule or manual.");
+            }
+            if (isRow != (trigger.TableId is not null))
+            {
+                error("invalid-trigger", path, isRow ? "A row trigger names its table." : "Only a row trigger names a table.");
+            }
+            else if (trigger.TableId is { } tableId && !tables.ContainsKey(tableId))
+            {
+                error("unknown-table", path, $"The trigger's table {tableId} does not exist.");
+            }
+            if (trigger.RelationshipId is { } relationshipId
+                && (!isRelation || !relationships.TryGetValue(relationshipId, out var link) || link.Kind != RelationshipKind.ManyToMany))
+            {
+                error("invalid-trigger", path, "Only a relation trigger names a relationship, and it must be a many-to-many one.");
+            }
+            if (trigger.ChangedFields.Count > 0)
+            {
+                var members = trigger.TableId is { } t && tables.TryGetValue(t, out var table)
+                    ? table.Fields.Select(f => f.Id).Concat(config.Relationships.Where(r => r.SourceTableId == t).Select(r => r.Id)).ToHashSet()
+                    : [];
+                if (trigger.Event != "row.updated" || trigger.ChangedFields.Any(f => !members.Contains(f)))
+                {
+                    error("invalid-trigger", path, "changedFields applies to row.updated and names fields or lookups of the trigger's table.");
+                }
+            }
+            if ((trigger.Event == "schedule") != (trigger.EveryMinutes is not null)
+                || trigger.EveryMinutes is < Automation.AutomationLimits.MinScheduleMinutes or > Automation.AutomationLimits.MaxScheduleMinutes)
+            {
+                error("invalid-trigger", path,
+                    $"A schedule trigger runs every {Automation.AutomationLimits.MinScheduleMinutes} to {Automation.AutomationLimits.MaxScheduleMinutes} minutes; other triggers have no interval.");
+            }
+
+            Expression(flow.Condition, $"{path}.condition", error);
+            if (flow.Steps.Count is 0 or > Automation.AutomationLimits.MaxSteps)
+            {
+                error("invalid-flow", path, $"A flow has 1 to {Automation.AutomationLimits.MaxSteps} steps.");
+            }
+            foreach (var dup in flow.Steps.GroupBy(s => s.Id).Where(g => g.Count() > 1))
+            {
+                error("duplicate-step", path, $"Step id '{dup.Key}' is used more than once.");
+            }
+            foreach (var step in flow.Steps)
+            {
+                var stepPath = $"{path}.{step.Id}";
+                if (!StepIdPattern().IsMatch(step.Id))
+                {
+                    error("invalid-step", stepPath, $"'{step.Id}' is not a valid step id: lowercase snake_case, so later steps can read steps.{step.Id}.");
+                }
+                if (!Automation.ActionCatalog.Keys.Contains(step.Action))
+                {
+                    error("unknown-action", stepPath, $"'{step.Action}' is not an action; actions are named with their major version, e.g. records.create@1.");
+                }
+                Expression(step.Condition, $"{stepPath}.condition", error);
+                if (step.Input.ToJsonString().Length > MaxStepInputChars)
+                {
+                    error("invalid-step", stepPath, $"A step's input is at most {MaxStepInputChars:N0} characters.");
+                }
+                try
+                {
+                    foreach (var hole in Automation.Expressions.TemplateExpressions(step.Input))
+                    {
+                        Expression(hole, $"{stepPath}.input", error);
+                    }
+                }
+                catch (Automation.ExpressionException e)
+                {
+                    error("invalid-expression", $"{stepPath}.input", e.Message);
+                }
+                if (step.Action == "flow.invoke@1" && step.Input["flow"] is JsonValue target && target.TryGetValue<string>(out var name)
+                    && !name.Contains("{{", StringComparison.Ordinal)
+                    && config.Flows.FirstOrDefault(f => f.ApiName == name) is not { Trigger.Event: "manual" })
+                {
+                    error("invalid-step", stepPath, $"flow.invoke starts a flow with a manual trigger; '{name}' is not one.");
+                }
+            }
+        }
+    }
+
+    private static void Expression(string? source, string path, Action<string, string, string> error)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return;
+        }
+        try
+        {
+            var unknown = Automation.Expressions.Variables(Automation.Expressions.Parse(source)).Where(v => !FlowVariables.Contains(v)).Distinct().ToList();
+            if (unknown.Count > 0)
+            {
+                error("invalid-expression", path, $"Unknown name(s) {string.Join(", ", unknown)}; an expression may read {string.Join(", ", FlowVariables)}.");
+            }
+        }
+        catch (Automation.ExpressionException e)
+        {
+            error("invalid-expression", path, e.Message);
+        }
     }
 
     private static void CheckField(TableDef table, FieldDef field, Dictionary<Guid, ChoiceSetDef> choiceSets, Action<string, string, string> error)

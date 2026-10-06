@@ -10,7 +10,7 @@ namespace Dcms.Plugins.DynamicApps.Metadata;
 /// </summary>
 public static class ConfigDiff
 {
-    private static readonly string[] KindOrder = ["settings", "choiceSet", "table", "field", "relationship", "index", "view"];
+    private static readonly string[] KindOrder = ["settings", "choiceSet", "table", "field", "relationship", "index", "view", "flow"];
     private static readonly string[] OpOrder = ["create", "update", "delete"];
 
     public static IReadOnlyList<ConfigChange> Between(AppConfig before, AppConfig after)
@@ -142,6 +142,10 @@ public static class ConfigDiff
         foreach (var view in config.Views)
         {
             Add(items, "view", view.Id, $"{TableName(view.TableId)}.{view.ApiName}", Node(view));
+        }
+        foreach (var flow in config.Flows)
+        {
+            Add(items, "flow", flow.Id, $"flows.{flow.ApiName}", Node(flow));
         }
         return items;
     }

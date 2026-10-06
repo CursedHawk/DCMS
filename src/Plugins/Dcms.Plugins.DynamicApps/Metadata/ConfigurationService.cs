@@ -250,6 +250,7 @@ public sealed class ConfigurationService(
         app.PublishedRevisionId = draft.Id;
         app.DraftRevisionId = null;
         Published(app, draft, previous);
+        await SyncSchedulesAsync(config, ct);
 
         Declare(draft, "revision.published").With("previous", previous?.Number);
         await db.SaveChangesAsync(ct);
@@ -327,6 +328,7 @@ public sealed class ConfigurationService(
         app.PublishedRevisionId = revision.Id;
         await RecordChangesAsync(revision, ConfigDiff.Between(liveConfig, config), source, ct);
         Published(app, revision, live);
+        await SyncSchedulesAsync(config, ct);
 
         Declare(revision, "revision.rolled_back").With("from", live.Number).With("to", target.Number);
         await db.SaveChangesAsync(ct);
@@ -492,6 +494,40 @@ public sealed class ConfigurationService(
         db.Revisions.Add(draft);
         app.DraftRevisionId = draft.Id;
         return draft;
+    }
+
+    /// <summary>
+    /// Makes the schedule rows match the configuration going live, in the publish's transaction.
+    /// A schedule whose interval did not change keeps its next due time, so publishing an
+    /// unrelated change neither skips nor repeats a tick.
+    /// </summary>
+    private async Task SyncSchedulesAsync(AppConfig config, CancellationToken ct)
+    {
+        var instanceId = InstanceId;
+        var wanted = config.Flows
+            .Where(f => f.Enabled && f.Trigger.Event == "schedule" && f.Trigger.EveryMinutes is > 0)
+            .ToDictionary(f => f.Id, f => f.Trigger.EveryMinutes!.Value);
+        var existing = await db.FlowSchedules.Where(s => s.InstanceId == instanceId).ToListAsync(ct);
+        foreach (var schedule in existing)
+        {
+            if (!wanted.TryGetValue(schedule.FlowId, out var every))
+            {
+                db.FlowSchedules.Remove(schedule);
+            }
+            else if (schedule.EveryMinutes != every)
+            {
+                schedule.EveryMinutes = every;
+                schedule.NextRunAt = clock.GetUtcNow().AddMinutes(every);
+            }
+        }
+        foreach (var (flowId, every) in wanted.Where(w => existing.All(s => s.FlowId != w.Key)))
+        {
+            db.FlowSchedules.Add(new FlowSchedule
+            {
+                Id = Guid.NewGuid(), InstanceId = instanceId, FlowId = flowId, EveryMinutes = every,
+                NextRunAt = clock.GetUtcNow().AddMinutes(every),
+            });
+        }
     }
 
     /// <summary>The <c>revision.published</c> event, in the publish's own transaction.</summary>

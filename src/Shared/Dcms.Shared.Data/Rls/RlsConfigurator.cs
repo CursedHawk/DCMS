@@ -103,6 +103,11 @@ public static class RlsConfigurator
         ("apps", "records"),
         ("apps", "relation_links"),
         ("apps", "unique_keys"),
+        // Automation runs hold the records that triggered them. The worker reads across tenants
+        // under RlsScope.Platform(), the explicit widening, rather than these being exempt.
+        ("apps", "flow_runs"),
+        ("apps", "flow_run_steps"),
+        ("apps", "flow_schedules"),
     ];
 
     /// <summary>

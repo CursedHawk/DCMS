@@ -46,7 +46,7 @@ audit outbox) and adds a second pool, with no isolation gain over RLS.
 own migration:
 - configuration: `apps`, `revisions`, `changes`;
 - records: `records`, `relation_links`, `unique_keys`;
-- automation: `outbox`, `flow_runs`, `flow_run_steps`, `schedules`.
+- automation: `outbox`, `flow_runs`, `flow_run_steps`, `flow_schedules`.
 
 ### Configuration revisions: one canonical jsonb snapshot per revision
 
@@ -91,14 +91,26 @@ the assistant and a person editing in parallel should see the same state.
 - **Routes.** Admin routes live at `/_records/{table}` (`_data` is the platform's data-set surface, ADR 0018).
 - **Published model only.** Draft metadata never reaches the data plane: the runtime, the public API and OpenAPI read the **published** revision only.
 
-### Automation: data, executed by the plugin's own engine jobs
+### Automation: data, run by the plugin's own worker over a database queue
 
-- **Flows are configuration.** Conditions and inputs use **our own small CEL-like expression language**: a hand-written parser, a whitelisted function set, step and size limits, no reflection, no I/O. A third-party engine would need sandbox vetting; JSON-logic is hostile to people.
+- **Flows are configuration.** A trigger, a condition and steps, each step one versioned action (`id@major`) with an input of `{{ expression }}` templates. Conditions and inputs use **our own small CEL-like expression language**: a hand-written parser, a whitelisted function set, no reflection, no I/O. It is bounded everywhere: source length, nodes, nesting, evaluation steps, string size, and the rendered size of a step's input. Reads never copy, so naming a large record repeatedly costs nothing. A third-party engine would need sandbox vetting; JSON-logic is hostile to people.
 - **Every mutation writes an event envelope to `apps.outbox` in its own transaction.**
-- **A dispatcher in the style of `OutboxDispatcher` routes envelopes to matching flows.** It records idempotent `flow_runs` and enqueues the plugin's static `automation-run` job. That reuses `PluginHandlerRunner`'s tenant scope, enabled-instance check, audit flush and JetStream retries.
-- **Delivery is at least once.** Runs are deduplicated on `(event, flow, flowHash)`, steps on `(run, step, attempt)`, and side effects carry idempotency keys.
-- **Explicit limits:** depth, steps, duration, writes and triggered flows per correlation.
-- **Actions are versioned** `id@major` from a catalog of native record actions, platform contracts (`dcms.email`, `dcms.notifications`, `dcms.content`, …), `visitors.profiles` and `automation.actions@1` providers. Every cross-plugin call goes through the contract proxy.
+- **One background worker in admin-api** routes outbox events to the flows they trigger (under the revision the event happened in), starts due schedules, and claims and executes runs.
+- **The database is the queue.** `apps.flow_runs` rows are claimed with `FOR UPDATE SKIP LOCKED` and a lease, so replicas share the work and a crashed worker's runs are picked up again.
+  - The PLUGIN_JOBS JetStream queue was rejected for this: 4 in flight across all plugins, a 2-minute dedupe window, a 1-day delay cap, and run state in two places.
+  - Each run executes inside `PluginHandlerRunner` (tenant scope, enabled-instance check, audit flush) and is pinned to its revision and flow hash, so a publish never changes what a queued run does.
+- **Delivery is at least once.** Runs are deduplicated on `(event, flow, flow hash)` by a unique index. A retry resumes after the steps that already succeeded. Side effects carry the step's idempotency key (email and notification dedupe keys).
+- **Failures.** Transient failures retry with backoff up to 3 attempts. Bad input, a refused record or a conflict fail at once. A failed or terminated run can be retried by hand.
+- **Explicit limits.** Depth 5, at most 20 runs per correlation, 50 steps, 100 record writes and 60 seconds per run. A run refused by a limit is recorded as terminated, with the reason, rather than silently dropped.
+- **Actions** come from a fixed catalog:
+  - records: create, update, delete, lookup, query;
+  - `flow.invoke` (manual flows only) and `event.publish`;
+  - `dcms.email.send` and `dcms.notifications.raise`;
+  - `content.get` and `content.list`;
+  - `visitor.lookup` through `visitors.profiles`.
+
+  Every cross-plugin call goes through the contract proxy. A change of meaning is a new major version alongside the old.
+- **Schedules** are rows rewritten at publish: an unchanged interval keeps its next due time. Missed ticks collapse into one.
 
 ### The assistant is a client of the same control plane
 

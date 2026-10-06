@@ -19,6 +19,7 @@ public sealed record AppConfig
     public IReadOnlyList<RelationshipDef> Relationships { get; init; } = [];
     public IReadOnlyList<ChoiceSetDef> ChoiceSets { get; init; } = [];
     public IReadOnlyList<ViewDef> Views { get; init; } = [];
+    public IReadOnlyList<FlowDef> Flows { get; init; } = [];
 }
 
 public sealed record AppSettings
@@ -239,6 +240,64 @@ public sealed record ViewSort
 {
     public Guid FieldId { get; init; }
     public bool Descending { get; init; }
+}
+
+/// <summary>
+/// An automation: when its trigger fires and its condition holds, its steps run in order, each
+/// one action. Data, not code — conditions and inputs are written in the flow expression
+/// language, and actions come from a fixed, versioned catalog.
+/// </summary>
+public sealed record FlowDef
+{
+    public Guid Id { get; init; }
+
+    /// <summary>Unique in the app; how other flows invoke it.</summary>
+    public string ApiName { get; init; } = string.Empty;
+
+    public string DisplayName { get; init; } = string.Empty;
+    public string? Description { get; init; }
+    public bool Enabled { get; init; } = true;
+    public FlowTrigger Trigger { get; init; } = new();
+
+    /// <summary>An expression; when it is false the run ends as skipped. Sees <c>event</c>, <c>row</c>, <c>previous</c>, <c>changedFields</c>, <c>input</c>.</summary>
+    public string? Condition { get; init; }
+
+    public IReadOnlyList<FlowStep> Steps { get; init; } = [];
+}
+
+/// <remarks>
+/// <see cref="Event"/>: <c>row.created</c>, <c>row.updated</c>, <c>row.deleted</c> (with
+/// <see cref="TableId"/>); <c>relation.created</c>, <c>relation.deleted</c> (optionally
+/// <see cref="RelationshipId"/>); <c>revision.published</c>; <c>flow.event.{name}</c> (published by
+/// another flow); <c>schedule</c> (with <see cref="EveryMinutes"/>); <c>manual</c> (run by a person,
+/// or invoked by another flow).
+/// </remarks>
+public sealed record FlowTrigger
+{
+    public string Event { get; init; } = "manual";
+    public Guid? TableId { get; init; }
+    public Guid? RelationshipId { get; init; }
+
+    /// <summary><c>row.updated</c> only: fire when one of these fields or lookups changed. Empty means any change.</summary>
+    public IReadOnlyList<Guid> ChangedFields { get; init; } = [];
+
+    /// <summary><c>schedule</c> only: how often, in minutes.</summary>
+    public int? EveryMinutes { get; init; }
+}
+
+public sealed record FlowStep
+{
+    /// <summary>snake_case, unique in the flow; later steps read its output as <c>steps.{id}</c>.</summary>
+    public string Id { get; init; } = string.Empty;
+
+    /// <summary>A catalog action with its major version, e.g. <c>records.create@1</c>.</summary>
+    public string Action { get; init; } = string.Empty;
+
+    /// <summary>The action's input; strings may hold <c>{{ expression }}</c> templates.</summary>
+    public JsonObject Input { get; init; } = [];
+
+    /// <summary>An expression; when it is false the step is skipped.</summary>
+    public string? Condition { get; init; }
 }
 
 /// <summary>Enums on the wire in camelCase ("manyToOne", "longText"), as the configuration documents use.</summary>

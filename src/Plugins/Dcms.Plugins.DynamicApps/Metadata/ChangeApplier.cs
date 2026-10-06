@@ -20,7 +20,7 @@ public static class ChangeApplier
     public const int MaxOperations = 200;
 
     private static readonly string[] Ops = ["create", "update", "delete"];
-    private static readonly string[] Types = ["settings", "table", "field", "index", "relationship", "choiceSet", "view"];
+    private static readonly string[] Types = ["settings", "table", "field", "index", "relationship", "choiceSet", "view", "flow"];
 
     /// <summary>
     /// The most a change set may carry, and the largest configuration document, in serialized
@@ -84,6 +84,7 @@ public static class ChangeApplier
         private JsonArray Relationships => Array(doc, "relationships");
         private JsonArray ChoiceSets => Array(doc, "choiceSets");
         private JsonArray Views => Array(doc, "views");
+        private JsonArray Flows => Array(doc, "flows");
 
         /// <summary>Applies one operation; returns what it created or patched, and the shape that must still hold.</summary>
         public (JsonObject Node, Type Shape)? Apply(ChangeOperation op)
@@ -117,6 +118,7 @@ public static class ChangeApplier
             ["relationship"] = typeof(RelationshipDef),
             ["choiceSet"] = typeof(ChoiceSetDef),
             ["view"] = typeof(ViewDef),
+            ["flow"] = typeof(FlowDef),
         };
 
         // ---------------------------------------------------------------- create
@@ -173,6 +175,11 @@ public static class ChangeApplier
                     ResolveViewMembers(value, TableById(value["tableId"]));
                     Views.Add(value);
                     break;
+                case "flow":
+                    AssignId(value);
+                    ResolveTrigger(value);
+                    Flows.Add(value);
+                    break;
                 default:
                     throw Invalid("settings always exist; update them instead.");
             }
@@ -222,6 +229,19 @@ public static class ChangeApplier
                     break;
                 case "choiceSet":
                     existing = ChoiceSet(Require(target));
+                    break;
+                case "flow":
+                    existing = Flow(Require(target));
+                    if (patch["trigger"] is JsonObject trigger)
+                    {
+                        // Merged first and resolved against the table the trigger will have, then
+                        // replaced whole, so a key the patch nulls out is really gone.
+                        var holder = new JsonObject { ["trigger"] = existing["trigger"]?.DeepClone() ?? new JsonObject() };
+                        MergePatch(holder["trigger"]!.AsObject(), trigger);
+                        ResolveTrigger(holder);
+                        existing["trigger"] = holder["trigger"]!.DeepClone();
+                        patch.Remove("trigger");
+                    }
                     break;
                 default:
                     existing = View(Require(target));
@@ -288,6 +308,9 @@ public static class ChangeApplier
                 case "view":
                     Views.Remove(View(target));
                     break;
+                case "flow":
+                    Flows.Remove(Flow(target));
+                    break;
                 default:
                     throw Invalid("settings cannot be deleted.");
             }
@@ -343,6 +366,27 @@ public static class ChangeApplier
             return Relationships.Cast<JsonObject>().FirstOrDefault(r =>
                        SameId(r["sourceTableId"], tableId) && Name(r) == name)
                    ?? throw Invalid($"no relationship '{reference}' (address it as sourceTable.apiName).");
+        }
+
+        private JsonObject Flow(string reference) =>
+            Find(Flows, reference) ?? throw Invalid($"no flow '{reference}'.");
+
+        /// <summary>A trigger's table, relationship (<c>table.apiName</c>) and changed fields may be named rather than id'd.</summary>
+        private void ResolveTrigger(JsonObject flow)
+        {
+            if (flow["trigger"] is not JsonObject trigger)
+            {
+                return;
+            }
+            ResolveTable(trigger, "tableId");
+            if (trigger["relationshipId"] is JsonValue r && r.TryGetValue<string>(out var relationship) && !Guid.TryParse(relationship, out _))
+            {
+                trigger["relationshipId"] = IdOf(Relationship(relationship)).ToString();
+            }
+            if (TableById(trigger["tableId"]) is { } table)
+            {
+                ResolveMembers(trigger, "changedFields", table);
+            }
         }
 
         private JsonObject ChoiceSet(string reference) =>

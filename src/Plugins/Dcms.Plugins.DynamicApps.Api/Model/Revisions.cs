@@ -26,7 +26,7 @@ public sealed record ChangeOperation
     /// <summary><c>create</c>, <c>update</c> or <c>delete</c>.</summary>
     public string Op { get; init; } = string.Empty;
 
-    /// <summary><c>settings</c>, <c>table</c>, <c>field</c>, <c>index</c>, <c>relationship</c>, <c>choiceSet</c> or <c>view</c>.</summary>
+    /// <summary><c>settings</c>, <c>table</c>, <c>field</c>, <c>index</c>, <c>relationship</c>, <c>choiceSet</c>, <c>view</c> or <c>flow</c>.</summary>
     public string Type { get; init; } = string.Empty;
 
     public string? Target { get; init; }

@@ -63,6 +63,8 @@ public sealed class ContentFlowFixture : IAsyncLifetime
             // Plugin events (visitor.registered, form.submitted) and the admin-api job consumer.
             await js.CreateStreamAsync(new StreamConfig("PLUGIN_EVENTS", ["plugins.events.>"]));
             await js.CreateStreamAsync(new StreamConfig("PLUGIN_JOBS", ["plugins.jobs.>"]) { Retention = StreamConfigRetention.Workqueue });
+            // Mail is only queued here (no email-worker runs); without the stream every send fails.
+            await js.CreateStreamAsync(new StreamConfig("EMAIL", ["email.>"]) { Retention = StreamConfigRetention.Workqueue });
         }
 
         MetaStub = await MetaStubServer.StartAsync();

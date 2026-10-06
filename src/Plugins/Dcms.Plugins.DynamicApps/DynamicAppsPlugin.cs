@@ -1,8 +1,12 @@
 using Dcms.Plugins.DynamicApps.Api;
+using Dcms.Plugins.DynamicApps.Automation;
 using Dcms.Plugins.DynamicApps.Data;
 using Dcms.Plugins.DynamicApps.Endpoints;
 using Dcms.Plugins.DynamicApps.Metadata;
+using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -70,6 +74,14 @@ public sealed class DynamicAppsPlugin : IPlugin
             new PermissionDefinition("flows-run", "Run automations",
                 "Start a flow by hand and retry failed runs."),
         ],
+        // What flow actions reach, always through these contracts: never another plugin's tables.
+        consumes:
+        [
+            ContractRequirement.Of<IPluginEmail>(),
+            ContractRequirement.Of<IPluginNotifications>(),
+            ContractRequirement.Of<IPluginContent>(),
+            ContractRequirement.Of<IVisitorProfiles>(optional: true),
+        ],
         category: "Content",
         summary: "Your own tables, automations and API, versioned and AI-configurable.",
         iconName: "DatabaseZap",
@@ -83,6 +95,13 @@ public sealed class DynamicAppsPlugin : IPlugin
         services.AddScoped<ConfigurationService>();
         services.AddScoped<RuntimeModelProvider>();
         services.AddScoped<RecordService>();
+        services.AddScoped<FlowRunQueue>();
+        services.AddScoped<FlowExecutor>();
+        services.AddScoped<FlowRunService>();
+        if (host.IsAdmin)
+        {
+            services.AddHostedService<AutomationWorker>();
+        }
     }
 
     /// <summary>Admin plane, <c>/api/admin/plugins/{slug}/…</c>: the configuration and the records.</summary>
@@ -90,5 +109,6 @@ public sealed class DynamicAppsPlugin : IPlugin
     {
         ModelEndpoints.Map(endpoints);
         RecordEndpoints.Map(endpoints);
+        AutomationEndpoints.Map(endpoints);
     }
 }
