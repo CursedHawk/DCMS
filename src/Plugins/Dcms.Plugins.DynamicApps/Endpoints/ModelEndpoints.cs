@@ -1,4 +1,5 @@
 using Dcms.Plugins.DynamicApps.Api.Model;
+using Dcms.Plugins.DynamicApps.Data;
 using Dcms.Plugins.DynamicApps.Metadata;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -26,6 +27,10 @@ internal static class ModelEndpoints
 
         endpoints.MapGet("/_model/published", (ConfigurationService service, CancellationToken ct) =>
                 Run(async () => await service.GetPublishedAsync(ct) is { } live ? Results.Ok(live) : NotFound("Nothing has been published yet.")))
+            .RequirePluginPermission("model-read");
+
+        endpoints.MapGet("/_model/public", async (RuntimeModelProvider models, CancellationToken ct) =>
+                await models.GetAsync(ct) is { } model ? Results.Ok(PublicApi.Model(model)) : NotFound("Nothing has been published yet."))
             .RequirePluginPermission("model-read");
 
         endpoints.MapPost("/_model/draft", (CreateDraftRequest? body, ConfigurationService service, CancellationToken ct) =>

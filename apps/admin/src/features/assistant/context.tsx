@@ -53,6 +53,11 @@ export function AiProvider({ children }: { children: React.ReactNode }) {
   return <AiContext.Provider value={value}>{children}</AiContext.Provider>;
 }
 
+/** The assistant's context, or null outside the shell (a plugin widget rendered elsewhere). */
+export function useOptionalAi(): AiContextValue | null {
+  return useContext(AiContext);
+}
+
 export function useAi(): AiContextValue {
   const context = useContext(AiContext);
   if (!context) throw new Error('useAi must be used within an AiProvider');

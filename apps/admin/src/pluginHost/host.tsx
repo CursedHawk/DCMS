@@ -19,6 +19,7 @@ import { DataSetView } from '../features/plugins/DataSetView';
 import { useDataSets } from '../features/plugins/dataApi';
 import type { PluginUiInfo } from './api';
 import { usePluginModule } from './modules';
+import { useOptionalAi } from '../features/assistant/context';
 
 /** A data set embedded in a plugin screen: the plugin page's own view, by slug and set id. */
 function EmbeddedDataSet({ slug, set }: { slug: string; set: string }) {
@@ -32,6 +33,9 @@ function EmbeddedDataSet({ slug, set }: { slug: string; set: string }) {
 export function useConsolePluginHost(): PluginHost {
   const navigate = useNavigate();
   const me = useMyPermissions(true);
+  const ai = useOptionalAi();
+  const setPage = ai?.setPage;
+  const setOpen = ai?.setOpen;
   return useMemo<PluginHost>(
     () => ({
       api,
@@ -40,9 +44,10 @@ export function useConsolePluginHost(): PluginHost {
       contentApiBase: runtimeConfig.contentApiBase,
       can: (permission) => can(me.data, permission),
       navigate: (to) => void navigate({ to: to as string }),
+      assistant: setPage && setOpen ? { setContext: setPage, open: () => setOpen(true) } : undefined,
       components: { DataSet: EmbeddedDataSet },
     }),
-    [me.data, navigate],
+    [me.data, navigate, setPage, setOpen],
   );
 }
 

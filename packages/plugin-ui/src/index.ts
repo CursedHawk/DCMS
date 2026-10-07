@@ -12,7 +12,7 @@
  * imports of console internals: that is what lets the same module run compiled into the
  * console (built-in plugins) or loaded from an installed plugin's folder.
  */
-import { createContext, createElement, useContext, type ComponentType, type ReactNode } from 'react';
+import { createContext, createElement, useContext, useEffect, useRef, type ComponentType, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ApiClient } from '@dcms/core';
 
@@ -65,6 +65,16 @@ export function definePluginAdmin(module: PluginAdminModule): PluginAdminModule 
   return module;
 }
 
+/**
+ * What a screen is showing, for the console's assistant: an area, one sentence, the ids of what
+ * is selected. Never the data itself — the assistant fetches that through its tools.
+ */
+export interface PluginAiContext {
+  area: string;
+  summary: string;
+  selection?: readonly string[];
+}
+
 /** The console's services, as a screen sees them. Provided by the console; never constructed by a plugin. */
 export interface PluginHost {
   /** The admin API client: `/admin/...` paths, signed in, with the current workspace. */
@@ -78,6 +88,11 @@ export interface PluginHost {
   /** Whether the signed-in member holds a permission key. */
   can(permission: string): boolean;
   navigate(to: string): void;
+  /** The console's assistant: what the screen shows, and a way to open it. Absent outside the console shell. */
+  assistant?: {
+    setContext(context: PluginAiContext | null): void;
+    open(): void;
+  };
   /** Console components a plugin may embed. */
   components: {
     /** A data set of an instance, rendered as the plugin page renders it (search, filters, editing). */
@@ -144,4 +159,27 @@ export function useCan(permission: string): boolean {
   const host = usePluginHost();
   const { pluginId } = usePluginScreen();
   return host.can(resolvePermission(pluginId, permission));
+}
+
+/**
+ * Tells the console's assistant what this screen shows, for as long as it is mounted — so
+ * "add a status field here" means this table. Compared by value: a new object with the same
+ * content each render costs nothing.
+ */
+export function usePluginAiContext(context: PluginAiContext | null): void {
+  const assistant = usePluginHost().assistant;
+  const latest = useRef(context);
+  latest.current = context;
+  const identity = context === null ? '' : [context.area, context.summary, ...(context.selection ?? [])].join('\u0000');
+  useEffect(() => {
+    if (!assistant) return undefined;
+    assistant.setContext(latest.current);
+    return () => assistant.setContext(null);
+  }, [identity, assistant]);
+}
+
+/** Opens the console's assistant beside the screen; null outside the console shell. */
+export function useOpenAssistant(): (() => void) | null {
+  const assistant = usePluginHost().assistant;
+  return assistant ? () => assistant.open() : null;
 }

@@ -155,10 +155,19 @@ per console question (its id is sent, not recorded).
 
 ### Admin UI: plugin-shipped screens
 
-Per ADR 0019 the plugin ships its own instance screens (`configuration`, `data`) from
-`src/Plugins/Dcms.Plugins.DynamicApps/admin`. The host gains only small, reusable additions:
-- a plugin screen can set the assistant's page context;
-- a plugin screen can open the assistant.
+Per ADR 0019 the plugin ships its own instance screens from
+`src/Plugins/Dcms.Plugins.DynamicApps/admin`:
+- `configuration` (model, automation, public access, revisions) edits the shared draft;
+- `records` browses and edits the published tables.
+
+Every model edit is a change set carrying the draft hash it was made against. A 409 tells the user
+the draft changed elsewhere and reloads it; nothing is merged silently. Publishing always goes
+through a review of the diff, with destructive changes called out.
+
+The host gains only small, reusable additions in `@dcms/plugin-ui`:
+- `usePluginAiContext` sets the assistant's page context (area `data-platform`, a summary and the
+  selected ids, never the whole document);
+- `useOpenAssistant` opens the assistant.
 
 An instance screen also requires `plugins:manage` (the `/plugins/{slug}` route guard). That is
 accepted for now.

@@ -674,6 +674,34 @@ importers:
         specifier: ^4
         version: 4.1.11(@opentelemetry/api@1.9.0)(@types/node@26.4.0)(jsdom@27.4.0)(vite@7.3.5(@types/node@26.4.0)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.1))
 
+  src/Plugins/Dcms.Plugins.DynamicApps/admin:
+    dependencies:
+      '@dcms/plugin-ui':
+        specifier: workspace:*
+        version: link:../../../../packages/plugin-ui
+      '@dcms/ui':
+        specifier: workspace:*
+        version: link:../../../../packages/ui
+      '@tanstack/react-query':
+        specifier: ^5
+        version: 5.101.0(react@19.2.7)
+      lucide-react:
+        specifier: ^0.469
+        version: 0.469.0(react@19.2.7)
+      react:
+        specifier: ^19
+        version: 19.2.7
+      react-i18next:
+        specifier: ^15
+        version: 15.7.4(i18next@25.10.10(typescript@5.9.3))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@5.9.3)
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.2.17
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
   src/Plugins/Dcms.Plugins.Facebook/admin:
     dependencies:
       '@dcms/plugin-meta-admin':

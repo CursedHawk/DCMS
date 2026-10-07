@@ -93,6 +93,16 @@ public sealed class DynamicAppsPlugin : IPlugin
             // Who the signed-in site visitor is, for tables with "own records" public access.
             ContractRequirement.Of<IVisitorIdentity>(optional: true),
         ],
+        // The control plane and the data, as tabs of each app's page (admin/src).
+        adminScreens:
+        [
+            new AdminScreen("configuration", "Configuration", AdminScreenScope.Instance, Permission: "model-read", IconName: "Blocks",
+                Titles: new Dictionary<string, string> { ["cs"] = "Konfigurace" },
+                Description: "Tables, relationships, views, automations, public access and revisions."),
+            new AdminScreen("records", "Records", AdminScreenScope.Instance, Permission: "data-read", IconName: "Table",
+                Titles: new Dictionary<string, string> { ["cs"] = "Záznamy" },
+                Description: "Browse and edit the app's records."),
+        ],
         category: "Content",
         summary: "Your own tables, automations and API, versioned and AI-configurable.",
         iconName: "DatabaseZap",

@@ -1,0 +1,23 @@
+{
+  "name": "@dcms/plugin-dynamic-apps-admin",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The Dynamic Apps plugin's admin screens: an app's configuration (model, automations, access, revisions) and its records.",
+  "main": "src/index.tsx",
+  "scripts": {
+    "build": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@dcms/plugin-ui": "workspace:*",
+    "@dcms/ui": "workspace:*",
+    "@tanstack/react-query": "^5",
+    "lucide-react": "^0.469",
+    "react": "^19",
+    "react-i18next": "^15"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "typescript": "^5"
+  }
+}
