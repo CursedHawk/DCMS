@@ -131,7 +131,7 @@ builder.AddDcmsPlugins(Dcms.PluginSdk.Abstractions.PluginPlane.Admin, plugins =>
 // Plugin imports fetch URLs that came from outside: public addresses only (PublicEgress).
 builder.Services.AddHttpClient(Dcms.AdminApi.Media.AdminPluginMedia.HttpClientName, client =>
         client.Timeout = TimeSpan.FromMinutes(2))
-    .ConfigurePrimaryHttpMessageHandler(sp => Dcms.AdminApi.Media.PublicEgress.Handler(
+    .ConfigurePrimaryHttpMessageHandler(sp => Dcms.Shared.Hosting.PublicEgress.Handler(
         allowPrivate: sp.GetRequiredService<IConfiguration>().GetValue("Media:ImportAllowLocal", false)));
 builder.Services.AddDcmsPluginWorkers();
 // Google Drive import (Media/GoogleDriveImport.cs). Optional: GoogleDrive__* in
@@ -179,7 +179,7 @@ builder.Services.AddHttpClient(Dcms.AdminApi.Connections.ApiConnectionFetcher.Ht
         client.Timeout = TimeSpan.FromSeconds(15))
     .ConfigurePrimaryHttpMessageHandler(sp =>
     {
-        var handler = Dcms.AdminApi.Media.PublicEgress.Handler(
+        var handler = Dcms.Shared.Hosting.PublicEgress.Handler(
             allowPrivate: sp.GetRequiredService<IConfiguration>().GetValue("Connections:AllowLocal", false));
         handler.AllowAutoRedirect = false;
         return handler;

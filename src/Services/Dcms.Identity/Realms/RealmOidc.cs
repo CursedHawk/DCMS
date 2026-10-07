@@ -150,10 +150,11 @@ public sealed class RealmOidcOptions(RealmOidcSchemes schemes, IConfiguration co
         options.Scope.Add("email");
         options.TokenValidationParameters.NameClaimType = "name";
         options.RequireHttpsMetadata = !configuration.GetValue("Identity:AllowInsecureHttp", false);
-        if (services.GetService<RealmOidcBackchannel>() is { } stub)
-        {
-            options.BackchannelHttpHandler = stub.Handler;
-        }
+        // A tenant names the issuer, so identity must not let it name anything inside the
+        // platform's network: every back-channel connection (discovery, keys, token — redirects
+        // included) goes to a public address or nowhere. Only tests swap in a stub.
+        options.BackchannelHttpHandler = services.GetService<RealmOidcBackchannel>()?.Handler
+            ?? Dcms.Shared.Hosting.PublicEgress.Handler(allowPrivate: configuration.GetValue("Identity:Realms:AllowPrivateIssuers", false));
 
         options.Events.OnRedirectToIdentityProvider = context =>
         {

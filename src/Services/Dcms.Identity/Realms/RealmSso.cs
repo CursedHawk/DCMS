@@ -29,14 +29,20 @@ public static class RealmSso
     public static ExternalIdentity FromOidc(RealmProvider provider, ClaimsPrincipal principal)
     {
         string? Claim(string type) => principal.FindFirst(type)?.Value;
-        var email = Claim("email") ?? (provider.Kind == RealmProviderKind.Entra ? Claim("preferred_username") : null);
+        var email = Claim("email");
         var verified = string.Equals(Claim("email_verified"), "true", StringComparison.OrdinalIgnoreCase);
         var (key, trusted) = provider.Kind switch
         {
             // Google says whether it verified the address, and the hd claim was already checked.
             RealmProviderKind.Google => (Claim("sub"), verified),
-            // One named directory (never common/organizations) answers for its own accounts.
-            RealmProviderKind.Entra => (Claim("tid") is { } tid && Claim("oid") is { } oid ? $"{tid}:{oid}" : null, true),
+            // Entra's email is an editable directory attribute, not a verified address: anyone
+            // able to set a user's mail could otherwise claim another person's account ("nOAuth").
+            // Trusted only with xms_edov — Microsoft's "the email's domain is verified by this
+            // directory" optional claim, which the tenant adds to its app registration. Without
+            // it, an Entra account gets in through an invitation link or an existing link only.
+            // preferred_username (a UPN) is never an email.
+            RealmProviderKind.Entra => (Claim("tid") is { } tid && Claim("oid") is { } oid ? $"{tid}:{oid}" : null,
+                Claim("xms_edov") is "true" or "1" or "True"),
             // The issuer as configured: the handler already held the token's iss to it.
             _ => (Claim("sub") is { } sub ? $"{provider.Issuer}|{sub}" : null, verified),
         };

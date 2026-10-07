@@ -107,6 +107,15 @@ public sealed class RealmProviderTests(IdentityAppFixture fixture) : IDisposable
         saved.GetProperty("callbackUrl").GetString().Should().StartWith(IdentityAppFixture.Issuer.TrimEnd('/') + "/realm/sso/");
         (await AdminAsync(HttpMethod.Get, $"/api/realms/{realm.TenantId}/providers", null, ct)).ToString().Should().NotContain("very-secret");
 
+        // A tenant may not point identity at the platform's own network.
+        foreach (var issuer in new[] { "https://admin-api/", "https://10.0.0.5/", "https://[::1]/", "https://user:pw@idp.test/" })
+        {
+            using var internalIssuer = await AdminRequestAsync(HttpMethod.Put, $"/api/realms/{realm.TenantId}/providers/odd",
+                new { kind = "oidc", displayName = "Odd", clientId = "o", clientSecret = "s", issuer }, ct);
+            using var refusedIssuer = await Factory.CreateClient().SendAsync(internalIssuer, ct);
+            refusedIssuer.StatusCode.Should().Be(HttpStatusCode.BadRequest, issuer);
+        }
+
         // A directory-less Entra would let any Microsoft account vouch for any address.
         using var request = await AdminRequestAsync(HttpMethod.Put, $"/api/realms/{realm.TenantId}/providers/ms",
             new { kind = "entra", displayName = "Microsoft", clientId = "m", clientSecret = "s", entraTenant = "common" }, ct);

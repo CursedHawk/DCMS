@@ -512,9 +512,13 @@ public static partial class RealmAdminEndpoints
                 var insecure = configuration.GetValue("Identity:AllowInsecureHttp", false);
                 if (!Uri.TryCreate(body.Issuer?.Trim(), UriKind.Absolute, out var issuer)
                     || !(issuer.Scheme == Uri.UriSchemeHttps || (insecure && issuer.Scheme == Uri.UriSchemeHttp))
-                    || !string.IsNullOrEmpty(issuer.Query) || !string.IsNullOrEmpty(issuer.Fragment))
+                    || !string.IsNullOrEmpty(issuer.Query) || !string.IsNullOrEmpty(issuer.Fragment)
+                    || !string.IsNullOrEmpty(issuer.UserInfo)
+                    // A public DNS name: not an address, not a bare service name like "admin-api".
+                    // The egress handler refuses private addresses at connect time as well.
+                    || issuer.HostNameType != UriHostNameType.Dns || !HostPattern().IsMatch(issuer.Host.ToLowerInvariant()))
                 {
-                    return "The issuer is the provider's https URL, without a query.";
+                    return "The issuer is the provider's https URL on a public domain name, without a query.";
                 }
                 break;
         }

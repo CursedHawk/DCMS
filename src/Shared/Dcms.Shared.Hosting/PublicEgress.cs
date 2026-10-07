@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace Dcms.AdminApi.Media;
+namespace Dcms.Shared.Hosting;
 
 /// <summary>
 /// Outbound connections to the public internet only, for fetching a URL that came from outside —

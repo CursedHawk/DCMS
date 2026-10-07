@@ -1,6 +1,6 @@
 extern alias AdminApiApp;
 using System.Net;
-using AdminApiApp::Dcms.AdminApi.Media;
+using Dcms.Shared.Hosting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 

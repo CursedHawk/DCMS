@@ -97,8 +97,10 @@ How providers work (UA2):
 - **When an email counts.** An email may find, link or create an account only when the provider
   vouches for it:
   - Google: `email_verified`, plus `hd` when a Workspace domain is set.
-  - Entra: always, because the configuration must name one directory; `common`,
-    `organizations` and `consumers` are refused.
+  - Entra: only with the `xms_edov` claim (the email's domain is verified by that directory).
+    Entra's `email` is an editable attribute, so it is otherwise not evidence ("nOAuth"). The
+    configuration must also name one directory; `common`, `organizations` and `consumers` are
+    refused.
   - OIDC: `email_verified`.
   - DCMS: a confirmed platform email, or an invitation link.
 - **No self-service sign-up.** An invitation link links whichever provider account accepts it.
@@ -109,6 +111,10 @@ How providers work (UA2):
   the round trip, so a planted link links nothing.
 - **Secrets.** Client secrets are encrypted under the Transit key `dcms-realm-secrets`, both
   directions Identity's alone, and are write-only through the admin API.
+- **No reaching inside.** A tenant names its issuer, so every provider back-channel connection
+  (discovery, keys, token, redirects included) goes through `PublicEgress`, which refuses
+  private, loopback, link-local and CGNAT addresses at connect time. Issuers must also be public
+  DNS names: no IP literals, no bare service names.
 - **Passwords can be switched off** per realm: the form and its endpoints go together.
 
 ### Pages are gated at the edge
