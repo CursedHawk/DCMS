@@ -137,6 +137,8 @@ public sealed class IdentitySeeder(
         // platform-api carries is only good for the endpoints that named it.
         await EnsureScopeAsync(
             manager, DcmsOAuth.Scopes.Console, "DCMS Console (service)", DcmsOAuth.Resources.AdminApi, ct);
+        await EnsureScopeAsync(
+            manager, DcmsOAuth.Scopes.Realms, "DCMS tenant realms (service)", DcmsOAuth.Resources.Identity, ct);
     }
 
     private static async Task EnsureScopeAsync(
@@ -217,7 +219,7 @@ public sealed class IdentitySeeder(
             DcmsOAuth.Clients.AdminApiService,
             "DCMS Admin API (service)",
             configuration["Identity:AdminApiService:Secret"] ?? "dcms-admin-api-dev-secret",
-            [DcmsOAuth.Scopes.Ai, DcmsOAuth.Scopes.Social],
+            [DcmsOAuth.Scopes.Ai, DcmsOAuth.Scopes.Social, DcmsOAuth.Scopes.Realms],
             ct);
 
         // platform-api → admin-api, for the console's certificates, notifications, tenant

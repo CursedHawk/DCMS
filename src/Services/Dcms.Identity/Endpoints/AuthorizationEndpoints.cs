@@ -2,6 +2,7 @@ using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using System.Security.Claims;
 using Dcms.Identity.Domain;
+using Dcms.Identity.Realms;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
@@ -45,6 +46,13 @@ public static class AuthorizationEndpoints
     {
         var request = context.GetOpenIddictServerRequest()
                       ?? throw new InvalidOperationException("OpenIddict request not found.");
+
+        // A tenant realm's client (ADR 0022): its own cookie, its own users, its own tokens.
+        // Nothing below — the platform cookie, DcmsUser — is consulted for it.
+        if (RealmClients.TryParse(request.ClientId, out var realmTenant))
+        {
+            return await RealmAuthorization.AuthorizeAsync(context, request, realmTenant);
+        }
 
         // Require an authenticated cookie session; otherwise bounce to login.
         var result = await context.AuthenticateAsync(IdentityConstants.ApplicationScheme);
@@ -153,6 +161,22 @@ public static class AuthorizationEndpoints
         if (request.IsAuthorizationCodeGrantType() || request.IsRefreshTokenGrantType())
         {
             var result = await context.AuthenticateAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+
+            // A realm's code or refresh token, exchanged by that realm's client and no other.
+            var realmClaim = result.Principal?.FindFirst(RealmStore.RealmClaim)?.Value;
+            var isRealmClient = RealmClients.TryParse(request.ClientId, out var clientRealm);
+            if (realmClaim is not null || isRealmClient)
+            {
+                return isRealmClient && realmClaim == clientRealm.ToString()
+                    ? await RealmAuthorization.ExchangeAsync(context, result.Principal!)
+                    : Results.Forbid(
+                        authenticationSchemes: [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme],
+                        properties: new AuthenticationProperties(new Dictionary<string, string?>
+                        {
+                            [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
+                            [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "The token is no longer valid.",
+                        }));
+            }
             var user = result.Principal is null ? null : await userManager.GetUserAsync(result.Principal);
             if (user is null)
             {
@@ -214,6 +238,10 @@ public static class AuthorizationEndpoints
         {
             return Results.Unauthorized();
         }
+        if (principal.FindFirst(RealmStore.RealmClaim) is not null)
+        {
+            return await RealmAuthorization.UserInfoAsync(context, principal);
+        }
 
         var user = await userManager.GetUserAsync(principal);
         if (user is null)
@@ -233,6 +261,12 @@ public static class AuthorizationEndpoints
     private static async Task<IResult> LogoutAsync(
         HttpContext context, SignInManager<DcmsUser> signInManager, LoginSessionRevocations revocations)
     {
+        // A realm's sign-out ends that realm's cookie only; the platform sign-in is not its to end.
+        if (RealmClients.TryParse(context.GetOpenIddictServerRequest()?.ClientId, out var realmTenant))
+        {
+            return await RealmAuthorization.LogoutAsync(context, realmTenant);
+        }
+
         // Ends the LOGIN, not only this cookie. Every console session in this browser was
         // authorized from it -- the platform console's refresh token, the edge's BFF session --
         // and each carries its id, so the token endpoint refuses to renew any of them from here

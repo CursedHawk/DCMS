@@ -27,7 +27,7 @@ public static class AccountEndpoints
 
     // SEC-07: the hidden antiforgery field for a server-rendered POST form. GetAndStoreTokens
     // sets the cookie half on the response; the field carries the request half.
-    private static string CsrfField(HttpContext http, IAntiforgery antiforgery)
+    internal static string CsrfField(HttpContext http, IAntiforgery antiforgery)
     {
         var t = antiforgery.GetAndStoreTokens(http);
         return $"<input type=\"hidden\" name=\"{t.FormFieldName}\" value=\"{Enc(t.RequestToken)}\" />";
@@ -401,7 +401,7 @@ public static class AccountEndpoints
     }
 
     // Prevent open redirects: only allow local paths.
-    private static string SafeReturnUrl(string? returnUrl)
+    internal static string SafeReturnUrl(string? returnUrl)
         => !string.IsNullOrEmpty(returnUrl) && returnUrl.StartsWith('/') && !returnUrl.StartsWith("//")
             ? returnUrl
             : "/";
@@ -604,14 +604,14 @@ public static class AccountEndpoints
             """;
     }
 
-    private static string ErrorBlock(string message) => $"<p class=\"error\">{Enc(message)}</p>";
+    internal static string ErrorBlock(string message) => $"<p class=\"error\">{Enc(message)}</p>";
 
     private static string QueryReturn(string? returnUrl) =>
         string.IsNullOrEmpty(returnUrl) ? string.Empty : "?returnUrl=" + Uri.EscapeDataString(returnUrl);
 
-    private static string Enc(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
+    internal static string Enc(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
 
-    private static string Layout(string title, string body) => $$"""
+    internal static string Layout(string title, string body) => $$"""
         <!doctype html>
         <html lang="en">
         <head>

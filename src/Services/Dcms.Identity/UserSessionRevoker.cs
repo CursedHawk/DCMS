@@ -23,8 +23,21 @@ public static class UserSessionRevoker
         DcmsUser user,
         CancellationToken ct = default)
     {
-        var subject = await users.GetUserIdAsync(user);
+        await RevokeSubjectAsync(tokens, authorizations, await users.GetUserIdAsync(user), ct);
 
+        // Rotates the stamp so anything keyed on it — notably the interactive Identity cookie's
+        // validation — no longer matches, ending the interactive session too.
+        await users.UpdateSecurityStampAsync(user);
+    }
+
+    /// <summary>
+    /// Revokes every token and authorization held for a subject. A realm user (ADR 0022) has no
+    /// <see cref="DcmsUser"/>, so the realm admin API calls this directly and restamps the
+    /// account itself.
+    /// </summary>
+    public static async Task RevokeSubjectAsync(
+        IOpenIddictTokenManager tokens, IOpenIddictAuthorizationManager authorizations, string subject, CancellationToken ct = default)
+    {
         // Revoke the tokens first: an authorization with no live tokens is inert, but a token
         // whose authorization was revoked is still refused, so tokens are the load-bearing half.
         await foreach (var token in tokens.FindBySubjectAsync(subject, ct))
@@ -36,9 +49,5 @@ public static class UserSessionRevoker
         {
             await authorizations.TryRevokeAsync(authorization, ct);
         }
-
-        // Rotates the stamp so anything keyed on it — notably the interactive Identity cookie's
-        // validation — no longer matches, ending the interactive session too.
-        await users.UpdateSecurityStampAsync(user);
     }
 }

@@ -76,6 +76,13 @@ public static class DcmsOAuth
         /// platform-api a token indistinguishable from the admin SPA's.</para>
         /// </summary>
         public const string Console = "dcms.console";
+
+        /// <summary>
+        /// Identity's realm admin API (ADR 0022): a tenant's site users, groups and OIDC client.
+        /// Granted to admin-api's service client only — the tenant's console reaches it through
+        /// the User Authentication plugin, never directly.
+        /// </summary>
+        public const string Realms = "dcms.realms";
     }
 
     public static class Resources
@@ -83,5 +90,8 @@ public static class DcmsOAuth
         public const string AdminApi = "dcms-admin-api";
         public const string AiGateway = "dcms-ai-gateway";
         public const string PlatformApi = "dcms-platform-api";
+
+        /// <summary>Identity itself, for its realm admin API.</summary>
+        public const string Identity = "dcms-identity";
     }
 }

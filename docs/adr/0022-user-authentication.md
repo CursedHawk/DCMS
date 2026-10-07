@@ -38,6 +38,23 @@ Enterprise users sign in through the existing Identity service, in a **realm per
   hold the tenant's provider secrets. content-api, the public plane, must never be able to
   decrypt a tenant credential.
 
+How it is built (UA1):
+- **The model.** `realms`, `realm_users`, `realm_groups`, `realm_group_members` and
+  `realm_logins` live in Identity's schema. They are not ASP.NET Identity stores, so nothing is
+  shared with `DcmsUser`'s tables.
+- **The cookie.** One cookie scheme, but a cookie per realm (`dcms.realm.{tenantId}`), named
+  from the realm the request is for. Every read re-checks status, lockout and the security
+  stamp.
+- **The pages.** `/realm/{slug}/login|forgot|reset|invite|logout`, on Identity's own host.
+  There is no sign-up: accounts come by invitation, or from a trusted provider in UA2.
+  Invitation and reset links are time-limited, single-use (bound to the stamp), and take their
+  origin from the configured issuer, never from the request's Host.
+- **The client.** Each realm's client `site:{tenantId}` is confidential and needs PKCE. Its
+  secret is HMAC-SHA256 of the client id under one master secret (`Identity:EdgeSites:Secret`)
+  that only Identity and the edge hold, so the edge needs no per-tenant secret store.
+- **The admin API.** `/api/realms/{tenantId}/…` answers only admin-api's service token with
+  scope `dcms.realms`.
+
 Realm tokens carry:
 - `sub`: the realm user id;
 - `realm`: the tenant id;

@@ -23,6 +23,9 @@ public sealed class IdentityAppFixture : IAsyncLifetime
 
     public const string Issuer = "http://identity.test/";
 
+    /// <summary>The master secret realm clients' secrets derive from (ADR 0022); what the edge holds.</summary>
+    public const string EdgeSitesSecret = "edge-sites-test-secret";
+
     /// <summary>The owner's connection, for tests that inspect what the service wrote.</summary>
     public string OwnerConnectionString => _postgres.GetConnectionString();
 
@@ -61,6 +64,7 @@ public sealed class IdentityAppFixture : IAsyncLifetime
             builder.UseSetting("ConnectionStrings:Postgres", postgres);
             builder.UseSetting("Identity:Issuer", Issuer);
             builder.UseSetting("Identity:AllowInsecureHttp", "true");
+            builder.UseSetting("Identity:EdgeSites:Secret", EdgeSitesSecret);
             builder.UseSetting("Identity:Migrate", migrateAndSeed ? "true" : "false");
             builder.UseSetting("Identity:Seed", migrateAndSeed ? "true" : "false");
             builder.ConfigureAppConfiguration((_, config) =>

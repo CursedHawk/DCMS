@@ -2,6 +2,7 @@ using Dcms.Identity;
 using Dcms.Identity.Data;
 using Dcms.Identity.Domain;
 using Dcms.Identity.Endpoints;
+using Dcms.Identity.Realms;
 using Dcms.Identity.Seeding;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Audit;
@@ -14,6 +15,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using static OpenIddict.Abstractions.OpenIddictConstants;
 
@@ -74,6 +76,31 @@ if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(goo
 }
 
 builder.Services.AddScoped<LoginSessionRevocations>();
+
+// Tenant realms (ADR 0022): each tenant's enterprise users, signed in with their own cookie —
+// one per realm, named by RealmCookieManager — and never with identity's platform cookie.
+builder.Services.TryAddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IPasswordHasher<RealmUser>, PasswordHasher<RealmUser>>();
+builder.Services.AddScoped<RealmStore>();
+builder.Services.AddAuthentication().AddCookie(RealmCookies.Scheme, options =>
+{
+    options.Cookie.Name = RealmCookies.BaseName;
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.CookieManager = new RealmCookieManager();
+    // A working day, renewed while in use: site sessions of an enterprise are shorter-lived
+    // than an operator's console.
+    options.ExpireTimeSpan = TimeSpan.FromHours(12);
+    options.SlidingExpiration = true;
+    options.Events.OnValidatePrincipal = RealmStore.ValidateCookieAsync;
+    // Never a redirect to the platform's login: every realm endpoint decides where to send a
+    // signed-out browser itself.
+    options.Events.OnRedirectToLogin = context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return Task.CompletedTask;
+    };
+});
 
 // Per-device sign-out. The account page lists a person's live console sessions and ends one;
 // ending only the edge's session leaves identity's cookie in that browser, and the next press
@@ -148,7 +175,7 @@ builder.Services
         options.RegisterScopes(
             Scopes.Email, Scopes.Profile, Scopes.Roles,
             DcmsOAuth.Scopes.Admin, DcmsOAuth.Scopes.Ai, DcmsOAuth.Scopes.Social,
-            DcmsOAuth.Scopes.Platform, DcmsOAuth.Scopes.Console);
+            DcmsOAuth.Scopes.Platform, DcmsOAuth.Scopes.Console, DcmsOAuth.Scopes.Realms);
 
         // A fixed issuer keeps tokens valid regardless of which host reaches the
         // server (SPA via localhost, services via the compose hostname). When set,
@@ -230,6 +257,12 @@ builder.Services.AddAuthorization(options =>
     // SuperAdmin global role -- these endpoints can lock an account and mint another
     // SuperAdmin, so they are deliberately NOT behind the platform permission model that
     // platform-api uses: that model is data, and the role that can edit it lives here.
+    // The realm admin API: admin-api's service token, and only one carrying dcms.realms.
+    options.AddPolicy(RealmAdminEndpoints.PolicyName, policy => policy
+        .AddAuthenticationSchemes(OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)
+        .RequireAuthenticatedUser()
+        .RequireAssertion(context => OpenIddict.Abstractions.OpenIddictExtensions.HasScope(context.User, DcmsOAuth.Scopes.Realms)));
+
     options.AddPolicy(Dcms.Identity.Endpoints.PlatformUserEndpoints.PolicyName, policy => policy
         .AddAuthenticationSchemes(OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)
         .RequireAuthenticatedUser()
@@ -352,6 +385,8 @@ app.MapAccountEndpoints();
 app.MapAccountApiEndpoints();
 app.MapPlatformUserEndpoints();
 app.MapAuthorizationEndpoints();
+app.MapRealmAccountEndpoints();
+app.MapRealmAdminEndpoints();
 app.MapGet("/", () => Results.Ok(new { service = "identity" }));
 app.Run();
 

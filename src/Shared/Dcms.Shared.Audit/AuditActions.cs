@@ -227,6 +227,29 @@ public static class AuditActions
     public const string SshKeyRemoved = "auth.sshkey.removed";
     public const string TokenIssued = "auth.token.issued";
 
+    // ---- tenant realms (ADR 0022): enterprise users of a tenant's sites, recorded in that tenant ----
+    public const string RealmLoginSucceeded = "realm.login.succeeded";
+    public const string RealmLoginFailed = "realm.login.failed";
+    public const string RealmLoginLockedOut = "realm.login.lockedout";
+    public const string RealmLogout = "realm.logout";
+    public const string RealmPasswordResetRequested = "realm.password.reset.requested";
+    public const string RealmPasswordResetCompleted = "realm.password.reset.completed";
+    public const string RealmInviteAccepted = "realm.invite.accepted";
+    public const string RealmUpserted = "realm.upserted";
+    public const string RealmDeleted = "realm.deleted";
+    public const string RealmUserInvited = "realm.user.invited";
+    public const string RealmUserInviteResent = "realm.user.invite.resent";
+    public const string RealmUserUpdated = "realm.user.updated";
+    public const string RealmUserDeleted = "realm.user.deleted";
+
+    /// <summary>Every session of one user ended by an administrator.</summary>
+    public const string RealmUserSignedOut = "realm.user.signed_out";
+    public const string RealmGroupCreated = "realm.group.created";
+    public const string RealmGroupUpdated = "realm.group.updated";
+    public const string RealmGroupDeleted = "realm.group.deleted";
+    public const string RealmGroupMemberAdded = "realm.group.member.added";
+    public const string RealmGroupMemberRemoved = "realm.group.member.removed";
+
     // ---- social (Meta connections) ----
 
     /// <summary>
