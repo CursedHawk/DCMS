@@ -15,6 +15,7 @@
     <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Runtime\Dcms.PluginSdk.Runtime.csproj" />
     <!-- visitors.profiles@1 (an optional consume) for the visitor.lookup action: the API assembly, never the plugin. -->
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.VisitorAuth.Api\Dcms.Plugins.VisitorAuth.Api.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.UserAuth.Api\Dcms.Plugins.UserAuth.Api.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Forms.Api\Dcms.Plugins.Forms.Api.csproj" />
   </ItemGroup>
 

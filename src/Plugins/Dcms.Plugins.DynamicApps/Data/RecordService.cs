@@ -45,6 +45,17 @@ public sealed class RecordService(
     /// </summary>
     public Guid? Visitor { get; set; }
 
+    /// <summary>
+    /// What the signed-in enterprise user may do here beyond the public access (ADR 0022): their
+    /// site permissions on this app, set by the public routes from <c>users.access@1</c>, without
+    /// the <c>dynamic-apps:{slug}:</c> prefix — <c>table:deals:read</c>. Holding one lifts the
+    /// public access for that action and table, and reaches every record, not only their own.
+    /// </summary>
+    public IReadOnlySet<string> Members { get; set; } = new HashSet<string>();
+
+    private bool Member(RuntimeTable table, PublicOp op) =>
+        Members.Contains($"table:{table.ApiName}:{op.ToString().ToLowerInvariant()}");
+
     private Guid InstanceId => context.Instance?.InstanceId
         ?? throw new InvalidOperationException("Dynamic Apps records are per instance; this context has none.");
 
@@ -191,7 +202,7 @@ public sealed class RecordService(
         using var activity = Span("dcms.dynamicapp.mutation", model, table, "update");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-        var record = await Records(table, plane, owned: true).FirstOrDefaultAsync(r => r.Id == id, ct);
+        var record = await Records(table, plane, PublicOp.Update).FirstOrDefaultAsync(r => r.Id == id, ct);
         if (record is null)
         {
             return null;
@@ -212,7 +223,7 @@ public sealed class RecordService(
         using var activity = Span("dcms.dynamicapp.mutation", model, table, "delete");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-        var record = await Records(table, plane, owned: true).FirstOrDefaultAsync(r => r.Id == id, ct);
+        var record = await Records(table, plane, PublicOp.Delete).FirstOrDefaultAsync(r => r.Id == id, ct);
         if (record is null)
         {
             return false;
@@ -542,11 +553,15 @@ public sealed class RecordService(
         return db.Records.Where(r => r.InstanceId == instanceId && r.TableId == table.Id);
     }
 
-    /// <summary>The records the plane may see; on the public site with <paramref name="owned"/> (a change), only the visitor's own.</summary>
-    private IQueryable<AppRecord> Records(RuntimeTable table, RecordPlane plane, bool owned = false)
+    /// <summary>
+    /// The records the plane may <paramref name="op"/>; on the public site a change, or a read of
+    /// an "own" table, reaches only the visitor's own — unless they hold that action as a member.
+    /// </summary>
+    private IQueryable<AppRecord> Records(RuntimeTable table, RecordPlane plane, PublicOp op = PublicOp.Read)
     {
         var records = Records(table);
-        if (plane == RecordPlane.Public && (owned || table.Def.Public.Read == PublicRead.Own))
+        var owned = op is PublicOp.Update or PublicOp.Delete || table.Def.Public.Read == PublicRead.Own;
+        if (plane == RecordPlane.Public && owned && !Member(table, op))
         {
             var visitor = Visitor;
             records = records.Where(r => visitor != null && r.OwnerVisitorId == visitor);
@@ -555,10 +570,10 @@ public sealed class RecordService(
     }
 
     private Guid? OwnerFilter(RuntimeTable table, RecordPlane plane) =>
-        plane == RecordPlane.Public && table.Def.Public.Read == PublicRead.Own ? Visitor : null;
+        plane == RecordPlane.Public && table.Def.Public.Read == PublicRead.Own && !Member(table, PublicOp.Read) ? Visitor : null;
 
-    private static bool Readable(RuntimeTable table, RecordPlane plane) =>
-        plane != RecordPlane.Public || table.Def.Public.Read != PublicRead.None;
+    private bool Readable(RuntimeTable table, RecordPlane plane) =>
+        plane != RecordPlane.Public || table.Def.Public.Read != PublicRead.None || Member(table, PublicOp.Read);
 
     private enum PublicOp { Read, Create, Update, Delete }
 
@@ -569,8 +584,13 @@ public sealed class RecordService(
     /// </summary>
     private void Allow(RuntimeTable table, PublicOp op)
     {
+        if (Member(table, op))
+        {
+            return;
+        }
         var access = table.Def.Public;
-        var readable = access.Read != PublicRead.None;
+        // What the caller can see of the table decides how a refusal reads: 404 hides it, 403 does not.
+        var readable = access.Read != PublicRead.None || Member(table, PublicOp.Read);
         var allowed = op switch
         {
             PublicOp.Read => readable,
@@ -580,7 +600,7 @@ public sealed class RecordService(
         };
         if (!allowed)
         {
-            throw readable || access.Create
+            throw readable || access.Create || Member(table, PublicOp.Create)
                 ? new PublicAccessException(403, $"The site may not {op.ToString().ToLowerInvariant()} {table.ApiName} records.")
                 : new PublicAccessException(404, $"There is no table '{table.ApiName}'.");
         }

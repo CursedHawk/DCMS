@@ -801,13 +801,19 @@ public sealed class ConfigurationService(
         }
     }
 
-    /// <summary>Whether the member behind this request holds a permission; false outside a request.</summary>
+    /// <summary>
+    /// Whether the member behind this request holds a permission; false outside a request, and on
+    /// a plane that knows no member permissions at all (content-api, where a site user starts a
+    /// flow): there the policy does not exist, and nobody holds it.
+    /// </summary>
     private async Task<bool> HoldsAsync(string permission)
     {
         var user = services.GetService<IHttpContextAccessor>()?.HttpContext?.User;
         var authz = services.GetService<IAuthorizationService>();
+        var policy = PermissionPolicyProvider.PolicyName(permission);
         return user is not null && authz is not null
-               && (await authz.AuthorizeAsync(user, null, PermissionPolicyProvider.PolicyName(permission))).Succeeded;
+               && await services.GetRequiredService<IAuthorizationPolicyProvider>().GetPolicyAsync(policy) is not null
+               && (await authz.AuthorizeAsync(user, null, policy)).Succeeded;
     }
 
     private async Task<AppConfig?> PublishedConfigAsync(DynamicApp app, CancellationToken ct) =>

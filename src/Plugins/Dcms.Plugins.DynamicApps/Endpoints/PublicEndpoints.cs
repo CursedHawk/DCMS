@@ -1,6 +1,8 @@
 using System.Text.Json.Nodes;
 using Dcms.Plugins.DynamicApps.Api.Model;
+using Dcms.Plugins.DynamicApps.Automation;
 using Dcms.Plugins.DynamicApps.Data;
+using Dcms.Plugins.UserAuth.Api;
 using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -21,6 +23,8 @@ namespace Dcms.Plugins.DynamicApps.Endpoints;
 internal static class PublicEndpoints
 {
     private const string Public = "The app's public API: what it allows is each table's public access, enforced per call.";
+
+    private const int MaxFlowInput = 16 * 1024;
 
     public static void Map(IPluginEndpointBuilder endpoints)
     {
@@ -73,6 +77,32 @@ internal static class PublicEndpoints
             .WithoutPermission(Public)
             .AuditAs("record.created");
 
+        // A manual flow, started from the site by a signed-in user holding flow:{name}:run on this
+        // app. It runs as any manual flow does (definer's rights, ADR 0021); one that uses an action
+        // needing a member permission cannot be started from here at all, since a site user holds none.
+        endpoints.MapPost("/flows/{flow}/run", (string flow, StartFlowRequest? body, RecordService records, FlowRunService runs,
+                IPluginContext context, ISandboxContext sandbox, HttpContext http, CancellationToken ct) =>
+                Write(records, context, http, ct, async () =>
+                {
+                    if (!records.Members.Contains($"flow:{flow}:run"))
+                    {
+                        return Results.Json(new { error = $"Starting '{flow}' needs a role that allows it." },
+                            statusCode: records.Visitor is null ? StatusCodes.Status401Unauthorized : StatusCodes.Status403Forbidden);
+                    }
+                    if (sandbox.IsSandbox)
+                    {
+                        return Preview();
+                    }
+                    var input = body?.Input ?? [];
+                    if (input.ToJsonString().Length > MaxFlowInput)
+                    {
+                        return Results.Json(new { error = "That input is too large." }, statusCode: StatusCodes.Status413PayloadTooLarge);
+                    }
+                    return Results.Accepted(value: new StartFlowResult(await runs.StartAsync(flow, input, ct)));
+                }))
+            .WithoutPermission("Started by a signed-in user holding the flow's run permission on this app (users.access@1), checked per call.")
+            .AuditAs("flow.started");
+
         endpoints.MapPatch("/data/{table}/{id:guid}", (string table, Guid id, JsonObject values, RecordService records, IPluginContext context,
                 ISandboxContext sandbox, HttpContext http, CancellationToken ct) =>
                 Write(records, context, http, ct, async () => sandbox.IsSandbox
@@ -90,10 +120,14 @@ internal static class PublicEndpoints
             .AuditAs("record.deleted");
     }
 
-    /// <summary>Says who the visitor is (a VisitorAuth visitor or a User Authentication user, when someone is signed in), then runs the call.</summary>
+    /// <summary>
+    /// Says who the visitor is (a VisitorAuth visitor or a User Authentication user, when someone
+    /// is signed in) and what they hold on this app as a member, then runs the call.
+    /// </summary>
     private static async Task<IResult> Run(RecordService records, IPluginContext context, CancellationToken ct, Func<Task<IResult>> handler)
     {
         records.Visitor = (await context.Contracts.CurrentVisitorAsync(ct))?.Id;
+        records.Members = await MemberPermissionsAsync(context, ct);
         try
         {
             return await RecordEndpoints.Run(handler);
@@ -127,6 +161,20 @@ internal static class PublicEndpoints
                 ? Results.Json(new { error = "Too many changes from here for now; try again within the hour." }, statusCode: 429)
                 : await handler();
         });
+
+    /// <summary>The signed-in user's site permissions on this app (users.access@1), its <c>dynamic-apps:{slug}:</c> prefix stripped.</summary>
+    private static async Task<IReadOnlySet<string>> MemberPermissionsAsync(IPluginContext context, CancellationToken ct)
+    {
+        if (context.Contracts.TryGet<IUserAccess>() is not { } access || context.Instance is not { } instance)
+        {
+            return new HashSet<string>();
+        }
+        var prefix = $"{DynamicAppsPlugin.PluginId}:{instance.Slug}:";
+        return (await access.ListPermissionsAsync(ct)).Permissions
+            .Where(p => p.StartsWith(prefix, StringComparison.Ordinal))
+            .Select(p => p[prefix.Length..])
+            .ToHashSet(StringComparer.Ordinal);
+    }
 
     // A preview of the site is not the site: its writes would land in the real application.
     private static IResult Preview() => Results.Json(new { error = "A site preview cannot change the app's records." }, statusCode: 403);

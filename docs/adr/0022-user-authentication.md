@@ -225,10 +225,29 @@ How it is built (UA4):
 - **Dynamic Apps.** A table's public access gains member actions (read, create, update and
   delete), each gated by its permission. Manual flows can be made runnable from the site, under
   a permission.
-- **Other plugins' site APIs** get route gates per instance: path prefix + method → permission
-  or group.
-- **Site-plane contract operations** may declare a site permission, checked through
-  `users.access@1` instead of being refused.
+- **Other plugins' site APIs** are gated by the site's path rules at the edge: `/api/{slug}` is a
+  path like any other, so a rule can admit only signed-in users or some groups to a plugin's API.
+
+How it is built (UA5):
+
+- **Roles are the switch.** There is no per-table "members" setting: a table, or a manual flow,
+  is open to whoever holds its permission, and closed to everyone else, exactly as the roles
+  say. The role editor offers every published table's read, create, update and delete and every
+  manual flow's run (`users.resources@1`, provided by Dynamic Apps); permissions are named by
+  API name, so renaming a table renames its permissions.
+- **What a permission adds.** `dynamic-apps:{slug}:table:{t}:{action}` lets its holders do that
+  action through the app's site API whatever the table's public access, on every record — an
+  "own records" table stops filtering to their own. Hidden fields stay hidden: members are still
+  the site, not the admin. Without a permission, an enterprise user is a visitor like any other.
+- **Site-started flows.** `POST /api/{slug}/flows/{flow}/run`, for holders of
+  `…:flow:{flow}:run`, throttled like other site writes and with input capped at 16 KB. The run
+  is a manual run with the definer's rights (ADR 0021); a flow using an action that needs a
+  member permission cannot be started from the site at all, since a site user holds none.
+- **Not built:** a `SitePermission` on site-exposed contract operations, and per-instance API
+  route rules in content-api. No operation or plugin needs either yet; the edge's path rules
+  cover the plugin APIs. They come when a plugin needs a permission finer than a path. The
+  limit to know about: path rules are per site hostname, so a tenant with several sites gates
+  a plugin's API on each.
 
 ## Consequences
 
