@@ -594,23 +594,45 @@ public sealed class ConfigurationService(
         var offered = (await ActionCatalog.WithProvidersAsync(context, ct)).ToDictionary(ActionCatalog.Key, StringComparer.Ordinal);
         var issues = ConfigValidator.Validate(config, published, offered.Keys.ToHashSet(StringComparer.Ordinal)).ToList();
         // Another plugin's action can carry that plugin's permission. Whoever changes a flow
-        // using it — and so whoever publishes or rolls back that change — must hold it, or a
-        // flow would let them do what the plugin refuses them by hand. A flow unchanged from
-        // the live one was vouched for by whoever published it.
+        // that uses it, or that can set such a flow off, must hold it — or a flow would let them
+        // do what the plugin refuses them by hand. A flow unchanged from the live one was
+        // vouched for by whoever published it.
+        var needs = ActionCatalog.PermissionsByFlow(config, offered);
         foreach (var flow in config.Flows.Where(f =>
                      published?.Flows.FirstOrDefault(p => p.Id == f.Id) is not { } live || TriggerRouter.Hash(live) != TriggerRouter.Hash(f)))
         {
-            foreach (var step in flow.Steps)
+            foreach (var permission in needs.GetValueOrDefault(flow.ApiName) ?? [])
             {
-                if (offered.GetValueOrDefault(step.Action) is ProvidedAction { Permission: { } permission }
-                    && !await HoldsAsync(permission))
+                if (!await HoldsAsync(permission))
                 {
-                    issues.Add(new ConfigIssue(IssueSeverity.Error, "action-not-permitted", $"flows.{flow.ApiName}.{step.Id}",
-                        $"Using {step.Action} in a flow needs the {permission} permission, which you do not have."));
+                    issues.Add(new ConfigIssue(IssueSeverity.Error, "action-not-permitted", $"flows.{flow.ApiName}",
+                        $"This flow uses, or can start a flow that uses, an action needing the {permission} permission, which you do not have."));
                 }
             }
         }
         return issues;
+    }
+
+    /// <summary>
+    /// Refuses starting a published flow by hand when it uses, or can set off, an action whose
+    /// permission the person lacks: a manual flow takes its input from whoever starts it.
+    /// </summary>
+    /// <exception cref="ContractValidationException">The person lacks one of the permissions.</exception>
+    public async Task EnsureMayStartAsync(string flow, CancellationToken ct)
+    {
+        if (await GetPublishedAsync(ct) is not { } live
+            || live.Config.Flows.SelectMany(f => f.Steps).All(s => ActionCatalog.Keys.Contains(s.Action)))
+        {
+            return;
+        }
+        var offered = (await ActionCatalog.WithProvidersAsync(context, ct)).ToDictionary(ActionCatalog.Key, StringComparer.Ordinal);
+        foreach (var permission in ActionCatalog.PermissionsByFlow(live.Config, offered).GetValueOrDefault(flow) ?? [])
+        {
+            if (!await HoldsAsync(permission))
+            {
+                throw new ContractValidationException($"Starting '{flow}' needs the {permission} permission: it uses, or can start a flow that uses, an action that requires it.");
+            }
+        }
     }
 
     /// <summary>Whether the member behind this request holds a permission; false outside a request.</summary>

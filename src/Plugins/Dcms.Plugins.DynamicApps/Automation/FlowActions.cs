@@ -10,6 +10,7 @@ using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Shared.Data.DynamicApps;
 using Dcms.Shared.Security;
 using Microsoft.Extensions.DependencyInjection;
@@ -99,6 +100,12 @@ public static partial class ActionCatalog
         var keys = Keys.ToHashSet(StringComparer.Ordinal);
         foreach (var provider in context.Contracts.GetAll<IAutomationActionProvider>())
         {
+            // A plugin offers actions in its own name only, so none can pass itself off as
+            // another's (and dodge the permission that one asks for).
+            if (provider is not ContractProxy { ProviderPluginId: var owner })
+            {
+                continue;
+            }
             AutomationActionList offers;
             try
             {
@@ -113,7 +120,8 @@ public static partial class ActionCatalog
             foreach (var offered in offers.Actions.Take(MaxActionsPerProvider))
             {
                 var action = new ProvidedAction(provider, offered);
-                if (ProvidedName().IsMatch(offered.Name) && offered.Major >= 1 && keys.Add(Key(action)))
+                if (ProvidedName().IsMatch(offered.Name) && offered.Name.StartsWith(owner + ".", StringComparison.Ordinal)
+                    && offered.Major >= 1 && keys.Add(Key(action)))
                 {
                     all.Add(action);
                 }
@@ -125,6 +133,62 @@ public static partial class ActionCatalog
     /// <summary>A built-in action by key, or else a provider's.</summary>
     public static async Task<IFlowAction?> FindAsync(IPluginContext context, string key, CancellationToken ct) =>
         Find(key) ?? (await WithProvidersAsync(context, ct)).FirstOrDefault(a => Key(a) == key);
+
+    /// <summary>
+    /// For each flow, the permissions its actions need (<see cref="ProvidedAction.Permission"/>):
+    /// its own steps', and those of every flow it can set off — by <c>flow.invoke</c>, by
+    /// <c>event.publish</c> or by writing a table a row trigger watches — however deep. Whoever
+    /// starts or changes a flow can steer everything downstream of it.
+    /// </summary>
+    public static Dictionary<string, HashSet<string>> PermissionsByFlow(AppConfig config, IReadOnlyDictionary<string, IFlowAction> actions)
+    {
+        var needs = config.Flows.DistinctBy(f => f.ApiName).ToDictionary(f => f.ApiName, f => f.Steps
+            .Select(s => actions.GetValueOrDefault(s.Action)).OfType<ProvidedAction>()
+            .Select(a => a.Permission).OfType<string>().ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
+        var starts = config.Flows.DistinctBy(f => f.ApiName).ToDictionary(f => f.ApiName, f => Starts(config, f).ToList(), StringComparer.Ordinal);
+        for (var changed = true; changed;)
+        {
+            changed = false;
+            foreach (var (flow, targets) in starts)
+            {
+                foreach (var permission in targets.SelectMany(t => needs[t]).ToList())
+                {
+                    changed |= needs[flow].Add(permission);
+                }
+            }
+        }
+        return needs;
+    }
+
+    /// <summary>The flows a flow's steps can start. A templated target could be any of its kind.</summary>
+    private static IEnumerable<string> Starts(AppConfig config, FlowDef flow)
+    {
+        foreach (var step in flow.Steps)
+        {
+            var (kind, target) = step.Action switch
+            {
+                "flow.invoke@1" => ("manual", Literal(step.Input["flow"])),
+                "event.publish@1" => ("event", Literal(step.Input["name"])),
+                "records.create@1" or "records.update@1" or "records.delete@1" => ("row", Literal(step.Input["table"])),
+                _ => (null, null),
+            };
+            foreach (var other in config.Flows.Where(f => kind switch
+                     {
+                         "manual" => f.Trigger.Event == "manual" && (target is null || f.ApiName == target),
+                         "event" => f.Trigger.Event.StartsWith(AppEvent.FlowEventPrefix, StringComparison.Ordinal)
+                                    && (target is null || f.Trigger.Event == AppEvent.FlowEventPrefix + target),
+                         "row" => f.Trigger.TableId is { } t
+                                  && (target is null || config.Tables.FirstOrDefault(x => x.Id == t)?.ApiName == target),
+                         _ => false,
+                     }))
+            {
+                yield return other.ApiName;
+            }
+        }
+    }
+
+    private static string? Literal(JsonNode? node) =>
+        node is JsonValue value && value.TryGetValue<string>(out var text) && !text.Contains("{{", StringComparison.Ordinal) ? text : null;
 
     private const int MaxActionsPerProvider = 50;
 

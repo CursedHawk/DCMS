@@ -24,6 +24,9 @@ public class ContractProxy : DispatchProxy
     private ContractDescriptor _descriptor = null!;
     private string _callerPluginId = null!;
     private string _providerPluginId = null!;
+
+    /// <summary>The plugin behind this proxy (<c>platform</c> for a platform contract): who a caller is really talking to.</summary>
+    public string ProviderPluginId => _providerPluginId;
     private IServiceProvider _services = null!;
 
     /// <param name="providerPluginId">The plugin behind this proxy; null for the platform.</param>

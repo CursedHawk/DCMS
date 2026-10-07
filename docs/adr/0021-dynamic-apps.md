@@ -115,7 +115,9 @@ the assistant and a person editing in parallel should see the same state.
   - An action no enabled provider offers fails validation and cannot publish.
   - A built-in key always wins over a provider's. A provider whose listing throws is skipped, not fatal.
   - **A descriptor may name a permission**, the one the provider requires of an admin doing the same by hand. Whoever adds or changes a flow using the action must hold it (`action-not-permitted`), or `dynamic-apps:publish` would silently include other plugins' rights.
+    - The requirement is transitive. A flow also needs the permissions of every flow it can set off: through `flow.invoke`, through `event.publish`, or by writing a table a row trigger watches. A templated target counts as every flow of that kind. Starting a flow by hand needs them too, because a manual flow takes its input from whoever starts it.
     - Flows identical to the live revision are not re-checked, so other members can still edit the rest of the app.
+    - A provider may only offer actions prefixed with its own plugin id. The contract proxy says which plugin is behind it, so no plugin can pass off an action as another's, or dodge that plugin's permission.
     - The check runs in validation, so it covers publish, rollback and the assistant alike.
 - **Other plugins' typed events become runtime events.** Dynamic Apps subscribes to `visitor.registered` and `form.submitted`.
   - The handler writes one outbox row per app whose live snapshot has a flow on that event, found with a jsonb containment query. The worker then routes it like a row event.

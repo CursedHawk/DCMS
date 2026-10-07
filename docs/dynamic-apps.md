@@ -94,11 +94,17 @@ Other plugins can add actions through `automation.actions@1`; see
 [plugins.md](plugins.md#offering-actions-to-dynamic-apps-flows). With Visitor accounts
 installed, for example, flows also get `visitor-auth.set-attributes@1`.
 
-A provider's action can require that plugin's own permission. Adding or changing a flow that
-uses it then needs that permission as well; `visitor-auth.set-attributes@1`, for example,
-needs *Edit visitor profiles*. A flow that is unchanged from the live one stays publishable by
-anyone who may publish the app. A manual flow can also be started by anyone with `flows-run`,
-so a manual flow that uses such an action hands that power on to them.
+A provider's action can require that plugin's own permission;
+`visitor-auth.set-attributes@1`, for example, needs *Edit visitor profiles*. That permission
+is needed to:
+
+- add or change a flow that uses the action;
+- add or change a flow that can set such a flow off (`flow.invoke`, `event.publish`, or
+  writing a table that its row trigger watches);
+- start such a flow by hand.
+
+A flow that is unchanged from the live one stays publishable by anyone who may publish the app.
+A provider can only offer actions named after itself.
 
 An action is named with its major version. Its meaning never changes within that version.
 

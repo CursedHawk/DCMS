@@ -11,7 +11,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Dcms.Plugins.DynamicApps.Automation;
 
 /// <summary>The run history of one application, and what a person may do about a run: retry it, or start a flow.</summary>
-public sealed class FlowRunService(AppsDbContext db, IPluginContext context, FlowRunQueue queue, IAuditRecorder audit, TimeProvider clock)
+public sealed class FlowRunService(
+    AppsDbContext db, IPluginContext context, FlowRunQueue queue, Metadata.ConfigurationService configuration, IAuditRecorder audit, TimeProvider clock)
 {
     private Guid InstanceId => context.Instance?.InstanceId
         ?? throw new InvalidOperationException("Flow runs are per instance; this context has none.");
@@ -96,6 +97,7 @@ public sealed class FlowRunService(AppsDbContext db, IPluginContext context, Flo
     /// <summary>Starts a manual flow now, as the person asking.</summary>
     public async Task<Guid> StartAsync(string flow, JsonObject input, CancellationToken ct)
     {
+        await configuration.EnsureMayStartAsync(flow, ct);
         using var rls = RlsScope.Tenant(context.TenantId);
         var runId = await queue.StartManualAsync(flow, input, EventOrigin.New(), Guid.NewGuid().ToString(), revision: null, ct);
         (audit.Declared ?? audit.Record($"plugin.{DynamicAppsPlugin.PluginId}.flow.started"))

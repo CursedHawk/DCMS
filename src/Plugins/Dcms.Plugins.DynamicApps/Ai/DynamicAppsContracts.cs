@@ -38,7 +38,7 @@ internal sealed class DynamicAppsContracts : IDynamicAppsConfig, IDynamicAppsRec
         _models = ActivatorUtilities.CreateInstance<RuntimeModelProvider>(services, context);
         _records = ActivatorUtilities.CreateInstance<RecordService>(services, context, _models, events);
         var queue = ActivatorUtilities.CreateInstance<FlowRunQueue>(services, context, _config);
-        _runs = ActivatorUtilities.CreateInstance<FlowRunService>(services, context, queue);
+        _runs = ActivatorUtilities.CreateInstance<FlowRunService>(services, context, queue, _config);
         _ai = Trace(http.HttpContext);
     }
 

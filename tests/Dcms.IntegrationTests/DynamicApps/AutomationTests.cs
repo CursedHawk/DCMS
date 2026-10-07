@@ -270,6 +270,25 @@ public sealed class AutomationTests(ContentFlowFixture fixture)
             operations = AppHarness.Operations("""[ { "op": "update", "type": "table", "target": "log", "value": { "displayName": "Journal" } } ]"""),
         }, @as: builder);
         Errors(unrelated).Should().BeEmpty("the visitor flow is unchanged from the live one");
+
+        // Nor can they reach it sideways: a new flow that starts the live one passes it their input.
+        var relay = await app.JsonAsync(HttpMethod.Post, "/_model/draft/changes", ct, new
+        {
+            expectedHash = unrelated.GetProperty("draft").GetProperty("hash").GetString(),
+            operations = AppHarness.Operations("""
+                [ { "op": "create", "type": "flow", "value": { "apiName": "relay", "displayName": "Relay",
+                    "trigger": { "event": "row.created", "tableId": "log" },
+                    "steps": [ { "id": "go", "action": "flow.invoke@1", "input": { "flow": "pry", "input": { "visitorId": "{{ row.message }}" } } } ] } } ]
+                """),
+        }, @as: builder);
+        Errors(relay).Should().Equal("action-not-permitted");
+
+        // And starting it by hand, with input of their choosing, takes the permission too.
+        var runner = await app.AddMemberAsync(["plugin:dynamic-apps:data-read", "plugin:dynamic-apps:flows-run"], ct);
+        (await app.SendAsync(HttpMethod.Post, "/_automation/flows/pry/run", new { input = new { visitorId = registered } }, ct, runner))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await app.SendAsync(HttpMethod.Post, "/_automation/flows/pry/run", new { input = new { visitorId = registered } }, ct))
+            .StatusCode.Should().Be(HttpStatusCode.Accepted, "the owner may");
     }
 
     [DockerFact]

@@ -229,14 +229,15 @@ provides: [ContractProvision.Of<IAutomationActionProvider, MyActions>()],
 
 Rules for providers:
 
-- **Prefix action names** with your plugin id (`visitor-auth.set-attributes`). A name
-  that clashes with a built-in action is ignored.
+- **Prefix action names** with your plugin id (`visitor-auth.set-attributes`). Names under
+  another prefix, or that clash with a built-in action, are ignored.
 - **Never change what an action means** within a major version. Offer `@2` alongside `@1`.
 - **Throw `ContractValidationException`** for a failure that the same input would repeat. The
   step then fails without retrying, while anything else is retried.
 - **Set the permission** your plugin asks of an admin who does the same thing by hand.
   VisitorAuth's is `plugin:visitor-auth:manage`. Anyone who adds or changes a flow using the
-  action must hold it, or the change does not validate and cannot publish. Without it, the
+  action must hold it, or the change does not validate and cannot publish. The same goes for
+  any flow that can set that one off, and for starting it by hand. Without it, the
   right to publish an app would quietly include your plugin's rights.
 - **Calls go through the contract runtime**, audited like any plugin-to-plugin call. Your
   plugin's own rules still apply: VisitorAuth refuses private attributes from a flow just as
