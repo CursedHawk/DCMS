@@ -7,6 +7,7 @@ import { navigationSpecs } from './navigation';
 import { partSpecs } from './parts';
 import { sectionSpecs } from './sections';
 import { typographySpecs } from './typography';
+import { userSpecs } from './users';
 import { utilitySpecs } from './utility';
 import { visitorSpecs } from './visitors';
 
@@ -19,6 +20,7 @@ export {
   partSpecs,
   sectionSpecs,
   typographySpecs,
+  userSpecs,
   utilitySpecs,
   visitorSpecs,
 };
@@ -38,5 +40,6 @@ export const BUILTIN_SPECS: DcmsComponentSpec[] = [
   ...interactiveSpecs,
   ...formSpecs,
   ...visitorSpecs,
+  ...userSpecs,
   ...utilitySpecs,
 ];

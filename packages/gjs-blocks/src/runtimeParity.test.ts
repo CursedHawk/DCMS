@@ -16,6 +16,15 @@ import {
   VISITOR_NAME_ATTR,
   visitorSpecs,
 } from './specs/visitors';
+import {
+  SIGNIN_PATH,
+  SIGNOUT_PATH,
+  USER_GATE_ATTR,
+  USER_NAME_ATTR,
+  USER_SIGNIN_ATTR,
+  USER_SIGNOUT_ATTR,
+  userSpecs,
+} from './specs/users';
 import { formSpecs } from './specs/forms';
 
 /**
@@ -351,6 +360,18 @@ describe('shared regions', () => {
 
   it('are wrapped in the class the builder styles them by', () => {
     expect(assembler).toContain('dcms-region');
+  });
+
+  it('sign enterprise users in at the edge through the attributes the blocks write', () => {
+    for (const attr of [USER_SIGNIN_ATTR, USER_SIGNOUT_ATTR, USER_GATE_ATTR, USER_NAME_ATTR]) {
+      expect(runtime, `hydrate.js does not read ${attr}`).toContain(`'${attr}'`);
+    }
+    // The links work without the runtime too: they are plain links to the edge's own endpoints.
+    expect(runtime).toContain(`'${SIGNIN_PATH}?returnUrl='`);
+    expect(runtime).toContain(`'${SIGNOUT_PATH}'`);
+    for (const spec of userSpecs) {
+      expect(spec.snippet, `${spec.type} writes nothing the runtime reads`).toMatch(/data-dcms-user-/);
+    }
   });
 
   it('submit forms and sign visitors in through the attributes the blocks write', () => {

@@ -1352,6 +1352,62 @@
     });
   }
 
+  // --- Enterprise users (User Authentication) ------------------------------
+  //
+  // Mirrors packages/gjs-blocks/src/specs/users.ts. Signing in is the edge's business: the
+  // session is a cookie this page never reads, and /.edge/site/me says who it belongs to (404
+  // on a site without User Authentication: nobody). Sections are cosmetic — the site's access
+  // rules are what keep a page private — so they are hidden until the answer is in, then shown
+  // or not; a sign-in link is sent back to the page it was clicked on.
+  var USER_SIGNIN_ATTR = 'data-dcms-user-signin';
+  var USER_SIGNOUT_ATTR = 'data-dcms-user-signout';
+  var USER_GATE_ATTR = 'data-dcms-user-gate';
+  var USER_NAME_ATTR = 'data-dcms-user-name';
+  var userPromise = null;
+
+  function currentUser() {
+    if (!userPromise) {
+      userPromise = fetch('/.edge/site/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then(
+        function (res) {
+          return res.ok ? res.json() : null;
+        },
+        function () {
+          return null;
+        }
+      ).then(function (me) {
+        return me && me.signedIn ? { name: me.name, email: me.email, groups: me.groups || [] } : null;
+      });
+    }
+    return userPromise;
+  }
+
+  function signInUrl(returnUrl) {
+    return '/.edge/site/signin?returnUrl=' + encodeURIComponent(returnUrl || location.pathname + location.search);
+  }
+
+  function applyUserGates(root) {
+    var gates = root.querySelectorAll('[' + USER_GATE_ATTR + ']');
+    var names = root.querySelectorAll('[' + USER_NAME_ATTR + ']');
+    if (!gates.length && !names.length) return;
+    for (var i = 0; i < gates.length; i++) gates[i].hidden = true;
+    currentUser().then(function (user) {
+      for (var j = 0; j < gates.length; j++) {
+        var want = gates[j].getAttribute(USER_GATE_ATTR);
+        gates[j].hidden = want === 'signed-out' ? !!user : !user;
+      }
+      for (var k = 0; k < names.length && user; k++) names[k].textContent = user.name || user.email || '';
+    });
+  }
+
+  function bindUserLinks() {
+    document.addEventListener('click', function (e) {
+      var el = e.target && e.target.closest ? e.target.closest('[' + USER_SIGNIN_ATTR + ']') : null;
+      if (!el) return;
+      e.preventDefault();
+      location.href = signInUrl();
+    });
+  }
+
   // The page's own API for custom code: contract operations and the visitor's session.
   function exposeApi() {
     window.dcms = window.dcms || {};
@@ -1367,6 +1423,16 @@
           if (!res.ok) return errorOf(res).then(function (m) { throw new Error(m); });
           return res.json();
         });
+      },
+    };
+    // The signed-in enterprise user (User Authentication), as the edge knows them.
+    window.dcms.user = {
+      current: currentUser,
+      signIn: function (returnUrl) {
+        location.href = signInUrl(returnUrl);
+      },
+      signOut: function () {
+        location.href = '/.edge/site/signout';
       },
     };
     window.dcms.visitor = {
@@ -1485,7 +1551,9 @@
     applyNav(document, location.pathname || '/');
     exposeApi();
     bindForms();
+    bindUserLinks();
     applyVisitorGates(document);
+    applyUserGates(document);
     var nodes = document.querySelectorAll('[data-dcms-component]');
     for (var i = 0; i < nodes.length; i++) hydrate(nodes[i]);
   }

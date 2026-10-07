@@ -22,6 +22,7 @@ import type {
   PagedResult,
   SearchParams,
   SearchResult,
+  SiteUser,
   SubmissionResult,
   TagIndex,
   TenantClientOptions,
@@ -91,6 +92,16 @@ export interface HttpCore {
    * by name, and sends the visitor token when one is configured.
    */
   invokeContract<T>(slug: string, contractId: string, operation: string, input?: unknown): Promise<T>;
+  /**
+   * The signed-in enterprise user of a site with User Authentication, or null. The session is
+   * the edge's (a cookie on the site's own domain), so this answers only same-origin — on the
+   * published site, not from a dev server elsewhere.
+   */
+  siteUser(): Promise<SiteUser | null>;
+  /** Where to send someone to sign in; they come back to `returnUrl` (a path on this site). Pure. */
+  siteSignInUrl(returnUrl?: string): string;
+  /** Where to send someone to sign out. Pure. */
+  siteSignOutUrl(): string;
 }
 
 export interface VisitorAuthApi {
@@ -209,6 +220,23 @@ export function createHttpCore(options: TenantClientOptions = {}): HttpCore {
       return call<T>('POST', `/api/${slug}/_contracts/${encodeURIComponent(contractId)}/${encodeURIComponent(operation)}`, {
         body: input ?? {},
       });
+    },
+    async siteUser(): Promise<SiteUser | null> {
+      try {
+        const res = await fetchImpl(url('/.edge/site/me'), { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+        if (!res.ok) return null;
+        const me = (await res.json()) as { signedIn: boolean } & SiteUser;
+        return me.signedIn ? { name: me.name, email: me.email, groups: me.groups ?? [] } : null;
+      } catch {
+        return null;
+      }
+    },
+    siteSignInUrl(returnUrl?: string): string {
+      const back = returnUrl ?? (typeof location === 'undefined' ? '/' : location.pathname + location.search);
+      return url(`/.edge/site/signin?returnUrl=${encodeURIComponent(back)}`);
+    },
+    siteSignOutUrl(): string {
+      return url('/.edge/site/signout');
     },
     visitorAuth(slug: string): VisitorAuthApi {
       return {

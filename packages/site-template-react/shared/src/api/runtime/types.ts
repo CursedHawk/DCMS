@@ -95,6 +95,14 @@ export interface VisitorTokens {
   refreshToken: string;
 }
 
+/** An enterprise user signed in to the site (User Authentication), as the edge knows them. */
+export interface SiteUser {
+  name: string | null;
+  email: string | null;
+  /** Their groups' ids in the tenant's directory. */
+  groups: string[];
+}
+
 export interface VisitorProfile {
   id: string;
   email: string;

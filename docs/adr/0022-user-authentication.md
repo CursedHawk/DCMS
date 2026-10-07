@@ -249,6 +249,25 @@ How it is built (UA5):
   limit to know about: path rules are per site hostname, so a tenant with several sites gates
   a plugin's API on each.
 
+### On the page (UA6)
+
+Signing in never happens in the page: it is the edge's (`/.edge/site/signin`, `/signout`), and the
+session is a cookie the page cannot read. What the page gets is `/.edge/site/me` — signed in or
+not, name, email, group ids.
+
+- **Builder blocks** (shown when the plugin is enabled): a sign-in button that returns to the page
+  it was clicked on, a sign-out button, and a section shown only to signed-in users or only to
+  signed-out ones, with the user's name. The section is cosmetic; the site's access rules are what
+  keep a page private, and the block says so.
+- **The page runtime** (`hydrate.js`) asks `/.edge/site/me` once per page and offers
+  `window.dcms.user.current() / signIn(returnUrl) / signOut()` to custom code.
+- **The site API client** (`@dcms/api-client`, and so the generated client and the React
+  templates) gains `siteUser()`, `siteSignInUrl()` and `siteSignOutUrl()`. Same origin only: the
+  cookie is the site's.
+- **Not built:** a group-specific section (group ids mean nothing to an author choosing in the
+  canvas; protect the path with a groups rule instead), and visual-builder (Mode D) components —
+  its code reaches `siteUser()` through the client.
+
 ## Consequences
 
 - **Identity grows a second user population.** Isolation is enforced structurally (separate
