@@ -7,6 +7,7 @@ using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.DataProtection;
 using Dcms.Shared.Data.DynamicApps;
+using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Data.Edge;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
@@ -79,6 +80,7 @@ public static class DcmsMigrationRunner
         await scoped.GetRequiredService<SocialDbContext>().Database.MigrateAsync(ct);
         await scoped.GetRequiredService<NotificationsDbContext>().Database.MigrateAsync(ct);
         await scoped.GetRequiredService<AppsDbContext>().Database.MigrateAsync(ct);
+        await scoped.GetRequiredService<UserAuthDbContext>().Database.MigrateAsync(ct);
 
         // The platform console's role -> permission grants. No tenant column, so it takes no
         // part in RLS; see PlatformDbContext for why that is correct rather than an omission.
@@ -165,6 +167,7 @@ public static class DcmsMigrationRunner
                 scoped.GetRequiredService<SocialDbContext>(),
                 scoped.GetRequiredService<NotificationsDbContext>(),
                 scoped.GetRequiredService<AppsDbContext>(),
+                scoped.GetRequiredService<UserAuthDbContext>(),
                 scoped.GetRequiredService<AuditDbContext>(),
                 // Listed even though nothing in it is tenant-scoped: the assertion's job is to
                 // catch a TenantId nobody registered, and a context it never sees cannot fail it.

@@ -1,0 +1,124 @@
+# ADR 0022: User Authentication: tenant-scoped enterprise users, signed in by Identity, enforced at the edge
+
+**Status:** accepted (2026-10-07) · being implemented (kanban epic #219)
+
+## Context
+
+Tenants want to put their hosted sites, Dynamic Apps and other plugin backends behind real
+enterprise sign-in. That means:
+- the company's Google Workspace or Microsoft Entra ID, any OIDC provider, or invite-only
+  passwords;
+- groups and roles deciding who may open which page, read which table, run which flow, or call
+  which API.
+
+What exists falls short in three ways:
+- **VisitorAuth** gives public visitors accounts, but it gates content only in the browser: a
+  gjs block shows or hides a section, and nothing on the server protects a page.
+- **The site plane carries no permissions.** It refuses every contract operation that asks for
+  one (`ContractDispatcher`), so there is no role-based access for anyone outside the console.
+- **The platform Identity service** (OpenIddict) signs in admin members, with one platform-wide
+  Google client. No tenant can bring its own provider, and an admin account is global across
+  tenants.
+
+## Decision
+
+### Accounts belong to a tenant: Identity realms
+
+Enterprise users sign in through the existing Identity service, in a **realm per tenant**:
+- **Separate pool.** A realm user (`RealmUser`) is not a `DcmsUser`: separate tables, separate
+  store, separate cookie scheme.
+- **Strictly tenant-scoped.** An account on tenant A does not exist on tenant B until one is
+  created there.
+- **Admin accounts stay separate.** A person who administers a tenant and also uses its sites
+  has two accounts.
+- **"Sign in with DCMS"** is one of a realm's providers. It links the person's platform login
+  to their own account in that realm, and never lets a platform session satisfy a realm.
+- **Why Identity.** It already has the hardened parts: password hashing and lockout, reset
+  email, sessions with per-device revocation, and Vault. It is also the one service allowed to
+  hold the tenant's provider secrets. content-api, the public plane, must never be able to
+  decrypt a tenant credential.
+
+Realm tokens carry:
+- `sub`: the realm user id;
+- `realm`: the tenant id;
+- `aud = dcms.realm:{tenantId}`;
+- email, name and groups.
+
+Every consumer checks that the audience is the request's own tenant.
+
+### Providers are tenant configuration
+
+Each realm enables any of these:
+- Google Workspace, optionally restricted to a hosted domain;
+- Microsoft Entra ID;
+- generic OIDC, by issuer;
+- invite-only email + password;
+- DCMS.
+
+**Provisioning policy.** Invite-only, or just-in-time for allowed email domains, with default
+groups and a mapping from IdP group claims. Accounts link by verified email only.
+
+**Secrets.** Client secrets are written to Vault by Identity and never returned to anyone.
+
+### Pages are gated at the edge
+
+The edge already signs people in at the boundary and keeps their sessions.
+- **Rules.** For tenant hosts it applies ordered **path rules per site**: `public`, `signedIn`,
+  or `groups: […]`. The first matching prefix wins.
+- **Sign-in.** Without a session, the edge challenges the tenant's realm through Identity, using
+  one OIDC client per tenant whose redirect URIs are the tenant's verified domains. A signed-in
+  user outside the allowed groups gets a 403.
+- **Forwarding.** With a session, the edge forwards the realm access token as a bearer on every
+  proxied request for that host. So a public page's API calls know the user too.
+
+### The plugin is the management and policy layer
+
+`user-auth` is a single-instance plugin.
+- **Admin screens:** users, groups, roles, providers, site access rules and sessions. User, group
+  and provider changes go through Identity's realm admin API, called by admin-api with a service
+  principal.
+- **Policy store.** The plugin's own schema `userauth` holds what Identity does not need at
+  sign-in time:
+  - **roles:** named bundles of permission keys;
+  - **grants:** a role given to a group or a user;
+  - **gates:** the site path rules.
+- **Permission keys** are `{plugin}:{instance}:{resource}:{action}`, e.g.
+  `dynamic-apps:crm:table:deals:read` or `dynamic-apps:crm:flow:approve:run`. They are data, not
+  manifest entries: a tenant's tables are runtime data.
+
+Contracts (`Dcms.Plugins.UserAuth.Api`):
+
+| Contract | Purpose |
+| --- | --- |
+| `users.identity@1` | The signed-in enterprise user of this request, or null. |
+| `users.access@1` | Whether that user holds a permission (groups + direct grants). The policy enforcement point for every consumer. |
+| `users.resources@1` | Open: each plugin lists what it can gate, for the permission picker. |
+| `users.directory@1` | Users and groups for the assistant and other plugins (Admin \| Ai). |
+| `visitors.identity@1` | Also provided, so "own records" in Dynamic Apps and Forms work for enterprise users unchanged. Consumers take the first provider that recognises the request. |
+
+**Recognising the user in content-api.** A `DcmsUser` authentication scheme validates realm
+tokens against Identity's keys and the request's tenant. It is never the default scheme, like
+`DcmsVisitor`, and `ActorKind.EndUser` names enterprise users in the audit log.
+
+### Enforcement where the resources are
+
+- **Dynamic Apps.** A table's public access gains member actions (read, create, update and
+  delete), each gated by its permission. Manual flows can be made runnable from the site, under
+  a permission.
+- **Other plugins' site APIs** get route gates per instance: path prefix + method → permission
+  or group.
+- **Site-plane contract operations** may declare a site permission, checked through
+  `users.access@1` instead of being refused.
+
+## Consequences
+
+- **Identity grows a second user population.** Isolation is enforced structurally (separate
+  store and cookie, audience bound to the tenant), and tested for: a tenant-A user is refused on
+  B, and a platform session never satisfies a realm.
+- **Sign-in happens on Identity's domain**, under `/realm/{tenant}`, branded with the tenant's
+  name and logo. Sign-in on the tenant's own domain is a later step.
+- **Rules take up to 30 seconds.** The edge caches gate rules per host for 30 seconds,
+  invalidated by events, so a rule change takes effect within that window.
+- **Two plugins answer "who is the visitor".** With VisitorAuth and User Authentication both
+  enabled, consumers ask every `visitors.identity@1` provider and take the first that recognises
+  the request's credential.

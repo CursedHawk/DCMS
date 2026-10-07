@@ -12,7 +12,7 @@ public static class AppRole
 
     /// <summary>Kept in step with SCHEMAS in infra/postgres/init/06-app-role.sh.</summary>
     private const string Schemas =
-        "tenancy plugins cms media sites search analytics chat visitors ai forms audit social notifications apps dataprotection edge platform";
+        "tenancy plugins cms media sites search analytics chat visitors ai forms audit social notifications apps userauth dataprotection edge platform";
 
     public static string ConnectionString(string ownerConnectionString) =>
         new Npgsql.NpgsqlConnectionStringBuilder(ownerConnectionString)

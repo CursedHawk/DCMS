@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.UserAuth.Api\Dcms.Plugins.UserAuth.Api.csproj" />
+    <!-- First-party: owns the userauth schema (ADR 0022). -->
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Security\Dcms.Shared.Security.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -11,6 +11,7 @@
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Events\Dcms.Plugins.Events.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.FileDownloads\Dcms.Plugins.FileDownloads.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.DynamicApps\Dcms.Plugins.DynamicApps.csproj" />
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.UserAuth\Dcms.Plugins.UserAuth.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Forms\Dcms.Plugins.Forms.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Facebook\Dcms.Plugins.Facebook.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.Instagram\Dcms.Plugins.Instagram.csproj" />

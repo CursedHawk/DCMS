@@ -9,6 +9,7 @@ using Dcms.Shared.Data.Analytics;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.DynamicApps;
+using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Notifications;
@@ -255,6 +256,7 @@ public sealed class TenantDeleter(
     MediaDbContext media,
     FormsDbContext forms,
     AppsDbContext apps,
+    UserAuthDbContext userAuth,
     SearchDbContext search,
     AnalyticsDbContext analytics,
     ChatDbContext chat,
@@ -346,6 +348,13 @@ public sealed class TenantDeleter(
             ("apps.Changes", () => apps.Changes.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("apps.Revisions", () => apps.Revisions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("apps.Apps", () => apps.Apps.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+
+        // User Authentication (ADR 0022): the access policy over the tenant's realm. Grants
+        // before the roles they point at.
+        await SweepAsync(userAuth, manifest, ct,
+            ("userauth.Grants", () => userAuth.Grants.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("userauth.Roles", () => userAuth.Roles.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("userauth.Gates", () => userAuth.Gates.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         await SweepAsync(search, manifest, ct,
             ("search.Documents", () => search.Documents.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));

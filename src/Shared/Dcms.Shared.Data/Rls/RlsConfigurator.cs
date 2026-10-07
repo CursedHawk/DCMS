@@ -108,6 +108,10 @@ public static class RlsConfigurator
         ("apps", "flow_runs"),
         ("apps", "flow_run_steps"),
         ("apps", "flow_schedules"),
+        // User Authentication (ADR 0022): the access policy over each tenant's realm.
+        ("userauth", "roles"),
+        ("userauth", "grants"),
+        ("userauth", "gates"),
     ];
 
     /// <summary>

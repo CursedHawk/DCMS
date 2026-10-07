@@ -6,6 +6,7 @@ using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.DynamicApps;
+using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Search;
@@ -65,7 +66,7 @@ public sealed class AuditInterceptorDiscoveryTests(AdminApiHostFixture fixture)
     [
         typeof(TenancyDbContext), typeof(CmsDbContext), typeof(MediaDbContext), typeof(SitesDbContext),
         typeof(FormsDbContext), typeof(ChatDbContext), typeof(VisitorsDbContext), typeof(AiDbContext),
-        typeof(SearchDbContext), typeof(AnalyticsDbContext), typeof(AppsDbContext),
+        typeof(SearchDbContext), typeof(AnalyticsDbContext), typeof(AppsDbContext), typeof(UserAuthDbContext),
     ];
 
     [Theory]

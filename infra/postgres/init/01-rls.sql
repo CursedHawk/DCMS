@@ -21,8 +21,8 @@ BEGIN
 END
 $$;
 
-GRANT USAGE ON SCHEMA tenancy, plugins, cms, media, sites, search, analytics, chat, visitors, ai, forms, audit, social, notifications, apps TO dcms_rls;
+GRANT USAGE ON SCHEMA tenancy, plugins, cms, media, sites, search, analytics, chat, visitors, ai, forms, audit, social, notifications, apps, userauth TO dcms_rls;
 
 -- Future tables (created by EF migrations) become readable by the test role.
-ALTER DEFAULT PRIVILEGES FOR ROLE dcms IN SCHEMA tenancy, plugins, cms, media, sites, search, analytics, chat, visitors, ai, forms, audit, social, notifications, apps
+ALTER DEFAULT PRIVILEGES FOR ROLE dcms IN SCHEMA tenancy, plugins, cms, media, sites, search, analytics, chat, visitors, ai, forms, audit, social, notifications, apps, userauth
     GRANT SELECT ON TABLES TO dcms_rls;

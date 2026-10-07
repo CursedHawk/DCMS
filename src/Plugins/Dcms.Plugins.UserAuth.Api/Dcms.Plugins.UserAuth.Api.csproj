@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The User Authentication plugin's public API: its contracts and permission keys (ADR 0022).
+    Reference this, not the plugin, to integrate with it. Depends on the plugin SDK abstractions
+    only.
+  -->
+
+  <ItemGroup>
+    <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
+  </ItemGroup>
+
+</Project>
