@@ -90,13 +90,10 @@ internal static class PublicEndpoints
             .AuditAs("record.deleted");
     }
 
-    /// <summary>Says who the visitor is (when VisitorAuth is on the site and someone is signed in), then runs the call.</summary>
+    /// <summary>Says who the visitor is (a VisitorAuth visitor or a User Authentication user, when someone is signed in), then runs the call.</summary>
     private static async Task<IResult> Run(RecordService records, IPluginContext context, CancellationToken ct, Func<Task<IResult>> handler)
     {
-        if (context.Contracts.TryGet<IVisitorIdentity>() is { } identity)
-        {
-            records.Visitor = (await identity.GetCurrentAsync(ct)).Visitor?.Id;
-        }
+        records.Visitor = (await context.Contracts.CurrentVisitorAsync(ct))?.Id;
         try
         {
             return await RecordEndpoints.Run(handler);

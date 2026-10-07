@@ -42,9 +42,7 @@ internal static class FormSubmissionEndpoints
             }
 
             // Optional: without VisitorAuth, or for an anonymous visitor, there is simply nobody.
-            var visitor = context.Contracts.TryGet<IVisitorIdentity>() is { } identity
-                ? (await identity.GetCurrentAsync(ct)).Visitor
-                : null;
+            var visitor = await context.Contracts.CurrentVisitorAsync(ct);
 
             var submitted = body.EnumerateObject().ToDictionary(p => p.Name, p => p.Value, StringComparer.Ordinal);
             if (visitor is not null)

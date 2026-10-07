@@ -1,6 +1,8 @@
 using System.Text.Json.Nodes;
 using Dcms.Plugins.UserAuth.Api;
+using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.UserAuth;
@@ -34,15 +36,34 @@ public sealed class UserAuthPlugin : IPlugin
         ],
         category: "Engagement",
         summary: "Enterprise sign-in, users, groups and roles that gate your sites, apps and APIs.",
-        iconName: "ShieldCheck");
+        iconName: "ShieldCheck",
+        provides:
+        [
+            ContractProvision.Of<IUserIdentity, UserIdentity>(),
+            ContractProvision.Of<IUserAccess, UserAccess>(),
+            ContractProvision.Of<IUserDirectory, UserDirectory>(),
+            // The same signed-in user, to plugins that only know visitors (own records, prefilled forms).
+            ContractProvision.Of<IVisitorIdentity, UserVisitorIdentity>(),
+        ],
+        // What roles can hold: whatever enabled plugins offer to gate.
+        consumes: [ContractRequirement.Of<IUserResources>(optional: true)]);
 
     public void ConfigureServices(IServiceCollection services, PluginHost host)
     {
+        services.AddHttpContextAccessor();
+        // On both planes: the contracts read the request's user wherever they are called. Only
+        // the edge ever sets the header, and only on a tenant site's requests.
+        services.AddUserAuthentication(host.Configuration);
         if (host.IsAdmin)
         {
-            // The site rules the edge enforces: published on every change, reconciled every few minutes.
+            // The site rules the edge enforces: published on every change, reconciled every few
+            // minutes. RealmAdminClient comes from admin-api, the one service identity answers.
             services.AddScoped<SiteGatePublisher>();
+            services.AddScoped<RealmRelay>();
             services.AddHostedService<SiteGateReconciler>();
         }
     }
+
+    /// <summary>Admin plane, <c>/api/admin/plugins/{slug}/…</c>: users, groups, providers, roles and site rules.</summary>
+    public void MapAdminEndpoints(IPluginEndpointBuilder endpoints) => UserAuthAdminEndpoints.Map(endpoints);
 }

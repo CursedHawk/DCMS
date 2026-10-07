@@ -21,6 +21,7 @@ using Dcms.Shared.Data.Visitors;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Security;
+using Dcms.Shared.Security.Realms;
 using Dcms.Shared.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -267,6 +268,7 @@ public sealed class TenantDeleter(
     TenantStore store,
     SiteDeleter siteDeleter,
     SiteGitService git,
+    RealmAdminClient realms,
     IObjectStorage storage,
     IOptions<StorageOptions> storageOptions,
     IAuditRecorder audit,
@@ -431,6 +433,19 @@ public sealed class TenantDeleter(
 
         var orgDeleted = await git.DeleteOrgAsync(slug, ct);
 
+        // The tenant's realm in identity (ADR 0022): its site users, their logins, its sign-in
+        // client and every token that client issued. Best effort like the rest of this block;
+        // a realm left behind is reported in the manifest, and holds no tenant content.
+        var realmDeleted = false;
+        try
+        {
+            realmDeleted = await realms.DeleteRealmAsync(tenantId, ct);
+        }
+        catch (Exception ex) when (ex is RealmAdminException or HttpRequestException)
+        {
+            logger.LogError(ex, "Failed deleting the realm of deleted tenant {TenantId}.", tenantId);
+        }
+
         logger.LogWarning("Tenant {TenantId} ({Slug}) deleted: {Sites} sites, {Objects} objects.",
             tenantId, slug, siteIds.Count, objects);
 
@@ -447,6 +462,7 @@ public sealed class TenantDeleter(
             .With("sites", siteIds.Count)
             .With("objects", objects)
             .With("git_org_deleted", orgDeleted)
+            .With("realm_deleted", realmDeleted)
             .With("storage_failed", storageFailed);
         await audit.FlushAsync(ct);
 

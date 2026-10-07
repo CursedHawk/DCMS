@@ -7,6 +7,8 @@
   <ItemGroup>
     <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.UserAuth.Api\Dcms.Plugins.UserAuth.Api.csproj" />
+    <!-- Also provides visitors.identity@1, so visitor-aware plugins recognise enterprise users. -->
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.VisitorAuth.Api\Dcms.Plugins.VisitorAuth.Api.csproj" />
     <!-- First-party: owns the userauth schema (ADR 0022). -->
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Security\Dcms.Shared.Security.csproj" />

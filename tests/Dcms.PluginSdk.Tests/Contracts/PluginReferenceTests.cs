@@ -37,7 +37,8 @@ public class PluginReferenceTests
         forms.Provides.Single().Hooks.Should().ContainSingle().Which.Name.Should().Be("forms.submitting");
         forms.CSharp.Should().Contain("HookSubscription.Of<FormSubmitting, MyInterceptor>");
         forms.Consumes.Should().Contain(r => r.ContractId == "visitors.identity@1" && r.Optional
-                                            && r.Providers.SequenceEqual(new[] { "visitor-auth" }));
+                                            // VisitorAuth's visitors, and User Authentication's users as visitors (ADR 0022).
+                                            && r.Providers.Order().SequenceEqual(new[] { "user-auth", "visitor-auth" }));
     }
 
     [Fact]

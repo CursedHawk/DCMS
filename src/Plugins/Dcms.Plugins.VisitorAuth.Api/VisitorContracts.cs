@@ -50,6 +50,26 @@ public interface IVisitorIdentity
     Task<CurrentVisitor> GetCurrentAsync(CancellationToken ct);
 }
 
+public static class VisitorIdentityExtensions
+{
+    /// <summary>
+    /// The signed-in visitor, from whichever provider recognises the request: VisitorAuth for a
+    /// visitor token, User Authentication for an enterprise user (ADR 0022). Null when none does,
+    /// or when no provider is enabled.
+    /// </summary>
+    public static async Task<VisitorProfile?> CurrentVisitorAsync(this IPluginContracts contracts, CancellationToken ct)
+    {
+        foreach (var identity in contracts.GetAll<IVisitorIdentity>())
+        {
+            if ((await identity.GetCurrentAsync(ct)).Visitor is { } visitor)
+            {
+                return visitor;
+            }
+        }
+        return null;
+    }
+}
+
 /// <summary>Visitor profiles and their tenant-defined attributes.</summary>
 [DcmsContract("visitors.profiles", 1,
     Description = "Site visitor profiles and their tenant-defined attributes.",

@@ -43,6 +43,7 @@ using Dcms.Shared.Messaging;
 using Dcms.Shared.Messaging.Email;
 using Dcms.Shared.Security;
 using Dcms.Shared.Security.Authorization;
+using Dcms.Shared.Security.Realms;
 using Dcms.Shared.Storage;
 using Dcms.Shared.Vault;
 using Finbuckle.MultiTenant.AspNetCore.Extensions;
@@ -215,6 +216,9 @@ builder.Services.Configure<ServiceClientOptions>(builder.Configuration.GetSectio
 builder.Services.Configure<Dcms.AdminApi.Observability.AlertingOptions>(
     builder.Configuration.GetSection("Alerting"));
 builder.Services.AddHttpClient<IServiceTokenProvider, ServiceTokenClient>();
+// identity's realm admin API (ADR 0022): the User Authentication plugin's directory, and the
+// realm a deleted tenant leaves behind.
+builder.Services.AddRealmAdminClient(builder.Configuration);
 builder.Services.AddHttpClient("ai-gateway", (sp, client) =>
 {
     var baseUrl = sp.GetRequiredService<IConfiguration>()["Services:AiGateway"] ?? "http://localhost:5007";

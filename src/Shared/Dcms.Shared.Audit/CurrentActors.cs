@@ -36,6 +36,11 @@ public sealed class HttpCurrentActor(IHttpContextAccessor accessor) : ICurrentAc
             {
                 return ActorKind.Visitor;
             }
+            // A realm token: identity issued it for one tenant's realm, not for the platform.
+            if (Principal!.HasClaim(c => c.Type == "aud" && c.Value.StartsWith("dcms.realm:", StringComparison.Ordinal)))
+            {
+                return ActorKind.EndUser;
+            }
             return Id is null ? ActorKind.ServiceClient : ActorKind.User;
         }
     }

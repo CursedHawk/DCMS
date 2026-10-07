@@ -52,6 +52,8 @@ public sealed class SiteGatePublisherTests(ContentFlowFixture fixture)
             .Should().Be(0, "a site without rules is still the tenant's: its pages can offer sign-in");
 
         (await PublishAsync(tenantId, ct)).Should().BeFalse("nothing changed, so the edge is not told anything");
+        fixture.Realms.RealmOf(tenantId)!.Hosts.Should().BeEquivalentTo([host, $"other.{host}"],
+            "the realm's redirect hosts are exactly the hosts the edge signs people in on");
 
         // The plugin goes: so does everything the edge enforces for this tenant.
         var disabled = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post,
@@ -59,6 +61,7 @@ public sealed class SiteGatePublisherTests(ContentFlowFixture fixture)
         disabled.StatusCode.Should().Be(HttpStatusCode.NoContent, await disabled.Content.ReadAsStringAsync(ct));
         (await PublishAsync(tenantId, ct)).Should().BeTrue();
         (await RowsAsync(tenantId, ct)).Should().BeEmpty();
+        fixture.Realms.RealmOf(tenantId)!.Hosts.Should().BeEmpty("the realm stays, with its users, but no site can sign anyone in");
     }
 
     private async Task<bool> PublishAsync(Guid tenantId, CancellationToken ct)

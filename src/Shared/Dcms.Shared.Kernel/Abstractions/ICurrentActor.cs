@@ -29,6 +29,9 @@ public enum ActorKind
 
     /// <summary>Plugin-initiated work; <see cref="ICurrentActor.Key"/> is the plugin id.</summary>
     Plugin,
+
+    /// <summary>An enterprise user of one tenant's realm (ADR 0022), signed in on its site through the edge.</summary>
+    EndUser,
 }
 
 /// <summary>

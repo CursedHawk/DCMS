@@ -56,7 +56,7 @@ public sealed class ContentFlowFixture : IAsyncLifetime
         await using (var nats = new NatsClient(_nats.GetConnectionString()))
         {
             var js = nats.CreateJetStreamContext();
-            await js.CreateStreamAsync(new StreamConfig("TENANCY", ["tenant.>", "plugin.instance.>", "membership.>"]));
+            await js.CreateStreamAsync(new StreamConfig("TENANCY", ["tenant.>", "plugin.instance.>", "membership.>", "edge.>", "platform.>"]));
             await js.CreateStreamAsync(new StreamConfig("CMS", ["content.>"]));
             await js.CreateStreamAsync(new StreamConfig("ANALYTICS", ["analytics.>"]));
             await js.CreateStreamAsync(new StreamConfig("NOTIFY", ["notify.>"]));
@@ -90,6 +90,9 @@ public sealed class ContentFlowFixture : IAsyncLifetime
                 services.AddAuthentication(TestAuthHandler.SchemeName)
                     .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
                 services.AddSingleton<Dcms.Shared.Vault.ITransitEncryptor, FakeTransitEncryptor>();
+                // No identity here: the realm admin API is an in-memory fake (UserAuth tests).
+                services.AddSingleton(new Dcms.Shared.Security.Realms.RealmAdminClient(
+                    new HttpClient(Realms) { BaseAddress = new Uri("http://identity.test/") }, new StubServiceTokenProvider()));
             });
         });
 
@@ -117,6 +120,10 @@ public sealed class ContentFlowFixture : IAsyncLifetime
                 // would test OpenIddict rather than the stories path.
                 services.AddSingleton<IServiceTokenProvider>(new StubServiceTokenProvider());
 
+                // Realm tokens (DcmsUser, ADR 0022) signed by a test key instead of identity's.
+                services.PostConfigure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
+                    Dcms.Plugins.UserAuth.UserAuthentication.SchemeName, UserAuth.RealmTokens.Trust);
+
                 // Point content-api's admin-api client at the in-memory admin host, translating
                 // the bearer into the test scheme's headers. The scope travels for real, so
                 // ServicePrincipalGuard is genuinely in the path rather than bypassed.
@@ -138,6 +145,9 @@ public sealed class ContentFlowFixture : IAsyncLifetime
     }
 
     /// <summary>Returns whatever it is asked for: the value is never validated in this fixture.</summary>
+    /// <summary>identity's realm admin API, in memory, behind admin-api's RealmAdminClient.</summary>
+    public UserAuth.FakeRealmApi Realms { get; } = new();
+
     private sealed class StubServiceTokenProvider : IServiceTokenProvider
     {
         public Task<string> GetTokenAsync(string scope, CancellationToken ct = default) =>
