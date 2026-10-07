@@ -35,7 +35,7 @@ public static class PluginUiEndpoints
         {
             var instances = await db.PluginInstances.AsNoTracking()
                 .OrderBy(p => p.Name)
-                .Select(p => new { p.Id, p.PluginId, p.Slug, p.Name, p.Enabled })
+                .Select(p => new { p.Id, p.PluginId, p.Slug, p.Name, p.Enabled, p.AiToolsEnabled })
                 .ToListAsync(ct);
             var authz = http.RequestServices.GetService(typeof(IAuthorizationService)) as IAuthorizationService;
 
@@ -70,7 +70,7 @@ public static class PluginUiEndpoints
                     module = Module(registry, plugin),
                     screens,
                     instances = instances.Where(i => i.PluginId == manifest.Id)
-                        .Select(i => new { id = i.Id, slug = i.Slug, name = i.Name, enabled = i.Enabled }),
+                        .Select(i => new { id = i.Id, slug = i.Slug, name = i.Name, enabled = i.Enabled, aiToolsEnabled = i.AiToolsEnabled }),
                 });
             }
             return Results.Ok(result);

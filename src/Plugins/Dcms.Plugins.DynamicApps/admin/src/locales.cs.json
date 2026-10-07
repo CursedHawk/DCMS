@@ -286,5 +286,11 @@
     "deleteHint": "Vazby, které na něj odkazují, se zpracují podle nastavení.",
     "emptyTitle": "Zatím nic není publikováno",
     "emptyHint": "Záznamy patří publikovaným tabulkám. Nejdřív publikujte konfiguraci aplikace."
+  },
+  "ai": {
+    "enableTitle": "Povolit asistentovi pracovat s touto aplikací?",
+    "enableDescription": "Tím zapnete AI nástroje aplikace. Asistent pak může číst a měnit konfiguraci i záznamy, a to jen s vašimi oprávněními. Publikování, návrat k revizi a mazání stále čekají na vaše schválení.",
+    "enable": "Zapnout a zeptat se",
+    "enableFailed": "AI nástroje se nepodařilo zapnout. Potřebujete oprávnění ke správě pluginů."
   }
 }

@@ -24,6 +24,8 @@ export interface PluginInstanceRef {
   slug: string;
   name: string;
   enabled: boolean;
+  /** Whether the assistant may use this instance's contracts (the instance's "AI tools" switch). */
+  aiToolsEnabled?: boolean;
 }
 
 /** What a screen component receives. */
@@ -92,6 +94,11 @@ export interface PluginHost {
   assistant?: {
     setContext(context: PluginAiContext | null): void;
     open(): void;
+    /**
+     * Turns on the instance's "AI tools" switch, so the assistant can use its contracts, and
+     * refreshes the assistant's tools. Needs `plugins:manage`, as the switch does in settings.
+     */
+    enableTools(instanceId: string): Promise<void>;
   };
   /** Console components a plugin may embed. */
   components: {

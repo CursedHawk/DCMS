@@ -1,5 +1,6 @@
 import { Component, useMemo, type ComponentType, type ErrorInfo, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import type { RegistryWidgetsType, WidgetProps } from '@rjsf/utils';
 import { AlertTriangle } from 'lucide-react';
@@ -36,6 +37,7 @@ export function useConsolePluginHost(): PluginHost {
   const ai = useOptionalAi();
   const setPage = ai?.setPage;
   const setOpen = ai?.setOpen;
+  const qc = useQueryClient();
   return useMemo<PluginHost>(
     () => ({
       api,
@@ -44,10 +46,24 @@ export function useConsolePluginHost(): PluginHost {
       contentApiBase: runtimeConfig.contentApiBase,
       can: (permission) => can(me.data, permission),
       navigate: (to) => void navigate({ to: to as string }),
-      assistant: setPage && setOpen ? { setContext: setPage, open: () => setOpen(true) } : undefined,
+      assistant: setPage && setOpen
+        ? {
+            setContext: setPage,
+            open: () => setOpen(true),
+            enableTools: async (instanceId) => {
+              await api.put(`/admin/plugins/instances/${instanceId}`, { aiToolsEnabled: true });
+              // The assistant's catalog and the screens' view of the switch, both now stale.
+              await Promise.all([
+                qc.invalidateQueries({ queryKey: ['contracts', 'ai'] }),
+                qc.invalidateQueries({ queryKey: ['plugin-ui'] }),
+                qc.invalidateQueries({ queryKey: ['plugin-instances'] }),
+              ]);
+            },
+          }
+        : undefined,
       components: { DataSet: EmbeddedDataSet },
     }),
-    [me.data, navigate, setPage, setOpen],
+    [me.data, navigate, setPage, setOpen, qc],
   );
 }
 

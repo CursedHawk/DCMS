@@ -167,3 +167,29 @@ test('Ask AI opens the assistant on this app, and the conversation can move to t
   await dock.getByRole('button', { name: 'Open in full view' }).click();
   await expect(page).toHaveURL(/\/assistant$/);
 });
+
+test('Ask AI on an app whose AI tools are off offers to turn them on first', async ({ page, api }) => {
+  api
+    .on('GET', '/api/admin/plugin-ui', [
+      ...data.PLUGIN_UI,
+      {
+        pluginId: 'dynamic-apps', name: 'Dynamic Apps', icon: 'DatabaseZap', source: 'builtin',
+        module: { kind: 'builtin', key: 'Dcms.Plugins.DynamicApps' },
+        screens: [{ id: 'configuration', title: 'Configuration', titles: {}, description: null, scope: 'instance',
+          icon: 'Blocks', permission: 'plugin:dynamic-apps:model-read', nav: null, allowed: true }],
+        instances: [{ id: INSTANCE.id, slug: 'crm', name: 'CRM', enabled: true, aiToolsEnabled: false }],
+      },
+    ])
+    .on('GET', '/api/admin/plugins/instances', [...data.PLUGIN_INSTANCES, { ...INSTANCE, aiToolsEnabled: false }])
+    .on('PUT', `/api/admin/plugins/instances/${INSTANCE.id}`, ({ route }: { route: import('@playwright/test').Route }) =>
+      route.fulfill({ status: 204 }).then(() => undefined));
+  await page.goto('/plugins/crm/configuration');
+
+  await page.getByRole('button', { name: 'Ask AI' }).click();
+  const offer = page.getByRole('dialog', { name: 'Let the assistant work on this app?' });
+  await offer.getByRole('button', { name: 'Turn on and ask' }).click();
+
+  await expect.poll(() => api.requestsTo('PUT', `/api/admin/plugins/instances/${INSTANCE.id}`).length).toBe(1);
+  expect(api.requestsTo('PUT', `/api/admin/plugins/instances/${INSTANCE.id}`)[0]!.body).toEqual({ aiToolsEnabled: true });
+  await expect(page.getByRole('dialog', { name: 'Assistant' })).toBeVisible();
+});

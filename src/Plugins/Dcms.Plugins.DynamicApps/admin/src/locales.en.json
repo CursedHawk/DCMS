@@ -286,5 +286,11 @@
     "deleteHint": "Relationships pointing at it are handled as configured.",
     "emptyTitle": "Nothing published yet",
     "emptyHint": "Records belong to the published tables. Publish the app's configuration first."
+  },
+  "ai": {
+    "enableTitle": "Let the assistant work on this app?",
+    "enableDescription": "This turns on the app's AI tools. The assistant can then read and change the configuration and records, with your permissions only. Publishing, rolling back and deleting still wait for your approval.",
+    "enable": "Turn on and ask",
+    "enableFailed": "Could not turn on AI tools. You need permission to manage plugins."
   }
 }

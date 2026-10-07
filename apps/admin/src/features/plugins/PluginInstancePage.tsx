@@ -131,7 +131,7 @@ export function PluginInstancePage({ slug, screen }: { slug: string; screen?: st
             <PluginScreenView
               plugin={pluginUi}
               screenId={screen}
-              instance={{ id: instance.id, slug: instance.slug, name: instance.name, enabled: instance.enabled }}
+              instance={{ id: instance.id, slug: instance.slug, name: instance.name, enabled: instance.enabled, aiToolsEnabled: instance.aiToolsEnabled }}
             />
           </TabsContent>
         ) : null}
@@ -624,6 +624,9 @@ function Settings({
     onSuccess: async () => {
       toast.success(t('common.saved'));
       await qc.invalidateQueries({ queryKey: ['plugin-instances'] });
+      // The AI tools switch decides what the assistant may use, and plugin screens show it.
+      await qc.invalidateQueries({ queryKey: ['contracts', 'ai'] });
+      await qc.invalidateQueries({ queryKey: ['plugin-ui'] });
       // Data sets may describe themselves from config (VisitorAuth's attribute columns).
       await qc.invalidateQueries({ queryKey: ['plugin-data'] });
     },

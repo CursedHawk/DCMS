@@ -27,7 +27,7 @@ export interface PluginUiInfo {
   source: string;
   module: PluginModuleRef | null;
   screens: PluginScreenInfo[];
-  instances: { id: string; slug: string; name: string; enabled: boolean }[];
+  instances: { id: string; slug: string; name: string; enabled: boolean; aiToolsEnabled?: boolean }[];
 }
 
 /** GET /admin/plugin-ui: every plugin's screens, UI module and instances (docs/adr/0019). */

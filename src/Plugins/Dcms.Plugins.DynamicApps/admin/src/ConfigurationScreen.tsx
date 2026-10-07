@@ -13,7 +13,7 @@ import {
 import {
   instancePath,
   useCan,
-  useOpenAssistant,
+  usePluginHost,
   usePluginAiContext,
   usePluginApi,
   usePluginT,
@@ -39,7 +39,23 @@ export function ConfigurationScreen({ instance }: PluginScreenProps) {
   const api = usePluginApi();
   const mayEdit = useCan('model-write');
   const mayPublish = useCan('publish');
-  const openAssistant = useOpenAssistant();
+  const assistant = usePluginHost().assistant;
+  // The assistant can only work on the app once its AI tools are on; offer that first.
+  const [enablingAi, setEnablingAi] = useState(false);
+  const [aiPending, setAiPending] = useState(false);
+  const askAi = () => (instance!.aiToolsEnabled === false ? setEnablingAi(true) : assistant?.open());
+  const enableAi = async () => {
+    setAiPending(true);
+    try {
+      await assistant?.enableTools(instance!.id);
+      setEnablingAi(false);
+      assistant?.open();
+    } catch {
+      toast.error(t('ai.enableFailed'));
+    } finally {
+      setAiPending(false);
+    }
+  };
   const [tab, setTab] = useState('model');
   const [selection, setSelection] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
@@ -92,8 +108,8 @@ export function ConfigurationScreen({ instance }: PluginScreenProps) {
           {published ? <Badge tone="outline">{t('status.live', { number: published.number })}</Badge> : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          {openAssistant ? (
-            <Button variant="outline" size="sm" onClick={openAssistant}>
+          {assistant ? (
+            <Button variant="outline" size="sm" onClick={askAi}>
               <Sparkles className="size-4" aria-hidden /> {t('actions.askAi')}
             </Button>
           ) : null}
@@ -146,6 +162,15 @@ export function ConfigurationScreen({ instance }: PluginScreenProps) {
       </Tabs>
 
       {draft ? <PublishDialog slug={slug} open={publishing} onOpenChange={setPublishing} draft={draft} /> : null}
+      <ConfirmDialog
+        open={enablingAi}
+        onOpenChange={setEnablingAi}
+        title={t('ai.enableTitle')}
+        description={t('ai.enableDescription')}
+        confirmLabel={t('ai.enable')}
+        pending={aiPending}
+        onConfirm={() => void enableAi()}
+      />
       <ConfirmDialog
         open={discarding}
         onOpenChange={setDiscarding}
