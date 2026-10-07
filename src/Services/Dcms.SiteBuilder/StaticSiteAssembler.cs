@@ -204,6 +204,7 @@ public sealed class StaticSiteAssembler
     /// The published file name for a route. Unchanged for ordinary routes, so
     /// existing links and host rewrite rules keep working: <c>/about/team</c> →
     /// <c>about_team.html</c>, <c>/events/:slug</c> → <c>events_@.html</c>.
+    /// site-host and the edge's site gates both depend on this naming.
     /// </summary>
     public static string FileNameFor(string path)
     {

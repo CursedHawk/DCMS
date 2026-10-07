@@ -188,17 +188,31 @@ public static class SiteAuthentication
     /// </summary>
     public static IApplicationBuilder UseSiteGates(this IApplicationBuilder app) => app.Use(async (context, next) =>
     {
-        var gate = Gate(context);
-        var path = context.Request.Path.Value ?? "/";
-        if (gate is not null && SiteGateRules.IsAmbiguous(path))
-        {
-            // Ahead of the /.edge/ pass-through too: "/.edge/..%2Fportal" must not ride it.
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            return;
-        }
-        if (gate is null || path.StartsWith("/.edge/", StringComparison.Ordinal) || path.StartsWith("/.well-known/acme-challenge/", StringComparison.Ordinal))
+        // What is judged is exactly what would be proxied to site-host: the edge's own endpoints
+        // (/.edge/site/*, the ACME challenge, health) are not tenant content and are never
+        // gated, and no path spelling can make a proxied request look like one of them.
+        if (!IsTenantSite(context))
         {
             await next();
+            return;
+        }
+        if (!context.RequestServices.GetRequiredService<SiteGates>().Loaded)
+        {
+            // The rules have never been read (the database was unreachable at startup): any
+            // tenant host might be gated, so none is served as if it were not.
+            context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            context.Response.Headers.RetryAfter = "5";
+            return;
+        }
+        if (Gate(context) is not { } gate)
+        {
+            await next();
+            return;
+        }
+        var path = context.Request.Path.Value ?? "/";
+        if (SiteGateRules.IsAmbiguous(path))
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
             return;
         }
 
@@ -213,6 +227,14 @@ public static class SiteAuthentication
         if (SiteGateRules.Decide(gate.Rules, path) is not null)
         {
             context.Items[GatedItem] = true;
+            // site-host marks every file "public, max-age=60"; a gated one must not sit in a
+            // browser's or any proxy's cache for the next person, nor be served from it after
+            // sign-out. Applied as the response starts, over whatever the upstream said.
+            context.Response.OnStarting(() =>
+            {
+                context.Response.Headers.CacheControl = "private, no-store";
+                return Task.CompletedTask;
+            });
         }
         switch (outcome)
         {
@@ -281,6 +303,10 @@ public static class SiteAuthentication
         }
         return await store.RefreshAsync(id, session, gate, auth, context.RequestAborted);
     }
+
+    private static bool IsTenantSite(HttpContext context) =>
+        context.GetEndpoint()?.Metadata.GetMetadata<Yarp.ReverseProxy.Model.RouteModel>()?.Config.Metadata?
+            .ContainsKey(Routing.PlatformRoutes.PublicPlaneMetadataKey) == true;
 
     private static bool WantsPage(HttpRequest request)
     {

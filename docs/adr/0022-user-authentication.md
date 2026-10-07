@@ -143,7 +143,10 @@ How it is built (UA3):
   repeated slashes resolved; case-insensitively, by whole segment (`/portal` covers
   `/portal/x`, not `/portals`). The first rule wins; `public` returns the path to public. On a
   gated host a path still holding `%` (an encoded slash, a double encoding) or `\` gets a 400:
-  the edge and the server behind could read it as different files.
+  the edge and the server behind could read it as different files. A top-level `a_b.html` is
+  judged as the page `/a/b` too, because that is the flat file site-host serves that page from.
+- **Until the rules are first read** (the database unreachable at startup) every tenant host
+  answers 503, retried every 5 seconds: no rules known must not mean no rules.
 - **Sessions.** A separate cookie scheme (`dcms.site`, host-only) and OIDC scheme from the
   platform's, under `/.edge/site/…`, so a platform session never satisfies a site and the two
   callbacks never collide. Tokens stay server-side in Redis; the cookie holds only a session
@@ -156,7 +159,8 @@ How it is built (UA3):
   outside the rule's groups: 403. Site sign-in not configured on this edge: 503 for gated paths,
   never the page.
 - **Forwarding** is `X-Dcms-Realm-Token`, stripped from every inbound request like the other
-  identity headers. Gated responses are never served from or stored in the output cache.
+  identity headers. Gated responses are never served from or stored in the output cache, and
+  leave as `Cache-Control: private, no-store` whatever site-host said.
 - **Endpoints on every gated host:** `/.edge/site/signin?returnUrl=`, `/.edge/site/signout`, and
   `/.edge/site/me` (the signed-in user as JSON, for the site runtime).
 

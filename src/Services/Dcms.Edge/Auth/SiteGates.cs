@@ -38,6 +38,23 @@ public static class SiteGateRules
     public static SiteRule? Decide(IReadOnlyList<SiteRule> rules, string path)
     {
         var normalized = Normalize(path);
+        // site-host stores the page /portal/reports as the flat file portal_reports.html, and
+        // serves any path with an extension as that file -- so /portal_reports.html is the same
+        // page under another name, and must meet the same rule (SiteHostEndpoints.CandidatesFor).
+        return PageOf(normalized) is { } page && DecideOne(rules, page) is { } rule ? rule : DecideOne(rules, normalized);
+    }
+
+    /// <summary>The page a top-level <c>a_b.html</c> artifact is, <c>/a/b</c>; null for any other path.</summary>
+    internal static string? PageOf(string normalized)
+    {
+        var name = normalized[1..];
+        return name.Length > 5 && !name.Contains('/') && name.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
+            ? Normalize("/" + name[..^5].Replace('_', '/'))
+            : null;
+    }
+
+    private static SiteRule? DecideOne(IReadOnlyList<SiteRule> rules, string normalized)
+    {
         foreach (var rule in rules)
         {
             var prefix = rule.Prefix.TrimEnd('/');
@@ -90,11 +107,21 @@ public static class SiteGateRules
 /// </summary>
 public sealed class SiteGates
 {
-    private volatile IReadOnlyDictionary<string, SiteGateEntry> _hosts = new Dictionary<string, SiteGateEntry>();
+    private volatile IReadOnlyDictionary<string, SiteGateEntry>? _hosts;
 
-    public int Count => _hosts.Count;
+    /// <summary>
+    /// False until the first read of the table succeeds. Until then no host is known to be
+    /// gated, and "not known" must not mean "public": tenant sites wait (503) instead.
+    /// </summary>
+    public bool Loaded => _hosts is not null;
 
-    public SiteGateEntry? For(string host) => _hosts.GetValueOrDefault(host.ToLowerInvariant());
+    public int Count => _hosts?.Count ?? 0;
+
+    /// <summary>
+    /// The host's rules. A trailing dot is the same name to DNS, so it is the same host here:
+    /// <c>corp.example.</c> must not be a way around the rules of <c>corp.example</c>.
+    /// </summary>
+    public SiteGateEntry? For(string host) => _hosts?.GetValueOrDefault(host.TrimEnd('.').ToLowerInvariant());
 
     public void Replace(IReadOnlyDictionary<string, SiteGateEntry> hosts) => _hosts = hosts;
 
@@ -149,7 +176,8 @@ public sealed class SiteGateLoader(SiteGates gates, IServiceScopeFactory scopes,
         while (!ct.IsCancellationRequested)
         {
             await ReloadAsync(ct);
-            try { await Task.Delay(SweepInterval, ct); }
+            // Tenant sites are held at 503 until the first load, so retry that one quickly.
+            try { await Task.Delay(gates.Loaded ? SweepInterval : TimeSpan.FromSeconds(5), ct); }
             catch (OperationCanceledException) { return; }
         }
     }

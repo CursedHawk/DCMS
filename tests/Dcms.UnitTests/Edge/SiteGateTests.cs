@@ -30,6 +30,13 @@ public class SiteGateTests
     [InlineData("/./portal/reports")]
     [InlineData("/x/../portal/reports")]
     [InlineData("/members/../portal")]
+    // site-host's flat artifact names for the same pages.
+    [InlineData("/portal.html")]
+    [InlineData("/portal_reports.html")]
+    [InlineData("/PORTAL_Reports.HTML")]
+    [InlineData("/portal_@.html")]
+    [InlineData("/_portal.html")]
+    [InlineData("/portal__reports.html")]
     public void Every_spelling_of_a_gated_path_meets_its_rule(string path) =>
         SiteGateRules.Decide(Site.Rules, path)!.Prefix.Should().Be("/portal");
 
@@ -55,6 +62,9 @@ public class SiteGateTests
     [InlineData("/about")]
     [InlineData("/portal/public")]
     [InlineData("/portal/public/brochure.pdf")]
+    [InlineData("/portal_public.html")]
+    [InlineData("/portals.html")]
+    [InlineData("/about.html")]
     public void Paths_no_rule_covers_or_a_public_rule_covers_are_open(string path) =>
         SiteGateRules.Decide(Site.Rules, path).Should().BeNull();
 
@@ -95,4 +105,17 @@ public class SiteGateTests
         a.Should().NotBe(SiteAuthentication.SecretFor("master", "site:bbbb"));
         a.Should().NotBe(SiteAuthentication.SecretFor("other", "site:aaaa"));
     }
+
+    [Fact]
+    public void A_trailing_dot_names_the_same_host()
+    {
+        var gates = new SiteGates();
+        gates.Replace(new Dictionary<string, SiteGateEntry>(StringComparer.OrdinalIgnoreCase) { ["corp.example"] = Site });
+        gates.For("corp.example.").Should().BeSameAs(Site);
+        gates.For("CORP.Example").Should().BeSameAs(Site);
+    }
+
+    [Fact]
+    public void Nothing_is_known_until_the_first_load() =>
+        new SiteGates().Loaded.Should().BeFalse();
 }

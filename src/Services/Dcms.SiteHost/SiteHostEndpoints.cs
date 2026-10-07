@@ -39,7 +39,9 @@ public static class SiteHostEndpoints
     /// SPA-style index.html fallback apply, as before.
     ///
     /// Mirrors StaticSiteAssembler.FileNameFor — a change to one belongs in both,
-    /// or the host asks for a file name the build never wrote.
+    /// or the host asks for a file name the build never wrote. And the edge's site
+    /// gates (SiteGateRules.PageOf) map a flat <c>a_b.html</c> back to <c>/a/b</c> so a
+    /// page's rule cannot be dodged by asking for its file: change that too.
     /// </summary>
     /// <summary>
     /// Serves one path of a resolved build. Small files come from <see cref="SiteArtifactCache"/>;
