@@ -36,7 +36,7 @@ public sealed class RealmTests(IdentityAppFixture fixture)
         await AcceptAsync(browser, invite, ct);
 
         var (location, verifier) = await AuthorizeAsync(browser, a, ct);
-        location.Should().StartWith($"https://{a.Host}/.edge/signin-oidc", "the invitation signed the user in to the realm");
+        location.Should().StartWith($"https://{a.Host}{RealmClients.CallbackPath}", "the invitation signed the user in to the realm");
         var tokens = await ExchangeAsync(a, location, verifier, ct);
 
         var access = Claims(tokens.GetProperty("access_token").GetString()!);
@@ -273,7 +273,7 @@ public sealed class RealmTests(IdentityAppFixture fixture)
         var url = QueryHelpers.AddQueryString("/connect/authorize", new Dictionary<string, string?>
         {
             ["client_id"] = realm.ClientId,
-            ["redirect_uri"] = $"https://{realm.Host}/.edge/signin-oidc",
+            ["redirect_uri"] = $"https://{realm.Host}{RealmClients.CallbackPath}",
             ["response_type"] = "code",
             ["scope"] = "openid profile email offline_access",
             ["state"] = "s",
@@ -290,7 +290,7 @@ public sealed class RealmTests(IdentityAppFixture fixture)
         using var response = await fixture.Factory.CreateClient().PostAsync("/connect/token", Form(
             ("grant_type", "authorization_code"),
             ("code", QueryHelpers.ParseQuery(new Uri(location).Query)["code"].ToString()),
-            ("redirect_uri", $"https://{realm.Host}/.edge/signin-oidc"),
+            ("redirect_uri", $"https://{realm.Host}{RealmClients.CallbackPath}"),
             ("client_id", realm.ClientId),
             ("client_secret", RealmClients.SecretFor(IdentityAppFixture.EdgeSitesSecret, realm.ClientId)),
             ("code_verifier", verifier)), ct);

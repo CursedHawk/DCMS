@@ -97,4 +97,13 @@ public sealed class EdgeAuthOptions
     /// session. See <see cref="BffGuard"/>.
     /// </summary>
     public string CsrfCookieName { get; set; } = "dcms.csrf";
+
+    /// <summary>
+    /// The master secret tenant realm clients' secrets derive from (ADR 0022) — the same value
+    /// identity holds as <c>Identity:EdgeSites:Secret</c>. Unset: no site sign-in, and any site
+    /// with access rules answers 503 on its gated paths rather than serving them.
+    /// </summary>
+    public string SitesSecret { get; set; } = string.Empty;
+
+    public bool SitesEnabled => Enabled && !string.IsNullOrWhiteSpace(SitesSecret);
 }

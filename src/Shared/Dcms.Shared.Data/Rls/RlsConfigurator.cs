@@ -128,6 +128,7 @@ public static class RlsConfigurator
         ("audit", "chain_heads"),         // one row per chain; the verifier walks all of them
         ("audit", "chain_anchors"),
         ("apps", "outbox"),               // Dynamic Apps events, drained by a cross-tenant dispatcher
+        ("edge", "site_gates"),           // read by hostname across tenants by the edge, which has no tenant context
     ];
 
     /// <summary>

@@ -313,6 +313,7 @@ services:
       # ingress (Grafana is reached at localhost:3001 directly), so there is nothing for it to
       # gate, and an unset secret disables edge authentication on both sides at once.
       Identity__Edge__Secret: "${EDGE_OIDC_CLIENT_SECRET:-}"
+      Identity__EdgeSites__Secret: "${EDGE_SITES_SECRET:-}"
       Identity__Edge__RedirectUris: "http://localhost:3001/.edge/signin-oidc"
       Identity__Edge__PostLogoutUris: "http://localhost:3001/.edge/signout-callback-oidc"
 
@@ -425,6 +426,7 @@ services:
       # ingress (Grafana is reached at localhost:3001 directly), so there is nothing for it to
       # gate, and an unset secret disables edge authentication on both sides at once.
       Identity__Edge__Secret: "${EDGE_OIDC_CLIENT_SECRET:-}"
+      Identity__EdgeSites__Secret: "${EDGE_SITES_SECRET:-}"
       Identity__Edge__RedirectUris: "http://localhost:3001/.edge/signin-oidc"
       Identity__Edge__PostLogoutUris: "http://localhost:3001/.edge/signout-callback-oidc"
 
@@ -707,6 +709,7 @@ services:
       Edge__Auth__Authority: "${PUBLIC_BASE_URL:-http://localhost:8080}"
       Edge__Auth__InternalAuthority: "http://identity:8080"
       Edge__Auth__ClientSecret: "${EDGE_OIDC_CLIENT_SECRET:-}"
+      Edge__Auth__SitesSecret: "${EDGE_SITES_SECRET:-}"
       # Rate limiting, partitioned on the real TCP peer -- the edge is the first hop, so unlike
       # the downstream limiters this one is not counting a header it assembled itself, and one
       # process is counting rather than one per replica. The generous number is a ceiling on one

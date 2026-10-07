@@ -108,6 +108,8 @@ builder.Services.AddHealthChecks()
 // why a missing secret opens the loop rather than closing the door.
 builder.AddEdgeAuthentication();
 builder.AddBff();
+// Tenant sites' enterprise sign-in and path rules (ADR 0022).
+builder.AddSiteAuthentication(builder.Configuration.GetSection(EdgeAuthOptions.SectionName).Get<EdgeAuthOptions>() ?? new EdgeAuthOptions());
 
 // Shedding load costs nothing downstream, and this is the only hop where the client address is
 // the actual TCP peer rather than a header the edge itself assembled.
@@ -179,6 +181,10 @@ app.UseAuthorization();
 // operator is not throttled out of the console by an anonymous flood from the same NAT.
 app.UseRateLimiter();
 
+// A tenant site's access rules, after authentication and before the cache: a gated page is
+// decided before a cached copy could be served, and never stored (see EdgeOutputCache).
+app.UseSiteGates();
+
 // Before the proxy, so a cache hit is served without a downstream request at all -- which is
 // the entire point. A no-op when the cache is not registered.
 if (EdgeOutputCache.IsEnabled(app.Configuration))
@@ -190,6 +196,7 @@ if (EdgeOutputCache.IsEnabled(app.Configuration))
 // belongs to somebody else.
 app.MapEdgeAuthEndpoints();
 app.MapBffEndpoints();
+app.MapSiteAuthEndpoints();
 
 // Before the proxy, and matched ahead of every host route. The certificate authority fetches
 // this on the domain it is validating, which is by definition a hostname the proxy would
@@ -211,6 +218,9 @@ app.MapReverseProxy(proxyPipeline =>
     // pipeline because whether this request may be authenticated from the edge's own session
     // depends on the matched route. Inert unless Edge:Auth:Bff is on -- ADR 0014.
     proxyPipeline.UseBffAuthentication();
+
+    // After the scrubbers, so the realm token header is the edge's own.
+    proxyPipeline.UseSiteSessionForwarding();
 });
 
 app.Run();

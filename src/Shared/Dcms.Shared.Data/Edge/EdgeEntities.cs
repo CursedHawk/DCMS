@@ -271,3 +271,28 @@ public sealed class EdgeRateLimitExemption
     /// <summary>The operator's email, for the same reason as <see cref="Note"/>.</summary>
     public string? CreatedBy { get; set; }
 }
+
+/// <summary>
+/// Who may open which pages of one tenant hostname (ADR 0022): the User Authentication plugin's
+/// site access rules, published here by admin-api for the edge to enforce. Keyed by hostname —
+/// the edge decides on the Host it was asked for — and read across tenants by the edge, which
+/// holds no tenant context.
+/// </summary>
+public sealed class EdgeSiteGate
+{
+    /// <summary>Lower-case hostname, unique.</summary>
+    public string Hostname { get; set; } = string.Empty;
+
+    public Guid TenantId { get; set; }
+
+    /// <summary>The tenant's realm slug: where its users sign in.</summary>
+    public string RealmSlug { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The site's ordered rules as JSON: <c>[{ "prefix": "/portal", "access": "groups", "groups": ["…"] }]</c>.
+    /// The first rule whose prefix matches decides; a path no rule matches is public.
+    /// </summary>
+    public string RulesJson { get; set; } = "[]";
+
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}

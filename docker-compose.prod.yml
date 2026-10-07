@@ -514,6 +514,8 @@ services:
       # Must equal Identity__Edge__Secret. Unset disables edge authentication and both consoles
       # fall back to their own login -- deliberately, rather than taking the ingress down.
       Edge__Auth__ClientSecret: "${EDGE_OIDC_CLIENT_SECRET:-}"
+      # Must equal Identity__EdgeSites__Secret (ADR 0022): tenant site sign-in.
+      Edge__Auth__SitesSecret: "${EDGE_SITES_SECRET:-}"
       # ADR 0014, phase 2: ON. The edge now requests dcms.admin and offline_access at sign-in
       # and keeps a session's tokens server-side.
       #

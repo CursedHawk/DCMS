@@ -76,6 +76,7 @@ x-vps-identity-seed: &vps-identity-seed
   # nothing — an unused redirect URI is never redirected to — and means turning the BFF on is
   # one variable rather than a variable plus a client-registration change.
   Identity__Edge__Secret: "${EDGE_OIDC_CLIENT_SECRET:-}"
+  Identity__EdgeSites__Secret: "${EDGE_SITES_SECRET:-}"
   Identity__Edge__RedirectUris: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}/.edge/signin-oidc;https://${GIT_HOST:-git.highgeek.eu}/.edge/signin-oidc;https://${ADMIN_HOST:-admin.highgeek.eu}/.edge/signin-oidc"
   Identity__Edge__PostLogoutUris: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}/.edge/signout-callback-oidc;https://${GIT_HOST:-git.highgeek.eu}/.edge/signout-callback-oidc;https://${ADMIN_HOST:-admin.highgeek.eu}/.edge/signout-callback-oidc"
 

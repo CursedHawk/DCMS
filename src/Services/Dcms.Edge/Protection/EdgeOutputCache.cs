@@ -68,7 +68,9 @@ public static class EdgeOutputCache
         public ValueTask CacheRequestAsync(OutputCacheContext context, CancellationToken cancellationToken)
         {
             var request = context.HttpContext.Request;
-            var personal = request.Headers.ContainsKey("Cookie")
+            // A gated request (behind a site access rule) is never cached, whoever asks.
+            var personal = Dcms.Edge.Auth.SiteAuthentication.IsGated(context.HttpContext)
+                           || request.Headers.ContainsKey("Cookie")
                            || request.Path.StartsWithSegments("/api")
                            || request.Path.StartsWithSegments("/hub");
 

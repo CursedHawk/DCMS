@@ -35,3 +35,14 @@ public sealed record RateLimitExemptionsChanged(
 {
     public int Version => 1;
 }
+
+/// <summary>
+/// A tenant's site access rules changed. Carries nothing but the fact, like
+/// <see cref="RateLimitExemptionsChanged"/>: every edge replica re-reads <c>edge.site_gates</c>.
+/// </summary>
+public sealed record SiteGatesChanged(
+    Guid EventId,
+    DateTimeOffset OccurredAt) : IDcmsEvent
+{
+    public int Version => 1;
+}

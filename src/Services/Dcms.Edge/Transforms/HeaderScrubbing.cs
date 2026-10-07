@@ -39,6 +39,9 @@ public static class HeaderScrubbing
     private static readonly string[] IdentityHeaders =
     [
         "X-WEBAUTH-USER", "X-WEBAUTH-EMAIL", "X-WEBAUTH-NAME", "X-WEBAUTH-ROLE", "X-WEBAUTH-GROUPS",
+        // A tenant site user's realm token, set from the edge's site session (ADR 0022). Only
+        // the edge says which enterprise user a request on a tenant site is.
+        Auth.SiteAuthentication.RealmTokenHeader,
     ];
 
     /// <summary>

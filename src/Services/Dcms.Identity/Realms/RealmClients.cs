@@ -25,9 +25,13 @@ public static class RealmClients
     public const string Prefix = "site:";
     public const string SecretSetting = "Identity:EdgeSites:Secret";
 
-    /// <summary>The edge's sign-in callback and sign-out landing, on every host it gates.</summary>
-    public const string CallbackPath = "/.edge/signin-oidc";
-    public const string SignedOutPath = "/.edge/signout-callback-oidc";
+    /// <summary>
+    /// The edge's site sign-in callback and sign-out landing, on every tenant host it gates.
+    /// Not the platform's <c>/.edge/signin-oidc</c>: both handlers look at every request, and two
+    /// claiming one path means the wrong one tries — and fails — to read the other's state.
+    /// </summary>
+    public const string CallbackPath = "/.edge/site/signin-oidc";
+    public const string SignedOutPath = "/.edge/site/signout-callback-oidc";
 
     public static string IdFor(Guid tenantId) => Prefix + tenantId.ToString("N");
 

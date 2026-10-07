@@ -221,6 +221,10 @@ if [ "$ENVIRONMENT" != "local" ]; then
   ensure_env_secret APP_DB_PASSWORD
   # identity's own runtime role (ADR 0015 phase 5), for the same reason.
   ensure_env_secret IDENTITY_DB_PASSWORD
+  # ADR 0022: identity derives each tenant's site:{id} client secret from it and the edge
+  # derives the same one, so only the two of them ever hold it. Unset, sites cannot be gated
+  # and the edge says so at startup; set, signing in to a gated tenant site works.
+  ensure_env_secret EDGE_SITES_SECRET
 fi
 
 # `config` fully resolves the overlay set and every substitution. If the files

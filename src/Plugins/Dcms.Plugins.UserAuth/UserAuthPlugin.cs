@@ -38,5 +38,11 @@ public sealed class UserAuthPlugin : IPlugin
 
     public void ConfigureServices(IServiceCollection services, PluginHost host)
     {
+        if (host.IsAdmin)
+        {
+            // The site rules the edge enforces: published on every change, reconciled every few minutes.
+            services.AddScoped<SiteGatePublisher>();
+            services.AddHostedService<SiteGateReconciler>();
+        }
     }
 }

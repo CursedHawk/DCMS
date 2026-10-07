@@ -41,6 +41,9 @@ public class EdgeDbContext(DbContextOptions<EdgeDbContext> options)
     /// <summary>Client addresses and ranges the edge does not rate-limit.</summary>
     public DbSet<EdgeRateLimitExemption> RateLimitExemptions => Set<EdgeRateLimitExemption>();
 
+    /// <summary>Tenant sites' access rules, by hostname (ADR 0022). Written by admin-api, enforced by the edge.</summary>
+    public DbSet<EdgeSiteGate> SiteGates => Set<EdgeSiteGate>();
+
     /// <summary>
     /// The edge's OWN key ring, not the shared <c>dataprotection</c> schema every other service
     /// uses.
@@ -127,6 +130,17 @@ public class EdgeDbContext(DbContextOptions<EdgeDbContext> options)
             e.Property(x => x.Cidr).HasMaxLength(64).IsRequired();
             e.Property(x => x.Note).HasMaxLength(500).IsRequired();
             e.Property(x => x.CreatedBy).HasMaxLength(320);
+        });
+
+        builder.Entity<EdgeSiteGate>(e =>
+        {
+            e.ToTable("site_gates");
+            e.HasKey(x => x.Hostname);
+            e.Property(x => x.Hostname).HasMaxLength(253);
+            e.Property(x => x.RealmSlug).HasMaxLength(63).IsRequired();
+            e.Property(x => x.RulesJson).HasColumnType("jsonb").IsRequired();
+            // What a tenant's republish replaces and its purge deletes.
+            e.HasIndex(x => x.TenantId);
         });
 
         builder.Entity<AcmeAccount>(e =>

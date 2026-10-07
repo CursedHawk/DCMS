@@ -63,6 +63,13 @@ public static class Subjects
     public const string RateLimitExemptionsChanged = "edge.ratelimit.exemptions-changed";
 
     /// <summary>
+    /// A tenant's site access rules were republished to <c>edge.site_gates</c> (ADR 0022). A
+    /// broadcast to every edge replica, which reloads the rules at once; on the TENANCY stream
+    /// under `edge.>` like the subjects above.
+    /// </summary>
+    public const string SiteGatesChanged = "edge.site-gates.changed";
+
+    /// <summary>
     /// A platform notification was recorded. Consumed by platform-api, which turns it into a
     /// push to every open console so the bell and the page behind it stop waiting for a poll.
     /// On the TENANCY stream for the same reason as the subject above.

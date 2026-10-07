@@ -10,6 +10,8 @@
     <!-- First-party: owns the userauth schema (ADR 0022). -->
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Security\Dcms.Shared.Security.csproj" />
+    <!-- Publishes site rules to the edge (edge.site_gates + a broadcast). -->
+    <ProjectReference Include="$(DcmsSrcRoot)Shared\Dcms.Shared.Messaging\Dcms.Shared.Messaging.csproj" />
   </ItemGroup>
 
 </Project>
