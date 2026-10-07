@@ -156,3 +156,14 @@ test('a record is edited with the version it was read at', async ({ page, api })
   await expect.poll(() => api.requestsTo('PATCH', `/api/admin/plugins/crm/_records/deals/${record.id}`).length).toBe(1);
   expect(api.requestsTo('PATCH', `/api/admin/plugins/crm/_records/deals/${record.id}`)[0]!.body).toEqual({ title: 'Bigger one', version: 3 });
 });
+
+test('Ask AI opens the assistant on this app, and the conversation can move to the full page', async ({ page }) => {
+  await page.goto('/plugins/crm/configuration');
+
+  await page.getByRole('button', { name: 'Ask AI' }).click();
+  const dock = page.getByRole('dialog', { name: 'Assistant' });
+  await expect(dock.getByText(/the CRM app's configuration \(Dynamic Apps instance "crm"\), model tab; draft revision 2 is open/)).toBeVisible();
+
+  await dock.getByRole('button', { name: 'Open in full view' }).click();
+  await expect(page).toHaveURL(/\/assistant$/);
+});
