@@ -69,7 +69,7 @@ public interface IFlowAction
 }
 
 /// <summary>The actions a flow may call, by <c>id@major</c>.</summary>
-public static class ActionCatalog
+public static partial class ActionCatalog
 {
     public static readonly IReadOnlyList<IFlowAction> All =
     [
@@ -87,6 +87,71 @@ public static class ActionCatalog
     public static string Key(IFlowAction action) => $"{action.Id}@{action.Major}";
 
     public static IFlowAction? Find(string key) => ByKey.GetValueOrDefault(key);
+
+    /// <summary>
+    /// The built-in actions and every action an enabled <c>automation.actions@1</c> provider
+    /// offers this tenant. A provider's action never shadows a built-in one, and of two providers
+    /// offering the same key the first wins.
+    /// </summary>
+    public static async Task<IReadOnlyList<IFlowAction>> WithProvidersAsync(IPluginContext context, CancellationToken ct)
+    {
+        var all = new List<IFlowAction>(All);
+        var keys = Keys.ToHashSet(StringComparer.Ordinal);
+        foreach (var provider in context.Contracts.GetAll<IAutomationActionProvider>())
+        {
+            AutomationActionList offers;
+            try
+            {
+                offers = await provider.ListAsync(ct);
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                // One broken provider must not take the designer and every publish down with it;
+                // a flow using its actions fails validation as naming an unknown action instead.
+                continue;
+            }
+            foreach (var offered in offers.Actions.Take(MaxActionsPerProvider))
+            {
+                var action = new ProvidedAction(provider, offered);
+                if (ProvidedName().IsMatch(offered.Name) && offered.Major >= 1 && keys.Add(Key(action)))
+                {
+                    all.Add(action);
+                }
+            }
+        }
+        return all;
+    }
+
+    /// <summary>A built-in action by key, or else a provider's.</summary>
+    public static async Task<IFlowAction?> FindAsync(IPluginContext context, string key, CancellationToken ct) =>
+        Find(key) ?? (await WithProvidersAsync(context, ct)).FirstOrDefault(a => Key(a) == key);
+
+    private const int MaxActionsPerProvider = 50;
+
+    [GeneratedRegex("^[a-z][a-z0-9-]*\\.[a-z0-9.-]{1,62}$")]
+    private static partial Regex ProvidedName();
+}
+
+/// <summary>An action another plugin offers through <c>automation.actions@1</c>, run through the contract runtime.</summary>
+internal sealed class ProvidedAction(IAutomationActionProvider provider, AutomationActionDescriptor offered) : IFlowAction
+{
+    public string Id => offered.Name;
+
+    /// <summary>What a member must hold to publish a flow using this action; see <see cref="AutomationActionDescriptor.Permission"/>.</summary>
+    public string? Permission => offered.Permission;
+    public int Major => offered.Major;
+    public string Description => offered.Description;
+    public OpRisk Risk => offered.Risk;
+    public JsonObject InputSchema => JsonNode.Parse(offered.InputSchema.GetRawText()) as JsonObject ?? [];
+
+    public async Task<JsonNode?> RunAsync(FlowActionContext context, JsonObject input, CancellationToken ct)
+    {
+        var instanceId = context.Plugin.Instance?.InstanceId
+            ?? throw new InvalidOperationException("Flow steps run per instance; this context has none.");
+        var result = await provider.ExecuteAsync(new AutomationActionCall(
+            offered.Name, offered.Major, JsonSerializer.SerializeToElement(input), context.IdempotencyKey, instanceId, context.Run.Id), ct);
+        return result.Output is { } output ? JsonNode.Parse(output.GetRawText()) : null;
+    }
 }
 
 public static class AutomationLimits

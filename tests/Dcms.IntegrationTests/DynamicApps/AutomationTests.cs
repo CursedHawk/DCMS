@@ -177,7 +177,122 @@ public sealed class AutomationTests(ContentFlowFixture fixture)
         (await RunsAsync(app, "tick", ct)).Should().ContainSingle("the schedule moved on to its next due time");
     }
 
+    [DockerFact]
+    public async Task A_form_submission_on_the_site_triggers_a_flow_with_what_was_sent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.InstallAsync("forms", "contact", """{"forms":[{"name":"hello","fields":[{"name":"message","required":true}]}]}""", ct);
+        await app.PublishAsync(Crm, ct);
+        await app.PublishAsync("""
+            [ { "op": "create", "type": "flow", "value": { "apiName": "file_it", "displayName": "File it",
+                "trigger": { "event": "form.submitted" }, "condition": "event.payload.formName == 'hello'",
+                "steps": [ { "id": "log", "action": "records.create@1", "input": { "table": "log", "values": { "message": "{{ event.payload.data.message }}" } } } ] } } ]
+            """, ct);
+
+        var sent = await app.SiteAsync(HttpMethod.Post, "/api/contact/forms/hello", ct, new { message = "call me back" });
+        ((int)sent.StatusCode).Should().BeInRange(200, 299, await sent.Content.ReadAsStringAsync(ct));
+
+        var run = (await WaitForRunsAsync(app, "file_it", 1, ct)).Single();
+        run.GetProperty("status").GetString().Should().Be("succeeded", run.ToString());
+        run.GetProperty("trigger").GetString().Should().Be("form.submitted");
+        (await app.JsonAsync(HttpMethod.Get, "/_records/log", ct)).GetProperty("items")[0].GetProperty("message").GetString()
+            .Should().Be("call me back");
+    }
+
+    [DockerFact]
+    public async Task A_new_visitor_triggers_a_flow_that_acts_through_another_plugins_action()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.InstallAsync("visitor-auth", "members",
+            """{"attributes":[{"key":"company","label":"Company","visibility":"plugins"},{"key":"secret","label":"Secret","visibility":"private"}]}""", ct);
+        await app.PublishAsync(Crm, ct);
+
+        var actions = await app.JsonAsync(HttpMethod.Get, "/_automation/actions", ct);
+        actions.EnumerateArray().Select(a => a.GetProperty("key").GetString()).Should().Contain("visitor-auth.set-attributes@1");
+
+        await app.PublishAsync("""
+            [ { "op": "create", "type": "flow", "value": { "apiName": "welcome", "displayName": "Welcome",
+                "trigger": { "event": "visitor.registered" },
+                "steps": [
+                  { "id": "tag", "action": "visitor-auth.set-attributes@1",
+                    "input": { "visitorId": "{{ event.payload.visitorId }}", "attributes": { "company": "Acme" } } },
+                  { "id": "log", "action": "records.create@1",
+                    "input": { "table": "log", "values": { "message": "{{ steps.tag.email }} at {{ steps.tag.attributes.company }}" } } } ] } } ]
+            """, ct);
+
+        var email = $"{Guid.NewGuid():N}@visitor.test";
+        await app.VisitorAsync(email, ct);
+
+        var run = (await WaitForRunsAsync(app, "welcome", 1, ct)).Single();
+        run.GetProperty("status").GetString().Should().Be("succeeded", run.ToString());
+        (await app.JsonAsync(HttpMethod.Get, "/_records/log", ct)).GetProperty("items")[0].GetProperty("message").GetString()
+            .Should().Be($"{email} at Acme");
+
+        // The provider's rules hold for a flow too: a private attribute is refused, and the step
+        // fails without retrying.
+        await app.PublishAsync("""
+            [ { "op": "create", "type": "flow", "value": { "apiName": "pry", "displayName": "Pry",
+                "steps": [ { "id": "tag", "action": "visitor-auth.set-attributes@1",
+                  "input": { "visitorId": "{{ input.visitorId }}", "attributes": { "secret": "x" } } } ] } } ]
+            """, ct);
+        var detail = await app.JsonAsync(HttpMethod.Get, $"/_automation/runs/{run.GetProperty("id").GetString()}", ct);
+        var registered = detail.GetProperty("steps")[0].GetProperty("input").GetProperty("visitorId").GetString();
+        await app.JsonAsync(HttpMethod.Post, "/_automation/flows/pry/run", ct, new { input = new { visitorId = registered } }, HttpStatusCode.Accepted);
+        var pried = (await WaitForRunsAsync(app, "pry", 1, ct)).Single();
+        pried.GetProperty("status").GetString().Should().Be("failed");
+        pried.GetProperty("attempts").GetInt32().Should().Be(1);
+
+        // Publishing an app is not managing visitors: a member who may do the one but not the
+        // other cannot write a flow that does it for them — yet may edit the rest of the app.
+        var builder = await app.AddMemberAsync(
+            ["plugin:dynamic-apps:model-read", "plugin:dynamic-apps:model-write", "plugin:dynamic-apps:publish"], ct);
+        var hash = (await app.JsonAsync(HttpMethod.Get, "/_model", ct, @as: builder)).GetProperty("hash").GetString();
+        var applied = await app.JsonAsync(HttpMethod.Post, "/_model/draft/changes", ct, new
+        {
+            expectedHash = hash,
+            operations = AppHarness.Operations("""
+                [ { "op": "update", "type": "flow", "target": "welcome", "value": { "displayName": "Welcome, again" } } ]
+                """),
+        }, @as: builder);
+        Errors(applied).Should().Equal("action-not-permitted");
+        (await app.SendAsync(HttpMethod.Post, "/_model/draft/publish",
+                new { expectedHash = applied.GetProperty("draft").GetProperty("hash").GetString() }, ct, builder))
+            .StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+
+        hash = (await app.JsonAsync(HttpMethod.Get, "/_model", ct, @as: builder)).GetProperty("hash").GetString();
+        await app.JsonAsync(HttpMethod.Post, "/_model/draft/discard", ct, new { expectedHash = hash }, HttpStatusCode.NoContent, builder);
+        hash = (await app.JsonAsync(HttpMethod.Get, "/_model", ct, @as: builder)).GetProperty("hash").GetString();
+        var unrelated = await app.JsonAsync(HttpMethod.Post, "/_model/draft/changes", ct, new
+        {
+            expectedHash = hash,
+            operations = AppHarness.Operations("""[ { "op": "update", "type": "table", "target": "log", "value": { "displayName": "Journal" } } ]"""),
+        }, @as: builder);
+        Errors(unrelated).Should().BeEmpty("the visitor flow is unchanged from the live one");
+    }
+
+    [DockerFact]
+    public async Task A_flow_naming_an_action_no_installed_plugin_offers_does_not_publish()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.PublishAsync(Crm, ct);
+        var applied = await app.JsonAsync(HttpMethod.Post, "/_model/draft/changes", ct, new
+        {
+            expectedHash = (await app.JsonAsync(HttpMethod.Get, "/_model", ct)).GetProperty("hash").GetString(),
+            operations = AppHarness.Operations("""
+                [ { "op": "create", "type": "flow", "value": { "apiName": "tag", "displayName": "Tag",
+                    "steps": [ { "id": "tag", "action": "visitor-auth.set-attributes@1", "input": {} } ] } } ]
+                """),
+        });
+        Errors(applied).Should().Contain("unknown-action");
+    }
+
     // ---- helpers ----
+
+    private static IEnumerable<string?> Errors(JsonElement applied) => applied.GetProperty("issues").EnumerateArray()
+        .Where(i => i.GetProperty("severity").GetString() == "error").Select(i => i.GetProperty("code").GetString());
 
     private static async Task<string> Create(AppHarness app, string table, object values, CancellationToken ct) =>
         (await app.JsonAsync(HttpMethod.Post, $"/_records/{table}", ct, values, HttpStatusCode.Created)).GetProperty("id").GetString()!;

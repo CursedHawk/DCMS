@@ -61,7 +61,7 @@ public sealed class PluginContractWiringTests(ContentFlowFixture fixture)
             .ToDictionary(p => p.GetProperty("id").GetString()!);
 
         catalog["visitor-auth"].GetProperty("provides").EnumerateArray().Select(p => p.GetString())
-            .Should().BeEquivalentTo(["visitors.identity@1", "visitors.profiles@1"]);
+            .Should().BeEquivalentTo(["visitors.identity@1", "visitors.profiles@1", "automation.actions@1"]);
         catalog["forms"].GetProperty("consumes").EnumerateArray()
             .Should().Contain(c => c.GetProperty("contractId").GetString() == "visitors.identity@1"
                                    && c.GetProperty("optional").GetBoolean());

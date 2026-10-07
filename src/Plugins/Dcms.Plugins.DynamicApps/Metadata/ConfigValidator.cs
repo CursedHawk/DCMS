@@ -50,7 +50,8 @@ public static partial class ConfigValidator
     [GeneratedRegex("^[a-z][a-z0-9_]{0,62}$")]
     private static partial Regex ApiNamePattern();
 
-    public static IReadOnlyList<ConfigIssue> Validate(AppConfig config, AppConfig? published = null)
+    /// <param name="actions">The action keys flows may use; the built-in ones when null (see <see cref="Automation.ActionCatalog.WithProvidersAsync"/>).</param>
+    public static IReadOnlyList<ConfigIssue> Validate(AppConfig config, AppConfig? published = null, IReadOnlySet<string>? actions = null)
     {
         var issues = new List<ConfigIssue>();
         void Error(string code, string path, string message) => issues.Add(new(IssueSeverity.Error, code, path, message));
@@ -230,7 +231,7 @@ public static partial class ConfigValidator
             }
         }
 
-        CheckFlows(config, tables, Error);
+        CheckFlows(config, tables, actions ?? Automation.ActionCatalog.Keys, Error);
 
         if (published is not null)
         {
@@ -259,7 +260,7 @@ public static partial class ConfigValidator
     [GeneratedRegex("^flow\\.event\\.[a-z][a-z0-9_.-]{0,62}$")]
     private static partial Regex FlowEventPattern();
 
-    private static void CheckFlows(AppConfig config, Dictionary<Guid, TableDef> tables, Action<string, string, string> error)
+    private static void CheckFlows(AppConfig config, Dictionary<Guid, TableDef> tables, IReadOnlySet<string> actions, Action<string, string, string> error)
     {
         Duplicates(config.Flows.Select(f => f.ApiName), "flows", "flow", error);
         var relationships = config.Relationships.DistinctBy(r => r.Id).ToDictionary(r => r.Id);
@@ -273,10 +274,10 @@ public static partial class ConfigValidator
             var isRow = RowEvents.Contains(trigger.Event);
             var isRelation = RelationEvents.Contains(trigger.Event);
             var known = isRow || isRelation || trigger.Event is "revision.published" or "schedule" or "manual"
-                        || FlowEventPattern().IsMatch(trigger.Event);
+                        || FlowEventPattern().IsMatch(trigger.Event) || Automation.PlatformEventBridge.Events.Contains(trigger.Event);
             if (!known)
             {
-                error("invalid-trigger", path, $"'{trigger.Event}' is not a trigger: use row.created/updated/deleted, relation.created/deleted, revision.published, flow.event.<name>, schedule or manual.");
+                error("invalid-trigger", path, $"'{trigger.Event}' is not a trigger: use row.created/updated/deleted, relation.created/deleted, revision.published, flow.event.<name>, visitor.registered, form.submitted, schedule or manual.");
             }
             if (isRow != (trigger.TableId is not null))
             {
@@ -324,7 +325,7 @@ public static partial class ConfigValidator
                 {
                     error("invalid-step", stepPath, $"'{step.Id}' is not a valid step id: lowercase snake_case, so later steps can read steps.{step.Id}.");
                 }
-                if (!Automation.ActionCatalog.Keys.Contains(step.Action))
+                if (!actions.Contains(step.Action))
                 {
                     error("unknown-action", stepPath, $"'{step.Action}' is not an action; actions are named with their major version, e.g. records.create@1.");
                 }

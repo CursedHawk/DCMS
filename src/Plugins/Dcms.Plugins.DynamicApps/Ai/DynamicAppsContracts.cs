@@ -91,7 +91,7 @@ internal sealed class DynamicAppsContracts : IDynamicAppsConfig, IDynamicAppsRec
             config.Views.Select(v => $"{TableName(v.TableId)}.{v.ApiName}{(v.IsDefault ? " (default)" : "")}").ToList(),
             config.Flows.Select(f =>
                 $"{f.ApiName}: {f.Trigger.Event}{(f.Trigger.TableId is { } t ? $" on {TableName(t)}" : "")}, {f.Steps.Count} step(s){(f.Enabled ? "" : ", disabled")}").ToList(),
-            doc is null ? [] : ConfigValidator.Validate(config, state.Published is null ? null : (await _config.GetPublishedAsync(ct))?.Config));
+            doc is null ? [] : await _config.IssuesAsync(config, state.Published is null ? null : (await _config.GetPublishedAsync(ct))?.Config, ct));
     }
 
     public async Task<TableDetail> GetTableAsync(TableRequest input, CancellationToken ct)
@@ -109,7 +109,7 @@ internal sealed class DynamicAppsContracts : IDynamicAppsConfig, IDynamicAppsRec
         ((await DocumentAsync(input.Revision, ct))?.Config ?? new AppConfig()).Flows.FirstOrDefault(f => f.ApiName == input.Flow)
         ?? throw new ContractValidationException($"There is no flow '{input.Flow}'.");
 
-    public Task<IReadOnlyList<FlowActionInfo>> ListActionsAsync(CancellationToken ct) => Task.FromResult(FlowRunService.Actions());
+    public Task<IReadOnlyList<FlowActionInfo>> ListActionsAsync(CancellationToken ct) => _runs.ActionsAsync(ct);
 
     public Task<RevisionPage> ListRevisionsAsync(CancellationToken ct) => _config.ListRevisionsAsync(1, 50, ct);
 

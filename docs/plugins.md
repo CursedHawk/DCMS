@@ -212,6 +212,41 @@ or overruns `Plugins:HookTimeoutMs` (2 s) is logged and skipped. Only a provider
 may run its hooks, and it decides what to keep of the result — Forms re-filters rewritten data to
 the form's declared fields.
 
+### Offering actions to Dynamic Apps flows
+
+A plugin can give tenant-built automations ([dynamic-apps.md](dynamic-apps.md)) something to
+do by providing `automation.actions@1` (`IAutomationActionProvider` in
+`Dcms.Plugins.DynamicApps.Api`):
+
+```csharp
+provides: [ContractProvision.Of<IAutomationActionProvider, MyActions>()],
+```
+
+- **`ListAsync`** returns descriptors: a name, a major version, a description, a risk, an
+  input JSON Schema, and optionally a **permission**.
+- **`ExecuteAsync`** runs one action for a flow step. It receives the rendered input, the
+  step's idempotency key (the same on every retry), and the app instance and run ids.
+
+Rules for providers:
+
+- **Prefix action names** with your plugin id (`visitor-auth.set-attributes`). A name
+  that clashes with a built-in action is ignored.
+- **Never change what an action means** within a major version. Offer `@2` alongside `@1`.
+- **Throw `ContractValidationException`** for a failure that the same input would repeat. The
+  step then fails without retrying, while anything else is retried.
+- **Set the permission** your plugin asks of an admin who does the same thing by hand.
+  VisitorAuth's is `plugin:visitor-auth:manage`. Anyone who adds or changes a flow using the
+  action must hold it, or the change does not validate and cannot publish. Without it, the
+  right to publish an app would quietly include your plugin's rights.
+- **Calls go through the contract runtime**, audited like any plugin-to-plugin call. Your
+  plugin's own rules still apply: VisitorAuth refuses private attributes from a flow just as
+  it does from any other caller.
+
+A flow naming an action that no enabled provider offers fails validation, so it cannot
+publish. Typed events reach flows by a different path: Dynamic Apps subscribes to
+`visitor.registered` and `form.submitted` itself, and forwards each to the apps that have a
+flow on it.
+
 ## Content plugins
 
 A plugin whose data is content (Blog, Events, galleries…) declares content types and gets the

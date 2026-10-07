@@ -25,13 +25,17 @@ public sealed class AppEventLog(IPluginContext context, AuditScope scope, TimePr
     public EventOrigin Origin { get; set; } = EventOrigin.New();
 
     public void Add(AppsDbContext db, int revision, string eventName, AppEventEntity entity, JsonObject payload,
+        IReadOnlyList<string>? changedFields = null) =>
+        Add(db, context.Instance?.InstanceId ?? throw new InvalidOperationException("Dynamic Apps events are per instance; this context has none."),
+            Guid.NewGuid(), revision, eventName, entity, payload, changedFields);
+
+    /// <summary>For one named instance, with the caller's event id (deterministic, when a redelivery must not add a second event).</summary>
+    public void Add(AppsDbContext db, Guid instanceId, Guid eventId, int revision, string eventName, AppEventEntity entity, JsonObject payload,
         IReadOnlyList<string>? changedFields = null)
     {
-        var instanceId = context.Instance?.InstanceId
-            ?? throw new InvalidOperationException("Dynamic Apps events are per instance; this context has none.");
         var evt = new AppEvent
         {
-            EventId = Guid.NewGuid(),
+            EventId = eventId,
             TenantId = context.TenantId,
             SourceInstanceId = instanceId,
             EventName = eventName,

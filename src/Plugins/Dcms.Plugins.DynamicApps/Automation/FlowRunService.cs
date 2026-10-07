@@ -16,7 +16,8 @@ public sealed class FlowRunService(AppsDbContext db, IPluginContext context, Flo
     private Guid InstanceId => context.Instance?.InstanceId
         ?? throw new InvalidOperationException("Flow runs are per instance; this context has none.");
 
-    public static IReadOnlyList<FlowActionInfo> Actions() => ActionCatalog.All
+    /// <summary>Every action this tenant's flows can use, other plugins' included.</summary>
+    public async Task<IReadOnlyList<FlowActionInfo>> ActionsAsync(CancellationToken ct) => (await ActionCatalog.WithProvidersAsync(context, ct))
         .Select(a => new FlowActionInfo(ActionCatalog.Key(a), a.Id, a.Major, a.Description,
             JsonNamingPolicy.CamelCase.ConvertName(a.Risk.ToString()), a.InputSchema))
         .ToList();

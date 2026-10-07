@@ -3,6 +3,7 @@ using Dcms.Plugins.DynamicApps.Automation;
 using Dcms.Plugins.DynamicApps.Data;
 using Dcms.Plugins.DynamicApps.Endpoints;
 using Dcms.Plugins.DynamicApps.Metadata;
+using Dcms.Plugins.Forms.Api;
 using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -92,6 +93,16 @@ public sealed class DynamicAppsPlugin : IPlugin
             ContractRequirement.Of<IVisitorProfiles>(optional: true),
             // Who the signed-in site visitor is, for tables with "own records" public access.
             ContractRequirement.Of<IVisitorIdentity>(optional: true),
+            // Flows trigger on form.submitted and read what was sent.
+            ContractRequirement.Of<IFormSubmissions>(optional: true),
+            // Actions other plugins offer to flows.
+            ContractRequirement.Of<IAutomationActionProvider>(optional: true),
+        ],
+        // Other plugins' events, forwarded to the flows that trigger on them.
+        subscribes:
+        [
+            EventSubscription.Of<VisitorRegistered, PlatformEventBridge>(),
+            EventSubscription.Of<FormSubmitted, PlatformEventBridge>(),
         ],
         // The control plane and the data, as tabs of each app's page (admin/src).
         adminScreens:

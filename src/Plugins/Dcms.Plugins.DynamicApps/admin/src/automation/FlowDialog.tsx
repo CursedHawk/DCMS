@@ -3,7 +3,7 @@ import { usePluginT } from '@dcms/plugin-ui';
 import { apiNameOf, API_NAME, type AppConfig, type ChangeOperation, type FlowActionInfo, type FlowDef, type FlowStep } from '../api';
 import { CheckField, FormDialog, SelectField, TextField } from '../model/dialogs';
 
-const EVENTS = ['row.created', 'row.updated', 'row.deleted', 'relation.created', 'relation.deleted', 'revision.published', 'schedule', 'manual', 'flow.event'] as const;
+const EVENTS = ['row.created', 'row.updated', 'row.deleted', 'relation.created', 'relation.deleted', 'revision.published', 'visitor.registered', 'form.submitted', 'schedule', 'manual', 'flow.event'] as const;
 type EventChoice = (typeof EVENTS)[number];
 
 // Kept out of the translations: i18next would read its {{ }} as interpolation.

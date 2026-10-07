@@ -211,6 +211,8 @@
     "relation_created": "Záznamy se propojí",
     "relation_deleted": "Záznamy se rozpojí",
     "revision_published": "Revize se publikuje",
+    "visitor_registered": "Návštěvník se zaregistruje na webu",
+    "form_submitted": "Odešle se formulář na webu (event.payload.formName, event.payload.data)",
     "schedule": "Podle plánu",
     "manual": "Ručně nebo jiným tokem",
     "flow_event": "Jiný tok ohlásí událost"

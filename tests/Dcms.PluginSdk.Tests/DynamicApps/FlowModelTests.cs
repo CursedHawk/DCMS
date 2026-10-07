@@ -80,6 +80,27 @@ public sealed class FlowModelTests
     private static IEnumerable<string> Names(AppEvent evt) => TriggerRouter.Match(Config, evt).Select(f => f.ApiName);
 
     [Fact]
+    public void Other_plugins_events_and_actions_are_usable_once_offered()
+    {
+        var withPlatform = Build("""
+            [ { "op": "create", "type": "flow", "value": { "apiName": "welcome", "displayName": "Welcome",
+                "trigger": { "event": "visitor.registered" },
+                "steps": [ { "id": "tag", "action": "visitor-auth.set-attributes@1", "input": { "visitorId": "{{ event.payload.visitorId }}" } } ] } },
+              { "op": "create", "type": "flow", "value": { "apiName": "file_it", "displayName": "File it",
+                "trigger": { "event": "form.submitted" }, "condition": "event.payload.formName == 'contact'",
+                "steps": [ { "id": "log", "action": "records.create@1", "input": { "table": "tags", "values": { "name": "{{ event.payload.data.name }}" } } } ] } } ]
+            """, Config);
+
+        Errors(withPlatform).Should().Equal(["unknown-action"], "no provider offers the visitor action here");
+        var offered = ActionCatalog.Keys.Append("visitor-auth.set-attributes@1").ToHashSet();
+        ConfigValidator.Validate(withPlatform, actions: offered).Where(i => i.Severity == IssueSeverity.Error).Should().BeEmpty();
+        TriggerRouter.Match(withPlatform, Event("form.submitted")).Select(f => f.ApiName).Should().Equal("file_it");
+
+        var onATable = Build("""[ { "op": "update", "type": "flow", "target": "welcome", "value": { "trigger": { "event": "visitor.registered", "tableId": "deals" } } } ]""", withPlatform);
+        ConfigValidator.Validate(onATable, actions: offered).Select(i => i.Code).Should().Contain("invalid-trigger");
+    }
+
+    [Fact]
     public void A_flow_hash_changes_with_its_definition_only()
     {
         var flow = Config.Flows.Single(f => f.ApiName == "big_deal");

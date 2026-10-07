@@ -14,7 +14,7 @@ internal static class AutomationEndpoints
 {
     public static void Map(IPluginEndpointBuilder endpoints)
     {
-        endpoints.MapGet("/_automation/actions", () => Results.Ok(FlowRunService.Actions()))
+        endpoints.MapGet("/_automation/actions", async (FlowRunService runs, CancellationToken ct) => Results.Ok(await runs.ActionsAsync(ct)))
             .RequirePluginPermission("model-read");
 
         // Runs carry the records that triggered them, so they are read with the data.

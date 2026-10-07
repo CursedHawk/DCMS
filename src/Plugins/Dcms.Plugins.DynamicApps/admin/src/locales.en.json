@@ -211,6 +211,8 @@
     "relation_created": "Records are linked",
     "relation_deleted": "Records are unlinked",
     "revision_published": "A revision is published",
+    "visitor_registered": "A visitor signs up on the site",
+    "form_submitted": "A site form is sent (event.payload.formName, event.payload.data)",
     "schedule": "On a schedule",
     "manual": "Run by hand or by another flow",
     "flow_event": "Another flow announces an event"

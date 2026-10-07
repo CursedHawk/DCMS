@@ -1,14 +1,19 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.Plugins.DynamicApps.Api.Model;
+using Dcms.Plugins.DynamicApps.Automation;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Data.DynamicApps;
 using Dcms.Shared.Data.Rls;
+using Dcms.Shared.Security.Authorization;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.DynamicApps.Metadata;
 
@@ -35,7 +40,8 @@ public sealed class ConfigurationService(
     IAuditRecorder audit,
     IMemoryCache cache,
     Data.AppEventLog events,
-    TimeProvider clock)
+    TimeProvider clock,
+    IServiceProvider services)
 {
     private const string ResourceType = "app_revision";
 
@@ -130,7 +136,7 @@ public sealed class ConfigurationService(
             draft.Revision,
             published?.Revision,
             ConfigDiff.Between(published?.Config ?? new AppConfig(), draft.Config),
-            ConfigValidator.Validate(draft.Config, published?.Config));
+            await IssuesAsync(draft.Config, published?.Config, ct));
     }
 
     // ------------------------------------------------------------------ writes
@@ -193,7 +199,7 @@ public sealed class ConfigurationService(
         await tx.CommitAsync(ct);
 
         var published = await PublishedConfigAsync(app, ct);
-        return new ApplyChangesResult(Info(draft), changes, ConfigValidator.Validate(after, published));
+        return new ApplyChangesResult(Info(draft), changes, await IssuesAsync(after, published, ct));
     }
 
     /// <summary>Validates the draft against what is live and, when it passes, stamps it validated.</summary>
@@ -203,7 +209,7 @@ public sealed class ConfigurationService(
         var (app, tx) = await LockAsync(ct);
         await using var _ = tx;
         var draft = await DraftAsync(app, ct);
-        var issues = ConfigValidator.Validate(ConfigJson.Parse(draft.Snapshot), await PublishedConfigAsync(app, ct));
+        var issues = await IssuesAsync(ConfigJson.Parse(draft.Snapshot), await PublishedConfigAsync(app, ct), ct);
         var result = new ValidationResult(Info(draft), issues);
         if (result.Valid)
         {
@@ -238,7 +244,7 @@ public sealed class ConfigurationService(
 
         var config = ConfigJson.Parse(draft.Snapshot);
         var liveConfig = await PublishedConfigAsync(app, ct);
-        var issues = ConfigValidator.Validate(config, liveConfig).ToList();
+        var issues = (await IssuesAsync(config, liveConfig, ct)).ToList();
         if (!issues.Any(i => i.Severity == IssueSeverity.Error))
         {
             issues.AddRange(await ReconcileDataAsync(liveConfig, config, ct));
@@ -300,7 +306,7 @@ public sealed class ConfigurationService(
 
         var liveConfig = ConfigJson.Parse(live.Snapshot);
         var config = ConfigJson.Parse(target.Snapshot);
-        var issues = ConfigValidator.Validate(config, liveConfig).ToList();
+        var issues = (await IssuesAsync(config, liveConfig, ct)).ToList();
         if (!issues.Any(i => i.Severity == IssueSeverity.Error))
         {
             issues.AddRange(await ReconcileDataAsync(liveConfig, config, ct));
@@ -573,6 +579,47 @@ public sealed class ConfigurationService(
         previous.Status = status;
         previous.UpdatedAt = clock.GetUtcNow();
         return previous;
+    }
+
+    /// <summary>
+    /// <see cref="ConfigValidator.Validate"/> against the actions this tenant's flows can use: the
+    /// built-in ones, and, once a flow names another, what <c>automation.actions@1</c> providers offer.
+    /// </summary>
+    public async Task<IReadOnlyList<ConfigIssue>> IssuesAsync(AppConfig config, AppConfig? published, CancellationToken ct)
+    {
+        if (config.Flows.SelectMany(f => f.Steps).All(s => ActionCatalog.Keys.Contains(s.Action)))
+        {
+            return ConfigValidator.Validate(config, published);
+        }
+        var offered = (await ActionCatalog.WithProvidersAsync(context, ct)).ToDictionary(ActionCatalog.Key, StringComparer.Ordinal);
+        var issues = ConfigValidator.Validate(config, published, offered.Keys.ToHashSet(StringComparer.Ordinal)).ToList();
+        // Another plugin's action can carry that plugin's permission. Whoever changes a flow
+        // using it — and so whoever publishes or rolls back that change — must hold it, or a
+        // flow would let them do what the plugin refuses them by hand. A flow unchanged from
+        // the live one was vouched for by whoever published it.
+        foreach (var flow in config.Flows.Where(f =>
+                     published?.Flows.FirstOrDefault(p => p.Id == f.Id) is not { } live || TriggerRouter.Hash(live) != TriggerRouter.Hash(f)))
+        {
+            foreach (var step in flow.Steps)
+            {
+                if (offered.GetValueOrDefault(step.Action) is ProvidedAction { Permission: { } permission }
+                    && !await HoldsAsync(permission))
+                {
+                    issues.Add(new ConfigIssue(IssueSeverity.Error, "action-not-permitted", $"flows.{flow.ApiName}.{step.Id}",
+                        $"Using {step.Action} in a flow needs the {permission} permission, which you do not have."));
+                }
+            }
+        }
+        return issues;
+    }
+
+    /// <summary>Whether the member behind this request holds a permission; false outside a request.</summary>
+    private async Task<bool> HoldsAsync(string permission)
+    {
+        var user = services.GetService<IHttpContextAccessor>()?.HttpContext?.User;
+        var authz = services.GetService<IAuthorizationService>();
+        return user is not null && authz is not null
+               && (await authz.AuthorizeAsync(user, null, PermissionPolicyProvider.PolicyName(permission))).Succeeded;
     }
 
     private async Task<AppConfig?> PublishedConfigAsync(DynamicApp app, CancellationToken ct) =>

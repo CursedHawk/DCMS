@@ -102,7 +102,7 @@ the assistant and a person editing in parallel should see the same state.
 - **Delivery is at least once.** Runs are deduplicated on `(event, flow, flow hash)` by a unique index. A retry resumes after the steps that already succeeded. Side effects carry the step's idempotency key (email and notification dedupe keys).
 - **Failures.** Transient failures retry with backoff up to 3 attempts. Bad input, a refused record or a conflict fail at once. A failed or terminated run can be retried by hand.
 - **Explicit limits.** Depth 5, at most 20 runs per correlation, 50 steps, 100 record writes and 60 seconds per run. A run refused by a limit is recorded as terminated, with the reason, rather than silently dropped.
-- **Actions** come from a fixed catalog:
+- **Actions** come from a built-in catalog:
   - records: create, update, delete, lookup, query;
   - `flow.invoke` (manual flows only) and `event.publish`;
   - `dcms.email.send` and `dcms.notifications.raise`;
@@ -110,6 +110,17 @@ the assistant and a person editing in parallel should see the same state.
   - `visitor.lookup` through `visitors.profiles`.
 
   Every cross-plugin call goes through the contract proxy. A change of meaning is a new major version alongside the old.
+- **Other plugins add actions through the open contract `automation.actions@1`.** It lives in `.Api`, so a provider references only that. A provider lists descriptors and executes by name, gets the step's idempotency key, and runs through the contract runtime like any other plugin-to-plugin call. VisitorAuth is the first provider, with `visitor-auth.set-attributes@1`.
+  - Validation asks the providers only when a flow names an action outside the built-in catalog, so most edits never leave the plugin.
+  - An action no enabled provider offers fails validation and cannot publish.
+  - A built-in key always wins over a provider's. A provider whose listing throws is skipped, not fatal.
+  - **A descriptor may name a permission**, the one the provider requires of an admin doing the same by hand. Whoever adds or changes a flow using the action must hold it (`action-not-permitted`), or `dynamic-apps:publish` would silently include other plugins' rights.
+    - Flows identical to the live revision are not re-checked, so other members can still edit the rest of the app.
+    - The check runs in validation, so it covers publish, rollback and the assistant alike.
+- **Other plugins' typed events become runtime events.** Dynamic Apps subscribes to `visitor.registered` and `form.submitted`.
+  - The handler writes one outbox row per app whose live snapshot has a flow on that event, found with a jsonb containment query. The worker then routes it like a row event.
+  - The event id derives from the platform event and the app, so a redelivered event adds nothing.
+  - `form.submitted` carries the submission's data, read through `forms.submissions@1`.
 - **Schedules** are rows rewritten at publish: an unchanged interval keeps its next due time. Missed ticks collapse into one.
 
 ### The public API and its OpenAPI come from the published model only

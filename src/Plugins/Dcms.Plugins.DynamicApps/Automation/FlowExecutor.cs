@@ -41,8 +41,12 @@ public sealed class FlowExecutor(
         using var activity = DcmsActivitySource.Start("dcms.dynamicapp.flow");
         activity?.SetTag("dcms.tenant", run.TenantId);
         activity?.SetTag("dcms.dynamicapp.instance", run.InstanceId);
+        activity?.SetTag("dcms.dynamicapp.revision", run.Revision);
         activity?.SetTag("dcms.dynamicapp.flow", run.FlowApiName);
+        activity?.SetTag("dcms.dynamicapp.flow_id", run.FlowId);
+        // A flow's version is the revision it ran under plus its definition hash (ADR 0021).
         activity?.SetTag("dcms.dynamicapp.flow_version", run.Revision);
+        activity?.SetTag("dcms.dynamicapp.flow_hash", run.FlowHash);
         activity?.SetTag("dcms.dynamicapp.flow_run", run.Id);
 
         var record = audit.Record($"plugin.{DynamicAppsPlugin.PluginId}.flow.executed")
@@ -149,6 +153,10 @@ public sealed class FlowExecutor(
     private async Task<Outcome?> StepAsync(FlowRun run, FlowStep step, Dictionary<string, JsonNode?> scope, JsonObject outputs, CancellationToken ct)
     {
         using var activity = DcmsActivitySource.Start("dcms.dynamicapp.flow.step");
+        activity?.SetTag("dcms.tenant", run.TenantId);
+        activity?.SetTag("dcms.dynamicapp.instance", run.InstanceId);
+        activity?.SetTag("dcms.dynamicapp.revision", run.Revision);
+        activity?.SetTag("dcms.dynamicapp.flow_id", run.FlowId);
         activity?.SetTag("dcms.dynamicapp.flow_run", run.Id);
         activity?.SetTag("dcms.dynamicapp.step", step.Id);
         activity?.SetTag("dcms.dynamicapp.action", step.Action);
@@ -173,11 +181,12 @@ public sealed class FlowExecutor(
             if (!string.IsNullOrWhiteSpace(step.Condition) && !Expressions.Truthy(Expressions.Evaluate(step.Condition, scope, now)))
             {
                 row.Status = FlowRunStatus.Skipped;
+                activity?.SetTag("dcms.dynamicapp.status", "skipped");
                 outputs[step.Id] = null;
                 await Save(row, ct);
                 return null;
             }
-            var action = ActionCatalog.Find(step.Action) ?? throw new FlowFatalException($"There is no action '{step.Action}'.");
+            var action = await ActionCatalog.FindAsync(context, step.Action, ct) ?? throw new FlowFatalException($"There is no action '{step.Action}'.");
             var input = Expressions.Render(step.Input, scope, now, action.HtmlInputs) as JsonObject ?? [];
             row.InputJson = Bounded(input);
 
