@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 import type { ToolRisk } from '../agent/modes';
-import type { AssistantTool } from './tools';
+import type { AssistantTool, ToolContext } from './tools';
 
 /**
  * Plugin contract operations as assistant tools (docs/adr/0016).
@@ -94,14 +94,55 @@ export function contractTools(catalog: readonly CatalogContract[]): AssistantToo
           input_schema: op.inputSchema,
           risk: toolRisk(op.risk),
           untrustedSource: op.returnsExternalText ? `${where}: text written by site visitors` : undefined,
-          summarize: () => `${op.name} on ${instance?.name ?? contract.id}`,
-          describe: () => `Ran ${op.name} on ${instance?.name ?? contract.id}`,
-          run: async (input) => JSON.stringify((await api.post(url, input)) ?? null),
+          summarize: (input) => `${words(op.name)} on ${instance?.name ?? contract.id}${brief(input)}`,
+          describe: (input) => `Ran ${words(op.name).toLowerCase()} on ${instance?.name ?? contract.id}${brief(input)}`,
+          // A plugin screen roots its query keys at `plugin:{slug}` to be refreshed by the
+          // assistant's changes to that instance (see @dcms/plugin-ui).
+          invalidates: instance ? [`plugin:${instance.slug}`] : undefined,
+          maxResultChars: 16_000,
+          run: async (input, context) =>
+            JSON.stringify((await api.post(url, input, { headers: traceHeaders(context.trace) })) ?? null),
         });
       }
     }
   }
   return tools;
+}
+
+/** `ApplyChangeSet` → "Apply change set". */
+function words(name: string): string {
+  const spaced = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/**
+ * What a call will do, for the approval card: a change set lists its operations; anything else
+ * shows its input, briefly. The card is where an operator decides, so it must say more than
+ * the operation's name.
+ */
+export function brief(input: Record<string, unknown>): string {
+  const ops = input.operations;
+  if (Array.isArray(ops)) {
+    const lines = ops.slice(0, 12).map((raw) => {
+      const op = (raw ?? {}) as { op?: string; type?: string; target?: string; value?: { apiName?: string } };
+      const subject = [op.target, op.value?.apiName].filter(Boolean).join(' → ');
+      return `${op.op ?? '?'} ${op.type ?? '?'}${subject ? ` ${subject}` : ''}`;
+    });
+    const more = ops.length > 12 ? `, and ${ops.length - 12} more` : '';
+    return `: ${lines.join('; ')}${more}`;
+  }
+  const json = JSON.stringify(input);
+  if (!json || json === '{}') return '';
+  return `: ${json.length > 160 ? `${json.slice(0, 160)}…` : json}`;
+}
+
+/** The trace a contract call carries, as headers the server reads only on the AI plane. */
+function traceHeaders(trace: ToolContext['trace']): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (trace?.conversationId) headers['X-Dcms-Ai-Conversation'] = trace.conversationId;
+  if (trace?.runId) headers['X-Dcms-Ai-Run'] = trace.runId;
+  if (trace?.toolCallId) headers['X-Dcms-Ai-Tool-Call'] = trace.toolCallId;
+  return headers;
 }
 
 /** The AI catalog for this member and tenant, as tools. Empty while loading or on failure. */

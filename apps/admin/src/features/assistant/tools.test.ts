@@ -146,6 +146,11 @@ describe('canWrite', () => {
   it('is false before permissions have loaded', () => {
     expect(canWrite(undefined)).toBe(false);
   });
+
+  it('counts plugin tools: a member who may only change an app\'s configuration still gets a write mode', () => {
+    const pluginWrite = { name: 'crm_config_apply_change_set', description: '', input_schema: {}, risk: 'safe' as const, run: async () => '' };
+    expect(canWrite(holder('content:read'), [pluginWrite])).toBe(true);
+  });
 });
 
 describe('the writing tools', () => {

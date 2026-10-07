@@ -6,8 +6,10 @@ using Dcms.IntegrationTests.Cms;
 namespace Dcms.IntegrationTests.DynamicApps;
 
 /// <summary>A tenant with one Dynamic Apps instance (<c>crm</c>), and the requests the tests send to it.</summary>
-public sealed class AppHarness(ContentFlowFixture fixture, HttpClient admin, Guid owner, string tenant)
+public sealed class AppHarness(ContentFlowFixture fixture, HttpClient admin, Guid owner, string tenant, Guid instanceId)
 {
+    public Guid InstanceId => instanceId;
+
     private static readonly Guid SuperAdmin = Guid.NewGuid();
 
     public HttpClient Admin => admin;
@@ -25,7 +27,8 @@ public sealed class AppHarness(ContentFlowFixture fixture, HttpClient admin, Gui
         var installed = await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", owner, tenant,
             body: new { pluginId = "dynamic-apps", slug = "crm", name = "CRM", config = """{"displayName":"Sales CRM"}""" }), ct);
         installed.StatusCode.Should().Be(HttpStatusCode.Created, await installed.Content.ReadAsStringAsync(ct));
-        return new AppHarness(fixture, admin, owner, tenant);
+        var instanceId = (await installed.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetGuid();
+        return new AppHarness(fixture, admin, owner, tenant, instanceId);
     }
 
     /// <summary>A request to <c>/api/admin/plugins/crm{path}</c> as <paramref name="as"/> (the owner by default).</summary>

@@ -130,12 +130,28 @@ the assistant and a person editing in parallel should see the same state.
 
 ### The assistant is a client of the same control plane
 
-Configuration and record operations are **contract operations exposed to `Ai`**
-(`dynamic-apps.config@1`, `dynamic-apps.records@1`). This is the existing and only tool path.
-- **The admin screens and the assistant call the same services.** The admin screens call them through admin routes, the assistant through those contract operations, with the same permission on each.
-- **Risk follows the existing mode table:** inspection is read, draft edits are safe, publish/rollback and record deletion are dangerous.
-- **Hiding a tool is ergonomics.** The server re-checks every call.
-- **Record text returned to the model is marked as external.**
+Configuration, automation runs and records are **contract operations exposed to `Ai`** — the
+existing and only tool path:
+- `dynamic-apps.config@1`: summary, table and flow, actions, revisions, diff, preview, public API, apply change set, validate, discard, publish, rollback, runs, start and retry flows;
+- `dynamic-apps.records@1`: query, get, create, update, link, unlink, bulk update, delete, bulk delete.
+
+- **One set of services.** The implementation is the same `ConfigurationService`, `RecordService` and `FlowRunService` calls the admin routes make. A person and the assistant are held to the same rules, and each operation's `Permission` is the one the matching admin route requires.
+- **Risk follows the existing mode table.** Inspection is read. Draft edits and record writes are safe. Discard, publish, rollback, record deletion, bulk changes and running flows are dangerous.
+- **Hiding a tool is ergonomics.** The dispatcher re-checks every call.
+- **Untrusted text.** Record text and run data are marked as external text, and the assistant fences them as untrusted.
+- **Tool descriptions teach the change-set grammar and the draft-first workflow.** The configuration page adds a short system-prompt section to the same effect.
+- **Trace.** An agent's call is marked `?plane=ai` and carries `X-Dcms-Ai-Conversation`, `-Run` (one per question) and `-Tool-Call` headers.
+  - The revision stores the conversation and run, the change log stores all three, and the audit entry names them.
+  - This is attribution only: what the call may do is still the member's permissions.
+- **The console assistant gained what plugin tools needed:**
+  - result capping;
+  - approval cards that say what a call will do (a change set lists its operations);
+  - invalidation of the `plugin:{slug}` query keys;
+  - a write mode for members whose only writable tools are plugin ones.
+
+Not done: a separate `ai-configure` / `ai-publish` permission to narrow what may be delegated (the
+instance's AI-tools switch and the member's own permissions decide), and storing an `ai.runs` row
+per console question (its id is sent, not recorded).
 
 ### Admin UI: plugin-shipped screens
 

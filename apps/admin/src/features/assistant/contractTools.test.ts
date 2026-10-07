@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { decide } from '../agent/modes';
 import { api } from '../../lib/api';
-import { contractTools, toolName, toolRisk, type CatalogContract } from './contractTools';
+import { brief, contractTools, toolName, toolRisk, type CatalogContract } from './contractTools';
 import { toolsFor } from './tools';
 
 vi.mock('../../lib/api', () => ({ api: { post: vi.fn(), get: vi.fn() } }));
@@ -68,7 +68,29 @@ describe('contract tools', () => {
     expect(api.post).toHaveBeenCalledWith(
       '/admin/contracts/visitors.profiles%401/Get?plane=ai&instance=members',
       { visitorId: 'v1' },
+      { headers: {} },
     );
+  });
+
+  it('sends the conversation, turn and tool call so the server can link what it changed', async () => {
+    vi.mocked(api.post).mockResolvedValue({});
+    const [get] = contractTools(catalog);
+    await get!.run({ visitorId: 'v1' }, {
+      attachments: [],
+      onUploaded: () => {},
+      trace: { conversationId: 'c1', runId: 'r1', toolCallId: 'toolu_1' },
+    });
+    expect(vi.mocked(api.post).mock.calls.at(-1)![2]).toEqual({
+      headers: { 'X-Dcms-Ai-Conversation': 'c1', 'X-Dcms-Ai-Run': 'r1', 'X-Dcms-Ai-Tool-Call': 'toolu_1' },
+    });
+  });
+
+  it('says on the approval card what a call will do, and refreshes the instance afterwards', () => {
+    const [, set] = contractTools(catalog);
+    expect(set!.invalidates).toEqual(['plugin:members']);
+    expect(brief({ operations: [{ op: 'create', type: 'table', value: { apiName: 'deals' } }, { op: 'delete', type: 'field', target: 'deals.old' }] }))
+      .toBe(': create table deals; delete field deals.old');
+    expect(brief({})).toBe('');
   });
 
   it('keeps names inside provider limits', () => {

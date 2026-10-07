@@ -13,6 +13,13 @@ using Microsoft.Extensions.Caching.Memory;
 namespace Dcms.Plugins.DynamicApps.Metadata;
 
 /// <summary>
+/// Which assistant conversation, run and tool call made a change: opaque links, recorded on the
+/// revision, its change log and its audit entry, so a configuration change can be traced back
+/// to the conversation that asked for it. The transcript is never the configuration record.
+/// </summary>
+public sealed record AiTrace(Guid? ConversationId, Guid? RunId, string? ToolCallId);
+
+/// <summary>
 /// The control plane of one application: its draft, its published revision and their history
 /// (ADR 0021). The only code that writes configuration — the admin routes and the assistant's
 /// contract call it alike, so a person and the AI are held to the same rules.
@@ -129,7 +136,7 @@ public sealed class ConfigurationService(
     // ------------------------------------------------------------------ writes
 
     /// <summary>Opens the draft from the published revision; returns the open one if there is one already.</summary>
-    public async Task<RevisionInfo> CreateDraftAsync(string? description, AppChangeSource source, CancellationToken ct)
+    public async Task<RevisionInfo> CreateDraftAsync(string? description, AppChangeSource source, CancellationToken ct, AiTrace? ai = null)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
         var (app, tx) = await LockAsync(ct);
@@ -143,8 +150,8 @@ public sealed class ConfigurationService(
             }
             return (await InfoAsync(open, ct))!;
         }
-        var draft = await OpenDraftAsync(app, description, source, ct);
-        Declare(draft, "revision.created");
+        var draft = await OpenDraftAsync(app, description, source, ct, ai);
+        Declare(draft, "revision.created", ai);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return Info(draft);
@@ -152,7 +159,7 @@ public sealed class ConfigurationService(
 
     /// <exception cref="ContractConflictException"><paramref name="request"/>'s hash is not the current one.</exception>
     /// <exception cref="ContractValidationException">An operation is malformed or names something that does not exist.</exception>
-    public async Task<ApplyChangesResult> ApplyAsync(ApplyChangesRequest request, AppChangeSource source, CancellationToken ct)
+    public async Task<ApplyChangesResult> ApplyAsync(ApplyChangesRequest request, AppChangeSource source, CancellationToken ct, AiTrace? ai = null)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
         var (app, tx) = await LockAsync(ct);
@@ -164,7 +171,7 @@ public sealed class ConfigurationService(
             throw Stale(current);
         }
 
-        var draft = await OpenDraftAsync(app, request.Description, source, ct);
+        var draft = await OpenDraftAsync(app, request.Description, source, ct, ai);
         var before = ConfigJson.Parse(draft.Snapshot);
         var after = ChangeApplier.Apply(before, request.Operations);
         var changes = ConfigDiff.Between(before, after);
@@ -176,10 +183,12 @@ public sealed class ConfigurationService(
         if (source == AppChangeSource.Ai)
         {
             draft.Source = AppChangeSource.Ai;
+            draft.SourceConversationId ??= ai?.ConversationId;
+            draft.SourceAiRunId ??= ai?.RunId;
         }
-        await RecordChangesAsync(draft, changes, source, ct);
+        await RecordChangesAsync(draft, changes, source, ct, ai);
 
-        Declare(draft, "change.applied").With("changes", changes.Count);
+        Declare(draft, "change.applied", ai).With("changes", changes.Count);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
 
@@ -188,7 +197,7 @@ public sealed class ConfigurationService(
     }
 
     /// <summary>Validates the draft against what is live and, when it passes, stamps it validated.</summary>
-    public async Task<ValidationResult> ValidateAsync(CancellationToken ct)
+    public async Task<ValidationResult> ValidateAsync(CancellationToken ct, AiTrace? ai = null)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
         var (app, tx) = await LockAsync(ct);
@@ -201,7 +210,7 @@ public sealed class ConfigurationService(
             draft.ValidatedAt = clock.GetUtcNow();
             draft.ValidatedHash = draft.Hash;
         }
-        Declare(draft, "revision.validated").With("valid", result.Valid).With("issues", issues.Count);
+        Declare(draft, "revision.validated", ai).With("valid", result.Valid).With("issues", issues.Count);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return result with { Revision = Info(draft) };
@@ -211,7 +220,7 @@ public sealed class ConfigurationService(
     /// Makes the draft live: validated, still based on what is live, and the published pointer,
     /// the superseded revision and the audit record moved in one transaction.
     /// </summary>
-    public async Task<PublishResult> PublishAsync(string expectedHash, CancellationToken ct)
+    public async Task<PublishResult> PublishAsync(string expectedHash, CancellationToken ct, AiTrace? ai = null)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
         var (app, tx) = await LockAsync(ct);
@@ -236,7 +245,7 @@ public sealed class ConfigurationService(
         }
         if (issues.Any(i => i.Severity == IssueSeverity.Error))
         {
-            Declare(draft, "revision.published").Failed("validation").With("issues", issues.Count);
+            Declare(draft, "revision.published", ai).Failed("validation").With("issues", issues.Count);
             return new PublishResult(false, Info(draft), issues);
         }
 
@@ -252,7 +261,7 @@ public sealed class ConfigurationService(
         Published(app, draft, previous);
         await SyncSchedulesAsync(config, ct);
 
-        Declare(draft, "revision.published").With("previous", previous?.Number);
+        Declare(draft, "revision.published", ai).With("previous", previous?.Number);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return new PublishResult(true, Info(draft), issues);
@@ -262,7 +271,7 @@ public sealed class ConfigurationService(
     /// Makes an earlier published revision's configuration live again — as a new revision, so
     /// history only ever moves forward and the one rolled back from stays inspectable.
     /// </summary>
-    public async Task<PublishResult> RollbackAsync(RollbackRequest request, AppChangeSource source, CancellationToken ct)
+    public async Task<PublishResult> RollbackAsync(RollbackRequest request, AppChangeSource source, CancellationToken ct, AiTrace? ai = null)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
         var (app, tx) = await LockAsync(ct);
@@ -321,23 +330,25 @@ public sealed class ConfigurationService(
             ValidatedAt = now,
             PublishedAt = now,
             PublishedBy = Actor,
+            SourceConversationId = ai?.ConversationId,
+            SourceAiRunId = ai?.RunId,
         };
         revision.ValidatedHash = revision.Hash;
         db.Revisions.Add(revision);
         await SupersedeAsync(app, AppRevisionStatus.RolledBack, ct);
         app.PublishedRevisionId = revision.Id;
-        await RecordChangesAsync(revision, ConfigDiff.Between(liveConfig, config), source, ct);
+        await RecordChangesAsync(revision, ConfigDiff.Between(liveConfig, config), source, ct, ai);
         Published(app, revision, live);
         await SyncSchedulesAsync(config, ct);
 
-        Declare(revision, "revision.rolled_back").With("from", live.Number).With("to", target.Number);
+        Declare(revision, "revision.rolled_back", ai).With("from", live.Number).With("to", target.Number);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return new PublishResult(true, Info(revision), issues);
     }
 
     /// <summary>Throws the draft away. Its revision and change log stay, marked discarded.</summary>
-    public async Task DiscardAsync(string expectedHash, CancellationToken ct)
+    public async Task DiscardAsync(string expectedHash, CancellationToken ct, AiTrace? ai = null)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
         var (app, tx) = await LockAsync(ct);
@@ -350,7 +361,7 @@ public sealed class ConfigurationService(
         draft.Status = AppRevisionStatus.Discarded;
         draft.UpdatedAt = clock.GetUtcNow();
         app.DraftRevisionId = null;
-        Declare(draft, "revision.discarded");
+        Declare(draft, "revision.discarded", ai);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
     }
@@ -467,7 +478,7 @@ public sealed class ConfigurationService(
         return (app, tx);
     }
 
-    private async Task<AppRevision> OpenDraftAsync(DynamicApp app, string? description, AppChangeSource source, CancellationToken ct)
+    private async Task<AppRevision> OpenDraftAsync(DynamicApp app, string? description, AppChangeSource source, CancellationToken ct, AiTrace? ai = null)
     {
         if (app.DraftRevisionId is { } open)
         {
@@ -490,6 +501,8 @@ public sealed class ConfigurationService(
             CreatedBy = Actor,
             CreatedAt = now,
             UpdatedAt = now,
+            SourceConversationId = ai?.ConversationId,
+            SourceAiRunId = ai?.RunId,
         };
         db.Revisions.Add(draft);
         app.DraftRevisionId = draft.Id;
@@ -565,7 +578,8 @@ public sealed class ConfigurationService(
     private async Task<AppConfig?> PublishedConfigAsync(DynamicApp app, CancellationToken ct) =>
         app.PublishedRevisionId is { } id ? (await DocumentAsync(id, ct)).Config : null;
 
-    private async Task RecordChangesAsync(AppRevision revision, IReadOnlyList<ConfigChange> changes, AppChangeSource source, CancellationToken ct)
+    private async Task RecordChangesAsync(AppRevision revision, IReadOnlyList<ConfigChange> changes, AppChangeSource source, CancellationToken ct,
+        AiTrace? ai = null)
     {
         var seq = await db.Changes.Where(c => c.RevisionId == revision.Id).MaxAsync(c => (int?)c.Seq, ct) ?? 0;
         foreach (var change in changes)
@@ -583,6 +597,9 @@ public sealed class ConfigurationService(
                 AfterJson = change.After?.ToJsonString(),
                 ActorType = source,
                 ActorId = Actor,
+                AiConversationId = ai?.ConversationId,
+                AiRunId = ai?.RunId,
+                ToolCallId = ai?.ToolCallId,
                 CreatedAt = clock.GetUtcNow(),
             });
         }
@@ -667,12 +684,19 @@ public sealed class ConfigurationService(
     /// The record of this write: the route's declared entry (its <c>AuditAs</c>), or — reached
     /// without one, from a job or a contract call — a record of its own under the same name.
     /// </summary>
-    private AuditEntry Declare(AppRevision revision, string action) =>
-        (audit.Declared ?? audit.Record($"plugin.{DynamicAppsPlugin.PluginId}.{action}"))
+    private AuditEntry Declare(AppRevision revision, string action, AiTrace? ai = null)
+    {
+        var entry = (audit.Declared ?? audit.Record($"plugin.{DynamicAppsPlugin.PluginId}.{action}"))
             .For(ResourceType, revision.Id, $"r{revision.Number}")
             .With("instance", InstanceId)
             .With("number", revision.Number)
             .With("hash", revision.Hash);
+        if (ai is not null)
+        {
+            entry.With("ai.conversation", ai.ConversationId).With("ai.run", ai.RunId).With("ai.tool_call", ai.ToolCallId);
+        }
+        return entry;
+    }
 
     private static ContractConflictException Stale(string current) =>
         new($"The configuration changed since you read it (current hash {current}). Read it again and re-apply your change.");

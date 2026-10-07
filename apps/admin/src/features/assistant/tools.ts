@@ -13,6 +13,11 @@ export interface ToolContext {
   attachments: readonly Attachment[];
   /** Records an upload so the same bytes are not sent twice. */
   onUploaded: (name: string, assetId: string) => void;
+  /**
+   * Which conversation, turn and tool call this is, for tools whose server records it: plugin
+   * contract calls send it as headers, and a Dynamic Apps revision links back to it.
+   */
+  trace?: { conversationId?: string; runId?: string; toolCallId?: string };
 }
 
 /**
@@ -533,8 +538,12 @@ export function toolsFor(
  * behave identically: a control whose other positions can never do anything is noise, and the
  * tooltip it would need says nothing the empty tool list does not.</p>
  */
-export function canWrite(me: MyPermissions | undefined): boolean {
-  return ASSISTANT_TOOLS.some(
+export function canWrite(
+  me: MyPermissions | undefined,
+  /** Plugin contract tools: a member who may only change plugin data still has a write mode. */
+  extra: readonly AssistantTool[] = [],
+): boolean {
+  return [...ASSISTANT_TOOLS, ...extra].some(
     (tool) => tool.risk && (!tool.permission || can(me, tool.permission)),
   );
 }

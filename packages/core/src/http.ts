@@ -54,6 +54,8 @@ function newRequestId(): string {
  */
 export interface RequestOptions {
   tenant?: string;
+  /** Extra headers for this request, e.g. the assistant's conversation trace. Applied after the ambient ones. */
+  headers?: Record<string, string>;
 }
 
 export interface ApiClientOptions {
@@ -70,7 +72,7 @@ export interface ApiClientOptions {
 
 export interface ApiClient {
   get<T>(path: string, opts?: RequestOptions): Promise<T>;
-  post<T>(path: string, body?: unknown): Promise<T>;
+  post<T>(path: string, body?: unknown, opts?: RequestOptions): Promise<T>;
   put<T>(path: string, body?: unknown): Promise<T>;
   patch<T>(path: string, body?: unknown): Promise<T>;
   del<T>(path: string): Promise<T>;
@@ -94,7 +96,7 @@ export interface ApiClient {
 
 /** Header override for a request options bag. Applied after the ambient headers, so it wins. */
 function overrides(opts?: RequestOptions): Record<string, string> {
-  return opts?.tenant ? { 'X-Dcms-Tenant': opts.tenant } : {};
+  return { ...opts?.headers, ...(opts?.tenant ? { 'X-Dcms-Tenant': opts.tenant } : {}) };
 }
 
 /**
@@ -201,10 +203,10 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
 
   return {
     get: <T,>(path: string, opts?: RequestOptions) => request<T>(path, { headers: overrides(opts) }),
-    post: <T,>(path: string, body?: unknown) =>
+    post: <T,>(path: string, body?: unknown, opts?: RequestOptions) =>
       request<T>(path, {
         method: 'POST',
-        headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+        headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...overrides(opts) },
         body: body === undefined ? undefined : JSON.stringify(body),
       }),
     put: <T,>(path: string, body?: unknown) =>

@@ -74,6 +74,13 @@ public sealed class DynamicAppsPlugin : IPlugin
             new PermissionDefinition("flows-run", "Run automations",
                 "Start a flow by hand and retry failed runs."),
         ],
+        // The control and data planes as contract operations: the admin and AI agents (when the
+        // instance opts in) call the same services the admin routes do.
+        provides:
+        [
+            ContractProvision.Of<IDynamicAppsConfig, Ai.DynamicAppsContracts>(),
+            ContractProvision.Of<IDynamicAppsRecords, Ai.DynamicAppsContracts>(),
+        ],
         // What flow actions reach, always through these contracts: never another plugin's tables.
         consumes:
         [
@@ -94,6 +101,7 @@ public sealed class DynamicAppsPlugin : IPlugin
     public void ConfigureServices(IServiceCollection services, PluginHost host)
     {
         services.AddMemoryCache();
+        services.AddHttpContextAccessor();
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<AppEventLog>();
         services.AddScoped<ConfigurationService>();

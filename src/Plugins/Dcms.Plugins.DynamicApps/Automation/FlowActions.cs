@@ -73,11 +73,11 @@ public static class ActionCatalog
 {
     public static readonly IReadOnlyList<IFlowAction> All =
     [
-        new RecordsCreate(), new RecordsUpdate(), new RecordsDelete(), new RecordsLookup(), new RecordsQuery(),
-        new FlowInvoke(), new EventPublish(),
+        new RecordsCreateAction(), new RecordsUpdateAction(), new RecordsDeleteAction(), new RecordsLookupAction(), new RecordsQueryAction(),
+        new FlowInvokeAction(), new EventPublishAction(),
         new EmailSendAction(), new NotificationRaiseAction(),
-        new ContentGet(), new ContentList(),
-        new VisitorLookup(),
+        new ContentGetAction(), new ContentListAction(),
+        new VisitorLookupAction(),
     ];
 
     private static readonly Dictionary<string, IFlowAction> ByKey = All.ToDictionary(a => Key(a), StringComparer.Ordinal);
@@ -151,7 +151,7 @@ internal sealed record RecordWrite(string Table, JsonObject Values, Guid? Id = n
 internal sealed record RecordRef(string Table, Guid Id);
 internal sealed record RecordFind(string Table, Guid? Id = null, RecordFilter? Filter = null, IReadOnlyList<RecordSort>? Sort = null, int PageSize = 20);
 
-internal sealed class RecordsCreate : FlowAction<RecordWrite>
+internal sealed class RecordsCreateAction : FlowAction<RecordWrite>
 {
     public override string Id => "records.create";
     public override string Description => "Create a record in one of this app's tables. Output: the record.";
@@ -165,7 +165,7 @@ internal sealed class RecordsCreate : FlowAction<RecordWrite>
     }
 }
 
-internal sealed class RecordsUpdate : FlowAction<RecordWrite>
+internal sealed class RecordsUpdateAction : FlowAction<RecordWrite>
 {
     public override string Id => "records.update";
     public override string Description => "Change fields of a record. Output: the record.";
@@ -181,7 +181,7 @@ internal sealed class RecordsUpdate : FlowAction<RecordWrite>
     }
 }
 
-internal sealed class RecordsDelete : FlowAction<RecordRef>
+internal sealed class RecordsDeleteAction : FlowAction<RecordRef>
 {
     public override string Id => "records.delete";
     public override string Description => "Delete a record. Output: { deleted }.";
@@ -196,7 +196,7 @@ internal sealed class RecordsDelete : FlowAction<RecordRef>
     }
 }
 
-internal sealed class RecordsLookup : FlowAction<RecordFind>
+internal sealed class RecordsLookupAction : FlowAction<RecordFind>
 {
     public override string Id => "records.lookup";
     public override string Description => "Find one record, by id or as the first match of a filter. Output: the record, or null.";
@@ -215,7 +215,7 @@ internal sealed class RecordsLookup : FlowAction<RecordFind>
     }
 }
 
-internal sealed class RecordsQuery : FlowAction<RecordFind>
+internal sealed class RecordsQueryAction : FlowAction<RecordFind>
 {
     public override string Id => "records.query";
     public override string Description => "Records matching a filter, up to 50. Output: { items, total }.";
@@ -235,7 +235,7 @@ internal sealed class RecordsQuery : FlowAction<RecordFind>
 internal sealed record InvokeInput(string Flow, JsonObject? Input = null);
 internal sealed record PublishInput(string Name, JsonObject? Payload = null);
 
-internal sealed class FlowInvoke : FlowAction<InvokeInput>
+internal sealed class FlowInvokeAction : FlowAction<InvokeInput>
 {
     public override string Id => "flow.invoke";
     public override string Description => "Start another flow of this app (one with a manual trigger), passing it input. Output: { runId }.";
@@ -251,7 +251,7 @@ internal sealed class FlowInvoke : FlowAction<InvokeInput>
     }
 }
 
-internal sealed class EventPublish : FlowAction<PublishInput>
+internal sealed class EventPublishAction : FlowAction<PublishInput>
 {
     public override string Id => "event.publish";
     public override string Description => "Announce flow.event.{name} with a payload; flows triggered by that event run. Output: { eventName }.";
@@ -340,7 +340,7 @@ internal sealed class NotificationRaiseAction : FlowAction<NotifyInput>
 internal sealed record ContentInput(string ContentType, string? Slug = null, int Page = 1, int PageSize = 20, Guid? InstanceId = null);
 internal sealed record VisitorInput(Guid VisitorId);
 
-internal sealed class ContentGet : FlowAction<ContentInput>
+internal sealed class ContentGetAction : FlowAction<ContentInput>
 {
     public override string Id => "content.get";
     public override string Description => "One published content item (any content plugin of this site) by type and slug. Output: the item, or null.";
@@ -352,7 +352,7 @@ internal sealed class ContentGet : FlowAction<ContentInput>
             new ContentLookup(input.ContentType, input.Slug ?? throw new FlowFatalException("content.get needs a slug."), input.InstanceId), ct));
 }
 
-internal sealed class ContentList : FlowAction<ContentInput>
+internal sealed class ContentListAction : FlowAction<ContentInput>
 {
     public override string Id => "content.list";
     public override string Description => "A page of published content items of one type (at most 50). Output: { items, page, pageSize, totalCount }.";
@@ -364,7 +364,7 @@ internal sealed class ContentList : FlowAction<ContentInput>
             new ContentListRequest(input.ContentType, Math.Max(1, input.Page), Math.Clamp(input.PageSize, 1, 50), input.InstanceId), ct));
 }
 
-internal sealed class VisitorLookup : FlowAction<VisitorInput>
+internal sealed class VisitorLookupAction : FlowAction<VisitorInput>
 {
     public override string Id => "visitor.lookup";
     public override string Description => "A site visitor's profile (email, display name, attributes shared with plugins), through VisitorAuth. Output: the profile, or null.";
