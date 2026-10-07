@@ -77,6 +77,40 @@ groups and a mapping from IdP group claims. Accounts link by verified email only
 
 **Secrets.** Client secrets are written to Vault by Identity and never returned to anyone.
 
+How providers work (UA2):
+- **One scheme per provider.** Each provider is one ASP.NET `OpenIdConnectHandler` scheme
+  (`realm-oidc-{providerId}`), added while running. The platform's vetted handler does state,
+  nonce, PKCE and token validation for every tenant's client.
+  - Its callback `/realm/sso/{providerId}/callback` is what the tenant registers at the
+    provider.
+  - A callback reaching a process that has not built that scheme yet (after a restart, or on
+    another replica) re-registers it first.
+- **Accounts link to a stable subject**, not an email:
+
+  | Provider | Subject |
+  | --- | --- |
+  | Google | `sub` |
+  | Entra | `tid:oid` |
+  | OIDC | `{issuer}|sub` |
+  | DCMS | the platform user id |
+
+- **When an email counts.** An email may find, link or create an account only when the provider
+  vouches for it:
+  - Google: `email_verified`, plus `hd` when a Workspace domain is set.
+  - Entra: always, because the configuration must name one directory; `common`,
+    `organizations` and `consumers` are refused.
+  - OIDC: `email_verified`.
+  - DCMS: a confirmed platform email, or an invitation link.
+- **No self-service sign-up.** An invitation link links whichever provider account accepts it.
+  Otherwise only the allowed-domains policy creates accounts: default groups, plus a mapping
+  from a provider group claim to realm groups that is kept in step at every sign-in.
+- **"Sign in with DCMS"** reads the platform cookie only to learn which platform account is
+  being linked. Its completion must carry a value from a cookie set when this browser started
+  the round trip, so a planted link links nothing.
+- **Secrets.** Client secrets are encrypted under the Transit key `dcms-realm-secrets`, both
+  directions Identity's alone, and are write-only through the admin API.
+- **Passwords can be switched off** per realm: the form and its endpoints go together.
+
 ### Pages are gated at the edge
 
 The edge already signs people in at the boundary and keeps their sessions.

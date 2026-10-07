@@ -36,3 +36,14 @@ path "transit/encrypt/dcms-dataprotection" {
 path "transit/decrypt/dcms-dataprotection" {
   capabilities = ["update"]
 }
+
+# Tenant realms' sign-in provider client secrets (identity.realm_providers, ADR 0022). Both
+# directions, and identity's alone: it encrypts what the realm admin API is given and decrypts
+# only to spend it in a provider's code exchange. No other policy names this key.
+path "transit/encrypt/dcms-realm-secrets" {
+  capabilities = ["update"]
+}
+
+path "transit/decrypt/dcms-realm-secrets" {
+  capabilities = ["update"]
+}

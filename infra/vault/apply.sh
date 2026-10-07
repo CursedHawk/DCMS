@@ -351,6 +351,14 @@ echo "  transit key dcms-tls-keys present"
 vault write -f transit/keys/dcms-edge-dataprotection >/dev/null
 echo "  transit key dcms-edge-dataprotection present"
 
+# Tenant realms' sign-in provider client secrets (identity.realm_providers, ADR 0022): each
+# tenant's own Google / Entra / OIDC client. Both directions to identity only -- it is what
+# spends them, in the code exchange -- so no tenant-facing service, and not admin-api, can
+# turn one back into plaintext. Never recreate it: every provider would stop signing anyone in
+# until its tenant re-entered the secret.
+vault write -f transit/keys/dcms-realm-secrets >/dev/null
+echo "  transit key dcms-realm-secrets present"
+
 echo "==> Policies"
 for svc in $SERVICES; do
   vault policy write "dcms-$svc" - < "policies/dcms-$svc.hcl" >/dev/null

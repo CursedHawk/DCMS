@@ -71,4 +71,9 @@ if ! vault read transit/keys/dcms-edge-dataprotection >/dev/null 2>&1; then
   vault write -f transit/keys/dcms-edge-dataprotection
 fi
 
+# Tenant realms' sign-in provider secrets (ADR 0022), identity's alone.
+if ! vault read transit/keys/dcms-realm-secrets >/dev/null 2>&1; then
+  vault write -f transit/keys/dcms-realm-secrets
+fi
+
 echo "Vault provisioning complete."

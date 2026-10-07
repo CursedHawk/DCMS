@@ -82,6 +82,23 @@ builder.Services.AddScoped<LoginSessionRevocations>();
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IPasswordHasher<RealmUser>, PasswordHasher<RealmUser>>();
 builder.Services.AddScoped<RealmStore>();
+
+// Realm providers (UA2): a tenant's own Google, Entra or OIDC client, one OpenIdConnect scheme
+// each, added while running; their secrets under identity's own Transit key.
+builder.Services.AddScoped<RealmSecrets>();
+builder.Services.AddSingleton<RealmOidcSchemes>();
+builder.Services.AddSingleton<IConfigureOptions<Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectOptions>, RealmOidcOptions>();
+builder.Services.TryAddEnumerable(ServiceDescriptor.Singleton<
+    IPostConfigureOptions<Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectOptions>,
+    Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectPostConfigureOptions>());
+builder.Services.AddAuthentication().AddCookie(RealmExternal.Scheme, options =>
+{
+    // Only between a provider's callback and the realm deciding who that is.
+    options.Cookie.Name = "dcms.realm.external";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.ExpireTimeSpan = TimeSpan.FromMinutes(10);
+});
 builder.Services.AddAuthentication().AddCookie(RealmCookies.Scheme, options =>
 {
     options.Cookie.Name = RealmCookies.BaseName;
@@ -374,6 +391,9 @@ app.UseDcmsSecurityHeaders();
 app.UseDcmsAudit();
 
 app.UseCors();
+// Before authentication: a provider's callback can arrive at a process that has not built its
+// scheme yet (a restart, another replica).
+app.UseMiddleware<RealmOidcCallbackMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -386,6 +406,7 @@ app.MapAccountApiEndpoints();
 app.MapPlatformUserEndpoints();
 app.MapAuthorizationEndpoints();
 app.MapRealmAccountEndpoints();
+app.MapRealmSsoEndpoints();
 app.MapRealmAdminEndpoints();
 app.MapGet("/", () => Results.Ok(new { service = "identity" }));
 app.Run();

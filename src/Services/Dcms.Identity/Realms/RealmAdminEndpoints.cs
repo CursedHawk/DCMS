@@ -9,10 +9,25 @@ using OpenIddict.Abstractions;
 
 namespace Dcms.Identity.Realms;
 
-public sealed record RealmUpsert(string Slug, string Name, IReadOnlyList<string>? Hosts);
+/// <param name="PasswordEnabled">Null leaves it as it is (new realms allow passwords).</param>
+public sealed record RealmUpsert(string Slug, string Name, IReadOnlyList<string>? Hosts, bool? PasswordEnabled = null);
 
 /// <param name="ClientReady">False until identity holds the edge's master secret: the realm exists, but no site can sign anyone in yet.</param>
-public sealed record RealmInfo(Guid TenantId, string Slug, string Name, IReadOnlyList<string> Hosts, string ClientId, bool ClientReady);
+public sealed record RealmInfo(Guid TenantId, string Slug, string Name, IReadOnlyList<string> Hosts, string ClientId, bool ClientReady,
+    bool PasswordEnabled);
+
+/// <param name="ClientSecret">Write-only: set or replace it; null keeps the stored one.</param>
+public sealed record RealmProviderWrite(
+    string Kind, string DisplayName, bool Enabled = true, string? ClientId = null, string? ClientSecret = null,
+    string? Issuer = null, string? EntraTenant = null, string? HostedDomain = null, string? Provisioning = null,
+    IReadOnlyList<string>? AllowedDomains = null, IReadOnlyList<Guid>? DefaultGroups = null, string? GroupClaim = null,
+    IReadOnlyDictionary<string, Guid>? GroupMappings = null);
+
+/// <param name="CallbackUrl">What to register at the provider as the redirect URI; null for DCMS.</param>
+public sealed record RealmProviderInfo(
+    string Key, string Kind, string DisplayName, bool Enabled, string? ClientId, bool HasSecret, string? Issuer, string? EntraTenant,
+    string? HostedDomain, string Provisioning, IReadOnlyList<string> AllowedDomains, IReadOnlyList<Guid> DefaultGroups,
+    string? GroupClaim, IReadOnlyDictionary<string, Guid> GroupMappings, string? CallbackUrl);
 
 public sealed record RealmUserInfo(
     Guid Id, string Email, string? DisplayName, string Status, IReadOnlyList<Guid> Groups,
@@ -89,6 +104,7 @@ public static partial class RealmAdminEndpoints
             realm.Slug = body.Slug!;
             realm.Name = body.Name.Trim();
             realm.Hosts = hosts;
+            realm.PasswordEnabled = body.PasswordEnabled ?? realm.PasswordEnabled;
             realm.UpdatedAt = DateTimeOffset.UtcNow;
             audit.Declared?.InTenant(tenantId).With("hosts", hosts.Count);
             await db.SaveChangesAsync(ct);
@@ -256,6 +272,77 @@ public static partial class RealmAdminEndpoints
             return Results.NoContent();
         }).WithAudit(AuditActions.RealmUserDeleted, "realm_user", AuditCategory.Auth);
 
+        // ---- sign-in providers ----
+
+        realms.MapGet("/providers", async (Guid tenantId, IdentityDbContext db, IConfiguration configuration, CancellationToken ct) =>
+            Results.Ok((await db.RealmProviders.AsNoTracking().Where(p => p.TenantId == tenantId).OrderBy(p => p.Key).ToListAsync(ct))
+                .Select(p => ProviderInfo(p, configuration)).ToList()));
+
+        realms.MapPut("/providers/{key}", async (Guid tenantId, string key, RealmProviderWrite body, IdentityDbContext db, RealmSecrets secrets,
+            RealmOidcSchemes schemes, IConfiguration configuration, IAuditRecorder audit, CancellationToken ct) =>
+        {
+            if (await db.Realms.AnyAsync(r => r.TenantId == tenantId, ct) is false)
+            {
+                return Results.NotFound();
+            }
+            var provider = await db.RealmProviders.FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Key == key, ct);
+            if (await ProviderProblemAsync(db, tenantId, key, body, provider, configuration, ct) is { } problem)
+            {
+                return Results.BadRequest(new { error = problem });
+            }
+            var kind = Enum.Parse<RealmProviderKind>(body.Kind, ignoreCase: true);
+            if (provider is null)
+            {
+                provider = new RealmProvider { Id = Guid.NewGuid(), TenantId = tenantId, Key = key };
+                db.RealmProviders.Add(provider);
+            }
+            var external = kind != RealmProviderKind.Dcms;
+            provider.Kind = kind;
+            provider.DisplayName = body.DisplayName.Trim();
+            provider.Enabled = body.Enabled;
+            provider.ClientId = external ? body.ClientId!.Trim() : null;
+            if (external && !string.IsNullOrEmpty(body.ClientSecret))
+            {
+                provider.SecretCiphertext = await secrets.EncryptAsync(body.ClientSecret, ct);
+            }
+            else if (!external)
+            {
+                provider.SecretCiphertext = null;
+            }
+            provider.Issuer = kind == RealmProviderKind.Oidc ? body.Issuer!.Trim().TrimEnd('/') : null;
+            provider.EntraTenant = kind == RealmProviderKind.Entra ? body.EntraTenant!.Trim().ToLowerInvariant() : null;
+            provider.HostedDomain = kind == RealmProviderKind.Google && !string.IsNullOrWhiteSpace(body.HostedDomain) ? body.HostedDomain.Trim().ToLowerInvariant() : null;
+            provider.Provisioning = string.Equals(body.Provisioning, "allowedDomains", StringComparison.OrdinalIgnoreCase)
+                ? RealmProvisioning.AllowedDomains : RealmProvisioning.InviteOnly;
+            provider.AllowedDomains = (body.AllowedDomains ?? []).Select(d => d.Trim().ToLowerInvariant()).Distinct().ToList();
+            provider.DefaultGroups = (body.DefaultGroups ?? []).Distinct().ToList();
+            provider.GroupClaim = string.IsNullOrWhiteSpace(body.GroupClaim) ? null : body.GroupClaim.Trim();
+            provider.GroupMappings = new Dictionary<string, Guid>(body.GroupMappings ?? new Dictionary<string, Guid>());
+            provider.UpdatedAt = DateTimeOffset.UtcNow;
+            // The secret is not recorded, only that it changed.
+            audit.Declared?.InTenant(tenantId).About(provider.Id).With("key", key).With("kind", kind.ToString())
+                .With("secretChanged", external && !string.IsNullOrEmpty(body.ClientSecret));
+            await db.SaveChangesAsync(ct);
+            schemes.Evict(provider.Id);
+            return Results.Ok(ProviderInfo(provider, configuration));
+        }).WithAudit(AuditActions.RealmProviderSaved, "realm_provider", AuditCategory.Auth);
+
+        realms.MapDelete("/providers/{key}", async (Guid tenantId, string key, IdentityDbContext db, RealmOidcSchemes schemes,
+            IAuditRecorder audit, CancellationToken ct) =>
+        {
+            if (await db.RealmProviders.FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Key == key, ct) is not { } provider)
+            {
+                return Results.NotFound();
+            }
+            audit.Declared?.InTenant(tenantId).About(provider.Id).With("key", key);
+            // Accounts linked through it keep their other ways in (a password, another provider).
+            await db.RealmLogins.Where(l => l.TenantId == tenantId && l.Provider == key).ExecuteDeleteAsync(ct);
+            db.RealmProviders.Remove(provider);
+            await db.SaveChangesAsync(ct);
+            schemes.Evict(provider.Id);
+            return Results.NoContent();
+        }).WithAudit(AuditActions.RealmProviderDeleted, "realm_provider", AuditCategory.Auth);
+
         // ---- groups ----
 
         realms.MapGet("/groups", async (Guid tenantId, IdentityDbContext db, CancellationToken ct) =>
@@ -358,7 +445,8 @@ public static partial class RealmAdminEndpoints
     private static async Task<RealmInfo> InfoAsync(Realm realm, IConfiguration configuration, IOpenIddictApplicationManager apps, CancellationToken ct) =>
         new(realm.TenantId, realm.Slug, realm.Name, realm.Hosts, RealmClients.IdFor(realm.TenantId),
             !string.IsNullOrWhiteSpace(configuration[RealmClients.SecretSetting])
-            && await apps.FindByClientIdAsync(RealmClients.IdFor(realm.TenantId), ct) is not null);
+            && await apps.FindByClientIdAsync(RealmClients.IdFor(realm.TenantId), ct) is not null,
+            realm.PasswordEnabled);
 
     private static RealmUserInfo Info(RealmUser user, IReadOnlyDictionary<Guid, List<Guid>> groups, RealmStore store) => new(
         user.Id, user.Email, user.DisplayName, user.Status.ToString().ToLowerInvariant(),
@@ -367,6 +455,96 @@ public static partial class RealmAdminEndpoints
     private static async Task<Dictionary<Guid, List<Guid>>> GroupsOfAsync(IdentityDbContext db, Guid tenantId, List<Guid> userIds, CancellationToken ct) =>
         (await db.RealmGroupMembers.AsNoTracking().Where(m => m.TenantId == tenantId && userIds.Contains(m.UserId)).ToListAsync(ct))
             .GroupBy(m => m.UserId).ToDictionary(g => g.Key, g => g.Select(m => m.GroupId).ToList());
+
+    private static RealmProviderInfo ProviderInfo(RealmProvider p, IConfiguration configuration) => new(
+        p.Key, JsonCamel(p.Kind.ToString()), p.DisplayName, p.Enabled, p.ClientId, p.SecretCiphertext is not null, p.Issuer, p.EntraTenant,
+        p.HostedDomain, JsonCamel(p.Provisioning.ToString()), p.AllowedDomains, p.DefaultGroups, p.GroupClaim, p.GroupMappings,
+        p.Kind == RealmProviderKind.Dcms || configuration["Identity:Issuer"] is not { Length: > 0 } issuer
+            ? null
+            : $"{issuer.TrimEnd('/')}{RealmExternal.CallbackPath(p.Id)}");
+
+    private static string JsonCamel(string value) => System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(value);
+
+    /// <summary>What is wrong with a provider as written, or null.</summary>
+    private static async Task<string?> ProviderProblemAsync(IdentityDbContext db, Guid tenantId, string key, RealmProviderWrite body,
+        RealmProvider? existing, IConfiguration configuration, CancellationToken ct)
+    {
+        if (!ProviderKeyPattern().IsMatch(key))
+        {
+            return "A provider key is 2 to 40 lowercase letters, digits and dashes, starting with a letter.";
+        }
+        if (!Enum.TryParse<RealmProviderKind>(body.Kind, ignoreCase: true, out var kind) || !Enum.IsDefined(kind) || int.TryParse(body.Kind, out _))
+        {
+            return "Kind is google, entra, oidc or dcms.";
+        }
+        if (string.IsNullOrWhiteSpace(body.DisplayName) || body.DisplayName.Trim().Length > 80 || body.DisplayName.Any(char.IsControl))
+        {
+            return "A provider needs a display name of up to 80 characters.";
+        }
+        if (kind != RealmProviderKind.Dcms)
+        {
+            if (string.IsNullOrWhiteSpace(body.ClientId) || body.ClientId.Length > 256)
+            {
+                return "A client id is required.";
+            }
+            if (string.IsNullOrEmpty(body.ClientSecret) && existing?.SecretCiphertext is null)
+            {
+                return "A client secret is required.";
+            }
+            if (body.ClientSecret?.Length > 2048)
+            {
+                return "That client secret is too long.";
+            }
+        }
+        switch (kind)
+        {
+            case RealmProviderKind.Google when !string.IsNullOrWhiteSpace(body.HostedDomain) && !HostPattern().IsMatch(body.HostedDomain.Trim().ToLowerInvariant()):
+                return "The hosted domain is not a domain name.";
+            case RealmProviderKind.Entra:
+                var tenant = body.EntraTenant?.Trim().ToLowerInvariant();
+                if (tenant is null or "common" or "organizations" or "consumers"
+                    || !(Guid.TryParse(tenant, out _) || HostPattern().IsMatch(tenant)))
+                {
+                    return "Name one Entra directory by tenant id or verified domain; common, organizations and consumers would let any directory vouch for an email.";
+                }
+                break;
+            case RealmProviderKind.Oidc:
+                var insecure = configuration.GetValue("Identity:AllowInsecureHttp", false);
+                if (!Uri.TryCreate(body.Issuer?.Trim(), UriKind.Absolute, out var issuer)
+                    || !(issuer.Scheme == Uri.UriSchemeHttps || (insecure && issuer.Scheme == Uri.UriSchemeHttp))
+                    || !string.IsNullOrEmpty(issuer.Query) || !string.IsNullOrEmpty(issuer.Fragment))
+                {
+                    return "The issuer is the provider's https URL, without a query.";
+                }
+                break;
+        }
+        var domains = body.AllowedDomains ?? [];
+        if (domains.Count > 50 || domains.Any(d => !HostPattern().IsMatch(d.Trim().ToLowerInvariant())))
+        {
+            return "Allowed domains are up to 50 domain names.";
+        }
+        if (string.Equals(body.Provisioning, "allowedDomains", StringComparison.OrdinalIgnoreCase) && domains.Count == 0)
+        {
+            return "Creating accounts on first sign-in needs at least one allowed domain.";
+        }
+        if (body.Provisioning is { } p && !p.Equals("inviteOnly", StringComparison.OrdinalIgnoreCase) && !p.Equals("allowedDomains", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Provisioning is inviteOnly or allowedDomains.";
+        }
+        var groups = (body.DefaultGroups ?? []).Concat((body.GroupMappings ?? new Dictionary<string, Guid>()).Values).Distinct().ToList();
+        if ((body.GroupMappings?.Count ?? 0) > 100 || body.GroupMappings?.Keys.Any(k => k.Length is 0 or > 256) == true || body.GroupClaim?.Length > 128)
+        {
+            return "Up to 100 group mappings, each value at most 256 characters, under a claim of at most 128.";
+        }
+        if (groups.Count > 0 && await db.RealmGroups.CountAsync(g => g.TenantId == tenantId && groups.Contains(g.Id), ct) != groups.Count)
+        {
+            return "A default or mapped group does not exist.";
+        }
+        return null;
+    }
+
+    [GeneratedRegex("^[a-z][a-z0-9-]{1,39}$")]
+    private static partial Regex ProviderKeyPattern();
 
     private static IResult? Invalid(RealmGroupWrite body) =>
         string.IsNullOrWhiteSpace(body.Name) || body.Name.Trim().Length > 120 || body.Description?.Length > 1000

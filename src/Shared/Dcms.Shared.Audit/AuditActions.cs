@@ -244,6 +244,8 @@ public static class AuditActions
 
     /// <summary>Every session of one user ended by an administrator.</summary>
     public const string RealmUserSignedOut = "realm.user.signed_out";
+    public const string RealmProviderSaved = "realm.provider.saved";
+    public const string RealmProviderDeleted = "realm.provider.deleted";
     public const string RealmGroupCreated = "realm.group.created";
     public const string RealmGroupUpdated = "realm.group.updated";
     public const string RealmGroupDeleted = "realm.group.deleted";

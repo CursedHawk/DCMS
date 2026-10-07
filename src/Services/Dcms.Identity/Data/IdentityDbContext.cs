@@ -30,6 +30,7 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
     public DbSet<RealmGroup> RealmGroups => Set<RealmGroup>();
     public DbSet<RealmGroupMember> RealmGroupMembers => Set<RealmGroupMember>();
     public DbSet<RealmLogin> RealmLogins => Set<RealmLogin>();
+    public DbSet<RealmProvider> RealmProviders => Set<RealmProvider>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -105,6 +106,32 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             // One account per provider subject per tenant; the same subject may sign in to many tenants.
             e.HasIndex(l => new { l.TenantId, l.Provider, l.ProviderKey }).IsUnique();
             e.HasOne<RealmUser>().WithMany().HasForeignKey(l => l.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<RealmProvider>(e =>
+        {
+            e.ToTable("realm_providers");
+            e.HasKey(p => p.Id);
+            e.Property(p => p.Key).HasMaxLength(40);
+            e.Property(p => p.Kind).HasConversion<string>().HasMaxLength(16);
+            e.Property(p => p.Provisioning).HasConversion<string>().HasMaxLength(24);
+            e.Property(p => p.DisplayName).HasMaxLength(80);
+            e.Property(p => p.ClientId).HasMaxLength(256);
+            e.Property(p => p.Issuer).HasMaxLength(512);
+            e.Property(p => p.EntraTenant).HasMaxLength(256);
+            e.Property(p => p.HostedDomain).HasMaxLength(256);
+            e.Property(p => p.SecretCiphertext).HasMaxLength(4096);
+            e.Property(p => p.GroupClaim).HasMaxLength(128);
+            // Through a converter: Npgsql maps a POCO to jsonb only with dynamic JSON switched on.
+            e.Property(p => p.GroupMappings).HasColumnType("jsonb").HasConversion(
+                v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                v => System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, Guid>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new(),
+                new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<Dictionary<string, Guid>>(
+                    (a, b) => a!.Count == b!.Count && !a.Except(b).Any(),
+                    v => v.Aggregate(0, (h, kv) => HashCode.Combine(h, kv.Key, kv.Value)),
+                    v => new Dictionary<string, Guid>(v)));
+            e.HasIndex(p => new { p.TenantId, p.Key }).IsUnique();
+            e.HasOne<Realm>().WithMany().HasForeignKey(p => p.TenantId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<ForgejoSyncOutbox>(e =>

@@ -19,6 +19,9 @@ public sealed class Realm
     /// <summary>The tenant's site hostnames: the edge's sign-in callbacks are registered for these.</summary>
     public List<string> Hosts { get; set; } = [];
 
+    /// <summary>Whether people may sign in with an email and password, or only through a provider.</summary>
+    public bool PasswordEnabled { get; set; } = true;
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
@@ -89,4 +92,75 @@ public sealed class RealmLogin
     public string ProviderKey { get; set; } = string.Empty;
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public enum RealmProviderKind
+{
+    /// <summary>Google Workspace (or any Google account, without a hosted domain).</summary>
+    Google,
+
+    /// <summary>Microsoft Entra ID, one directory.</summary>
+    Entra,
+
+    /// <summary>Any OpenID Connect provider, by issuer.</summary>
+    Oidc,
+
+    /// <summary>The person's DCMS (platform) account, linked to their account in this realm.</summary>
+    Dcms,
+}
+
+public enum RealmProvisioning
+{
+    /// <summary>Only people already invited (or linked) get in.</summary>
+    InviteOnly,
+
+    /// <summary>Also anyone the provider vouches for at one of <see cref="RealmProvider.AllowedDomains"/>: their account is created on first sign-in.</summary>
+    AllowedDomains,
+}
+
+/// <summary>
+/// One way into a realm besides a password (ADR 0022): a tenant's own Google, Entra or OIDC
+/// client, or DCMS. The client secret is encrypted with Vault Transit (<c>dcms-realm-secrets</c>,
+/// identity's alone) and never leaves identity again.
+/// </summary>
+public sealed class RealmProvider
+{
+    public Guid Id { get; set; }
+    public Guid TenantId { get; set; }
+
+    /// <summary>Lowercase, unique per realm: the sign-in button's path (<c>/realm/{slug}/sso/{key}</c>).</summary>
+    public string Key { get; set; } = string.Empty;
+
+    public RealmProviderKind Kind { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public bool Enabled { get; set; } = true;
+
+    public string? ClientId { get; set; }
+
+    /// <summary>Generic OIDC: the issuer, whose discovery document is read.</summary>
+    public string? Issuer { get; set; }
+
+    /// <summary>Entra: the directory (tenant id or verified domain). Never common/organizations: the directory is what vouches for the email.</summary>
+    public string? EntraTenant { get; set; }
+
+    /// <summary>Google: only accounts of this Workspace domain (the <c>hd</c> claim).</summary>
+    public string? HostedDomain { get; set; }
+
+    /// <summary>Transit ciphertext of the client secret.</summary>
+    public string? SecretCiphertext { get; set; }
+
+    public RealmProvisioning Provisioning { get; set; } = RealmProvisioning.InviteOnly;
+    public List<string> AllowedDomains { get; set; } = [];
+
+    /// <summary>Groups an account created through this provider starts in.</summary>
+    public List<Guid> DefaultGroups { get; set; } = [];
+
+    /// <summary>The claim carrying the person's groups at the provider (Entra: <c>groups</c>).</summary>
+    public string? GroupClaim { get; set; }
+
+    /// <summary>A provider group value → a realm group: kept in step at every sign-in through this provider.</summary>
+    public Dictionary<string, Guid> GroupMappings { get; set; } = [];
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

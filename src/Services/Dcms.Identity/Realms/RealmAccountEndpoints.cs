@@ -3,7 +3,9 @@ using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Messaging.Email;
 using Microsoft.AspNetCore.Antiforgery;
+using Dcms.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using static Dcms.Identity.Endpoints.AccountEndpoints;
 
 namespace Dcms.Identity.Realms;
@@ -26,9 +28,9 @@ public static class RealmAccountEndpoints
         var realm = app.MapGroup("/realm/{slug}").AllowAnonymous();
 
         realm.MapGet("/login", async (string slug, string? returnUrl, string? error, HttpContext http, IAntiforgery antiforgery,
-            RealmStore store, CancellationToken ct) =>
+            RealmStore store, IdentityDbContext db, CancellationToken ct) =>
             await store.FindRealmBySlugAsync(slug, ct) is { } r
-                ? Html(LoginPage(r, returnUrl, error is not null, CsrfField(http, antiforgery)))
+                ? Html(LoginPage(r, await ProvidersAsync(db, r, ct), returnUrl, error, CsrfField(http, antiforgery)))
                 : NotFound());
 
         realm.MapPost("/login", async (string slug, HttpContext http, RealmStore store, IAuditRecorder audit,
@@ -37,6 +39,11 @@ public static class RealmAccountEndpoints
             if (await store.FindRealmBySlugAsync(slug, ct) is not { } r)
             {
                 return NotFound();
+            }
+            if (!r.PasswordEnabled)
+            {
+                // Passwords are switched off for this realm: the form is gone, and so is the endpoint.
+                return Results.Redirect($"/realm/{Uri.EscapeDataString(slug)}/login");
             }
             var (result, user) = await store.PasswordSignInAsync(r.TenantId, email ?? string.Empty, password ?? string.Empty, ct);
             if (result != RealmSignIn.Succeeded)
@@ -72,9 +79,9 @@ public static class RealmAccountEndpoints
                 return NotFound();
             }
             audit.Declared?.InTenant(r.TenantId);
-            // Only an active account with a password gets a link; the page reads the same either
-            // way, so the form says nothing about who has an account.
-            if (await store.FindByEmailAsync(r.TenantId, address ?? string.Empty, ct) is { Status: RealmUserStatus.Active, PasswordHash: not null } user)
+            // Only an active account with a password, in a realm that still allows passwords, gets
+            // a link; the page reads the same either way, so the form says nothing about who has an account.
+            if (r.PasswordEnabled && await store.FindByEmailAsync(r.TenantId, address ?? string.Empty, ct) is { Status: RealmUserStatus.Active, PasswordHash: not null } user)
             {
                 audit.Declared?.About(user.Id);
                 var link = $"{PublicOrigin(configuration)}/realm/{Uri.EscapeDataString(slug)}/reset?token={Uri.EscapeDataString(store.ResetToken(user))}{ReturnQuery(returnUrl, '&')}";
@@ -120,16 +127,29 @@ public static class RealmAccountEndpoints
             return Results.Redirect(Landing(slug, returnUrl));
         }).WithAudit(AuditActions.RealmPasswordResetCompleted, category: AuditCategory.Auth);
 
-        realm.MapGet("/invite", async (string slug, string? token, HttpContext http, IAntiforgery antiforgery, RealmStore store, CancellationToken ct) =>
+        realm.MapGet("/invite", async (string slug, string? token, HttpContext http, IAntiforgery antiforgery, RealmStore store,
+            IdentityDbContext db, CancellationToken ct) =>
         {
             if (await store.FindRealmBySlugAsync(slug, ct) is not { } r)
             {
                 return NotFound();
             }
-            return await store.FromInviteAsync(r.TenantId, token, ct) is not { } user
-                ? Html(InvalidLinkPage(r, "This invitation is invalid, already used or has expired. Ask for a new one.", null))
-                : Html(PasswordPage(r, $"Welcome, {user.DisplayName ?? user.Email}", "invite", token!, null, null, CsrfField(http, antiforgery),
-                    $"Choose a password to finish setting up your {r.Name} account."));
+            if (await store.FromInviteAsync(r.TenantId, token, ct) is not { } user)
+            {
+                return Html(InvalidLinkPage(r, "This invitation is invalid, already used or has expired. Ask for a new one.", null));
+            }
+            // Accept with a password, or by signing in through one of the realm's providers.
+            var providers = ProviderButtons(r, await ProvidersAsync(db, r, ct), null, token);
+            return Html(r.PasswordEnabled
+                ? PasswordPage(r, $"Welcome, {user.DisplayName ?? user.Email}", "invite", token!, null, null, CsrfField(http, antiforgery),
+                    $"Choose a password to finish setting up your {r.Name} account.", providers)
+                : Layout($"{r.Name} — Welcome", $$"""
+                    <form>
+                      <h1>Welcome, {{Enc(user.DisplayName ?? user.Email)}}</h1>
+                      <p class="lead">Sign in with your organisation's account to finish setting up your {{Enc(r.Name)}} access.</p>
+                      {{providers}}
+                    </form>
+                    """));
         });
 
         realm.MapPost("/invite", async (string slug, HttpContext http, IAntiforgery antiforgery, RealmStore store, IAuditRecorder audit,
@@ -240,14 +260,31 @@ public static class RealmAccountEndpoints
         <form><h1>Not found</h1><p class="lead">There is no sign-in here. Check the address you were given.</p></form>
         """), "text/html", statusCode: StatusCodes.Status404NotFound);
 
-    private static string LoginPage(Realm realm, string? returnUrl, bool failed, string csrf)
+    private static string LoginPage(Realm realm, IReadOnlyList<RealmProvider> providers, string? returnUrl, string? error, string csrf)
     {
         var slug = Uri.EscapeDataString(realm.Slug);
+        var problem = error switch
+        {
+            null => string.Empty,
+            "sso" => ErrorBlock("Signing in through that provider did not work. Try again, or use another way in."),
+            _ => ErrorBlock("Invalid email or password."),
+        };
+        var buttons = ProviderButtons(realm, providers, returnUrl, null);
+        if (!realm.PasswordEnabled)
+        {
+            return Layout($"{realm.Name} — Sign in", $$"""
+                <form>
+                  <h1>Sign in to {{Enc(realm.Name)}}</h1>
+                  {{problem}}
+                  {{(providers.Count == 0 ? "<p class=\"lead\">There is no way to sign in here yet. Ask an administrator.</p>" : buttons)}}
+                </form>
+                """);
+        }
         return Layout($"{realm.Name} — Sign in", $$"""
             <form method="post" action="/realm/{{slug}}/login">
               {{csrf}}
               <h1>Sign in to {{Enc(realm.Name)}}</h1>
-              {{(failed ? ErrorBlock("Invalid email or password.") : string.Empty)}}
+              {{problem}}
               <input type="hidden" name="returnUrl" value="{{Enc(returnUrl)}}" />
               <label for="email">Email</label>
               <input id="email" name="email" type="email" autocomplete="username" required autofocus />
@@ -255,9 +292,22 @@ public static class RealmAccountEndpoints
               <input id="password" name="password" type="password" autocomplete="current-password" required />
               <p class="forgot"><a href="/realm/{{slug}}/forgot{{ReturnQuery(returnUrl, '?')}}">Forgot password?</a></p>
               <button type="submit">Sign in</button>
+              {{(providers.Count == 0 ? string.Empty : "<div class=\"divider\"><span>or</span></div>" + buttons)}}
             </form>
             """);
     }
+
+    private static Task<List<RealmProvider>> ProvidersAsync(IdentityDbContext db, Realm realm, CancellationToken ct) =>
+        db.RealmProviders.AsNoTracking().Where(p => p.TenantId == realm.TenantId && p.Enabled).OrderBy(p => p.DisplayName).ToListAsync(ct);
+
+    /// <summary>One button per provider, out to <c>/realm/{slug}/sso/{key}</c>.</summary>
+    private static string ProviderButtons(Realm realm, IReadOnlyList<RealmProvider> providers, string? returnUrl, string? invite) =>
+        string.Concat(providers.Select(p =>
+        {
+            var href = $"/realm/{Uri.EscapeDataString(realm.Slug)}/sso/{Uri.EscapeDataString(p.Key)}"
+                       + (invite is null ? ReturnQuery(returnUrl, '?') : $"?invite={Uri.EscapeDataString(invite)}");
+            return $"<a class=\"google\" href=\"{Enc(href)}\"><span>Continue with {Enc(p.DisplayName)}</span></a>";
+        }));
 
     private static string ForgotPage(Realm realm, string? returnUrl, bool sent, string csrf)
     {
@@ -286,7 +336,7 @@ public static class RealmAccountEndpoints
     }
 
     private static string PasswordPage(Realm realm, string title, string action, string token, string? returnUrl, string? error, string csrf,
-        string? lead = null) => Layout($"{realm.Name} — {title}", $$"""
+        string? lead = null, string? providers = null) => Layout($"{realm.Name} — {title}", $$"""
         <form method="post" action="/realm/{{Uri.EscapeDataString(realm.Slug)}}/{{action}}">
           {{csrf}}
           <h1>{{Enc(title)}}</h1>
@@ -299,6 +349,7 @@ public static class RealmAccountEndpoints
           <label for="confirmPassword">Confirm password</label>
           <input id="confirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="{{RealmStore.MinPasswordLength}}" required />
           <button type="submit">Save password</button>
+          {{(string.IsNullOrEmpty(providers) ? string.Empty : "<div class=\"divider\"><span>or</span></div>" + providers)}}
         </form>
         """);
 
