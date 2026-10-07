@@ -120,7 +120,8 @@ public static partial class ConfigValidator
                 {
                     Warn("reference-as-text", $"{path}.{field.ApiName}",
                         $"{table.ApiName}.{field.ApiName} looks like a reference to {target.ApiName}. Make it a relationship instead "
-                        + $"(sourceTableId {table.ApiName}, targetTableId {target.ApiName}): values are then checked, deletes are handled, and the related record can be fetched.");
+                        + $"(sourceTableId {table.ApiName}, targetTableId {target.ApiName}, copyFrom '{field.ApiName}' to keep the ids it holds): "
+                        + "values are then checked, deletes are handled, and the related record can be fetched.");
                 }
             }
 
@@ -241,6 +242,7 @@ public static partial class ConfigValidator
         }
 
         CheckFlows(config, tables, actions ?? Automation.ActionCatalog.Keys, Error);
+        CheckCopies(config, published, Error);
 
         if (published is not null)
         {
@@ -465,6 +467,27 @@ public static partial class ConfigValidator
     private static bool InBounds(FieldDef field, decimal value) =>
         (field.Minimum is null || value >= field.Minimum) && (field.Maximum is null || value <= field.Maximum);
 
+    /// <summary>Each new field or relationship's <c>copyFrom</c> names a live field of its table whose values could fit it.</summary>
+    private static void CheckCopies(AppConfig config, AppConfig? published, Action<string, string, string> error)
+    {
+        var liveIds = (published?.Tables ?? []).SelectMany(t => t.Fields.Select(f => f.Id))
+            .Concat((published?.Relationships ?? []).Select(r => r.Id)).ToHashSet();
+        var copies = config.Tables.SelectMany(t => t.Fields.Select(f => (Id: f.Id, TableId: t.Id, Path: $"{t.ApiName}.{f.ApiName}", f.CopyFrom, Type: (FieldType?)f.Type)))
+            .Concat(config.Relationships.Select(r => (Id: r.Id, TableId: r.SourceTableId, Path: r.ApiName, r.CopyFrom, Type: (FieldType?)null)));
+        foreach (var copy in copies.Where(c => c.CopyFrom is not null && !liveIds.Contains(c.Id)))
+        {
+            var source = published?.Tables.FirstOrDefault(t => t.Id == copy.TableId)?.Fields.FirstOrDefault(f => f.ApiName == copy.CopyFrom);
+            if (source is null)
+            {
+                error("copy-from-unknown", copy.Path, $"copyFrom '{copy.CopyFrom}' is not a field of this table in the live revision, so there are no values to copy.");
+            }
+            else if (ValueCarry.Incompatible(source, copy.Type) is { } why)
+            {
+                error("copy-from-incompatible", copy.Path, $"copyFrom '{copy.CopyFrom}': {why}.");
+            }
+        }
+    }
+
     private static void CheckAgainstPublished(AppConfig config, AppConfig published,
         Action<string, string, string> error, Action<string, string, string> warn)
     {
@@ -491,10 +514,11 @@ public static partial class ConfigValidator
                 {
                     error("immutable-api-name", path, $"Was '{was.ApiName}'. {Fixed}");
                 }
-                if (was.Type != field.Type && !Widenings.Contains((was.Type, field.Type)))
+                if (was.Type != field.Type && !Widenings.Contains((was.Type, field.Type)) && !ValueCarry.IsConversion(was.Type, field.Type))
                 {
                     error("incompatible-type-change", path,
-                        $"A published {Camel(was.Type)} field cannot become {Camel(field.Type)}: existing values would not fit. Add a new field instead.");
+                        $"A published {Camel(was.Type)} field cannot become {Camel(field.Type)}: existing values would not fit. Add a new field "
+                        + "(with copyFrom naming this one, if its values should move) instead. Text can become choice, and choice multi-choice, in place.");
                 }
             }
         }

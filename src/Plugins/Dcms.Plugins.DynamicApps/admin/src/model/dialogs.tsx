@@ -113,6 +113,20 @@ export function CheckField({ id, label, checked, onChange, hint }: {
   );
 }
 
+const NO_COPY = '-';
+
+/** A new field or lookup that replaces a live one: whose values it takes over when published. */
+function CopyFromField({ id, value, onChange, fields }: { id: string; value: string; onChange: (v: string) => void; fields: FieldDef[] }) {
+  const { t } = usePluginT();
+  return (
+    <div className="space-y-1">
+      <SelectField id={id} label={t('form.copyFrom')} value={value} onChange={onChange}
+        options={[{ value: NO_COPY, label: t('form.copyNone') }, ...fields.map((f) => ({ value: f.apiName, label: `${f.displayName} (${f.apiName})` }))]} />
+      <p className="text-xs text-muted-foreground">{t('form.copyFromHint')}</p>
+    </div>
+  );
+}
+
 export function SelectField<T extends string>({ id, label, value, onChange, options, placeholder }: {
   id: string;
   label: string;
@@ -212,10 +226,11 @@ export function TableDialog({ table, pending, onCancel, onSave }: { table?: Tabl
 const TEXT_TYPES: FieldType[] = ['text', 'longText', 'email', 'url'];
 const NUMBER_TYPES: FieldType[] = ['integer', 'decimal'];
 
-export function FieldDialog({ table, field, choiceSets, pending, onCancel, onSave }: {
+export function FieldDialog({ table, field, choiceSets, liveTables = [], pending, onCancel, onSave }: {
   table: TableDef;
   field?: FieldDef;
   choiceSets: ChoiceSetDef[];
+  liveTables?: TableDef[];
   pending: boolean;
   onCancel: () => void;
   onSave: Save;
@@ -241,6 +256,8 @@ export function FieldDialog({ table, field, choiceSets, pending, onCancel, onSav
   const [defaultText, setDefaultText] = useState(field?.default === undefined ? '' : typeof field.default === 'string' ? field.default : JSON.stringify(field.default));
   const [primary, setPrimary] = useState(field !== undefined && field.id === table.primaryFieldId);
   const isChoice = type === 'choice' || type === 'multiChoice';
+  const [copyFrom, setCopyFrom] = useState(NO_COPY);
+  const copyable = field ? [] : liveTables.find((x) => x.id === table.id)?.fields ?? [];
 
   const defaultValue = (): unknown => {
     if (!defaultText.trim()) return undefined;
@@ -268,6 +285,7 @@ export function FieldDialog({ table, field, choiceSets, pending, onCancel, onSav
       minimum: NUMBER_TYPES.includes(type) ? number(minimum) : undefined,
       maximum: NUMBER_TYPES.includes(type) ? number(maximum) : undefined,
       default: defaultValue(),
+      copyFrom: field || copyFrom === NO_COPY ? undefined : copyFrom,
     };
     const ops: ChangeOperation[] = field
       ? [{ op: 'update', type: 'field', target: field.id, value: patchOf(field, value) }]
@@ -295,6 +313,9 @@ export function FieldDialog({ table, field, choiceSets, pending, onCancel, onSav
         ) : null}
       </div>
       <TextField id="field-description" label={t('form.description')} value={description} onChange={setDescription} />
+      {copyable.length > 0 ? (
+        <CopyFromField id="field-copy-from" value={copyFrom} onChange={setCopyFrom} fields={copyable} />
+      ) : null}
       <div className="grid gap-2 sm:grid-cols-2">
         <CheckField id="f-required" label={t('flags.required')} checked={flags.required} onChange={flag('required')} />
         <CheckField id="f-unique" label={t('flags.unique')} checked={flags.unique} onChange={flag('unique')} />
@@ -401,9 +422,10 @@ export function ViewDialog({ table, view, relationships, pending, onCancel, onSa
   );
 }
 
-export function RelationshipDialog({ relationship, tables, pending, onCancel, onSave }: {
+export function RelationshipDialog({ relationship, tables, liveTables = [], pending, onCancel, onSave }: {
   relationship?: RelationshipDef;
   tables: TableDef[];
+  liveTables?: TableDef[];
   pending: boolean;
   onCancel: () => void;
   onSave: Save;
@@ -416,6 +438,10 @@ export function RelationshipDialog({ relationship, tables, pending, onCancel, on
   const [inverse, setInverse] = useState(relationship?.inverseApiName ?? '');
   const [required, setRequired] = useState(relationship?.required ?? false);
   const [onDelete, setOnDelete] = useState<RelationshipDef['onDelete']>(relationship?.onDelete ?? 'restrict');
+  const [copyFrom, setCopyFrom] = useState(NO_COPY);
+  // Record ids kept as text: what a lookup can take over.
+  const copyable = relationship || kind === 'manyToMany' ? []
+    : (liveTables.find((x) => x.id === source)?.fields ?? []).filter((f) => f.type === 'text' || f.type === 'longText');
   const tableOptions = tables.map((x) => ({ value: x.id, label: `${x.displayName} (${x.apiName})` }));
   const save = () => {
     const value = {
@@ -427,6 +453,7 @@ export function RelationshipDialog({ relationship, tables, pending, onCancel, on
       inverseApiName: optional(inverse),
       required: kind === 'manyToMany' ? false : required,
       onDelete,
+      copyFrom: copyable.length === 0 || copyFrom === NO_COPY ? undefined : copyFrom,
     };
     onSave(relationship
       ? [{ op: 'update', type: 'relationship', target: relationship.id, value: patchOf(relationship, value) }]
@@ -444,6 +471,9 @@ export function RelationshipDialog({ relationship, tables, pending, onCancel, on
       </div>
       <Names names={names} idPrefix="rel" />
       <TextField id="rel-inverse" label={t('form.inverseName')} value={inverse} onChange={setInverse} mono hint={t('form.inverseHint')} />
+      {copyable.length > 0 ? (
+        <CopyFromField id="rel-copy-from" value={copyFrom} onChange={setCopyFrom} fields={copyable} />
+      ) : null}
       {kind !== 'manyToMany' ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <CheckField id="rel-required" label={t('flags.required')} checked={required} onChange={setRequired} />

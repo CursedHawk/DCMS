@@ -29,6 +29,8 @@ const INSTANCE = {
 const TABLE_ID = 'aaaaaaaa-0000-0000-0000-000000000001';
 const TITLE_ID = 'aaaaaaaa-0000-0000-0000-000000000002';
 const AMOUNT_ID = 'aaaaaaaa-0000-0000-0000-000000000003';
+const STAGE_ID = 'aaaaaaaa-0000-0000-0000-000000000004';
+const STAGES_ID = 'aaaaaaaa-0000-0000-0000-000000000005';
 
 const DEALS = {
   id: TABLE_ID, apiName: 'deals', displayName: 'Deal', pluralName: 'Deals', enabled: true, primaryFieldId: TITLE_ID,
@@ -38,11 +40,16 @@ const DEALS = {
       filterable: false, deprecated: false, readOnly: false, hiddenFromPublic: false },
     { id: AMOUNT_ID, apiName: 'amount', displayName: 'Amount', type: 'decimal', required: false, unique: false, searchable: false,
       sortable: true, filterable: false, deprecated: false, readOnly: false, hiddenFromPublic: false },
+    { id: STAGE_ID, apiName: 'stage', displayName: 'Stage', type: 'choice', choiceSetId: STAGES_ID, required: false, unique: false,
+      searchable: false, sortable: false, filterable: true, deprecated: false, readOnly: false, hiddenFromPublic: false },
   ],
   indexes: [],
 };
 
-const CONFIG = { schemaVersion: 1, settings: {}, tables: [DEALS], relationships: [], choiceSets: [], views: [], flows: [] };
+const STAGES = { id: STAGES_ID, apiName: 'deal_stage', displayName: 'Stage',
+  options: [{ value: 'lead', label: 'Lead' }, { value: 'won', label: 'Won' }, { value: 'lost', label: 'Lost' }] };
+
+const CONFIG = { schemaVersion: 1, settings: {}, tables: [DEALS], relationships: [], choiceSets: [STAGES], views: [], flows: [] };
 
 const revision = (number: number, status: string, hash: string) => ({
   id: `bbbbbbbb-0000-0000-0000-00000000000${number}`, number, status, source: 'human', hash,
@@ -214,4 +221,27 @@ test('a publish the server refuses says why', async ({ page, api }) => {
   await expect(review.getByText(/1 existing record\(s\) have no value/)).toBeVisible();
   await expect(review.getByText('activities.type')).toBeVisible();
   await expect(review.getByRole('button', { name: 'Publish' })).toBeDisabled();
+});
+
+test("a record's choice is changed right in the list, and the list is filtered by picked choices", async ({ page, api }) => {
+  const record = { id: 'dddddddd-0000-0000-0000-000000000002', version: 5, created_at: '2026-10-07T10:00:00Z', updated_at: '2026-10-07T10:00:00Z',
+    title: 'Pending', amount: 100, stage: 'lead' };
+  api
+    .on('POST', '/api/admin/plugins/crm/_records/deals/query', { items: [record], total: 1, page: 1, pageSize: 25 })
+    .on('PATCH', '/api/admin/plugins/crm/_records/deals/:id', { ...record, version: 6, stage: 'won' });
+  await page.goto('/plugins/crm/records');
+
+  const table = page.getByRole('table');
+  await table.getByRole('combobox', { name: 'Change Stage' }).click();
+  await page.getByRole('option', { name: 'Won' }).click();
+  await expect.poll(() => api.requestsTo('PATCH', `/api/admin/plugins/crm/_records/deals/${record.id}`).length).toBe(1);
+  expect(api.requestsTo('PATCH', `/api/admin/plugins/crm/_records/deals/${record.id}`)[0]!.body).toEqual({ stage: 'won', version: 5 });
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Filter by Stage' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Won' }).click();
+  await page.getByRole('menuitemcheckbox', { name: 'Lost' }).click();
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/plugins/crm/_records/deals/query')
+    .some((r) => JSON.stringify((r.body as { filter?: unknown }).filter) === JSON.stringify({ field: 'stage', op: 'in', value: ['won', 'lost'] })))
+    .toBe(true);
 });

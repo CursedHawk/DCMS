@@ -5,6 +5,7 @@ import { ConfirmDialog } from '../ConfirmDialog';
 import { usePluginT } from '@dcms/plugin-ui';
 import {
   useApplyChanges,
+  usePublished,
   type AppConfig,
   type ChangeOperation,
   type ChoiceSetDef,
@@ -35,6 +36,8 @@ export function ModelTab({ slug, config, editable, onSelect }: {
 }) {
   const { t } = usePluginT();
   const apply = useApplyChanges(slug);
+  // What is live, for "copy values from" when a new field or lookup replaces a live field.
+  const liveTables = usePublished(slug).data?.config.tables ?? [];
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [deleting, setDeleting] = useState<Deleting>(null);
@@ -112,7 +115,7 @@ export function ModelTab({ slug, config, editable, onSelect }: {
           <TableDialog table={editing.table} pending={apply.isPending} onCancel={() => setEditing(null)} onSave={save} />
         ) : null}
         {editing?.kind === 'field' && config ? (
-          <FieldDialog table={editing.table} field={editing.field} choiceSets={config.choiceSets} pending={apply.isPending}
+          <FieldDialog table={editing.table} field={editing.field} choiceSets={config.choiceSets} liveTables={liveTables} pending={apply.isPending}
             onCancel={() => setEditing(null)} onSave={save} />
         ) : null}
         {editing?.kind === 'index' ? (
@@ -123,7 +126,7 @@ export function ModelTab({ slug, config, editable, onSelect }: {
             onCancel={() => setEditing(null)} onSave={save} />
         ) : null}
         {editing?.kind === 'relationship' && config ? (
-          <RelationshipDialog relationship={editing.relationship} tables={config.tables} pending={apply.isPending}
+          <RelationshipDialog relationship={editing.relationship} tables={config.tables} liveTables={liveTables} pending={apply.isPending}
             onCancel={() => setEditing(null)} onSave={save} />
         ) : null}
         {editing?.kind === 'choiceSet' ? (

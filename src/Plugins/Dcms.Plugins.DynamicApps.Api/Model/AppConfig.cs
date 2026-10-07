@@ -108,6 +108,14 @@ public sealed record FieldDef
 
     /// <summary>Choice types: the set the value comes from.</summary>
     public Guid? ChoiceSetId { get; init; }
+
+    /// <summary>
+    /// When this is new: the api name of the live field it replaces, on the same table (for a
+    /// relationship, its source table). Publishing copies the values that fit — record ids that
+    /// exist, for a lookup; values among the options, for a choice — and reports the rest.
+    /// Ignored once this is published.
+    /// </summary>
+    public string? CopyFrom { get; init; }
 }
 
 public sealed record IndexDef
@@ -197,6 +205,14 @@ public sealed record RelationshipDef
     public bool Required { get; init; }
 
     public DeleteBehavior OnDelete { get; init; } = DeleteBehavior.Restrict;
+
+    /// <summary>
+    /// When this is new: the api name of the live field it replaces, on the same table (for a
+    /// relationship, its source table). Publishing copies the values that fit — record ids that
+    /// exist, for a lookup; values among the options, for a choice — and reports the rest.
+    /// Ignored once this is published.
+    /// </summary>
+    public string? CopyFrom { get; init; }
 }
 
 public sealed record ChoiceSetDef

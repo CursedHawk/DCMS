@@ -129,7 +129,12 @@ public interface IDynamicAppsConfig
             + "onDelete?: restrict|setNull|cascade}}; manyToOne (the default) is the source table's lookup field, manyToMany needs inverseApiName. "
             + "A fixed set of values (stage, status, type) is a choice field on a choice set: create {type: choiceSet, value: {apiName: 'deal_stage', "
             + "displayName, options: [{value: 'won', label: 'Won'}]}} and a field {type: 'choice', choiceSetId: 'deal_stage'}. Give each table a "
-            + "primaryFieldId (its name or title field). Table public: "
+            + "primaryFieldId (its name or title field). Keep the data when improving a model: never delete and re-create a field to change it. "
+            + "A text field becomes a choice field in place ({op: update, type: field, target: 'deals.stage', value: {type: 'choice', "
+            + "choiceSetId: 'deal_stage'}}; every existing value must be an option, and the issues name the ones that are not), and a choice field "
+            + "becomes multiChoice the same way. When a new field or relationship replaces a live field, give it copyFrom: the old field's api "
+            + "name (e.g. relationship company with copyFrom: 'company_id'), and delete the old field in the same change set; publishing copies "
+            + "the values that fit (existing record ids for a lookup, options for a choice) and reports the rest. Table public: "
             + "{read: none|all|own, create, updateOwn, deleteOwn}. Flow: {apiName, displayName, trigger: {event, tableId?, changedFields?, everyMinutes?}, "
             + "condition?, steps: [{id, action: 'records.create@1', input with {{ expressions }}}]}. Api names are lowercase snake_case. "
             + "Returns the changes made and the draft's validation issues; fix errors before publishing.")]

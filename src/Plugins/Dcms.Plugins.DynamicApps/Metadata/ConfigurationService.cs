@@ -410,17 +410,43 @@ public sealed class ConfigurationService(
             var was = liveTables.GetValueOrDefault(table.Id);
             var records = db.Records.Where(r => r.InstanceId == instanceId && r.TableId == table.Id);
 
+            // Fields converted in place keep their values, if every value fits the new type.
+            foreach (var member in table.Members.Where(m => m.Field is { } f
+                         && was?.ById.GetValueOrDefault(m.Id)?.Field is { } before && before.Type != f.Type && ValueCarry.IsConversion(before.Type, f.Type)))
+            {
+                var before = was!.ById[member.Id].Field!.Type;
+                issues.AddRange(await CarryAsync(table, member, before, member.Key, apply, convert: true, ct));
+            }
+
+            // New fields and lookups that take over a live field's values (copyFrom).
+            var carried = new Dictionary<Guid, (string Condition, object[] Parameters)>();
+            foreach (var member in table.Members.Where(m => was?.ById.ContainsKey(m.Id) != true))
+            {
+                var copyFrom = member.Field?.CopyFrom ?? member.Lookup?.CopyFrom;
+                if (copyFrom is null || was?.Def.Fields.FirstOrDefault(f => f.ApiName == copyFrom) is not { } source)
+                {
+                    continue;
+                }
+                var (condition, _, parameters) = ValueCarry.Sql(source.Type, member.Field?.Type, source.Id.ToString(), member.Options ?? [],
+                    member.Lookup?.TargetTableId, first: 2);
+                carried[member.Id] = (condition, parameters);
+                issues.AddRange(await CarryAsync(table, member, source.Type, source.Id.ToString(), apply, convert: false, ct, source.ApiName));
+            }
+
             foreach (var member in table.Members.Where(m => m.Required && m.Field?.Default is null))
             {
                 if (was?.ById.GetValueOrDefault(member.Id) is { Required: true })
                 {
                     continue;
                 }
-                var missing = await records.CountAsync(r => !EF.Functions.JsonExists(r.Data, member.Key), ct);
+                var missing = carried.TryGetValue(member.Id, out var carry)
+                    ? await CountAsync(table, $$"""NOT (r."Data" ? {{{2 + carry.Parameters.Length}}}) AND NOT ({{carry.Condition}})""",
+                        [.. carry.Parameters, member.Key], ct)
+                    : await records.CountAsync(r => !EF.Functions.JsonExists(r.Data, member.Key), ct);
                 if (missing > 0)
                 {
                     issues.Add(new ConfigIssue(IssueSeverity.Error, "required-without-data", $"{table.ApiName}.{member.ApiName}",
-                        $"{missing} existing record(s) have no value for it. Give it a default, fill it in first, or leave it optional."));
+                        $"{missing} existing record(s) have no value for it. {ReplacedHint(was, table, member)}"));
                 }
             }
 
@@ -476,6 +502,84 @@ public sealed class ConfigurationService(
             }
         }
         return issues;
+    }
+
+    /// <summary>
+    /// What to tell someone whose new required member has no values: when it took the place
+    /// of a live field (same name, or <c>x_id</c> for the lookup <c>x</c>), that the values did
+    /// not come along and how to bring them — the first thing anyone tries, filling in the
+    /// records, cannot work, because the live model still writes the old field.
+    /// </summary>
+    private static string ReplacedHint(Data.RuntimeTable? was, Data.RuntimeTable table, Data.RuntimeMember member)
+    {
+        var copyFrom = member.Field?.CopyFrom ?? member.Lookup?.CopyFrom;
+        var old = was?.Def.Fields.FirstOrDefault(f => (f.ApiName == member.ApiName || f.ApiName == member.ApiName + "_id")
+                                                       && !table.ById.ContainsKey(f.Id));
+        return copyFrom is not null
+            ? $"Not every value of '{copyFrom}' fits it. Fix those records first, give it a default, or leave it optional."
+            : old is not null
+                ? $"It replaces the deleted '{old.ApiName}' field, whose values are not carried over: set copyFrom '{old.ApiName}' on it to bring them, give it a default, or leave it optional. Editing the records first does not help; they still write the old field until this is published."
+                : "Give it a default, fill it in first, or leave it optional.";
+    }
+
+    /// <summary>
+    /// Moves one member's values: from its own key, for a field converted in place
+    /// (<paramref name="convert"/>), or from the live field it replaces. A conversion refuses
+    /// the publish when a value does not fit — it would be lost; a copy moves what fits and
+    /// warns about the rest. <paramref name="apply"/> false only counts.
+    /// </summary>
+    private async Task<IReadOnlyList<ConfigIssue>> CarryAsync(Data.RuntimeTable table, Data.RuntimeMember member, FieldType sourceType,
+        string sourceKey, bool apply, bool convert, CancellationToken ct, string? sourceName = null)
+    {
+        var path = $"{table.ApiName}.{member.ApiName}";
+        var (condition, value, parameters) = ValueCarry.Sql(sourceType, member.Field?.Type, sourceKey, member.Options ?? [],
+            member.Lookup?.TargetTableId, first: 2);
+        // Blank text is no value: not counted, not carried, and dropped by a conversion.
+        const string Present = """jsonb_typeof(r."Data" -> {2}) <> 'null' AND (r."Data" ->> {2}) <> ''""";
+        var present = await CountAsync(table, Present, parameters, ct);
+        var fit = await CountAsync(table, condition, parameters, ct);
+        var issues = new List<ConfigIssue>();
+        if (present > fit)
+        {
+            var samples = await SamplesAsync(table, $"{Present} AND NOT ({condition})", parameters, ct);
+            var fits = member.IsLookup ? "the id of an existing record" : member.Options is not null ? "one of the options" : "the new type";
+            var message = $"{present - fit} of {present} record(s) hold a value that is not {fits}: {string.Join(", ", samples.Select(v => $"'{v}'"))}";
+            issues.Add(convert
+                ? new ConfigIssue(IssueSeverity.Error, "conversion-invalid-values", path, $"{message}. Add them as options, or change those records first.")
+                : new ConfigIssue(IssueSeverity.Warning, "copy-partial", path, $"{message}. They are not copied from '{sourceName}'."));
+        }
+        if (apply && !(convert && present > fit))
+        {
+            var sets = new List<string>();
+            if (!convert || member.Field?.Type == FieldType.MultiChoice)
+            {
+                sets.Add($$"""UPDATE apps.records r SET "Data" = jsonb_set(r."Data", ARRAY[{{{2 + parameters.Length}}}], {{value}}), "Version" = r."Version" + 1 WHERE r."InstanceId" = {0} AND r."TableId" = {1} AND {{condition}}""");
+            }
+            if (convert)
+            {
+                sets.Add($$"""UPDATE apps.records r SET "Data" = r."Data" - {{{2 + parameters.Length}}}, "Version" = r."Version" + 1 WHERE r."InstanceId" = {0} AND r."TableId" = {1} AND (r."Data" ->> {2}) = ''""");
+            }
+            foreach (var sql in sets)
+            {
+                // Only this class's own fragments are formatted in; every value is a parameter.
+                await db.Database.ExecuteSqlRawAsync(sql, [InstanceId, table.Id, .. parameters, member.Key], ct);
+            }
+        }
+        return issues;
+    }
+
+    private async Task<int> CountAsync(Data.RuntimeTable table, string condition, object[] parameters, CancellationToken ct)
+    {
+        // Only this class's own fragments are formatted in; every value is a parameter.
+        var sql = $$"""SELECT count(*)::int AS "Value" FROM apps.records r WHERE r."InstanceId" = {0} AND r."TableId" = {1} AND {{condition}}""";
+        return await db.Database.SqlQueryRaw<int>(sql, [InstanceId, table.Id, .. parameters]).SingleAsync(ct);
+    }
+
+    private async Task<List<string>> SamplesAsync(Data.RuntimeTable table, string condition, object[] parameters, CancellationToken ct)
+    {
+        // Only this class's own fragments are formatted in; every value is a parameter.
+        var sql = $$"""SELECT DISTINCT left(r."Data" ->> {2}, 40) AS "Value" FROM apps.records r WHERE r."InstanceId" = {0} AND r."TableId" = {1} AND {{condition}} LIMIT 5""";
+        return await db.Database.SqlQueryRaw<string>(sql, [InstanceId, table.Id, .. parameters]).ToListAsync(ct);
     }
 
     /// <summary>

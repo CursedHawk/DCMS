@@ -33,6 +33,8 @@ export interface FieldDef {
   minimum?: number;
   maximum?: number;
   choiceSetId?: string;
+  /** When new: the live field of this table whose values it takes over at publish. */
+  copyFrom?: string;
 }
 
 export interface PublicAccess {
@@ -74,6 +76,8 @@ export interface RelationshipDef {
   inverseApiName?: string;
   required: boolean;
   onDelete: 'restrict' | 'setNull' | 'cascade';
+  /** When new: the live text field of the source table holding the record ids it takes over at publish. */
+  copyFrom?: string;
 }
 
 export interface ChoiceSetDef {

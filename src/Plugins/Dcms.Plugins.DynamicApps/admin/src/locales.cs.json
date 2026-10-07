@@ -158,7 +158,10 @@
     "inverseHint": "Druhá tabulka pak tyto záznamy vypíše; u mnoho k mnoha povinné.",
     "onDelete": "Když se cíl smaže",
     "options": "Možnosti",
-    "optionsHint": "Jedna na řádek: hodnota | popisek (popisek je volitelný)."
+    "optionsHint": "Jedna na řádek: hodnota | popisek (popisek je volitelný).",
+    "copyFrom": "Převzít hodnoty z",
+    "copyNone": "Nic (začít prázdné)",
+    "copyFromHint": "Pokud nahrazuje živé pole, publikování do něj zkopíruje jeho hodnoty. Hodnoty, které se nehodí, se vypíší a nezkopírují."
   },
   "automation": {
     "flows": "Toky",
@@ -286,7 +289,10 @@
     "deleteTitle": "Smazat tento záznam?",
     "deleteHint": "Vazby, které na něj odkazují, se zpracují podle nastavení.",
     "emptyTitle": "Zatím nic není publikováno",
-    "emptyHint": "Záznamy patří publikovaným tabulkám. Nejdřív publikujte konfiguraci aplikace."
+    "emptyHint": "Záznamy patří publikovaným tabulkám. Nejdřív publikujte konfiguraci aplikace.",
+    "filterBy": "Filtrovat podle: {{field}}",
+    "any": "Cokoli",
+    "editField": "Změnit: {{field}}"
   },
   "ai": {
     "enableTitle": "Povolit asistentovi pracovat s touto aplikací?",

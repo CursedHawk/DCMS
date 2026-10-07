@@ -78,6 +78,21 @@ An application has at most one open draft, based on the current published revisi
 Per-user/per-run drafts with server-side rebase were rejected: far more conflict logic, and
 the assistant and a person editing in parallel should see the same state.
 
+### Model changes keep the data
+
+Values are stored under member ids, so a field deleted and re-created under the same name starts
+empty. Two ways keep the data, both validated against the live revision and dry-run by validate
+and preview:
+
+- **In-place conversions.** Text → choice and choice → multiChoice keep the field id. Publish
+  refuses (`conversion-invalid-values`, with samples) if any value does not fit, rather than
+  losing it.
+- **`copyFrom`.** A new field or relationship may name the live field it replaces. Publish
+  copies, set-based in SQL, the values that fit (existing record ids for a lookup, options for a
+  choice), warns about the rest (`copy-partial`), and bumps those records' versions.
+  `copyFrom` stays in the snapshot. It is ignored once the member is live; null is omitted, so
+  older revisions' hashes are unchanged.
+
 ### Records: jsonb canonical store, not EAV, not a table per tenant table
 
 - **Storage.** Each record is one row with a jsonb `Data` column whose values are keyed by **field id** (a lookup by its relationship id), never by api name. A deleted field's values can therefore never resurface under a new field that reuses the name, and a rollback restores access to them.

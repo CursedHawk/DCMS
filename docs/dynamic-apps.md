@@ -43,6 +43,31 @@ then has two screens:
 **Renaming a field's api name once it is published is refused.** Add a new field and mark the
 old one deprecated instead: clients and flows depend on the name.
 
+### Changing a model without losing data
+
+A record keeps each value under the field's internal id. A field that is deleted and created
+again under the same name is therefore a new, empty field, and editing records beforehand does
+not help: until the change is published, they still write the old field. Instead:
+
+- **Convert a field in place.**
+  - A text field can become a choice field, and a choice field a multi-choice field, by
+    changing its type.
+  - Publishing keeps every value, provided each one is an option. Validate and the review list
+    the values that are not, with examples; blank text counts as no value.
+  - Choice to multi-choice turns each value into a one-item list.
+- **Carry values into a replacement.**
+  - When a new field or relationship replaces a live field, choose that field under *Copy
+    values from* (`copyFrom`), and delete the old field in the same draft.
+  - Publishing copies the values that fit: record ids that exist, for a lookup (a `company_id`
+    text field becoming the `company` relationship), and options, for a choice.
+  - What does not fit is listed and left out. Each copied record's version goes up by one.
+
+The validator flags a text `…_id` field that names another table (`reference-as-text`) and
+suggests the relationship with `copyFrom`.
+
+On the Records screen, choice fields can be changed straight from the list, and the list can
+be filtered by picking some of a choice field's options.
+
 ## Automations (flows)
 
 A flow is a **trigger**, an optional **condition** and up to 50 **steps**.

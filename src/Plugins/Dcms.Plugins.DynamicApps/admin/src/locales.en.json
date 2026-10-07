@@ -158,7 +158,10 @@
     "inverseHint": "Lets the other table list these records; required for many-to-many.",
     "onDelete": "When the target is deleted",
     "options": "Options",
-    "optionsHint": "One per line: value | label (the label is optional)."
+    "optionsHint": "One per line: value | label (the label is optional).",
+    "copyFrom": "Copy values from",
+    "copyNone": "Nothing (start empty)",
+    "copyFromHint": "When this replaces a live field, publishing copies that field's values into it. Values that do not fit are listed, not copied."
   },
   "automation": {
     "flows": "Flows",
@@ -286,7 +289,10 @@
     "deleteTitle": "Delete this record?",
     "deleteHint": "Relationships pointing at it are handled as configured.",
     "emptyTitle": "Nothing published yet",
-    "emptyHint": "Records belong to the published tables. Publish the app's configuration first."
+    "emptyHint": "Records belong to the published tables. Publish the app's configuration first.",
+    "filterBy": "Filter by {{field}}",
+    "any": "Any",
+    "editField": "Change {{field}}"
   },
   "ai": {
     "enableTitle": "Let the assistant work on this app?",

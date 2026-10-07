@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
   CenteredSpinner,
   Checkbox,
   DataTable,
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
   EmptyState,
   Input,
   Label,
@@ -56,11 +60,20 @@ interface Member {
   label: string;
   field?: FieldDef;
   lookup?: RelationshipDef;
+  /** A choice or multi-choice field's options, from its choice set. */
+  options?: { value: string; label: string }[];
 }
+
+type Choices = Record<string, string[]>;
+
+const isChoice = (m: Member) => m.field?.type === 'choice' || m.field?.type === 'multiChoice';
 
 function membersOf(config: AppConfig, table: TableDef): Member[] {
   return [
-    ...table.fields.map((f) => ({ id: f.id, apiName: f.apiName, label: f.displayName, field: f })),
+    ...table.fields.map((f) => ({
+      id: f.id, apiName: f.apiName, label: f.displayName, field: f,
+      options: config.choiceSets.find((c) => c.id === f.choiceSetId)?.options,
+    })),
     ...config.relationships
       .filter((r) => r.sourceTableId === table.id && r.kind !== 'manyToMany')
       .map((r) => ({ id: r.id, apiName: r.apiName, label: r.displayName ?? r.apiName, lookup: r })),
@@ -79,12 +92,15 @@ export function RecordsScreen({ instance }: PluginScreenProps) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<RecordRow | 'new' | null>(null);
+  // The options picked per choice field: records shown have one of them.
+  const [choices, setChoices] = useState<Choices>({});
 
   const tables = config?.tables.filter((x) => x.enabled) ?? [];
   const table = tables.find((x) => x.id === tableId) ?? tables[0] ?? null;
   const views = config?.views.filter((v) => v.tableId === table?.id) ?? [];
   const view = views.find((v) => v.id === viewId) ?? views.find((v) => v.isDefault) ?? null;
-  useEffect(() => setPage(1), [table?.id, view?.id, search]);
+  useEffect(() => setChoices({}), [table?.id]);
+  useEffect(() => setPage(1), [table?.id, view?.id, search, choices]);
 
   usePluginAiContext(useMemo(() => ({
     area: 'data-platform',
@@ -105,14 +121,17 @@ export function RecordsScreen({ instance }: PluginScreenProps) {
     page,
     pageSize: PAGE_SIZE,
     sort: sortMember ? [{ field: sortMember.apiName, direction: sortBy!.descending ? 'desc' : 'asc' }] : undefined,
+    filter: choiceFilter(members, choices),
   });
 
   const columns = useMemo<Column<RecordRow>[]>(() => shown.map((m, i) => ({
     id: m.apiName,
     header: m.label,
     primary: i === 0,
-    cell: (row) => <span className="line-clamp-1">{display(row[m.apiName], m, i18n.language)}</span>,
-  })), [shown, i18n.language]);
+    cell: (row) => mayWrite && isChoice(m) && !m.field?.readOnly
+      ? <InlineChoice slug={slug} table={table!.apiName} member={m} row={row} />
+      : <span className="line-clamp-1">{display(row[m.apiName], m, i18n.language)}</span>,
+  })), [shown, i18n.language, mayWrite, slug, table]);
 
   if (published.isLoading) return <CenteredSpinner />;
   if (!config || tables.length === 0) {
@@ -142,6 +161,10 @@ export function RecordsScreen({ instance }: PluginScreenProps) {
             <Input id="records-search" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         ) : null}
+        {members.filter((m) => isChoice(m) && m.options?.length).map((m) => (
+          <ChoiceFilter key={m.id} member={m} picked={choices[m.apiName] ?? []}
+            onChange={(picked) => setChoices((c) => ({ ...c, [m.apiName]: picked }))} />
+        ))}
         {mayWrite ? (
           <Button className="ml-auto" onClick={() => setEditing('new')}><Plus className="size-4" /> {t('records.new')}</Button>
         ) : null}
@@ -169,6 +192,108 @@ export function RecordsScreen({ instance }: PluginScreenProps) {
   );
 }
 
+/**
+ * The query filter for the options picked: a choice field holds one of them, a multi-choice
+ * field at least one. Fields with nothing picked do not filter.
+ */
+function choiceFilter(members: Member[], choices: Choices): unknown {
+  const parts = members.flatMap((m): unknown[] => {
+    const picked = choices[m.apiName] ?? [];
+    if (picked.length === 0) return [];
+    return m.field?.type === 'multiChoice'
+      ? [{ or: picked.map((value) => ({ field: m.apiName, op: 'contains', value })) }]
+      : [{ field: m.apiName, op: 'in', value: picked }];
+  });
+  return parts.length === 0 ? undefined : parts.length === 1 ? parts[0] : { and: parts };
+}
+
+/** Pick some of a choice field's options; the list shows records holding any of them. */
+function ChoiceFilter({ member, picked, onChange }: { member: Member; picked: string[]; onChange: (picked: string[]) => void }) {
+  const { t } = usePluginT();
+  return (
+    <div className="space-y-1">
+      <Label>{member.label}</Label>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" className="min-w-36 justify-between" aria-label={t('records.filterBy', { field: member.label })}>
+            <span className="truncate">{picked.length === 0 ? t('records.any') : picked.map((v) => labelOf(member, v)).join(', ')}</span>
+            <ChevronDown className="size-4 opacity-60" aria-hidden />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          {member.options!.map((o) => (
+            <DropdownMenuCheckboxItem key={o.value} checked={picked.includes(o.value)} onSelect={(e) => e.preventDefault()}
+              onCheckedChange={(on) => onChange(on ? [...picked, o.value] : picked.filter((v) => v !== o.value))}>
+              {o.label}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+/**
+ * A choice cell that is its own editor: picking an option saves the record at the version it
+ * was read, so a change made meanwhile is a conflict, not an overwrite.
+ */
+function InlineChoice({ slug, table, member, row }: { slug: string; table: string; member: Member; row: RecordRow }) {
+  const { t } = usePluginT();
+  const api = usePluginApi();
+  const qc = useQueryClient();
+  const save = useMutation({
+    mutationFn: (value: string | string[] | null) =>
+      api.patch(instancePath(slug, `/_records/${table}/${row.id}`), { [member.apiName]: value, version: row.version }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [rootKey(slug), 'records'] }),
+    onError: (error) => {
+      const fields = (error as { detail?: { fields?: Record<string, string> } }).detail?.fields;
+      if (fields?.[member.apiName]) toast.error(fields[member.apiName]);
+      else if ((error as { status?: number }).status === 409) toast.error(t('records.conflict'));
+      else toastApiError(error, t);
+    },
+  });
+  const options = member.options ?? [];
+  const value = row[member.apiName];
+  // Clicks here edit the cell; they must not also open the record.
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation();
+
+  if (member.field?.type === 'multiChoice') {
+    const picked = Array.isArray(value) ? (value as string[]) : [];
+    return (
+      <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-7 max-w-56 justify-between gap-1 px-2" disabled={save.isPending}
+              onClick={stop} aria-label={t('records.editField', { field: member.label })}>
+              <span className="truncate">{picked.length === 0 ? '—' : picked.map((v) => labelOf(member, v)).join(', ')}</span>
+              <ChevronDown className="size-3.5 opacity-60" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" onClick={stop}>
+            {options.map((o) => (
+              <DropdownMenuCheckboxItem key={o.value} checked={picked.includes(o.value)} onSelect={(e) => e.preventDefault()}
+                onCheckedChange={(on) => save.mutate(on ? [...picked, o.value] : picked.filter((v) => v !== o.value))}>
+                {o.label}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+  return (
+    <Select value={typeof value === 'string' ? value : undefined} disabled={save.isPending}
+      onValueChange={(v) => { if (v !== value) save.mutate(v); }}>
+      <SelectTrigger className="h-7 min-w-28 px-2 text-sm" onClick={stop} onKeyDown={stop} aria-label={t('records.editField', { field: member.label })}>
+        <SelectValue placeholder="—" />
+      </SelectTrigger>
+      <SelectContent onClick={stop}>{options.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+    </Select>
+  );
+}
+
+function labelOf(member: Member, value: string): string {
+  return member.options?.find((o) => o.value === value)?.label ?? value;
+}
+
 /** How a stored value reads in a table cell. */
 function display(value: unknown, member: Member, language: string): string {
   if (value === null || value === undefined) return '';
@@ -178,8 +303,10 @@ function display(value: unknown, member: Member, language: string): string {
       return value ? '✓' : '—';
     case 'dateTime':
       return new Date(String(value)).toLocaleString(language);
+    case 'choice':
+      return labelOf(member, String(value));
     case 'multiChoice':
-      return Array.isArray(value) ? value.join(', ') : String(value);
+      return Array.isArray(value) ? value.map((v) => labelOf(member, String(v))).join(', ') : String(value);
     case 'json':
       return JSON.stringify(value);
     default:
