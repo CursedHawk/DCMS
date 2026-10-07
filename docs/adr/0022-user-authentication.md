@@ -268,6 +268,25 @@ not, name, email, group ids.
   canvas; protect the path with a groups rule instead), and visual-builder (Mode D) components —
   its code reaches `siteUser()` through the client.
 
+### Automation, events and the assistant (UA7)
+
+- **Actions** (`automation.actions@1`): `user-auth.invite@1`, `user-auth.add-to-group@1` and
+  `user-auth.remove-from-group@1`. People are named by email (what an app's records hold), groups
+  by id or name. Each needs `users-manage` of whoever publishes the flow (ADR 0021). Invite is
+  idempotent: someone who already has an account is left as they are, so a retried step does
+  not fail on the account its first try made.
+- **Events** under `users.directory@1`: `user.invited` (published by the plugin wherever an
+  invitation is sent: console, contract, flow) and `user.activated` (an invitation accepted, or
+  an account made on first sign-in through a trusted provider). Identity announces activations on
+  `tenant.realm.user-activated` (TENANCY) after the save; admin-api's plugin relays them, durably,
+  as `user.activated` in that tenant. Both are best effort at the source: the account or the
+  invitation stands whether or not a flow hears of it. Dynamic Apps flows trigger on both.
+- **Not built:** `user.signed-in`. Every sign-in as an event is volume with little a flow would
+  do with it; the audit log already has sign-ins.
+- **The assistant** reaches `users.directory@1` (list, invite, enable or disable, group
+  membership; disabling is dangerous) on instances with AI tools on. Provider secrets and site
+  rules are not contract operations, so no tool can read a secret or change who reaches a page.
+
 ## Consequences
 
 - **Identity grows a second user population.** Isolation is enforced structurally (separate

@@ -217,6 +217,8 @@
     "revision_published": "A revision is published",
     "visitor_registered": "A visitor signs up on the site",
     "form_submitted": "A site form is sent (event.payload.formName, event.payload.data)",
+    "user_invited": "A site user is invited (event.payload.email)",
+    "user_activated": "A site user accepts an invitation or first signs in (event.payload.email)",
     "schedule": "On a schedule",
     "manual": "Run by hand or by another flow",
     "flow_event": "Another flow announces an event"

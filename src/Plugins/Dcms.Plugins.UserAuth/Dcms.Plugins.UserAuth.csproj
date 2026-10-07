@@ -7,6 +7,10 @@
   <ItemGroup>
     <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Abstractions\Dcms.PluginSdk.Abstractions.csproj" />
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.UserAuth.Api\Dcms.Plugins.UserAuth.Api.csproj" />
+    <!-- Offers actions to Dynamic Apps flows (automation.actions@1). -->
+    <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.DynamicApps.Api\Dcms.Plugins.DynamicApps.Api.csproj" />
+    <!-- First-party: relays identity's realm events as plugin events (PluginHandlerRunner). -->
+    <ProjectReference Include="$(DcmsSrcRoot)PluginSdk\Dcms.PluginSdk.Runtime\Dcms.PluginSdk.Runtime.csproj" />
     <!-- Also provides visitors.identity@1, so visitor-aware plugins recognise enterprise users. -->
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.VisitorAuth.Api\Dcms.Plugins.VisitorAuth.Api.csproj" />
     <!-- First-party: owns the userauth schema (ADR 0022). -->

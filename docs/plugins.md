@@ -249,6 +249,28 @@ publish. Typed events reach flows by a different path: Dynamic Apps subscribes t
 `visitor.registered` and `form.submitted` itself, and forwards each to the apps that have a
 flow on it.
 
+### Enterprise users: who is signed in, and what they may do
+
+With User Authentication enabled ([user-auth.md](user-auth.md)), a site request can carry a
+signed-in enterprise user. A plugin serving the site learns about them through contracts, all
+optional to consume:
+
+- `users.identity@1` — `GetCurrentAsync()`: id, email, name and group ids, or null.
+- `users.access@1` — `CheckAsync(new PermissionCheck(key))` and `ListPermissionsAsync()`: what
+  the roles granted to the user and their groups allow. This is the decision point; check it on
+  every call that needs it.
+- `users.resources@1` — provide it to list what your plugin lets a tenant gate (resources and
+  their actions); the role editor offers them. Keys are
+  `{plugin}:{instance}:{resource}:{action}` (`SitePermission` in the `.Api`); the resource may
+  have parts (`table:deals`).
+- `visitors.identity@1` is provided too, so code written for visitors sees enterprise users
+  as visitors. Ask every provider: `context.Contracts.CurrentVisitorAsync(ct)`.
+
+Dynamic Apps is the worked example: `AppUserResources` lists tables and manual flows, and its
+public routes load the user's permissions once per request. A plugin with no finer need than "a
+signed-in user" or "these groups" needs nothing: the site's path rules at the edge cover
+`/api/{slug}` like any other path.
+
 ## Content plugins
 
 A plugin whose data is content (Blog, Events, galleries…) declares content types and gets the

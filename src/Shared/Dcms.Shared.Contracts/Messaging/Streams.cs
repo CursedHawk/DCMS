@@ -70,6 +70,14 @@ public static class Subjects
     public const string SiteGatesChanged = "edge.site-gates.changed";
 
     /// <summary>
+    /// An account in a tenant's realm became active (ADR 0022): an invitation accepted, or an
+    /// account made on first sign-in through a trusted provider. Published by identity, relayed
+    /// by admin-api's User Authentication plugin as its <c>user.activated</c> event. On the
+    /// TENANCY stream under `tenant.>`: it is the tenant's.
+    /// </summary>
+    public const string RealmUserActivated = "tenant.realm.user-activated";
+
+    /// <summary>
     /// A platform notification was recorded. Consumed by platform-api, which turns it into a
     /// push to every open console so the bell and the page behind it stop waiting for a poll.
     /// On the TENANCY stream for the same reason as the subject above.

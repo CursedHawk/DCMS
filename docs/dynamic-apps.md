@@ -82,6 +82,7 @@ A flow is a **trigger**, an optional **condition** and up to 50 **steps**.
 | `flow.event.<name>` | Another flow announces it with `event.publish@1`. |
 | `visitor.registered` | A visitor signs up on the site. This needs the Visitor accounts plugin. |
 | `form.submitted` | A form of the Forms plugin is sent. `event.payload.data` holds what was sent. |
+| `user.invited`, `user.activated` | A site user is invited, or accepts (or first signs in through a trusted provider). `event.payload.email` holds their email. This needs the User Authentication plugin. |
 | `schedule` | Every N minutes, from 5 minutes up to one week. |
 | `manual` | A person starts the flow, or another flow does with `flow.invoke@1`. |
 
@@ -117,7 +118,9 @@ The Automation tab lists every action available to flows. The built-in actions a
 
 Other plugins can add actions through `automation.actions@1`; see
 [plugins.md](plugins.md#offering-actions-to-dynamic-apps-flows). With Visitor accounts
-installed, for example, flows also get `visitor-auth.set-attributes@1`.
+installed, for example, flows also get `visitor-auth.set-attributes@1`; with User Authentication,
+`user-auth.invite@1`, `user-auth.add-to-group@1` and `user-auth.remove-from-group@1` (people by
+email, groups by id or name; each needs *Manage site users*).
 
 A provider's action can require that plugin's own permission;
 `visitor-auth.set-attributes@1`, for example, needs *Edit visitor profiles*. Publishing an app
@@ -161,6 +164,12 @@ An action is named with its major version. Its meaning never changes within that
 - **The site API** is `/api/{slug}/data/{table}` on content-api. It is generated from the live
   revision only, and it is in the site's OpenAPI document and generated client.
 - **Public writes are throttled** to 120 an hour per visitor and per IP.
+- **Enterprise users get more through roles** (User Authentication, [user-auth.md](user-auth.md)).
+  A role holding `dynamic-apps:{slug}:table:{table}:read|create|update|delete` lets its holders do
+  that through the site API whatever the table's public access, on every record. A role holding
+  `dynamic-apps:{slug}:flow:{flow}:run` lets them start that manual flow with
+  `POST /api/{slug}/flows/{flow}/run` (`{ "input": { … } }`, at most 16 KB). The role editor lists
+  every published table and manual flow.
 
 ## The assistant
 

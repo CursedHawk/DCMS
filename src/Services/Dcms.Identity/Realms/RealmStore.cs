@@ -1,5 +1,8 @@
 using System.Security.Claims;
 using Dcms.Identity.Data;
+using Dcms.Shared.Contracts.Events;
+using Dcms.Shared.Contracts.Messaging;
+using Dcms.Shared.Messaging;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
@@ -79,7 +82,8 @@ public enum RealmSignIn
 /// sign-in with lockout, invitation and reset links, and the principals cookies and tokens are
 /// minted from. The one place realm rows are read, so no query forgets its tenant.
 /// </summary>
-public sealed class RealmStore(IdentityDbContext db, IPasswordHasher<RealmUser> hasher, IDataProtectionProvider protection, TimeProvider clock)
+public sealed class RealmStore(IdentityDbContext db, IPasswordHasher<RealmUser> hasher, IDataProtectionProvider protection, TimeProvider clock,
+    IEventPublisher events, ILogger<RealmStore> logger)
 {
     public const string RealmClaim = "realm";
     public const string GroupsClaim = "groups";
@@ -175,7 +179,8 @@ public sealed class RealmStore(IdentityDbContext db, IPasswordHasher<RealmUser> 
             throw new ArgumentException($"Use at least {MinPasswordLength} characters.");
         }
         user.PasswordHash = hasher.HashPassword(user, password);
-        if (user.Status == RealmUserStatus.Invited)
+        var accepted = user.Status == RealmUserStatus.Invited;
+        if (accepted)
         {
             user.Status = RealmUserStatus.Active;
         }
@@ -183,6 +188,28 @@ public sealed class RealmStore(IdentityDbContext db, IPasswordHasher<RealmUser> 
         user.LockoutEnd = null;
         Restamp(user);
         await db.SaveChangesAsync(ct);
+        if (accepted)
+        {
+            await ActivatedAsync(user, ct);
+        }
+    }
+
+    /// <summary>
+    /// Tells the tenant that an account became active (ADR 0022), after it is saved. Best effort:
+    /// the account is active either way, and a broker that cannot take the event costs a flow
+    /// that would have run on it, not the sign-in.
+    /// </summary>
+    public async Task ActivatedAsync(RealmUser user, CancellationToken ct)
+    {
+        try
+        {
+            await events.PublishAsync(Subjects.RealmUserActivated,
+                new RealmUserActivated(Guid.NewGuid(), clock.GetUtcNow(), user.TenantId, user.Id, user.Email), ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not announce that realm user {UserId} became active.", user.Id);
+        }
     }
 
     /// <summary>Every cookie, refresh token and emailed link minted for the user so far stops working.</summary>

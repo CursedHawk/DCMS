@@ -98,6 +98,8 @@ public sealed class DynamicAppsPlugin : IPlugin
             ContractRequirement.Of<IVisitorIdentity>(optional: true),
             // What a signed-in enterprise user holds on this app beyond its public access.
             ContractRequirement.Of<IUserAccess>(optional: true),
+            // Flows trigger on user.invited and user.activated.
+            ContractRequirement.Of<IUserDirectory>(optional: true),
             // Flows trigger on form.submitted and read what was sent.
             ContractRequirement.Of<IFormSubmissions>(optional: true),
             // Actions other plugins offer to flows.
@@ -108,6 +110,8 @@ public sealed class DynamicAppsPlugin : IPlugin
         [
             EventSubscription.Of<VisitorRegistered, PlatformEventBridge>(),
             EventSubscription.Of<FormSubmitted, PlatformEventBridge>(),
+            EventSubscription.Of<UserInvited, PlatformEventBridge>(),
+            EventSubscription.Of<UserActivated, PlatformEventBridge>(),
         ],
         // The control plane and the data, as tabs of each app's page (admin/src).
         adminScreens:

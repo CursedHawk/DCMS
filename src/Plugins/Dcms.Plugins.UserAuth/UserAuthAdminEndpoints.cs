@@ -10,6 +10,7 @@ using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Security.Realms;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Dcms.Plugins.UserAuth;
 
@@ -60,8 +61,9 @@ internal static partial class UserAuthAdminEndpoints
         endpoints.MapGet("/users/{userId:guid}", (Guid userId, RealmRelay relay, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Get, $"/users/{userId}", null, ct))
             .RequirePluginPermission("users-read");
-        endpoints.MapPost("/users/invite", (RealmInvite body, RealmRelay relay, CancellationToken ct) =>
-                relay.SendAsync(HttpMethod.Post, "/users/invite", body, ct))
+        endpoints.MapPost("/users/invite", (RealmInvite body, RealmRelay relay, IPluginContext context, ILogger<RealmRelay> logger, CancellationToken ct) =>
+                relay.SendAsync(HttpMethod.Post, "/users/invite", body, ct,
+                    then: answer => UserEvents.InvitedAsync(context, JsonSerializer.Deserialize<RealmInviteResult>(answer, JsonSerializerOptions.Web)!.User, logger, ct)))
             .RequirePluginPermission("users-manage")
             .AuditAs("user.invited");
         endpoints.MapPost("/users/{userId:guid}/invite", (Guid userId, RealmRelay relay, CancellationToken ct) =>
@@ -79,7 +81,7 @@ internal static partial class UserAuthAdminEndpoints
         // Their direct grants go with them, once identity has let them go.
         endpoints.MapDelete("/users/{userId:guid}", (Guid userId, RealmRelay relay, UserAuthDbContext db, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Delete, $"/users/{userId}", null, ct,
-                    then: () => RemoveGrantsAsync(db, GrantSubject.User, userId, ct)))
+                    then: _ => RemoveGrantsAsync(db, GrantSubject.User, userId, ct)))
             .RequirePluginPermission("users-manage")
             .AuditAs("user.deleted");
 
@@ -98,7 +100,7 @@ internal static partial class UserAuthAdminEndpoints
         // through it: closed, rather than a rule silently changing what it lets in.
         endpoints.MapDelete("/groups/{groupId:guid}", (Guid groupId, RealmRelay relay, UserAuthDbContext db, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Delete, $"/groups/{groupId}", null, ct,
-                    then: () => RemoveGrantsAsync(db, GrantSubject.Group, groupId, ct)))
+                    then: _ => RemoveGrantsAsync(db, GrantSubject.Group, groupId, ct)))
             .RequirePluginPermission("users-manage")
             .AuditAs("group.deleted");
         endpoints.MapPut("/groups/{groupId:guid}/members/{userId:guid}", (Guid groupId, Guid userId, RealmRelay relay, CancellationToken ct) =>
@@ -400,7 +402,8 @@ internal static partial class UserAuthAdminEndpoints
 /// </summary>
 public sealed class RealmRelay(RealmAdminClient realms, SiteGatePublisher publisher, IPluginContext context)
 {
-    public async Task<IResult> SendAsync(HttpMethod method, string path, object? body, CancellationToken ct, Func<Task>? then = null)
+    /// <param name="then">Run after identity said yes, with what it answered.</param>
+    public async Task<IResult> SendAsync(HttpMethod method, string path, object? body, CancellationToken ct, Func<string, Task>? then = null)
     {
         var response = await realms.SendAsync(context.TenantId, method, path, body, ct);
         try
@@ -416,11 +419,11 @@ public sealed class RealmRelay(RealmAdminClient realms, SiteGatePublisher publis
             {
                 return Results.Json(new { error = "The sign-in service did not answer. Try again in a moment." }, statusCode: StatusCodes.Status502BadGateway);
             }
+            var content = await response.Content.ReadAsStringAsync(ct);
             if (response.IsSuccessStatusCode && then is not null)
             {
-                await then();
+                await then(content);
             }
-            var content = await response.Content.ReadAsStringAsync(ct);
             return content.Length == 0 ? Results.StatusCode(status) : Results.Content(content, "application/json", statusCode: status);
         }
         finally

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Dcms.Plugins.UserAuth.Api;
 using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Shared.Contracts.Realms;
 using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.UserAuth;
@@ -9,6 +10,7 @@ using Dcms.Shared.Security.Realms;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Dcms.Plugins.UserAuth;
 
@@ -82,7 +84,7 @@ public sealed class UserAccess(IHttpContextAccessor http, IPluginContext context
 /// The tenant's users and groups through identity's realm admin API. admin-api only: that is the
 /// one service allowed to ask identity, so on the site plane every operation refuses.
 /// </summary>
-public sealed class UserDirectory(IPluginContext context, IServiceProvider services) : IUserDirectory
+public sealed class UserDirectory(IPluginContext context, IServiceProvider services, ILogger<UserDirectory> logger) : IUserDirectory
 {
     private RealmAdminClient Realms => services.GetService<RealmAdminClient>()
         ?? throw new InvalidOperationException("The user directory is available on the admin plane only.");
@@ -105,6 +107,7 @@ public sealed class UserDirectory(IPluginContext context, IServiceProvider servi
     {
         var result = await Call(() => Realms.CallAsync<RealmInviteResult>(context.TenantId, HttpMethod.Post, "/users/invite",
             new RealmInvite(input.Email, input.DisplayName, input.Groups), ct));
+        await UserEvents.InvitedAsync(context, result.User, logger, ct);
         return ToUser(result.User);
     }
 
@@ -139,4 +142,20 @@ public sealed class UserDirectory(IPluginContext context, IServiceProvider servi
         await call();
         return true;
     });
+}
+
+/// <summary>The plugin's events (ADR 0022). Published after the fact and best effort: an invitation is sent whether or not a flow hears of it.</summary>
+public static class UserEvents
+{
+    public static async Task InvitedAsync(IPluginContext context, RealmUserInfo user, ILogger logger, CancellationToken ct)
+    {
+        try
+        {
+            await context.PublishAsync(new UserInvited(user.Id, user.Email), ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not announce the invitation of realm user {UserId}.", user.Id);
+        }
+    }
 }

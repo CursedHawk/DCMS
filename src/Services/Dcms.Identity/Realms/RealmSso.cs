@@ -78,6 +78,7 @@ public static class RealmSso
         RealmUser? invited, CancellationToken ct)
     {
         var tenantId = provider.TenantId;
+        var activated = false;
         var login = await db.RealmLogins.FirstOrDefaultAsync(l => l.TenantId == tenantId && l.Provider == provider.Key && l.ProviderKey == external.Key, ct);
         RealmUser? user = login is null ? null : await store.FindUserAsync(tenantId, login.UserId, ct);
 
@@ -99,6 +100,7 @@ public static class RealmSso
                     Status = RealmUserStatus.Active,
                 };
                 db.RealmUsers.Add(user);
+                activated = true;
                 var existing = await db.RealmGroups.Where(g => g.TenantId == tenantId && provider.DefaultGroups.Contains(g.Id)).Select(g => g.Id).ToListAsync(ct);
                 db.RealmGroupMembers.AddRange(existing.Select(g => new RealmGroupMember { TenantId = tenantId, GroupId = g, UserId = user.Id }));
             }
@@ -113,6 +115,7 @@ public static class RealmSso
                 // on so the emailed link stops working.
                 user.Status = RealmUserStatus.Active;
                 RealmStore.Restamp(user);
+                activated = true;
             }
         }
         if (!store.CanSignIn(user))
@@ -127,6 +130,10 @@ public static class RealmSso
             user.DisplayName = name;
         }
         await db.SaveChangesAsync(ct);
+        if (activated)
+        {
+            await store.ActivatedAsync(user, ct);
+        }
         return user;
     }
 

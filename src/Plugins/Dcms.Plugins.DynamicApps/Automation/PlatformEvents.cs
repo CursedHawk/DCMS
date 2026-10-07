@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Dcms.Plugins.DynamicApps.Api;
 using Dcms.Plugins.DynamicApps.Data;
 using Dcms.Plugins.Forms.Api;
+using Dcms.Plugins.UserAuth.Api;
 using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.Shared.Data.DynamicApps;
@@ -22,13 +23,28 @@ namespace Dcms.Plugins.DynamicApps.Automation;
 /// </summary>
 internal sealed class PlatformEventBridge(AppsDbContext db, AppEventLog events) :
     IPluginEventHandler<VisitorRegistered>,
-    IPluginEventHandler<FormSubmitted>
+    IPluginEventHandler<FormSubmitted>,
+    IPluginEventHandler<UserInvited>,
+    IPluginEventHandler<UserActivated>
 {
     public const string VisitorRegisteredEvent = "visitor.registered";
     public const string FormSubmittedEvent = "form.submitted";
+    public const string UserInvitedEvent = "user.invited";
+    public const string UserActivatedEvent = "user.activated";
 
     /// <summary>The platform events a flow may trigger on.</summary>
-    public static readonly IReadOnlySet<string> Events = new HashSet<string>(StringComparer.Ordinal) { VisitorRegisteredEvent, FormSubmittedEvent };
+    public static readonly IReadOnlySet<string> Events = new HashSet<string>(StringComparer.Ordinal)
+    {
+        VisitorRegisteredEvent, FormSubmittedEvent, UserInvitedEvent, UserActivatedEvent,
+    };
+
+    public Task HandleAsync(UserInvited e, IPluginContext context, CancellationToken ct) =>
+        ForwardAsync(context, UserInvitedEvent, e.UserId, new AppEventEntity("user", e.UserId),
+            () => Task.FromResult(new JsonObject { ["userId"] = e.UserId.ToString(), ["email"] = e.Email }), ct);
+
+    public Task HandleAsync(UserActivated e, IPluginContext context, CancellationToken ct) =>
+        ForwardAsync(context, UserActivatedEvent, e.UserId, new AppEventEntity("user", e.UserId),
+            () => Task.FromResult(new JsonObject { ["userId"] = e.UserId.ToString(), ["email"] = e.Email }), ct);
 
     public Task HandleAsync(VisitorRegistered e, IPluginContext context, CancellationToken ct) =>
         ForwardAsync(context, VisitorRegisteredEvent, e.VisitorId, new AppEventEntity("visitor", e.VisitorId),

@@ -1,8 +1,10 @@
 using System.Text.Json.Nodes;
+using Dcms.Plugins.DynamicApps.Api;
 using Dcms.Plugins.UserAuth.Api;
 using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.UserAuth;
@@ -44,9 +46,16 @@ public sealed class UserAuthPlugin : IPlugin
             ContractProvision.Of<IUserDirectory, UserDirectory>(),
             // The same signed-in user, to plugins that only know visitors (own records, prefilled forms).
             ContractProvision.Of<IVisitorIdentity, UserVisitorIdentity>(),
+            // Invite and group membership as steps of Dynamic Apps flows.
+            ContractProvision.Of<IAutomationActionProvider, UserAutomationActions>(),
         ],
-        // What roles can hold: whatever enabled plugins offer to gate.
-        consumes: [ContractRequirement.Of<IUserResources>(optional: true)],
+        consumes:
+        [
+            // What roles can hold: whatever enabled plugins offer to gate.
+            ContractRequirement.Of<IUserResources>(optional: true),
+            // user.invited and user.activated.
+            ContractRequirement.Of<IPluginEvents>(),
+        ],
         // The plugin's page (admin/src): the directory, the policy over it, and how people sign in.
         adminScreens:
         [
@@ -74,6 +83,7 @@ public sealed class UserAuthPlugin : IPlugin
             services.AddScoped<SiteGatePublisher>();
             services.AddScoped<RealmRelay>();
             services.AddHostedService<SiteGateReconciler>();
+            services.AddHostedService<RealmEventRelay>();
         }
     }
 

@@ -217,6 +217,8 @@
     "revision_published": "Revize se publikuje",
     "visitor_registered": "Návštěvník se zaregistruje na webu",
     "form_submitted": "Odešle se formulář na webu (event.payload.formName, event.payload.data)",
+    "user_invited": "Uživatel webu je pozván (event.payload.email)",
+    "user_activated": "Uživatel webu přijme pozvánku nebo se poprvé přihlásí (event.payload.email)",
     "schedule": "Podle plánu",
     "manual": "Ručně nebo jiným tokem",
     "flow_event": "Jiný tok ohlásí událost"

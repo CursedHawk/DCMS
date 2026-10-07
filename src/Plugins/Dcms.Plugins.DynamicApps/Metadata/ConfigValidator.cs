@@ -302,7 +302,7 @@ public static partial class ConfigValidator
                         || FlowEventPattern().IsMatch(trigger.Event) || Automation.PlatformEventBridge.Events.Contains(trigger.Event);
             if (!known)
             {
-                error("invalid-trigger", path, $"'{trigger.Event}' is not a trigger: use row.created/updated/deleted, relation.created/deleted, revision.published, flow.event.<name>, visitor.registered, form.submitted, schedule or manual.");
+                error("invalid-trigger", path, $"'{trigger.Event}' is not a trigger: use row.created/updated/deleted, relation.created/deleted, revision.published, flow.event.<name>, visitor.registered, form.submitted, user.invited, user.activated, schedule or manual.");
             }
             if (isRow != (trigger.TableId is not null))
             {

@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 
 namespace Dcms.Plugins.UserAuth.Api;
@@ -79,11 +80,20 @@ public sealed record DirectoryGroup(Guid Id, string Name, string? Description, i
 
 public sealed record DirectoryGroupList(IReadOnlyList<DirectoryGroup> Groups);
 
+/// <summary>Someone was invited to sign in to the tenant's sites (from the console, a flow or the assistant).</summary>
+[ContractEvent("user.invited")]
+public sealed record UserInvited(Guid UserId, string Email) : IPluginEvent;
+
+/// <summary>An account became active: an invitation accepted, or an account made on first sign-in through a trusted provider.</summary>
+[ContractEvent("user.activated")]
+public sealed record UserActivated(Guid UserId, string Email) : IPluginEvent;
+
 /// <summary>
 /// The tenant's enterprise users and groups, for the assistant and for other plugins. Admin
 /// plane only: the directory lives in identity, which only admin-api may ask.
 /// </summary>
-[DcmsContract("users.directory", 1, Description = "The tenant's enterprise users and groups: list, invite, enable or disable, group membership.")]
+[DcmsContract("users.directory", 1, Description = "The tenant's enterprise users and groups: list, invite, enable or disable, group membership.",
+    Events = [typeof(UserInvited), typeof(UserActivated)])]
 public interface IUserDirectory
 {
     [Operation(OpRisk.Read, Permission = UserAuthPermissions.UsersRead, Expose = OpExposure.Admin | OpExposure.Ai, ReturnsExternalText = true,
