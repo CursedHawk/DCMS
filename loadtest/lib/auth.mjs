@@ -120,17 +120,23 @@ export async function edgeSession({ admin, username, password }) {
     throw new Error(`POST ${form.action} returned ${response.status} -- antiforgery token refused, or the form changed.`);
   }
   form = parseForm(await response.text(), url);
-  if (!form?.fields.code) {
+  // The code comes back either as a form_post to the edge, or as a redirect the edge has
+  // already taken (landing on the admin itself) -- identity answers with whichever its
+  // client is configured for.
+  const landed = new URL(url).origin === new URL(admin).origin && !new URL(url).pathname.startsWith('/.edge/');
+  if (!form?.fields.code && !landed) {
     throw new Error(`Expected the form_post back to the edge after sign-in, got ${response.status} at ${url}. `
       + `Error in URL, if any: ${new URL(url).searchParams.get('error') ?? 'none'}.`);
   }
 
   // 6. Hand the code to the edge, which sets its session cookie.
-  ({ url, response } = await follow(jar, form.action, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams(form.fields),
-  }));
+  if (form?.fields.code) {
+    ({ url, response } = await follow(jar, form.action, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(form.fields),
+    }));
+  }
   if (url.includes('/.edge/denied')) {
     throw new Error(`The edge denied ${username} after sign-in (/.edge/denied) -- the account lacks the role the admin host requires.`);
   }
