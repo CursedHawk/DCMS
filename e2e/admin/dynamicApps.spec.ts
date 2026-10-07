@@ -193,3 +193,25 @@ test('Ask AI on an app whose AI tools are off offers to turn them on first', asy
   expect(api.requestsTo('PUT', `/api/admin/plugins/instances/${INSTANCE.id}`)[0]!.body).toEqual({ aiToolsEnabled: true });
   await expect(page.getByRole('dialog', { name: 'Assistant' })).toBeVisible();
 });
+
+test('a publish the server refuses says why', async ({ page, api }) => {
+  api.on('POST', '/api/admin/plugins/crm/_model/draft/publish', ({ route }: { route: import('@playwright/test').Route }) =>
+    route.fulfill({
+      status: 422,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        published: false, revision: DRAFT,
+        issues: [{ severity: 'error', code: 'required-without-data', path: 'activities.type',
+          message: '1 existing record(s) have no value for it. Give it a default, fill it in first, or leave it optional.' }],
+      }),
+    }).then(() => undefined));
+  await page.goto('/plugins/crm/configuration');
+
+  await page.getByRole('button', { name: 'Review & publish' }).click();
+  const review = page.getByRole('dialog');
+  await review.getByRole('button', { name: 'Publish' }).click();
+
+  await expect(review.getByText(/1 existing record\(s\) have no value/)).toBeVisible();
+  await expect(review.getByText('activities.type')).toBeVisible();
+  await expect(review.getByRole('button', { name: 'Publish' })).toBeDisabled();
+});

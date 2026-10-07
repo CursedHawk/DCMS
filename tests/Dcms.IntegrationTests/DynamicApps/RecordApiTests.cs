@@ -138,12 +138,20 @@ public sealed class RecordApiTests(ContentFlowFixture fixture)
 
         // A new required field without a default: the existing records would have no value.
         var refused = await Draft(app, """[ { "op": "create", "type": "field", "target": "companies", "value": { "apiName": "country", "displayName": "Country", "required": true } } ]""", ct);
+        // Validate and preview already say so: what publish would refuse is no surprise.
+        (await app.JsonAsync(HttpMethod.Post, "/_model/draft/validate", ct)).GetProperty("issues").EnumerateArray()
+            .Select(i => i.GetProperty("code").GetString()).Should().Contain("required-without-data");
+        var preview = await app.JsonAsync(HttpMethod.Get, "/_model/draft/preview", ct);
+        preview.GetProperty("canPublish").GetBoolean().Should().BeFalse();
+        preview.GetProperty("issues").EnumerateArray().Select(i => i.GetProperty("code").GetString()).Should().Contain("required-without-data");
         var result = await app.JsonAsync(HttpMethod.Post, "/_model/draft/publish", ct, new { expectedHash = refused }, HttpStatusCode.UnprocessableEntity);
         result.GetProperty("issues").EnumerateArray().Select(i => i.GetProperty("code").GetString()).Should().Contain("required-without-data");
         await app.JsonAsync(HttpMethod.Post, "/_model/draft/discard", ct, new { expectedHash = refused }, HttpStatusCode.NoContent);
 
         // Making a field unique when the records already disagree.
         var unique = await Draft(app, """[ { "op": "update", "type": "field", "target": "companies.name", "value": { "unique": true } } ]""", ct);
+        (await app.JsonAsync(HttpMethod.Get, "/_model/draft/preview", ct)).GetProperty("issues").EnumerateArray()
+            .Select(i => i.GetProperty("code").GetString()).Should().Contain("unique-violated-by-data");
         result = await app.JsonAsync(HttpMethod.Post, "/_model/draft/publish", ct, new { expectedHash = unique }, HttpStatusCode.UnprocessableEntity);
         result.GetProperty("issues").EnumerateArray().Select(i => i.GetProperty("code").GetString()).Should().Contain("unique-violated-by-data");
 

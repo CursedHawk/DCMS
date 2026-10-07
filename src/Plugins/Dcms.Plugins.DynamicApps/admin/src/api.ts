@@ -325,6 +325,12 @@ export function useModelAction<TInput, TResult>(slug: string, run: (input: TInpu
   });
 }
 
+/** A publish or rollback the server refused (422): its result, with the issues that say why. */
+export function refusedOf(error: unknown): PublishResult | null {
+  const { status, detail } = error as { status?: number; detail?: unknown };
+  return status === 422 && detail && Array.isArray((detail as PublishResult).issues) ? (detail as PublishResult) : null;
+}
+
 export function usePreview(slug: string, enabled: boolean) {
   const api = usePluginApi();
   return useQuery({

@@ -44,7 +44,8 @@
     "destructive": "Some changes may lose or reject existing data — deleted tables or fields, type changes, new constraints. They are marked below.",
     "destructiveOne": "May affect existing data",
     "noChanges": "No changes.",
-    "done": "Revision {{number}} is live."
+    "done": "Revision {{number}} is live.",
+    "refused": "Not published: fix the problems listed and try again."
   },
   "kinds": {
     "settings": "settings",

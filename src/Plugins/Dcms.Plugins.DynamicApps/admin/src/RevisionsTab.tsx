@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Badge, Button, DataTable, toast, type Column } from '@dcms/ui';
 import { instancePath, usePluginApi, usePluginT } from '@dcms/plugin-ui';
 import { ConfirmDialog } from './ConfirmDialog';
-import { useModelAction, useRevisionChanges, useRevisions, type PublishResult, type RevisionInfo } from './api';
+import { refusedOf, useModelAction, useRevisionChanges, useRevisions, type PublishResult, type RevisionInfo } from './api';
 import { ChangeList, Issues } from './PublishDialog';
 
 const LIVE_ONCE = new Set<RevisionInfo['status']>(['published', 'superseded', 'rolledBack']);
@@ -66,6 +66,14 @@ export function RevisionsTab({ slug, mayRollback }: { slug: string; mayRollback:
               toast.success(t('revisions.rolledBack', { number: result.revision?.number }));
             } else {
               setRefused(result);
+            }
+          },
+          onError: (error) => {
+            const result = refusedOf(error);
+            if (result) {
+              setRollbackTo(null);
+              setRefused(result);
+              toast.error(t('publish.refused'));
             }
           },
         })}

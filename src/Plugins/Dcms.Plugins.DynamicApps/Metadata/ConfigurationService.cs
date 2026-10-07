@@ -130,13 +130,14 @@ public sealed class ConfigurationService(
     /// <summary>What publishing the draft would change against what is live, and whether it may.</summary>
     public async Task<RevisionPreview> PreviewAsync(CancellationToken ct)
     {
+        using var rls = RlsScope.Tenant(context.TenantId);
         var draft = await GetDraftAsync(ct) ?? throw NoDraft();
         var published = await GetPublishedAsync(ct);
         return new RevisionPreview(
             draft.Revision,
             published?.Revision,
             ConfigDiff.Between(published?.Config ?? new AppConfig(), draft.Config),
-            await IssuesAsync(draft.Config, published?.Config, ct));
+            await IssuesWithDataAsync(draft.Config, published?.Config, ct));
     }
 
     // ------------------------------------------------------------------ writes
@@ -209,7 +210,7 @@ public sealed class ConfigurationService(
         var (app, tx) = await LockAsync(ct);
         await using var _ = tx;
         var draft = await DraftAsync(app, ct);
-        var issues = await IssuesAsync(ConfigJson.Parse(draft.Snapshot), await PublishedConfigAsync(app, ct), ct);
+        var issues = await IssuesWithDataAsync(ConfigJson.Parse(draft.Snapshot), await PublishedConfigAsync(app, ct), ct);
         var result = new ValidationResult(Info(draft), issues);
         if (result.Valid)
         {
@@ -385,7 +386,8 @@ public sealed class ConfigurationService(
     /// rule that is new or changed has its keys claimed from the records that exist — a
     /// duplicate among them refuses the publish. Keys of rules that are gone are released.
     /// </summary>
-    private async Task<IReadOnlyList<ConfigIssue>> ReconcileDataAsync(AppConfig? live, AppConfig next, CancellationToken ct)
+    /// <param name="apply">False checks only — what validate and preview report — and writes nothing.</param>
+    private async Task<IReadOnlyList<ConfigIssue>> ReconcileDataAsync(AppConfig? live, AppConfig next, CancellationToken ct, bool apply = true)
     {
         var issues = new List<ConfigIssue>();
         var instanceId = InstanceId;
@@ -396,7 +398,7 @@ public sealed class ConfigurationService(
         // Released: unique rules the next model no longer has.
         var kept = nextTables.SelectMany(t => t.Uniques).Select(u => u.Id).ToHashSet();
         var released = liveTables.Values.SelectMany(t => t.Uniques).Select(u => u.Id).Where(id => !kept.Contains(id)).ToList();
-        if (released.Count > 0)
+        if (apply && released.Count > 0)
         {
             // Set-based, under the revision.published entry the caller declares.
             await db.UniqueKeys.Where(k => k.InstanceId == instanceId && released.Contains(k.ConstraintId)).ExecuteDeleteAsync(ct);
@@ -435,7 +437,10 @@ public sealed class ConfigurationService(
                     $"A new unique rule is checked against every record, and this table has more than {MaxRecordsForNewUnique:N0}."));
                 continue;
             }
-            await db.UniqueKeys.Where(k => k.InstanceId == instanceId && rebuild.Contains(k.ConstraintId)).ExecuteDeleteAsync(ct);
+            if (apply)
+            {
+                await db.UniqueKeys.Where(k => k.InstanceId == instanceId && rebuild.Contains(k.ConstraintId)).ExecuteDeleteAsync(ct);
+            }
             var claimed = new Dictionary<(Guid, string), Guid>();
             var clashes = new HashSet<Guid>();
             await foreach (var record in records.AsNoTracking().AsAsyncEnumerable().WithCancellation(ct))
@@ -454,7 +459,7 @@ public sealed class ConfigurationService(
                 issues.Add(new ConfigIssue(IssueSeverity.Error, "unique-violated-by-data", table.ApiName,
                     $"Existing records share the same {string.Join(" + ", constraint.Members.Select(m => m.ApiName))}; make them distinct before requiring it."));
             }
-            if (clashes.Count == 0)
+            if (apply && clashes.Count == 0)
             {
                 db.UniqueKeys.AddRange(claimed.Select(c => new AppUniqueKey
                 {
@@ -589,6 +594,22 @@ public sealed class ConfigurationService(
     /// </summary>
     public async Task<IReadOnlyList<ConfigIssue>> IssuesAsync(AppConfig config, AppConfig? published, CancellationToken ct) =>
         (await CheckAsync(config, published, ct)).Issues;
+
+    /// <summary>
+    /// <see cref="IssuesAsync"/>, and — when the configuration itself is sound — what publishing
+    /// would find in the records that exist (a new required field they lack, a new unique rule
+    /// they break), checked without writing anything. So validate and preview say what publish
+    /// would refuse.
+    /// </summary>
+    private async Task<IReadOnlyList<ConfigIssue>> IssuesWithDataAsync(AppConfig config, AppConfig? published, CancellationToken ct)
+    {
+        var issues = (await IssuesAsync(config, published, ct)).ToList();
+        if (!issues.Any(i => i.Severity == IssueSeverity.Error))
+        {
+            issues.AddRange(await ReconcileDataAsync(published, config, ct, apply: false));
+        }
+        return issues;
+    }
 
     /// <summary>
     /// The issues, and the provider permissions the configuration's flows need — all held by

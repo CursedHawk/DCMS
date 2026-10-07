@@ -44,7 +44,8 @@
     "destructive": "Některé změny mohou ztratit nebo odmítnout existující data — smazané tabulky či pole, změny typu, nová omezení. Jsou označeny níže.",
     "destructiveOne": "Může ovlivnit existující data",
     "noChanges": "Žádné změny.",
-    "done": "Revize {{number}} je v provozu."
+    "done": "Revize {{number}} je v provozu.",
+    "refused": "Nepublikováno: opravte uvedené problémy a zkuste to znovu."
   },
   "kinds": {
     "settings": "nastavení",
