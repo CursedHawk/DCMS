@@ -278,7 +278,11 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(RealmAdminEndpoints.PolicyName, policy => policy
         .AddAuthenticationSchemes(OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)
         .RequireAuthenticatedUser()
-        .RequireAssertion(context => OpenIddict.Abstractions.OpenIddictExtensions.HasScope(context.User, DcmsOAuth.Scopes.Realms)));
+        // The scope, and the one client allowed it: defence in depth should a permission ever be
+        // granted to another client by mistake.
+        .RequireAssertion(context => OpenIddict.Abstractions.OpenIddictExtensions.HasScope(context.User, DcmsOAuth.Scopes.Realms)
+            // A client-credentials token's subject is its client (AuthorizationEndpoints).
+            && context.User.FindFirst(OpenIddict.Abstractions.OpenIddictConstants.Claims.Subject)?.Value == DcmsOAuth.Clients.RealmAdminService));
 
     options.AddPolicy(Dcms.Identity.Endpoints.PlatformUserEndpoints.PolicyName, policy => policy
         .AddAuthenticationSchemes(OpenIddict.Validation.AspNetCore.OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme)

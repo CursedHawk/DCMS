@@ -249,7 +249,7 @@ public sealed class RealmProviderTests(IdentityAppFixture fixture) : IDisposable
     {
         using var tokenResponse = await Factory.CreateClient().PostAsync("/connect/token", new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["grant_type"] = "client_credentials", ["client_id"] = "dcms-admin-api", ["client_secret"] = "dcms-admin-api-dev-secret", ["scope"] = "dcms.realms",
+            ["grant_type"] = "client_credentials", ["client_id"] = "dcms-realm-admin", ["client_secret"] = "dcms-realm-admin-dev-secret", ["scope"] = "dcms.realms",
         }), ct);
         var token = (await tokenResponse.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("access_token").GetString();
         var request = new HttpRequestMessage(method, path);

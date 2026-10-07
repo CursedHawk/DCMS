@@ -5,6 +5,7 @@ using System.Text.Json;
 using Dcms.Shared.Contracts.Realms;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Dcms.Shared.Security.Realms;
 
@@ -21,6 +22,9 @@ public sealed class RealmAdminException(int status, string message) : Exception(
 /// </summary>
 public sealed class RealmAdminClient(HttpClient http, IServiceTokenProvider tokens)
 {
+    /// <summary>The one client identity gives <see cref="Scope"/>: not the service client admin-api shares with content-api.</summary>
+    public const string ClientId = "dcms-realm-admin";
+
     public const string Scope = "dcms.realms";
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
@@ -108,13 +112,32 @@ public static class RealmAdminClientExtensions
 {
     /// <summary>
     /// Registers <see cref="RealmAdminClient"/> against identity's internal address — the host of
-    /// <c>ServiceClient:TokenEndpoint</c>, which is where this service already gets its tokens.
+    /// <c>ServiceClient:TokenEndpoint</c>, where this service already gets its tokens — with its
+    /// own credentials, <c>Realms:ClientSecret</c> for <see cref="RealmAdminClient.ClientId"/>
+    /// (Vault, seeded with identity's copy by <c>infra/vault/apply.sh --seed</c>).
     /// </summary>
-    public static IServiceCollection AddRealmAdminClient(this IServiceCollection services, IConfiguration configuration)
+    /// <param name="development">Only then is a missing secret replaced by the published dev one; elsewhere it stays empty and identity says no.</param>
+    public static IServiceCollection AddRealmAdminClient(this IServiceCollection services, IConfiguration configuration, bool development)
     {
         var tokenEndpoint = configuration.GetSection(ServiceClientOptions.SectionName).Get<ServiceClientOptions>()?.TokenEndpoint
                             ?? new ServiceClientOptions().TokenEndpoint;
-        services.AddHttpClient<RealmAdminClient>(client => client.BaseAddress = new Uri(new Uri(tokenEndpoint), "/"));
+        var credentials = Options.Create(new ServiceClientOptions
+        {
+            TokenEndpoint = tokenEndpoint,
+            ClientId = RealmAdminClient.ClientId,
+            ClientSecret = configuration["Realms:ClientSecret"] is { Length: > 0 } secret ? secret
+                : development ? "dcms-realm-admin-dev-secret" : string.Empty,
+        });
+        services.AddHttpClient(TokenClientName);
+        // A token cache of its own: the shared IServiceTokenProvider holds admin-api's other client.
+        services.AddSingleton(sp => new RealmAdminTokens(
+            new ServiceTokenClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient(TokenClientName), credentials)));
+        services.AddHttpClient(nameof(RealmAdminClient), client => client.BaseAddress = new Uri(new Uri(tokenEndpoint), "/"))
+            .AddTypedClient((http, sp) => new RealmAdminClient(http, sp.GetRequiredService<RealmAdminTokens>().Provider));
         return services;
     }
+
+    private const string TokenClientName = "dcms-realm-admin-tokens";
+
+    private sealed record RealmAdminTokens(IServiceTokenProvider Provider);
 }

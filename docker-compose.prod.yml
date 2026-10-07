@@ -232,6 +232,8 @@ services:
   identity-migrate:
     environment:
       <<: *prod-env
+      # It seeds the clients too: from Vault, never the base compose's dev value.
+      Identity__RealmAdminService__Secret: ""
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=${POSTGRES_PASSWORD}"
       # The issuer is the AUTH host, not the admin console's. Every resource server validates
       # `iss` against this, so changing it invalidates tokens minted before the change -- one
@@ -243,6 +245,8 @@ services:
   identity:
     environment:
       <<: *prod-env
+      # From identity's Vault path; blanked so the base compose's dev value cannot survive here.
+      Identity__RealmAdminService__Secret: ""
       # ADR 0015 phase 5: its own role, dcms_identity (infra/postgres/init/07-identity-role.sh),
       # with DML on identity and dataprotection and an INSERT on the audit outbox. Not dcms_app,
       # which would put password hashes and tokens in reach of every tenant-facing service.
@@ -296,6 +300,8 @@ services:
       # production container. Vault loads after the environment, so the real secret still
       # wins; what this removes is the fallback that would quietly take its place.
       ServiceClient__ClientSecret: ""
+      # And the realm admin client's (ADR 0022), for the same reason: Vault's, never the dev one.
+      Realms__ClientSecret: ""
       Services__AiGateway: "http://ai-gateway:8080"
       # DDL belongs to the migration job. The RLS coverage assertion still runs at every
       # startup -- it reads no database and it is what catches a tenant table added

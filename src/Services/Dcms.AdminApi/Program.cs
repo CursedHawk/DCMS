@@ -218,7 +218,7 @@ builder.Services.Configure<Dcms.AdminApi.Observability.AlertingOptions>(
 builder.Services.AddHttpClient<IServiceTokenProvider, ServiceTokenClient>();
 // identity's realm admin API (ADR 0022): the User Authentication plugin's directory, and the
 // realm a deleted tenant leaves behind.
-builder.Services.AddRealmAdminClient(builder.Configuration);
+builder.Services.AddRealmAdminClient(builder.Configuration, builder.Environment.IsDevelopment());
 builder.Services.AddHttpClient("ai-gateway", (sp, client) =>
 {
     var baseUrl = sp.GetRequiredService<IConfiguration>()["Services:AiGateway"] ?? "http://localhost:5007";

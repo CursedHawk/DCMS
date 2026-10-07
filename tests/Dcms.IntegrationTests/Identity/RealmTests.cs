@@ -184,6 +184,12 @@ public sealed class RealmTests(IdentityAppFixture fixture)
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", console);
         using var forbidden = await client.SendAsync(request, ct);
         forbidden.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // admin-api's general service client, whose secret content-api also holds, is not given
+        // the scope at all: only dcms-realm-admin is.
+        using var refused = await client.PostAsync("/connect/token", Form(("grant_type", "client_credentials"),
+            ("client_id", "dcms-admin-api"), ("client_secret", "dcms-admin-api-dev-secret"), ("scope", "dcms.realms")), ct);
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest, await refused.Content.ReadAsStringAsync(ct));
     }
 
     // ---- helpers ----
@@ -221,7 +227,7 @@ public sealed class RealmTests(IdentityAppFixture fixture)
     {
         using var request = new HttpRequestMessage(method, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer",
-            await ServiceTokenAsync("dcms-admin-api", "dcms-admin-api-dev-secret", "dcms.realms", ct));
+            await ServiceTokenAsync("dcms-realm-admin", "dcms-realm-admin-dev-secret", "dcms.realms", ct));
         if (body is not null)
         {
             request.Content = JsonContent.Create(body);

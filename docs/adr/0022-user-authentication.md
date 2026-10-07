@@ -287,6 +287,18 @@ not, name, email, group ids.
   membership; disabling is dangerous) on instances with AI tools on. Provider secrets and site
   rules are not contract operations, so no tool can read a secret or change who reaches a page.
 
+### Acceptance (UA8)
+
+- **The realm admin API has a client of its own.** `dcms.realms` was first granted to
+  `dcms-admin-api`, whose secret content-api also holds; so the plane that serves the public
+  sites could have invited, disabled or re-providered any tenant's users. It now belongs to
+  `dcms-realm-admin` alone (secret `Identity__RealmAdminService__Secret` = admin-api's
+  `Realms__ClientSecret`, generated together by `infra/vault/apply.sh --seed`), the policy
+  checks the client as well as the scope, and the old client loses the scope on the next start.
+- **Isolation is tested where it is enforced:** a realm token is nobody on another tenant
+  (content-api), a platform session never satisfies a realm (identity), a tenant's rules never
+  apply to another host (edge), and the realm API refuses every client but one.
+
 ## Consequences
 
 - **Identity grows a second user population.** Isolation is enforced structurally (separate

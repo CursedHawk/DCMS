@@ -219,8 +219,30 @@ public sealed class IdentitySeeder(
             DcmsOAuth.Clients.AdminApiService,
             "DCMS Admin API (service)",
             configuration["Identity:AdminApiService:Secret"] ?? "dcms-admin-api-dev-secret",
-            [DcmsOAuth.Scopes.Ai, DcmsOAuth.Scopes.Social, DcmsOAuth.Scopes.Realms],
+            [DcmsOAuth.Scopes.Ai, DcmsOAuth.Scopes.Social],
             ct);
+
+        // admin-api → the realm admin API. Its own client, so the scope is not in the hands of
+        // content-api, which shares the client above (and its permissions converge: an existing
+        // dcms-admin-api loses dcms.realms on the next start). No published fallback secret
+        // outside Development: identity's token endpoint is public, and a known secret for this
+        // client would be every tenant's user directory.
+        if (configuration["Identity:RealmAdminService:Secret"] is { Length: > 0 } realmSecret
+            || (services.GetRequiredService<IHostEnvironment>().IsDevelopment() && (realmSecret = "dcms-realm-admin-dev-secret") is not null))
+        {
+            await EnsureServiceClientAsync(
+                manager,
+                DcmsOAuth.Clients.RealmAdminService,
+                "DCMS realm admin (admin-api)",
+                realmSecret,
+                [DcmsOAuth.Scopes.Realms],
+                ct);
+        }
+        else
+        {
+            logger.LogError("Identity:RealmAdminService:Secret is not set: the realm admin client is not seeded, and User Authentication cannot manage users. "
+                + "infra/vault/apply.sh --seed generates it.");
+        }
 
         // platform-api → admin-api, for the console's certificates, notifications, tenant
         // lifecycle and analytics prune. Its own client, not a reuse of admin-api's: whoever

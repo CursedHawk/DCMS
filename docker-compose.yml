@@ -314,6 +314,8 @@ services:
       # gate, and an unset secret disables edge authentication on both sides at once.
       Identity__Edge__Secret: "${EDGE_OIDC_CLIENT_SECRET:-}"
       Identity__EdgeSites__Secret: "${EDGE_SITES_SECRET:-}"
+      # The realm admin client (ADR 0022): a dev value, never a fallback in code outside Development.
+      Identity__RealmAdminService__Secret: "dcms-realm-admin-dev-secret"
       Identity__Edge__RedirectUris: "http://localhost:3001/.edge/signin-oidc"
       Identity__Edge__PostLogoutUris: "http://localhost:3001/.edge/signout-callback-oidc"
 
@@ -427,6 +429,8 @@ services:
       # gate, and an unset secret disables edge authentication on both sides at once.
       Identity__Edge__Secret: "${EDGE_OIDC_CLIENT_SECRET:-}"
       Identity__EdgeSites__Secret: "${EDGE_SITES_SECRET:-}"
+      # The realm admin client (ADR 0022): a dev value, never a fallback in code outside Development.
+      Identity__RealmAdminService__Secret: "dcms-realm-admin-dev-secret"
       Identity__Edge__RedirectUris: "http://localhost:3001/.edge/signin-oidc"
       Identity__Edge__PostLogoutUris: "http://localhost:3001/.edge/signout-callback-oidc"
 
@@ -471,6 +475,7 @@ services:
       ServiceClient__TokenEndpoint: "http://dcms-identity:8080/connect/token"
       ServiceClient__ClientId: "dcms-admin-api"
       ServiceClient__ClientSecret: "dcms-admin-api-dev-secret"
+      Realms__ClientSecret: "dcms-realm-admin-dev-secret"
       Services__AiGateway: "http://ai-gateway:8080"
       # The other end of the alert webhook. Unset → the endpoint refuses every request,
       # which is the right way for an unconfigured installation to fail.

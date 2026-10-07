@@ -76,7 +76,7 @@ REQUIRED_SHARED=""
 #   Email__User/__Password      a relay on a private network may need no auth
 #   Alerting__WebhookSecret     shared with the Grafana container, so it stays in .env
 #
-# Three pairs here must AGREE, and `--seed` generates each pair together so they cannot
+# Four pairs here must AGREE, and `--seed` generates each pair together so they cannot
 # disagree at creation time:
 #
 #   admin-api/Platform__DbPassword  ==  the password inside
@@ -94,10 +94,16 @@ REQUIRED_SHARED=""
 #     dcms-admin-api secret: content-api holds that one, and sharing it would hand content-api
 #     the dcms.console scope as well. A mismatch is every proxied console call failing to get
 #     a token, which surfaces as 500s on the console's audit, certificate and tenant pages.
+#
+#   identity/Identity__RealmAdminService__Secret  ==  admin-api/Realms__ClientSecret
+#     The client-credentials secret for dcms-realm-admin, the only client holding dcms.realms
+#     (ADR 0022): admin-api managing tenants' site users. Its own client for the same reason as
+#     the one above -- content-api holds the dcms-admin-api secret and serves the public sites.
+#     A mismatch is every User Authentication screen answering 502.
 required_keys_for() {
   case "$1" in
-    identity)     echo "Audit__ChainKey Identity__AdminApiService__Secret Identity__PlatformApiService__Secret Identity__SuperAdmin__Password Identity__SigningCertificate Identity__EncryptionCertificate" ;;
-    admin-api)    echo "Audit__ChainKey ServiceClient__ClientSecret Forgejo__Token Forgejo__AdminToken Forgejo__WebhookSecret Platform__DbPassword" ;;
+    identity)     echo "Audit__ChainKey Identity__AdminApiService__Secret Identity__PlatformApiService__Secret Identity__RealmAdminService__Secret Identity__SuperAdmin__Password Identity__SigningCertificate Identity__EncryptionCertificate" ;;
+    admin-api)    echo "Audit__ChainKey ServiceClient__ClientSecret Realms__ClientSecret Forgejo__Token Forgejo__AdminToken Forgejo__WebhookSecret Platform__DbPassword" ;;
     content-api)  echo "Audit__ChainKey ServiceClient__ClientSecret Visitor__SigningKey" ;;
     media-worker) echo "Audit__ChainKey" ;;
     site-host)    echo "Audit__ChainKey" ;;
@@ -224,6 +230,16 @@ if [ "$MODE" = "seed" ]; then
     console_secret="$(generate_secret)"
     seed_key secret/dcms/identity Identity__PlatformApiService__Secret "$console_secret"
     seed_key secret/dcms/platform-api ServiceClient__ClientSecret "$console_secret"
+  fi
+
+  # The realm admin client's secret (ADR 0022), in the two paths that must agree.
+  if vault kv get -field=Identity__RealmAdminService__Secret secret/dcms/identity >/dev/null 2>&1 \
+     && vault kv get -field=Realms__ClientSecret secret/dcms/admin-api >/dev/null 2>&1; then
+    echo "  keep    the realm admin client secret (both halves already set)"
+  else
+    realms_secret="$(generate_secret)"
+    seed_key secret/dcms/identity Identity__RealmAdminService__Secret "$realms_secret"
+    seed_key secret/dcms/admin-api Realms__ClientSecret "$realms_secret"
   fi
 
   echo

@@ -36,6 +36,14 @@ public static class DcmsOAuth
         /// for exactly this service.</para>
         /// </summary>
         public const string PlatformApiService = "dcms-platform-api-service";
+
+        /// <summary>
+        /// admin-api → identity's realm admin API (ADR 0022), and nothing else: the only client
+        /// holding <c>dcms.realms</c>. Not <see cref="AdminApiService"/>, whose secret content-api
+        /// also holds — content-api serves the public sites and must never be able to invite,
+        /// disable or re-provider a tenant's users.
+        /// </summary>
+        public const string RealmAdminService = "dcms-realm-admin";
     }
 
     /// <summary>
