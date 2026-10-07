@@ -144,6 +144,10 @@ public sealed class RecordApiTests(ContentFlowFixture fixture)
         var preview = await app.JsonAsync(HttpMethod.Get, "/_model/draft/preview", ct);
         preview.GetProperty("canPublish").GetBoolean().Should().BeFalse();
         preview.GetProperty("issues").EnumerateArray().Select(i => i.GetProperty("code").GetString()).Should().Contain("required-without-data");
+        // What the records hold is only told to someone who may read them.
+        var designer = await app.AddMemberAsync(["plugin:dynamic-apps:model-read"], ct);
+        (await app.JsonAsync(HttpMethod.Get, "/_model/draft/preview", ct, @as: designer)).GetProperty("issues").EnumerateArray()
+            .Select(i => i.GetProperty("code").GetString()).Should().NotContain("required-without-data");
         var result = await app.JsonAsync(HttpMethod.Post, "/_model/draft/publish", ct, new { expectedHash = refused }, HttpStatusCode.UnprocessableEntity);
         result.GetProperty("issues").EnumerateArray().Select(i => i.GetProperty("code").GetString()).Should().Contain("required-without-data");
         await app.JsonAsync(HttpMethod.Post, "/_model/draft/discard", ct, new { expectedHash = refused }, HttpStatusCode.NoContent);

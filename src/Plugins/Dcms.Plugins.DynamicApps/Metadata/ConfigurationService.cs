@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Dcms.Plugins.DynamicApps.Api;
 using Dcms.Plugins.DynamicApps.Api.Model;
 using Dcms.Plugins.DynamicApps.Automation;
 using Dcms.PluginSdk.Abstractions;
@@ -137,7 +138,7 @@ public sealed class ConfigurationService(
             draft.Revision,
             published?.Revision,
             ConfigDiff.Between(published?.Config ?? new AppConfig(), draft.Config),
-            await IssuesWithDataAsync(draft.Config, published?.Config, ct));
+            await IssuesWithDataAsync(draft.Config, published?.Config, ct, cached: true));
     }
 
     // ------------------------------------------------------------------ writes
@@ -431,7 +432,14 @@ public sealed class ConfigurationService(
             {
                 continue;
             }
-            if (await records.CountAsync(ct) > MaxRecordsForNewUnique)
+            var count = await records.CountAsync(ct);
+            if (!apply && count > MaxRecordsForDryUnique)
+            {
+                issues.Add(new ConfigIssue(IssueSeverity.Warning, "unique-unchecked", table.ApiName,
+                    $"A new unique rule on {count:N0} records is checked when you publish, not here."));
+                continue;
+            }
+            if (count > MaxRecordsForNewUnique)
             {
                 issues.Add(new ConfigIssue(IssueSeverity.Error, "unique-too-large", table.ApiName,
                     $"A new unique rule is checked against every record, and this table has more than {MaxRecordsForNewUnique:N0}."));
@@ -601,15 +609,39 @@ public sealed class ConfigurationService(
     /// they break), checked without writing anything. So validate and preview say what publish
     /// would refuse.
     /// </summary>
-    private async Task<IReadOnlyList<ConfigIssue>> IssuesWithDataAsync(AppConfig config, AppConfig? published, CancellationToken ct)
+    /// <remarks>
+    /// Only for someone who may read the records: the findings describe them (how many lack a
+    /// value, that some share one). And cached briefly per draft and live revision, because
+    /// preview is a read anyone with model-read can repeat, and the check reads the records.
+    /// Publish always runs it in full, whoever publishes.
+    /// </remarks>
+    /// <param name="cached">Preview's: it is a read anyone with model-read can repeat. Validate is a write, serialized by the app lock, and wants the records as they are now.</param>
+    private async Task<IReadOnlyList<ConfigIssue>> IssuesWithDataAsync(AppConfig config, AppConfig? published, CancellationToken ct, bool cached = false)
     {
         var issues = (await IssuesAsync(config, published, ct)).ToList();
-        if (!issues.Any(i => i.Severity == IssueSeverity.Error))
+        if (issues.Any(i => i.Severity == IssueSeverity.Error) || !await HoldsAsync(DynamicAppsPermissions.DataRead))
+        {
+            return issues;
+        }
+        if (!cached)
         {
             issues.AddRange(await ReconcileDataAsync(published, config, ct, apply: false));
+            return issues;
         }
+        var key = $"dynamic-apps:data-issues:{InstanceId}:{ConfigJson.Hash(config)}:{(published is null ? "" : ConfigJson.Hash(published))}";
+        var data = await cache.GetOrCreateAsync(key, async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = DataCheckCacheFor;
+            return await ReconcileDataAsync(published, config, ct, apply: false);
+        });
+        issues.AddRange(data ?? []);
         return issues;
     }
+
+    private static readonly TimeSpan DataCheckCacheFor = TimeSpan.FromSeconds(30);
+
+    /// <summary>Above this, a dry run leaves a new unique rule to publish rather than read every record for it.</summary>
+    public const int MaxRecordsForDryUnique = 20_000;
 
     /// <summary>
     /// The issues, and the provider permissions the configuration's flows need — all held by
