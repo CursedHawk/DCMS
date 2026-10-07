@@ -124,7 +124,12 @@ public interface IDynamicAppsConfig
             + "resource (fields and indexes take target = their table; a table may list its fields inline). update: value is a JSON merge patch "
             + "(null removes a key). delete: target only. Inside values, ids may be api names (tableId, sourceTableId, targetTableId, choiceSetId, "
             + "primaryFieldId, fieldIds, columns). Field types: text longText integer decimal boolean date dateTime email url choice multiChoice media json. "
-            + "A manyToOne/oneToOne relationship is the source table's lookup field; manyToMany needs inverseApiName. Table public: "
+            + "Model it properly: a link between tables is a relationship, never an '…_id' text field — {type: relationship, value: {apiName: 'company', "
+            + "displayName, sourceTableId: 'deals', targetTableId: 'companies', kind: manyToOne|oneToOne|manyToMany, inverseApiName?: 'deals', required?, "
+            + "onDelete?: restrict|setNull|cascade}}; manyToOne (the default) is the source table's lookup field, manyToMany needs inverseApiName. "
+            + "A fixed set of values (stage, status, type) is a choice field on a choice set: create {type: choiceSet, value: {apiName: 'deal_stage', "
+            + "displayName, options: [{value: 'won', label: 'Won'}]}} and a field {type: 'choice', choiceSetId: 'deal_stage'}. Give each table a "
+            + "primaryFieldId (its name or title field). Table public: "
             + "{read: none|all|own, create, updateOwn, deleteOwn}. Flow: {apiName, displayName, trigger: {event, tableId?, changedFields?, everyMinutes?}, "
             + "condition?, steps: [{id, action: 'records.create@1', input with {{ expressions }}}]}. Api names are lowercase snake_case. "
             + "Returns the changes made and the draft's validation issues; fix errors before publishing.")]

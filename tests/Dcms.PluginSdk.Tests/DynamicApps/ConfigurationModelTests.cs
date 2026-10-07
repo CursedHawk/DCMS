@@ -43,6 +43,21 @@ public sealed class ConfigurationModelTests
     private static IEnumerable<string> Errors(AppConfig config, AppConfig? published = null) =>
         ConfigValidator.Validate(config, published).Where(i => i.Severity == IssueSeverity.Error).Select(i => i.Code);
 
+    [Fact]
+    public void A_reference_kept_as_text_is_flagged_so_it_becomes_a_relationship()
+    {
+        var config = Build("""
+            [ { "op": "create", "type": "table", "value": { "apiName": "companies", "displayName": "Company", "fields": [ { "apiName": "name", "displayName": "Name" } ] } },
+              { "op": "create", "type": "table", "value": { "apiName": "activities", "displayName": "Activity", "fields": [ { "apiName": "subject", "displayName": "Subject" } ] } },
+              { "op": "create", "type": "table", "value": { "apiName": "deals", "displayName": "Deal", "fields": [
+                  { "apiName": "company_id", "displayName": "Company" }, { "apiName": "primary_company_id", "displayName": "Primary company" },
+                  { "apiName": "activity_id", "displayName": "Activity", "type": "integer" }, { "apiName": "external_id", "displayName": "External" } ] } } ]
+            """);
+        ConfigValidator.Validate(config).Where(i => i.Code == "reference-as-text").Select(i => i.Path)
+            .Should().BeEquivalentTo(["deals.company_id", "deals.primary_company_id", "deals.activity_id"], "external_id names no table");
+        ConfigValidator.Validate(config).Where(i => i.Code == "reference-as-text").Should().OnlyContain(i => i.Severity == IssueSeverity.Warning);
+    }
+
     // ------------------------------------------------------------------ applying change sets
 
     [Fact]

@@ -114,6 +114,15 @@ public static partial class ConfigValidator
             {
                 Warn("no-primary-field", path, "No primary field: records will be shown by id in lists and lookups.");
             }
+            foreach (var field in table.Fields.Where(f => f.Type is FieldType.Text or FieldType.Integer))
+            {
+                if (ReferencedTable(config, field.ApiName) is { } target)
+                {
+                    Warn("reference-as-text", $"{path}.{field.ApiName}",
+                        $"{table.ApiName}.{field.ApiName} looks like a reference to {target.ApiName}. Make it a relationship instead "
+                        + $"(sourceTableId {table.ApiName}, targetTableId {target.ApiName}): values are then checked, deletes are handled, and the related record can be fetched.");
+                }
+            }
 
             Duplicates(table.Indexes.Select(i => i.ApiName), $"{path}.indexes", "index", Error);
             foreach (var index in table.Indexes)
@@ -259,6 +268,20 @@ public static partial class ConfigValidator
 
     [GeneratedRegex("^flow\\.event\\.[a-z][a-z0-9_.-]{0,62}$")]
     private static partial Regex FlowEventPattern();
+
+    /// <summary>The table a <c>…_id</c> field seems to point at: <c>company_id</c> or <c>primary_company_id</c> → <c>companies</c>.</summary>
+    private static TableDef? ReferencedTable(AppConfig config, string fieldName)
+    {
+        if (!fieldName.EndsWith("_id", StringComparison.Ordinal) || fieldName.Length < 4)
+        {
+            return null;
+        }
+        var stem = fieldName[..^3];
+        var last = stem[(stem.LastIndexOf('_') + 1)..];
+        string[] Forms(string s) => [s, s + "s", s + "es", s.EndsWith('y') ? s[..^1] + "ies" : s];
+        var names = Forms(stem).Concat(Forms(last)).ToHashSet(StringComparer.Ordinal);
+        return config.Tables.FirstOrDefault(t => names.Contains(t.ApiName));
+    }
 
     private static void CheckFlows(AppConfig config, Dictionary<Guid, TableDef> tables, IReadOnlySet<string> actions, Action<string, string, string> error)
     {
