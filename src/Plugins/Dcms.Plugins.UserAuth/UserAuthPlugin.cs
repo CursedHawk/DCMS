@@ -46,7 +46,20 @@ public sealed class UserAuthPlugin : IPlugin
             ContractProvision.Of<IVisitorIdentity, UserVisitorIdentity>(),
         ],
         // What roles can hold: whatever enabled plugins offer to gate.
-        consumes: [ContractRequirement.Of<IUserResources>(optional: true)]);
+        consumes: [ContractRequirement.Of<IUserResources>(optional: true)],
+        // The plugin's page (admin/src): the directory, the policy over it, and how people sign in.
+        adminScreens:
+        [
+            new AdminScreen("users", "Users", AdminScreenScope.Instance, Permission: "users-read", IconName: "Users",
+                Titles: new Dictionary<string, string> { ["cs"] = "Uživatelé" },
+                Description: "The people who can sign in to your sites, and their groups."),
+            new AdminScreen("access", "Access", AdminScreenScope.Instance, Permission: "users-read", IconName: "ShieldCheck",
+                Titles: new Dictionary<string, string> { ["cs"] = "Přístup" },
+                Description: "Which pages of each site need signing in, and roles over your apps and APIs."),
+            new AdminScreen("sign-in", "Sign-in", AdminScreenScope.Instance, Permission: "users-read", IconName: "KeyRound",
+                Titles: new Dictionary<string, string> { ["cs"] = "Přihlášení" },
+                Description: "Passwords and the identity providers your users sign in with."),
+        ]);
 
     public void ConfigureServices(IServiceCollection services, PluginHost host)
     {

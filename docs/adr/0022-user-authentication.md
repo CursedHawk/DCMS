@@ -193,6 +193,33 @@ Contracts (`Dcms.Plugins.UserAuth.Api`):
 tokens against Identity's keys and the request's tenant. It is never the default scheme, like
 `DcmsVisitor`, and `ActorKind.EndUser` names enterprise users in the audit log.
 
+How it is built (UA4):
+
+- **Screens.** Three, on the instance's page: *Users* (users and groups), *Access* (each site's
+  rules, and roles with who holds them) and *Sign-in* (passwords on or off, and providers).
+  Sessions are not a screen of their own: "sign out everywhere" is a user action.
+- **Passing calls to identity.** The console routes for users, groups and providers check the
+  member's plugin permission, then pass the call to identity's realm admin API for this tenant
+  (`RealmAdminClient`, client credentials, scope `dcms.realms`) and answer with identity's own
+  status and message. The wire records live in `Dcms.Shared.Contracts.Realms`, shared by both
+  sides. Identity unreachable, or refusing admin-api itself, is a 502.
+- **The realm follows the plugin.** It is created the first time the console needs it, or when
+  the publisher next runs, named after the tenant. Its hosts are exactly the hostnames the edge
+  gates; disabling the plugin empties them and keeps the users. Purging the tenant deletes it.
+- **Grants outlive nothing.** Deleting a user or a group at identity deletes the grants to it.
+  A site rule naming a deleted group keeps the id and admits nobody through it: closed, rather
+  than a rule silently widening.
+- **Site rules** are replaced as a whole per site, in order. A prefix must be a plain path
+  (no `%`, `\`, `//` or dot segments, which the edge would refuse anyway), unique per site
+  ignoring case and a trailing slash, and a `groups` rule needs 1 to 50 groups.
+- **Permissions** are the union of the roles granted to the user and to the groups in their
+  token. A role or grant change applies on the user's next request; a group membership change
+  applies with their next token, within minutes.
+- **The user in content-api** comes from `X-Dcms-Realm-Token` only — never from
+  `Authorization`, where platform and visitor tokens travel — and is accepted only if its
+  audience is `dcms.realm:{request tenant}` and its `realm` claim is that tenant. An otherwise
+  anonymous request becomes that user's, so audit records name them.
+
 ### Enforcement where the resources are
 
 - **Dynamic Apps.** A table's public access gains member actions (read, create, update and
