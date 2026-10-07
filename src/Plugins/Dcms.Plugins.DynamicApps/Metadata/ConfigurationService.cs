@@ -244,7 +244,7 @@ public sealed class ConfigurationService(
 
         var config = ConfigJson.Parse(draft.Snapshot);
         var liveConfig = await PublishedConfigAsync(app, ct);
-        var issues = (await IssuesAsync(config, liveConfig, ct)).ToList();
+        var (issues, vouched) = await CheckAsync(config, liveConfig, ct);
         if (!issues.Any(i => i.Severity == IssueSeverity.Error))
         {
             issues.AddRange(await ReconcileDataAsync(liveConfig, config, ct));
@@ -262,6 +262,7 @@ public sealed class ConfigurationService(
         draft.PublishedBy = Actor;
         draft.ValidatedAt = now;
         draft.ValidatedHash = draft.Hash;
+        draft.VouchedPermissions = vouched;
         app.PublishedRevisionId = draft.Id;
         app.DraftRevisionId = null;
         Published(app, draft, previous);
@@ -306,7 +307,7 @@ public sealed class ConfigurationService(
 
         var liveConfig = ConfigJson.Parse(live.Snapshot);
         var config = ConfigJson.Parse(target.Snapshot);
-        var issues = (await IssuesAsync(config, liveConfig, ct)).ToList();
+        var (issues, vouched) = await CheckAsync(config, liveConfig, ct);
         if (!issues.Any(i => i.Severity == IssueSeverity.Error))
         {
             issues.AddRange(await ReconcileDataAsync(liveConfig, config, ct));
@@ -336,6 +337,7 @@ public sealed class ConfigurationService(
             ValidatedAt = now,
             PublishedAt = now,
             PublishedBy = Actor,
+            VouchedPermissions = vouched,
             SourceConversationId = ai?.ConversationId,
             SourceAiRunId = ai?.RunId,
         };
@@ -585,32 +587,39 @@ public sealed class ConfigurationService(
     /// <see cref="ConfigValidator.Validate"/> against the actions this tenant's flows can use: the
     /// built-in ones, and, once a flow names another, what <c>automation.actions@1</c> providers offer.
     /// </summary>
-    public async Task<IReadOnlyList<ConfigIssue>> IssuesAsync(AppConfig config, AppConfig? published, CancellationToken ct)
+    public async Task<IReadOnlyList<ConfigIssue>> IssuesAsync(AppConfig config, AppConfig? published, CancellationToken ct) =>
+        (await CheckAsync(config, published, ct)).Issues;
+
+    /// <summary>
+    /// The issues, and the provider permissions the configuration's flows need — all held by
+    /// the person checking, or an <c>action-not-permitted</c> issue says which are not.
+    /// Publishing vouches for every flow, not only the changed ones: a flow is steered by what
+    /// surrounds it (its table's public access, the flows that start it) as much as by itself.
+    /// </summary>
+    private async Task<(List<ConfigIssue> Issues, List<string> Permissions)> CheckAsync(AppConfig config, AppConfig? published, CancellationToken ct)
     {
         if (config.Flows.SelectMany(f => f.Steps).All(s => ActionCatalog.Keys.Contains(s.Action)))
         {
-            return ConfigValidator.Validate(config, published);
+            return (ConfigValidator.Validate(config, published).ToList(), []);
         }
         var offered = (await ActionCatalog.WithProvidersAsync(context, ct)).ToDictionary(ActionCatalog.Key, StringComparer.Ordinal);
         var issues = ConfigValidator.Validate(config, published, offered.Keys.ToHashSet(StringComparer.Ordinal)).ToList();
-        // Another plugin's action can carry that plugin's permission. Whoever changes a flow
-        // that uses it, or that can set such a flow off, must hold it — or a flow would let them
-        // do what the plugin refuses them by hand. A flow unchanged from the live one was
-        // vouched for by whoever published it.
         var needs = ActionCatalog.PermissionsByFlow(config, offered);
-        foreach (var flow in config.Flows.Where(f =>
-                     published?.Flows.FirstOrDefault(p => p.Id == f.Id) is not { } live || TriggerRouter.Hash(live) != TriggerRouter.Hash(f)))
+        var held = new List<string>();
+        foreach (var permission in needs.Values.SelectMany(p => p).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
         {
-            foreach (var permission in needs.GetValueOrDefault(flow.ApiName) ?? [])
+            if (await HoldsAsync(permission))
             {
-                if (!await HoldsAsync(permission))
-                {
-                    issues.Add(new ConfigIssue(IssueSeverity.Error, "action-not-permitted", $"flows.{flow.ApiName}",
-                        $"This flow uses, or can start a flow that uses, an action needing the {permission} permission, which you do not have."));
-                }
+                held.Add(permission);
+                continue;
+            }
+            foreach (var flow in needs.Where(n => n.Value.Contains(permission)).Select(n => n.Key))
+            {
+                issues.Add(new ConfigIssue(IssueSeverity.Error, "action-not-permitted", $"flows.{flow}",
+                    $"This flow uses, or can start a flow that uses, an action needing the {permission} permission, which you do not have."));
             }
         }
-        return issues;
+        return (issues, held);
     }
 
     /// <summary>

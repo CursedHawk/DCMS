@@ -93,6 +93,14 @@ public sealed class AppRevision : TenantEntity
     public DateTimeOffset? PublishedAt { get; set; }
     public string? PublishedBy { get; set; }
 
+    /// <summary>
+    /// The permissions other plugins' flow actions ask for that the publisher held, checked when
+    /// this revision went live. A provider action runs only if its permission is here: the
+    /// publisher vouched for every flow, and a revision published before an action needed a
+    /// permission does not inherit it.
+    /// </summary>
+    public List<string> VouchedPermissions { get; set; } = [];
+
     /// <summary>Opaque links to the assistant conversation and run that opened this revision.</summary>
     public Guid? SourceConversationId { get; set; }
     public Guid? SourceAiRunId { get; set; }

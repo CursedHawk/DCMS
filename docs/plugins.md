@@ -235,9 +235,10 @@ Rules for providers:
 - **Throw `ContractValidationException`** for a failure that the same input would repeat. The
   step then fails without retrying, while anything else is retried.
 - **Set the permission** your plugin asks of an admin who does the same thing by hand.
-  VisitorAuth's is `plugin:visitor-auth:manage`. Anyone who adds or changes a flow using the
-  action must hold it, or the change does not validate and cannot publish. The same goes for
-  any flow that can set that one off, and for starting it by hand. Without it, the
+  VisitorAuth's is `plugin:visitor-auth:manage`. Whoever publishes an app whose flows use the
+  action, directly or through a flow they can start, must hold it. So must anyone who starts
+  such a flow by hand. The revision records what was checked, and at run time an action whose
+  permission is not on the record does not run. Without it, the
   right to publish an app would quietly include your plugin's rights.
 - **Calls go through the contract runtime**, audited like any plugin-to-plugin call. Your
   plugin's own rules still apply: VisitorAuth refuses private attributes from a flow just as

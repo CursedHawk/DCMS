@@ -114,9 +114,11 @@ the assistant and a person editing in parallel should see the same state.
   - Validation asks the providers only when a flow names an action outside the built-in catalog, so most edits never leave the plugin.
   - An action no enabled provider offers fails validation and cannot publish.
   - A built-in key always wins over a provider's. A provider whose listing throws is skipped, not fatal.
-  - **A descriptor may name a permission**, the one the provider requires of an admin doing the same by hand. Whoever adds or changes a flow using the action must hold it (`action-not-permitted`), or `dynamic-apps:publish` would silently include other plugins' rights.
-    - The requirement is transitive. A flow also needs the permissions of every flow it can set off: through `flow.invoke`, through `event.publish`, or by writing a table a row trigger watches. A templated target counts as every flow of that kind. Starting a flow by hand needs them too, because a manual flow takes its input from whoever starts it.
-    - Flows identical to the live revision are not re-checked, so other members can still edit the rest of the app.
+  - **A descriptor may name a permission**: the one the provider requires of an admin doing the same by hand. Without this, `dynamic-apps:publish` would silently include other plugins' rights.
+    - **Definer's rights.** Publishing (or rolling back) vouches for every flow in the revision, not only the changed ones. A flow is steered by what surrounds it as much as by itself: its table's public access, or the flows that start it. So the publisher must hold every such permission (`action-not-permitted`).
+    - **The requirement is transitive.** A flow also needs the permissions of every flow it can set off: through `flow.invoke`, through `event.publish`, or by writing a table a row trigger watches. A templated target counts as every flow of that kind.
+    - **Manual starts.** Starting a flow by hand needs the permissions too, because a manual flow takes its input from whoever starts it.
+    - **Recorded on the revision.** The permissions checked are stored as `VouchedPermissions`, frozen with the snapshot. At run time a provider action runs only if the permission it asks for now is on that list. This fails closed for revisions published before the check existed, and for a permission a provider adds later.
     - A provider may only offer actions prefixed with its own plugin id. The contract proxy says which plugin is behind it, so no plugin can pass off an action as another's, or dodge that plugin's permission.
     - The check runs in validation, so it covers publish, rollback and the assistant alike.
 - **Other plugins' typed events become runtime events.** Dynamic Apps subscribes to `visitor.registered` and `form.submitted`.

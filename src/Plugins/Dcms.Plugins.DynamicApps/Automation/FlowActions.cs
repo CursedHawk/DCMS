@@ -12,7 +12,9 @@ using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Shared.Data.DynamicApps;
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Security;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.DynamicApps.Automation;
@@ -212,6 +214,22 @@ internal sealed class ProvidedAction(IAutomationActionProvider provider, Automat
     {
         var instanceId = context.Plugin.Instance?.InstanceId
             ?? throw new InvalidOperationException("Flow steps run per instance; this context has none.");
+        // The permission as the provider asks for it now, against what the revision's publisher
+        // was checked for: a revision published before the action needed it never inherits it.
+        if (Permission is { } permission)
+        {
+            using var rls = RlsScope.Tenant(context.Plugin.TenantId);
+            var db = context.Services.GetRequiredService<AppsDbContext>();
+            var run = context.Run;
+            var vouched = await db.Revisions.AsNoTracking()
+                .Where(r => r.Number == run.Revision && db.Apps.Any(a => a.Id == r.AppId && a.InstanceId == run.InstanceId))
+                .Select(r => r.VouchedPermissions).FirstOrDefaultAsync(ct);
+            if (vouched is null || !vouched.Contains(permission))
+            {
+                throw new FlowFatalException(
+                    $"{Id}@{Major} needs the {permission} permission, which whoever published revision {run.Revision} was not checked for. Publish the app again as someone who has it.");
+            }
+        }
         var result = await provider.ExecuteAsync(new AutomationActionCall(
             offered.Name, offered.Major, JsonSerializer.SerializeToElement(input), context.IdempotencyKey, instanceId, context.Run.Id), ct);
         return result.Output is { } output ? JsonNode.Parse(output.GetRawText()) : null;

@@ -244,8 +244,10 @@ public sealed class AutomationTests(ContentFlowFixture fixture)
         pried.GetProperty("status").GetString().Should().Be("failed");
         pried.GetProperty("attempts").GetInt32().Should().Be(1);
 
-        // Publishing an app is not managing visitors: a member who may do the one but not the
-        // other cannot write a flow that does it for them — yet may edit the rest of the app.
+        // Publishing an app is not managing visitors. Publishing vouches for every flow in it —
+        // a flow is steered by what surrounds it as much as by itself — so a member who may
+        // publish but not manage visitors cannot publish an app whose flows act on visitors,
+        // however unrelated their own edit.
         var builder = await app.AddMemberAsync(
             ["plugin:dynamic-apps:model-read", "plugin:dynamic-apps:model-write", "plugin:dynamic-apps:publish"], ct);
         var hash = (await app.JsonAsync(HttpMethod.Get, "/_model", ct, @as: builder)).GetProperty("hash").GetString();
@@ -253,42 +255,42 @@ public sealed class AutomationTests(ContentFlowFixture fixture)
         {
             expectedHash = hash,
             operations = AppHarness.Operations("""
-                [ { "op": "update", "type": "flow", "target": "welcome", "value": { "displayName": "Welcome, again" } } ]
+                [ { "op": "update", "type": "table", "target": "log", "value": { "displayName": "Journal" } },
+                  { "op": "create", "type": "flow", "value": { "apiName": "relay", "displayName": "Relay",
+                    "trigger": { "event": "row.created", "tableId": "deals" },
+                    "steps": [ { "id": "go", "action": "flow.invoke@1", "input": { "flow": "pry", "input": { "visitorId": "{{ row.title }}" } } } ] } } ]
                 """),
         }, @as: builder);
-        Errors(applied).Should().Equal("action-not-permitted");
+        Refused(applied).Should().BeEquivalentTo(["flows.welcome", "flows.pry", "flows.relay"],
+            "relay reaches the visitor action through pry, which it starts");
         (await app.SendAsync(HttpMethod.Post, "/_model/draft/publish",
                 new { expectedHash = applied.GetProperty("draft").GetProperty("hash").GetString() }, ct, builder))
             .StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
 
-        hash = (await app.JsonAsync(HttpMethod.Get, "/_model", ct, @as: builder)).GetProperty("hash").GetString();
-        await app.JsonAsync(HttpMethod.Post, "/_model/draft/discard", ct, new { expectedHash = hash }, HttpStatusCode.NoContent, builder);
-        hash = (await app.JsonAsync(HttpMethod.Get, "/_model", ct, @as: builder)).GetProperty("hash").GetString();
-        var unrelated = await app.JsonAsync(HttpMethod.Post, "/_model/draft/changes", ct, new
-        {
-            expectedHash = hash,
-            operations = AppHarness.Operations("""[ { "op": "update", "type": "table", "target": "log", "value": { "displayName": "Journal" } } ]"""),
-        }, @as: builder);
-        Errors(unrelated).Should().BeEmpty("the visitor flow is unchanged from the live one");
-
-        // Nor can they reach it sideways: a new flow that starts the live one passes it their input.
-        var relay = await app.JsonAsync(HttpMethod.Post, "/_model/draft/changes", ct, new
-        {
-            expectedHash = unrelated.GetProperty("draft").GetProperty("hash").GetString(),
-            operations = AppHarness.Operations("""
-                [ { "op": "create", "type": "flow", "value": { "apiName": "relay", "displayName": "Relay",
-                    "trigger": { "event": "row.created", "tableId": "log" },
-                    "steps": [ { "id": "go", "action": "flow.invoke@1", "input": { "flow": "pry", "input": { "visitorId": "{{ row.message }}" } } } ] } } ]
-                """),
-        }, @as: builder);
-        Errors(relay).Should().Equal("action-not-permitted");
-
-        // And starting it by hand, with input of their choosing, takes the permission too.
+        // Starting it by hand, with input of their choosing, takes the permission too.
         var runner = await app.AddMemberAsync(["plugin:dynamic-apps:data-read", "plugin:dynamic-apps:flows-run"], ct);
         (await app.SendAsync(HttpMethod.Post, "/_automation/flows/pry/run", new { input = new { visitorId = registered } }, ct, runner))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await app.SendAsync(HttpMethod.Post, "/_automation/flows/pry/run", new { input = new { visitorId = registered } }, ct))
-            .StatusCode.Should().Be(HttpStatusCode.Accepted, "the owner may");
+
+        // And a revision whose publisher was never checked for it — one published before the
+        // check existed — does not run the action at all.
+        await using (var conn = new Npgsql.NpgsqlConnection(fixture.PostgresConnectionString))
+        {
+            await conn.OpenAsync(ct);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                ALTER TABLE apps.revisions DISABLE TRIGGER revisions_freeze;
+                UPDATE apps.revisions SET "VouchedPermissions" = '{}'
+                WHERE "Status" = 'Published' AND "TenantId" = (SELECT "Id"::uuid FROM tenancy.tenants WHERE "Identifier" = @slug);
+                ALTER TABLE apps.revisions ENABLE TRIGGER revisions_freeze;
+                """;
+            cmd.Parameters.AddWithValue("slug", app.Tenant);
+            (await cmd.ExecuteNonQueryAsync(ct)).Should().BeGreaterThan(0);
+        }
+        await app.JsonAsync(HttpMethod.Post, "/_automation/flows/pry/run", ct, new { input = new { visitorId = registered } }, HttpStatusCode.Accepted);
+        var unvouched = (await WaitForRunsAsync(app, "pry", 2, ct)).OrderBy(r => r.GetProperty("createdAt").GetDateTimeOffset()).Last();
+        unvouched.GetProperty("status").GetString().Should().Be("failed");
+        unvouched.GetProperty("error").GetString().Should().Contain("was not checked for");
     }
 
     [DockerFact]
@@ -309,6 +311,9 @@ public sealed class AutomationTests(ContentFlowFixture fixture)
     }
 
     // ---- helpers ----
+
+    private static IEnumerable<string?> Refused(JsonElement applied) => applied.GetProperty("issues").EnumerateArray()
+        .Where(i => i.GetProperty("code").GetString() == "action-not-permitted").Select(i => i.GetProperty("path").GetString());
 
     private static IEnumerable<string?> Errors(JsonElement applied) => applied.GetProperty("issues").EnumerateArray()
         .Where(i => i.GetProperty("severity").GetString() == "error").Select(i => i.GetProperty("code").GetString());

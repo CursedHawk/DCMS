@@ -95,16 +95,20 @@ Other plugins can add actions through `automation.actions@1`; see
 installed, for example, flows also get `visitor-auth.set-attributes@1`.
 
 A provider's action can require that plugin's own permission;
-`visitor-auth.set-attributes@1`, for example, needs *Edit visitor profiles*. That permission
-is needed to:
+`visitor-auth.set-attributes@1`, for example, needs *Edit visitor profiles*. Publishing an app
+vouches for every flow in it, including flows that can set such a flow off (`flow.invoke`,
+`event.publish`, or writing a table its row trigger watches). So:
 
-- add or change a flow that uses the action;
-- add or change a flow that can set such a flow off (`flow.invoke`, `event.publish`, or
-  writing a table that its row trigger watches);
-- start such a flow by hand.
+- Publishing or rolling back an app whose flows use such an action needs the permission, even
+  for an unrelated edit. Validation reports `action-not-permitted` naming the flows.
+- Starting such a flow by hand needs it too.
+- The permissions checked are stored with the revision. At run time an action runs only if its
+  permission was checked when the revision went live; otherwise the step fails and the app must
+  be published again by someone who holds it.
 
-A flow that is unchanged from the live one stays publishable by anyone who may publish the app.
-A provider can only offer actions named after itself.
+Once published, a flow acts with the publisher's say-so for everyone who can trigger it: for
+example, members who write records, or visitors where public access allows. Choose its trigger
+with that in mind. A provider can only offer actions named after itself.
 
 An action is named with its major version. Its meaning never changes within that version.
 
