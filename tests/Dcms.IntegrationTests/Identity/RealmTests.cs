@@ -151,6 +151,23 @@ public sealed class RealmTests(IdentityAppFixture fixture)
     }
 
     [DockerFact]
+    public async Task A_sign_in_returns_only_to_an_authorization_never_off_site()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var a = await RealmAsync(ct);
+        var email = $"{Guid.NewGuid():N}@corp.test";
+        var (_, invite) = await InviteAsync(a, email, ct);
+        await AcceptAsync(Browser(), invite, ct);
+
+        foreach (var hostile in new[] { "/\\evil.test/", "//evil.test/", "https://evil.test/", "/account/manage" })
+        {
+            (await PasswordSignInAsync(Browser(), a.Slug, email, Password, ct, hostile)).Should().Be($"/realm/{a.Slug}/", hostile);
+        }
+        (await PasswordSignInAsync(Browser(), a.Slug, email, Password, ct, "/connect/authorize?client_id=x"))
+            .Should().Be("/connect/authorize?client_id=x");
+    }
+
+    [DockerFact]
     public async Task The_realm_admin_api_answers_only_the_realms_scope()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -239,12 +256,13 @@ public sealed class RealmTests(IdentityAppFixture fixture)
     }
 
     /// <summary>Signs in on the realm's form; returns where it redirected (an error says so in the query).</summary>
-    private static async Task<string> PasswordSignInAsync(HttpClient browser, string slug, string email, string password, CancellationToken ct)
+    private static async Task<string> PasswordSignInAsync(HttpClient browser, string slug, string email, string password, CancellationToken ct,
+        string returnUrl = "")
     {
         using var page = await browser.GetAsync($"/realm/{slug}/login", ct);
         var html = await page.Content.ReadAsStringAsync(ct);
         using var response = await browser.PostAsync($"/realm/{slug}/login", Form(
-            ("email", email), ("password", password), ("__RequestVerificationToken", Antiforgery(html))), ct);
+            ("email", email), ("password", password), ("returnUrl", returnUrl), ("__RequestVerificationToken", Antiforgery(html))), ct);
         response.StatusCode.Should().Be(HttpStatusCode.Found);
         return response.Headers.Location!.ToString();
     }

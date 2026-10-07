@@ -400,9 +400,13 @@ public static class AccountEndpoints
         return name?.Replace(" ", string.Empty) ?? string.Empty;
     }
 
-    // Prevent open redirects: only allow local paths.
+    // Prevent open redirects: only allow local paths. Not "//host" (protocol-relative), and not
+    // "/\host" either -- browsers read a backslash as a slash, so that is "//host" in disguise --
+    // nor anything with a control character a browser might strip on the way.
     internal static string SafeReturnUrl(string? returnUrl)
-        => !string.IsNullOrEmpty(returnUrl) && returnUrl.StartsWith('/') && !returnUrl.StartsWith("//")
+        => !string.IsNullOrEmpty(returnUrl) && returnUrl[0] == '/'
+           && (returnUrl.Length == 1 || (returnUrl[1] != '/' && returnUrl[1] != '\\'))
+           && !returnUrl.Any(char.IsControl)
             ? returnUrl
             : "/";
 

@@ -166,7 +166,7 @@ public static class RealmAccountEndpoints
                 : Results.Redirect($"/realm/{Uri.EscapeDataString(slug)}/login");
         });
 
-        realm.MapMethods("/logout", ["GET", "POST"], async (string slug, string? returnUrl, HttpContext http, RealmStore store, IAuditRecorder audit, CancellationToken ct) =>
+        realm.MapMethods("/logout", ["GET", "POST"], async (string slug, HttpContext http, RealmStore store, IAuditRecorder audit, CancellationToken ct) =>
         {
             if (await store.FindRealmBySlugAsync(slug, ct) is not { } r)
             {
@@ -174,15 +174,21 @@ public static class RealmAccountEndpoints
             }
             audit.Declared?.InTenant(r.TenantId);
             await RealmCookies.SignOutAsync(http, r.TenantId);
-            return Results.Redirect(SafeReturnUrl(returnUrl) is var target && target != "/" ? target : $"/realm/{Uri.EscapeDataString(slug)}/login");
+            // Nowhere but the realm's own sign-in: a sign-out link is the easiest one to plant.
+            return Results.Redirect($"/realm/{Uri.EscapeDataString(slug)}/login");
         }).WithAudit(AuditActions.RealmLogout, category: AuditCategory.Auth);
 
         return app;
     }
 
-    /// <summary>Where a sign-in lands: back to the authorization it interrupted, else the realm's own page.</summary>
+    /// <summary>
+    /// Where a sign-in lands: back to the authorization it interrupted, and nowhere else a link
+    /// could name — otherwise the realm's own page.
+    /// </summary>
     private static string Landing(string slug, string? returnUrl) =>
-        SafeReturnUrl(returnUrl) is var target && target != "/" ? target : $"/realm/{Uri.EscapeDataString(slug)}/";
+        SafeReturnUrl(returnUrl) is var target && target.StartsWith("/connect/authorize?", StringComparison.Ordinal)
+            ? target
+            : $"/realm/{Uri.EscapeDataString(slug)}/";
 
     /// <summary>
     /// The origin people reach identity at, for links in email: the configured issuer, never the
