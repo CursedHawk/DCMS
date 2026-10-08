@@ -110,6 +110,7 @@ public static class SiteAuthentication
                 options.Scope.Add("email");
                 options.Scope.Add("offline_access");
                 options.Backchannel = new HttpClient(new InternalIdentityHandler(auth.Authority, auth.InternalAuthority));
+                options.ProtocolValidator = new SiteProtocolValidator { RequireStateValidation = false, NonceLifetime = TimeSpan.FromMinutes(15) };
                 // The audience is the realm's client, which varies by host; it is matched exactly
                 // against this host's tenant in OnTokenValidated.
                 options.TokenValidationParameters.AudienceValidator = (audiences, _, _) =>
@@ -157,12 +158,18 @@ public static class SiteAuthentication
                         context.Principal = new ClaimsPrincipal(new ClaimsIdentity(
                             [new Claim(SessionClaim, id), new Claim("realm", gate.TenantId.ToString())], CookieScheme));
                     },
-                    OnRemoteFailure = context =>
+                    OnRemoteFailure = async context =>
                     {
-                        // Never an unhandled 500 on a tenant's site.
-                        context.Response.Redirect("/");
+                        // Never an unhandled 500 on a tenant's site — and never a redirect either:
+                        // "/" may be gated itself, and identity still holds the realm sign-in, so
+                        // a redirect would go straight round again until the rate limiter stops it.
+                        context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(SiteAuthentication))
+                            .LogWarning(context.Failure, "Site sign-in failed on {Host}.", context.Request.Host.Host);
                         context.HandleResponse();
-                        return Task.CompletedTask;
+                        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                        context.Response.ContentType = "text/html; charset=utf-8";
+                        context.Response.Headers.CacheControl = "no-store";
+                        await context.Response.WriteAsync(SignInFailedPage);
                     },
                     OnRedirectToIdentityProviderForSignOut = context =>
                     {
@@ -314,16 +321,38 @@ public static class SiteAuthentication
         return accept.Length == 0 || accept.Contains("text/html", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string DeniedPage(SiteSession session) => $$"""
+    private static string MessagePage(string title, string body) => $$"""
         <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>No access</title>
+        <title>{{title}}</title>
         <style>body{font-family:system-ui,sans-serif;background:#f1f5f9;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}
         main{background:#fff;padding:2rem;border-radius:.75rem;box-shadow:0 1px 3px rgba(0,0,0,.1);max-width:24rem}h1{font-size:1.25rem;margin:0 0 .75rem}
         p{color:#475569;font-size:.9rem}a{color:#2563eb}</style></head>
-        <body><main><h1>You don't have access to this page</h1>
-        <p>You're signed in as {{WebUtility.HtmlEncode(session.Email ?? session.Name ?? "")}}, but this part of the site is for other groups.</p>
-        <p><a href="/">Back to the home page</a> · <a href="/.edge/site/signout">Sign out</a></p></main></body></html>
+        <body><main><h1>{{title}}</h1>{{body}}</main></body></html>
         """;
+
+    private static string DeniedPage(SiteSession session) => MessagePage("You don't have access to this page",
+        $"""<p>You're signed in as {WebUtility.HtmlEncode(session.Email ?? session.Name ?? "")}, but this part of the site is for other groups.</p><p><a href="/">Back to the home page</a> · <a href="/.edge/site/signout">Sign out</a></p>""");
+
+    private static readonly string SignInFailedPage = MessagePage("Sign-in didn't complete",
+        """<p>Something went wrong while signing you in. Nothing was changed.</p><p><a href="/.edge/site/signin">Try again</a> · <a href="/">Home page</a></p>""");
+
+    /// <summary>
+    /// The handler checks the id_token's <c>azp</c> against <c>Options.ClientId</c>, which here is
+    /// only a placeholder — the client is per host. So the check is made against the token's own
+    /// single audience instead, and OnTokenValidated has already required that audience to be this
+    /// host's client: together, azp = aud = site:{this host's tenant}.
+    /// </summary>
+    public sealed class SiteProtocolValidator : OpenIdConnectProtocolValidator
+    {
+        protected override void ValidateIdToken(OpenIdConnectProtocolValidationContext validationContext)
+        {
+            if (validationContext.ValidatedIdToken?.Audiences.ToList() is [var audience] && audience.StartsWith("site:", StringComparison.Ordinal))
+            {
+                validationContext.ClientId = audience;
+            }
+            base.ValidateIdToken(validationContext);
+        }
+    }
 
     /// <summary>The site's own sign-in, sign-out and "who am I" for pages and the site runtime.</summary>
     public static void MapSiteAuthEndpoints(this IEndpointRouteBuilder app)
