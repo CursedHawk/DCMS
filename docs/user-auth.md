@@ -13,6 +13,9 @@ pages need it, and what they may do with the workspace's apps once in. The desig
 - **Pages are protected at the edge.** A page under a protected path is not served until the
   visitor has signed in (and is in the right group). Hiding a section in the builder is cosmetic;
   protecting its path is not.
+- **Data is protected at the API.** A plugin's site API (`/api/{instance}/…`) can be restricted
+  to signed-in users or to a role permission. For a React site this, not the page rules, is the
+  protection: see [Single-page apps](#single-page-apps-react-sites).
 - **Visitor accounts still exist.** Visitor Authentication is the self-registration kind for the
   public. Both can be enabled; plugins that know visitors see enterprise users as visitors too.
 
@@ -44,14 +47,59 @@ pages need it, and what they may do with the workspace's apps once in. The desig
    Apps table's read, create, update and delete, and each manual flow's run. See
    [dynamic-apps.md](dynamic-apps.md#records-and-the-public-api).
 
+7. On **Access → API access**, restrict the plugin instances whose data needs it: *Any
+   signed-in user*, or *Role permission* — then give roles `{plugin}:{instance}:api:read` (GET)
+   and `…:api:write` (everything else). Restricted instances also drop out of search and
+   `/api/tags` for whoever may not read them.
+
+## Single-page apps (React sites)
+
+A React site (Mode B and the visual builder) is downloaded once; moving between its pages is not
+a request, so **the edge never sees it**. A rule on `/reports` stops someone opening `/reports`
+directly, but not clicking to it inside the app. So, for a React site:
+
+1. **Protect the data, on Access → API access.** Whatever the page shows comes from
+   `/api/{instance}/…`, and that is checked on every call, however the page was reached. The
+   site rules editor names the instances a rule's path points at (`/audio-library-1/track` →
+   `/api/audio-library-1`) with one click to require sign-in for them.
+2. **Let the app ask, for the experience.** Both React runtimes ask the edge before drawing a
+   route (`/.edge/site/access`) and, when the answer is no, leave the app for the server's own
+   sign-in or "no access" page. Visual sites do it built in; a Mode B site gets
+   `siteAccessLoader` in `src/dcms` with **Refresh API** and puts it on its root route (the
+   content template does). Sites created before this need that one line in `src/routes.tsx`:
+   `{ element: <Layout />, loader: siteAccessLoader, shouldRevalidate: siteAccessRevalidate, … }`.
+
+What stays true however it is configured:
+
+- **Anything in the app's code is public to whoever can load the app.** Every page's code, and
+  any text or image imported into a component, is in one bundle under `/assets`. Only data
+  fetched from the API can be kept from someone.
+- **The `/assets` rule decides who can run the app at all.** Rules are first-match, so with
+  `/portal` *Staff* above `/` *Admins*, Staff get the `/portal` page but not the code to draw it —
+  a blank page. The editor warns and offers an `/assets` rule wide enough for everyone let in.
+- **Client checks are the experience.** `useSiteAccess`, `useSiteUser` and the route guard can be
+  bypassed by anyone with the browser's devtools; the edge and the API cannot.
+- **Two vocabularies.** Page rules are per domain, by path prefix, for groups; API access is per
+  plugin instance, for every domain, by role permission. A prefix cannot express a route pattern
+  (`/:id/edit`).
+- **Media files are not protected.** An image or audio file of restricted content is still
+  served to anyone with its URL (`/api/media/{id}/…`).
+- **The live chat is not an instance API.** Its hub is not covered by API access; its bot does
+  not answer from restricted content.
+
 ## On the site
 
 - Builder blocks (Forms category): **Sign-in button**, **Sign-out button**, and **Signed-in
   section** (shown only to signed-in users, or only to signed-out ones, with the user's name).
 - Custom code: `window.dcms.user.current()`, `.signIn(returnUrl)`, `.signOut()`.
-- The site API client: `api.siteUser()`, `api.siteSignInUrl()`, `api.siteSignOutUrl()`.
+- The site API client: `api.siteUser()`, `api.siteSignInUrl()`, `api.siteSignOutUrl()`,
+  `api.siteAccess(paths)`; `ApiError.signInRequired` for a session that ended under an open app.
+- A role permission from the site: the generated client's `api.{user-auth instance}.access.check({ permission })`
+  and `.listPermissions()` (`users.access@1`).
 - The edge's own endpoints on every protected site: `/.edge/site/signin?returnUrl=…`,
-  `/.edge/site/signout`, `/.edge/site/me`.
+  `/.edge/site/signout`, `/.edge/site/me`, `/.edge/site/access?path=…` (allow / signin /
+  forbidden / unavailable per path). Refusals of API calls, at the edge and by API access, are
+  `application/problem+json` with `error` = `signin_required` or `forbidden` and a `signInUrl`.
 
 ## Automation and the assistant
 
@@ -68,6 +116,7 @@ pages need it, and what they may do with the workspace's apps once in. The desig
 | --- | --- |
 | A site rule | Every edge at once; at worst within 2 minutes. |
 | A role or a grant | The user's next request. |
+| An instance's API access | Within 10 seconds. |
 | A user's groups, disabling them, "sign out everywhere" | Within 10 minutes (their next token). |
 | A domain added to or removed from a site | Within 5 minutes. |
 

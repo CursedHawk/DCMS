@@ -299,6 +299,28 @@ not, name, email, group ids.
   (content-api), a platform session never satisfies a realm (identity), a tenant's rules never
   apply to another host (edge), and the realm API refuses every client but one.
 
+### Single-page apps (2026-10-08)
+
+The first React site behind rules showed what path rules cannot do: a rule on
+`/audio-library-1/track` refused the direct load, while clicking there inside the app worked —
+the navigation was no request, and the page's data came from `/api/audio-library-1/track`,
+covered only by the `/` rule. Decided:
+
+- **Data is gated where it is served.** `userauth.api_rules` restricts one plugin instance's site
+  API — its own routes, content delivery, config and site contracts, i.e. every endpoint whose
+  route starts `/api/{slug}` — to any signed-in user or to `{plugin}:{slug}:api:read|write`
+  (contracts judged by the operation's risk, not the POST). content-api checks the endpoint
+  routing matched, not the path text, so no spelling (`/API/…`, an instance id for the slug)
+  reaches it unchecked. Search and tags drop restricted instances the caller cannot read; on the
+  site plane a call content-api did not check (the chat hub, the bot in the background) reads
+  none of them, and the admin plane hides nothing.
+- **The app asks the edge, the edge answers with its own decision.** `/.edge/site/access` runs
+  the gate's `Decide`; the runtimes' route guards act on it by leaving the app for a real page
+  load, so the edge's sign-in and 403 page are the only UI and can never disagree.
+- **Not attempted:** gating the bundle per route (it is one artifact), protecting media by URL,
+  and one rule language for pages and APIs. The console states these limits where rules are
+  edited, and warns when the `/assets` rule would leave people a blank page.
+
 ## Consequences
 
 - **Identity grows a second user population.** Isolation is enforced structurally (separate
