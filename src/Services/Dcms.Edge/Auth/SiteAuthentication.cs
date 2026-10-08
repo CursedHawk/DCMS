@@ -258,15 +258,52 @@ public static class SiteAuthentication
                     context.Response.ContentType = "text/html; charset=utf-8";
                     await context.Response.WriteAsync(DeniedPage(session!));
                 }
+                else
+                {
+                    await RefuseAsync(context, "forbidden");
+                }
                 return;
             case SiteGateOutcome.Unavailable:
                 context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 return;
             default:
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                await RefuseAsync(context, "signin_required");
                 return;
         }
     });
+
+    /// <summary>
+    /// An API call the gate refused, in the shape content-api's API access answers in, so a
+    /// single-page app handles both alike: sign in again (<c>signin_required</c>) or not for you.
+    /// </summary>
+    private static Task RefuseAsync(HttpContext context, string error) =>
+        context.Response.WriteAsJsonAsync(
+            new { type = "about:blank", title = error == "forbidden" ? "You don't have access to this." : "Sign in to use this.",
+                status = context.Response.StatusCode, error, signInUrl = "/.edge/site/signin" },
+            options: null, contentType: "application/problem+json");
+
+    /// <summary>What a single-page app may ask about a path: the gate's own answer, so its route guard never disagrees with it.</summary>
+    public static string AccessOf(SiteGateEntry? gate, string path, SiteSession? session, bool sitesEnabled)
+    {
+        if (gate is null)
+        {
+            return "allow";
+        }
+        // A router's location may carry its query or hash; the gate judges the path.
+        path = path.Split('?', '#')[0];
+        if (SiteGateRules.IsAmbiguous(path))
+        {
+            return "forbidden";
+        }
+        return Decide(gate, path, session, sitesEnabled, pageLoad: true) switch
+        {
+            SiteGateOutcome.Pass => "allow",
+            SiteGateOutcome.Challenge or SiteGateOutcome.Unauthorized => "signin",
+            SiteGateOutcome.Unavailable => "unavailable",
+            _ => "forbidden",
+        };
+    }
 
     /// <summary>
     /// What the gate does with one request: let it through, send a page load to sign in, refuse
@@ -382,6 +419,28 @@ public static class SiteAuthentication
             await context.SignOutAsync(CookieScheme);
             // And the realm's own sign-in at identity, so the next "Sign in" asks again.
             return Results.SignOut(new AuthenticationProperties { RedirectUri = "/" }, [OidcScheme]);
+        });
+
+        // A single-page app's route guard: may this visitor open these paths? Asked before the
+        // app draws a route, since its own navigation never reaches the gate. UX, not security:
+        // the gate and content-api's API access still decide every real request.
+        app.MapGet("/.edge/site/access", async (HttpContext context, string[]? path) =>
+        {
+            var gates = context.RequestServices.GetRequiredService<SiteGates>();
+            if (!gates.Loaded)
+            {
+                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            }
+            var paths = (path ?? []).Distinct(StringComparer.Ordinal).ToList();
+            if (paths.Count is 0 or > 50 || paths.Any(p => p.Length is 0 or > 2048 || p[0] != '/'))
+            {
+                return Results.BadRequest(new { error = "Ask about 1 to 50 paths, each starting with /." });
+            }
+            var auth = context.RequestServices.GetRequiredService<IOptions<EdgeAuthOptions>>().Value;
+            var gate = Gate(context);
+            var session = gate is not null && auth.SitesEnabled ? await CurrentAsync(context, gate, auth) : null;
+            context.Response.Headers.CacheControl = "no-store";
+            return Results.Ok(paths.ToDictionary(p => p, p => AccessOf(gate, p, session, auth.SitesEnabled), StringComparer.Ordinal));
         });
 
         app.MapGet("/.edge/site/me", async (HttpContext context) =>

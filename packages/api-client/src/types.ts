@@ -96,6 +96,12 @@ export interface VisitorTokens {
 }
 
 /** An enterprise user signed in to the site (User Authentication), as the edge knows them. */
+/**
+ * The site's access rules on one path: open it, sign in first, not for this visitor, or the site
+ * cannot sign anyone in right now.
+ */
+export type SiteAccess = 'allow' | 'signin' | 'forbidden' | 'unavailable';
+
 export interface SiteUser {
   name: string | null;
   email: string | null;

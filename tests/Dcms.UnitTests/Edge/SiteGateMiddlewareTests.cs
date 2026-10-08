@@ -89,3 +89,43 @@ public class SiteGateMiddlewareTests
         return context.Response.StatusCode;
     }
 }
+
+/// <summary>
+/// <c>/.edge/site/access</c>, a single-page app's route guard (ADR 0022): the gate's own decision
+/// for a path, as a word, so the guard can never disagree with what a direct load would get.
+/// </summary>
+public class SiteAccessDecisionTests
+{
+    private static readonly Guid Staff = Guid.NewGuid();
+
+    private static readonly SiteGateEntry Corp = new(Guid.NewGuid(), "corp",
+    [
+        new SiteRule("/portal/news", SiteAccess.Public),
+        new SiteRule("/portal/admin", SiteAccess.Groups, [Staff]),
+        new SiteRule("/portal", SiteAccess.SignedIn),
+    ]);
+
+    private static SiteSession As(params Guid[] groups) =>
+        new(Corp.TenantId, "u", null, null, groups, "a", "r", DateTimeOffset.UtcNow.AddMinutes(5));
+
+    [Theory]
+    [InlineData("/", null, "allow")]
+    [InlineData("/portal/news/today?x=1", null, "allow")]
+    [InlineData("/portal", null, "signin")]
+    [InlineData("/portal/x#top", null, "signin")]
+    [InlineData("/portal_x.html", null, "signin")]
+    [InlineData("/portal/admin", "member", "allow")]
+    [InlineData("/portal/admin", "outsider", "forbidden")]
+    [InlineData("/portal%2Fadmin", "member", "forbidden")]
+    public void Answers_as_the_gate_would(string path, string? who, string expected) =>
+        SiteAuthentication.AccessOf(Corp, path, who switch { "member" => As(Staff), "outsider" => As(), _ => null }, sitesEnabled: true)
+            .Should().Be(expected);
+
+    [Fact]
+    public void A_host_without_rules_is_open() =>
+        SiteAuthentication.AccessOf(null, "/anything", null, sitesEnabled: true).Should().Be("allow");
+
+    [Fact]
+    public void Rules_the_edge_cannot_sign_anyone_in_for_are_unavailable() =>
+        SiteAuthentication.AccessOf(Corp, "/portal", null, sitesEnabled: false).Should().Be("unavailable");
+}

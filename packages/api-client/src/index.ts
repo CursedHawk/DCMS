@@ -22,6 +22,7 @@ import type {
   PagedResult,
   SearchParams,
   SearchResult,
+  SiteAccess,
   SiteUser,
   SubmissionResult,
   TagIndex,
@@ -46,6 +47,15 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = 'ApiError';
+  }
+
+  /**
+   * Whether this is a site's "sign in first" — a 401 from the edge's path rules or an instance's
+   * API access (User Authentication), e.g. once a session has ended under a long-open app. Send
+   * the visitor to `siteSignInUrl()`, which brings them back to the page they were on.
+   */
+  get signInRequired(): boolean {
+    return this.status === 401 && (this.body as { error?: unknown } | undefined)?.error === 'signin_required';
   }
 }
 
@@ -102,6 +112,12 @@ export interface HttpCore {
   siteSignInUrl(returnUrl?: string): string;
   /** Where to send someone to sign out. Pure. */
   siteSignOutUrl(): string;
+  /**
+   * What the site's access rules say about each path for this visitor — the edge's own decision,
+   * for a single-page app's route guard (its navigation never reaches the rules). UX only: the
+   * server still decides every real request. All "allow" when the site has no rules.
+   */
+  siteAccess(paths: string[]): Promise<Record<string, SiteAccess>>;
 }
 
 export interface VisitorAuthApi {
@@ -237,6 +253,15 @@ export function createHttpCore(options: TenantClientOptions = {}): HttpCore {
     },
     siteSignOutUrl(): string {
       return url('/.edge/site/signout');
+    },
+    async siteAccess(paths: string[]): Promise<Record<string, SiteAccess>> {
+      const query = new URLSearchParams();
+      for (const path of paths) query.append('path', path);
+      const res = await fetchImpl(url(`/.edge/site/access?${query}`), { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      // Not behind the edge (a dev server elsewhere): there are no rules to ask.
+      if (res.status === 404) return Object.fromEntries(paths.map((p) => [p, 'allow' as const]));
+      if (!res.ok) throw new ApiError(res.status, res.url, `site access check failed: ${res.status}`, await safeBody(res));
+      return (await res.json()) as Record<string, SiteAccess>;
     },
     visitorAuth(slug: string): VisitorAuthApi {
       return {
