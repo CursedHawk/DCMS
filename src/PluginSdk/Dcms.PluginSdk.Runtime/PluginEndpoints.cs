@@ -36,6 +36,19 @@ public static class PluginEndpoints
         return root;
     }
 
+    /// <summary>
+    /// Every plugin's <see cref="IPluginRequestGate"/>, in registration order. Place after
+    /// authentication: a gate sees the request's tenant, user and routed endpoint.
+    /// </summary>
+    public static IApplicationBuilder UseDcmsPluginGates(this IApplicationBuilder app)
+    {
+        foreach (var gate in app.ApplicationServices.GetServices<IPluginRequestGate>())
+        {
+            app.Use(next => http => gate.InvokeAsync(http, next));
+        }
+        return app;
+    }
+
     /// <summary>Each plugin's <see cref="IPlugin.MapHostEndpoints"/>: routes outside any instance prefix.</summary>
     public static IEndpointRouteBuilder MapDcmsPluginHostEndpoints(this IEndpointRouteBuilder app)
     {

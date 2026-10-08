@@ -76,6 +76,11 @@ public sealed class UserAuthPlugin : IPlugin
         // On both planes: the contracts read the request's user wherever they are called. Only
         // the edge ever sets the header, and only on a tenant site's requests.
         services.AddUserAuthentication(host.Configuration);
+        if (host.IsSite)
+        {
+            // API access: every instance's /api/{slug}, before its endpoint runs.
+            services.AddSingleton<IPluginRequestGate, UserApiAccess>();
+        }
         if (host.IsAdmin)
         {
             // The site rules the edge enforces: published on every change, reconciled every few

@@ -5,7 +5,6 @@ using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Kernel.Abstractions;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
@@ -21,11 +20,12 @@ namespace Dcms.Plugins.UserAuth;
 /// its route changes never reach the edge, but its data always comes through here.
 /// </summary>
 /// <remarks>
-/// Mapped by content-api after authentication. A tenant with no rules costs one cached lookup.
+/// A request gate (<see cref="IPluginRequestGate"/>) on the site plane: content-api runs it after
+/// authentication, with the endpoint routed. A tenant with no rules costs one cached lookup.
 /// Also leaves on the request which restricted instances the caller may read
 /// (<see cref="ApiRuleVisibility.ReadableItem"/>), for search and tags, which read across instances.
 /// </remarks>
-public static class UserApiAccess
+public sealed class UserApiAccess : IPluginRequestGate
 {
     public const string SignInPath = "/.edge/site/signin";
 
@@ -38,16 +38,16 @@ public static class UserApiAccess
     /// <summary><c>{plugin}:{slug}:api:read</c> for reads, <c>…:api:write</c> for everything else.</summary>
     public static string Permission(string pluginId, string slug, bool write) => $"{pluginId}:{slug}:api:{(write ? "write" : "read")}";
 
-    public static IApplicationBuilder UseUserApiAccess(this IApplicationBuilder app) => app.Use(async (http, next) =>
+    public async Task InvokeAsync(HttpContext http, RequestDelegate next)
     {
         if (http.RequestServices.GetRequiredService<ITenantContext>().TenantId is not { } tenantId)
         {
-            await next();
+            await next(http);
             return;
         }
         if (await RulesAsync(http, tenantId) is not { Count: > 0 } rules)
         {
-            await next();
+            await next(http);
             return;
         }
 
@@ -68,7 +68,7 @@ public static class UserApiAccess
                                            || string.Equals(i.InstanceId.ToString(), slug, StringComparison.OrdinalIgnoreCase)) is not { } instance
             || !rules.TryGetValue(instance.InstanceId, out var rule))
         {
-            await next();
+            await next(http);
             return;
         }
         if (permissions is null)
@@ -87,8 +87,8 @@ public static class UserApiAccess
             http.Response.Headers.CacheControl = "private, no-store";
             return Task.CompletedTask;
         });
-        await next();
-    });
+        await next(http);
+    }
 
     private static bool Allows(ApiAccess access, IReadOnlySet<string>? permissions, PluginInstanceContext instance, bool write) =>
         permissions is not null
