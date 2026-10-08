@@ -64,7 +64,22 @@
     "remove": "Odebrat pravidlo",
     "noGroups": "Nejdřív vytvořte skupiny na obrazovce Uživatelé.",
     "access": { "public": "Kdokoli", "signedIn": "Kdokoli přihlášený", "groups": "Členové skupin…" },
+    "spa": {
+      "notice": "Tento web je jednostránková aplikace. Jeho pravidla chrání stránky načtené přímo; přechody mezi stránkami uvnitř aplikace k nim nikdy nedojdou. Data, která tyto stránky čtou, chraňte v přístupu k API.",
+      "instance": "Stránky pod /{{slug}} čtou API {{name}}:",
+      "restrict": "Vyžadovat přihlášení pro jeho API",
+      "assets": "Lidé vpuštění pravidly {{paths}} nenačtou samotnou aplikaci: její kód pod /assets kryje přísnější pravidlo, takže uvidí prázdnou stránku.",
+      "assetsFix": "Přidat /assets na začátek: {{access}}"
+    },
     "empty": { "title": "Zatím žádné weby", "description": "Vytvořte web a dejte mu doménu; pak určíte, které stránky vyžadují přihlášení." }
+  },
+  "api": {
+    "tab": "Přístup k API",
+    "intro": "Kdo smí volat API jednotlivých pluginů pro web, /api/…: data za vašimi stránkami, ať se ptá kterákoli stránka nebo aplikace. To chrání jednostránkovou aplikaci, jejíž vlastní navigace na pravidla webu nikdy nenarazí. Instance nastavená na oprávnění vyžaduje roli s jejím oprávněním ke čtení nebo zápisu.",
+    "empty": "Žádný povolený plugin nemá API pro web.",
+    "accessFor": "Přístup k API pro {{name}}",
+    "permissions": "Role udělují:",
+    "access": { "public": "Kdokoli", "signedIn": "Kdokoli přihlášený", "permission": "Oprávnění role" }
   },
   "roles": {
     "tab": "Role",

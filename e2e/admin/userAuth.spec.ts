@@ -4,7 +4,8 @@ import * as data from '../fixtures/data';
 /**
  * The User Authentication screens (docs/adr/0022) in the real console against a mocked server:
  * inviting someone hands back the link for when mail does not arrive; a site's rules are saved
- * whole and in order; a provider's secret is sent only when typed.
+ * whole and in order; a provider's secret is sent only when typed; a single-page app's rules
+ * point at the API access its data needs, and at an /assets rule that would leave people a blank page.
  */
 
 test.use({
@@ -28,8 +29,20 @@ const PAT = {
   hasPassword: true, lockedOut: false, createdAt: '2026-10-07T10:00:00Z', lastSignInAt: null,
 };
 const SITE = {
-  id: 'ffffffff-0000-0000-0000-000000000001', name: 'Intranet', hosts: [{ hostname: 'intranet.corp.test', verified: true }],
+  id: 'ffffffff-0000-0000-0000-000000000001', name: 'Intranet', spa: false, hosts: [{ hostname: 'intranet.corp.test', verified: true }],
   rules: [{ prefix: '/portal', access: 'signedIn', groups: [] }],
+};
+const ADMINS = { id: 'eeeeeeee-0000-0000-0000-000000000009', name: 'Admins', description: null, members: 1 };
+const APP = {
+  id: 'ffffffff-0000-0000-0000-000000000002', name: 'Library', spa: true, hosts: [{ hostname: 'library.corp.test', verified: true }],
+  rules: [
+    { prefix: '/audio-library-1/track', access: 'groups', groups: [STAFF.id] },
+    { prefix: '/', access: 'groups', groups: [ADMINS.id] },
+  ],
+};
+const LIBRARY = {
+  instanceId: 'cccccccc-0000-0000-0000-0000000000a1', slug: 'audio-library-1', name: 'Audio library', plugin: 'audio-library',
+  access: 'public', readPermission: 'audio-library:audio-library-1:api:read', writePermission: 'audio-library:audio-library-1:api:write',
 };
 const ENTRA = {
   key: 'entra', kind: 'entra', displayName: 'Microsoft', enabled: true, clientId: 'app-id', hasSecret: true, issuer: null,
@@ -68,6 +81,7 @@ test.beforeEach(async ({ api }) => {
     .on('GET', '/api/admin/plugins/users/roles', [])
     .on('GET', '/api/admin/plugins/users/resources', [])
     .on('GET', '/api/admin/plugins/users/sites', [SITE])
+    .on('GET', '/api/admin/plugins/users/api-access', [LIBRARY])
     .on('GET', '/api/admin/plugins/users/providers', [ENTRA]);
 });
 
@@ -129,4 +143,47 @@ test("a provider's stored secret is kept unless a new one is typed", async ({ pa
   expect(api.requestsTo('PUT', '/api/admin/plugins/users/providers/entra')[0]!.body).toMatchObject({
     kind: 'entra', displayName: 'Microsoft 365', clientId: 'app-id', clientSecret: null, entraTenant: 'corp.test',
   });
+});
+
+test("a single-page app's rules point at its data's API access and at an /assets rule that would leave a blank page", async ({ page, api }) => {
+  api
+    .on('GET', '/api/admin/plugins/users/sites', [APP])
+    .on('GET', '/api/admin/plugins/users/groups', [STAFF, ADMINS])
+    .on('PUT', `/api/admin/plugins/users/api-access/${LIBRARY.instanceId}`, {})
+    .on('PUT', `/api/admin/plugins/users/sites/${APP.id}/rules`, {});
+  await page.goto('/plugins/users/access');
+
+  await expect(page.getByText(/single-page app/)).toBeVisible();
+  await page.getByRole('button', { name: 'Require sign-in for its API' }).click();
+  await expect.poll(() => api.requestsTo('PUT', `/api/admin/plugins/users/api-access/${LIBRARY.instanceId}`).length).toBe(1);
+  expect(api.requestsTo('PUT', `/api/admin/plugins/users/api-access/${LIBRARY.instanceId}`)[0]!.body).toEqual({ access: 'signedIn' });
+
+  await expect(page.getByText(/can't load the app itself/)).toBeVisible();
+  await page.getByRole('button', { name: /Add \/assets first/ }).click();
+  await expect(page.getByText(/can't load the app itself/)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect.poll(() => api.requestsTo('PUT', `/api/admin/plugins/users/sites/${APP.id}/rules`).length).toBe(1);
+  expect(api.requestsTo('PUT', `/api/admin/plugins/users/sites/${APP.id}/rules`)[0]!.body).toEqual([
+    { prefix: '/assets', access: 'groups', groups: [ADMINS.id, STAFF.id] },
+    ...APP.rules,
+  ]);
+});
+
+test("an instance's API access is set, and a permission level names the permissions roles grant", async ({ page, api }) => {
+  let current = LIBRARY;
+  api
+    .on('GET', '/api/admin/plugins/users/api-access', () => [current])
+    .on('PUT', `/api/admin/plugins/users/api-access/${LIBRARY.instanceId}`, () => {
+      current = { ...LIBRARY, access: 'permission' };
+      return {};
+    });
+  await page.goto('/plugins/users/access');
+  await page.getByRole('tab', { name: 'API access' }).click();
+
+  await expect(page.getByText('/api/audio-library-1')).toBeVisible();
+  await page.getByRole('combobox', { name: 'API access for Audio library' }).click();
+  await page.getByRole('option', { name: 'Role permission' }).click();
+
+  await expect(page.getByText('audio-library:audio-library-1:api:read')).toBeVisible();
+  expect(api.requestsTo('PUT', `/api/admin/plugins/users/api-access/${LIBRARY.instanceId}`)[0]!.body).toEqual({ access: 'permission' });
 });

@@ -332,13 +332,15 @@ internal static partial class UserAuthAdminEndpoints
         // The tenant's sites with the hostnames rules apply on, and each site's rules in order.
         endpoints.MapGet("/sites", async (SitesDbContext sites, TenancyDbContext tenancy, UserAuthDbContext db, CancellationToken ct) =>
             {
-                var list = await sites.Sites.AsNoTracking().OrderBy(s => s.Name).Select(s => new { s.Id, s.Name }).ToListAsync(ct);
+                var list = await sites.Sites.AsNoTracking().OrderBy(s => s.Name).Select(s => new { s.Id, s.Name, s.RenderMode }).ToListAsync(ct);
                 var domains = await tenancy.Domains.AsNoTracking().Where(d => d.SiteId != null)
                     .Select(d => new { d.SiteId, d.Hostname, verified = d.VerifiedAt != null }).ToListAsync(ct);
                 var gates = await db.Gates.AsNoTracking().OrderBy(g => g.Position).ToListAsync(ct);
                 return Results.Ok(list.Select(s => new
                 {
                     s.Id, s.Name,
+                    // A single-page app: its route changes never reach the edge, so its rules guard direct loads only.
+                    spa = s.RenderMode.IsViteApp(),
                     hosts = domains.Where(d => d.SiteId == s.Id).Select(d => new { d.Hostname, d.verified }),
                     rules = gates.Where(g => g.SiteId == s.Id).Select(g => new { prefix = g.PathPrefix, access = Camel(g.Access), g.Groups }),
                 }));

@@ -64,7 +64,22 @@
     "remove": "Remove rule",
     "noGroups": "Create groups first, on the Users screen.",
     "access": { "public": "Anyone", "signedIn": "Any signed-in user", "groups": "Members of groups…" },
+    "spa": {
+      "notice": "This site is a single-page app. Its rules guard pages loaded directly; moving between pages inside the app never reaches them. Protect the data those pages read under API access.",
+      "instance": "Pages under /{{slug}} read {{name}}'s API:",
+      "restrict": "Require sign-in for its API",
+      "assets": "People let in by {{paths}} can't load the app itself: its code under /assets is covered by a stricter rule, so they'd see a blank page.",
+      "assetsFix": "Add /assets first: {{access}}"
+    },
     "empty": { "title": "No sites yet", "description": "Create a site and give it a domain; then you can decide which of its pages need signing in." }
+  },
+  "api": {
+    "tab": "API access",
+    "intro": "Who may call each plugin's site API, /api/…: the data behind your pages, whichever page or app asks. This is what protects a single-page app, whose own navigation never meets the site rules. An instance set to permission needs a role holding its read or write permission.",
+    "empty": "No plugins with a site API are enabled.",
+    "accessFor": "API access for {{name}}",
+    "permissions": "Roles grant:",
+    "access": { "public": "Anyone", "signedIn": "Any signed-in user", "permission": "Role permission" }
   },
   "roles": {
     "tab": "Roles",

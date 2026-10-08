@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Globe, KeyRound, Lock, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, Globe, KeyRound, Lock, Plus, ShieldCheck, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Badge,
@@ -28,10 +28,13 @@ import {
 import { useCan, usePluginApi, usePluginT } from '@dcms/plugin-ui';
 import {
   type Access,
+  type ApiAccess,
   type Group,
+  type InstanceApiAccess,
   type Role,
   type Rule,
   displayName,
+  useApiAccess,
   useGroups,
   usePath,
   useResources,
@@ -40,11 +43,13 @@ import {
   useUsers,
   useWrite,
 } from './api';
+import { assetsConflict, instancesBehind, withFirst } from './ruleChecks';
 import { GroupChecklist } from './UsersScreen';
 
 /**
- * Who may reach what (manifest screen "access"): roles — bundles of site permissions given to
- * groups or users — and each site's path rules, which the edge enforces before a page is served.
+ * Who may reach what (manifest screen "access"): each site's path rules, which the edge enforces
+ * before a page is served; each plugin instance's API access, which content-api enforces on its
+ * data whatever page asked; and roles — bundles of site permissions given to groups or users.
  */
 export function AccessScreen() {
   const { t } = usePluginT();
@@ -52,10 +57,14 @@ export function AccessScreen() {
     <Tabs defaultValue="sites" className="space-y-4">
       <TabsList>
         <TabsTrigger value="sites">{t('sites.tab')}</TabsTrigger>
+        <TabsTrigger value="api">{t('api.tab')}</TabsTrigger>
         <TabsTrigger value="roles">{t('roles.tab')}</TabsTrigger>
       </TabsList>
       <TabsContent value="sites">
         <SitesTab />
+      </TabsContent>
+      <TabsContent value="api">
+        <ApiTab />
       </TabsContent>
       <TabsContent value="roles">
         <RolesTab />
@@ -108,12 +117,12 @@ function SitesTab() {
           )}
         </div>
       </div>
-      {site ? <RulesEditor key={site.id} siteId={site.id} saved={site.rules} groups={groups.data ?? []} /> : null}
+      {site ? <RulesEditor key={site.id} siteId={site.id} spa={site.spa} saved={site.rules} groups={groups.data ?? []} /> : null}
     </div>
   );
 }
 
-function RulesEditor({ siteId, saved, groups }: { siteId: string; saved: Rule[]; groups: Group[] }) {
+function RulesEditor({ siteId, spa, saved, groups }: { siteId: string; spa: boolean; saved: Rule[]; groups: Group[] }) {
   const { t } = usePluginT();
   const api = usePluginApi();
   const path = usePath();
@@ -132,6 +141,7 @@ function RulesEditor({ siteId, saved, groups }: { siteId: string; saved: Rule[];
   return (
     <Card className="space-y-4 p-4">
       <p className="text-sm text-muted-foreground">{t('sites.intro')}</p>
+      {spa ? <SpaNotice rules={rules} canEdit={canEdit} onFix={setRules} /> : null}
       {rules.length === 0 ? <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{t('sites.noRules')}</p> : null}
       <ol className="space-y-3">
         {rules.map((rule, i) => (
@@ -198,6 +208,104 @@ function RulesEditor({ siteId, saved, groups }: { siteId: string; saved: Rule[];
           </div>
         </div>
       ) : null}
+    </Card>
+  );
+}
+
+/**
+ * A single-page app's caveats, where the rules are edited: they guard direct loads, not the app's
+ * own navigation, so its data needs API access too; and its code is one bundle under /assets.
+ */
+function SpaNotice({ rules, canEdit, onFix }: { rules: Rule[]; canEdit: boolean; onFix: (rules: Rule[]) => void }) {
+  const { t } = usePluginT();
+  const api = usePluginApi();
+  const path = usePath();
+  const instances = useApiAccess();
+  const restrict = useWrite((i: InstanceApiAccess) => api.put(path(`/api-access/${i.instanceId}`), { access: 'signedIn' }));
+  const behind = instancesBehind(rules, instances.data ?? []);
+  const conflict = assetsConflict(rules);
+  return (
+    <div className="space-y-2">
+      <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <p className="flex items-start gap-2">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden /> {t('sites.spa.notice')}
+        </p>
+        {behind.map((i) => (
+          <div key={i.instanceId} className="flex flex-wrap items-center gap-2 pl-6">
+            <span>{t('sites.spa.instance', { name: i.name, slug: i.slug })}</span>
+            <Badge tone={i.access === 'public' ? 'warning' : 'outline'}>{t(`api.access.${i.access}`)}</Badge>
+            {canEdit && i.access === 'public' ? (
+              <Button size="sm" variant="outline" disabled={restrict.isPending} onClick={() => restrict.mutate(i)}>
+                {t('sites.spa.restrict')}
+              </Button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      {conflict ? (
+        <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          <p className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+            {t('sites.spa.assets', { paths: conflict.affected.map((r) => r.prefix).join(', ') })}
+          </p>
+          {canEdit ? (
+            <Button size="sm" variant="outline" className="ml-6" onClick={() => onFix(withFirst(rules, conflict.fix))}>
+              {t('sites.spa.assetsFix', { access: t(`sites.access.${conflict.fix.access}`) })}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---- API access --------------------------------------------------------------------------------
+
+function ApiTab() {
+  const { t } = usePluginT();
+  const api = usePluginApi();
+  const path = usePath();
+  const canEdit = useCan('access-manage');
+  const instances = useApiAccess();
+  const set = useWrite((args: { instance: InstanceApiAccess; access: ApiAccess }) =>
+    api.put(path(`/api-access/${args.instance.instanceId}`), { access: args.access }));
+
+  if (instances.isLoading) return null;
+  return (
+    <Card className="space-y-4 p-4">
+      <p className="text-sm text-muted-foreground">{t('api.intro')}</p>
+      {instances.data?.length === 0 ? <p className="text-sm text-muted-foreground">{t('api.empty')}</p> : null}
+      <ul className="divide-y">
+        {instances.data?.map((i) => (
+          <li key={i.instanceId} className="flex flex-wrap items-center gap-3 py-3">
+            <div className="min-w-48 flex-1">
+              <div className="font-medium">{i.name}</div>
+              <div className="font-mono text-xs text-muted-foreground">/api/{i.slug}</div>
+            </div>
+            <Select
+              value={i.access}
+              disabled={!canEdit || set.isPending}
+              onValueChange={(access) => set.mutate({ instance: i, access: access as ApiAccess })}
+            >
+              <SelectTrigger className="w-64" aria-label={t('api.accessFor', { name: i.name })}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(['public', 'signedIn', 'permission'] as const).map((a) => (
+                  <SelectItem key={a} value={a}>
+                    {t(`api.access.${a}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {i.access === 'permission' ? (
+              <p className="basis-full text-xs text-muted-foreground">
+                {t('api.permissions')} <code className="font-mono">{i.readPermission}</code> · <code className="font-mono">{i.writePermission}</code>
+              </p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }

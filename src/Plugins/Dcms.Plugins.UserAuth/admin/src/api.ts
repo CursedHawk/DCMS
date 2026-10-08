@@ -113,8 +113,23 @@ export interface Rule {
 export interface SiteWithRules {
   id: string;
   name: string;
+  /** A single-page app (React): its route changes never reach the edge, so rules guard direct loads only. */
+  spa: boolean;
   hosts: { hostname: string; verified: boolean }[];
   rules: Rule[];
+}
+
+export type ApiAccess = 'public' | 'signedIn' | 'permission';
+
+/** Who may call one plugin instance's site API, /api/{slug}. */
+export interface InstanceApiAccess {
+  instanceId: string;
+  slug: string;
+  name: string;
+  plugin: string;
+  access: ApiAccess;
+  readPermission: string;
+  writePermission: string;
 }
 
 /** `/admin/plugins/{slug}{path}` of the instance this screen belongs to. */
@@ -169,6 +184,12 @@ export function useSites() {
   const api = usePluginApi();
   const path = usePath();
   return useQuery({ queryKey: ['user-auth', 'sites'], queryFn: () => api.get<SiteWithRules[]>(path('/sites')) });
+}
+
+export function useApiAccess() {
+  const api = usePluginApi();
+  const path = usePath();
+  return useQuery({ queryKey: ['user-auth', 'api-access'], queryFn: () => api.get<InstanceApiAccess[]>(path('/api-access')) });
 }
 
 /**
