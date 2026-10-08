@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Tenancy;
+using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Storage;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -56,6 +57,12 @@ public class HlsServingTests : IAsyncLifetime
             await tenancy.Database.MigrateAsync();
             tenancy.Tenants.Add(new Tenant { Id = _tenantId.ToString(), Identifier = Slug, Name = "HLS" });
             await tenancy.SaveChangesAsync();
+        }
+        // content-api reads every tenant's API access rules (ADR 0022) before any route.
+        await using (var userAuth = new UserAuthDbContext(new DbContextOptionsBuilder<UserAuthDbContext>()
+            .UseNpgsql(conn, o => o.MigrationsHistoryTable("__ef_migrations_history", UserAuthDbContext.Schema)).Options, new NullCtx()))
+        {
+            await userAuth.Database.MigrateAsync();
         }
         await using (var media = new MediaDbContext(
             new DbContextOptionsBuilder<MediaDbContext>().UseNpgsql(conn).Options, new FixedCtx(_tenantId)))

@@ -1,5 +1,7 @@
+using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Shared.Caching;
 using Dcms.Shared.Data.Cms;
+using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Kernel.Abstractions;
 
 namespace Dcms.ContentApi.Delivery;
@@ -14,7 +16,8 @@ namespace Dcms.ContentApi.Delivery;
 /// half, which is *what tags exist and which collections to ask*.
 ///
 /// Published content only. This is the public delivery API: a draft's tags are
-/// as unpublished as the draft.
+/// as unpublished as the draft. Nor does it name collections of an instance the caller's API
+/// access refuses (<see cref="ApiRuleVisibility"/>).
 /// </summary>
 public static class TagDeliveryEndpoints
 {
@@ -28,7 +31,7 @@ public static class TagDeliveryEndpoints
     {
         app.MapGet("/api/tags", async (
             string? contentType, string? field, ITenantContext tenant, CmsDbContext db,
-            ICacheService cache, CancellationToken ct) =>
+            ICacheService cache, UserAuthDbContext userAuth, PluginContextFactory plugins, HttpContext http, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
             {
@@ -65,6 +68,19 @@ public static class TagDeliveryEndpoints
                     .ToList();
 
                 await cache.SetAsync(key, cached, Ttl, ct);
+            }
+
+            // Filtered per caller after the shared cache: the index is the tenant's, what is shown is theirs.
+            var hidden = await ApiRuleVisibility.HiddenAsync(userAuth, tenantId, http, sitePlane: true, ct);
+            if (hidden.Count > 0)
+            {
+                var slugs = (await plugins.EnabledInstancesAsync(tenantId, ct))
+                    .Where(i => hidden.Contains(i.InstanceId)).Select(i => i.Slug).ToHashSet(StringComparer.Ordinal);
+                cached = cached
+                    .Select(t => t with { Occurrences = t.Occurrences.Where(o => !slugs.Contains(o.Instance)).ToList() })
+                    .Where(t => t.Occurrences.Count > 0)
+                    .Select(t => t with { Count = t.Occurrences.Sum(o => o.Count) })
+                    .ToList();
             }
 
             return Results.Ok(new { items = cached, totalCount = cached.Count });

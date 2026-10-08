@@ -112,6 +112,7 @@ public static class RlsConfigurator
         ("userauth", "roles"),
         ("userauth", "grants"),
         ("userauth", "gates"),
+        ("userauth", "api_rules"),
     ];
 
     /// <summary>

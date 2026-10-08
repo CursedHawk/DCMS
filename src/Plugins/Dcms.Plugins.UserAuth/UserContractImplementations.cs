@@ -44,7 +44,7 @@ public sealed class UserVisitorIdentity(IHttpContextAccessor http) : IVisitorIde
 /// </summary>
 public sealed class UserAccess(IHttpContextAccessor http, IPluginContext context, UserAuthDbContext db) : IUserAccess
 {
-    private const string PermissionsItem = "dcms.user-auth.permissions";
+    internal const string PermissionsItem = "dcms.user-auth.permissions";
 
     public async Task<AccessDecision> CheckAsync(PermissionCheck input, CancellationToken ct) =>
         new(SitePermission.IsValid(input.Permission) && (await PermissionsAsync(ct)).Contains(input.Permission));

@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Dcms.Plugins.UserAuth.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Shared.Contracts.Realms;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
@@ -20,6 +21,9 @@ public sealed record RoleWrite(string Key, string Name, string? Description, IRe
 
 /// <param name="SubjectType"><c>group</c> or <c>user</c>.</param>
 public sealed record GrantWrite(string SubjectType, Guid SubjectId);
+
+/// <param name="Access"><c>public</c>, <c>signedIn</c> or <c>permission</c>.</param>
+public sealed record ApiAccessWrite(string Access);
 
 /// <param name="Access"><c>public</c>, <c>signedIn</c> or <c>groups</c>.</param>
 public sealed record GateWrite(string Prefix, string Access, IReadOnlyList<Guid>? Groups);
@@ -242,16 +246,86 @@ internal static partial class UserAuthAdminEndpoints
             .AuditAs("role.revoked");
 
         // What roles can hold: every enabled plugin's gateable resources (users.resources@1).
-        endpoints.MapGet("/resources", async (IPluginContext context, CancellationToken ct) =>
+        endpoints.MapGet("/resources", async (IPluginContext context, PluginContextFactory plugins, UserAuthDbContext db, CancellationToken ct) =>
             {
                 var catalogs = new List<UserResourceCatalog>();
                 foreach (var provider in context.Contracts.GetAll<IUserResources>())
                 {
                     catalogs.Add(await provider.ListAsync(ct));
                 }
+                // And the site API of every instance whose API access asks for a permission.
+                var byPermission = await db.ApiRules.Where(r => r.Access == ApiAccess.Permission).Select(r => r.InstanceId).ToListAsync(ct);
+                foreach (var instance in (await plugins.EnabledInstancesAsync(context.TenantId, ct)).Where(i => byPermission.Contains(i.InstanceId)))
+                {
+                    var api = new UserResource("api", "Site API", [new UserResourceAction("read", "Read"), new UserResourceAction("write", "Write")]);
+                    var index = catalogs.FindIndex(c => c.Plugin == instance.PluginId && c.Instance == instance.Slug);
+                    if (index >= 0)
+                    {
+                        catalogs[index] = catalogs[index] with { Resources = [.. catalogs[index].Resources, api] };
+                    }
+                    else
+                    {
+                        catalogs.Add(new UserResourceCatalog(instance.PluginId, instance.Slug, instance.Name, [api]));
+                    }
+                }
                 return Results.Ok(catalogs.OrderBy(c => c.Label, StringComparer.CurrentCultureIgnoreCase));
             })
             .RequirePluginPermission("users-read");
+
+        // ---- API access: who may call each instance's /api/{slug} ----
+
+        endpoints.MapGet("/api-access", async (IPluginContext context, PluginContextFactory plugins, UserAuthDbContext db, CancellationToken ct) =>
+            {
+                var rules = await db.ApiRules.AsNoTracking().ToDictionaryAsync(r => r.InstanceId, r => r.Access, ct);
+                return Results.Ok((await plugins.EnabledInstancesAsync(context.TenantId, ct))
+                    .Where(i => i.PluginId != UserAuthPlugin.PluginId)
+                    .OrderBy(i => i.Name, StringComparer.CurrentCultureIgnoreCase)
+                    .Select(i => new
+                    {
+                        instanceId = i.InstanceId, i.Slug, i.Name, plugin = i.PluginId,
+                        access = rules.TryGetValue(i.InstanceId, out var access) ? Camel(access) : "public",
+                        readPermission = UserApiAccess.Permission(i.PluginId, i.Slug, write: false),
+                        writePermission = UserApiAccess.Permission(i.PluginId, i.Slug, write: true),
+                    }));
+            })
+            .RequirePluginPermission("users-read");
+
+        endpoints.MapPut("/api-access/{instanceId:guid}", async (Guid instanceId, ApiAccessWrite body, IPluginContext context,
+                PluginContextFactory plugins, UserAuthDbContext db, CancellationToken ct) =>
+            {
+                var instance = (await plugins.EnabledInstancesAsync(context.TenantId, ct)).FirstOrDefault(i => i.InstanceId == instanceId);
+                if (instance is null || instance.PluginId == UserAuthPlugin.PluginId)
+                {
+                    return Results.NotFound();
+                }
+                var isPublic = string.Equals(body.Access, "public", StringComparison.OrdinalIgnoreCase);
+                var access = ApiAccess.SignedIn;
+                if (!isPublic && (!Enum.TryParse(body.Access, ignoreCase: true, out access) || !Enum.IsDefined(access)))
+                {
+                    return Results.BadRequest(new { error = $"'{body.Access}' is not an API access level (public, signedIn, permission)." });
+                }
+                var rule = await db.ApiRules.FirstOrDefaultAsync(r => r.InstanceId == instanceId, ct);
+                if (isPublic)
+                {
+                    if (rule is not null)
+                    {
+                        db.ApiRules.Remove(rule);
+                    }
+                }
+                else if (rule is null)
+                {
+                    db.ApiRules.Add(new ApiRule { Id = Guid.NewGuid(), TenantId = context.TenantId, InstanceId = instanceId, Access = access });
+                }
+                else
+                {
+                    rule.Access = access;
+                    rule.UpdatedAt = DateTimeOffset.UtcNow;
+                }
+                await db.SaveChangesAsync(ct);
+                return Results.NoContent();
+            })
+            .RequirePluginPermission("access-manage")
+            .AuditAs("api_access.updated");
 
         // ---- site rules ----
 

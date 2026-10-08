@@ -356,7 +356,8 @@ public sealed class TenantDeleter(
         await SweepAsync(userAuth, manifest, ct,
             ("userauth.Grants", () => userAuth.Grants.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("userauth.Roles", () => userAuth.Roles.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
-            ("userauth.Gates", () => userAuth.Gates.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
+            ("userauth.Gates", () => userAuth.Gates.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("userauth.ApiRules", () => userAuth.ApiRules.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         await SweepAsync(search, manifest, ct,
             ("search.Documents", () => search.Documents.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));

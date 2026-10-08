@@ -1,8 +1,12 @@
+using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Search;
+using Dcms.Shared.Data.UserAuth;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.PluginSdk.Runtime.Platform;
 
@@ -10,8 +14,10 @@ namespace Dcms.PluginSdk.Runtime.Platform;
 /// <see cref="IPluginSearch"/> over <c>search.search_documents</c> (Postgres full text,
 /// <c>websearch_to_tsquery</c>). Scoped by the caller's tenant explicitly, since callers such as
 /// the chatbot run with no request behind them.
+/// Leaves out instances the tenant restricted to site users who the caller is not
+/// (<see cref="ApiRuleVisibility"/>): a search must not show what the instance's own API refuses.
 /// </summary>
-public sealed class PluginSearch(IPluginContext caller, SearchDbContext search) : IPluginSearch
+public sealed class PluginSearch(IPluginContext caller, SearchDbContext search, IServiceProvider services) : IPluginSearch
 {
     public const int MaxLimit = 50;
     public const int MaxBodyChars = 2000;
@@ -30,11 +36,17 @@ public sealed class PluginSearch(IPluginContext caller, SearchDbContext search) 
         var take = Math.Clamp(input.Limit, 1, MaxLimit);
         var bodyChars = Math.Clamp(input.BodyChars, 0, MaxBodyChars);
 
+        var hidden = services.GetService<UserAuthDbContext>() is { } userAuth
+            ? await ApiRuleVisibility.HiddenAsync(userAuth, caller.TenantId, services.GetService<IHttpContextAccessor>()?.HttpContext,
+                sitePlane: services.GetService<PluginHost>()?.IsSite ?? true, ct)
+            : [];
+
         using var rls = RlsScope.Tenant(caller.TenantId);
         // EF.Functions.* must stay inside the expression (it throws if invoked directly), so the
         // tsquery is rebuilt inline rather than hoisted to a local.
         var query = search.Documents.IgnoreQueryFilters().AsNoTracking()
             .Where(d => d.TenantId == caller.TenantId
+                        && !hidden.Contains(d.PluginInstanceId)
                         && d.SearchVector.Matches(EF.Functions.WebSearchToTsQuery("simple", q)));
 
         long? total = input.IncludeTotal ? await query.LongCountAsync(ct) : null;

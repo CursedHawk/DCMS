@@ -1,5 +1,6 @@
 using Dcms.ContentApi.Delivery;
 using Dcms.ContentApi.Plugins;
+using Dcms.Plugins.UserAuth;
 using Dcms.PluginSdk.Runtime;
 using Dcms.PluginSdk.Runtime.Platform;
 using Dcms.Plugins.All;
@@ -143,6 +144,8 @@ app.UseDcmsAudit();
 app.UseMultiTenant();
 app.UseAuthentication();
 app.UseAuthorization();
+// Plugin instances a tenant restricted to its site users (ADR 0022): before any /api/{slug} route.
+app.UseUserApiAccess();
 app.MapDcmsDefaultEndpoints();
 app.MapDcmsPlugins();
 app.MapPluginConfig();

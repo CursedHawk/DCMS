@@ -78,6 +78,30 @@ public sealed class SiteGate : TenantEntity
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public enum ApiAccess
+{
+    /// <summary>Any signed-in user of the tenant's realm.</summary>
+    SignedIn,
+
+    /// <summary>
+    /// Reads need <c>{plugin}:{instance}:api:read</c>, every other method <c>…:api:write</c>,
+    /// held through a role.
+    /// </summary>
+    Permission,
+}
+
+/// <summary>
+/// Who may call one plugin instance's site API, <c>/api/{slug}/…</c> — its own routes, its
+/// content delivery and its site contracts (ADR 0022). An instance with no rule is public. This
+/// is what protects a single-page app's data: its routes never reach the edge's path rules.
+/// </summary>
+public sealed class ApiRule : TenantEntity
+{
+    public Guid InstanceId { get; set; }
+    public ApiAccess Access { get; set; } = ApiAccess.SignedIn;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 /// <summary>Owns the "userauth" schema: the User Authentication plugin's access policy (ADR 0022).</summary>
 public class UserAuthDbContext(DbContextOptions<UserAuthDbContext> options, ITenantContext tenantContext) : DbContext(options)
 {
@@ -89,6 +113,7 @@ public class UserAuthDbContext(DbContextOptions<UserAuthDbContext> options, ITen
     public DbSet<UserRole> Roles => Set<UserRole>();
     public DbSet<UserGrant> Grants => Set<UserGrant>();
     public DbSet<SiteGate> Gates => Set<SiteGate>();
+    public DbSet<ApiRule> ApiRules => Set<ApiRule>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -129,6 +154,15 @@ public class UserAuthDbContext(DbContextOptions<UserAuthDbContext> options, ITen
             e.HasIndex(g => new { g.TenantId, g.SiteId, g.PathPrefix }).IsUnique();
             e.HasIndex(g => new { g.TenantId, g.SiteId, g.Position });
             e.HasQueryFilter(g => g.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<ApiRule>(e =>
+        {
+            e.ToTable("api_rules");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.Access).HasConversion<string>().HasMaxLength(16);
+            e.HasIndex(r => new { r.TenantId, r.InstanceId }).IsUnique();
+            e.HasQueryFilter(r => r.TenantId == CurrentTenantId);
         });
     }
 }
