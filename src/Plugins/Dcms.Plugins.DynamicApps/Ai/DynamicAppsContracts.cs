@@ -237,6 +237,7 @@ internal sealed class DynamicAppsContracts : IDynamicAppsConfig, IDynamicAppsRec
         if (access.Create) parts.Add("create");
         if (access.UpdateOwn) parts.Add("updateOwn");
         if (access.DeleteOwn) parts.Add("deleteOwn");
+        if (access.Rules.Count > 0) parts.Add($"rules:{access.Rules.Count}");
         return string.Join(" ", parts);
     }
 

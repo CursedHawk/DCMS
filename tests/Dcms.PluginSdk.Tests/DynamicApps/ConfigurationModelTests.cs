@@ -61,6 +61,27 @@ public sealed class ConfigurationModelTests
     // ------------------------------------------------------------------ applying change sets
 
     [Fact]
+    public void Row_rules_must_follow_real_relationships_to_a_testable_field_of_something_a_user_has()
+    {
+        var config = Build(Crm + "");
+        string Rule(string rule) => $$"""[ { "op": "update", "type": "table", "target": "contacts", "value": { "public": { "rules": [ {{rule}} ] } } } ]""";
+        Errors(Build(Rule("""{ "path": ["company"], "field": "name", "matches": "user.email" }"""), config)).Should().BeEmpty();
+        Errors(Build(Rule("""{ "path": [], "field": "status", "matches": "user.attribute.team-1", "update": true }"""), config)).Should().BeEmpty();
+
+        Errors(Build(Rule("""{ "path": ["employer"], "field": "name", "matches": "user.email" }"""), config)).Should().Contain("invalid-rule", "no such relationship");
+        Errors(Build(Rule("""{ "path": ["company", "contacts", "company", "contacts"], "field": "email", "matches": "user.email" }"""), config))
+            .Should().Contain("invalid-rule", "at most three hops");
+        Errors(Build(Rule("""{ "path": ["company"], "field": "nope", "matches": "user.email" }"""), config)).Should().Contain("invalid-rule");
+        Errors(Build(Rule("""{ "path": [], "field": "email", "matches": "user.role" }"""), config)).Should().Contain("invalid-rule");
+        Errors(Build(Rule("""{ "path": [], "field": "email", "matches": "user.email", "read": false }"""), config)).Should().Contain("invalid-rule", "it grants nothing");
+
+        // A rule reading a table the site may write lets the site decide who gets in.
+        var writable = Build("""[ { "op": "update", "type": "table", "target": "companies", "value": { "public": { "create": true } } } ]""",
+            Build(Rule("""{ "path": ["company"], "field": "name", "matches": "user.email" }"""), config));
+        ConfigValidator.Validate(writable).Should().Contain(i => i.Code == "rule-writable" && i.Severity == IssueSeverity.Warning);
+    }
+
+    [Fact]
     public void A_change_set_resolves_api_names_to_ids_and_builds_a_valid_app()
     {
         var config = Build(Crm);

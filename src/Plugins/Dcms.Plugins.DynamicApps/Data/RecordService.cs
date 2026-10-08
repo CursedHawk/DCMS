@@ -10,6 +10,7 @@ using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using NpgsqlTypes;
 using DeleteBehavior = Dcms.Plugins.DynamicApps.Api.Model.DeleteBehavior;
 
 namespace Dcms.Plugins.DynamicApps.Data;
@@ -45,6 +46,9 @@ public sealed class RecordService(
     /// </summary>
     public Guid? Visitor { get; set; }
 
+    /// <summary>The signed-in user as the tables' row rules see them; set with <see cref="Visitor"/>.</summary>
+    public RowSubject? Subject { get; set; }
+
     /// <summary>
     /// What the signed-in enterprise user may do here beyond the public access (ADR 0022): their
     /// site permissions on this app, set by the public routes from <c>users.access@1</c>, without
@@ -52,6 +56,9 @@ public sealed class RecordService(
     /// public access for that action and table, and reaches every record, not only their own.
     /// </summary>
     public IReadOnlySet<string> Members { get; set; } = new HashSet<string>();
+
+    // Numbers each scoped query's parameters apart, should two ever be composed into one command.
+    private int _scopes;
 
     private bool Member(RuntimeTable table, PublicOp op) =>
         Members.Contains($"table:{table.ApiName}:{op.ToString().ToLowerInvariant()}");
@@ -72,7 +79,7 @@ public sealed class RecordService(
         // Raw SQL by construction: QueryCompiler writes only its own identifiers and operators,
         // and every value — field keys included — is a parameter. Nothing the caller sent is in
         // these strings; the limit and offset are integers it validated.
-        var compiled = new QueryCompiler(model, table, plane).Compile(query, context.TenantId, InstanceId, OwnerFilter(table, plane));
+        var compiled = new QueryCompiler(model, table, plane).Compile(query, context.TenantId, InstanceId, Scope(model, table, plane, PublicOp.Read));
         var pageSql = $"""
             SELECT r.* FROM apps.records r WHERE {compiled.Where}
             ORDER BY {compiled.OrderBy} LIMIT {compiled.Limit} OFFSET {compiled.Offset}
@@ -102,7 +109,7 @@ public sealed class RecordService(
                 throw new ContractValidationException($"'{name}' is not a lookup of {table.ApiName}; only lookups expand.");
             }
         }
-        var record = await Records(table, plane).AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
+        var record = await Records(model, table, plane).AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
         if (record is null)
         {
             return null;
@@ -126,7 +133,7 @@ public sealed class RecordService(
         }
         pageSize = Math.Clamp(pageSize, 1, QueryCompiler.MaxPageSize);
         page = Math.Max(page, 1);
-        var record = await Records(table, plane).AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
+        var record = await Records(model, table, plane).AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
         if (record is null)
         {
             return null;
@@ -138,17 +145,17 @@ public sealed class RecordService(
             case NavigationKind.Lookup:
                 var target = (JsonNode.Parse(record.Data)?[nav.Relationship.Id.ToString()] as JsonValue)?.GetValue<string>();
                 var targetId = Guid.TryParse(target, out var t) ? t : Guid.Empty;
-                related = Records(other, plane).Where(r => r.Id == targetId);
+                related = Records(model, other, plane).Where(r => r.Id == targetId);
                 break;
             case NavigationKind.Inverse:
-                related = Records(other, plane).Where(r => EF.Functions.JsonContains(r.Data, Pointer(nav.Relationship.Id, id)));
+                related = Records(model, other, plane).Where(r => EF.Functions.JsonContains(r.Data, Pointer(nav.Relationship.Id, id)));
                 break;
             default:
                 var links = db.RelationLinks.Where(l => l.InstanceId == InstanceId && l.RelationshipId == nav.Relationship.Id);
                 var ids = nav.FromSource
                     ? links.Where(l => l.SourceId == id).Select(l => l.TargetId)
                     : links.Where(l => l.TargetId == id).Select(l => l.SourceId);
-                related = Records(other, plane).Where(r => ids.Contains(r.Id));
+                related = Records(model, other, plane).Where(r => ids.Contains(r.Id));
                 break;
         }
         var total = await related.CountAsync(ct);
@@ -167,7 +174,7 @@ public sealed class RecordService(
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
         var write = RecordCodec.Write(table, values, null, plane);
-        await CheckLookupsAsync(model, table, write.Data, write.Changed, ct);
+        await CheckLookupsAsync(model, table, write.Data, write.Changed, plane, ct);
         var now = clock.GetUtcNow();
         var record = new AppRecord
         {
@@ -202,7 +209,7 @@ public sealed class RecordService(
         using var activity = Span("dcms.dynamicapp.mutation", model, table, "update");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-        var record = await Records(table, plane, PublicOp.Update).FirstOrDefaultAsync(r => r.Id == id, ct);
+        var record = await Records(model, table, plane, PublicOp.Update).FirstOrDefaultAsync(r => r.Id == id, ct);
         if (record is null)
         {
             return null;
@@ -223,7 +230,7 @@ public sealed class RecordService(
         using var activity = Span("dcms.dynamicapp.mutation", model, table, "delete");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-        var record = await Records(table, plane, PublicOp.Delete).FirstOrDefaultAsync(r => r.Id == id, ct);
+        var record = await Records(model, table, plane, PublicOp.Delete).FirstOrDefaultAsync(r => r.Id == id, ct);
         if (record is null)
         {
             return false;
@@ -353,7 +360,7 @@ public sealed class RecordService(
         {
             return;
         }
-        await CheckLookupsAsync(model, table, write.Data, write.Changed, ct);
+        await CheckLookupsAsync(model, table, write.Data, write.Changed, plane, ct);
         record.Data = write.Data.ToJsonString();
         record.Version++;
         record.UpdatedAt = clock.GetUtcNow();
@@ -444,7 +451,7 @@ public sealed class RecordService(
     }
 
     /// <summary>Every lookup the write changed points at an existing record of its target table.</summary>
-    private async Task CheckLookupsAsync(RuntimeModel model, RuntimeTable table, JsonObject data, IReadOnlyList<string> changed, CancellationToken ct)
+    private async Task CheckLookupsAsync(RuntimeModel model, RuntimeTable table, JsonObject data, IReadOnlyList<string> changed, RecordPlane plane, CancellationToken ct)
     {
         var errors = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var member in table.Members.Where(m => m.IsLookup && changed.Contains(m.ApiName)))
@@ -453,8 +460,10 @@ public sealed class RecordService(
             {
                 continue;
             }
+            // From the site, a lookup may only point at a record the caller can read there: else a
+            // row rule that follows it would let them file records under, say, any company.
             if (!model.ById.TryGetValue(member.Lookup!.TargetTableId, out var targetTable)
-                || !await Records(targetTable).AnyAsync(r => r.Id == target, ct))
+                || !await (Readable(targetTable, plane) ? Records(model, targetTable, plane) : Records(targetTable)).AnyAsync(r => r.Id == target, ct))
             {
                 errors[member.ApiName] = $"there is no {(targetTable?.ApiName ?? "target")} record {target}.";
             }
@@ -519,7 +528,7 @@ public sealed class RecordService(
             }
             var ids = rows.Select(r => (JsonNode.Parse(r.Data)?[member.Key] as JsonValue)?.GetValue<string>())
                 .Where(s => s is not null).Select(s => Guid.Parse(s!)).Distinct().ToList();
-            var targets = await Records(target, plane).AsNoTracking().Where(r => ids.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
+            var targets = await Records(model, target, plane).AsNoTracking().Where(r => ids.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
             foreach (var item in items)
             {
                 if (item[name] is JsonValue v && Guid.TryParse(v.GetValue<string>(), out var id) && targets.TryGetValue(id, out var hit))
@@ -553,34 +562,88 @@ public sealed class RecordService(
         return db.Records.Where(r => r.InstanceId == instanceId && r.TableId == table.Id);
     }
 
-    /// <summary>
-    /// The records the plane may <paramref name="op"/>; on the public site a change, or a read of
-    /// an "own" table, reaches only the visitor's own — unless they hold that action as a member.
-    /// </summary>
-    private IQueryable<AppRecord> Records(RuntimeTable table, RecordPlane plane, PublicOp op = PublicOp.Read)
+    /// <summary>The records the plane may <paramref name="op"/>: on the public site, what <see cref="Scope"/> leaves.</summary>
+    private IQueryable<AppRecord> Records(RuntimeModel model, RuntimeTable table, RecordPlane plane, PublicOp op = PublicOp.Read)
     {
         var records = Records(table);
-        var owned = op is PublicOp.Update or PublicOp.Delete || table.Def.Public.Read == PublicRead.Own;
-        if (plane == RecordPlane.Public && owned && !Member(table, op))
+        if (Scope(model, table, plane, op) is not { } scope)
         {
-            var visitor = Visitor;
-            records = records.Where(r => visitor != null && r.OwnerVisitorId == visitor);
+            return records;
         }
-        return records;
+        // Raw SQL by construction: RowRules writes only its own identifiers, every value is a
+        // parameter. Named apart from the parameters EF adds to the query it is composed into.
+        var parameters = new List<NpgsqlParameter>();
+        var prefix = $"rs{++_scopes}_";
+        string Parameter(object value, NpgsqlDbType type)
+        {
+            var p = new NpgsqlParameter($"{prefix}{parameters.Count}", type) { Value = value };
+            parameters.Add(p);
+            return "@" + p.ParameterName;
+        }
+        var sql = $"""
+            SELECT r.* FROM apps.records r WHERE r."InstanceId" = {Parameter(InstanceId, NpgsqlDbType.Uuid)}
+            AND r."TableId" = {Parameter(table.Id, NpgsqlDbType.Uuid)} AND {scope(Parameter)}
+            """;
+        var reachable = db.Records.FromSqlRaw(sql, parameters.ToArray())
+            .IgnoreQueryFilters() // only ids come out, matched against Records(table), which keeps the tenant filter
+            .Select(r => r.Id);
+        return records.Where(r => reachable.Contains(r.Id));
     }
 
-    private Guid? OwnerFilter(RuntimeTable table, RecordPlane plane) =>
-        plane == RecordPlane.Public && table.Def.Public.Read == PublicRead.Own && !Member(table, PublicOp.Read) ? Visitor : null;
+    /// <summary>
+    /// Which of a table's records the public site may <paramref name="op"/>, as SQL over alias
+    /// <c>r</c>; null when it may reach them all. Records the visitor owns, where the table's
+    /// own-record access allows, and those a row rule granting the action matches for the
+    /// signed-in user. A member holding the action reaches every record.
+    /// </summary>
+    private SqlWriter? Scope(RuntimeModel model, RuntimeTable table, RecordPlane plane, PublicOp op)
+    {
+        var access = table.Def.Public;
+        if (plane != RecordPlane.Public || Member(table, op) || (op == PublicOp.Read && access.Read == PublicRead.All))
+        {
+            return null;
+        }
+        var own = op switch
+        {
+            PublicOp.Read => access.Read == PublicRead.Own,
+            PublicOp.Update => access.UpdateOwn,
+            PublicOp.Delete => access.DeleteOwn,
+            _ => false,
+        };
+        var rules = access.Rules.Where(r => Grants(r, op)).ToList();
+        var (visitor, subject) = (Visitor, Subject);
+        return parameter =>
+        {
+            var terms = new List<string>();
+            if (own && visitor is { } v)
+            {
+                terms.Add($"""r."OwnerVisitorId" = {parameter(v, NpgsqlDbType.Uuid)}""");
+            }
+            if (subject is not null)
+            {
+                terms.AddRange(rules.Select(rule => RowRules.Sql(model, table, rule, subject, "r", parameter)));
+            }
+            return terms.Count == 0 ? "FALSE" : "(" + string.Join(" OR ", terms) + ")";
+        };
+    }
+
+    private static bool Grants(RowRule rule, PublicOp op) => op switch
+    {
+        PublicOp.Read => rule.Read,
+        PublicOp.Update => rule.Update,
+        PublicOp.Delete => rule.Delete,
+        _ => false,
+    };
 
     private bool Readable(RuntimeTable table, RecordPlane plane) =>
-        plane != RecordPlane.Public || table.Def.Public.Read != PublicRead.None || Member(table, PublicOp.Read);
+        plane != RecordPlane.Public || PublicApi.Readable(table) || Member(table, PublicOp.Read);
 
     private enum PublicOp { Read, Create, Update, Delete }
 
     /// <summary>
     /// What the public site may do with a table, decided by its public access. A table it may
     /// not read does not exist as far as the site can tell (404); one it may read but not write
-    /// says so (403); "own" access without a signed-in visitor asks for one (401).
+    /// says so (403); "own" or rule access without a signed-in visitor asks for one (401).
     /// </summary>
     private void Allow(RuntimeTable table, PublicOp op)
     {
@@ -590,13 +653,13 @@ public sealed class RecordService(
         }
         var access = table.Def.Public;
         // What the caller can see of the table decides how a refusal reads: 404 hides it, 403 does not.
-        var readable = access.Read != PublicRead.None || Member(table, PublicOp.Read);
+        var readable = Readable(table, RecordPlane.Public);
         var allowed = op switch
         {
             PublicOp.Read => readable,
             PublicOp.Create => access.Create,
-            PublicOp.Update => access.UpdateOwn,
-            _ => access.DeleteOwn,
+            PublicOp.Update => access.UpdateOwn || access.Rules.Any(r => r.Update),
+            _ => access.DeleteOwn || access.Rules.Any(r => r.Delete),
         };
         if (!allowed)
         {
@@ -604,7 +667,7 @@ public sealed class RecordService(
                 ? new PublicAccessException(403, $"The site may not {op.ToString().ToLowerInvariant()} {table.ApiName} records.")
                 : new PublicAccessException(404, $"There is no table '{table.ApiName}'.");
         }
-        var needsVisitor = op is PublicOp.Update or PublicOp.Delete || (op == PublicOp.Read && access.Read == PublicRead.Own);
+        var needsVisitor = op is PublicOp.Update or PublicOp.Delete || (op == PublicOp.Read && access.Read != PublicRead.All);
         if (needsVisitor && Visitor is null)
         {
             throw new PublicAccessException(401, $"Sign in to {op.ToString().ToLowerInvariant()} your {table.ApiName} records.");

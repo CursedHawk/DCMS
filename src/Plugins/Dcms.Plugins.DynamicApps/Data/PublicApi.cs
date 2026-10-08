@@ -12,7 +12,19 @@ namespace Dcms.Plugins.DynamicApps.Data;
 public static class PublicApi
 {
     public static IEnumerable<RuntimeTable> Tables(RuntimeModel model) =>
-        model.ByName.Values.Where(t => t.Def.Public.Read != PublicRead.None || t.Def.Public.Create).OrderBy(t => t.ApiName, StringComparer.Ordinal);
+        model.ByName.Values.Where(t => Readable(t) || Updatable(t) || Deletable(t) || t.Def.Public.Create).OrderBy(t => t.ApiName, StringComparer.Ordinal);
+
+    /// <summary>Some of the site may read some of the table: everyone, the visitor their own, or whoever a row rule matches.</summary>
+    public static bool Readable(RuntimeTable table) => table.Def.Public.Read != PublicRead.None || table.Def.Public.Rules.Any(r => r.Read);
+
+    public static bool Updatable(RuntimeTable table) => table.Def.Public.UpdateOwn || table.Def.Public.Rules.Any(r => r.Update);
+
+    public static bool Deletable(RuntimeTable table) => table.Def.Public.DeleteOwn || table.Def.Public.Rules.Any(r => r.Delete);
+
+    // Says that rules apply, never what they test: those name tables and fields the site may not see.
+    private static string Reach(RuntimeTable table, string own) =>
+        (table.Def.Public.Read == PublicRead.Own ? own : "")
+        + (table.Def.Public.Rules.Count > 0 ? " Only records the app's row access rules give the signed-in user." : "");
 
     private static IEnumerable<RuntimeMember> Visible(RuntimeTable table) =>
         table.Members.Where(m => RecordCodec.Visible(m, RecordPlane.Public));
@@ -39,6 +51,7 @@ public static class PublicApi
                 ["create"] = t.Def.Public.Create,
                 ["updateOwn"] = t.Def.Public.UpdateOwn,
                 ["deleteOwn"] = t.Def.Public.DeleteOwn,
+                ["rowRules"] = t.Def.Public.Rules.Count > 0,
             },
             ["fields"] = new JsonArray(Visible(t).Select(m => (JsonNode)new JsonObject
             {
@@ -51,7 +64,7 @@ public static class PublicApi
                 ["options"] = m.Options is { } options ? new JsonArray(options.Select(o => (JsonNode)o).ToArray()) : null,
             }).ToArray()),
             ["relationships"] = new JsonArray(t.Navigations.Values
-                .Where(n => model.ById.TryGetValue(n.OtherTableId, out var other) && other.Def.Public.Read != PublicRead.None)
+                .Where(n => model.ById.TryGetValue(n.OtherTableId, out var other) && Readable(other))
                 .Select(n => (JsonNode)new JsonObject
                 {
                     ["apiName"] = n.ApiName,
@@ -85,9 +98,9 @@ public static class PublicApi
             var access = table.Def.Public;
             var label = table.Def.PluralName ?? table.Def.DisplayName;
 
-            if (access.Read != PublicRead.None)
+            if (Readable(table))
             {
-                var own = access.Read == PublicRead.Own ? " Only the signed-in visitor's own records." : "";
+                var own = access.Read == PublicRead.All ? "" : Reach(table, " Only the signed-in visitor's own records.");
                 paths.Add(new OpenApiPathFragment($"/data/{name}", "get", $"{slug}_{name}_list", $"List {label}",
                     Describe($"A page of {label}.{own} `sort` is a field name, `-` first for descending; `select` and `expand` are comma-separated."),
                     Ref(page), Parameters: ListParameters(), ClientPath: [name, "list"], Extensions: revision));
@@ -97,7 +110,7 @@ public static class PublicApi
                 paths.Add(new OpenApiPathFragment($"/data/{name}/{{id}}", "get", $"{slug}_{name}_get", $"Get one {table.Def.DisplayName}",
                     Describe($"One {table.Def.DisplayName} by id.{own}"),
                     Ref(record), Parameters: [IdParameter(), ExpandParameter()], ClientPath: [name, "get"], Extensions: revision));
-                foreach (var nav in table.Navigations.Values.Where(n => model.ById.TryGetValue(n.OtherTableId, out var o) && o.Def.Public.Read != PublicRead.None))
+                foreach (var nav in table.Navigations.Values.Where(n => model.ById.TryGetValue(n.OtherTableId, out var o) && Readable(o)))
                 {
                     var other = model.ById[nav.OtherTableId];
                     paths.Add(new OpenApiPathFragment($"/data/{name}/{{id}}/{nav.ApiName}", "get", $"{slug}_{name}_{nav.ApiName}",
@@ -113,16 +126,16 @@ public static class PublicApi
                     Describe($"Create a {table.Def.DisplayName}. A signed-in visitor becomes its owner."),
                     Ref(record), RequestBodySchema: Ref(input), SuccessStatus: "201", ClientPath: [name, "create"], Extensions: revision));
             }
-            if (access.UpdateOwn)
+            if (Updatable(table))
             {
                 paths.Add(new OpenApiPathFragment($"/data/{name}/{{id}}", "patch", $"{slug}_{name}_update", $"Update your {table.Def.DisplayName}",
-                    Describe($"Change fields of one of the signed-in visitor's own {label}. Send `version` to refuse a stale write."),
+                    Describe($"Change fields of one of {label} the signed-in user may change: their own, or one the row access rules give them. Send `version` to refuse a stale write."),
                     Ref(record), RequestBodySchema: Ref($"{input}_patch"), Parameters: [IdParameter()], ClientPath: [name, "update"], Extensions: revision));
             }
-            if (access.DeleteOwn)
+            if (Deletable(table))
             {
                 paths.Add(new OpenApiPathFragment($"/data/{name}/{{id}}", "delete", $"{slug}_{name}_delete", $"Delete your {table.Def.DisplayName}",
-                    Describe($"Delete one of the signed-in visitor's own {label}."),
+                    Describe($"Delete one of {label} the signed-in user may delete: their own, or one the row access rules give them."),
                     null, Parameters: [IdParameter()], SuccessStatus: "204", ClientPath: [name, "delete"], Extensions: revision));
             }
         }

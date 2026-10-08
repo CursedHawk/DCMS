@@ -98,6 +98,8 @@ public sealed class DynamicAppsPlugin : IPlugin
             ContractRequirement.Of<IVisitorIdentity>(optional: true),
             // What a signed-in enterprise user holds on this app beyond its public access.
             ContractRequirement.Of<IUserAccess>(optional: true),
+            // A signed-in enterprise user's groups, for row rules matching user.groups.
+            ContractRequirement.Of<IUserIdentity>(optional: true),
             // Flows trigger on user.invited and user.activated.
             ContractRequirement.Of<IUserDirectory>(optional: true),
             // Flows trigger on form.submitted and read what was sent.

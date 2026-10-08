@@ -247,7 +247,28 @@
     "apiHint": "Revision {{revision}}. Signed-in site visitors own what they create.",
     "notPublished": "Publish the app to get a public API.",
     "nothingPublic": "No table is open to the site.",
-    "openapi": "API reference (OpenAPI)"
+    "openapi": "API reference (OpenAPI)",
+    "rules": {
+      "badge": "row rules",
+      "title": "Row access rules",
+      "hint": "A signed-in user also reaches each record a rule matches for them: follow the relationships from the record, and the field there must hold their id, email, one of their groups or a profile attribute. Keep the tables a rule reads admin-only.",
+      "add": "Add rule",
+      "remove": "Remove",
+      "through": "then via",
+      "here": "— stop here —",
+      "field": "Field of {{table}}",
+      "matches": "holds the user's",
+      "attribute": "Attribute key",
+      "read": "read",
+      "update": "change",
+      "delete": "delete",
+      "subject": {
+        "user_id": "user id",
+        "user_email": "email",
+        "user_groups": "group (any)",
+        "user_attribute": "profile attribute"
+      }
+    }
   },
   "revisions": {
     "status": "Status",

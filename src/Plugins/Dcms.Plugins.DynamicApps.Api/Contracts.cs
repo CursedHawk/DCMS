@@ -135,7 +135,14 @@ public interface IDynamicAppsConfig
             + "becomes multiChoice the same way. When a new field or relationship replaces a live field, give it copyFrom: the old field's api "
             + "name (e.g. relationship company with copyFrom: 'company_id'), and delete the old field in the same change set; publishing copies "
             + "the values that fit (existing record ids for a lookup, options for a choice) and reports the rest. Table public: "
-            + "{read: none|all|own, create, updateOwn, deleteOwn}. Flow: {apiName, displayName, trigger: {event, tableId?, changedFields?, everyMinutes?}, "
+            + "{read: none|all|own, create, updateOwn, deleteOwn, rules?}. Row-level access for signed-in site users is rules: "
+            + "[{path: [navigation api names, at most 3], field, matches: user.id|user.email|user.groups|user.attribute.{key}, read?: true, "
+            + "update?, delete?}] — a record is reachable by a user when, following path from it, field (text, email, choice or multiChoice) "
+            + "holds that value of theirs (case-insensitive); rules add to read/own, so keep read: none for rule-only tables. For per-record "
+            + "permissions model a permission table, e.g. company_access {company → companies (inverseApiName 'access'), user_email: email} "
+            + "with companies rules [{path: ['access'], field: 'user_email', matches: 'user.email'}] and activities (lookup company) "
+            + "[{path: ['company', 'access'], field: 'user_email', matches: 'user.email'}]; a group per record is a text field holding the "
+            + "group id with matches 'user.groups'. Never give the site write access to the table a rule reads. Flow: {apiName, displayName, trigger: {event, tableId?, changedFields?, everyMinutes?}, "
             + "condition?, steps: [{id, action: 'records.create@1', input with {{ expressions }}}]}. Api names are lowercase snake_case. "
             + "Returns the changes made and the draft's validation issues; fix errors before publishing.")]
     Task<ApplyChangesResult> ApplyChangeSetAsync(ApplyChangesRequest input, CancellationToken ct);

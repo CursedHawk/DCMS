@@ -247,7 +247,28 @@
     "apiHint": "Revize {{revision}}. Přihlášení návštěvníci webu vlastní, co vytvoří.",
     "notPublished": "Pro veřejné API aplikaci publikujte.",
     "nothingPublic": "Žádná tabulka není pro web otevřená.",
-    "openapi": "Referenční příručka API (OpenAPI)"
+    "openapi": "Referenční příručka API (OpenAPI)",
+    "rules": {
+      "badge": "pravidla řádků",
+      "title": "Pravidla přístupu k řádkům",
+      "hint": "Přihlášený uživatel navíc dosáhne na každý záznam, který pro něj odpovídá některému pravidlu: od záznamu se projdou vazby a pole na jejich konci musí obsahovat jeho id, e-mail, jednu z jeho skupin nebo atribut profilu. Tabulky, které pravidlo čte, nechte jen pro administraci.",
+      "add": "Přidat pravidlo",
+      "remove": "Odebrat",
+      "through": "dále přes",
+      "here": "— zde skončit —",
+      "field": "Pole tabulky {{table}}",
+      "matches": "obsahuje uživatelův",
+      "attribute": "Klíč atributu",
+      "read": "číst",
+      "update": "měnit",
+      "delete": "mazat",
+      "subject": {
+        "user_id": "id uživatele",
+        "user_email": "e-mail",
+        "user_groups": "skupina (kterákoli)",
+        "user_attribute": "atribut profilu"
+      }
+    }
   },
   "revisions": {
     "status": "Stav",

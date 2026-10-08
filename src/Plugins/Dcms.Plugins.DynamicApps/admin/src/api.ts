@@ -42,6 +42,18 @@ export interface PublicAccess {
   create: boolean;
   updateOwn: boolean;
   deleteOwn: boolean;
+  /** Row access: a signed-in user also reaches each record one of these matches for them. */
+  rules?: RowRule[];
+}
+
+/** Follow `path` (navigation api names) from a record; it is the user's when `field` there holds what `matches` names of them. */
+export interface RowRule {
+  path: string[];
+  field: string;
+  matches: string;
+  read: boolean;
+  update: boolean;
+  delete: boolean;
 }
 
 export interface IndexDef {
@@ -365,7 +377,7 @@ export function usePublicModel(slug: string, enabled: boolean) {
   const api = usePluginApi();
   return useQuery({
     queryKey: [rootKey(slug), 'public'],
-    queryFn: () => api.get<{ revision: number; tables: { apiName: string; access: PublicAccess; fields: { apiName: string; type: string }[] }[] }>(
+    queryFn: () => api.get<{ revision: number; tables: { apiName: string; access: PublicAccess & { rowRules?: boolean }; fields: { apiName: string; type: string }[] }[] }>(
       instancePath(slug, '/_model/public')),
     enabled,
     retry: false,

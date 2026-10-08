@@ -122,11 +122,14 @@ internal static class PublicEndpoints
 
     /// <summary>
     /// Says who the visitor is (a VisitorAuth visitor or a User Authentication user, when someone
-    /// is signed in) and what they hold on this app as a member, then runs the call.
+    /// is signed in), what row rules can match for them, and what they hold on this app as a
+    /// member, then runs the call.
     /// </summary>
     private static async Task<IResult> Run(RecordService records, IPluginContext context, CancellationToken ct, Func<Task<IResult>> handler)
     {
-        records.Visitor = (await context.Contracts.CurrentVisitorAsync(ct))?.Id;
+        var visitor = await context.Contracts.CurrentVisitorAsync(ct);
+        records.Visitor = visitor?.Id;
+        records.Subject = visitor is null ? null : new RowSubject(visitor.Id, visitor.Email, await GroupsAsync(context, visitor.Id, ct), visitor.Attributes);
         records.Members = await MemberPermissionsAsync(context, ct);
         try
         {
@@ -138,6 +141,12 @@ internal static class PublicEndpoints
         }
     }
 
+
+    /// <summary>The signed-in enterprise user's groups, for row rules matching <c>user.groups</c>; none for a VisitorAuth visitor.</summary>
+    private static async Task<IReadOnlyList<Guid>> GroupsAsync(IPluginContext context, Guid visitorId, CancellationToken ct) =>
+        context.Contracts.TryGet<IUserIdentity>() is { } identity && (await identity.GetCurrentAsync(ct)).User is { } user && user.Id == visitorId
+            ? user.Groups
+            : [];
 
     /// <summary>
     /// A public write, throttled: anyone may call these, and a table open for creation must not

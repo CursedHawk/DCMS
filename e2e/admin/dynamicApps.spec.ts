@@ -245,3 +245,26 @@ test("a record's choice is changed right in the list, and the list is filtered b
     .some((r) => JSON.stringify((r.body as { filter?: unknown }).filter) === JSON.stringify({ field: 'stage', op: 'in', value: ['won', 'lost'] })))
     .toBe(true);
 });
+
+test('a row access rule is saved as part of the table public access', async ({ page, api }) => {
+  api
+    .on('GET', '/api/admin/plugins/crm/_model/public', { revision: 1, tables: [] })
+    .on('POST', '/api/admin/plugins/crm/_model/draft/changes', { draft: DRAFT, changes: [], issues: [] });
+  await page.goto('/plugins/crm/configuration');
+  await page.getByRole('tab', { name: 'Public access & API' }).click();
+
+  await page.getByRole('button', { name: 'Add rule' }).click();
+  await page.getByLabel('Field of deals').click();
+  await page.getByRole('option', { name: 'title' }).click();
+  await page.getByLabel('change', { exact: true }).last().click();
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/plugins/crm/_model/draft/changes').length).toBe(1);
+  const body = api.requestsTo('POST', '/api/admin/plugins/crm/_model/draft/changes')[0]!.body as {
+    operations: { op: string; type: string; target: string; value: { public: { rules: unknown[] } } }[];
+  };
+  expect(body.operations[0]).toMatchObject({ op: 'update', type: 'table', target: TABLE_ID });
+  expect(body.operations[0]!.value.public.rules).toEqual([
+    { path: [], field: 'title', matches: 'user.email', read: true, update: true, delete: false },
+  ]);
+});

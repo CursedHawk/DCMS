@@ -154,6 +154,39 @@ public sealed record PublicAccess
 
     /// <summary>A signed-in visitor may delete their own records.</summary>
     public bool DeleteOwn { get; init; }
+
+    /// <summary>
+    /// Row access: a signed-in user also reaches each record that one of these rules matches for
+    /// them, on top of <see cref="Read"/> and the own-record flags.
+    /// </summary>
+    public IReadOnlyList<RowRule> Rules { get; init; } = [];
+}
+
+/// <summary>
+/// One row access rule: follow <see cref="Path"/> from the record, and the record is the signed-in
+/// user's to reach when <see cref="Field"/> there holds one of what <see cref="Matches"/> names.
+/// With an empty path the field is the record's own (<c>owner_email</c> = <c>user.email</c>);
+/// through a path it can live in a permission table
+/// (<c>["company", "permissions"]</c>, field <c>user_email</c>), so access is data, not configuration.
+/// </summary>
+public sealed record RowRule
+{
+    /// <summary>Navigation api names followed in order: lookups, their inverses, many-to-many. At most three.</summary>
+    public IReadOnlyList<string> Path { get; init; } = [];
+
+    /// <summary>A text, email, choice or multi-choice field of the table the path ends at.</summary>
+    public string Field { get; init; } = string.Empty;
+
+    /// <summary>
+    /// What of the signed-in user the field must hold: <c>user.id</c>, <c>user.email</c>,
+    /// <c>user.groups</c> (any of their group ids) or <c>user.attribute.{key}</c> (a visitor
+    /// profile attribute shared with plugins). Compared without regard to case.
+    /// </summary>
+    public string Matches { get; init; } = "user.id";
+
+    public bool Read { get; init; } = true;
+    public bool Update { get; init; }
+    public bool Delete { get; init; }
 }
 
 [JsonConverter(typeof(CamelCaseEnumConverter<RelationshipKind>))]

@@ -161,6 +161,21 @@ An action is named with its major version. Its meaning never changes within that
 - **Public access is per table**, on the Access tab. A table can be readable by everyone or
   only for each visitor's own rows. Visitors can also be allowed to create rows, and to update
   or delete their own. Fields marked hidden-from-public never leave the server.
+- **Row access rules** decide, per record, which signed-in users reach it (Access tab, "Row access
+  rules"). A rule follows relationships from the record to a field and matches it against the
+  user's id, email, groups or a profile attribute; it grants read, change and/or delete. Typical
+  setups:
+  - *A permission table.* `company_access` (lookup `company` → companies, inverse `access`;
+    email field `user_email`). Companies get the rule path `access`, field `user_email`, matches
+    `user.email`. Adding or removing a row grants or revokes access at once.
+  - *Inherited access.* Activities (lookup `company`) get path `company` → `access`, same field:
+    an activity is visible exactly when its company is. From the site, a new or changed activity
+    can only point at a company the user can see.
+  - *A group per record.* A text field holding a User Authentication group id, matches
+    `user.groups`.
+
+  Rules add to the table's read/own settings, so leave read on "no access" for rule-only tables,
+  and keep the tables a rule reads admin-only (the validator warns otherwise).
 - **The site API** is `/api/{slug}/data/{table}` on content-api. It is generated from the live
   revision only, and it is in the site's OpenAPI document and generated client.
 - **Public writes are throttled** to 120 an hour per visitor and per IP.

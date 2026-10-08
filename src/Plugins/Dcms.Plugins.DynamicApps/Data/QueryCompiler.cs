@@ -46,8 +46,8 @@ public sealed class QueryCompiler
     }
 
     /// <exception cref="ContractValidationException">The query names something the model does not have, or asks for too much.</exception>
-    /// <param name="ownerVisitorId">When set, only that site visitor's records match (a table's "own" public access).</param>
-    public Compiled Compile(RecordQuery query, Guid tenantId, Guid instanceId, Guid? ownerVisitorId = null)
+    /// <param name="scope">When set, only the records it holds for match: what the caller may reach of the table (own records, row rules).</param>
+    public Compiled Compile(RecordQuery query, Guid tenantId, Guid instanceId, SqlWriter? scope = null)
     {
         if (query.PageSize is < 1 or > MaxPageSize)
         {
@@ -75,9 +75,9 @@ public sealed class QueryCompiler
             $"""r."InstanceId" = {Parameter(instanceId, NpgsqlDbType.Uuid)}""",
             $"""r."TableId" = {Parameter(_table.Id, NpgsqlDbType.Uuid)}""",
         };
-        if (ownerVisitorId is { } owner)
+        if (scope is not null)
         {
-            where.Add($"""r."OwnerVisitorId" = {Parameter(owner, NpgsqlDbType.Uuid)}""");
+            where.Add(scope(Parameter));
         }
         if (query.Filter is { } filter)
         {

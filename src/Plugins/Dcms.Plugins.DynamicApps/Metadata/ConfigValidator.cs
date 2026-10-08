@@ -241,6 +241,7 @@ public static partial class ConfigValidator
             }
         }
 
+        CheckRules(config, tables, Error, Warn);
         CheckFlows(config, tables, actions ?? Automation.ActionCatalog.Keys, Error);
         CheckCopies(config, published, Error);
 
@@ -468,6 +469,75 @@ public static partial class ConfigValidator
         (field.Minimum is null || value >= field.Minimum) && (field.Maximum is null || value <= field.Maximum);
 
     /// <summary>Each new field or relationship's <c>copyFrom</c> names a live field of its table whose values could fit it.</summary>
+    /// <summary>
+    /// Row access rules: each path follows navigations that exist, to a field a rule can test,
+    /// against something a signed-in user has. A table on the path the site may write is a
+    /// warning: whoever writes it decides who the rule lets in.
+    /// </summary>
+    private static void CheckRules(AppConfig config, Dictionary<Guid, TableDef> tables,
+        Action<string, string, string> error, Action<string, string, string> warn)
+    {
+        foreach (var table in config.Tables.Where(t => t.Public.Rules.Count > 0))
+        {
+            var path = $"{table.ApiName}.public.rules";
+            Limit(table.Public.Rules.Count, Data.RowRules.MaxRules, path, error);
+            foreach (var (rule, i) in table.Public.Rules.Select((r, i) => (r, i + 1)))
+            {
+                var at = $"{path}[{i}]";
+                if (!rule.Read && !rule.Update && !rule.Delete)
+                {
+                    error("invalid-rule", at, "A rule grants at least one of read, update and delete.");
+                }
+                if (!Data.RowRules.ValidSubject(rule.Matches))
+                {
+                    error("invalid-rule", at, $"matches '{rule.Matches}' is not {string.Join(", ", Data.RowRules.Subjects)} or {Data.RowRules.AttributePrefix}{{key}}.");
+                }
+                if (rule.Path.Count > Data.RowRules.MaxPath)
+                {
+                    error("invalid-rule", at, $"A rule's path follows at most {Data.RowRules.MaxPath} relationships.");
+                    continue;
+                }
+                var current = table;
+                var written = new List<string>();
+                foreach (var step in rule.Path)
+                {
+                    var next = config.Relationships
+                        .Where(r => (r.SourceTableId == current.Id && r.ApiName == step) || (r.TargetTableId == current.Id && r.InverseApiName == step))
+                        .Select(r => r.SourceTableId == current.Id && r.ApiName == step ? r.TargetTableId : r.SourceTableId)
+                        .Select(id => tables.GetValueOrDefault(id))
+                        .FirstOrDefault();
+                    if (next is null)
+                    {
+                        error("invalid-rule", at, $"{current.ApiName} has no relationship '{step}'.");
+                        current = null;
+                        break;
+                    }
+                    current = next;
+                    if (current.Public.Create || current.Public.UpdateOwn || current.Public.Rules.Any(r => r.Update))
+                    {
+                        written.Add(current.ApiName);
+                    }
+                }
+                if (current is null)
+                {
+                    continue;
+                }
+                var field = current.Fields.FirstOrDefault(f => f.ApiName == rule.Field);
+                if (field is null || !Data.RowRules.FieldTypes.Contains(field.Type))
+                {
+                    error("invalid-rule", at, field is null
+                        ? $"{current.ApiName} has no field '{rule.Field}'."
+                        : $"{current.ApiName}.{field.ApiName} is {Camel(field.Type)}; a rule tests a text, email, choice or multiChoice field.");
+                }
+                foreach (var name in written.Distinct())
+                {
+                    warn("rule-writable", at, $"The site may write {name}, which this rule reads: whoever writes it decides who the rule lets in. "
+                        + "Keep permission tables admin-only, or make the field read-only or hidden from the public.");
+                }
+            }
+        }
+    }
+
     private static void CheckCopies(AppConfig config, AppConfig? published, Action<string, string, string> error)
     {
         var liveIds = (published?.Tables ?? []).SelectMany(t => t.Fields.Select(f => f.Id))
