@@ -24,7 +24,7 @@ slot accepts is fixed by the component — the builder refuses anything else, an
 | Path | What |
 | --- | --- |
 | `src/dcms/runtime/` | The component runtime. Updated by DCMS; local edits are lost. |
-| `src/api/`, `src/dcms/` | The tenant's API client, analytics and consent. |
+| `src/api/`, `src/dcms/` | The tenant's API client, analytics, consent and sign-in helpers. The runtime already asks the site's access rules before each page. |
 | `openapi.json` | The raw API description. |
 
 `src/main.tsx` and `vite.config.ts` wire the runtime in; keep that wiring.

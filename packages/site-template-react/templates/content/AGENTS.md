@@ -32,7 +32,7 @@ Read this before changing anything. It is short on purpose.
 | Path | What |
 | --- | --- |
 | `src/api/` | The typed client for this tenant's content API, generated from its plugins. |
-| `src/dcms/` | Analytics and the cookie-consent banner. Configure through props and options. |
+| `src/dcms/` | Analytics, the cookie-consent banner and sign-in helpers (`useSiteUser`, `siteAccessLoader`). Configure through props and options. |
 | `openapi.json` | The raw API description. Large — read `src/api/API.md` instead. |
 
 They are regenerated whenever the tenant's plugins change, so an edit there is lost.
@@ -51,6 +51,22 @@ Everything else in the project is yours.
 5. `collections` and `forms` (exported from `src/api`) describe what this tenant has, so code
    written against them works for any tenant. For one specific collection, use its typed accessor,
    e.g. `api.news.post.list({ pageSize: 6 })`.
+
+## Pages for signed-in users
+
+When the tenant uses User Authentication, the edge enforces the site's access rules on every
+page load — but moving between pages inside this app is not a page load.
+
+- `src/routes.tsx` puts `siteAccessLoader` on the root route: before each page is drawn it asks
+  the rules, and sends the visitor to sign in or to the "no access" page. Keep it on the root
+  route when you restructure the routes.
+- To show or hide a link or a section, use `useSiteUser()` and `useSiteAccess(path)` from
+  `src/dcms`. For a role's permission use the generated client's `access.check({ permission })`
+  (see API.md).
+- This is the experience, not the protection. Data is protected by the console's
+  **Access → API access**; anything written into a component ships to anyone who loads the app.
+- A long-open app can outlive its session: on an API error, `signInIfRequired(error)` sends the
+  visitor to sign in again and back.
 
 ## Styling
 

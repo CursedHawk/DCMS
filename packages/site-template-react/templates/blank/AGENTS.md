@@ -26,7 +26,7 @@ Read this before changing anything. It is short on purpose.
 | Path | What |
 | --- | --- |
 | `src/api/` | The typed client for this tenant's content API, generated from its plugins. |
-| `src/dcms/` | Analytics and the cookie-consent banner. Configure through props and options. |
+| `src/dcms/` | Analytics, the cookie-consent banner and sign-in helpers (`useSiteUser`, `siteAccessLoader`). Configure through props and options. |
 | `openapi.json` | The raw API description. Large — read `src/api/API.md` instead. |
 
 They are regenerated whenever the tenant's plugins change, so an edit there is lost.

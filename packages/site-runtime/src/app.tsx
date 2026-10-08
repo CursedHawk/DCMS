@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { Outlet, RouterProvider, createBrowserRouter, useLocation, useParams, type RouteObject } from 'react-router';
+import { guardedRoutes } from './access';
 import { codeDefinitions, readCodeContracts, type CodeContract, type CodeModules } from './code';
 import { BUILTIN_COMPONENTS } from './components';
 import { appSchema, pageSchema, type App, type Page } from './document';
@@ -100,10 +101,11 @@ export function SiteStyles({ theme }: { theme: ThemeTokens }) {
 }
 
 export function DcmsApp({ documents, registry, dataClient }: { documents: SiteDocuments; registry?: Registry; dataClient?: DataClient }) {
-  const router = useMemo(
-    () => createBrowserRouter(siteRoutes(documents, registry ?? registryFor(documents))),
-    [documents, registry],
-  );
+  const router = useMemo(() => {
+    // Guarded by the site's access rules: the app's own navigation never reaches the edge.
+    const { routes, hydrationData } = guardedRoutes(siteRoutes(documents, registry ?? registryFor(documents)));
+    return createBrowserRouter(routes, { hydrationData });
+  }, [documents, registry]);
   useEffect(() => {
     for (const problem of documents.problems) console.error(`dcms: ${problem}`);
   }, [documents]);
