@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.Plugins.DynamicApps.Api.Model;
 using Dcms.Plugins.DynamicApps.Automation;
@@ -129,7 +130,7 @@ internal static class PublicEndpoints
     {
         var visitor = await context.Contracts.CurrentVisitorAsync(ct);
         records.Visitor = visitor?.Id;
-        records.Subject = visitor is null ? null : new RowSubject(visitor.Id, visitor.Email, await GroupsAsync(context, visitor.Id, ct), visitor.Attributes);
+        records.Subject = visitor is null ? null : await SubjectAsync(context, visitor, ct);
         records.Members = await MemberPermissionsAsync(context, ct);
         try
         {
@@ -142,11 +143,27 @@ internal static class PublicEndpoints
     }
 
 
-    /// <summary>The signed-in enterprise user's groups, for row rules matching <c>user.groups</c>; none for a VisitorAuth visitor.</summary>
-    private static async Task<IReadOnlyList<Guid>> GroupsAsync(IPluginContext context, Guid visitorId, CancellationToken ct) =>
-        context.Contracts.TryGet<IUserIdentity>() is { } identity && (await identity.GetCurrentAsync(ct)).User is { } user && user.Id == visitorId
-            ? user.Groups
-            : [];
+    /// <summary>
+    /// The visitor as row rules may trust them. Email and groups only from a User Authentication
+    /// user, whose identity provider or invitation vouched for the address; a VisitorAuth visitor
+    /// picks theirs at registration. Attributes only those the visitor cannot edit themselves.
+    /// </summary>
+    private static async Task<RowSubject> SubjectAsync(IPluginContext context, VisitorProfile visitor, CancellationToken ct)
+    {
+        var user = context.Contracts.TryGet<IUserIdentity>() is { } identity && (await identity.GetCurrentAsync(ct)).User is { } u && u.Id == visitor.Id
+            ? u
+            : null;
+        var attributes = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        if (visitor.Attributes.Count > 0 && context.Contracts.TryGet<IVisitorProfiles>() is { } profiles)
+        {
+            var locked = (await profiles.ListAttributeDefinitionsAsync(ct)).Definitions.Where(d => !d.VisitorEditable).Select(d => d.Key).ToHashSet();
+            foreach (var (key, value) in visitor.Attributes.Where(a => locked.Contains(a.Key)))
+            {
+                attributes[key] = value;
+            }
+        }
+        return new RowSubject(visitor.Id, user?.Email, user?.Groups ?? [], attributes);
+    }
 
     /// <summary>
     /// A public write, throttled: anyone may call these, and a table open for creation must not

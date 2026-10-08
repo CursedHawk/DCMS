@@ -105,12 +105,55 @@ public sealed class RowRuleTests(ContentFlowFixture fixture)
             .StatusCode.Should().Be(HttpStatusCode.OK, "the group rule grants changing too");
         (await SiteAsync(app, HttpMethod.Patch, $"/api/crm/data/companies/{initech}", outsider, ct, new { name = "Hijacked" }))
             .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await SiteAsync(app, HttpMethod.Patch, $"/api/crm/data/companies/{initech}", seller, ct, new { team = Guid.NewGuid().ToString() }))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden, "a write may not hand a record out of the writer's own reach");
+        (await JsonAsync(await SiteAsync(app, HttpMethod.Get, $"/api/crm/data/companies/{initech}", seller, ct), ct))
+            .GetProperty("name").GetString().Should().Be("Initech Ltd", "the refused write was undone");
 
         var model = await JsonAsync(await SiteAsync(app, HttpMethod.Get, "/api/crm/_model", null, ct), ct);
         var companies = model.GetProperty("tables").EnumerateArray().Single(t => t.GetProperty("apiName").GetString() == "companies");
         companies.GetProperty("access").GetProperty("rowRules").GetBoolean().Should().BeTrue();
         companies.GetProperty("access").TryGetProperty("rules", out _).Should().BeFalse("what the rules test is not the site's business");
         model.GetProperty("tables").EnumerateArray().Select(t => t.GetProperty("apiName").GetString()).Should().NotContain("company_access");
+    }
+
+    [DockerFact]
+    public async Task Only_what_a_user_cannot_claim_for_themselves_opens_a_row()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (app, _) = await SetUpAsync(ct);
+        await app.InstallAsync("visitor-auth", "members", """
+            {"attributes":[{"key":"region","label":"Region","visibility":"plugins","visitorEditable":false},
+                           {"key":"nickname","label":"Nickname","visibility":"plugins","visitorEditable":true}]}
+            """, ct);
+        await app.PublishAsync("""
+            [ { "op": "update", "type": "table", "target": "companies", "value": { "public": { "rules": [
+                { "path": ["access"], "field": "user_email", "matches": "user.email" },
+                { "path": [], "field": "team", "matches": "user.attribute.region" },
+                { "path": [], "field": "team", "matches": "user.attribute.nickname" } ] } } } ]
+            """, ct);
+        var acme = await CreateAsync(app, "companies", new { name = "Acme" }, ct);
+        await CreateAsync(app, "company_access", new { company = acme, user_email = "ada@corp.test" }, ct);
+        await CreateAsync(app, "companies", new { name = "Hooli", team = "North" }, ct);
+
+        // Anyone can register a visitor account under Ada's address; it is not Ada's sign-in.
+        var visitor = await app.VisitorAsync("ada@corp.test", ct);
+        async Task<int> VisibleAsync() =>
+            (await JsonAsync(await app.SiteAsync(HttpMethod.Get, "/api/crm/data/companies", ct, token: visitor), ct)).GetProperty("total").GetInt32();
+        (await VisibleAsync()).Should().Be(0, "an unverified visitor email matches no rule");
+
+        (await app.SiteAsync(HttpMethod.Put, "/api/members/me/profile", ct, new { attributes = new { nickname = "north" } }, visitor))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        (await VisibleAsync()).Should().Be(0, "nor does an attribute the visitor sets themselves");
+
+        await using (var conn = new Npgsql.NpgsqlConnection(fixture.PostgresConnectionString))
+        {
+            await conn.OpenAsync(ct);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = """UPDATE visitors.visitor_accounts SET "AttributesJson" = "AttributesJson" || '{"region":"north"}'::jsonb WHERE "Email" = 'ada@corp.test'""";
+            (await cmd.ExecuteNonQueryAsync(ct)).Should().BeGreaterThan(0);
+        }
+        (await VisibleAsync()).Should().Be(1, "an attribute only the tenant sets does");
     }
 
     private async Task<(AppHarness App, Guid TenantId)> SetUpAsync(CancellationToken ct)

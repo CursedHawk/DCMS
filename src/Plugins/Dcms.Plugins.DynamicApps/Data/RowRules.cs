@@ -8,8 +8,13 @@ namespace Dcms.Plugins.DynamicApps.Data;
 /// <summary>Writes a SQL predicate, adding each value it needs through <c>parameter</c>, which returns the placeholder.</summary>
 public delegate string SqlWriter(Func<object, NpgsqlDbType, string> parameter);
 
-/// <summary>The signed-in site user as row rules see them (a VisitorAuth visitor or a User Authentication user).</summary>
-public sealed record RowSubject(Guid Id, string Email, IReadOnlyList<Guid> Groups, IReadOnlyDictionary<string, JsonElement> Attributes)
+/// <summary>
+/// The signed-in site user as row rules see them: only what they cannot claim for themselves.
+/// <paramref name="Email"/> and <paramref name="Groups"/> come from a User Authentication sign-in
+/// alone (a VisitorAuth visitor registers with any address, unverified); <paramref name="Attributes"/>
+/// holds only attributes the visitor may not edit.
+/// </summary>
+public sealed record RowSubject(Guid Id, string? Email, IReadOnlyList<Guid> Groups, IReadOnlyDictionary<string, JsonElement> Attributes)
 {
     /// <summary>What <paramref name="matches"/> names of this user, lower-cased; empty when they have none.</summary>
     public string[] Values(string matches)
@@ -17,7 +22,7 @@ public sealed record RowSubject(Guid Id, string Email, IReadOnlyList<Guid> Group
         IEnumerable<string> values = matches switch
         {
             "user.id" => [Id.ToString()],
-            "user.email" => [Email],
+            "user.email" => Email is null ? [] : [Email],
             "user.groups" => Groups.Select(g => g.ToString()),
             _ when matches.StartsWith(RowRules.AttributePrefix, StringComparison.Ordinal)
                    && Attributes.TryGetValue(matches[RowRules.AttributePrefix.Length..], out var value) => Scalars(value),

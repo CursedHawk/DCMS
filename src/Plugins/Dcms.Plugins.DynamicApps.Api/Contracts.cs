@@ -142,7 +142,8 @@ public interface IDynamicAppsConfig
             + "permissions model a permission table, e.g. company_access {company → companies (inverseApiName 'access'), user_email: email} "
             + "with companies rules [{path: ['access'], field: 'user_email', matches: 'user.email'}] and activities (lookup company) "
             + "[{path: ['company', 'access'], field: 'user_email', matches: 'user.email'}]; a group per record is a text field holding the "
-            + "group id with matches 'user.groups'. Never give the site write access to the table a rule reads. Flow: {apiName, displayName, trigger: {event, tableId?, changedFields?, everyMinutes?}, "
+            + "group id with matches 'user.groups'. user.email and user.groups only match User Authentication users; user.attribute only "
+            + "matches attributes visitors cannot edit. Never give the site write access to the table a rule reads. Flow: {apiName, displayName, trigger: {event, tableId?, changedFields?, everyMinutes?}, "
             + "condition?, steps: [{id, action: 'records.create@1', input with {{ expressions }}}]}. Api names are lowercase snake_case. "
             + "Returns the changes made and the draft's validation issues; fix errors before publishing.")]
     Task<ApplyChangesResult> ApplyChangeSetAsync(ApplyChangesRequest input, CancellationToken ct);

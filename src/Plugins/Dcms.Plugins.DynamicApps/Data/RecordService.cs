@@ -196,6 +196,7 @@ public sealed class RecordService(
 
         Declare("record.created", table, record.Id);
         await SaveAsync(ct);
+        await CheckReachAsync(model, table, record.Id, plane, PublicOp.Create, ct);
         await tx.CommitAsync(ct);
         return RecordCodec.Read(table, record, plane);
     }
@@ -217,6 +218,7 @@ public sealed class RecordService(
         await UpdateCoreAsync(model, table, record, values, plane, ct);
         Declare("record.updated", table, record.Id);
         await SaveAsync(ct);
+        await CheckReachAsync(model, table, record.Id, plane, PublicOp.Update, ct);
         await tx.CommitAsync(ct);
         return RecordCodec.Read(table, record, plane);
     }
@@ -625,6 +627,29 @@ public sealed class RecordService(
             }
             return terms.Count == 0 ? "FALSE" : "(" + string.Join(" OR ", terms) + ")";
         };
+    }
+
+    /// <summary>
+    /// A site write to a table with row rules must leave the record where the writer can still
+    /// reach it — a create readable or changeable by them, an update still changeable — as a
+    /// database policy's WITH CHECK would. Otherwise a user could file a record under a company
+    /// they cannot see, or hand one out of their reach. Runs inside the write's transaction, so a
+    /// refusal undoes it.
+    /// </summary>
+    private async Task CheckReachAsync(RuntimeModel model, RuntimeTable table, Guid id, RecordPlane plane, PublicOp op, CancellationToken ct)
+    {
+        if (plane != RecordPlane.Public || table.Def.Public.Rules.Count == 0 || Member(table, op))
+        {
+            return;
+        }
+        foreach (var reach in op == PublicOp.Create ? [PublicOp.Read, PublicOp.Update] : new[] { op })
+        {
+            if (Scope(model, table, plane, reach) is null || await Records(model, table, plane, reach).AnyAsync(r => r.Id == id, ct))
+            {
+                return;
+            }
+        }
+        throw new PublicAccessException(403, $"That would leave the {table.ApiName} record out of your reach.");
     }
 
     private static bool Grants(RowRule rule, PublicOp op) => op switch

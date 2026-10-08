@@ -174,6 +174,9 @@ An action is named with its major version. Its meaning never changes within that
   - *A group per record.* A text field holding a User Authentication group id, matches
     `user.groups`.
 
+  Email and groups only count for User Authentication sign-ins (a visitor account's email is
+  unverified), and an attribute only when visitors cannot edit it themselves. A site write must
+  leave the record within the writer's reach, or it is refused.
   Rules add to the table's read/own settings, so leave read on "no access" for rule-only tables,
   and keep the tables a rule reads admin-only (the validator warns otherwise).
 - **The site API** is `/api/{slug}/data/{table}` on content-api. It is generated from the live
