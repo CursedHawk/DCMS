@@ -92,6 +92,8 @@ export interface Role {
   name: string;
   description: string | null;
   permissions: string[];
+  /** Its permissions reach every record, past plugins' row access rules. */
+  bypassRowAccess: boolean;
   grants: Grant[];
 }
 

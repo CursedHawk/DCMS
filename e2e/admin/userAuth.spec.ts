@@ -187,3 +187,17 @@ test("an instance's API access is set, and a permission level names the permissi
   await expect(page.getByText('audio-library:audio-library-1:api:read')).toBeVisible();
   expect(api.requestsTo('PUT', `/api/admin/plugins/users/api-access/${LIBRARY.instanceId}`)[0]!.body).toEqual({ access: 'permission' });
 });
+
+test('a role is saved with whether it bypasses row-level access', async ({ page, api }) => {
+  api.on('POST', '/api/admin/plugins/users/roles', { id: 'ffffffff-0000-0000-0000-000000000001' });
+  await page.goto('/plugins/users/access');
+  await page.getByRole('tab', { name: 'Roles' }).click();
+
+  await page.getByRole('button', { name: 'New role' }).click();
+  await page.getByLabel('Name').fill('Managers');
+  await page.getByLabel('Bypass row-level access').check();
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/plugins/users/roles').length).toBe(1);
+  expect(api.requestsTo('POST', '/api/admin/plugins/users/roles')[0]!.body).toMatchObject({ key: 'managers', name: 'Managers', bypassRowAccess: true });
+});

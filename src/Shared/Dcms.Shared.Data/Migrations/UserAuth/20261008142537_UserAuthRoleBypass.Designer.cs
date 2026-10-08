@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using Dcms.Shared.Data.UserAuth;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Dcms.Shared.Data.Migrations.UserAuth
 {
     [DbContext(typeof(UserAuthDbContext))]
-    partial class UserAuthDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261008142537_UserAuthRoleBypass")]
+    partial class UserAuthRoleBypass
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

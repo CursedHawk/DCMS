@@ -101,12 +101,35 @@ export function contractTools(catalog: readonly CatalogContract[]): AssistantToo
           invalidates: instance ? [`plugin:${instance.slug}`] : undefined,
           maxResultChars: 16_000,
           run: async (input, context) =>
-            JSON.stringify((await api.post(url, input, { headers: traceHeaders(context.trace) })) ?? null),
+            JSON.stringify((await api.post(url, await withAttachedCsv(input, context.attachments), { headers: traceHeaders(context.trace) })) ?? null),
         });
       }
     }
   }
   return tools;
+}
+
+/** The largest attached CSV the console sends as an operation's `csv`. */
+export const MAX_ATTACHED_CSV_BYTES = 2_000_000;
+
+/**
+ * An operation input naming an attached file as `csvFile` (Dynamic Apps' record import) gets the
+ * file's text as `csv` instead: the model has the file's name, never its bytes, and copying a
+ * whole file through the model would be slow, costly and lossy.
+ */
+export async function withAttachedCsv(input: Record<string, unknown>, attachments: ToolContext['attachments']): Promise<Record<string, unknown>> {
+  const name = input.csvFile;
+  if (typeof name !== 'string') return input;
+  const attachment = attachments.find((a) => a.name === name);
+  if (!attachment) {
+    const known = attachments.map((a) => a.name).join(', ') || 'nothing';
+    throw new Error(`No file named "${name}" is attached. Attached: ${known}.`);
+  }
+  if (attachment.size > MAX_ATTACHED_CSV_BYTES) {
+    throw new Error(`"${name}" is larger than ${MAX_ATTACHED_CSV_BYTES / 1_000_000} MB; split it.`);
+  }
+  const { csvFile: _named, ...rest } = input;
+  return { ...rest, csv: await attachment.file.text() };
 }
 
 /** `ApplyChangeSet` → "Apply change set". */

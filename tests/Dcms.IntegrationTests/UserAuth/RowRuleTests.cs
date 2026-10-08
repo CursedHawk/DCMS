@@ -156,6 +156,44 @@ public sealed class RowRuleTests(ContentFlowFixture fixture)
         (await VisibleAsync()).Should().Be(1, "an attribute only the tenant sets does");
     }
 
+    [DockerFact]
+    public async Task A_role_allows_the_action_but_the_rules_still_pick_the_rows_unless_it_bypasses_them()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (app, tenantId) = await SetUpAsync(ct);
+        var acme = await CreateAsync(app, "companies", new { name = "Acme" }, ct);
+        var globex = await CreateAsync(app, "companies", new { name = "Globex" }, ct);
+        await CreateAsync(app, "company_access", new { company = acme, user_email = "ada@corp.test" }, ct);
+        var readers = Guid.NewGuid();
+        var managers = Guid.NewGuid();
+        await GrantAsync(app, readers, ["dynamic-apps:crm:table:companies:read", "dynamic-apps:crm:table:companies:update"], bypass: false, ct);
+        await GrantAsync(app, managers, ["dynamic-apps:crm:table:companies:read"], bypass: true, ct);
+        var ada = RealmTokens.Mint(tenantId, Guid.NewGuid(), [readers], email: "ada@corp.test");
+        var boss = RealmTokens.Mint(tenantId, Guid.NewGuid(), [managers], email: "boss@corp.test");
+
+        Names(await JsonAsync(await SiteAsync(app, HttpMethod.Get, "/api/crm/data/companies", ada, ct), ct), "name")
+            .Should().Equal(["Acme"], "a role without bypass reads only the rows the rules give");
+        (await SiteAsync(app, HttpMethod.Patch, $"/api/crm/data/companies/{acme}", ada, ct, new { name = "Acme Inc" }))
+            .StatusCode.Should().Be(HttpStatusCode.OK, "its update reaches the rows they can read, though no rule grants update");
+        (await SiteAsync(app, HttpMethod.Patch, $"/api/crm/data/companies/{globex}", ada, ct, new { name = "Mine" }))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound, "and no others");
+        Names(await JsonAsync(await SiteAsync(app, HttpMethod.Get, "/api/crm/data/companies", boss, ct), ct), "name")
+            .Should().Equal(["Acme Inc", "Globex"], "a bypassing role reaches every record");
+
+        var roles = await JsonAsync(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, "/api/admin/plugins/users/roles", app.Owner, app.Tenant), ct), ct);
+        roles.EnumerateArray().Select(r => r.GetProperty("bypassRowAccess").GetBoolean()).Should().BeEquivalentTo([false, true]);
+    }
+
+    private static async Task GrantAsync(AppHarness app, Guid group, string[] permissions, bool bypass, CancellationToken ct)
+    {
+        var res = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/users/roles", app.Owner, app.Tenant,
+            body: new { key = $"r_{Guid.NewGuid():N}"[..20], name = "Role", permissions, bypassRowAccess = bypass }), ct);
+        res.StatusCode.Should().Be(HttpStatusCode.Created, await res.Content.ReadAsStringAsync(ct));
+        var role = (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetGuid();
+        (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/plugins/users/roles/{role}/grants",
+            app.Owner, app.Tenant, body: new { subjectType = "group", subjectId = group }), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
     private async Task<(AppHarness App, Guid TenantId)> SetUpAsync(CancellationToken ct)
     {
         var app = await AppHarness.CreateAsync(fixture, ct);

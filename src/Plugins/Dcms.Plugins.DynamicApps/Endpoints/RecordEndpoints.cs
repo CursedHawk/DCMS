@@ -75,6 +75,11 @@ internal static class RecordEndpoints
             .RequirePluginPermission("data-delete")
             .AuditAs("record.bulk_deleted");
 
+        endpoints.MapPost("/_records/{table}/import", (string table, bool? dryRun, ImportRequest body, RecordService records, CancellationToken ct) =>
+                Run(async () => Results.Ok(await records.ImportAsync(table, body, dryRun ?? false, ct))))
+            .RequirePluginPermission("data-import")
+            .AuditAs("record.imported");
+
         endpoints.MapGet("/_records/{table}/{id:guid}/{navigation}", (string table, Guid id, string navigation, int? page, int? pageSize,
                 RecordService records, CancellationToken ct) =>
                 Run(async () => await records.RelatedAsync(table, id, navigation, page ?? 1, pageSize ?? 50, RecordPlane.Admin, ct) is { } related

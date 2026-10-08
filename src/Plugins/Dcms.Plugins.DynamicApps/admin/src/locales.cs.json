@@ -231,6 +231,18 @@
     "failed": "selhalo",
     "terminated": "zastaveno limitem"
   },
+  "import": {
+    "open": "Importovat CSV",
+    "title": "Import {{table}} z CSV",
+    "hint": "První řádek pojmenovává pole ({{fields}}); fungují i zobrazované názvy. Vazby berou id záznamu nebo jeho název. Nejvýše 1 000 řádků, vše nebo nic.",
+    "file": "Soubor CSV",
+    "check": "Zkontrolovat",
+    "ready": "Všech {{count}} řádků je připraveno k importu.",
+    "problems": "{{count}} problémů v {{rows}} řádcích; nic nebylo importováno.",
+    "row": "Řádek {{row}}",
+    "run": "Importovat {{count}} záznamů",
+    "done": "Importováno {{count}} záznamů."
+  },
   "access": {
     "title": "Co smí veřejný web",
     "hint": "Pro každou tabulku. Změny jsou součástí konceptu a platí po jeho publikování.",

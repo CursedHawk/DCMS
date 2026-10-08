@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Plus, Trash2, Upload } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Button,
@@ -38,6 +38,7 @@ import {
   type PluginScreenProps,
 } from '@dcms/plugin-ui';
 import { ConfirmDialog } from './ConfirmDialog';
+import { ImportDialog } from './ImportDialog';
 import {
   rootKey,
   usePublished,
@@ -87,6 +88,8 @@ export function RecordsScreen({ instance }: PluginScreenProps) {
   const published = usePublished(slug);
   const config = published.data?.config ?? null;
   const mayWrite = useCan('data-write');
+  const mayImport = useCan('data-import');
+  const [importing, setImporting] = useState(false);
   const [tableId, setTableId] = useState<string>('');
   const [viewId, setViewId] = useState<string>('');
   const [search, setSearch] = useState('');
@@ -165,10 +168,16 @@ export function RecordsScreen({ instance }: PluginScreenProps) {
           <ChoiceFilter key={m.id} member={m} picked={choices[m.apiName] ?? []}
             onChange={(picked) => setChoices((c) => ({ ...c, [m.apiName]: picked }))} />
         ))}
-        {mayWrite ? (
-          <Button className="ml-auto" onClick={() => setEditing('new')}><Plus className="size-4" /> {t('records.new')}</Button>
-        ) : null}
+        <div className="ml-auto flex gap-2">
+          {mayImport ? (
+            <Button variant="outline" onClick={() => setImporting(true)}><Upload className="size-4" /> {t('import.open')}</Button>
+          ) : null}
+          {mayWrite ? (
+            <Button onClick={() => setEditing('new')}><Plus className="size-4" /> {t('records.new')}</Button>
+          ) : null}
+        </div>
       </div>
+      {importing ? <ImportDialog slug={slug} table={table!} onClose={() => setImporting(false)} /> : null}
 
       <DataTable rows={records.data?.items ?? []} columns={columns} rowKey={(r) => r.id} isLoading={records.isLoading}
         empty={t('records.none')} onRowClick={(row) => setEditing(row)} />

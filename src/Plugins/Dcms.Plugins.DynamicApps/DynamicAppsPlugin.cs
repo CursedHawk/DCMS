@@ -73,6 +73,8 @@ public sealed class DynamicAppsPlugin : IPlugin
             new PermissionDefinition("data-read", "View application records"),
             new PermissionDefinition("data-write", "Create and edit application records"),
             new PermissionDefinition("data-delete", "Delete application records"),
+            new PermissionDefinition("data-import", "Import application records in bulk",
+                "Create up to 1,000 records at once from rows or a CSV file."),
             new PermissionDefinition("flows-run", "Run automations",
                 "Start a flow by hand and retry failed runs."),
         ],

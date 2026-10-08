@@ -72,3 +72,27 @@ public sealed record BulkDeleteRequest(IReadOnlyList<Guid> Ids);
 public sealed record BulkResult(int Affected);
 
 public sealed record LinkRequest(Guid TargetId);
+
+/// <summary>
+/// Records to create in one go: <see cref="Rows"/> (values by field api name, as for one record)
+/// or <see cref="Csv"/> (a header row naming the fields, then one row per record). All or nothing.
+/// </summary>
+/// <param name="Columns">CSV only: header text → field api name, for headers that are neither.</param>
+/// <param name="CsvFile">
+/// For the assistant: the name of a CSV file the operator attached to the conversation. The
+/// console reads it and sends its text as <see cref="Csv"/>; the server never sees the name alone.
+/// </param>
+public sealed record ImportRequest(
+    IReadOnlyList<JsonObject>? Rows = null,
+    string? Csv = null,
+    IReadOnlyDictionary<string, string>? Columns = null,
+    string? CsvFile = null);
+
+/// <param name="Row">1-based, counting data rows (a CSV's header is not a row).</param>
+/// <param name="Field">The field api name, or <c>_record</c> for the row as a whole.</param>
+public sealed record ImportError(int Row, string Field, string Message);
+
+/// <param name="Rows">Rows read.</param>
+/// <param name="Created">Records created: 0 on a dry run or when any row failed (nothing is written then).</param>
+/// <param name="Errors">The first problems found, at most 100; <paramref name="ErrorCount"/> counts them all.</param>
+public sealed record ImportResult(int Rows, int Created, bool DryRun, IReadOnlyList<ImportError> Errors, int ErrorCount);

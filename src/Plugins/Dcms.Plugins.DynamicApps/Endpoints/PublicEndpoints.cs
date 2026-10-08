@@ -131,7 +131,7 @@ internal static class PublicEndpoints
         var visitor = await context.Contracts.CurrentVisitorAsync(ct);
         records.Visitor = visitor?.Id;
         records.Subject = visitor is null ? null : await SubjectAsync(context, visitor, ct);
-        records.Members = await MemberPermissionsAsync(context, ct);
+        (records.Members, records.Bypass) = await MemberPermissionsAsync(context, ct);
         try
         {
             return await RecordEndpoints.Run(handler);
@@ -188,18 +188,23 @@ internal static class PublicEndpoints
                 : await handler();
         });
 
-    /// <summary>The signed-in user's site permissions on this app (users.access@1), its <c>dynamic-apps:{slug}:</c> prefix stripped.</summary>
-    private static async Task<IReadOnlySet<string>> MemberPermissionsAsync(IPluginContext context, CancellationToken ct)
+    /// <summary>
+    /// The signed-in user's site permissions on this app (users.access@1), and those of them held
+    /// through a role that bypasses row-level access, their <c>dynamic-apps:{slug}:</c> prefix stripped.
+    /// </summary>
+    private static async Task<(IReadOnlySet<string> Members, IReadOnlySet<string> Bypass)> MemberPermissionsAsync(IPluginContext context, CancellationToken ct)
     {
         if (context.Contracts.TryGet<IUserAccess>() is not { } access || context.Instance is not { } instance)
         {
-            return new HashSet<string>();
+            return (new HashSet<string>(), new HashSet<string>());
         }
         var prefix = $"{DynamicAppsPlugin.PluginId}:{instance.Slug}:";
-        return (await access.ListPermissionsAsync(ct)).Permissions
+        HashSet<string> Ours(IEnumerable<string> permissions) => permissions
             .Where(p => p.StartsWith(prefix, StringComparison.Ordinal))
             .Select(p => p[prefix.Length..])
             .ToHashSet(StringComparer.Ordinal);
+        var held = await access.ListPermissionsAsync(ct);
+        return (Ours(held.Permissions), Ours(held.BypassRowAccess ?? []));
     }
 
     // A preview of the site is not the site: its writes would land in the real application.

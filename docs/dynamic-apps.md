@@ -158,6 +158,17 @@ An action is named with its major version. Its meaning never changes within that
 - **Members** work with records on the Records screen. The admin API for records lives at
   `/api/admin/plugins/{slug}/_records/{table}`. Bulk update and bulk delete take up to 500
   records.
+- **Bulk import** (Records → *Import CSV*, permission *Import application records in bulk*,
+  `plugin:dynamic-apps:data-import`): up to 1,000 rows into one table, all or nothing. The first
+  row names the fields by api or display name; `,` or `;` separates. Numbers use a dot, booleans
+  are true/false/yes/no, dates yyyy-MM-dd, multi-choice values are split by `;` or `|`, and a
+  lookup takes the target's id or its primary field value (a company's name). *Check* runs
+  every row without writing; a failed import writes nothing and lists the problems by row.
+  `POST …/_records/{table}/import?dryRun=true|false` with `{ csv }` or `{ rows }`. Every record
+  fires its table's row-created automations.
+- **The assistant imports too**: attach a CSV to the conversation and ask; it validates with
+  `validate_import`, then imports with `import_records` after you confirm. The console sends the
+  attached file's text itself (`csvFile` → `csv`), so the file never passes through the model.
 - **Public access is per table**, on the Access tab. A table can be readable by everyone or
   only for each visitor's own rows. Visitors can also be allowed to create rows, and to update
   or delete their own. Fields marked hidden-from-public never leave the server.
@@ -184,7 +195,9 @@ An action is named with its major version. Its meaning never changes within that
 - **Public writes are throttled** to 120 an hour per visitor and per IP.
 - **Enterprise users get more through roles** (User Authentication, [user-auth.md](user-auth.md)).
   A role holding `dynamic-apps:{slug}:table:{table}:read|create|update|delete` lets its holders do
-  that through the site API whatever the table's public access, on every record. A role holding
+  that through the site API whatever the table's public access, on every record. On a table with
+  row access rules it reaches only the rows the rules let its holders read, unless the role has
+  **Bypass row-level access** (Access → Roles in User Authentication). A role holding
   `dynamic-apps:{slug}:flow:{flow}:run` lets them start that manual flow with
   `POST /api/{slug}/flows/{flow}/run` (`{ "input": { … } }`, at most 16 KB). The role editor lists
   every published table and manual flow.

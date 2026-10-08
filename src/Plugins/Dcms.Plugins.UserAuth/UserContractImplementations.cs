@@ -45,12 +45,14 @@ public sealed class UserVisitorIdentity(IHttpContextAccessor http) : IVisitorIde
 public sealed class UserAccess(IHttpContextAccessor http, IPluginContext context, UserAuthDbContext db) : IUserAccess
 {
     internal const string PermissionsItem = "dcms.user-auth.permissions";
+    private const string BypassItem = "dcms.user-auth.bypass-row-access";
 
     public async Task<AccessDecision> CheckAsync(PermissionCheck input, CancellationToken ct) =>
         new(SitePermission.IsValid(input.Permission) && (await PermissionsAsync(ct)).Contains(input.Permission));
 
     public async Task<PermissionList> ListPermissionsAsync(CancellationToken ct) =>
-        new((await PermissionsAsync(ct)).Order(StringComparer.Ordinal).ToList());
+        new((await PermissionsAsync(ct)).Order(StringComparer.Ordinal).ToList(),
+            (http.HttpContext?.Items[BypassItem] as HashSet<string> ?? []).Order(StringComparer.Ordinal).ToList());
 
     private async Task<HashSet<string>> PermissionsAsync(CancellationToken ct)
     {
@@ -58,25 +60,32 @@ public sealed class UserAccess(IHttpContextAccessor http, IPluginContext context
         {
             return [];
         }
-        if (request.Items.TryGetValue(PermissionsItem, out var cached) && cached is HashSet<string> known)
+        if (request.Items.TryGetValue(PermissionsItem, out var cached) && cached is HashSet<string> known && request.Items.ContainsKey(BypassItem))
         {
             return known;
         }
-        var permissions = await ForAsync(db, context.TenantId, user.Id, user.Groups, ct);
+        var (permissions, bypass) = await HeldAsync(db, context.TenantId, user.Id, user.Groups, ct);
         request.Items[PermissionsItem] = permissions;
+        request.Items[BypassItem] = bypass;
         return permissions;
     }
 
     /// <summary>The permissions one user holds, directly or through their groups.</summary>
-    public static async Task<HashSet<string>> ForAsync(UserAuthDbContext db, Guid tenantId, Guid userId, IReadOnlyList<Guid> groups, CancellationToken ct)
+    public static async Task<HashSet<string>> ForAsync(UserAuthDbContext db, Guid tenantId, Guid userId, IReadOnlyList<Guid> groups, CancellationToken ct) =>
+        (await HeldAsync(db, tenantId, userId, groups, ct)).Permissions;
+
+    /// <summary>The permissions one user holds, and those of them held through a role that bypasses row-level access.</summary>
+    public static async Task<(HashSet<string> Permissions, HashSet<string> Bypass)> HeldAsync(UserAuthDbContext db, Guid tenantId, Guid userId,
+        IReadOnlyList<Guid> groups, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(tenantId);
         var roleIds = db.Grants
             .Where(g => (g.SubjectType == GrantSubject.User && g.SubjectId == userId)
                         || (g.SubjectType == GrantSubject.Group && groups.Contains(g.SubjectId)))
             .Select(g => g.RoleId);
-        var lists = await db.Roles.Where(r => roleIds.Contains(r.Id)).Select(r => r.Permissions).ToListAsync(ct);
-        return lists.SelectMany(p => p).ToHashSet(StringComparer.Ordinal);
+        var roles = await db.Roles.Where(r => roleIds.Contains(r.Id)).Select(r => new { r.Permissions, r.BypassRowAccess }).ToListAsync(ct);
+        return (roles.SelectMany(r => r.Permissions).ToHashSet(StringComparer.Ordinal),
+            roles.Where(r => r.BypassRowAccess).SelectMany(r => r.Permissions).ToHashSet(StringComparer.Ordinal));
     }
 }
 

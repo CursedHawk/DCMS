@@ -21,6 +21,13 @@ public sealed class UserRole : TenantEntity
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public List<string> Permissions { get; set; } = [];
+
+    /// <summary>
+    /// Its permissions reach every record, past the row access rules a plugin applies (Dynamic
+    /// Apps' <c>public.rules</c>). Off: the role allows the action, the rules still pick the rows.
+    /// </summary>
+    public bool BypassRowAccess { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

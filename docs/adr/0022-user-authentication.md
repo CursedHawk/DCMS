@@ -237,7 +237,14 @@ How it is built (UA5):
   API name, so renaming a table renames its permissions.
 - **What a permission adds.** `dynamic-apps:{slug}:table:{t}:{action}` lets its holders do that
   action through the app's site API whatever the table's public access, on every record — an
-  "own records" table stops filtering to their own. Hidden fields stay hidden: members are still
+  "own records" table stops filtering to their own. Since 2026-10-08, a table with row access
+  rules (ADR 0021) is the exception: there the permission allows the action, and reaches the rows
+  the rules let the holder read (plus those a rule grants for that action), unless the role has
+  **Bypass row-level access** (`userauth.roles.BypassRowAccess`, off by default). Bypass is per
+  role, so a user's action is unfiltered when any role giving them that permission bypasses;
+  `users.access@1` reports those permissions as `PermissionList.BypassRowAccess`. A role holding
+  create may still add records the rules do not show its holder, but their lookups must point at
+  records they can read. Hidden fields stay hidden: members are still
   the site, not the admin. Without a permission, an enterprise user is a visitor like any other.
 - **Site-started flows.** `POST /api/{slug}/flows/{flow}/run`, for holders of
   `…:flow:{flow}:run`, throttled like other site writes and with input capped at 16 KB. The run

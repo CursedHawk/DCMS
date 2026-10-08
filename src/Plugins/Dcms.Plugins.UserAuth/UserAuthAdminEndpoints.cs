@@ -17,7 +17,8 @@ namespace Dcms.Plugins.UserAuth;
 
 public sealed record RealmSettings(bool PasswordEnabled);
 
-public sealed record RoleWrite(string Key, string Name, string? Description, IReadOnlyList<string>? Permissions);
+/// <param name="BypassRowAccess">Null on an update keeps what the role has.</param>
+public sealed record RoleWrite(string Key, string Name, string? Description, IReadOnlyList<string>? Permissions, bool? BypassRowAccess = null);
 
 /// <param name="SubjectType"><c>group</c> or <c>user</c>.</param>
 public sealed record GrantWrite(string SubjectType, Guid SubjectId);
@@ -137,7 +138,7 @@ internal static partial class UserAuthAdminEndpoints
                 var grants = await db.Grants.AsNoTracking().ToListAsync(ct);
                 return Results.Ok(roles.Select(r => new
                 {
-                    r.Id, r.Key, r.Name, r.Description, r.Permissions, r.UpdatedAt,
+                    r.Id, r.Key, r.Name, r.Description, r.Permissions, r.BypassRowAccess, r.UpdatedAt,
                     grants = grants.Where(g => g.RoleId == r.Id)
                         .Select(g => new { g.Id, subjectType = Camel(g.SubjectType), g.SubjectId, g.CreatedAt }),
                 }));
@@ -157,11 +158,11 @@ internal static partial class UserAuthAdminEndpoints
                 var role = new UserRole
                 {
                     Id = Guid.NewGuid(), TenantId = context.TenantId, Key = body.Key, Name = body.Name.Trim(),
-                    Description = body.Description?.Trim(), Permissions = Permissions(body),
+                    Description = body.Description?.Trim(), Permissions = Permissions(body), BypassRowAccess = body.BypassRowAccess ?? false,
                 };
                 db.Roles.Add(role);
                 await db.SaveChangesAsync(ct);
-                return Results.Created($"roles/{role.Id}", new { role.Id, role.Key, role.Name, role.Description, role.Permissions });
+                return Results.Created($"roles/{role.Id}", new { role.Id, role.Key, role.Name, role.Description, role.Permissions, role.BypassRowAccess });
             })
             .RequirePluginPermission("access-manage")
             .AuditAs("role.created");
@@ -181,10 +182,10 @@ internal static partial class UserAuthAdminEndpoints
                 {
                     return Results.Conflict(new { error = $"A role with the key '{body.Key}' already exists." });
                 }
-                (role.Key, role.Name, role.Description, role.Permissions, role.UpdatedAt) =
-                    (body.Key, body.Name.Trim(), body.Description?.Trim(), Permissions(body), DateTimeOffset.UtcNow);
+                (role.Key, role.Name, role.Description, role.Permissions, role.BypassRowAccess, role.UpdatedAt) =
+                    (body.Key, body.Name.Trim(), body.Description?.Trim(), Permissions(body), body.BypassRowAccess ?? role.BypassRowAccess, DateTimeOffset.UtcNow);
                 await db.SaveChangesAsync(ct);
-                return Results.Ok(new { role.Id, role.Key, role.Name, role.Description, role.Permissions });
+                return Results.Ok(new { role.Id, role.Key, role.Name, role.Description, role.Permissions, role.BypassRowAccess });
             })
             .RequirePluginPermission("access-manage")
             .AuditAs("role.updated");

@@ -373,6 +373,7 @@ function RolesTab() {
             <div className="text-sm">
               <KeyRound className="mr-1 inline size-3.5 text-muted-foreground" aria-hidden />
               {t('roles.permissionCount', { count: role.permissions.length })}
+              {role.bypassRowAccess ? <Badge tone="outline" className="ml-2">{t('roles.bypassBadge')}</Badge> : null}
             </div>
             <div className="space-y-1.5">
               <div className="text-xs font-medium uppercase text-muted-foreground">{t('roles.heldBy')}</div>
@@ -432,8 +433,9 @@ function RoleDialog({ role, onClose }: { role: Role | null; onClose: () => void 
   const [key, setKey] = useState(role?.key ?? '');
   const [description, setDescription] = useState(role?.description ?? '');
   const [permissions, setPermissions] = useState<string[]>(role?.permissions ?? []);
+  const [bypassRowAccess, setBypassRowAccess] = useState(role?.bypassRowAccess ?? false);
   const save = useWrite(() => {
-    const body = { key, name: name.trim(), description: description.trim() || null, permissions };
+    const body = { key, name: name.trim(), description: description.trim() || null, permissions, bypassRowAccess };
     return role ? api.put(path(`/roles/${role.id}`), body) : api.post(path('/roles'), body);
   }, onClose);
 
@@ -477,6 +479,13 @@ function RoleDialog({ role, onClose }: { role: Role | null; onClose: () => void 
             <Label htmlFor="ua-role-description">{t('roles.description')}</Label>
             <Input id="ua-role-description" value={description} onChange={(e) => setDescription(e.target.value)} />
           </div>
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox className="mt-0.5" checked={bypassRowAccess} onCheckedChange={(on) => setBypassRowAccess(on === true)} />
+            <span>
+              {t('roles.bypass')}
+              <span className="block text-xs text-muted-foreground">{t('roles.bypassHint')}</span>
+            </span>
+          </label>
           <div className="space-y-3">
             <div className="text-sm font-medium">{t('roles.permissions')}</div>
             {(resources.data ?? []).length === 0 ? <p className="text-sm text-muted-foreground">{t('roles.noResources')}</p> : null}

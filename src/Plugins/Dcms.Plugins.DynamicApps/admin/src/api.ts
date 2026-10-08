@@ -413,6 +413,14 @@ export function useRun(slug: string, id: string | null) {
   });
 }
 
+export interface ImportResult {
+  rows: number;
+  created: number;
+  dryRun: boolean;
+  errors: { row: number; field: string; message: string }[];
+  errorCount: number;
+}
+
 export function useRecords(slug: string, table: string | null, query: RecordQuery) {
   const api = usePluginApi();
   return useQuery({

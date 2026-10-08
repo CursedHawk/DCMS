@@ -166,6 +166,23 @@ and preview:
   - The SDK gained `IPlugin.BuildOpenApiFragmentAsync` (an async, service-aware fragment) and `IPlugin.ApiVersionAsync` (here, the published revision's hash), which both hosts add to the document's and the client's cache keys. Publishing therefore rebuilds them at once.
   - The document is descriptive: authorization is the routes' job.
 
+### Bulk import (added 2026-10-08)
+
+- **One operation, three callers.** `RecordService.ImportAsync` serves the admin route
+  `_records/{table}/import`, the Records screen's CSV dialog and the assistant's
+  `ValidateImport` (Read) / `ImportRecords` (Dangerous) contract operations, under a permission of
+  its own (`data-import`): creating records one by one does not imply loading a thousand.
+- **All or nothing, checked first.** Every row goes through `RecordCodec.Write`, the lookup check,
+  and unique values against the table *and* the other rows before anything is written; one bad
+  row writes nothing. Up to 1,000 rows, 2 M characters of CSV, 200 columns, 100 reported errors.
+- **CSV without a dependency.** `CsvRows` is a small RFC 4180 reader (quotes, doubled quotes,
+  line breaks in cells, `,` or `;`). A row with more cells than the header is refused: it is
+  almost always an unquoted separator, and dropping the extra would silently cut a value short.
+- **Lookups by name.** A lookup cell that is not an id is matched, case-insensitively, against the
+  target table's primary field; an ambiguous name is an error, never a guess.
+- **The assistant never carries the file.** It names the attachment as `csvFile`; the console
+  replaces that with the file's text (`withAttachedCsv`). The server refuses a bare `csvFile`.
+
 ### The assistant is a client of the same control plane
 
 Configuration, automation runs and records are **contract operations exposed to `Ai`** — the

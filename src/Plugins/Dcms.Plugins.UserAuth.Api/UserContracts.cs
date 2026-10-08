@@ -23,7 +23,11 @@ public sealed record PermissionCheck(string Permission);
 
 public sealed record AccessDecision(bool Allowed);
 
-public sealed record PermissionList(IReadOnlyList<string> Permissions);
+/// <param name="BypassRowAccess">
+/// The subset of <paramref name="Permissions"/> held through a role that bypasses row-level access:
+/// with these the holder reaches every record; with the rest, a plugin's row rules still pick them.
+/// </param>
+public sealed record PermissionList(IReadOnlyList<string> Permissions, IReadOnlyList<string>? BypassRowAccess = null);
 
 /// <summary>
 /// What the signed-in enterprise user may do: the permissions of the roles granted to them and

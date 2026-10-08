@@ -25,7 +25,7 @@ export function describeAttachments(attachments: readonly Attachment[]): string 
   const lines = attachments.map(
     (a) => `- ${a.name} (${a.type || 'unknown type'}, ${Math.round(a.size / 1024)} KB)`,
   );
-  return `\n\nFiles attached to this message, uploadable with upload_media:\n${lines.join('\n')}`;
+  return `\n\nFiles attached to this message, uploadable with upload_media (a CSV can also be imported into a Dynamic Apps table: pass its name as csvFile):\n${lines.join('\n')}`;
 }
 
 /** Two files of the same name in one pool would make `upload_media("x.jpg")` ambiguous. */

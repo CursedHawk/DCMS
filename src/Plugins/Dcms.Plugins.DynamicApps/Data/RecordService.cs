@@ -35,6 +35,11 @@ public sealed class RecordService(
 {
     public const int MaxBulk = 500;
 
+    /// <summary>The most records one import creates.</summary>
+    public const int MaxImport = 1000;
+
+    private const int MaxImportErrors = 100;
+
     /// <summary>The most records one delete may take with it through cascading relationships.</summary>
     public const int MaxCascade = 500;
 
@@ -53,15 +58,25 @@ public sealed class RecordService(
     /// What the signed-in enterprise user may do here beyond the public access (ADR 0022): their
     /// site permissions on this app, set by the public routes from <c>users.access@1</c>, without
     /// the <c>dynamic-apps:{slug}:</c> prefix — <c>table:deals:read</c>. Holding one lifts the
-    /// public access for that action and table, and reaches every record, not only their own.
+    /// public access for that action and table and reaches every record — except on a table with
+    /// row rules, where it reaches the rows the rules let them read, unless held through
+    /// <see cref="Bypass"/>.
     /// </summary>
     public IReadOnlySet<string> Members { get; set; } = new HashSet<string>();
+
+    /// <summary>The <see cref="Members"/> permissions held through a role that bypasses row-level access.</summary>
+    public IReadOnlySet<string> Bypass { get; set; } = new HashSet<string>();
 
     // Numbers each scoped query's parameters apart, should two ever be composed into one command.
     private int _scopes;
 
-    private bool Member(RuntimeTable table, PublicOp op) =>
-        Members.Contains($"table:{table.ApiName}:{op.ToString().ToLowerInvariant()}");
+    private static string Permission(RuntimeTable table, PublicOp op) => $"table:{table.ApiName}:{op.ToString().ToLowerInvariant()}";
+
+    private bool Member(RuntimeTable table, PublicOp op) => Members.Contains(Permission(table, op));
+
+    /// <summary>Reaches every record for this action: through a bypassing role, or a role on a table with no row rules.</summary>
+    private bool Unscoped(RuntimeTable table, PublicOp op) =>
+        Member(table, op) && (table.Def.Public.Rules.Count == 0 || Bypass.Contains(Permission(table, op)));
 
     private Guid InstanceId => context.Instance?.InstanceId
         ?? throw new InvalidOperationException("Dynamic Apps records are per instance; this context has none.");
@@ -288,6 +303,155 @@ public sealed class RecordService(
         await SaveAsync(ct);
         await tx.CommitAsync(ct);
         return new BulkResult(records.Count);
+    }
+
+    /// <summary>
+    /// Creates many records of one table at once, all or nothing: every row is checked first — its
+    /// values, its lookups, its unique values against the table and against the other rows — and
+    /// nothing is written unless all pass, or when <paramref name="dryRun"/>. A lookup may name its
+    /// target by id or by the target's primary field value (a company's name). Each record is
+    /// created as one would be by hand, so row triggers fire for each.
+    /// </summary>
+    public async Task<ImportResult> ImportAsync(string tableName, ImportRequest request, bool dryRun, CancellationToken ct)
+    {
+        using var rls = RlsScope.Tenant(context.TenantId);
+        var (model, table) = await TableAsync(tableName, RecordPlane.Admin, PublicOp.Create, ct);
+        var rows = request switch
+        {
+            { Csv: { } csv, Rows: null } => CsvRows.Parse(table, csv, request.Columns, MaxImport),
+            { Rows: { } given, Csv: null } => given,
+            { CsvFile: { } file } => throw new ContractValidationException($"The file '{file}' was not sent: only the console can read an attached file."),
+            _ => throw new ContractValidationException("Send rows or csv, not both."),
+        };
+        if (rows.Count is 0 or > MaxImport)
+        {
+            throw new ContractValidationException($"An import takes 1 to {MaxImport} rows.");
+        }
+        using var activity = Span("dcms.dynamicapp.mutation", model, table, "import");
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        var errors = new List<ImportError>();
+        var names = await ResolveLookupNamesAsync(model, table, rows, ct);
+        var claimed = new HashSet<(Guid, string)>();
+        var accepted = new List<JsonObject>();
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var values = rows[i].DeepClone().AsObject();
+            var rowErrors = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var member in table.Members.Where(m => m.IsLookup))
+            {
+                if (values[member.ApiName] is JsonValue v && v.TryGetValue<string>(out var raw) && raw.Trim() is var text && !Guid.TryParse(text, out _))
+                {
+                    if (names.TryGetValue((member.Id, text.ToLowerInvariant()), out var id) && id is { } target)
+                    {
+                        values[member.ApiName] = target.ToString();
+                    }
+                    else
+                    {
+                        rowErrors[member.ApiName] = id is null && names.ContainsKey((member.Id, text.ToLowerInvariant()))
+                            ? $"more than one record is called '{text}'; use its id."
+                            : $"there is no record called '{text}'.";
+                    }
+                }
+            }
+            try
+            {
+                var write = RecordCodec.Write(table, values, null, RecordPlane.Admin);
+                await CheckLookupsAsync(model, table, write.Data, write.Changed, RecordPlane.Admin, ct);
+                foreach (var key in RecordCodec.UniqueKeys(table, write.Data))
+                {
+                    if (!claimed.Add(key) || await db.UniqueKeys.AnyAsync(k => k.InstanceId == InstanceId && k.ConstraintId == key.ConstraintId && k.Key == key.Key, ct))
+                    {
+                        rowErrors["_record"] = $"another {table.ApiName} record already has this {Describe(table, key.ConstraintId)}.";
+                    }
+                }
+                if (rowErrors.Count == 0)
+                {
+                    accepted.Add(write.Data);
+                }
+            }
+            catch (RecordValidationException e)
+            {
+                foreach (var (field, message) in e.Errors)
+                {
+                    rowErrors.TryAdd(field, message);
+                }
+            }
+            errors.AddRange(rowErrors.Select(e => new ImportError(i + 1, e.Key, e.Value)));
+        }
+        activity?.SetTag("dcms.dynamicapp.rows", rows.Count);
+        if (errors.Count > 0 || dryRun)
+        {
+            return new ImportResult(rows.Count, 0, dryRun, errors.Take(MaxImportErrors).ToList(), errors.Count);
+        }
+
+        var now = clock.GetUtcNow();
+        foreach (var data in accepted)
+        {
+            var record = new AppRecord
+            {
+                Id = Guid.NewGuid(),
+                InstanceId = InstanceId,
+                TableId = table.Id,
+                Data = data.ToJsonString(),
+                CreatedAt = now,
+                UpdatedAt = now,
+                CreatedBy = Actor,
+                UpdatedBy = Actor,
+            };
+            db.Records.Add(record);
+            foreach (var (constraintId, key) in RecordCodec.UniqueKeys(table, data))
+            {
+                db.UniqueKeys.Add(new AppUniqueKey { Id = Guid.NewGuid(), InstanceId = InstanceId, ConstraintId = constraintId, RecordId = record.Id, Key = key });
+            }
+            events.Add(db, model.Revision.Number, AppEvent.RowCreated, Entity(table, record.Id),
+                new JsonObject { ["record"] = RecordCodec.Read(table, record, RecordPlane.System) });
+        }
+        Declare("record.imported", table, null).With("count", accepted.Count);
+        await SaveAsync(ct);
+        await tx.CommitAsync(ct);
+        return new ImportResult(rows.Count, accepted.Count, false, [], 0);
+    }
+
+    /// <summary>
+    /// The records the import's lookups name by their primary field rather than by id:
+    /// (lookup, lower-cased name) → the id, or null when the name is not unique.
+    /// </summary>
+    private async Task<Dictionary<(Guid, string), Guid?>> ResolveLookupNamesAsync(RuntimeModel model, RuntimeTable table, IReadOnlyList<JsonObject> rows, CancellationToken ct)
+    {
+        var found = new Dictionary<(Guid, string), Guid?>();
+        foreach (var member in table.Members.Where(m => m.IsLookup))
+        {
+            var wanted = rows.Select(r => r[member.ApiName] is JsonValue v && v.TryGetValue<string>(out var t) ? t.Trim() : null)
+                .Where(t => t is { Length: > 0 and <= 1000 } && !Guid.TryParse(t, out _))
+                .Select(t => t!.ToLowerInvariant()).Distinct().ToArray();
+            if (wanted.Length == 0 || !model.ById.TryGetValue(member.Lookup!.TargetTableId, out var target) || target.Primary is not { } primary)
+            {
+                continue;
+            }
+            // Raw SQL by construction: identifiers are this method's own, every value a parameter.
+            const string sql = """
+                SELECT r.* FROM apps.records r
+                WHERE r."InstanceId" = @instance AND r."TableId" = @table AND lower(r."Data" ->> @key) = ANY(@names)
+                """;
+            var matches = await db.Records.FromSqlRaw(sql,
+                    new NpgsqlParameter("instance", NpgsqlDbType.Uuid) { Value = InstanceId },
+                    new NpgsqlParameter("table", NpgsqlDbType.Uuid) { Value = target.Id },
+                    new NpgsqlParameter("key", NpgsqlDbType.Text) { Value = primary.Key },
+                    new NpgsqlParameter("names", NpgsqlDbType.Array | NpgsqlDbType.Text) { Value = wanted })
+                .IgnoreQueryFilters() // the instance is in the WHERE, under the caller's RlsScope
+                .AsNoTracking()
+                .ToListAsync(ct);
+            foreach (var match in matches)
+            {
+                var name = (JsonNode.Parse(match.Data)?[primary.Key] as JsonValue)?.GetValue<object>()?.ToString()?.ToLowerInvariant();
+                if (name is not null)
+                {
+                    found[(member.Id, name)] = found.ContainsKey((member.Id, name)) ? null : match.Id;
+                }
+            }
+        }
+        return found;
     }
 
     /// <summary>Links two records through a many-to-many relationship. Linking twice is not an error.</summary>
@@ -596,23 +760,27 @@ public sealed class RecordService(
     /// Which of a table's records the public site may <paramref name="op"/>, as SQL over alias
     /// <c>r</c>; null when it may reach them all. Records the visitor owns, where the table's
     /// own-record access allows, and those a row rule granting the action matches for the
-    /// signed-in user. A member holding the action reaches every record.
+    /// signed-in user. A member holding the action reaches every record, unless the table has row
+    /// rules and their role does not bypass them: then the action reaches the rows the rules let
+    /// them read, as well as those granted for the action itself.
     /// </summary>
     private SqlWriter? Scope(RuntimeModel model, RuntimeTable table, RecordPlane plane, PublicOp op)
     {
         var access = table.Def.Public;
-        if (plane != RecordPlane.Public || Member(table, op) || (op == PublicOp.Read && access.Read == PublicRead.All))
+        var member = Member(table, op);
+        if (plane != RecordPlane.Public || Unscoped(table, op) || (access.Read == PublicRead.All && (op == PublicOp.Read || member)))
         {
             return null;
         }
-        var own = op switch
+        bool Own(PublicOp o) => o switch
         {
             PublicOp.Read => access.Read == PublicRead.Own,
             PublicOp.Update => access.UpdateOwn,
             PublicOp.Delete => access.DeleteOwn,
             _ => false,
         };
-        var rules = access.Rules.Where(r => Grants(r, op)).ToList();
+        var own = Own(op) || (member && Own(PublicOp.Read));
+        var rules = access.Rules.Where(r => Grants(r, op) || (member && r.Read)).ToList();
         var (visitor, subject) = (Visitor, Subject);
         return parameter =>
         {
@@ -638,7 +806,9 @@ public sealed class RecordService(
     /// </summary>
     private async Task CheckReachAsync(RuntimeModel model, RuntimeTable table, Guid id, RecordPlane plane, PublicOp op, CancellationToken ct)
     {
-        if (plane != RecordPlane.Public || table.Def.Public.Rules.Count == 0 || Member(table, op))
+        // A role holding create may add records the rules do not show them; its lookups are still
+        // held to records they can read, so it cannot file them under someone else's.
+        if (plane != RecordPlane.Public || table.Def.Public.Rules.Count == 0 || Unscoped(table, op) || (op == PublicOp.Create && Member(table, op)))
         {
             return;
         }

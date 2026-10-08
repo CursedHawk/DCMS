@@ -41,6 +41,14 @@ public sealed record RecordsUpdate(string Table, IReadOnlyList<Guid> Ids, JsonOb
 
 public sealed record RecordsDelete(string Table, IReadOnlyList<Guid> Ids);
 
+/// <summary>An import into <paramref name="Table"/>: see <see cref="ImportRequest"/>.</summary>
+public sealed record RecordsImport(
+    string Table,
+    IReadOnlyList<JsonObject>? Rows = null,
+    string? Csv = null,
+    IReadOnlyDictionary<string, string>? Columns = null,
+    string? CsvFile = null);
+
 /// <param name="Relationship">The many-to-many relationship's name on <paramref name="Table"/>.</param>
 public sealed record RecordLink(string Table, Guid Id, string Relationship, Guid TargetId);
 
@@ -143,7 +151,8 @@ public interface IDynamicAppsConfig
             + "with companies rules [{path: ['access'], field: 'user_email', matches: 'user.email'}] and activities (lookup company) "
             + "[{path: ['company', 'access'], field: 'user_email', matches: 'user.email'}]; a group per record is a text field holding the "
             + "group id with matches 'user.groups'. user.email and user.groups only match User Authentication users; user.attribute only "
-            + "matches attributes visitors cannot edit. Never give the site write access to the table a rule reads. Flow: {apiName, displayName, trigger: {event, tableId?, changedFields?, everyMinutes?}, "
+            + "matches attributes visitors cannot edit. A User Authentication role's table permission still sees only rule-matched rows unless the role "
+            + "has bypassRowAccess. Never give the site write access to the table a rule reads. Flow: {apiName, displayName, trigger: {event, tableId?, changedFields?, everyMinutes?}, "
             + "condition?, steps: [{id, action: 'records.create@1', input with {{ expressions }}}]}. Api names are lowercase snake_case. "
             + "Returns the changes made and the draft's validation issues; fix errors before publishing.")]
     Task<ApplyChangesResult> ApplyChangeSetAsync(ApplyChangesRequest input, CancellationToken ct);
@@ -226,4 +235,24 @@ public interface IDynamicAppsRecords
     [Operation(OpRisk.Dangerous, Permission = DynamicAppsPermissions.DataDelete, Expose = OpExposure.Admin | OpExposure.Ai,
         Description = "Delete up to 500 records.")]
     Task<BulkResult> BulkDeleteRecordsAsync(RecordsDelete input, CancellationToken ct);
+
+    [Operation(OpRisk.Read, Permission = DynamicAppsPermissions.DataImport, Expose = OpExposure.Admin | OpExposure.Ai, ReturnsExternalText = true,
+        Description = "Import records into one table from a CSV file the operator attached (csvFile: its exact name), from csv text, or from rows "
+            + "(values by field api name). The CSV's first row names the fields: api names or display names, or map other headers with "
+            + "columns {header: api_name}. Separator , or ;. Cells: numbers with a dot, booleans true/false/yes/no, dates yyyy-MM-dd, "
+            + "date-times ISO 8601, multiChoice values separated by ; or |, choice by option value; an empty cell leaves the field empty. A "
+            + "lookup takes the target record's id or its primary field value (a company's name). At most 1,000 rows; all or nothing. "
+            + "Checks every row without writing anything and returns the problems by row and field. Run it before import_records and fix "
+            + "what it reports (map columns, correct values) first.")]
+    Task<ImportResult> ValidateImportAsync(RecordsImport input, CancellationToken ct);
+
+    [Operation(OpRisk.Dangerous, Permission = DynamicAppsPermissions.DataImport, Expose = OpExposure.Admin | OpExposure.Ai, ReturnsExternalText = true,
+        Description = "Import records into one table from a CSV file the operator attached (csvFile: its exact name), from csv text, or from rows "
+            + "(values by field api name). The CSV's first row names the fields: api names or display names, or map other headers with "
+            + "columns {header: api_name}. Separator , or ;. Cells: numbers with a dot, booleans true/false/yes/no, dates yyyy-MM-dd, "
+            + "date-times ISO 8601, multiChoice values separated by ; or |, choice by option value; an empty cell leaves the field empty. A "
+            + "lookup takes the target record's id or its primary field value (a company's name). At most 1,000 rows; all or nothing. "
+            + "Creates the records only when every row passes (each fires its table's row-created automations); otherwise creates none "
+            + "and returns the problems. Validate first and say how many records will be created.")]
+    Task<ImportResult> ImportRecordsAsync(RecordsImport input, CancellationToken ct);
 }

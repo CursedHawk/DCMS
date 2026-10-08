@@ -44,7 +44,9 @@ pages need it, and what they may do with the workspace's apps once in. The desig
    covers is public. `/portal` covers `/portal` and everything under it, not `/portals`.
    Put exceptions first: `/portal/news` *Anyone* above `/portal` *Any signed-in user*.
 6. On **Access → Roles**, give groups or people permissions on your apps: each published Dynamic
-   Apps table's read, create, update and delete, and each manual flow's run. See
+   Apps table's read, create, update and delete, and each manual flow's run. On a table with row
+   access rules a role's permission still only reaches the rows the rules give its holders; tick
+   **Bypass row-level access** on a role (managers, admins) to let it reach every row. See
    [dynamic-apps.md](dynamic-apps.md#records-and-the-public-api).
 
 7. On **Access → API access**, restrict the plugin instances whose data needs it: *Any

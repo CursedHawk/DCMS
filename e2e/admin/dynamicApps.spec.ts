@@ -17,6 +17,7 @@ test.use({
     'plugin:dynamic-apps:data-read',
     'plugin:dynamic-apps:data-write',
     'plugin:dynamic-apps:data-delete',
+    'plugin:dynamic-apps:data-import',
     'plugin:dynamic-apps:flows-run',
   ],
 });
@@ -267,4 +268,27 @@ test('a row access rule is saved as part of the table public access', async ({ p
   expect(body.operations[0]!.value.public.rules).toEqual([
     { path: [], field: 'title', matches: 'user.email', read: true, update: true, delete: false },
   ]);
+});
+
+test('a CSV file is checked, then imported into the table', async ({ page, api }) => {
+  const IMPORT = '/api/admin/plugins/crm/_records/deals/import';
+  api
+    .on('POST', '/api/admin/plugins/crm/_records/deals/query', { items: [], total: 0, page: 1, pageSize: 25 })
+    .on('POST', IMPORT, ({ query }: { query: URLSearchParams }) =>
+      query.get('dryRun') === 'true'
+        ? { rows: 2, created: 0, dryRun: true, errors: [], errorCount: 0 }
+        : { rows: 2, created: 2, dryRun: false, errors: [], errorCount: 0 });
+  await page.goto('/plugins/crm/records');
+
+  await page.getByRole('button', { name: 'Import CSV' }).click();
+  await page.getByLabel('CSV file').setInputFiles({ name: 'deals.csv', mimeType: 'text/csv', buffer: Buffer.from('title,amount\nBig one,100\nSmall one,5\n') });
+  await page.getByRole('button', { name: 'Check' }).click();
+  await expect(page.getByText('All 2 rows are ready to import.')).toBeVisible();
+  await page.getByRole('button', { name: 'Import 2 records' }).click();
+
+  await expect.poll(() => api.requestsTo('POST', IMPORT).length).toBe(2);
+  const [check, run] = api.requestsTo('POST', IMPORT);
+  expect(check!.query.get('dryRun')).toBe('true');
+  expect(run!.query.get('dryRun')).toBe('false');
+  expect(run!.body).toEqual({ csv: 'title,amount\nBig one,100\nSmall one,5\n' });
 });

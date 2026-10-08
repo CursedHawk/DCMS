@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { decide } from '../agent/modes';
 import { api } from '../../lib/api';
-import { brief, contractTools, toolName, toolRisk, type CatalogContract } from './contractTools';
+import { brief, contractTools, toolName, toolRisk, withAttachedCsv, type CatalogContract } from './contractTools';
 import { toolsFor } from './tools';
 
 vi.mock('../../lib/api', () => ({ api: { post: vi.fn(), get: vi.fn() } }));
@@ -96,5 +96,20 @@ describe('contract tools', () => {
   it('keeps names inside provider limits', () => {
     expect(toolName('a'.repeat(80), 'GetThing')).toHaveLength(64);
     expect(toolRisk('Dangerous')).toBe('dangerous');
+  });
+});
+
+describe('attached CSV files', () => {
+  const file = (name: string, text: string) => ({ name, size: text.length, type: 'text/csv', file: Object.assign(new File([text], name, { type: 'text/csv' }), { text: async () => text }) });
+
+  it('sends an attached file named as csvFile as the csv text, and leaves other inputs alone', async () => {
+    const attachments = [file('people.csv', 'name\nAda\n')];
+    expect(await withAttachedCsv({ table: 'people', csvFile: 'people.csv' }, attachments)).toEqual({ table: 'people', csv: 'name\nAda\n' });
+    const plain = { table: 'people', csv: 'name\nBob\n' };
+    expect(await withAttachedCsv(plain, attachments)).toBe(plain);
+  });
+
+  it('names the attached files when the one asked for is not there', async () => {
+    await expect(withAttachedCsv({ csvFile: 'nope.csv' }, [file('people.csv', 'x')])).rejects.toThrow(/Attached: people\.csv/);
   });
 });

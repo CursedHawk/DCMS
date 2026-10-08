@@ -192,6 +192,14 @@ internal sealed class DynamicAppsContracts : IDynamicAppsConfig, IDynamicAppsRec
     public Task<BulkResult> BulkDeleteRecordsAsync(RecordsDelete input, CancellationToken ct) =>
         Guarded(() => _records.BulkDeleteAsync(input.Table, new BulkDeleteRequest(input.Ids), RecordPlane.Admin, ct));
 
+    public Task<ImportResult> ValidateImportAsync(RecordsImport input, CancellationToken ct) =>
+        Guarded(() => _records.ImportAsync(input.Table, Import(input), dryRun: true, ct));
+
+    public Task<ImportResult> ImportRecordsAsync(RecordsImport input, CancellationToken ct) =>
+        Guarded(() => _records.ImportAsync(input.Table, Import(input), dryRun: false, ct));
+
+    private static ImportRequest Import(RecordsImport input) => new(input.Rows, input.Csv, input.Columns, input.CsvFile);
+
     // ------------------------------------------------------------------ helpers
 
     /// <summary>A refused record answers like any refused contract call: 400 with every field's reason.</summary>
