@@ -1,0 +1,17 @@
+{
+  "ga": {
+    "title": "Google Analytics",
+    "intro": "Každému webu, který má posílat data do Google Analytics, zadejte jeho GA4 Measurement ID. Značka se načte až poté, co návštěvník přijme cookie lištu, a do té doby se Googlu nic neposílá.",
+    "site": "Web",
+    "measurementId": "Measurement ID",
+    "placeholder": "G-XXXXXXXXXX",
+    "invalid": "Measurement ID má tvar G- následované písmeny a číslicemi.",
+    "uploaded": "Nahrané soubory: značku Google přidejte do svého balíčku sami.",
+    "noSites": "Tento pracovní prostor zatím nemá žádné weby.",
+    "save": "Uložit",
+    "saved": "Measurement ID uložena. Živé weby je převezmou do zhruba pěti minut, bez nového publikování.",
+    "public": "Measurement ID je veřejné: objeví se na každé stránce, která značku načte. Není to tajemství.",
+    "pageViews": "Zobrazení stránek měří samotné rozšířené měření Google. V datovém streamu GA nechte zapnuté „Změny stránky na základě událostí historie prohlížeče“, aby jednostránkové weby počítaly každou stránku.",
+    "disabled": "Plugin je vypnutý, takže žádný web Google Analytics nenačítá."
+  }
+}

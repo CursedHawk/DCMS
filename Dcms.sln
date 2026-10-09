@@ -161,6 +161,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dcms.Plugins.UserAuth.Api",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dcms.Plugins.UserAuth", "src\Plugins\Dcms.Plugins.UserAuth\Dcms.Plugins.UserAuth.csproj", "{83422830-AE3D-4527-BB3D-CB66576040C8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dcms.Plugins.GoogleAnalytics", "src\Plugins\Dcms.Plugins.GoogleAnalytics\Dcms.Plugins.GoogleAnalytics.csproj", "{0C4AA3B9-657E-416C-B178-4C2139C6C543}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -1011,6 +1013,18 @@ Global
 		{83422830-AE3D-4527-BB3D-CB66576040C8}.Release|x64.Build.0 = Release|Any CPU
 		{83422830-AE3D-4527-BB3D-CB66576040C8}.Release|x86.ActiveCfg = Release|Any CPU
 		{83422830-AE3D-4527-BB3D-CB66576040C8}.Release|x86.Build.0 = Release|Any CPU
+		{0C4AA3B9-657E-416C-B178-4C2139C6C543}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0C4AA3B9-657E-416C-B178-4C2139C6C543}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0C4AA3B9-657E-416C-B178-4C2139C6C543}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0C4AA3B9-657E-416C-B178-4C2139C6C543}.Debug|x64.Build.0 = Debug|Any CPU
+		{0C4AA3B9-657E-416C-B178-4C2139C6C543}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0C4AA3B9-657E-416C-B178-4C2139C6C543}.Debug|x86.Build.0 = Debug|Any CPU
+		{0C4AA3B9-657E-416C-B178-4C2139C6C543}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0C4AA3B9-657E-416C-B178-4C2139C6C543}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0C4AA3B9-657E-416C-B178-4C2139C6C543}.Release|x64.ActiveCfg = Release|Any CPU
+		{0C4AA3B9-657E-416C-B178-4C2139C6C543}.Release|x64.Build.0 = Release|Any CPU
+		{0C4AA3B9-657E-416C-B178-4C2139C6C543}.Release|x86.ActiveCfg = Release|Any CPU
+		{0C4AA3B9-657E-416C-B178-4C2139C6C543}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -1090,5 +1104,6 @@ Global
 		{0B22F4FF-68CF-419D-BD34-349BF1C308AD} = {58D3A2C3-F96F-5E57-2C6B-ECE59D6A18FC}
 		{3C486948-D6D6-48BF-B533-3D9A27C48D3D} = {58D3A2C3-F96F-5E57-2C6B-ECE59D6A18FC}
 		{83422830-AE3D-4527-BB3D-CB66576040C8} = {58D3A2C3-F96F-5E57-2C6B-ECE59D6A18FC}
+		{0C4AA3B9-657E-416C-B178-4C2139C6C543} = {58D3A2C3-F96F-5E57-2C6B-ECE59D6A18FC}
 	EndGlobalSection
 EndGlobal

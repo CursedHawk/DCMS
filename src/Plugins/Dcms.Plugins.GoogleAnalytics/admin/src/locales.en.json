@@ -1,0 +1,17 @@
+{
+  "ga": {
+    "title": "Google Analytics",
+    "intro": "Give each site that should report to Google Analytics its GA4 Measurement ID. The tag loads only after a visitor accepts the cookie banner, and nothing is sent to Google before that.",
+    "site": "Site",
+    "measurementId": "Measurement ID",
+    "placeholder": "G-XXXXXXXXXX",
+    "invalid": "A Measurement ID looks like G- followed by letters and digits.",
+    "uploaded": "Uploaded files: add the Google tag to your bundle yourself.",
+    "noSites": "This workspace has no sites yet.",
+    "save": "Save",
+    "saved": "Measurement IDs saved. Live sites pick them up within about five minutes; no republish needed.",
+    "public": "A Measurement ID is public: it appears in every page that loads the tag. It is not a secret.",
+    "pageViews": "Page views come from Google's own enhanced measurement. Keep \"Page changes based on browser history events\" on in your GA data stream so single-page sites count each page.",
+    "disabled": "This plugin is disabled, so no site loads Google Analytics."
+  }
+}
