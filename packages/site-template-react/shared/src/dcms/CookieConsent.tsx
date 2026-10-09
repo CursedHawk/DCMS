@@ -1,11 +1,12 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { consentNeeded, onAnalyticsChange, setConsent } from './analytics';
+import { consentNeeded, gaMeasurementId, onAnalyticsChange, setConsent } from './analytics';
 
 /**
  * The cookie notice for a Mode B site.
  *
  * Renders nothing at all unless there is genuinely something to consent to: the
- * tenant records analytics, the mode is `banner`, and this visitor has not
+ * tenant records analytics or the site reports to Google Analytics, the mode is
+ * `banner`, and this visitor has not
  * already answered. A site whose owner has switched analytics off shows no
  * banner, which is the whole point — a consent prompt for storage that never
  * happens is theatre, and it trains people to click "accept" without reading.
@@ -36,8 +37,15 @@ export function CookieConsent({
   // Subscribed rather than read once: the banner has to appear when the status
   // check comes back, which is after the first render.
   const [visible, setVisible] = useState(false);
+  // Whether Google Analytics is among what is being asked about — it can arrive
+  // after the banner is already up, and the default copy has to stop saying
+  // "anonymous" when it does.
+  const [google, setGoogle] = useState(false);
   useEffect(() => {
-    const sync = () => setVisible(consentNeeded());
+    const sync = () => {
+      setVisible(consentNeeded());
+      setGoogle(gaMeasurementId() !== null);
+    };
     sync();
     return onAnalyticsChange(sync);
   }, []);
@@ -48,7 +56,9 @@ export function CookieConsent({
     <div className="dcms-consent" role="dialog" aria-live="polite" aria-label="Cookie notice" style={bar}>
       <p className="dcms-consent-text" style={text}>
         {message ??
-          'We use anonymous analytics to understand how this site is used. No data is stored until you accept.'}
+          (google
+            ? 'We use analytics, including Google Analytics, to understand how this site is used. Nothing is stored or sent until you accept.'
+            : 'We use anonymous analytics to understand how this site is used. No data is stored until you accept.')}
         {policyUrl ? (
           <>
             {' '}

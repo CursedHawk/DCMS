@@ -930,8 +930,57 @@
     return policy().mode === 'off' || storedConsent() === 'granted';
   }
 
+  // The site's Google Analytics Measurement ID, from the Google Analytics plugin
+  // (GET /api/ga/config, answered for the site site-host resolved). Null when the
+  // site has none — then nothing of Google's is ever loaded.
+  var gaId = null;
+
+  // Asked at runtime rather than stamped at publish, so changing the ID or turning
+  // the plugin off reaches this page without a republish. The answer is cached by
+  // the browser for a few minutes, so a visitor browsing pages asks once.
+  function loadGaConfig(done) {
+    try {
+      fetch('/api/ga/config', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
+        .then(function (res) { return res.ok ? res.json() : {}; })
+        .then(function (body) {
+          gaId = body && typeof body.measurementId === 'string' && /^G-[A-Z0-9]{4,20}$/.test(body.measurementId)
+            ? body.measurementId
+            : null;
+        }, function () { gaId = null; })
+        .then(done, done);
+    } catch (e) {
+      done();
+    }
+  }
+
+  // Google's tag (gtag.js), loaded at most once and only once the visitor has said
+  // yes: basic consent mode, so a visitor who declines or never answers sends
+  // Google nothing at all. Page views come from GA itself (its own initial
+  // page_view); the DCMS beacon is never forwarded, so neither system counts a
+  // view twice. A gtag the author already pasted into the head is left alone.
+  var gaLoaded = false;
+
+  function loadGa(id) {
+    if (gaLoaded || window.gtag || navigator.webdriver) return;
+    gaLoaded = true;
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function () { window.dataLayer.push(arguments); };
+    window.gtag('consent', 'default', {
+      analytics_storage: 'granted',
+      ad_storage: 'denied',
+      ad_user_data: 'denied',
+      ad_personalization: 'denied',
+    });
+    window.gtag('js', new Date());
+    window.gtag('config', id);
+    var tag = document.createElement('script');
+    tag.async = true;
+    tag.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(id);
+    document.head.appendChild(tag);
+  }
+
   function consentBannerNeeded() {
-    return analyticsConfigured() &&
+    return (analyticsConfigured() || gaId !== null) &&
       policy().mode !== 'off' &&
       storedConsent() !== 'granted' &&
       storedConsent() !== 'denied';
@@ -946,8 +995,11 @@
     bar.setAttribute('aria-label', 'Cookie notice');
 
     var text = document.createElement('p');
-    text.textContent = p.message ||
-      'We use anonymous analytics to understand how this site is used. No data is stored until you accept.';
+    // "Anonymous" stops being true once Google is involved, so the default copy says
+    // who is asking. An owner's own message always wins.
+    text.textContent = p.message || (gaId
+      ? 'We use analytics, including Google Analytics, to understand how this site is used. Nothing is stored or sent until you accept.'
+      : 'We use anonymous analytics to understand how this site is used. No data is stored until you accept.');
     bar.appendChild(text);
 
     if (p.policyUrl) {
@@ -1097,12 +1149,15 @@
   }
 
   function startAnalytics() {
+    var granted = policy().mode === 'off' || storedConsent() === 'granted';
+    if (granted && gaId) loadGa(gaId);
     if (analyticsAllowed()) {
       sendPageview();
       trackOutboundClicks();
       trackEngagement();
       return;
     }
+    if (granted) return;
     if (consentBannerNeeded()) {
       // The pageview is sent on acceptance, so a visitor who says yes is still
       // counted for the page they said it on rather than only from the next one.
@@ -1549,7 +1604,9 @@
   }
 
   function run() {
-    startAnalytics();
+    // The banner and both trackers wait for the GA answer, so the consent decision
+    // knows every provider the page has before it asks (or decides not to).
+    loadGaConfig(startAnalytics);
     applyNav(document, location.pathname || '/');
     exposeApi();
     bindForms();

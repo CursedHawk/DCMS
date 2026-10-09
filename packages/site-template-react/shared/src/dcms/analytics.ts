@@ -20,6 +20,13 @@
  * exit, and it gates on `allowed()` — so declining does not merely hide the
  * banner, it stops the session id from ever being created.
  *
+ * **Google Analytics, when the site has a Measurement ID.** The Google Analytics
+ * plugin answers `GET /api/ga/config` with the ID of the site being served; the
+ * tag (gtag.js) is loaded only after the visitor accepts — basic consent mode,
+ * so a visitor who declines sends Google nothing. GA counts its own page views
+ * (its initial `page_view` plus enhanced measurement's history-change events);
+ * the DCMS beacon is never forwarded to it, so no view is counted twice.
+ *
  * ---
  * This file is part of the DCMS-generated layer (`src/dcms/`, beside `src/api/`).
  * The "Refresh API" button in the editor overwrites it, so local edits are lost.
@@ -65,6 +72,9 @@ let options: Resolved = defaults;
 /** null until `/api/analytics/status` answers. Unknown means "do not send". */
 let recording: boolean | null = null;
 let installed = false;
+/** The site's GA4 Measurement ID, or null — none configured, or not answered yet. */
+let gaId: string | null = null;
+let gaLoaded = false;
 /**
  * Where the visitor came from — sent with the document's first page view only. A client-side
  * route change is internal navigation, not a new arrival, and repeating the landing referrer on
@@ -93,12 +103,20 @@ export function setConsent(value: 'granted' | 'denied'): void {
     /* the in-memory decision still governs this page */
   }
   notify();
-  if (value === 'granted') sendPageview();
+  if (value === 'granted') {
+    loadGaIfAllowed();
+    sendPageview();
+  }
 }
 
 /** Whether a banner should be shown: only when there is something to consent to. */
 export function consentNeeded(): boolean {
-  return recording === true && options.mode !== 'off' && consentState() === 'unknown';
+  return (recording === true || gaId !== null) && options.mode !== 'off' && consentState() === 'unknown';
+}
+
+/** The Measurement ID Google Analytics reports to on this site, or null. The banner names Google when set. */
+export function gaMeasurementId(): string | null {
+  return gaId;
 }
 
 function allowed(): boolean {
@@ -169,6 +187,41 @@ export function sendPageview(): void {
 /** Record something of your own: `trackEvent('signup', { plan: 'pro' })`. */
 export function trackEvent(type: string, props?: Record<string, unknown>): void {
   send(type, currentPath(), props);
+}
+
+/* ------------------------------------------------------ google analytics -- */
+
+const MEASUREMENT_ID = /^G-[A-Z0-9]{4,20}$/;
+
+type Gtag = (...args: unknown[]) => void;
+
+/**
+ * Loads gtag.js once, if the site has an ID and the visitor agreed. A gtag the
+ * author already put in the page is left alone rather than doubled.
+ */
+function loadGaIfAllowed(): void {
+  const w = window as unknown as { dataLayer?: unknown[]; gtag?: Gtag };
+  if (gaLoaded || !gaId || w.gtag || navigator.webdriver) return;
+  if (options.mode !== 'off' && consentState() !== 'granted') return;
+  gaLoaded = true;
+  const dataLayer = (w.dataLayer = w.dataLayer ?? []);
+  // gtag.js reads the `arguments` object itself, not an array of them.
+  w.gtag = function gtag() {
+    // eslint-disable-next-line prefer-rest-params
+    dataLayer.push(arguments);
+  };
+  w.gtag('consent', 'default', {
+    analytics_storage: 'granted',
+    ad_storage: 'denied',
+    ad_user_data: 'denied',
+    ad_personalization: 'denied',
+  });
+  w.gtag('js', new Date());
+  w.gtag('config', gaId);
+  const tag = document.createElement('script');
+  tag.async = true;
+  tag.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(gaId)}`;
+  document.head.appendChild(tag);
 }
 
 /* ------------------------------------------------------------- tracking -- */
@@ -291,5 +344,21 @@ export function installAnalytics(opts: AnalyticsOptions = {}): void {
       // only safe direction for something that stores data about people.
       recording = false;
       notify();
+    });
+
+  // Which GA property this site reports to, if any. Asked at runtime so changing
+  // the ID, or turning the plugin off, needs no rebuild of the site.
+  void fetch(`${options.apiBaseUrl}/api/ga/config`, {
+    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+  })
+    .then((res) => (res.ok ? res.json() : {}))
+    .then((body: { measurementId?: unknown }) => {
+      gaId = typeof body.measurementId === 'string' && MEASUREMENT_ID.test(body.measurementId) ? body.measurementId : null;
+      notify();
+      loadGaIfAllowed();
+    })
+    .catch(() => {
+      /* no GA: nothing to load and nothing to ask about */
     });
 }
