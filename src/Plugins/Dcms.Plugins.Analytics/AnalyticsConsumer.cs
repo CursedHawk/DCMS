@@ -7,15 +7,15 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
-using EventEntity = Dcms.Shared.Data.Analytics.AnalyticsEvent;
 using Dcms.Shared.Data.Rls;
 
 namespace Dcms.Plugins.Analytics;
 
 /// <summary>
 /// Persists analytics event batches and maintains per-day rollups. Resilient to
-/// NATS being unavailable; idempotency is best-effort (raw events are append-only,
-/// rollups are incremented — acceptable for analytics).
+/// NATS being unavailable, and idempotent: each hit is stored under its ingest id, and a
+/// redelivered batch (committed, then the ack lost) conflicts on that id and increments
+/// nothing — before, it stored the hit twice and counted it twice.
 /// </summary>
 internal sealed class AnalyticsConsumer(
     INatsJSContext jetStream,
@@ -71,48 +71,61 @@ internal sealed class AnalyticsConsumer(
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AnalyticsDbContext>();
 
-        foreach (var evt in batch.Events)
+        // The row and its rollup increment commit together, so "the row exists" is exactly
+        // "it was counted" — which is what lets a conflict on the row skip the increment.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        for (var i = 0; i < batch.Events.Count; i++)
         {
-            db.Events.Add(new EventEntity
+            var evt = batch.Events[i];
+            var eventId = EventKey(batch.EventId, i);
+            var props = evt.Props?.GetRawText() ?? "{}";
+
+            var inserted = await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO analytics.events ("TenantId", "OccurredAt", "Type", "Path", "Referrer", "SessionId",
+                    "VisitorHash", "PropsJson", "Device", "Browser", "Os", "Country", "UtmSource", "UtmMedium",
+                    "UtmCampaign", "SiteId", "Hostname", "EventId")
+                VALUES ({batch.TenantId}, {evt.OccurredAt}, {evt.Type}, {evt.Path}, {evt.Referrer}, {evt.SessionId},
+                    {evt.VisitorHash}, CAST({props} AS jsonb), {evt.Device}, {evt.Browser}, {evt.Os}, {evt.Country},
+                    {evt.UtmSource}, {evt.UtmMedium}, {evt.UtmCampaign}, {evt.SiteId}, {evt.Hostname}, {eventId})
+                ON CONFLICT ("TenantId", "EventId") WHERE "EventId" IS NOT NULL DO NOTHING
+                """, ct);
+            if (inserted == 0)
             {
-                TenantId = batch.TenantId,
-                OccurredAt = evt.OccurredAt,
-                Type = evt.Type,
-                Path = evt.Path,
-                Referrer = evt.Referrer,
-                SessionId = evt.SessionId,
-                VisitorHash = evt.VisitorHash,
-                PropsJson = evt.Props?.GetRawText() ?? "{}",
-                Device = evt.Device,
-                Browser = evt.Browser,
-                Os = evt.Os,
-                Country = evt.Country,
-                UtmSource = evt.UtmSource,
-                UtmMedium = evt.UtmMedium,
-                UtmCampaign = evt.UtmCampaign,
-            });
+                continue;
+            }
 
             // Rollups key on the *path without its query*: "/pricing?utm_source=x" and
             // "/pricing" are the same page, and keying on the raw path fragmented the
-            // top-pages table into one row per campaign link.
+            // top-pages table into one row per campaign link. An upsert rather than
+            // read-then-write, so two writers cannot both read the old count.
             var rollupPath = RollupPath(evt.Path);
             var day = DateOnly.FromDateTime(evt.OccurredAt.UtcDateTime);
-            var rollup = await db.DailyRollups.FirstOrDefaultAsync(
-                r => r.TenantId == batch.TenantId && r.Day == day && r.Type == evt.Type && r.Path == rollupPath, ct);
-            if (rollup is null)
-            {
-                db.DailyRollups.Add(new DailyRollup
-                {
-                    TenantId = batch.TenantId, Day = day, Type = evt.Type, Path = rollupPath, Count = 1,
-                });
-            }
-            else
-            {
-                rollup.Count++;
-            }
+            var site = evt.SiteId ?? Guid.Empty;
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO analytics.daily_rollups ("TenantId", "Day", "SiteId", "Type", "Path", "Count")
+                VALUES ({batch.TenantId}, {day}, {site}, {evt.Type}, {rollupPath}, 1)
+                ON CONFLICT ("TenantId", "Day", "SiteId", "Type", "Path")
+                DO UPDATE SET "Count" = analytics.daily_rollups."Count" + 1
+                """, ct);
         }
+        await tx.CommitAsync(ct);
+    }
 
-        await db.SaveChangesAsync(ct);
+    /// <summary>
+    /// A stable id per event in a batch: the batch id itself for the first (every producer sends
+    /// one event per batch today), and a deterministic variant of it for any after that.
+    /// </summary>
+    internal static Guid EventKey(Guid batchId, int index)
+    {
+        if (index == 0)
+        {
+            return batchId;
+        }
+        Span<byte> bytes = stackalloc byte[16];
+        batchId.TryWriteBytes(bytes);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt32LittleEndian(bytes[12..],
+            System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(bytes[12..]) ^ index);
+        return new Guid(bytes);
     }
 
     /// <summary>

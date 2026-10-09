@@ -1,6 +1,7 @@
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Analytics;
+using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
 using Microsoft.AspNetCore.Builder;
@@ -33,22 +34,38 @@ internal static class AnalyticsDashboardEndpoints
     {
         app.MapGet("/api/admin/analytics", async (
             int? days, DateTimeOffset? from, DateTimeOffset? to, string? type, string? path,
-            string? country, string? device, AnalyticsDbContext db, ITenantContext tenant,
-            CancellationToken ct) =>
+            string? country, string? device, string? site, string? host, AnalyticsDbContext db,
+            ITenantContext tenant, CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;
             var (start, end) = ResolveRange(days, from, to);
 
+            // `site` is a site id, or "none" for hits no site claims (externally hosted sites
+            // and everything recorded before hits carried a site). Anything else is a typo, and
+            // silently showing every site's numbers under it would be the worst answer.
+            Guid? siteId = null;
+            if (!string.IsNullOrWhiteSpace(site))
+            {
+                if (site == "none") siteId = Guid.Empty;
+                else if (Guid.TryParse(site, out var parsed)) siteId = parsed;
+                else return Results.BadRequest(new { error = "site must be a site id or \"none\"." });
+            }
+
             // Filters apply to the raw events. When any is set the summary has to come
             // from there too, or the headline numbers would describe a different
-            // population than the breakdowns below them.
+            // population than the breakdowns below them. Site is not among them: the
+            // rollups carry it, so a site-filtered series still comes from there.
             var filtered = !string.IsNullOrWhiteSpace(type)
                            || !string.IsNullOrWhiteSpace(path)
                            || !string.IsNullOrWhiteSpace(country)
-                           || !string.IsNullOrWhiteSpace(device);
+                           || !string.IsNullOrWhiteSpace(device)
+                           || !string.IsNullOrWhiteSpace(host);
 
             var events = db.Events.AsNoTracking()
                 .Where(e => e.TenantId == tenantId && e.OccurredAt >= start && e.OccurredAt < end);
+            if (siteId == Guid.Empty) events = events.Where(e => e.SiteId == null);
+            else if (siteId is { } only) events = events.Where(e => e.SiteId == only);
+            if (!string.IsNullOrWhiteSpace(host)) events = events.Where(e => e.Hostname == host);
             if (!string.IsNullOrWhiteSpace(type)) events = events.Where(e => e.Type == type);
             if (!string.IsNullOrWhiteSpace(country)) events = events.Where(e => e.Country == country);
             if (!string.IsNullOrWhiteSpace(device)) events = events.Where(e => e.Device == device);
@@ -80,7 +97,7 @@ internal static class AnalyticsDashboardEndpoints
                         new DateOnly(x.Year, x.Month, x.Day).ToString("yyyy-MM-dd"), x.Events, x.Visitors))
                     .OrderBy(x => x.Day)
                     .ToList()
-                : await UnfilteredSeriesAsync(db, tenantId, startDay, endDay, events, ct);
+                : await UnfilteredSeriesAsync(db, tenantId, siteId, startDay, endDay, events, ct);
 
             var topPaths = await events
                 .GroupBy(e => e.Path)
@@ -118,6 +135,13 @@ internal static class AnalyticsDashboardEndpoints
                 .Select(g => new { key = g.Key, count = g.LongCount() })
                 .OrderByDescending(x => x.count).Take(TopN).ToListAsync(ct);
 
+            // A site can answer on several domains (custom domain, its platform subdomain, www).
+            var byHostname = await events
+                .Where(e => e.Hostname != null)
+                .GroupBy(e => e.Hostname!)
+                .Select(g => new { key = g.Key, count = g.LongCount() })
+                .OrderByDescending(x => x.count).Take(TopN).ToListAsync(ct);
+
             var byCampaign = await events
                 .Where(e => e.UtmSource != null)
                 .GroupBy(e => new { e.UtmSource, e.UtmMedium, e.UtmCampaign })
@@ -141,6 +165,7 @@ internal static class AnalyticsDashboardEndpoints
                 byCountry = byCountry.Select(x => new { country = x.key, count = x.count }),
                 byDevice = byDevice.Select(x => new { device = x.key, count = x.count }),
                 byBrowser = byBrowser.Select(x => new { browser = x.key, count = x.count }),
+                byHostname = byHostname.Select(x => new { hostname = x.key, count = x.count }),
                 byCampaign,
             });
         }).RequirePermission(PlatformPermissions.AnalyticsRead);
@@ -148,7 +173,7 @@ internal static class AnalyticsDashboardEndpoints
         // The dimensions the SPA's filter dropdowns offer, so they list what this
         // tenant actually has rather than a hard-coded guess.
         app.MapGet("/api/admin/analytics/dimensions", async (
-            int? days, AnalyticsDbContext db, ITenantContext tenant, CancellationToken ct) =>
+            int? days, AnalyticsDbContext db, SitesDbContext sitesDb, ITenantContext tenant, CancellationToken ct) =>
         {
             var tenantId = tenant.TenantId!.Value;
             var (start, end) = ResolveRange(days, null, null);
@@ -157,6 +182,11 @@ internal static class AnalyticsDashboardEndpoints
 
             return Results.Ok(new
             {
+                // Every site, not only those with hits: "no visits yet" is an answer too.
+                sites = await sitesDb.Sites.AsNoTracking().Where(s => s.TenantId == tenantId)
+                    .OrderBy(s => s.Name).Select(s => new { id = s.Id, name = s.Name }).ToListAsync(ct),
+                hostnames = await events.Where(e => e.Hostname != null)
+                    .Select(e => e.Hostname!).Distinct().OrderBy(x => x).ToListAsync(ct),
                 types = await events.Select(e => e.Type).Distinct().OrderBy(x => x).ToListAsync(ct),
                 countries = await events.Where(e => e.Country != null)
                     .Select(e => e.Country!).Distinct().OrderBy(x => x).ToListAsync(ct),
@@ -215,11 +245,13 @@ internal static class AnalyticsDashboardEndpoints
     /// visitors per day from the raw events (the rollups cannot carry them).
     /// </summary>
     private static async Task<List<DayPoint>> UnfilteredSeriesAsync(
-        AnalyticsDbContext db, Guid tenantId, DateOnly startDay, DateOnly endDay,
+        AnalyticsDbContext db, Guid tenantId, Guid? siteId, DateOnly startDay, DateOnly endDay,
         IQueryable<Shared.Data.Analytics.AnalyticsEvent> events, CancellationToken ct)
     {
+        // Rollups store "no site" as Guid.Empty, which is also how the caller spells it.
         var counts = await db.DailyRollups.AsNoTracking()
             .Where(r => r.TenantId == tenantId && r.Day >= startDay && r.Day <= endDay)
+            .Where(r => siteId == null || r.SiteId == siteId)
             .GroupBy(r => r.Day)
             .Select(g => new { Day = g.Key, Count = g.Sum(r => r.Count) })
             .ToListAsync(ct);

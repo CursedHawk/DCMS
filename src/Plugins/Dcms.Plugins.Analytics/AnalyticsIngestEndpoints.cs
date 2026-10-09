@@ -104,13 +104,30 @@ internal static class AnalyticsIngestEndpoints
         // Device/browser/OS and country are derived from the request, not read from the
         // payload: a page can claim to be anything, and it cannot see its own IP.
         var facts = UserAgentFacts.Parse(http.Request.Headers.UserAgent.ToString(), geo.ResolveCountry(http));
-        return Publish(events, tenantId, body.Type, body.Path, body.Referrer, body.SessionId, body.Props, facts, ct);
+
+        // Crawlers are dropped here rather than stored and filtered: they inflated every total
+        // and rollup, and the rollups cannot be filtered after the fact.
+        if (facts.Device == UserAgentFacts.Bot)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        // Set by site-host from the Host it resolved (the edge scrubs any client copy). Absent for
+        // an externally hosted site, whose hits stay unattributed.
+        var site = Guid.TryParse(http.Request.Headers[SiteHeader], out var siteId) ? siteId : (Guid?)null;
+        var host = http.Request.Headers[SiteHostHeader].ToString() is { Length: > 0 and <= 253 } h ? h : null;
+
+        return Publish(events, tenantId, body.Type, body.Path, ReferrerFacts.IsSelfReferral(body.Referrer, host) ? null : body.Referrer,
+            body.SessionId, body.Props, facts, ct, site, host);
     }
+
+    private const string SiteHeader = "X-Dcms-Site";
+    private const string SiteHostHeader = "X-Dcms-Site-Host";
 
     /// <summary>Queues one event; shared by the beacon and the <c>analytics.tracking@1</c> contract.</summary>
     public static ValueTask Publish(
         IEventPublisher events, Guid tenantId, string? type, string? path, string? referrer, string? sessionId,
-        JsonElement? props, RequestFacts facts, CancellationToken ct)
+        JsonElement? props, RequestFacts facts, CancellationToken ct, Guid? siteId = null, string? hostname = null)
     {
         var utm = UtmFacts.FromPath(path);
         var evt = new AnalyticsEvent(
@@ -127,10 +144,14 @@ internal static class AnalyticsIngestEndpoints
             facts.Country,
             utm.Source,
             utm.Medium,
-            utm.Campaign);
+            utm.Campaign,
+            siteId,
+            hostname);
 
-        return events.PublishAsync(Subjects.AnalyticsEvents, new AnalyticsEventBatch(
-            Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, [evt]), ct);
+        // The batch id is the message id: JetStream drops a republish of it within the stream's
+        // duplicate window, and the consumer stores it so a redelivery is skipped as well.
+        var batch = new AnalyticsEventBatch(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, [evt]);
+        return events.PublishAsync(Subjects.AnalyticsEvents, batch, ct, batch.EventId.ToString());
     }
 
     private static string? Hash(string? sessionId)

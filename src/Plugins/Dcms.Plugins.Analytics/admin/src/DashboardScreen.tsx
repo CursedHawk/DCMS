@@ -47,10 +47,13 @@ interface Analytics {
   byCountry: { country: string; count: number }[];
   byDevice: { device: string; count: number }[];
   byBrowser: { browser: string; count: number }[];
+  byHostname: { hostname: string; count: number }[];
   byCampaign: { source: string; medium: string | null; campaign: string | null; count: number }[];
 }
 
 interface Dimensions {
+  sites: { id: string; name: string }[];
+  hostnames: string[];
   types: string[];
   countries: string[];
   devices: string[];
@@ -111,6 +114,9 @@ function readRefreshMinutes(): number {
 /** Radix Select reserves the empty string for "nothing selected". */
 const ANY = '__any';
 
+/** The `site` filter value for hits no site claims (external sites, and history before sites were recorded). */
+const UNATTRIBUTED = 'none';
+
 /** ISO 3166-1 alpha-2 → the reader's own language, falling back to the raw code. */
 const regionNames =
   typeof Intl !== 'undefined' && 'DisplayNames' in Intl
@@ -138,6 +144,8 @@ export function DashboardScreen() {
   const mayClear = useCan('tenant:settings');
 
   const [days, setDays] = useState('30');
+  const [site, setSite] = useState(ANY);
+  const [host, setHost] = useState(ANY);
   const [type, setType] = useState(ANY);
   const [country, setCountry] = useState(ANY);
   const [device, setDevice] = useState(ANY);
@@ -169,6 +177,8 @@ export function DashboardScreen() {
   };
 
   const query = new URLSearchParams({ days });
+  if (site !== ANY) query.set('site', site);
+  if (host !== ANY) query.set('host', host);
   if (type !== ANY) query.set('type', type);
   if (country !== ANY) query.set('country', country);
   if (device !== ANY) query.set('device', device);
@@ -227,8 +237,11 @@ export function DashboardScreen() {
     onError: (e) => toastApiError(e, t),
   });
 
-  const hasFilters = type !== ANY || country !== ANY || device !== ANY || appliedPath.trim() !== '';
+  const hasFilters =
+    site !== ANY || host !== ANY || type !== ANY || country !== ANY || device !== ANY || appliedPath.trim() !== '';
   const clearFilters = () => {
+    setSite(ANY);
+    setHost(ANY);
     setType(ANY);
     setCountry(ANY);
     setDevice(ANY);
@@ -278,6 +291,28 @@ export function DashboardScreen() {
       />
 
       <div className="mb-5 flex flex-wrap items-center gap-2">
+        <FilterSelect
+          value={site}
+          onChange={setSite}
+          placeholder={t('analytics.filterSite')}
+          options={
+            dimensions.data?.sites.length ? [...dimensions.data.sites.map((s) => s.id), UNATTRIBUTED] : []
+          }
+          label={(v) =>
+            v === UNATTRIBUTED
+              ? t('analytics.unattributed')
+              : (dimensions.data?.sites.find((s) => s.id === v)?.name ?? v)
+          }
+        />
+        {/* Only worth offering once there is more than one domain to tell apart. */}
+        {(dimensions.data?.hostnames.length ?? 0) > 1 ? (
+          <FilterSelect
+            value={host}
+            onChange={setHost}
+            placeholder={t('analytics.filterHostname')}
+            options={dimensions.data?.hostnames ?? []}
+          />
+        ) : null}
         <FilterSelect
           value={type}
           onChange={setType}
@@ -416,6 +451,13 @@ export function DashboardScreen() {
                 count: r.count,
               }))}
             />
+            {a.data.byHostname.length > 1 ? (
+              <BreakdownCard
+                title={t('analytics.byHostname')}
+                rows={a.data.byHostname.map((r) => ({ key: r.hostname, label: r.hostname, count: r.count }))}
+                onPick={setHost}
+              />
+            ) : null}
             <BreakdownCard
               title={t('analytics.byType')}
               rows={a.data.byType.map((r) => ({ key: r.type, label: r.type, count: r.count }))}

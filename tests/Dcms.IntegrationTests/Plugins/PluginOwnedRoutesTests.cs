@@ -2,6 +2,10 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Dcms.IntegrationTests.Cms;
+using Dcms.Shared.Contracts.Events;
+using Dcms.Shared.Contracts.Messaging;
+using Dcms.Shared.Messaging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.IntegrationTests.Plugins;
 
@@ -58,6 +62,87 @@ public sealed class PluginOwnedRoutesTests(ContentFlowFixture fixture)
         body.GetProperty("pageviews").GetInt64().Should().Be(2);
         body.GetProperty("topPages").EnumerateArray().Select(p => p.GetProperty("path").GetString())
             .Should().Contain("/pricing?utm_source=news");
+    }
+
+    /// <summary>
+    /// A tenant's sites are told apart (site-host stamps X-Dcms-Site), crawlers are not stored,
+    /// and a batch delivered twice — committed, then its ack lost — is stored and counted once.
+    /// </summary>
+    [DockerFact]
+    public async Task Hits_are_per_site_bots_are_dropped_and_a_redelivered_batch_counts_once()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var owner = Guid.NewGuid();
+        var tenant = "sites-" + Guid.NewGuid().ToString("N")[..8];
+        var admin = fixture.Admin.CreateClient();
+        var content = fixture.Content.CreateClient();
+        var created = await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/tenants", SuperAdmin, "", "SuperAdmin",
+            new { slug = tenant, name = tenant, ownerUserId = owner, ownerEmail = $"{owner:N}@dcms.test" }), ct);
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var tenantId = (await created.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("tenantId").GetGuid();
+        (await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", owner, tenant,
+            body: new { pluginId = "analytics", slug = "stats", name = "Stats", config = "{}" }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+
+        Guid shop = Guid.NewGuid(), blog = Guid.NewGuid();
+        HttpRequestMessage Hit(Guid site, string path, string? userAgent = null, string? referrer = null)
+        {
+            var req = Site(tenant, "/api/collect", new { path, sessionId = "s-" + path, referrer });
+            req.Headers.Add("X-Dcms-Site", site.ToString());
+            req.Headers.Add("X-Dcms-Site-Host", "shop.example");
+            if (userAgent is not null) req.Headers.UserAgent.ParseAdd(userAgent);
+            return req;
+        }
+        (await content.SendAsync(Hit(shop, "/cart", referrer: "https://shop.example/"), ct)).StatusCode.Should().Be(HttpStatusCode.Accepted);
+        (await content.SendAsync(Hit(blog, "/post"), ct)).StatusCode.Should().Be(HttpStatusCode.Accepted);
+        (await content.SendAsync(Hit(shop, "/crawled", userAgent: "Mozilla/5.0 (compatible; Googlebot/2.1)"), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Accepted, "a crawler is told nothing, it is just not stored");
+
+        // The same batch twice, without a message id so JetStream's own dedupe cannot hide it.
+        var batch = new AnalyticsEventBatch(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId,
+            [new AnalyticsEvent(DateTimeOffset.UtcNow, "pageview", "/twice", null, "s-twice", null, null, SiteId: shop)]);
+        var publisher = fixture.Admin.Services.GetRequiredService<IEventPublisher>();
+        await publisher.PublishAsync(Subjects.AnalyticsEvents, batch, ct);
+        await publisher.PublishAsync(Subjects.AnalyticsEvents, batch, ct);
+
+        async Task<JsonElement> Dashboard(string query)
+        {
+            var res = await admin.SendAsync(Req(HttpMethod.Get, $"/api/admin/analytics?days=1&{query}", owner, tenant), ct);
+            res.StatusCode.Should().Be(HttpStatusCode.OK);
+            return await res.Content.ReadFromJsonAsync<JsonElement>(ct);
+        }
+
+        JsonElement shopView = default;
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (DateTime.UtcNow < deadline)
+        {
+            shopView = await Dashboard($"site={shop}");
+            if (shopView.GetRawText().Contains("/twice", StringComparison.Ordinal)
+                && shopView.GetRawText().Contains("/cart", StringComparison.Ordinal))
+            {
+                break;
+            }
+            await Task.Delay(250, ct);
+        }
+        // Let a second copy of the batch land, if it were going to.
+        await Task.Delay(1000, ct);
+        shopView = await Dashboard($"site={shop}");
+
+        var paths = shopView.GetProperty("topPaths").EnumerateArray()
+            .ToDictionary(p => p.GetProperty("path").GetString()!, p => p.GetProperty("count").GetInt64());
+        paths.Should().BeEquivalentTo(new Dictionary<string, long> { ["/cart"] = 1, ["/twice"] = 1 });
+        shopView.GetProperty("series").EnumerateArray().Sum(d => d.GetProperty("events").GetInt64())
+            .Should().Be(2, "the rollups counted the redelivered batch once");
+        shopView.GetProperty("topSources").GetArrayLength().Should().Be(0, "a referrer on the site's own host is not a source");
+        shopView.GetProperty("byHostname").EnumerateArray().Single().GetProperty("hostname").GetString()
+            .Should().Be("shop.example");
+
+        var blogView = await Dashboard($"site={blog}");
+        blogView.GetProperty("topPaths").EnumerateArray().Select(p => p.GetProperty("path").GetString())
+            .Should().Equal("/post");
+
+        (await admin.SendAsync(Req(HttpMethod.Get, "/api/admin/analytics?site=nope", owner, tenant), ct))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [DockerFact]

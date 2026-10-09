@@ -43,6 +43,20 @@ public sealed class AnalyticsEvent
     public string? UtmSource { get; set; }
     public string? UtmMedium { get; set; }
     public string? UtmCampaign { get; set; }
+
+    // ---- Site attribution, from the headers site-host sets ----
+    /// <summary>The site the hit came from; null for an externally hosted site, and for rows older than the column.</summary>
+    public Guid? SiteId { get; set; }
+
+    /// <summary>The domain the visitor used. A site can answer on several.</summary>
+    public string? Hostname { get; set; }
+
+    /// <summary>
+    /// The ingest-assigned id of this hit, unique per tenant. A JetStream redelivery of a batch the
+    /// consumer already committed lands on it and is skipped, rather than storing the hit twice
+    /// and incrementing its rollup again. Null on rows older than the column.
+    /// </summary>
+    public Guid? EventId { get; set; }
 }
 
 /// <summary>
@@ -59,6 +73,12 @@ public sealed class DailyRollup
 {
     public Guid TenantId { get; set; }
     public DateOnly Day { get; set; }
+
+    /// <summary>
+    /// The site, or <see cref="Guid.Empty"/> for hits with none (externally hosted sites, and every
+    /// rollup older than the column). Not nullable because it is part of the key.
+    /// </summary>
+    public Guid SiteId { get; set; }
     public string Type { get; set; } = string.Empty;
     public string Path { get; set; } = string.Empty;
     public long Count { get; set; }
@@ -104,12 +124,16 @@ public class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> options) : 
             // The dashboard's unique-visitor count is a DISTINCT over this triple for
             // a date range; without the index it is a full scan of the tenant's events.
             e.HasIndex(x => new { x.TenantId, x.OccurredAt, x.VisitorHash });
+            e.Property(x => x.Hostname).HasMaxLength(253);
+            e.HasIndex(x => new { x.TenantId, x.SiteId, x.OccurredAt });
+            // The consumer's ON CONFLICT target — what makes a redelivered batch a no-op.
+            e.HasIndex(x => new { x.TenantId, x.EventId }).IsUnique().HasFilter("\"EventId\" IS NOT NULL");
         });
 
         builder.Entity<DailyRollup>(e =>
         {
             e.ToTable("daily_rollups");
-            e.HasKey(x => new { x.TenantId, x.Day, x.Type, x.Path });
+            e.HasKey(x => new { x.TenantId, x.Day, x.SiteId, x.Type, x.Path });
             e.Property(x => x.Type).HasMaxLength(64);
             e.Property(x => x.Path).HasMaxLength(1024);
         });

@@ -50,6 +50,10 @@
     "pageviewsHint": "Page views only — the subset of events with type \"pageview\".",
     "eventsHint": "Everything recorded, including page views, outbound clicks, downloads and page-leave signals.",
     "refresh": "Refresh rate",
-    "refreshEvery": "Refresh every {{count}} min"
+    "refreshEvery": "Refresh every {{count}} min",
+    "filterSite": "Any site",
+    "unattributed": "No site (external or older)",
+    "filterHostname": "Any domain",
+    "byHostname": "Domains"
   }
 }

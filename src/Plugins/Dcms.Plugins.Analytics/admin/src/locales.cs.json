@@ -50,6 +50,10 @@
     "pageviewsHint": "Pouze zobrazení stránek — události typu „pageview“.",
     "eventsHint": "Vše zaznamenané, včetně zobrazení, odchozích kliknutí, stažení a opuštění stránky.",
     "refresh": "Obnovování",
-    "refreshEvery": "Obnovit každých {{count}} min"
+    "refreshEvery": "Obnovit každých {{count}} min",
+    "filterSite": "Libovolný web",
+    "unattributed": "Bez webu (externí nebo starší)",
+    "filterHostname": "Libovolná doména",
+    "byHostname": "Domény"
   }
 }

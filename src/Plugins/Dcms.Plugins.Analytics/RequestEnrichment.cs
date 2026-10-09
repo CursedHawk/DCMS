@@ -50,6 +50,9 @@ public sealed class HeaderGeoIpResolver(IConfiguration configuration)
 /// </summary>
 public static class UserAgentFacts
 {
+    /// <summary>The <see cref="RequestFacts.Device"/> of a crawler; the beacon drops these.</summary>
+    public const string Bot = "bot";
+
     private static readonly Regex BotPattern = new(
         @"bot|crawler|spider|crawling|slurp|facebookexternalhit|preview|monitor|curl|wget|python-requests|headless",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -64,10 +67,9 @@ public static class UserAgentFacts
         var ua = userAgent;
         if (BotPattern.IsMatch(ua))
         {
-            // Bots are kept rather than dropped: "how much of this traffic is real"
-            // is a question the dashboard should be able to answer, and silently
-            // discarding them makes totals unexplainable.
-            return new RequestFacts("bot", null, null, country);
+            // Classified here, dropped by the beacon (AnalyticsIngestEndpoints): stored bots
+            // inflated every total and rollup. Older rows still carry "bot" as their device.
+            return new RequestFacts(Bot, null, null, country);
         }
 
         var device = ua.Contains("iPad", StringComparison.OrdinalIgnoreCase)
@@ -136,4 +138,16 @@ public sealed record UtmFacts(string? Source, string? Medium, string? Campaign)
     }
 
     private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
+}
+
+public static class ReferrerFacts
+{
+    /// <summary>
+    /// A referrer on the site's own domain is internal navigation, not a traffic source — every
+    /// Mode A page after the first carried one, so the site itself topped "top sources".
+    /// </summary>
+    public static bool IsSelfReferral(string? referrer, string? host) =>
+        host is not null
+        && Uri.TryCreate(referrer, UriKind.Absolute, out var uri)
+        && string.Equals(uri.Host, host, StringComparison.OrdinalIgnoreCase);
 }
