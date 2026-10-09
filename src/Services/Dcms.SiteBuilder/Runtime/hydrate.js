@@ -1018,8 +1018,10 @@
 
   function send(type, path, props) {
     // Every beacon goes through here, so this is the single gate: nothing leaves
-    // the page — and no session id is created — without consent.
-    if (!analyticsAllowed()) return;
+    // the page — and no session id is created — without consent. Automated
+    // browsers (headless test runs, scrapers driving Chrome) say so and are not
+    // visitors.
+    if (!analyticsAllowed() || navigator.webdriver) return;
     var payload = {
       type: type,
       path: path,

@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot, hydrateRoot } from 'react-dom/client';
 import { config } from './config';
-import { installAnalytics } from './dcms';
+import { CookieConsent, installAnalytics } from './dcms';
 import { DcmsApp, createFetchDataClient, loadDocuments } from './dcms/runtime';
 
 // Anonymous analytics, gated on consent: nothing is stored or sent until the visitor accepts.
@@ -17,6 +17,10 @@ const documents = loadDocuments(
 const app = (
   <StrictMode>
     <DcmsApp documents={documents} dataClient={createFetchDataClient(config.apiBaseUrl)} />
+    {/* Without it nothing was ever recorded: the default mode waits for an answer no one was
+        asked for. It renders nothing until there is something to consent to, so the
+        prerendered markup still hydrates as-is. */}
+    <CookieConsent />
   </StrictMode>
 );
 // A prerendered page (scripts/prerender.mjs) is hydrated; any other starts from empty.

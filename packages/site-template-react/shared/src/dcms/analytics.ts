@@ -65,6 +65,12 @@ let options: Resolved = defaults;
 /** null until `/api/analytics/status` answers. Unknown means "do not send". */
 let recording: boolean | null = null;
 let installed = false;
+/**
+ * Where the visitor came from — sent with the document's first page view only. A client-side
+ * route change is internal navigation, not a new arrival, and repeating the landing referrer on
+ * every one of them credited a single search click with each page the visitor went on to see.
+ */
+let pageReferrer: string | null = typeof document === 'undefined' ? null : document.referrer || null;
 const listeners = new Set<() => void>();
 
 /* -------------------------------------------------------------- consent -- */
@@ -132,8 +138,9 @@ function currentPath(): string {
 
 function send(type: string, path: string, props?: Record<string, unknown>): void {
   // The single gate. Nothing leaves the page — and no session id is created —
-  // without consent.
-  if (!allowed()) return;
+  // without consent. Automated browsers (headless test runs, scrapers driving
+  // Chrome) say so and are not visitors.
+  if (!allowed() || navigator.webdriver) return;
   try {
     void fetch(`${options.apiBaseUrl}/api/collect`, {
       method: 'POST',
@@ -141,7 +148,7 @@ function send(type: string, path: string, props?: Record<string, unknown>): void
       body: JSON.stringify({
         type,
         path,
-        referrer: document.referrer || null,
+        referrer: pageReferrer,
         sessionId: sessionId(),
         props: props ?? null,
       }),
@@ -172,14 +179,26 @@ export function trackEvent(type: string, props?: Record<string, unknown>): void 
  * `pushState`/`replaceState` fire no event, so they are wrapped. The beacon is
  * deferred to a microtask because a router updates the URL *before* it renders,
  * and a pageview is more useful attributed to the page that actually appeared.
+ *
+ * A `replaceState` counts only when the *pathname* changes. Routers and pages
+ * rewrite the query in place all the time — a filter, a search box, a sort
+ * order, `setSearchParams(..., { replace: true })` — and each of those was being
+ * recorded as another view of the same page. A push or a back/forward is the
+ * visitor going somewhere, so those still count on any change, query included
+ * (that is where `utm_*` lives).
  */
 function trackRouteChanges(): void {
   let last = currentPath();
-  const fire = () => {
+  let lastPathname = location.pathname;
+  const fire = (replaced: boolean) => {
     queueMicrotask(() => {
       const now = currentPath();
-      if (now === last) return; // a replaceState that changed nothing
+      if (now === last) return; // nothing changed
+      const samePage = location.pathname === lastPathname;
       last = now;
+      lastPathname = location.pathname;
+      if (replaced && samePage) return; // the same page rewriting its own query
+      pageReferrer = null;
       sendPageview();
     });
   };
@@ -188,11 +207,11 @@ function trackRouteChanges(): void {
     const original = history[name];
     history[name] = function patched(this: History, ...args: Parameters<History['pushState']>) {
       const result = original.apply(this, args);
-      fire();
+      fire(name === 'replaceState');
       return result;
     };
   }
-  addEventListener('popstate', fire);
+  addEventListener('popstate', () => fire(false));
 }
 
 const DOWNLOAD_EXT = /\.(pdf|zip|rar|7z|gz|tar|docx?|xlsx?|pptx?|csv|txt|rtf|dmg|exe|pkg|apk|mp3|mp4|wav|mov)$/i;
