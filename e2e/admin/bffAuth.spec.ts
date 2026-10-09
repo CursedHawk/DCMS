@@ -133,3 +133,21 @@ test('sign in and sign out are handed to the edge, not driven from the browser',
   expect(url.searchParams.get('returnUrl')).toBe('/');
   expect([...url.searchParams.keys()]).toEqual(['returnUrl']);
 });
+
+test('"Switch account" asks the edge for identity\'s account list and comes back to the same page', async ({
+  page,
+}) => {
+  await useBffMode(page);
+  await page.goto('/sites');
+
+  await page.getByRole('button', { name: 'Account settings' }).click();
+  const signin = page.waitForRequest((r) => r.url().includes('/.edge/signin'));
+  await page.getByRole('menuitem', { name: 'Switch account' }).click();
+
+  // The one value the edge forwards to identity as prompt=select_account. Identity then shows
+  // the accounts on this browser even though one is signed in, and picking one signs the
+  // console in as it.
+  const url = new URL((await signin).url());
+  expect(url.searchParams.get('prompt')).toBe('select_account');
+  expect(url.searchParams.get('returnUrl')).toBe('/sites');
+});

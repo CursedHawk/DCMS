@@ -1,4 +1,4 @@
-import { Bot, Languages, Search, Settings } from 'lucide-react';
+import { ArrowLeftRight, Bot, Languages, Search, Settings } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -14,7 +14,7 @@ import {
 } from '@dcms/ui';
 import { NotificationBell } from '../features/notifications/NotificationBell';
 import { LANGUAGES, setLanguage } from '../lib/i18n';
-import { logout } from '../auth';
+import { logout, switchAccount } from '../auth';
 import { useAuth } from '../useAuth';
 import { useAi } from '../features/assistant/context';
 import { TenantSwitcher } from './TenantSwitcher';
@@ -120,6 +120,11 @@ export function Topbar({
                 label: t('account.menuItem'),
                 icon: Settings,
                 onSelect: () => void navigate({ to: '/account' as string }),
+              },
+              {
+                label: t('actions.switchAccount'),
+                icon: ArrowLeftRight,
+                onSelect: () => void switchAccount(),
               },
             ]}
           />

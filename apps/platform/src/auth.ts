@@ -23,6 +23,7 @@ const auth = createAuth({
 
 export const login = auth.login;
 export const logout = auth.logout;
+export const switchAccount = auth.switchAccount;
 export const completeSignin = auth.completeSignin;
 export const renewSilently = auth.renewSilently;
 export const getAccessToken = auth.getAccessToken;

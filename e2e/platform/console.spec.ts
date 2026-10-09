@@ -74,3 +74,18 @@ test('the audit log fills the columns that used to be empty on every row', async
   // the honest reading of a proxied write.
   await expect(table.getByText('via service')).toBeVisible();
 });
+
+test('"Switch account" sends the operator to identity\'s account list', async ({ page }) => {
+  await page.goto('/');
+
+  await page.getByRole('button', { name: 'Account' }).click();
+  const authorize = page.waitForRequest((r) => r.url().includes('/connect/authorize'));
+  await page.getByRole('menuitem', { name: 'Switch account' }).click();
+
+  // A fresh authorization request, with the prompt that makes identity list this browser's
+  // accounts even though one is signed in. The callback replaces the stored user, so cancelling
+  // at the chooser leaves the console exactly as it was.
+  const url = new URL((await authorize).url());
+  expect(url.searchParams.get('prompt')).toBe('select_account');
+  expect(url.searchParams.get('client_id')).toBe('dcms-platform-spa');
+});

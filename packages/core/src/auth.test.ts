@@ -121,6 +121,14 @@ describe('createBffAuth', () => {
     expect(assign).toHaveBeenCalledWith('/.edge/signout');
   });
 
+  it('sends "Switch account" to the edge asking for identity\'s account list, and comes back here', async () => {
+    await createBffAuth().switchAccount();
+
+    expect(assign).toHaveBeenCalledWith(
+      '/.edge/signin?prompt=select_account&returnUrl=%2Fsites%2F42%3Ftab%3Dfiles',
+    );
+  });
+
   it('has nothing local to clear', async () => {
     // Not a no-op by omission: the cookie is HttpOnly, so there is genuinely nothing here to
     // drop, and the delete-account path relies on that being true rather than silently failing.

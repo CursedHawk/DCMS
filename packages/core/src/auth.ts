@@ -34,6 +34,11 @@ export interface AuthClient {
   login(): Promise<void>;
   register(): Promise<void>;
   logout(): Promise<void>;
+  /**
+   * "Switch account": identity's account list, even when signed in. Picking one signs this
+   * console in as that account; the others stay signed in on the browser to switch back to.
+   */
+  switchAccount(): Promise<void>;
   completeSignin(): Promise<AuthSession | null>;
   renewSilently(): Promise<AuthSession | null>;
   getUser(): Promise<AuthSession | null>;
@@ -141,6 +146,9 @@ export function createAuth(options: AuthOptions): BearerAuthClient {
     // flag rides along as returnUrl and survives the round-trip back to /connect/authorize.
     register: () => userManager.signinRedirect({ extraQueryParams: { dcms_flow: 'register' } }),
     logout: () => userManager.signoutRedirect(),
+    // The stored user is replaced by the callback, so nothing here has to be dropped first —
+    // and cancelling at the chooser leaves the current account exactly as it was.
+    switchAccount: () => userManager.signinRedirect({ prompt: 'select_account' }),
     completeSignin: () => (signinCallback ??= userManager.signinRedirectCallback()),
     renewSilently,
     getUser,
@@ -243,6 +251,9 @@ export function createBffAuth(options: BffAuthOptions = {}): AuthClient {
     },
     logout: async () => {
       window.location.assign(`${base}/signout`);
+    },
+    switchAccount: async () => {
+      window.location.assign(`${base}/signin?prompt=select_account&returnUrl=${returnHere()}`);
     },
     // The edge owns the OIDC callback, at /.edge/signin-oidc, so the SPA never sees a code to
     // exchange and its /auth/callback route is dead in this mode. Re-reading the session is

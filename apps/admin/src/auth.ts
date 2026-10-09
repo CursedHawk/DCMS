@@ -17,6 +17,7 @@ const auth = createBffAuth();
 export const login = auth.login;
 export const register = auth.register;
 export const logout = auth.logout;
+export const switchAccount = auth.switchAccount;
 export const renewSilently = auth.renewSilently;
 export const getUser = auth.getUser;
 export const subscribeToAuth = auth.subscribe;

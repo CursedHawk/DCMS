@@ -1,7 +1,7 @@
-import { ExternalLink } from 'lucide-react';
+import { ArrowLeftRight, ExternalLink } from 'lucide-react';
 import { ThemeControl, Topbar as ShellTopbar, UserMenu } from '@dcms/ui';
 import { NotificationBell } from '../features/notifications/NotificationBell';
-import { logout } from '../auth';
+import { logout, switchAccount } from '../auth';
 import { runtimeConfig } from '../runtime-config';
 import { can, Perm, type PlatformMe } from '../lib/permissions';
 
@@ -37,6 +37,7 @@ export function Topbar({ me, menuButton }: { me: PlatformMe | undefined; menuBut
             email={me?.email}
             secondary={me?.roles.length ? me.roles.join(', ') : undefined}
             onSignOut={() => void logout()}
+            entries={[{ label: 'Switch account', icon: ArrowLeftRight, onSelect: () => void switchAccount() }]}
           />
         </>
       }
