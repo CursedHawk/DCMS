@@ -112,13 +112,30 @@ public sealed class BrowserAccounts(
             db.BrowserAccounts.Add(row);
         }
 
+        Stamp(row, user, loginSessionId);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation })
+        {
+            // A double-submitted sign-in: the other request inserted this account's row between
+            // our read and our write. Take its row instead of failing the sign-in with a 500.
+            db.Entry(row).State = EntityState.Detached;
+            row = await db.BrowserAccounts.SingleAsync(r => r.DeviceHash == device && r.UserId == user.Id, ct);
+            Stamp(row, user, loginSessionId);
+            await db.SaveChangesAsync(ct);
+        }
+        return loginSessionId;
+    }
+
+    private void Stamp(BrowserAccount row, DcmsUser user, string loginSessionId)
+    {
         var now = clock.GetUtcNow();
         row.LoginSessionId = loginSessionId;
         row.SecurityStamp = user.SecurityStamp;
         row.LastUsedAt = now;
         row.ExpiresAt = now + Lifetime;
-        await db.SaveChangesAsync(ct);
-        return loginSessionId;
     }
 
     /// <summary>
