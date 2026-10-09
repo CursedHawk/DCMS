@@ -102,8 +102,10 @@ test('the full preview runs the developer’s code in the opaque-origin sandbox'
   // Bundles in the browser and fetches react, react-router, zod and dompurify from esm.sh, like
   // the Mode B preview: it needs the network, which is why it is slow.
   test.slow();
-  // The site's analytics asks whether it is on; through the preview proxy, like any site call.
+  // The site's analytics asks whether it is on, and which Google Analytics ID it has (none);
+  // through the preview proxy, like any site call.
   api.on('GET', '/api/admin/sites/:id/preview/api/analytics/status', { enabled: false });
+  api.on('GET', '/api/admin/sites/:id/preview/api/ga/config', {});
   await open(page, api, { ...realSite(), ...SITE_FILES });
   await page.getByRole('group', { name: 'View' }).getByTitle('Preview').click();
 

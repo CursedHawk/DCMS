@@ -46,15 +46,6 @@ public sealed class GoogleAnalyticsPluginTests(ContentFlowFixture fixture)
         (await ConfigAsync(tenant2, shop, ct)).TryGetProperty("measurementId", out _).Should().BeFalse();
     }
 
-    [Fact]
-    public void Only_well_formed_ids_keyed_by_a_site_id_are_served()
-    {
-        var site = Guid.NewGuid();
-        GoogleAnalyticsPlugin.MeasurementIds($$$"""{"sites":{"{{{site}}}":"G-OK12345","not-a-guid":"G-OK12345","{{{Guid.NewGuid()}}}":"G-x\"><script>"}}""")
-            .Should().BeEquivalentTo(new Dictionary<string, string> { [site.ToString()] = "G-OK12345" });
-        GoogleAnalyticsPlugin.MeasurementIds("not json").Should().BeEmpty();
-    }
-
     private async Task<JsonElement> ConfigAsync(string tenant, Guid? site, CancellationToken ct)
     {
         var req = new HttpRequestMessage(HttpMethod.Get, "/api/ga/config");
@@ -85,5 +76,18 @@ public sealed class GoogleAnalyticsPluginTests(ContentFlowFixture fixture)
         if (slug.Length > 0) req.Headers.Add("X-Dcms-Tenant", slug);
         if (body is not null) req.Content = JsonContent.Create(body);
         return req;
+    }
+}
+
+/// <summary>The config parsing behind /api/ga/config; no containers, so no fixture collection.</summary>
+public sealed class GoogleAnalyticsConfigTests
+{
+    [Fact]
+    public void Only_well_formed_ids_keyed_by_a_site_id_are_served()
+    {
+        var site = Guid.NewGuid();
+        GoogleAnalyticsPlugin.MeasurementIds($$$"""{"sites":{"{{{site}}}":"G-OK12345","not-a-guid":"G-OK12345","{{{Guid.NewGuid()}}}":"G-x\"><script>"}}""")
+            .Should().BeEquivalentTo(new Dictionary<string, string> { [site.ToString()] = "G-OK12345" });
+        GoogleAnalyticsPlugin.MeasurementIds("not json").Should().BeEmpty();
     }
 }

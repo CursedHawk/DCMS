@@ -34,7 +34,7 @@ function run(policy: Record<string, unknown>, ga: { measurementId?: string }) {
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const banner = () => document.querySelector<HTMLElement>('.dcms-consent');
 const gtagScripts = () =>
-  [...document.head.querySelectorAll<HTMLScriptElement>('script')].filter((s) => s.src.includes('googletagmanager'));
+  Array.from(document.head.querySelectorAll<HTMLScriptElement>('script')).filter((s) => s.src.includes('googletagmanager'));
 
 beforeEach(() => {
   urls = [];
