@@ -138,12 +138,15 @@ public static class AuthorizationEndpoints
             return existing;
         }
 
-        var minted = LoginSessions.New(user.Id.ToString());
-        properties.Items[LoginSessions.PropertyItem] = minted;
+        properties.Items[LoginSessions.PropertyItem] = LoginSessions.New(user.Id.ToString());
         // Re-issues the cookie in place. The principal is the one it already carries, so this
         // changes nothing about who is signed in — only that the login can now be named.
         await context.SignInAsync(IdentityConstants.ApplicationScheme, result.Principal!, properties);
-        return minted;
+        // Read back rather than returning the one minted above: signing in records the account
+        // on this browser, and a live login already recorded for it wins (BrowserAccounts.
+        // RecordAsync). Returning the minted id would put an id in the tokens that the cookie
+        // does not carry and no row names.
+        return properties.Items[LoginSessions.PropertyItem]!;
     }
 
     private static async Task<IResult> ExchangeAsync(

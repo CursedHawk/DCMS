@@ -207,6 +207,14 @@ public static class AuditActions
 
     /// <summary>One device signed out from the account page, leaving the others alone.</summary>
     public const string SessionRevoked = "auth.session.revoked";
+
+    /// <summary>The sign-in page's account list: switched to an account this browser already
+    /// holds a live login for, with no password.</summary>
+    public const string AccountSwitched = "auth.account.switched";
+
+    /// <summary>The sign-in page's account list: an account taken off this browser, its login
+    /// ended with it.</summary>
+    public const string AccountRemoved = "auth.account.removed";
     public const string PasswordChanged = "auth.password.changed";
     public const string PasswordResetRequested = "auth.password.reset.requested";
     public const string PasswordResetCompleted = "auth.password.reset.completed";

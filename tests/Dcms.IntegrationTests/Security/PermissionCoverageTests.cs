@@ -254,10 +254,14 @@ public sealed class IdentityPermissionCoverageTests : PermissionCoverageTestsBas
         "POST /account/api/ssh-keys",
         "POST /account/external/complete",
         "POST /account/external/link",
+        // Device-scoped by construction: both act only on a row bound to this browser's
+        // HttpOnly device cookie, and switching needs that row's login to still be alive.
+        "POST /account/forget",
         "POST /account/forgot-password",
         "POST /account/login",
         "POST /account/register",
         "POST /account/reset-password",
+        "POST /account/switch",
         "POST /api/identity/users/{id:guid}/confirm-email",
         "POST /api/identity/users/{id:guid}/lock",
         "POST /api/identity/users/{id:guid}/roles",

@@ -133,6 +133,21 @@ public sealed class BrowserAccountsTests : IAsyncLifetime
     }
 
     [DockerFact]
+    public async Task Signing_in_again_to_a_live_account_resumes_its_login_rather_than_orphaning_it()
+    {
+        // A second password sign-in for the same account on the same browser must not mint a
+        // new login over the live one: the console renewing from the first would keep running
+        // on an id no row names, and "Remove from this browser" could never end it.
+        var ct = TestContext.Current.CancellationToken;
+        var browser = Browser();
+        await SignInAsync(browser, Ada, ct);
+        var first = await LoginIdOfNextAuthorizationAsync(browser, ct);
+
+        await SignInAsync(browser, Ada, ct);
+        (await LoginIdOfNextAuthorizationAsync(browser, ct)).Should().Be(first);
+    }
+
+    [DockerFact]
     public async Task Another_browser_cannot_switch_to_an_account_it_never_signed_in_with()
     {
         // The row id is in the page's HTML, so it is not a secret. The device cookie is, and the
@@ -286,6 +301,12 @@ public sealed class BrowserAccountsTests : IAsyncLifetime
             }), ct);
         response.StatusCode.Should().Be(HttpStatusCode.Found);
         return response.Headers.Location!.ToString();
+    }
+
+    private async Task<string?> LoginIdOfNextAuthorizationAsync(HttpClient browser, CancellationToken ct)
+    {
+        var auth = await AuthorizeAsync(browser, ct);
+        return IdTokenClaim(await ExchangeAsync(browser, CodeFrom(auth.Location), auth.Verifier, ct), "dcms_lsid");
     }
 
     private async Task<string?> SubjectOfNextAuthorizationAsync(HttpClient browser, CancellationToken ct)

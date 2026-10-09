@@ -87,10 +87,11 @@ public sealed class BrowserAccounts(
     /// Records that <paramref name="user"/> signed in on this browser, returning the login id
     /// the cookie must carry.
     ///
-    /// <para>An id the caller already has (a switch, a re-issued cookie) is kept. Otherwise a
-    /// live row for the same account is <i>resumed</i> rather than replaced: signing in again
-    /// with a password must not orphan the login the platform console is already renewing
-    /// from, which would leave it running on an id nothing here lists.</para>
+    /// <para><b>A live row's login always wins</b>, over an id the caller brings as well as over
+    /// a fresh one. Replacing it would orphan that login: still alive in whatever console is
+    /// renewing from it, but named by no row, so "Remove from this browser" could never end it.
+    /// The caller must put the returned id in the cookie — OnSigningIn does — so the cookie and
+    /// the row always agree.</para>
     /// </summary>
     public async Task<string> RecordAsync(
         HttpContext http, DcmsUser user, string? loginSessionId, CancellationToken ct = default)
@@ -99,11 +100,13 @@ public sealed class BrowserAccounts(
         var row = await db.BrowserAccounts
             .SingleOrDefaultAsync(r => r.DeviceHash == device && r.UserId == user.Id, ct);
 
-        if (string.IsNullOrEmpty(loginSessionId))
+        if (row is not null && await IsLiveAsync(row, user, ct))
         {
-            loginSessionId = row is not null && await IsLiveAsync(row, user, ct)
-                ? row.LoginSessionId
-                : LoginSessions.New(user.Id.ToString());
+            loginSessionId = row.LoginSessionId;
+        }
+        else if (string.IsNullOrEmpty(loginSessionId))
+        {
+            loginSessionId = LoginSessions.New(user.Id.ToString());
         }
 
         if (row is null)
@@ -120,9 +123,14 @@ public sealed class BrowserAccounts(
         catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation })
         {
             // A double-submitted sign-in: the other request inserted this account's row between
-            // our read and our write. Take its row instead of failing the sign-in with a 500.
+            // our read and our write. Join ITS login rather than overwrite it — overwriting would
+            // orphan whichever of the two ids ended up in the browser's cookie.
             db.Entry(row).State = EntityState.Detached;
             row = await db.BrowserAccounts.SingleAsync(r => r.DeviceHash == device && r.UserId == user.Id, ct);
+            if (await IsLiveAsync(row, user, ct))
+            {
+                loginSessionId = row.LoginSessionId;
+            }
             Stamp(row, user, loginSessionId);
             await db.SaveChangesAsync(ct);
         }

@@ -79,14 +79,13 @@ public static class AccountEndpoints
             properties.Items[LoginSessions.PropertyItem] = loginSessionId;
             await signInManager.SignInAsync(user, properties, authenticationMethod: "switch");
 
-            audit.Declare(AuditActions.LoginSucceeded)
+            audit.Declare(AuditActions.AccountSwitched)
                 .Platform()
                 .As(AuditCategory.Auth)
-                .With("method", "switch")
                 .About(user.Id);
             metrics.Login("switch", "succeeded");
             return Results.Redirect(SafeReturnUrl(returnUrl));
-        }).WithAudit(AuditActions.LoginSucceeded, category: AuditCategory.Auth);
+        }).WithAudit(AuditActions.AccountSwitched, category: AuditCategory.Auth);
 
         // "Remove from this browser". Ends the login too — see BrowserAccounts.ForgetAsync.
         app.MapPost("/account/forget", async (
@@ -95,7 +94,7 @@ public static class AccountEndpoints
         {
             await accounts.ForgetAsync(http, id, ct);
             return Results.Redirect($"/account/login{QueryReturn(returnUrl)}");
-        }).WithAudit(AuditActions.SessionRevoked, category: AuditCategory.Auth);
+        }).WithAudit(AuditActions.AccountRemoved, category: AuditCategory.Auth);
 
         app.MapPost("/account/login", async (
             SignInManager<DcmsUser> signInManager,
