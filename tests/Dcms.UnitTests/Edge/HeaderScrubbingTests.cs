@@ -29,6 +29,9 @@ public class HeaderScrubbingTests
     [InlineData("X-WEBAUTH-USER", "admin@highgeek.eu")]
     [InlineData("X-WEBAUTH-EMAIL", "admin@highgeek.eu")]
     [InlineData("X-WEBAUTH-ROLE", "Admin")]
+    // Site attribution: only site-host says which site a request is for.
+    [InlineData("X-Dcms-Site", "00000000-0000-0000-0000-000000000001")]
+    [InlineData("X-Dcms-Site-Host", "victim.example")]
     public async Task Strips_untrusted_headers_from_every_request(string header, string value)
     {
         var context = new DefaultHttpContext();

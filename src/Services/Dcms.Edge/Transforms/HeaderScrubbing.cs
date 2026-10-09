@@ -45,6 +45,14 @@ public static class HeaderScrubbing
     ];
 
     /// <summary>
+    /// Which site a public-plane request belongs to. site-host sets these from the Host it
+    /// resolved, and analytics and the Google Analytics plugin key on them. Unlike
+    /// <c>X-Dcms-Tenant</c> no client — operator or visitor — ever has a reason to send one,
+    /// so they are scrubbed everywhere rather than per route.
+    /// </summary>
+    private static readonly string[] SiteAttributionHeaders = ["X-Dcms-Site", "X-Dcms-Site-Host"];
+
+    /// <summary>
     /// Headers that select a tenant or a data space. These are legitimate <b>client</b> headers
     /// on the operator plane — the admin SPA sends <c>X-Dcms-Tenant</c> and
     /// <c>TenantMembershipMiddleware</c> authorises the caller's membership of whatever it names
@@ -64,6 +72,10 @@ public static class HeaderScrubbing
                 context.Request.Headers.Remove(header);
             }
             foreach (var header in IdentityHeaders)
+            {
+                context.Request.Headers.Remove(header);
+            }
+            foreach (var header in SiteAttributionHeaders)
             {
                 context.Request.Headers.Remove(header);
             }

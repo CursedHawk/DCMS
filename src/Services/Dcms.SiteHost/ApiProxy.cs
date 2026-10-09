@@ -6,7 +6,8 @@ namespace Dcms.SiteHost;
 /// <summary>
 /// Reverse-proxies /api and /hub from a tenant domain to content-api, injecting
 /// the resolved tenant slug as X-Dcms-Tenant so content-api applies the right
-/// tenant context. Uses YARP's direct forwarder for per-request header control.
+/// tenant context, and the site (X-Dcms-Site, X-Dcms-Site-Host) so analytics can tell
+/// a tenant's sites apart. Uses YARP's direct forwarder for per-request header control.
 /// </summary>
 public static class ApiProxy
 {
@@ -33,7 +34,7 @@ public static class ApiProxy
                 return;
             }
 
-            var transformer = new TenantHeaderTransformer(route.TenantSlug);
+            var transformer = new TenantHeaderTransformer(route);
             await forwarder.SendAsync(context, contentApiBaseUrl, httpClient, requestConfig, transformer);
         }
 
@@ -42,14 +43,21 @@ public static class ApiProxy
         return app;
     }
 
-    private sealed class TenantHeaderTransformer(string tenantSlug) : HttpTransformer
+    private sealed class TenantHeaderTransformer(SiteRoute route) : HttpTransformer
     {
         public override async ValueTask TransformRequestAsync(
             HttpContext httpContext, HttpRequestMessage proxyRequest, string destinationPrefix, CancellationToken cancellationToken)
         {
             await base.TransformRequestAsync(httpContext, proxyRequest, destinationPrefix, cancellationToken);
             proxyRequest.Headers.Remove("X-Dcms-Tenant");
-            proxyRequest.Headers.Add("X-Dcms-Tenant", tenantSlug);
+            proxyRequest.Headers.Add("X-Dcms-Tenant", route.TenantSlug);
+
+            // Set, never passed through: the edge scrubs both, and this is the only hop that
+            // knows which site the Host resolved to.
+            proxyRequest.Headers.Remove("X-Dcms-Site");
+            proxyRequest.Headers.Add("X-Dcms-Site", route.SiteId.ToString());
+            proxyRequest.Headers.Remove("X-Dcms-Site-Host");
+            proxyRequest.Headers.TryAddWithoutValidation("X-Dcms-Site-Host", httpContext.Request.Host.Host.ToLowerInvariant());
 
             // YARP's default transformer copies headers but adds no X-Forwarded-* of its own,
             // and UseForwardedHeaders upstream has already consumed the edge's. Restate them from
