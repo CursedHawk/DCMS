@@ -29,3 +29,4 @@ as their implementation phase lands.
 - [0020](0020-mode-d-react-visual-builder.md) — Mode D: a visual builder whose output is a real React application
 - [0021](0021-dynamic-apps.md) — Dynamic Apps: a tenant-defined application runtime inside the plugin boundary
 - [0022](0022-user-authentication.md) — User Authentication: tenant-scoped enterprise users, signed in by Identity, enforced at the edge
+- [0023](0023-google-analytics-plugin.md) — Google Analytics as a plugin: a Measurement ID per site, looked up at runtime, loaded after consent

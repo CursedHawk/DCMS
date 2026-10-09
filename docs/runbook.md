@@ -253,8 +253,17 @@ searchable content types (title + text fields) into `search_documents`;
 **Analytics** — `analytics` schema (events + daily_rollups). content-api
 `POST /api/{slug}/collect` (anonymous beacon) publishes `analytics.events`;
 admin-api's `AnalyticsConsumer` persists events and increments per-day rollups;
-`GET /api/admin/analytics?days=` serves the dashboard (`analytics:read`).
+`GET /api/admin/analytics?days=` serves the dashboard (`analytics:read`), filterable by
+`site` (a site id, or `none`) and `host`. Hits are attributed to the site site-host resolved
+(`X-Dcms-Site`/`X-Dcms-Site-Host`, which the edge scrubs from clients). Each hit is stored once:
+the consumer's insert is keyed on the ingest id, so a JetStream redelivery changes nothing.
+Crawler User-Agents are dropped at ingest.
 Event-table range partitioning is a documented later optimization.
+
+**Google Analytics** — the `google-analytics` plugin holds a GA4 Measurement ID per site in its
+instance config (screen "Sites" on its page). Site runtimes ask `GET /api/ga/config` (cached
+5 min server-side and in the browser) and load gtag.js only after consent. Nothing to run on a
+host: enabling the plugin and filling in an ID is the whole setup. See ADR 0023.
 
 **Visitor Auth** — `visitors` schema (visitor_accounts + visitor_refresh_tokens),
 a separate per-tenant identity pool. content-api endpoints
@@ -301,7 +310,9 @@ TS, reaches the hub through site-host's `/hub` proxy).
   and `/hub` are exempt. 429 on exceed.
 - **Security headers** — content-api and site-host emit `X-Content-Type-Options`,
   `X-Frame-Options: DENY`, `Referrer-Policy`, and an optional
-  `Security:ContentSecurityPolicy`.
+  `Security:ContentSecurityPolicy`. If that is ever set for site-host, it must allow Google
+  Analytics: `https://www.googletagmanager.com` (script) and `https://*.google-analytics.com`
+  plus `https://*.analytics.google.com` (connect) — see ADR 0023.
 - **CORS** — content-api allows the admin SPA origins (`Cors:AllowedOrigins`,
   default localhost:5173/5000) with credentials, required for the cross-origin
   agent hub connection.
