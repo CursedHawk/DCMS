@@ -29,6 +29,8 @@ public static class BffAuthentication
     {
         builder.Services.AddSingleton<BffSessionStore>();
         builder.Services.AddSingleton<BffTokenProvider>();
+        // Every edge cookie, BFF or not, is checked against identity's login. See LoginSessionCheck.
+        builder.Services.AddHttpClient<LoginSessionCheck>(client => client.Timeout = TimeSpan.FromSeconds(5));
     }
 
     /// <summary>

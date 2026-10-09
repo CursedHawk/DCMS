@@ -149,6 +149,44 @@ public sealed class LoginSessionRevocationTests : IAsyncLifetime
     }
 
     [DockerFact]
+    public async Task The_edge_can_ask_whether_a_login_has_ended_and_nobody_else_can()
+    {
+        // The edge's Grafana and git cookies carry no token to fail a refresh with, so this is
+        // the only way a sign-out reaches them.
+        var ct = TestContext.Current.CancellationToken;
+        var browser = Browser();
+        await SignInAsync(browser, ct);
+        var auth = await AuthorizeAsync(browser, ct);
+        var loginSessionId = IdTokenClaim(await ExchangeAsync(browser, CodeFrom(auth.Location), auth.Verifier, ct), "dcms_lsid")!;
+
+        async Task<HttpResponseMessage> AskAsync(string? credentials)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, $"/edge/login-sessions/{Uri.EscapeDataString(loginSessionId)}");
+            if (credentials is not null)
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue(
+                    "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials)));
+            }
+            return await _factory.CreateClient().SendAsync(request, ct);
+        }
+
+        (await AskAsync(null)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await AskAsync($"{Client}:wrong-secret")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        (await AskAsync($"dcms-platform-spa:{Secret}")).StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "only the edge's own client may ask");
+
+        (await (await AskAsync($"{Client}:{Secret}")).Content.ReadFromJsonAsync<JsonElement>(ct))
+            .GetProperty("ended").GetBoolean().Should().BeFalse();
+
+        using (var logout = await browser.GetAsync("/connect/logout", ct))
+        {
+            logout.StatusCode.Should().Be(HttpStatusCode.Found);
+        }
+        (await (await AskAsync($"{Client}:{Secret}")).Content.ReadFromJsonAsync<JsonElement>(ct))
+            .GetProperty("ended").GetBoolean().Should().BeTrue();
+    }
+
+    [DockerFact]
     public async Task One_browser_keeps_one_login_id_across_authorizations()
     {
         // The id has to be STABLE, not merely present. If each authorization minted a fresh one

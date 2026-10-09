@@ -433,6 +433,7 @@ app.MapAccountEndpoints();
 app.MapAccountApiEndpoints();
 app.MapPlatformUserEndpoints();
 app.MapAuthorizationEndpoints();
+app.MapEdgeLoginSessionEndpoints();
 app.MapRealmAccountEndpoints();
 app.MapRealmSsoEndpoints();
 app.MapRealmAdminEndpoints();

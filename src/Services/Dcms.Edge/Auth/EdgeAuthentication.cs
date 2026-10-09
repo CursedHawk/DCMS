@@ -30,6 +30,10 @@ public static class EdgeAuthentication
     private const string RegisterFlowItem = "dcms_flow";
     private const string RegisterFlow = "register";
 
+    /// <summary>The OIDC prompt value for "Switch account", and the property carrying it.</summary>
+    private const string SelectAccount = "select_account";
+    private const string SelectAccountItem = "dcms_select_account";
+
     public static void AddEdgeAuthentication(this WebApplicationBuilder builder)
     {
         var auth = builder.Configuration.GetSection(EdgeAuthOptions.SectionName).Get<EdgeAuthOptions>()
@@ -121,6 +125,8 @@ public static class EdgeAuthentication
                 options.SlidingExpiration = true;
                 options.LoginPath = "/.edge/signin";
                 options.AccessDeniedPath = "/.edge/denied";
+                // Ends this cookie when the identity login behind it ends. See LoginSessionCheck.
+                options.Events.OnValidatePrincipal = LoginSessionCheck.ValidateAsync;
             })
             .AddOpenIdConnect(options =>
             {
@@ -181,6 +187,12 @@ public static class EdgeAuthentication
                         if (context.Properties.Items.ContainsKey(RegisterFlowItem))
                         {
                             context.ProtocolMessage.Parameters[RegisterFlowItem] = RegisterFlow;
+                        }
+                        // "Switch account": identity shows its account list even to a browser
+                        // that is signed in.
+                        if (context.Properties.Items.ContainsKey(SelectAccountItem))
+                        {
+                            context.ProtocolMessage.Prompt = SelectAccount;
                         }
                         return Task.CompletedTask;
                     },
@@ -261,6 +273,18 @@ public static class EdgeAuthentication
                                 // deployed with the claim, which the revoke path tolerates.
                                 LoginSessionId: context.Principal.FindFirst(LoginSessionClaim)?.Value));
 
+                        // A sign-in on a browser that already has a session here — "Switch
+                        // account" — replaces it. The cookie is about to be overwritten, so the
+                        // old row would otherwise sit in Redis holding the previous account's
+                        // tokens, unreachable from this browser and still listed on its account
+                        // page until it expired.
+                        if (BffTokenProvider.SessionIdOf(context.HttpContext.User) is { Length: > 0 } previous)
+                        {
+                            await context.HttpContext.RequestServices
+                                .GetRequiredService<BffSessionStore>()
+                                .RemoveAsync(previous);
+                        }
+
                         var sessionId = Guid.NewGuid().ToString("N");
                         ((System.Security.Claims.ClaimsIdentity)context.Principal.Identity!)
                             .AddClaim(new System.Security.Claims.Claim(BffSessionStore.SessionIdClaim, sessionId));
@@ -285,7 +309,7 @@ public static class EdgeAuthentication
             return;
         }
 
-        app.MapGet("/.edge/signin", (HttpContext context, string? returnUrl, string? flow) =>
+        app.MapGet("/.edge/signin", (HttpContext context, string? returnUrl, string? flow, string? prompt) =>
         {
             var properties = new Microsoft.AspNetCore.Authentication.AuthenticationProperties
             {
@@ -300,6 +324,11 @@ public static class EdgeAuthentication
             if (string.Equals(flow, RegisterFlow, StringComparison.Ordinal))
             {
                 properties.Items[RegisterFlowItem] = RegisterFlow;
+            }
+            // Same rule: only the one value, never whatever a link carried.
+            if (string.Equals(prompt, SelectAccount, StringComparison.Ordinal))
+            {
+                properties.Items[SelectAccountItem] = SelectAccount;
             }
 
             return Results.Challenge(properties, [OpenIdConnectDefaults.AuthenticationScheme]);
