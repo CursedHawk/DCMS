@@ -60,7 +60,21 @@ public sealed class BrowserAccounts(
     AuditScope scope,
     TimeProvider clock)
 {
-    public const string DeviceCookie = "dcms.device";
+    /// <summary>
+    /// The device cookie's name. <c>__Host-</c> over HTTPS, and that prefix is the security
+    /// boundary, not decoration: tenant sites on <c>*.dcms.highgeek.eu</c> run their own script
+    /// and share the registrable domain, so without it a tenant page could set
+    /// <c>dcms.device=&lt;known&gt;; Domain=highgeek.eu</c> — every later sign-in in that browser
+    /// would be recorded under a value the attacker holds, and their own browser could then
+    /// switch into those accounts with no password. A browser refuses any <c>__Host-</c> cookie
+    /// that carries a Domain, so a sibling host cannot plant one. Plain HTTP (development and
+    /// the test server) cannot use the prefix, which requires Secure, and has no sibling hosts.
+    /// </summary>
+    public const string DeviceCookie = "__Host-dcms.device";
+    private const string InsecureDeviceCookie = "dcms.device";
+
+    private static string DeviceCookieName(HttpContext http)
+        => http.Request.IsHttps ? DeviceCookie : InsecureDeviceCookie;
 
     /// <summary>
     /// How long a login stays switchable without use. The same 14 days as identity's cookie and
@@ -218,18 +232,20 @@ public sealed class BrowserAccounts(
            && !await revocations.IsRevokedAsync(row.LoginSessionId, ct);
 
     private static string? DeviceHashOf(HttpContext http)
-        => http.Request.Cookies.TryGetValue(DeviceCookie, out var value) && !string.IsNullOrEmpty(value)
+        => http.Request.Cookies.TryGetValue(DeviceCookieName(http), out var value) && !string.IsNullOrEmpty(value)
             ? HashOf(value)
             : null;
 
     /// <summary>
     /// The device cookie, set if this browser has none. Host-only on the auth host, HttpOnly,
     /// and good for the browser's maximum of 400 days: it names a browser, not a login, and the
-    /// rows behind it expire on their own.
+    /// rows behind it expire on their own. Only ever a value minted HERE — see
+    /// <see cref="DeviceCookie"/> for why the name is what keeps it that way.
     /// </summary>
     private static string EnsureDeviceCookie(HttpContext http)
     {
-        if (http.Request.Cookies.TryGetValue(DeviceCookie, out var existing) && !string.IsNullOrEmpty(existing))
+        var name = DeviceCookieName(http);
+        if (http.Request.Cookies.TryGetValue(name, out var existing) && !string.IsNullOrEmpty(existing))
         {
             return existing;
         }
@@ -242,7 +258,7 @@ public sealed class BrowserAccounts(
         var value = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
             .TrimEnd('=').Replace('+', '-').Replace('/', '_');
         http.Items[DeviceCookie] = value;
-        http.Response.Cookies.Append(DeviceCookie, value, new CookieOptions
+        http.Response.Cookies.Append(name, value, new CookieOptions
         {
             HttpOnly = true,
             Secure = http.Request.IsHttps,

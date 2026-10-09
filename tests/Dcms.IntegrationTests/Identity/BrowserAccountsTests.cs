@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Mvc.Testing.Handlers;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
@@ -203,6 +204,34 @@ public sealed class BrowserAccountsTests : IAsyncLifetime
 
         (await ChooserAsync(browser, ct))[Ada].LoggedIn.Should().BeFalse(
             "a new password ends every login made with the old one, here as on the cookie");
+    }
+
+    [DockerFact]
+    public async Task A_device_cookie_planted_by_a_sibling_host_is_never_used()
+    {
+        // Cookie tossing. A tenant page on *.dcms.highgeek.eu shares the registrable domain, so
+        // it can set "dcms.device=<known>; Domain=highgeek.eu" in a visitor's browser. Had the
+        // server adopted that value, the victim's sign-ins would be recorded under a device the
+        // attacker holds — and the attacker's own browser could switch into them, no password.
+        // Over HTTPS the real cookie is __Host- prefixed, which no sibling can set.
+        var ct = TestContext.Current.CancellationToken;
+        var https = new Uri("https://localhost");
+        var victimJar = new CookieContainer();
+        victimJar.Add(https, new Cookie("dcms.device", "planted-by-a-tenant-page"));
+        var victim = _factory.CreateDefaultClient(https, new CookieContainerHandler(victimJar));
+        await SignInAsync(victim, Ada, ct);
+
+        var device = victimJar.GetCookies(https).Single(c => c.Name.StartsWith("__Host-", StringComparison.Ordinal));
+        device.Name.Should().Be("__Host-dcms.device");
+        device.Value.Should().NotBe("planted-by-a-tenant-page");
+        device.Secure.Should().BeTrue();
+        device.HttpOnly.Should().BeTrue();
+
+        var attackerJar = new CookieContainer();
+        attackerJar.Add(https, new Cookie("dcms.device", "planted-by-a-tenant-page"));
+        var attacker = _factory.CreateDefaultClient(https, new CookieContainerHandler(attackerJar));
+        (await attacker.GetStringAsync("/account/login", ct)).Should().NotContain("Choose an account",
+            "the planted value names no browser the server ever recorded an account on");
     }
 
     private sealed record Row(Guid Id, bool LoggedIn);
