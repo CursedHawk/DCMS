@@ -35,10 +35,67 @@ public static class AccountEndpoints
 
     public static IEndpointRouteBuilder MapAccountEndpoints(this IEndpointRouteBuilder app)
     {
+        // The accounts this browser has signed in with come first, Google-style: one click on a
+        // live one switches to it, a signed-out one opens the form with its address filled in.
+        // `add` is "Use another account", and an error or a prefilled email means the form is
+        // what the person is already in the middle of.
         app.MapGet("/account/login", async (
-            HttpContext http, IAntiforgery antiforgery,
-            SignInManager<DcmsUser> signInManager, string? returnUrl, string? error) =>
-            Results.Content(LoginPage(returnUrl, error, await GoogleEnabledAsync(signInManager), CsrfField(http, antiforgery)), "text/html"));
+            HttpContext http, IAntiforgery antiforgery, BrowserAccounts accounts,
+            SignInManager<DcmsUser> signInManager, string? returnUrl, string? error, string? email, bool? add) =>
+        {
+            var csrf = CsrfField(http, antiforgery);
+            if (add != true && error is null && string.IsNullOrEmpty(email))
+            {
+                var current = await http.AuthenticateAsync(IdentityConstants.ApplicationScheme);
+                var currentLogin = current.Succeeded
+                    ? current.Properties?.GetString(LoginSessions.PropertyItem)
+                    : null;
+                var list = await accounts.ListAsync(http, currentLogin, http.RequestAborted);
+                if (list.Count > 0)
+                {
+                    return Results.Content(ChooserPage(returnUrl, list, csrf), "text/html");
+                }
+            }
+            return Results.Content(LoginPage(returnUrl, error, await GoogleEnabledAsync(signInManager), csrf, email), "text/html");
+        });
+
+        // Sign in as an account this browser already holds a live login for: no password,
+        // because the browser proves it holds that login the same way identity's own cookie
+        // would — the HttpOnly device cookie the row is bound to. The login id is carried over,
+        // so every console already running on it stays on it.
+        app.MapPost("/account/switch", async (
+            HttpContext http, BrowserAccounts accounts, SignInManager<DcmsUser> signInManager,
+            IAuditRecorder audit, DcmsMetrics metrics,
+            [FromForm] Guid id, [FromForm] string? returnUrl, CancellationToken ct) =>
+        {
+            if (await accounts.FindLiveAsync(http, id, ct) is not var (user, loginSessionId))
+            {
+                // Signed out between rendering the list and the click, or not this browser's.
+                // Back to the list, which now says which.
+                return Results.Redirect($"/account/login{QueryReturn(returnUrl)}");
+            }
+
+            var properties = new AuthenticationProperties();
+            properties.Items[LoginSessions.PropertyItem] = loginSessionId;
+            await signInManager.SignInAsync(user, properties, authenticationMethod: "switch");
+
+            audit.Declare(AuditActions.LoginSucceeded)
+                .Platform()
+                .As(AuditCategory.Auth)
+                .With("method", "switch")
+                .About(user.Id);
+            metrics.Login("switch", "succeeded");
+            return Results.Redirect(SafeReturnUrl(returnUrl));
+        }).WithAudit(AuditActions.LoginSucceeded, category: AuditCategory.Auth);
+
+        // "Remove from this browser". Ends the login too — see BrowserAccounts.ForgetAsync.
+        app.MapPost("/account/forget", async (
+            HttpContext http, BrowserAccounts accounts,
+            [FromForm] Guid id, [FromForm] string? returnUrl, CancellationToken ct) =>
+        {
+            await accounts.ForgetAsync(http, id, ct);
+            return Results.Redirect($"/account/login{QueryReturn(returnUrl)}");
+        }).WithAudit(AuditActions.SessionRevoked, category: AuditCategory.Auth);
 
         app.MapPost("/account/login", async (
             SignInManager<DcmsUser> signInManager,
@@ -410,8 +467,9 @@ public static class AccountEndpoints
             ? returnUrl
             : "/";
 
-    private static string LoginPage(string? returnUrl, string? error, bool googleEnabled, string csrf)
+    private static string LoginPage(string? returnUrl, string? error, bool googleEnabled, string csrf, string? email = null)
     {
+        var autofocus = string.IsNullOrEmpty(email) ? ("autofocus", "") : ("", "autofocus");
         var errorBlock = error is null ? string.Empty : ErrorBlock("Invalid email or password.");
         var body = $$"""
             <form method="post" action="/account/login">
@@ -420,9 +478,9 @@ public static class AccountEndpoints
               {{errorBlock}}
               <input type="hidden" name="returnUrl" value="{{Enc(returnUrl)}}" />
               <label for="email">Email</label>
-              <input id="email" name="email" type="email" autocomplete="username" required autofocus />
+              <input id="email" name="email" type="email" autocomplete="username" value="{{Enc(email)}}" required {{autofocus.Item1}} />
               <label for="password">Password</label>
-              <input id="password" name="password" type="password" autocomplete="current-password" required />
+              <input id="password" name="password" type="password" autocomplete="current-password" required {{autofocus.Item2}} />
               <p class="forgot"><a href="/account/forgot-password{{QueryReturn(returnUrl)}}">Forgot password?</a></p>
               <button type="submit">Sign in</button>
               {{GoogleBlock(googleEnabled, returnUrl)}}
@@ -430,6 +488,61 @@ public static class AccountEndpoints
             </form>
             """;
         return Layout("DCMS — Sign in", body);
+    }
+
+    /// <summary>
+    /// The accounts this browser has signed in with. One form per live account (a POST, so a
+    /// link on someone else's page cannot switch who you are), and a plain link for a
+    /// signed-out one, which needs its password again.
+    /// </summary>
+    private static string ChooserPage(string? returnUrl, IReadOnlyList<BrowserAccountView> accounts, string csrf)
+    {
+        var ret = $"<input type=\"hidden\" name=\"returnUrl\" value=\"{Enc(returnUrl)}\" />";
+        var items = string.Join("\n", accounts.Select(a =>
+        {
+            var initial = Enc(string.IsNullOrEmpty(a.Name) ? "?" : a.Name[..1].ToUpperInvariant());
+            var status = a.LoggedIn
+                ? "<span class=\"status live\">Logged in</span>"
+                : "<span class=\"status out\">Signed out</span>";
+            var current = a.Current && a.LoggedIn ? " <span class=\"current\">current</span>" : string.Empty;
+            var who = $$"""
+                <span class="avatar" aria-hidden="true">{{initial}}</span>
+                <span class="who"><span class="name">{{Enc(a.Name)}}{{current}}</span><span class="mail">{{Enc(a.Email)}}</span></span>
+                {{status}}
+                """;
+            var pick = a.LoggedIn
+                ? $$"""
+                    <form method="post" action="/account/switch">
+                      {{csrf}}{{ret}}
+                      <input type="hidden" name="id" value="{{a.Id}}" />
+                      <button type="submit" class="account">{{who}}</button>
+                    </form>
+                    """
+                : $"<a class=\"account\" href=\"/account/login?email={Uri.EscapeDataString(a.Email)}{(string.IsNullOrEmpty(returnUrl) ? "" : "&returnUrl=" + Uri.EscapeDataString(returnUrl))}\">{who}</a>";
+            return $$"""
+                <li>
+                  {{pick}}
+                  <form method="post" action="/account/forget" class="forget">
+                    {{csrf}}{{ret}}
+                    <input type="hidden" name="id" value="{{a.Id}}" />
+                    <button type="submit" title="Remove from this browser" aria-label="Remove {{Enc(a.Email)}} from this browser">&times;</button>
+                  </form>
+                </li>
+                """;
+        }));
+        var add = string.IsNullOrEmpty(returnUrl)
+            ? "/account/login?add=true"
+            : "/account/login?add=true&returnUrl=" + Uri.EscapeDataString(returnUrl);
+        var body = $$"""
+            <main class="card">
+              <h1>Choose an account</h1>
+              <ul class="accounts">
+                {{items}}
+              </ul>
+              <a class="another" href="{{Enc(add)}}">Use another account</a>
+            </main>
+            """;
+        return Layout("DCMS — Choose an account", body);
     }
 
     private static string RegisterPage(string? returnUrl, string? error, bool googleEnabled, string csrf)
@@ -645,6 +758,25 @@ public static class AccountEndpoints
             p.alt { font-size:.8rem; color:#475569; text-align:center; margin:1.25rem 0 0; }
             p.alt a { color:#2563eb; text-decoration:none; }
             p.alt a:hover { text-decoration:underline; }
+            main.card { background:#fff; padding:2rem; border-radius:.75rem; box-shadow:0 1px 3px rgba(0,0,0,.1); width:22rem; }
+            main.card form { background:none; padding:0; box-shadow:none; width:auto; border-radius:0; }
+            ul.accounts { list-style:none; margin:0; padding:0; }
+            ul.accounts li { display:flex; align-items:center; gap:.25rem; border-bottom:1px solid #e2e8f0; }
+            ul.accounts li > :first-child { flex:1; min-width:0; }
+            .account { display:flex; align-items:center; gap:.75rem; width:100%; margin:0; padding:.75rem .25rem; background:none; color:#0f172a; border:0; border-radius:.375rem; text-align:left; text-decoration:none; font-size:.9rem; cursor:pointer; box-sizing:border-box; }
+            .account:hover { background:#f8fafc; }
+            .avatar { flex:none; width:2rem; height:2rem; border-radius:50%; background:#e2e8f0; color:#334155; display:flex; align-items:center; justify-content:center; font-weight:600; }
+            .who { flex:1; min-width:0; display:flex; flex-direction:column; }
+            .who .name, .who .mail { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+            .who .mail { font-size:.78rem; color:#64748b; }
+            .current { font-size:.7rem; color:#64748b; font-weight:400; }
+            .status { flex:none; font-size:.72rem; border-radius:999px; padding:.15rem .5rem; }
+            .status.live { color:#166534; background:#f0fdf4; }
+            .status.out { color:#64748b; background:#f1f5f9; }
+            form.forget button { margin:0; width:auto; padding:.25rem .5rem; background:none; color:#94a3b8; font-size:1.1rem; line-height:1; }
+            form.forget button:hover { background:#f1f5f9; color:#dc2626; }
+            a.another { display:block; margin-top:1rem; font-size:.85rem; color:#2563eb; text-decoration:none; }
+            a.another:hover { text-decoration:underline; }
           </style>
         </head>
         <body>

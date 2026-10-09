@@ -76,6 +76,7 @@ if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(goo
 }
 
 builder.Services.AddScoped<LoginSessionRevocations>();
+builder.Services.AddScoped<BrowserAccounts>();
 
 // Tenant realms (ADR 0022): each tenant's enterprise users, signed in with their own cookie —
 // one per realm, named by RealmCookieManager — and never with identity's platform cookie.
@@ -123,12 +124,13 @@ builder.Services.AddAuthentication().AddCookie(RealmCookies.Scheme, options =>
 // ending only the edge's session leaves identity's cookie in that browser, and the next press
 // of "Sign in" completes /connect/authorize silently. See LoginSessions.
 //
-// The id itself is minted at the authorization endpoint, not here — see
-// AuthorizationEndpoints.EnsureLoginSessionAsync. Minting it in OnSigningIn instead was the
-// first attempt and it does not work: that event fires only on an explicit SignInAsync, so a
-// browser holding a cookie from before the feature shipped never gets one, and every session
-// it goes on to create is unrevokable for the cookie's whole 14-day life. The symptom is
-// "sign out that device" working in a private window and nowhere else.
+// The id is minted at sign-in (OnSigningIn below, which also records the account on this
+// browser for the sign-in page's account list) AND on demand at the authorization endpoint —
+// see AuthorizationEndpoints.EnsureLoginSessionAsync. OnSigningIn alone is not enough: it
+// fires only on an explicit SignInAsync, so a browser holding a cookie from before the feature
+// shipped would never get one, and every session it went on to create would be unrevokable for
+// the cookie's whole 14-day life — "sign out that device" working in a private window and
+// nowhere else.
 builder.Services.ConfigureApplicationCookie(options =>
 {
     // Pinned rather than left to the default so LoginSessions.Retention has something to be
@@ -142,11 +144,14 @@ builder.Services.ConfigureApplicationCookie(options =>
     var validateStamp = options.Events.OnValidatePrincipal;
     options.Events.OnValidatePrincipal = async context =>
     {
+        // Ended means revoked (signed out, removed, ended from the account page) or no longer
+        // alive on this browser's account list (expired, password changed) — the same rule
+        // that shows the account as "Signed out" on the sign-in page.
         if (context.Properties.Items.TryGetValue(LoginSessions.PropertyItem, out var loginSessionId)
             && loginSessionId is { Length: > 0 }
             && await context.HttpContext.RequestServices
-                .GetRequiredService<LoginSessionRevocations>()
-                .IsRevokedAsync(loginSessionId, context.HttpContext.RequestAborted))
+                .GetRequiredService<BrowserAccounts>()
+                .HasEndedAsync(loginSessionId, context.HttpContext.RequestAborted))
         {
             context.RejectPrincipal();
             // Deleted as well as refused, so the browser stops presenting a cookie that will
@@ -156,6 +161,25 @@ builder.Services.ConfigureApplicationCookie(options =>
         }
 
         await validateStamp(context);
+    };
+
+    // Every platform sign-in — password, Google, sign-up, switching accounts, a re-issued
+    // cookie — passes through here, so this is the one place the login id is settled and the
+    // account is put on this browser's list.
+    var signingIn = options.Events.OnSigningIn;
+    options.Events.OnSigningIn = async context =>
+    {
+        await signingIn(context);
+        var http = context.HttpContext;
+        if (await http.RequestServices.GetRequiredService<UserManager<DcmsUser>>()
+                .GetUserAsync(context.Principal!) is not { } user)
+        {
+            return;
+        }
+        context.Properties.Items.TryGetValue(LoginSessions.PropertyItem, out var existing);
+        context.Properties.Items[LoginSessions.PropertyItem] = await http.RequestServices
+            .GetRequiredService<BrowserAccounts>()
+            .RecordAsync(http, user, existing, http.RequestAborted);
     };
 });
 

@@ -22,6 +22,9 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
     /// <see cref="LoginSessions"/>.</summary>
     public DbSet<RevokedLoginSession> RevokedLoginSessions => Set<RevokedLoginSession>();
 
+    /// <summary>Platform accounts signed in per browser. See <see cref="BrowserAccounts"/>.</summary>
+    public DbSet<BrowserAccount> BrowserAccounts => Set<BrowserAccount>();
+
     // Tenant realms (ADR 0022): each tenant's enterprise users, apart from DcmsUser by table.
     // Not under RLS — identity reads no tenant table and holds no tenant context — so every
     // query names its tenant itself; RealmStore is the one place that does.
@@ -53,6 +56,21 @@ public sealed class IdentityDbContext(DbContextOptions<IdentityDbContext> option
             e.Property(r => r.Id).HasMaxLength(128);
             // Drives the prune on write.
             e.HasIndex(r => r.ExpiresAt);
+        });
+
+        builder.Entity<BrowserAccount>(e =>
+        {
+            e.ToTable("browser_accounts");
+            e.HasKey(r => r.Id);
+            e.Property(r => r.DeviceHash).HasMaxLength(64);
+            e.Property(r => r.LoginSessionId).HasMaxLength(128);
+            e.Property(r => r.SecurityStamp).HasMaxLength(256);
+            // One row per account per browser: signing in again resumes it.
+            e.HasIndex(r => new { r.DeviceHash, r.UserId }).IsUnique();
+            // Every touch and every "has this login ended" asks by login id.
+            e.HasIndex(r => r.LoginSessionId);
+            // A deleted account leaves nothing to offer.
+            e.HasOne<DcmsUser>().WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<Realm>(e =>

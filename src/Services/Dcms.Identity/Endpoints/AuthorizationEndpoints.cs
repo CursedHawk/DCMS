@@ -54,6 +54,18 @@ public static class AuthorizationEndpoints
             return await RealmAuthorization.AuthorizeAsync(context, request, realmTenant);
         }
 
+        // "Switch account" in a console. The chooser lists this browser's accounts whether or
+        // not one is signed in, and hands back to this same authorization once one is picked —
+        // minus the prompt, or picking would only show the chooser again.
+        if (request.HasPromptValue(PromptValues.SelectAccount))
+        {
+            var resume = context.Request.PathBase + context.Request.Path + QueryString.Create(
+                context.Request.Query
+                    .Where(q => !string.Equals(q.Key, Parameters.Prompt, StringComparison.Ordinal))
+                    .SelectMany(q => q.Value.Select(v => new KeyValuePair<string, string?>(q.Key, v))));
+            return Results.Redirect("/account/login?returnUrl=" + Uri.EscapeDataString(resume));
+        }
+
         // Require an authenticated cookie session; otherwise bounce to login.
         var result = await context.AuthenticateAsync(IdentityConstants.ApplicationScheme);
         if (!result.Succeeded || result.Principal?.Identity?.IsAuthenticated != true)
@@ -91,6 +103,7 @@ public static class AuthorizationEndpoints
         // The id of the interactive login this authorization is being issued from, so the
         // session it produces can be ended together with the login behind it.
         var loginSessionId = await EnsureLoginSessionAsync(context, result, user);
+        await context.RequestServices.GetRequiredService<BrowserAccounts>().TouchAsync(loginSessionId, context.RequestAborted);
 
         var principal = await BuildUserPrincipalAsync(
             user, userManager, scopeManager, request.GetScopes(), loginSessionId);
@@ -137,7 +150,7 @@ public static class AuthorizationEndpoints
         HttpContext context,
         UserManager<DcmsUser> userManager,
         IOpenIddictScopeManager scopeManager,
-        LoginSessionRevocations revocations)
+        BrowserAccounts browserAccounts)
     {
         var request = context.GetOpenIddictServerRequest()
                       ?? throw new InvalidOperationException("OpenIddict request not found.");
@@ -209,7 +222,7 @@ public static class AuthorizationEndpoints
             // whose button was pressed.
             var loginSessionId = result.Principal!.FindFirst(LoginSessions.ClaimType)?.Value;
             if (!string.IsNullOrEmpty(loginSessionId)
-                && await revocations.IsRevokedAsync(loginSessionId, context.RequestAborted))
+                && await browserAccounts.HasEndedAsync(loginSessionId, context.RequestAborted))
             {
                 return Results.Forbid(
                     authenticationSchemes: [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme],
@@ -218,6 +231,13 @@ public static class AuthorizationEndpoints
                         [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
                         [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = "This sign-in has ended.",
                     }));
+            }
+
+            // A console renewing from this login keeps its account "Logged in" on the sign-in
+            // page for as long as the refresh token it just got.
+            if (!string.IsNullOrEmpty(loginSessionId))
+            {
+                await browserAccounts.TouchAsync(loginSessionId, context.RequestAborted);
             }
 
             // Carried forward from the authorization code (and then from each refresh token),
