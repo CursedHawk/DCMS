@@ -117,6 +117,11 @@
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     font-family: var(--font-ui);
+    /* A word longer than its line — an ACME challenge token, a trace id, a provisioned
+       hostname — breaks instead of running out of its box. Only ever applies to a word that
+       would overflow, so ordinary text is untouched. A flex item still needs
+       `[overflow-wrap:anywhere]` (or HostLink): break-word does not let it shrink. */
+    overflow-wrap: break-word;
     font-size: var(--dcms-text-base);
     -webkit-font-smoothing: antialiased;
   }

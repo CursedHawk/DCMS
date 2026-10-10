@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AlertTriangle, Globe, Plus, RefreshCw, ShieldCheck } from 'lucide-react';
 import {
   Badge, Button, CenteredSpinner, cn, Dialog, DialogBody, DialogContent, DialogDescription,
-  DialogFooter, DialogHeader, DialogTitle, EmptyState, Input, Label, Switch, TagsInput,
+  DialogFooter, DialogHeader, DialogTitle, EmptyState, HostLink, Input, Label, Switch, TagsInput,
   toastApiError,
 } from '@dcms/ui';
 import { useTranslation } from 'react-i18next';
@@ -116,15 +116,17 @@ export function CertificatesPage() {
             <li key={row.id} className="rounded-md border border-border bg-card p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h2 className="font-medium">{row.name}</h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="min-w-0 font-medium [overflow-wrap:anywhere]">{row.name}</h2>
                     {!row.enabled && <Badge tone="secondary">Disabled</Badge>}
                     {row.requiresDns && <Badge tone="outline">DNS-01</Badge>}
                     {row.reissueRequested && <Badge tone="warning">Reissue pending</Badge>}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1">
                     {row.identifiers.map((i) => (
-                      <Badge key={i} tone="outline" className="font-mono">{i}</Badge>
+                      <Badge key={i} tone="outline" className="max-w-full font-mono">
+                        <HostLink host={i} className="text-current" />
+                      </Badge>
                     ))}
                   </div>
                 </div>
@@ -196,7 +198,15 @@ export function CertificatesPage() {
               {row.covers.length > 0 && row.covers.join() !== row.identifiers.join() && (
                 <p className="mt-3 text-xs text-muted-foreground">
                   The certificate currently served covers{' '}
-                  <span className="font-mono">{row.covers.join(', ')}</span> — it will be replaced
+                  <span className="font-mono">
+                    {row.covers.map((host, i) => (
+                      <span key={host}>
+                        {i > 0 ? ', ' : null}
+                        <HostLink host={host} />
+                      </span>
+                    ))}
+                  </span>{' '}
+                  — it will be replaced
                   with one matching the list above on the next renewal.
                 </p>
               )}

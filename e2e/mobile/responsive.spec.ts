@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures/test';
-import { unreachableControls } from '../fixtures/layout';
+import { spillingContent, unreachableControls } from '../fixtures/layout';
 
 /**
  * The phone, on a Pixel 5.
@@ -93,6 +93,8 @@ test.describe('at 360px', () => {
       await page.waitForLoadState('networkidle');
 
       expect(await unreachableControls(page)).toEqual([]);
+    expect(await spillingContent(page)).toEqual([]);
+      expect(await spillingContent(page)).toEqual([]);
     });
   }
 });
@@ -146,6 +148,20 @@ test('a long provisioned domain wraps, and opens the site in a new tab', async (
       id: 'd2', hostname: custom, verified: false, isPrimary: false, managed: false, siteId: null,
       siteName: null, txtRecord: `_dcms-verify.${custom}`, txtValue: 'dcms-verify=0123456789abcdef0123456789abcdef',
     },
+    {
+      id: 'd3', hostname: 'moordoor.cz', verified: true, isPrimary: false, managed: false, siteId: null,
+      siteName: null, txtRecord: '', txtValue: '',
+    },
+  ]);
+  // The CA's own sentence, with a 43-character challenge token in it: one word wider than the box.
+  api.on('GET', '/api/admin/domains/certificates', [
+    {
+      hostname: 'moordoor.cz', source: 'dcms', issuer: "(STAGING) Let's Encrypt", notBefore: '2026-09-01T00:00:00Z',
+      notAfter: '2026-11-30T00:00:00Z', renewedAt: null, reissueRequested: false,
+      lastError:
+        'urn:ietf:params:acme:error:unauthorized: Invalid response from http://moordoor.cz/.well-known/acme-challenge/x8dJ3kq0AbCdEfGhIjKlMnOpQrStUvWxYz0123456789: 404',
+      lastAttemptAt: '2026-10-10T08:00:00Z', consecutiveFailures: 3, expired: false, daysRemaining: 51,
+    },
   ]);
   await page.setViewportSize({ width: 360, height: 740 });
   await page.goto('/settings/domains');
@@ -159,8 +175,12 @@ test('a long provisioned domain wraps, and opens the site in a new tab', async (
   const record = page.getByText(`_dcms-verify.${custom}`);
   await record.scrollIntoViewIfNeeded();
   await expect(record).toBeInViewport({ ratio: 1 });
+  // Beside its label and the copy button, the value was a column a few characters wide.
+  const value = await page.getByText('dcms-verify=0123456789abcdef0123456789abcdef').boundingBox();
+  expect(value!.width).toBeGreaterThan(140);
 
   expect(await unreachableControls(page)).toEqual([]);
+  expect(await spillingContent(page)).toEqual([]);
   const sideways = await page.locator('main').first().evaluate((m) => m.scrollWidth - m.clientWidth);
   expect(sideways).toBeLessThanOrEqual(0);
 });

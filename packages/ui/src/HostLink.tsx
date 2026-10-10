@@ -9,9 +9,14 @@ import { cn } from './cn';
  * breaks them only when the line is actually too short — and, unlike `break-word`, it also lets a
  * flex item shrink below the hostname's width, which is the case that overflowed.</p>
  *
- * <p>`host` is a bare hostname, or a URL when the caller already has one.</p>
+ * <p>`host` is a bare hostname, or a URL when the caller already has one. A wildcard
+ * (`*.example.com`) is shown as text: there is no single site to open.</p>
  */
 export function HostLink({ host, className }: { host: string; className?: string }) {
+  // A wildcard names a set of hosts, not one you can open; it still has to wrap.
+  if (host.startsWith('*.')) {
+    return <span className={cn('min-w-0 [overflow-wrap:anywhere]', className)}>{host}</span>;
+  }
   const href = /^https?:\/\//.test(host) ? host : `https://${host}`;
   return (
     <a

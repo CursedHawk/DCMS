@@ -1,5 +1,5 @@
 import { platformTest as test, expect } from '../fixtures/test';
-import { unreachableControls } from '../fixtures/layout';
+import { spillingContent, unreachableControls } from '../fixtures/layout';
 
 /**
  * The platform console on a phone, at 360px with touch.
@@ -64,7 +64,7 @@ test.beforeEach(({ api }) => {
         lastAttemptAt: '2026-10-01T00:00:00Z',
         expired: false,
         lastError:
-          'urn:ietf:params:acme:error:rateLimited: too many certificates already issued for exact set of domains',
+          'urn:ietf:params:acme:error:unauthorized: Invalid response from http://admin.highgeek.eu/.well-known/acme-challenge/x8dJ3kq0AbCdEfGhIjKlMnOpQrStUvWxYz0123456789: 404',
         daysRemaining: 51,
         issuedThisWeek: 2,
       },
@@ -129,6 +129,7 @@ for (const path of PAGES) {
     await page.waitForLoadState('networkidle');
 
     expect(await unreachableControls(page)).toEqual([]);
+    expect(await spillingContent(page)).toEqual([]);
   });
 }
 
@@ -199,6 +200,18 @@ test('a page action drops below the title rather than squeezing it', async ({ pa
     // Beside it, the description was a column of three words a line.
     expect(action!.y, path).toBeGreaterThan(title!.y + title!.height);
   }
+});
+
+test("a certificate's domains open the site in a new tab; a wildcard is not a site", async ({
+  page,
+}) => {
+  await page.goto('/certificates');
+
+  const site = page.getByRole('link', { name: 'admin.highgeek.eu' });
+  await expect(site).toHaveAttribute('href', 'https://admin.highgeek.eu');
+  await expect(site).toHaveAttribute('target', '_blank');
+  await expect(page.getByText('*.highgeek.eu').first()).toBeVisible();
+  await expect(page.getByRole('link', { name: '*.highgeek.eu' })).toHaveCount(0);
 });
 
 test('the navigation is a drawer that closes behind you', async ({ page }) => {

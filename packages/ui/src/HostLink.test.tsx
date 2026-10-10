@@ -11,6 +11,12 @@ describe('HostLink', () => {
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
+  it('shows a wildcard as text, since there is no one site to open', () => {
+    render(<HostLink host="*.highgeek.eu" />);
+    expect(screen.getByText('*.highgeek.eu')).toBeInTheDocument();
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+
   it('keeps a URL it is given as it is', () => {
     render(<HostLink host="http://localhost:8080" />);
     expect(screen.getByRole('link')).toHaveAttribute('href', 'http://localhost:8080');

@@ -92,8 +92,14 @@ interface SiteSummary {
 export function DomainsPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const domains = useQuery({ queryKey: ['domains'], queryFn: () => api.get<Domain[]>('/admin/domains') });
-  const sites = useQuery({ queryKey: ['sites'], queryFn: () => api.get<SiteSummary[]>('/admin/sites') });
+  const domains = useQuery({
+    queryKey: ['domains'],
+    queryFn: () => api.get<Domain[]>('/admin/domains'),
+  });
+  const sites = useQuery({
+    queryKey: ['sites'],
+    queryFn: () => api.get<SiteSummary[]>('/admin/sites'),
+  });
   /*
    * A separate query from the domains list, not a field on it. The list is what the page needs
    * to render at all; certificate state degrading to "unknown" is a worse page, not a broken
@@ -217,41 +223,47 @@ export function DomainsPage() {
                   )}
                   {d.isPrimary ? <Badge tone="default">{t('domains.primary')}</Badge> : null}
                   {d.managed ? <Badge tone="secondary">{t('domains.providedBadge')}</Badge> : null}
-                  <div className="flex-1" />
-                  {!d.verified ? (
-                    <Button size="sm" disabled={verify.isPending} onClick={() => verify.mutate(d.id)}>
-                      {t('actions.verify')}
-                    </Button>
-                  ) : null}
-                  {/*
+                  {/* One group, so the actions wrap together rather than leaving delete alone on a line. */}
+                  <div className="ml-auto flex items-center gap-2">
+                    {!d.verified ? (
+                      <Button
+                        size="sm"
+                        disabled={verify.isPending}
+                        onClick={() => verify.mutate(d.id)}
+                      >
+                        {t('actions.verify')}
+                      </Button>
+                    ) : null}
+                    {/*
                     Only offered where it can succeed: a domain that serves no site
                     has nothing to be canonical for, and the server rejects it.
                   */}
-                  {d.verified && d.siteId && !d.isPrimary ? (
+                    {d.verified && d.siteId && !d.isPrimary ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        title={t('domains.primaryHint')}
+                        disabled={setPrimary.isPending}
+                        onClick={() => setPrimary.mutate(d.id)}
+                      >
+                        <Star className="h-4 w-4" /> {t('domains.makePrimary')}
+                      </Button>
+                    ) : null}
                     <Button
-                      size="sm"
-                      variant="outline"
-                      title={t('domains.primaryHint')}
-                      disabled={setPrimary.isPending}
-                      onClick={() => setPrimary.mutate(d.id)}
+                      size="icon"
+                      variant="ghost"
+                      title={t('domains.remove')}
+                      aria-label={t('domains.remove')}
+                      disabled={remove.isPending}
+                      onClick={() => {
+                        if (window.confirm(t('domains.removeConfirm', { hostname: d.hostname }))) {
+                          remove.mutate(d.id);
+                        }
+                      }}
                     >
-                      <Star className="h-4 w-4" /> {t('domains.makePrimary')}
+                      <Trash2 className="h-4 w-4" />
                     </Button>
-                  ) : null}
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    title={t('domains.remove')}
-                    aria-label={t('domains.remove')}
-                    disabled={remove.isPending}
-                    onClick={() => {
-                      if (window.confirm(t('domains.removeConfirm', { hostname: d.hostname }))) {
-                        remove.mutate(d.id);
-                      }
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  </div>
                 </div>
 
                 {!d.verified ? (
@@ -310,7 +322,9 @@ export function DomainsPage() {
                     onReissue={() => reissue.mutate(d.id)}
                     onUpload={() => setUploadFor(d)}
                     onRemove={() => {
-                      if (window.confirm(t('domains.certRemoveConfirm', { hostname: d.hostname }))) {
+                      if (
+                        window.confirm(t('domains.certRemoveConfirm', { hostname: d.hostname }))
+                      ) {
                         removeCertificate.mutate(d.id);
                       }
                     }}
@@ -570,9 +584,15 @@ function UploadCertificateDialog({
 
 function Field({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-28 shrink-0 text-xs font-medium text-muted-foreground">{label}</span>
-      <code className="min-w-0 flex-1 rounded bg-background px-2 py-1 text-xs [overflow-wrap:anywhere]">{value}</code>
+    // Label above on a phone: beside it, with the copy button, the value was left a column a few
+    // characters wide and a 44-character token wrapped into a dozen lines.
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:grid-cols-[7rem_minmax(0,1fr)_auto]">
+      <span className="col-span-2 text-xs font-medium text-muted-foreground sm:col-span-1">
+        {label}
+      </span>
+      <code className="rounded bg-background px-2 py-1 text-xs [overflow-wrap:anywhere]">
+        {value}
+      </code>
       <CopyButton value={value} />
     </div>
   );

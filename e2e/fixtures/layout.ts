@@ -35,3 +35,22 @@ export async function unreachableControls(page: Page, within?: Locator): Promise
     return out;
   }, root);
 }
+
+/**
+ * Boxes whose content is wider than they are: a long token, hostname or URL running out of the
+ * card it sits in. Still on the screen, often, so `unreachableControls` does not see it — the text
+ * just crosses a border. Boxes that clip or scroll on purpose (`truncate`, `overflow-x-auto`) are
+ * not counted.
+ */
+export async function spillingContent(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const out: string[] = [];
+    for (const el of document.querySelectorAll<HTMLElement>('main *, [role=dialog] *')) {
+      if (el.clientWidth === 0 || getComputedStyle(el).overflowX !== 'visible') continue;
+      if (el.scrollWidth > el.clientWidth + 1) {
+        out.push(`${el.tagName.toLowerCase()} "${el.innerText.trim().slice(0, 50)}"`);
+      }
+    }
+    return out;
+  });
+}
