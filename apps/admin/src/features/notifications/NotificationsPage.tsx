@@ -140,7 +140,7 @@ function Detail({ notification }: { notification: Notification | null }) {
   const params = parseParams(notification.paramsJson);
 
   return (
-    <div className="rounded-md border p-5">
+    <div className="rounded-md border p-5 [overflow-wrap:anywhere]">
       <div className="mb-3 flex items-center gap-2">
         <Badge tone={severityTone[notification.severity]}>{notification.severity}</Badge>
         <span className="text-xs text-muted-foreground">

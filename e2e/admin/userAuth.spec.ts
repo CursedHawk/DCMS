@@ -112,6 +112,8 @@ test("a site's rules are saved whole and in order", async ({ page, api }) => {
   await page.goto('/plugins/users/access');
 
   await expect(page.getByText('intranet.corp.test')).toBeVisible();
+  // A site's address opens the site, in a new tab so the rules being edited stay put.
+  await expect(page.getByRole('link', { name: 'intranet.corp.test' })).toHaveAttribute('target', '_blank');
   await page.getByRole('button', { name: 'Add rule' }).click();
   const paths = page.getByLabel('Path');
   await paths.nth(1).fill('/portal/news');
@@ -131,6 +133,7 @@ test("a site's rules are saved whole and in order", async ({ page, api }) => {
 test("a provider's stored secret is kept unless a new one is typed", async ({ page, api }) => {
   api.on('PUT', '/api/admin/plugins/users/providers/entra', ENTRA);
   await page.goto('/plugins/users/sign-in');
+  await expect(page.getByRole('link', { name: 'intranet.corp.test' })).toHaveAttribute('href', 'https://intranet.corp.test');
 
   await expect(page.getByText('https://auth.test/realm/sso/1/callback')).toBeVisible();
   await page.getByRole('button', { name: 'Edit' }).click();

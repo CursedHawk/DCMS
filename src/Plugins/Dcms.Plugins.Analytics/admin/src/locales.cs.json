@@ -54,6 +54,7 @@
     "filterSite": "Libovolný web",
     "unattributed": "Bez webu (externí nebo starší)",
     "filterHostname": "Libovolná doména",
-    "byHostname": "Domény"
+    "byHostname": "Domény",
+    "openSite": "Otevřít {{host}} v nové záložce"
   }
 }

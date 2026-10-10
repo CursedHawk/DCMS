@@ -114,7 +114,7 @@
     "notReady": "Přihlašování na vaše weby zatím není na této platformě nastavené, takže se nikdo nepřihlásí. Vaše nastavení zůstane a začne platit, jakmile bude.",
     "passwords": "E-mail a heslo",
     "passwordsHint": "Pozvaní si nastaví heslo. Vypněte, chcete-li povolit jen poskytovatele níže.",
-    "hosts": "Přihlašuje se na: {{hosts}}",
+    "hosts": "Přihlašuje se na:",
     "noHosts": "Žádný z vašich webů zatím nemá ověřenou doménu, není se tedy kde přihlásit.",
     "providers": "Poskytovatelé přihlášení",
     "add": "Přidat poskytovatele",

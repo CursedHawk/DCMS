@@ -54,6 +54,7 @@
     "filterSite": "Any site",
     "unattributed": "No site (external or older)",
     "filterHostname": "Any domain",
-    "byHostname": "Domains"
+    "byHostname": "Domains",
+    "openSite": "Open {{host}} in a new tab"
   }
 }

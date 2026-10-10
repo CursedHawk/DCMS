@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
   EmptyState,
+  HostLink,
   Input,
   Label,
   Page,
@@ -204,7 +205,7 @@ export function DomainsPage() {
               <CardContent className="space-y-4 p-5">
                 <div className="flex flex-wrap items-center gap-2">
                   <Globe className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium">{d.hostname}</span>
+                  <HostLink host={d.hostname} className="font-medium" />
                   {d.verified ? (
                     <Badge tone="success">
                       <BadgeCheck className="h-3 w-3" /> {t('domains.verified')}
@@ -524,7 +525,7 @@ function UploadCertificateDialog({
     <Dialog open={domain !== null} onOpenChange={(next) => !next && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="[overflow-wrap:anywhere]">
             {t('domains.certUpload')} — {domain?.hostname}
           </DialogTitle>
         </DialogHeader>
@@ -571,7 +572,7 @@ function Field({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center gap-2">
       <span className="w-28 shrink-0 text-xs font-medium text-muted-foreground">{label}</span>
-      <code className="flex-1 overflow-x-auto rounded bg-background px-2 py-1 text-xs">{value}</code>
+      <code className="min-w-0 flex-1 rounded bg-background px-2 py-1 text-xs [overflow-wrap:anywhere]">{value}</code>
       <CopyButton value={value} />
     </div>
   );

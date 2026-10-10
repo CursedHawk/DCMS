@@ -113,7 +113,7 @@
     "notReady": "Sign-in to your sites is not configured on this platform yet, so nobody can sign in. Your settings are kept and take effect once it is.",
     "passwords": "Email and password",
     "passwordsHint": "Invited people set a password. Turn it off to allow only the providers below.",
-    "hosts": "People sign in on: {{hosts}}",
+    "hosts": "People sign in on:",
     "noHosts": "None of your sites has a verified domain yet, so there is nowhere to sign in.",
     "providers": "Sign-in providers",
     "add": "Add provider",

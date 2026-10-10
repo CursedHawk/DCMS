@@ -15,6 +15,7 @@ export * from './hooks';
 export * from './Page';
 export * from './ConfirmDeleteDialog';
 export * from './CopyButton';
+export * from './HostLink';
 export * from './Toaster';
 export * from './live';
 export * from './patterns';

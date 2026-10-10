@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Trash2, TrendingUp, X } from 'lucide-react';
+import { ExternalLink, Trash2, TrendingUp, X } from 'lucide-react';
 import { useState } from 'react';
 import type { TFunction } from 'i18next';
 import {
@@ -456,6 +456,7 @@ export function DashboardScreen() {
                 title={t('analytics.byHostname')}
                 rows={a.data.byHostname.map((r) => ({ key: r.hostname, label: r.hostname, count: r.count }))}
                 onPick={setHost}
+                openLabel={(host) => t('analytics.openSite', { host })}
               />
             ) : null}
             <BreakdownCard
@@ -539,16 +540,20 @@ function FilterSelect({
 /**
  * A ranked breakdown with a share bar. Rows are clickable when `onPick` is given,
  * which is how a reader drills from "most traffic is mobile" into just that slice.
+ * With `openLabel` each key is a hostname and gets its own link to the site beside the row —
+ * beside, because the row is already a button and a link cannot sit inside one.
  */
 function BreakdownCard({
   title,
   rows,
   onPick,
+  openLabel,
   empty,
 }: {
   title: string;
   rows: { key: string; label: string; count: number }[];
   onPick?: (key: string) => void;
+  openLabel?: (key: string) => string;
   empty?: string;
 }) {
   const max = rows.reduce((m, r) => Math.max(m, r.count), 0);
@@ -563,12 +568,12 @@ function BreakdownCard({
         ) : (
           <ul className="space-y-1">
             {rows.map((r) => (
-              <li key={r.key}>
+              <li key={r.key} className="flex items-center gap-1">
                 <button
                   type="button"
                   disabled={!onPick}
                   onClick={() => onPick?.(r.key)}
-                  className="relative flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm enabled:hover:bg-accent/50 disabled:cursor-default"
+                  className="relative flex min-w-0 flex-1 items-center justify-between gap-3 rounded-md px-2 py-1.5 text-sm enabled:hover:bg-accent/50 disabled:cursor-default"
                 >
                   {/* Share bar behind the label rather than a separate column: it
                       reads as proportion at a glance without stealing width. */}
@@ -584,6 +589,18 @@ function BreakdownCard({
                     {r.count.toLocaleString()}
                   </span>
                 </button>
+                {openLabel ? (
+                  <a
+                    href={`https://${r.key}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={openLabel(r.key)}
+                    title={openLabel(r.key)}
+                    className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                  </a>
+                ) : null}
               </li>
             ))}
           </ul>

@@ -24,6 +24,7 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
+  HostLink,
 } from '@dcms/ui';
 import { useCan, usePluginApi, usePluginT } from '@dcms/plugin-ui';
 import {
@@ -107,8 +108,8 @@ function SitesTab() {
         <div className="flex flex-wrap gap-1">
           {site?.hosts.length ? (
             site.hosts.map((h) => (
-              <Badge key={h.hostname} tone={h.verified ? 'outline' : 'warning'}>
-                {h.hostname}
+              <Badge key={h.hostname} tone={h.verified ? 'outline' : 'warning'} className="max-w-full">
+                <HostLink host={h.hostname} className="text-current" />
                 {h.verified ? '' : ` · ${t('sites.unverified')}`}
               </Badge>
             ))

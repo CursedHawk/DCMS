@@ -133,3 +133,34 @@ test('past conversations are a drawer away on a phone', async ({ page, api }) =>
   await page.getByRole('button', { name: 'Past conversations' }).click();
   await expect(page.getByRole('dialog').getByText('Rewrite the pricing page')).toBeVisible();
 });
+
+test('a long provisioned domain wraps, and opens the site in a new tab', async ({ page, api }) => {
+  const host = 'quarterly-investor-relations-portal-acme-studio.dcms.highgeek.eu';
+  const custom = 'www.a-very-long-custom-domain-name-for-acme-studio.example';
+  api.on('GET', '/api/admin/domains', [
+    {
+      id: 'd1', hostname: host, verified: true, isPrimary: true, managed: true, siteId: null,
+      siteName: null, txtRecord: '', txtValue: '',
+    },
+    {
+      id: 'd2', hostname: custom, verified: false, isPrimary: false, managed: false, siteId: null,
+      siteName: null, txtRecord: `_dcms-verify.${custom}`, txtValue: 'dcms-verify=0123456789abcdef0123456789abcdef',
+    },
+  ]);
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto('/settings/domains');
+
+  // One unbroken word wider than the phone: it ran off the right edge as plain text.
+  const link = page.getByRole('link', { name: host });
+  await expect(link).toHaveAttribute('href', `https://${host}`);
+  await expect(link).toHaveAttribute('target', '_blank');
+  await expect(link).toHaveAttribute('rel', /noopener/);
+  await expect(link).toBeInViewport({ ratio: 1 });
+  const record = page.getByText(`_dcms-verify.${custom}`);
+  await record.scrollIntoViewIfNeeded();
+  await expect(record).toBeInViewport({ ratio: 1 });
+
+  expect(await unreachableControls(page)).toEqual([]);
+  const sideways = await page.locator('main').first().evaluate((m) => m.scrollWidth - m.clientWidth);
+  expect(sideways).toBeLessThanOrEqual(0);
+});

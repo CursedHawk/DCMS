@@ -20,6 +20,7 @@ import {
   SelectValue,
   Switch,
   TagsInput,
+  HostLink,
 } from '@dcms/ui';
 import { useCan, usePluginApi, usePluginT } from '@dcms/plugin-ui';
 import { type Provider, type ProviderKind, type ProviderWrite, useGroups, usePath, useProviders, useRealm, useWrite } from './api';
@@ -66,7 +67,19 @@ export function SignInScreen() {
         </div>
         {realm.data ? (
           <div className="text-sm text-muted-foreground">
-            {realm.data.hosts.length ? t('signIn.hosts', { hosts: realm.data.hosts.join(', ') }) : t('signIn.noHosts')}
+            {realm.data.hosts.length ? (
+              <>
+                {t('signIn.hosts')}{' '}
+                {realm.data.hosts.map((host, i) => (
+                  <span key={host}>
+                    {i > 0 ? ', ' : null}
+                    <HostLink host={host} />
+                  </span>
+                ))}
+              </>
+            ) : (
+              t('signIn.noHosts')
+            )}
           </div>
         ) : null}
       </Card>
