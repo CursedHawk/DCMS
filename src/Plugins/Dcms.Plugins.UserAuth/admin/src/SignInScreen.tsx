@@ -79,7 +79,7 @@ export function SignInScreen() {
         ) : null}
       </div>
       {providers.data?.length === 0 ? <p className="text-sm text-muted-foreground">{t('signIn.none')}</p> : null}
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {providers.data?.map((p) => (
           <Card key={p.key} className="space-y-2 p-4">
             <div className="flex items-start justify-between gap-2">
@@ -172,7 +172,7 @@ function ProviderDialog({ provider, onClose }: { provider: Provider | null; onCl
         </DialogHeader>
         <DialogBody className="max-h-[70vh] space-y-4 overflow-y-auto">
           {provider ? null : (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>{t('signIn.kind')}</Label>
                 <Select

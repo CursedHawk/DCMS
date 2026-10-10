@@ -238,7 +238,7 @@ export function FolderRail({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
+                  className="shrink-0 can-hover:opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
                   aria-label={t('common.actions')}
                 >
                   <MoreVertical className="h-4 w-4" />

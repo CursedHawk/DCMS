@@ -22,7 +22,7 @@ export function Topbar({
   return (
     <header
       className={cn(
-        'flex shrink-0 items-center gap-2 border-b bg-background/80 px-3 backdrop-blur sm:px-4',
+        'flex shrink-0 items-center gap-1 border-b bg-background/80 px-2 backdrop-blur sm:gap-2 sm:px-4',
         'h-[calc(var(--dcms-row-h)+0.75rem)]',
         className,
       )}

@@ -118,7 +118,7 @@ function LayerRow({
           title={hidden ? t('builder.show') : t('builder.hide')}
           className={cn(
             'shrink-0 rounded p-1 text-muted-foreground',
-            hidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+            hidden ? 'opacity-100' : 'can-hover:opacity-0 group-hover:opacity-100',
           )}
           onClick={() => component.addStyle({ display: hidden ? '' : 'none' })}
         >
@@ -129,7 +129,7 @@ function LayerRow({
           title={locked ? t('builder.unlock') : t('builder.lock')}
           className={cn(
             'shrink-0 rounded p-1 text-muted-foreground',
-            locked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+            locked ? 'opacity-100' : 'can-hover:opacity-0 group-hover:opacity-100',
           )}
           onClick={() => component.set('locked', !locked)}
         >
@@ -138,7 +138,7 @@ function LayerRow({
         <button
           type="button"
           title={t('actions.delete')}
-          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100"
+          className="shrink-0 rounded p-1 text-muted-foreground can-hover:opacity-0 hover:text-destructive group-hover:opacity-100"
           onClick={() => component.remove()}
         >
           <Trash2 className="h-3.5 w-3.5" />

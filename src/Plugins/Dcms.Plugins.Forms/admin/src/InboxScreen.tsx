@@ -270,7 +270,7 @@ export function InboxScreen() {
         }
       />
 
-      <div className="grid gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
         <nav className="space-y-4">
           {(instances.data ?? [])
             .filter((instance) => instance.forms.length > 0)

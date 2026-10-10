@@ -191,7 +191,7 @@ export function PagesPanel() {
                 onClick={() => setHome(entry)}
                 className={cn(
                   'shrink-0 rounded p-1',
-                  entry.home ? 'text-primary' : 'text-muted-foreground opacity-0 group-hover:opacity-100',
+                  entry.home ? 'text-primary' : 'text-muted-foreground can-hover:opacity-0 group-hover:opacity-100',
                 )}
               >
                 <Home className="h-3.5 w-3.5" />
@@ -200,7 +200,7 @@ export function PagesPanel() {
                 type="button"
                 title={t('actions.delete')}
                 onClick={() => removePage(entry)}
-                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100"
+                className="shrink-0 rounded p-1 text-muted-foreground can-hover:opacity-0 hover:text-destructive group-hover:opacity-100"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>

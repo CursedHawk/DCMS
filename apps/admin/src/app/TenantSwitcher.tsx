@@ -37,9 +37,9 @@ export function TenantSwitcher() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="min-w-44 justify-between">
+        <Button variant="outline" size="sm" className="min-w-0 shrink justify-between sm:min-w-44">
           <span className="truncate">{active?.name ?? t('tenant.switcher')}</span>
-          <ChevronsUpDown className="h-3.5 w-3.5 opacity-60" />
+          <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-60 p-1.5">

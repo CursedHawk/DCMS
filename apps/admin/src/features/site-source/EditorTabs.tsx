@@ -64,7 +64,7 @@ export function EditorTabs() {
                 'transition-opacity hover:text-foreground',
                 // A pinned tab shows its pin always — that is the state it is advertising.
                 // An unpinned one only offers the action on hover or keyboard focus.
-                pinned ? 'text-primary' : 'opacity-0 focus-visible:opacity-100 group-hover:opacity-100',
+                pinned ? 'text-primary' : 'can-hover:opacity-0 focus-visible:opacity-100 group-hover:opacity-100',
               )}
             >
               <Pin className={cn('h-3 w-3', pinned && 'fill-current')} aria-hidden />
@@ -72,7 +72,7 @@ export function EditorTabs() {
             <button
               type="button"
               onClick={() => closeTab(path)}
-              className="opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 hover:text-foreground"
+              className="can-hover:opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 hover:text-foreground"
               title={t('ide.tabs.close')}
             >
               <X className="h-3 w-3" />
@@ -102,7 +102,7 @@ export function EditorTabs() {
             <button
               type="button"
               onClick={() => closeDiff(d.path)}
-              className="opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
+              className="can-hover:opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground"
               title="Close"
             >
               <X className="h-3 w-3" />

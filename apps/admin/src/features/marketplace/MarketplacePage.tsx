@@ -99,7 +99,7 @@ export function MarketplacePage() {
       </FilterBar>
 
       {marketplace.isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }, (_, i) => (
             <Skeleton key={i} className="h-32 rounded-lg" />
           ))}
@@ -111,7 +111,7 @@ export function MarketplacePage() {
           description={t('marketplace.noneDescription')}
         />
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {visible.map((item) => (
             <li key={item.id}>
               <PluginCard item={item} onOpen={() => setSelected(item)} />

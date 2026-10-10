@@ -66,7 +66,7 @@ export function NotificationsPage() {
           description={t('notifications.emptyDescription')}
         />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="divide-y rounded-md border">
             {items.map((n) => (
               <ListRow

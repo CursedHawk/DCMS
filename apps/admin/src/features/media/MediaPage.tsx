@@ -263,7 +263,7 @@ export function MediaPage() {
         </TourTarget>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="lg:sticky lg:top-6 lg:self-start">
           {folders.isLoading ? (
             <CenteredSpinner />
@@ -414,7 +414,7 @@ export function MediaPage() {
                           'absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border bg-background/90 transition-opacity',
                           isSelected
                             ? 'border-primary bg-primary text-primary-foreground opacity-100'
-                            : 'opacity-0 group-hover:opacity-100',
+                            : 'can-hover:opacity-0 group-hover:opacity-100',
                         )}
                       >
                         {isSelected ? <span className="text-[11px] font-bold">✓</span> : null}

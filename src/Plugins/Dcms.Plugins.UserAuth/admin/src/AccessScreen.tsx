@@ -343,7 +343,7 @@ function RolesTab() {
         ) : null}
       </div>
       {roles.data?.length === 0 ? <EmptyState icon={ShieldCheck} title={t('roles.empty.title')} description={t('roles.empty.description')} /> : null}
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {roles.data?.map((role) => (
           <Card key={role.id} className="space-y-3 p-4">
             <div className="flex items-start justify-between gap-2">
@@ -457,7 +457,7 @@ function RoleDialog({ role, onClose }: { role: Role | null; onClose: () => void 
           <DialogTitle>{role ? t('roles.editTitle') : t('roles.createTitle')}</DialogTitle>
         </DialogHeader>
         <DialogBody className="max-h-[70vh] space-y-4 overflow-y-auto">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="ua-role-name">{t('roles.name')}</Label>
               <Input

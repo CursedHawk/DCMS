@@ -71,7 +71,7 @@ function TableAccess({ slug, table, config, editable }: { slug: string; table: T
   const setRules = (next: RowRule[]) => setAccess((a) => ({ ...a, rules: next }));
   const set = (key: keyof PublicAccess) => (value: boolean) => setAccess((a) => ({ ...a, [key]: value }));
   return (
-    <div className="grid items-end gap-3 p-3 sm:grid-cols-[12rem_10rem_1fr_auto]">
+    <div className="grid grid-cols-1 items-end gap-3 p-3 sm:grid-cols-[12rem_10rem_1fr_auto]">
       <div>
         <div className="font-medium">{table.displayName}</div>
         <div className="font-mono text-xs text-muted-foreground">{table.apiName}</div>

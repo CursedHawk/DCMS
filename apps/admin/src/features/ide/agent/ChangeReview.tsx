@@ -69,7 +69,7 @@ export function ChangeReview({
               onClick={() => onRevert(change.path)}
               aria-label={t('ide.agent.revertFile', { path: change.path })}
               title={t('ide.agent.revertFile', { path: change.path })}
-              className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+              className="shrink-0 rounded p-0.5 text-muted-foreground can-hover:opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
             >
               <Undo2 className="h-3 w-3" aria-hidden />
             </button>

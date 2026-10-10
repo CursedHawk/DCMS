@@ -171,7 +171,7 @@ function useNames(initialLabel: string, initialApi: string) {
 function Names({ names, idPrefix }: { names: ReturnType<typeof useNames>; idPrefix: string }) {
   const { t } = usePluginT();
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       <TextField id={`${idPrefix}-label`} label={t('form.displayName')} value={names.label} onChange={names.setLabel} />
       <TextField id={`${idPrefix}-api`} label={t('form.apiName')} value={names.api} onChange={names.setApi} mono
         invalid={names.api.length > 0 && !API_NAME.test(names.api)} hint={t('form.apiNameHint')} />
@@ -303,7 +303,7 @@ export function FieldDialog({ table, field, choiceSets, liveTables = [], pending
     <FormDialog title={t(field ? 'model.editField' : 'model.newField')} pending={pending}
       canSave={names.valid && (!isChoice || choiceSetId !== '')} onCancel={onCancel} onSave={save} wide>
       <Names names={names} idPrefix="field" />
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <SelectField id="field-type" label={t('fields.type')} value={type} onChange={setType}
           options={FIELD_TYPES.map((value) => ({ value, label: t(`types.${value}`) }))} />
         {isChoice ? (
@@ -316,7 +316,7 @@ export function FieldDialog({ table, field, choiceSets, liveTables = [], pending
       {copyable.length > 0 ? (
         <CopyFromField id="field-copy-from" value={copyFrom} onChange={setCopyFrom} fields={copyable} />
       ) : null}
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <CheckField id="f-required" label={t('flags.required')} checked={flags.required} onChange={flag('required')} />
         <CheckField id="f-unique" label={t('flags.unique')} checked={flags.unique} onChange={flag('unique')} />
         <CheckField id="f-primary" label={t('flags.primary')} checked={primary} onChange={setPrimary} hint={t('form.primaryHint')} />
@@ -327,7 +327,7 @@ export function FieldDialog({ table, field, choiceSets, liveTables = [], pending
         <CheckField id="f-hidden" label={t('flags.hidden')} checked={flags.hiddenFromPublic} onChange={flag('hiddenFromPublic')} hint={t('form.hiddenHint')} />
         <CheckField id="f-deprecated" label={t('flags.deprecated')} checked={flags.deprecated} onChange={flag('deprecated')} />
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {TEXT_TYPES.includes(type) ? (
           <TextField id="field-max" label={t('form.maxLength')} value={maxLength} onChange={setMaxLength} type="number" />
         ) : null}
@@ -410,7 +410,7 @@ export function ViewDialog({ table, view, relationships, pending, onCancel, onSa
         <legend className="text-sm font-medium">{t('form.columns')}</legend>
         {members.map((m) => <CheckField key={m.id} id={`col-${m.id}`} label={m.label} checked={columns.includes(m.id)} onChange={toggle(m.id)} />)}
       </fieldset>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <SelectField id="view-sort" label={t('form.sortBy')} value={sortField} onChange={setSortField}
           options={members.filter((m) => m.sortable).map((m) => ({ value: m.id, label: m.label }))} />
         <div className="flex items-end pb-2">
@@ -465,7 +465,7 @@ export function RelationshipDialog({ relationship, tables, liveTables = [], pend
     <FormDialog title={t(relationship ? 'model.editRelationship' : 'model.newRelationship')} pending={pending} canSave={canSave} onCancel={onCancel} onSave={save}>
       <SelectField id="rel-kind" label={t('form.kind')} value={kind} onChange={setKind}
         options={(['manyToOne', 'oneToOne', 'manyToMany'] as const).map((value) => ({ value, label: t(`kinds.rel.${value}`) }))} />
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <SelectField id="rel-source" label={t('form.source')} value={source} onChange={setSource} options={tableOptions} />
         <SelectField id="rel-target" label={t('form.target')} value={target} onChange={setTarget} options={tableOptions} />
       </div>
@@ -475,7 +475,7 @@ export function RelationshipDialog({ relationship, tables, liveTables = [], pend
         <CopyFromField id="rel-copy-from" value={copyFrom} onChange={setCopyFrom} fields={copyable} />
       ) : null}
       {kind !== 'manyToMany' ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <CheckField id="rel-required" label={t('flags.required')} checked={required} onChange={setRequired} />
           <SelectField id="rel-ondelete" label={t('form.onDelete')} value={onDelete} onChange={setOnDelete}
             options={(['restrict', 'setNull', 'cascade'] as const).map((value) => ({ value, label: t(`onDelete.${value}`) }))} />

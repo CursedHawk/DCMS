@@ -152,7 +152,7 @@ export function SitesPage() {
                 variant="ghost"
                 title={t('sites.delete')}
                 aria-label={t('sites.delete')}
-                className="absolute right-2 top-2 opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                className="absolute right-2 top-2 can-hover:opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
                 onClick={() => setPendingDelete(s)}
               >
                 <Trash2 className="h-4 w-4" />

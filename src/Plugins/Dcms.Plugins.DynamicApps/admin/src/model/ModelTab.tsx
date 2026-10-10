@@ -161,7 +161,7 @@ export function ModelTab({ slug, config, editable, onSelect }: {
   const views = config.views.filter((v) => v.tableId === table?.id);
 
   return (
-    <div className="grid gap-6 pt-2 lg:grid-cols-[14rem_1fr]">
+    <div className="grid grid-cols-1 gap-6 pt-2 lg:grid-cols-[14rem_minmax(0,1fr)]">
       <nav aria-label={t('model.tables')} className="space-y-1">
         <div className="flex items-center justify-between px-1 pb-1">
           <h3 className="text-sm font-semibold">{t('model.tables')}</h3>

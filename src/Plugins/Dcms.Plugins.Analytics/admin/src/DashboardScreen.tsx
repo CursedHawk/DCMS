@@ -393,7 +393,7 @@ export function DashboardScreen() {
             scales make both readable, and a single series per chart means identity comes from
             the title rather than from a colour anybody has to decode.
           */}
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <TrendChart
               title={t('analytics.pageviewsOverTime')}
               data={mergeSeries(a.data.series, previous.data?.series, 'events')}
@@ -406,7 +406,7 @@ export function DashboardScreen() {
             />
           </div>
 
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <BreakdownCard
               title={t('analytics.topPaths')}
               rows={a.data.topPaths.map((r) => ({ key: r.path, label: r.path, count: r.count }))}

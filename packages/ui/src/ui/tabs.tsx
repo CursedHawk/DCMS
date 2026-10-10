@@ -11,7 +11,8 @@ export const TabsList = forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      'inline-flex h-9 items-center justify-center gap-1 rounded-lg bg-muted p-1 text-muted-foreground',
+      // Wraps rather than running off the edge: on a phone a five-tab strip is wider than the screen.
+      'inline-flex min-h-9 max-w-full flex-wrap items-center justify-center gap-1 rounded-lg bg-muted p-1 text-muted-foreground',
       className,
     )}
     {...props}

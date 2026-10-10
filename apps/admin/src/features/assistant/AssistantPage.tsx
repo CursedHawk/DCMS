@@ -1,9 +1,9 @@
-import { Check, KeyRound, Link2, PanelRightClose, Users } from 'lucide-react';
+import { Check, History, KeyRound, Link2, PanelRightClose, Users } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { Button, Spinner, cn } from '@dcms/ui';
+import { Button, Sheet, SheetContent, SheetTitle, Spinner, cn } from '@dcms/ui';
 import { useAi } from './context';
 import { ApprovalCard } from './ApprovalCard';
 import { Composer } from './Composer';
@@ -31,6 +31,7 @@ export function AssistantPage() {
   const [scope, setScope] = useState<ConversationScope>('mine');
   const [selected, setSelected] = useState<ToolStep | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [railOpen, setRailOpen] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   const conversationId = routeId ?? null;
@@ -63,28 +64,50 @@ export function AssistantPage() {
 
   const shared = detail.data?.visibility === 'Workspace';
 
+  const rail = (
+    <ConversationRail
+      scope={scope}
+      onScopeChange={setScope}
+      selectedId={conversationId}
+      onSelect={(id) => {
+        setRailOpen(false);
+        void navigate({
+          to: '/assistant/$conversationId' as string,
+          params: { conversationId: id } as never,
+        });
+      }}
+      onNew={() => {
+        setRailOpen(false);
+        session.reset();
+        void navigate({ to: '/assistant' as string });
+      }}
+    />
+  );
+
   return (
     <div className="flex h-[calc(100dvh-var(--dcms-topbar-h,3.5rem))] min-h-0">
-      <aside className="hidden w-60 shrink-0 border-r md:block">
-        <ConversationRail
-          scope={scope}
-          onScopeChange={setScope}
-          selectedId={conversationId}
-          onSelect={(id) =>
-            void navigate({
-              to: '/assistant/$conversationId' as string,
-              params: { conversationId: id } as never,
-            })
-          }
-          onNew={() => {
-            session.reset();
-            void navigate({ to: '/assistant' as string });
-          }}
-        />
-      </aside>
+      <aside className="hidden w-60 shrink-0 border-r md:block">{rail}</aside>
+
+      {/* Below md the rail does not fit beside the transcript, so it is a drawer: without it a
+          phone had no way to reopen a past conversation or start a new one. */}
+      <Sheet open={railOpen} onOpenChange={setRailOpen}>
+        <SheetContent side="left" width="w-72" className="p-0 md:hidden">
+          <SheetTitle className="sr-only">{t('assistant.history')}</SheetTitle>
+          {rail}
+        </SheetContent>
+      </Sheet>
 
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="-ml-2 h-8 w-8 md:hidden"
+            aria-label={t('assistant.history')}
+            onClick={() => setRailOpen(true)}
+          >
+            <History className="h-4 w-4" aria-hidden />
+          </Button>
           <h1 className="min-w-0 flex-1 truncate text-sm font-medium">
             {detail.data?.title ?? t('assistant.newChat')}
           </h1>

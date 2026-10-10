@@ -292,7 +292,7 @@ export function LayoutPanel() {
                         toast.success(t('builder.regions.deleted', { label: entry.label }));
                       }
                     }}
-                    className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100"
+                    className="shrink-0 rounded p-1 text-muted-foreground can-hover:opacity-0 hover:text-destructive group-hover:opacity-100"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>

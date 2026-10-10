@@ -74,12 +74,12 @@ export function FlowDialog({ config, flow, actions, pending, onCancel, onSave }:
 
   return (
     <FormDialog title={t(flow ? 'automation.editFlow' : 'automation.newFlow')} pending={pending} canSave={canSave} onCancel={onCancel} onSave={save} wide>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <TextField id="flow-label" label={t('form.displayName')} value={label}
           onChange={(v) => { setLabel(v); if (!flow) setApi(apiNameOf(v)); }} />
         <TextField id="flow-api" label={t('form.apiName')} value={api} onChange={setApi} mono />
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <SelectField id="flow-event" label={t('automation.trigger')} value={event} onChange={setEvent}
           options={EVENTS.map((value) => ({ value, label: t(`events.${value.replace('.', '_')}`) }))} />
         {isRow ? (
@@ -96,7 +96,7 @@ export function FlowDialog({ config, flow, actions, pending, onCancel, onSave }:
       {event === 'row.updated' && table ? (
         <fieldset className="space-y-1">
           <legend className="text-sm font-medium">{t('automation.changedFields')}</legend>
-          <div className="grid gap-1 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-3">
             {table.fields.map((f) => (
               <CheckField key={f.id} id={`chg-${f.id}`} label={f.displayName} checked={changed.includes(f.id)}
                 onChange={(on) => setChanged((ids) => (on ? [...ids, f.id] : ids.filter((x) => x !== f.id)))} />

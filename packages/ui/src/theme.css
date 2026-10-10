@@ -22,6 +22,15 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
+ * Only where the device can hover. Tailwind v4 already gates `hover:` and `group-hover:` behind
+ * `(hover: hover)`, so a control written `opacity-0 group-hover:opacity-100` is never revealed on
+ * a phone or tablet: it stays invisible, and a `hidden group-hover:flex` one is not even there to
+ * tap. Hide hover-revealed controls with `can-hover:opacity-0` / `can-hover:hidden` instead, and a
+ * touch screen simply shows them.
+ */
+@custom-variant can-hover (@media (hover: hover));
+
+/*
  * Design tokens (shadcn-style) as HSL triplets so they can be themed per mode
  * and consumed through Tailwind utilities (bg-background, text-foreground, …).
  */

@@ -108,7 +108,7 @@ export function PluginInstancePage({ slug, screen }: { slug: string; screen?: st
 
       <Tabs value={screen ? SCREEN_TAB + screen : tab} onValueChange={onTab} className="mt-6">
         {/* Scrolls on a phone rather than pushing the page sideways. */}
-        <TabsList className="max-w-full justify-start overflow-x-auto">
+        <TabsList className="justify-start">
           <TabsTrigger value="overview">{t('pluginPage.tabs.overview')}</TabsTrigger>
           {instanceScreens.map((s) => (
             <TabsTrigger key={s.id} value={SCREEN_TAB + s.id}>
@@ -417,7 +417,7 @@ function Overview({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <div className="space-y-6">
         {manifest.description ? <p className="max-w-prose text-sm text-muted-foreground">{manifest.description}</p> : null}
 
@@ -552,7 +552,7 @@ function DataTab({
   const set = sets.find((s) => s.id === current) ?? sets[0];
   if (sets.length === 1) return <DataSetView key={set.id} slug={slug} set={set} />;
   return (
-    <div className="grid gap-6 md:grid-cols-[13rem_1fr]">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[13rem_minmax(0,1fr)]">
       <nav className="flex gap-1 overflow-x-auto md:flex-col" aria-label="Data sets">
         {sets.map((s) => {
           const Icon = iconByName(s.icon ?? 'Database');
@@ -635,7 +635,7 @@ function Settings({
 
   return (
     <div className="max-w-3xl space-y-5">
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="plugin-name">{t('common.name')}</Label>
           <Input id="plugin-name" value={name} onChange={(e) => setName(e.target.value)} />

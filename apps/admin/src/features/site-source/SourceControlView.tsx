@@ -392,7 +392,7 @@ export function SourceControlView({
                   onClick={() => askDiscard(c)}
                   title={t('ide.git.discard')}
                   aria-label={t('ide.git.discardOf', { path: c.path })}
-                  className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+                  className="shrink-0 rounded p-0.5 text-muted-foreground can-hover:opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
                 >
                   <Undo2 className="h-3.5 w-3.5" aria-hidden />
                 </button>
@@ -430,7 +430,7 @@ export function SourceControlView({
                     {i === 0 && <BranchTag label={t('ide.git.current')} tone="current" />}
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                <div className="flex shrink-0 items-center gap-0.5 can-hover:opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
                   <button
                     type="button"
                     onClick={() => askRestore(c)}

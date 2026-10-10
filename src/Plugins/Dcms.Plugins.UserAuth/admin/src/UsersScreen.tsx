@@ -334,7 +334,7 @@ function MembershipDialog({ user, groups, onClose }: { user: SiteUser; groups: G
 
 export function GroupChecklist({ groups, value, onChange }: { groups: Group[]; value: string[]; onChange: (value: string[]) => void }) {
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {groups.map((g) => (
         <label key={g.id} className="flex items-center gap-2 text-sm">
           <Checkbox

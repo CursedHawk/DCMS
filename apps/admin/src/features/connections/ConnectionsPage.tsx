@@ -172,7 +172,7 @@ function ConnectionDialog({ connection, onClose }: { connection: ApiConnection |
             save.mutate();
           }}
         >
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="conn-name">{t('connections.name')}</Label>
               <Input id="conn-name" value={name} onChange={(e) => setName(e.target.value)} required />
@@ -186,7 +186,7 @@ function ConnectionDialog({ connection, onClose }: { connection: ApiConnection |
             <Label htmlFor="conn-url">{t('connections.baseUrl')}</Label>
             <Input id="conn-url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} required />
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label>{t('connections.auth')}</Label>
               <Select value={authKind} onValueChange={setAuthKind}>

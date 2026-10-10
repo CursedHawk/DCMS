@@ -214,7 +214,7 @@ export function NotificationRow({
         type="button"
         onClick={onDismiss}
         aria-label={dismissLabel}
-        className="rounded opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
+        className="rounded can-hover:opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100"
       >
         <X className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
       </button>

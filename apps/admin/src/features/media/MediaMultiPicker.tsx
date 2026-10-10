@@ -80,7 +80,7 @@ export function MediaMultiPicker({
                 >
                   <X className="h-3 w-3" />
                 </button>
-                <div className="absolute inset-x-0 bottom-0 flex justify-between bg-background/70 opacity-0 transition group-hover:opacity-100">
+                <div className="absolute inset-x-0 bottom-0 flex justify-between bg-background/70 can-hover:opacity-0 transition group-hover:opacity-100">
                   <button
                     type="button"
                     aria-label="move left"

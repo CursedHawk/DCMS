@@ -140,7 +140,7 @@ export function MediaDetailDialog({
           <CenteredSpinner />
         ) : (
           <DialogBody className="space-y-5">
-            <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               {/* Preview */}
               <div className="overflow-hidden rounded-lg border bg-muted">
                 <div className="flex aspect-video items-center justify-center">

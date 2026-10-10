@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Bot, Languages, Search, Settings } from 'lucide-react';
+import { ArrowLeftRight, Bot, Languages, Moon, Search, Settings, Sun } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -10,7 +10,9 @@ import {
   ThemeControl,
   Topbar as ShellTopbar,
   TourButton,
+  useMediaQuery,
   UserMenu,
+  useTheme,
 } from '@dcms/ui';
 import { NotificationBell } from '../features/notifications/NotificationBell';
 import { LANGUAGES, setLanguage } from '../lib/i18n';
@@ -30,6 +32,30 @@ export function Topbar({
   const { user } = useAuth();
   const navigate = useNavigate();
   const ai = useAi();
+  const { resolved, setTheme } = useTheme();
+
+  /*
+   * A phone cannot fit the whole bar: with the language and theme buttons the user menu was
+   * pushed past the right edge and could not be reached at all. Both are set-once preferences,
+   * so below `sm` they leave the bar and live in the user menu instead. The buttons are hidden
+   * by CSS; the menu entries need JS, because a Radix menu item hidden with `display: none`
+   * still takes part in its keyboard navigation.
+   */
+  const narrow = useMediaQuery('(max-width: 639.98px)');
+  const preferenceEntries = narrow
+    ? [
+        {
+          label: t('theme.toggle'),
+          icon: resolved === 'dark' ? Sun : Moon,
+          onSelect: () => setTheme(resolved === 'dark' ? 'light' : 'dark'),
+        },
+        ...LANGUAGES.filter((l) => l.code !== i18n.language).map((l) => ({
+          label: l.label,
+          icon: Languages,
+          onSelect: () => setLanguage(l.code),
+        })),
+      ]
+    : [];
 
   return (
     <ShellTopbar
@@ -81,33 +107,35 @@ export function Topbar({
 
           <NotificationBell enabled={!!user} />
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label={t('nav.language')}>
-                <Languages className="h-4 w-4" aria-hidden />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {LANGUAGES.map((l) => (
-                <DropdownMenuItem
-                  key={l.code}
-                  onClick={() => setLanguage(l.code)}
-                  className={i18n.language === l.code ? 'font-semibold text-primary' : ''}
-                >
-                  {l.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="hidden sm:contents">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label={t('nav.language')}>
+                  <Languages className="h-4 w-4" aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {LANGUAGES.map((l) => (
+                  <DropdownMenuItem
+                    key={l.code}
+                    onClick={() => setLanguage(l.code)}
+                    className={i18n.language === l.code ? 'font-semibold text-primary' : ''}
+                  >
+                    {l.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-          <ThemeControl
-            labels={{
-              toggle: t('theme.toggle'),
-              light: t('theme.light'),
-              dark: t('theme.dark'),
-              system: t('theme.system'),
-            }}
-          />
+            <ThemeControl
+              labels={{
+                toggle: t('theme.toggle'),
+                light: t('theme.light'),
+                dark: t('theme.dark'),
+                system: t('theme.system'),
+              }}
+            />
+          </div>
 
           <UserMenu
             name={user?.profile.name}
@@ -116,6 +144,7 @@ export function Topbar({
             signOutLabel={t('actions.signOut')}
             onSignOut={() => void logout()}
             entries={[
+              ...preferenceEntries,
               {
                 label: t('account.menuItem'),
                 icon: Settings,

@@ -184,7 +184,7 @@ export function ContentPage() {
           description={t('content.noCollectionsHint')}
         />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="space-y-4">
             <p className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t('content.collections')}

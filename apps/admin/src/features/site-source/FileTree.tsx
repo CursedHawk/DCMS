@@ -215,7 +215,7 @@ export function FileTree() {
               )}
               <span className="truncate">{node.name}</span>
             </button>
-            <span className="hidden shrink-0 items-center gap-1 group-hover:flex">
+            <span className="flex shrink-0 items-center gap-1 can-hover:hidden group-hover:flex">
               <button
                 type="button"
                 title={t('ide.moveFolder')}
@@ -267,7 +267,7 @@ export function FileTree() {
           <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           <span className="truncate">{node.name}</span>
         </button>
-        <span className="hidden shrink-0 items-center gap-1 group-hover:flex">
+        <span className="flex shrink-0 items-center gap-1 can-hover:hidden group-hover:flex">
           <button
             type="button"
             title={t('ide.download')}

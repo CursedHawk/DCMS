@@ -154,7 +154,7 @@ function Row({
           type="button"
           onClick={onDelete}
           aria-label={t('assistant.deleteChat', { title: conversation.title })}
-          className="absolute right-1 top-1.5 hidden rounded p-1 text-muted-foreground hover:text-destructive group-hover:block"
+          className="absolute right-1 top-1.5 rounded p-1 text-muted-foreground hover:text-destructive can-hover:hidden group-hover:block"
         >
           <Trash2 className="h-3 w-3" aria-hidden />
         </button>

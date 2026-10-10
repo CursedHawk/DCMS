@@ -113,7 +113,7 @@ export function ComponentsPanel() {
                   type="button"
                   title={t('builder.components.settings')}
                   onClick={() => setSettingsFor(definition.name)}
-                  className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
+                  className="shrink-0 rounded p-1 text-muted-foreground can-hover:opacity-0 hover:text-foreground group-hover:opacity-100"
                 >
                   <Settings2 className="h-3.5 w-3.5" />
                 </button>
@@ -121,7 +121,7 @@ export function ComponentsPanel() {
                   type="button"
                   title={t('actions.delete')}
                   onClick={() => remove(definition)}
-                  className="shrink-0 rounded p-1 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100"
+                  className="shrink-0 rounded p-1 text-muted-foreground can-hover:opacity-0 hover:text-destructive group-hover:opacity-100"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
