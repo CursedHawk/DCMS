@@ -122,7 +122,7 @@ export function OverviewPage() {
         {growth.isError ? (
           <p className="text-sm text-muted-foreground">Growth series unavailable.</p>
         ) : (
-          <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2">
             <Trend label="New tenants" series={series.map((p) => p.newTenants)} />
             <Trend label="New users" series={series.map((p) => p.newUsers)} />
             <Trend label="New sites" series={series.map((p) => p.newSites)} />
@@ -146,7 +146,7 @@ export function OverviewPage() {
 const PLATFORM_MEDIA_BUDGET_BYTES = 40 * 1024 ** 3;
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return <div className="mx-auto w-full max-w-4xl px-6 py-8">{children}</div>;
+  return <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 py-8">{children}</div>;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

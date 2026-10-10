@@ -65,7 +65,7 @@ export function SignalsPanel() {
             </Notice>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[32rem] text-sm">
+              <table className="w-full text-sm sm:min-w-[32rem]">
                 <caption className="sr-only">Request rate, error ratio and latency by service</caption>
                 <thead>
                   <tr className="border-b border-border text-xs text-muted-foreground">

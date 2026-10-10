@@ -89,7 +89,7 @@ export function TenantsPage() {
         srHeader: 'Actions',
         align: 'right',
         cell: (r) => (
-          <div className="flex items-center justify-end gap-1">
+          <div className="flex flex-wrap items-center justify-end gap-1">
             {/*
               Media and content are managed in the tenant admin, not here. Rather than rebuild
               those screens against a cross-tenant API, the console hands the operator a link

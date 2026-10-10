@@ -41,7 +41,7 @@ export function MonitoringPage() {
     return (
       <div className="flex h-full flex-col">
         <SignalsPanel />
-        <div className="mx-auto w-full max-w-3xl px-6 py-16">
+        <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-16">
           <EmptyState
             title="No Grafana address configured"
             description="Set DCMS_GRAFANA_BASE on the platform-spa container to embed the dashboards here. Everything else in this console works without it."

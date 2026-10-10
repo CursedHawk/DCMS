@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/test';
+import { unreachableControls } from '../fixtures/layout';
 
 /**
  * The phone, on a Pixel 5.
@@ -91,23 +92,7 @@ test.describe('at 360px', () => {
       await expect(page.getByRole('button', { name: 'Account settings' })).toBeVisible();
       await page.waitForLoadState('networkidle');
 
-      // Off the screen, or cut off by a box that clips it: both are a control nobody can tap.
-      const unreachable = await page.evaluate(() => {
-        const out: string[] = [];
-        for (const el of document.querySelectorAll('button, a[href], [role=tab], input, select, textarea')) {
-          const r = el.getBoundingClientRect();
-          if (r.width === 0 || r.height === 0) continue;
-          let clipped = r.left < -1 || r.right > window.innerWidth + 1;
-          for (let a = el.parentElement; a && !clipped; a = a.parentElement) {
-            if (getComputedStyle(a).overflowX === 'visible') continue;
-            const ar = a.getBoundingClientRect();
-            clipped = r.left < ar.left - 1 || r.right > ar.right + 1;
-          }
-          if (clipped) out.push((el.getAttribute('aria-label') || (el as HTMLElement).innerText).trim());
-        }
-        return out;
-      });
-      expect(unreachable).toEqual([]);
+      expect(await unreachableControls(page)).toEqual([]);
     });
   }
 });

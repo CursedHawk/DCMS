@@ -132,7 +132,7 @@ export function AuditPage() {
   const items = q.data?.pages.flatMap((p) => p.items) ?? [];
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 py-8">
+    <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 py-8">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Audit log</h1>
         <p className="mt-1 text-sm text-muted-foreground">

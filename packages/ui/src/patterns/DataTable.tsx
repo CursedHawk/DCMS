@@ -312,7 +312,7 @@ export function DataTable<T>({
                     ) : (
                       <div className="font-medium">{primary?.cell(row)}</div>
                     )}
-                    <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                    <dl className="mt-2 grid grid-cols-[fit-content(45%)_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
                       {rest.map((column) => (
                         <div key={column.id} className="contents">
                           <dt className="text-muted-foreground">

@@ -74,9 +74,9 @@ export function CertificatesPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-8">
-      <header className="mb-6 flex items-start justify-between gap-4">
-        <div>
+    <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 py-8">
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-[1_1_20rem]">
           <h1 className="text-2xl font-semibold tracking-tight">Certificates</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             The domains this platform holds TLS certificates for, and keeps renewed. Tenants’

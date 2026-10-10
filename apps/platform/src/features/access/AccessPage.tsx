@@ -55,7 +55,7 @@ export function AccessPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-8">
+    <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 py-8">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Access</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -100,7 +100,7 @@ export function AccessPage() {
               )}
             </div>
 
-            <ul className="grid gap-1 sm:grid-cols-2">
+            <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
               {catalog.data!.permissions.map((key) => (
                 <li key={key}>
                   <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-secondary">

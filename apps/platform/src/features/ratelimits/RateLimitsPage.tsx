@@ -48,9 +48,9 @@ export function RateLimitsPage() {
     });
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-8">
-      <header className="mb-6 flex items-start justify-between gap-4">
-        <div>
+    <div className="mx-auto w-full max-w-4xl px-4 sm:px-6 py-8">
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-[1_1_20rem]">
           <h1 className="text-2xl font-semibold tracking-tight">Rate limits</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Addresses the platform does not rate-limit. Every other client is held to the edge’s
@@ -81,7 +81,7 @@ export function RateLimitsPage() {
           {rows.map((row) => (
             <li key={row.id} className="flex items-start justify-between gap-4 p-4">
               <div className="min-w-0">
-                <div className="font-mono text-sm">{row.cidr}</div>
+                <div className="break-all font-mono text-sm">{row.cidr}</div>
                 <p className="mt-1 text-sm">{row.note}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Added {date(row.createdAt)}{row.createdBy ? ` by ${row.createdBy}` : ''}

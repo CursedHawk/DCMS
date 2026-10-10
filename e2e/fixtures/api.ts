@@ -344,10 +344,9 @@ export function platformApi(options: { permissions?: string[]; isSuperAdmin?: bo
     .on('GET', '/api/platform/stores', { stores: [] })
     .on('GET', '/api/platform/purge/loki', [])
     .on('GET', '/api/platform/roles', [])
-    .on('GET', '/api/platform/permissions/catalog', { permissions: [] })
-    .on('GET', '/api/platform/health/signals', {
-      reachable: false, requestsPerSecond: null, errorRatio: null, latencyP95: null, targetsDown: null,
-    })
+    .on('GET', '/api/platform/permissions/catalog', { permissions: [], readOnly: [] })
+    // HealthSignals: the arrays are always present, empty when Prometheus did not answer.
+    .on('GET', '/api/platform/health/signals', { reachable: false, services: [], targets: [] })
     .on('POST', '/api/platform/tenants/:id/suspend', {})
     .on('POST', '/api/platform/tenants/:id/resume', {});
 
