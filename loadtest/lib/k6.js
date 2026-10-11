@@ -12,7 +12,8 @@ import { SharedArray } from 'k6/data';
  */
 export const tenants = new SharedArray('tenants', () => {
   const profile = __ENV.PROFILE || 'local';
-  return JSON.parse(open(`../fixtures/${profile}.json`)).tenants;
+  // Missing for a scenario with fixtures of its own (dynamicapps); the others fail on the empty list.
+  try { return JSON.parse(open(`../fixtures/${profile}.json`)).tenants; } catch { return []; }
 });
 
 export const MODE = __ENV.MODE || 'edge';

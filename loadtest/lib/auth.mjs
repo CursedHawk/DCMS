@@ -66,11 +66,18 @@ function parseForm(html, pageUrl) {
 }
 
 async function send(jar, url, init = {}) {
-  const response = await fetch(url, {
-    ...init,
-    redirect: 'manual',
-    headers: { ...(init.headers ?? {}), cookie: jar.header(url) },
-  });
+  let response;
+  // The edge limits the whole auth host to 30 requests a minute per address, exempt or not, so
+  // signing in several site users in a row meets 429s. Refused requests did nothing: wait, retry.
+  for (let attempt = 0; ; attempt++) {
+    response = await fetch(url, {
+      ...init,
+      redirect: 'manual',
+      headers: { ...(init.headers ?? {}), cookie: jar.header(url) },
+    });
+    if (response.status !== 429 || attempt >= 8) break;
+    await new Promise((r) => setTimeout(r, 1000 * Number(response.headers.get('retry-after') || 15)));
+  }
   jar.store(url, response);
   return response;
 }
@@ -161,3 +168,53 @@ export async function edgeSession({ admin, username, password }) {
  */
 export const sessionHeaders = ({ cookie, csrf, origin }) =>
   ({ cookie, 'X-Dcms-Csrf': csrf, origin });
+
+/** Every <form> on the page whose inputs include `field`, first match: login pages list provider buttons as forms too. */
+function formWith(html, pageUrl, field) {
+  for (const match of html.matchAll(/<form[\s\S]*?<\/form>/gi)) {
+    const form = parseForm(match[0], pageUrl);
+    if (form && field in form.fields) return form;
+  }
+  return null;
+}
+
+/**
+ * A User Authentication (realm) user signed in on a tenant site, as a browser would be:
+ *   1. with `inviteUrl`: accept the invitation by choosing `password` (identity's realm form);
+ *   2. {site}/.edge/site/signin -> identity's realm authorize -> its login form, unless step 1
+ *      already left a realm cookie -> back to the edge's /.edge/site/signin-oidc (query mode);
+ *   3. {site}/.edge/site/me must say signedIn.
+ * @returns {Promise<{cookie:string, email:string, groups:string[]}>} the site's dcms.site cookie.
+ */
+export async function realmSiteSession({ site, email, password, inviteUrl }) {
+  const jar = new Jar();
+  site = site.replace(/\/$/, '');
+
+  if (inviteUrl) {
+    let { url, response } = await follow(jar, inviteUrl);
+    const form = formWith(await response.text(), url, 'confirmPassword');
+    if (!form) throw new Error(`No password form at the invitation ${url} (${response.status}) -- used or expired?`);
+    ({ url, response } = await follow(jar, form.action, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ ...form.fields, password, confirmPassword: password }),
+    }));
+    if (response.status >= 400) throw new Error(`Accepting the invitation for ${email} -> ${response.status} at ${url}`);
+  }
+
+  let { url, response } = await follow(jar, `${site}/.edge/site/signin?returnUrl=%2F`);
+  if (new URL(url).host !== new URL(site).host) {
+    const form = formWith(await response.text(), url, 'password');
+    if (!form) throw new Error(`Expected the realm login form after ${site}/.edge/site/signin, got ${response.status} at ${url}`);
+    ({ url, response } = await follow(jar, form.action, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ ...form.fields, email, password }),
+    }));
+    if (new URL(url).searchParams.get('error') === '1') throw new Error(`Realm sign-in rejected for ${email}`);
+  }
+  const cookie = jar.header(site, (name) => name.startsWith('dcms.site'));
+  const me = await (await send(jar, `${site}/.edge/site/me`)).json().catch(() => ({}));
+  if (!cookie || !me.signedIn) throw new Error(`${email} is not signed in on ${site} (ended at ${url}, ${response.status})`);
+  return { cookie, email: me.email, groups: me.groups };
+}

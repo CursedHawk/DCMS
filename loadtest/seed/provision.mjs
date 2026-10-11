@@ -20,6 +20,7 @@ import { png, siteBundle } from './assets.mjs';
 import { modeASource } from './sites.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const log = (...args) => console.log('[seed]', ...args);
 
@@ -209,7 +210,7 @@ async function ensureMedia(api, count, tenantSlug) {
  * seed. Mode C reaches the same place (artifacts in the sites bucket, a succeeded build,
  * a resolvable domain) through the shortest path that is still the real one.
  */
-async function ensureSite(api, tenantSlug) {
+export async function ensureSite(api, tenantSlug) {
   const sites = await api.get('/api/admin/sites');
   const name = `loadtest-site-${tenantSlug}`;
   let site = (sites.items ?? sites).find((s) => s.name === name);
@@ -350,7 +351,8 @@ async function waitForBuild(api, siteId, buildId, timeoutMs = 180_000) {
   }
 }
 
-main().catch((error) => {
+// Run only as a script: seed/dynamic-apps.mjs imports ensureSite from here.
+if (process.argv[1] === fileURLToPath(import.meta.url)) main().catch((error) => {
   console.error('[seed] FAILED:', error.message);
   if (error.cause) console.error('[seed] cause:', error.cause.message ?? error.cause);
   if (process.env.DCMS_LOADTEST_DEBUG) console.error(error);

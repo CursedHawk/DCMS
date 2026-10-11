@@ -187,6 +187,36 @@ early in it. Re-seed (teardown, then provision) before a like-for-like compariso
 
 ---
 
+## Dynamic Apps: `seed/dynamic-apps.mjs`, the probe, and `dynamicapps`
+
+A separate estate, one tenant (`da-stress`, NOT removed by `teardown.mjs`), built to exercise
+every part of the Dynamic Apps plugin at once:
+
+```sh
+node loadtest/seed/dynamic-apps.mjs --env vps1                  # ~115k records; -e da.scale=0.1 for a small one
+node loadtest/seed/dynamic-apps-probe.mjs --env vps1            # all sections, or --only functional|limits|automation|scale|model
+./loadtest/stress.sh --env vps1 --scenario dynamicapps --steps "5 10 20 40" -- --via vps1
+```
+
+- **The seed** (`seed/da-model.mjs` holds the app): a Mode C site with a domain; User
+  Authentication with 12 invited, activated and signed-in site users (`test+da-*@highgeek.eu`,
+  one password in `fixtures/da-<env>-<tenant>.password`), groups, a bypassing and a non-bypassing
+  role, a gated `/portal`; Forms; and instance `crm` with 12 tables, every field type, all three
+  relationship kinds, row rules through a permission table, every public-access mode and 17
+  flows covering every trigger. Data arrives through the bulk import, timed per call.
+- **The probe** checks each feature (row rules per user, bypass, own records, page gating, flows
+  from the site, revisions, delete behaviours, forms -> flows, cascade limit), answers every hard
+  cap, runs two automation storms (one bulk update; one PATCH per record), times the expensive
+  read shapes at full size, and builds instance `limits` up to the configuration ceiling.
+  It writes `runs/da-probe-*.json`.
+- **The scenario** mixes admin reads and writes with site-API reads as anonymous, rule-bound,
+  wide and bypassing users. It has no public writes: the site API allows 120 an hour per address.
+
+Signing in 12 site users meets the edge's 30-a-minute auth-host limit, which an exemption does
+not lift; `lib/auth.mjs` waits out 429s, so the seed's user step takes about two minutes.
+
+---
+
 ## The fixture estate
 
 `seed/provision.mjs` builds, per tenant: a blog plugin instance, N published posts, M
@@ -291,7 +321,7 @@ the bundle is reproducible and the reasoning is not. Each finding as `file:line`
 measurement that proves it, and the fix. A finding without a number is a guess; a number
 without a file is not actionable.
 
-Findings so far: [`2026-09-02`](findings/2026-09-02-vps1.md), [`2026-09-24`](findings/2026-09-24-vps1.md),
+Findings so far: [`2026-09-02`](findings/2026-09-02-vps1.md), [`2026-09-24`](findings/2026-09-24-vps1.md), [`2026-10-11` Dynamic Apps](findings/2026-10-11-vps1-dynamic-apps.md),
 [`2026-09-26` stress/limits](findings/2026-09-26-vps1-stress.md).
 
 ---
