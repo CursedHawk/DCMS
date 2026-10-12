@@ -29,6 +29,7 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options, ITenan
     public DbSet<TenantRolePermission> TenantRolePermissions => Set<TenantRolePermission>();
     public DbSet<MemberRole> MemberRoles => Set<MemberRole>();
     public DbSet<Invitation> Invitations => Set<Invitation>();
+    public DbSet<TenantUsage> Usage => Set<TenantUsage>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -109,6 +110,14 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options, ITenan
             // Cross-tenant by design, so this index deliberately does not lead with TenantId.
             e.HasIndex(i => new { i.AcceptedAt, i.ExpiredNotifiedAt, i.ExpiresAt });
             e.HasQueryFilter(i => i.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<TenantUsage>(e =>
+        {
+            e.ToTable("tenant_usage");
+            e.HasKey(u => u.TenantId);
+            e.Property(u => u.CategoriesJson).HasColumnName("Categories").HasColumnType("jsonb");
+            e.HasQueryFilter(u => u.TenantId == CurrentTenantId);
         });
     }
 

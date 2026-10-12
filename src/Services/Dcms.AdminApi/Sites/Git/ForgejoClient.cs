@@ -63,6 +63,15 @@ public sealed class ForgejoClient(HttpClient http, IOptions<ForgejoOptions> opti
         return true;
     }
 
+    /// <summary>The repo, or null when it does not exist.</summary>
+    public async Task<RepoInfo?> GetRepoAsync(string owner, string repo, CancellationToken ct)
+    {
+        using var res = await http.GetAsync($"/api/v1/repos/{owner}/{repo}", ct);
+        if (res.StatusCode == HttpStatusCode.NotFound) return null;
+        if (res.StatusCode != HttpStatusCode.OK) await ThrowFor(res, ct);
+        return await res.Content.ReadFromJsonAsync<RepoInfo>(Json, ct);
+    }
+
     /// <summary>
     /// Permanently delete a repo, history included. Treats 404 as success so a
     /// site whose repo was already removed still deletes cleanly.
@@ -349,7 +358,8 @@ public sealed class ForgejoClient(HttpClient http, IOptions<ForgejoOptions> opti
         [property: JsonPropertyName("new_branch_name")] string NewBranchName,
         [property: JsonPropertyName("old_branch_name")] string OldBranchName);
 
-    public sealed record RepoInfo(long Id, string Name, string FullName, string DefaultBranch, string CloneUrl, string SshUrl);
+    /// <param name="Size">Kilobytes on disk, as Forgejo reports it.</param>
+    public sealed record RepoInfo(long Id, string Name, string FullName, string DefaultBranch, string CloneUrl, string SshUrl, long Size = 0);
     public sealed record BranchInfo(string Name, BranchCommit? Commit);
     public sealed record BranchCommit(string Id);
 

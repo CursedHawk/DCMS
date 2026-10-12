@@ -404,6 +404,7 @@ public sealed class TenantDeleter(
             ("tenancy.TenantRoles", () => tenancy.TenantRoles.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.Invitations", () => tenancy.Invitations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.Domains", () => tenancy.Domains.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.Usage", () => tenancy.Usage.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.Tenants", () => tenancy.Tenants.Where(t => t.Id == key).ExecuteDeleteAsync(ct)));
         // Resolution is cached for 30 s (TenantStore). Without this the deleted tenant keeps
         // resolving here -- and a new tenant created under the same slug meanwhile resolves to

@@ -37,6 +37,8 @@ public static class RlsConfigurator
         ("tenancy", "tenant_role_permissions"),
         ("tenancy", "member_roles"),
         ("tenancy", "invitations"),
+        // What each tenant stores, down to site and plugin names.
+        ("tenancy", "tenant_usage"),
         ("plugins", "plugin_instances"),
         // Every plugin's private documents and Transit-encrypted credentials, all tenants in
         // two tables: the policy is the only thing between one tenant's plugin state and another's.

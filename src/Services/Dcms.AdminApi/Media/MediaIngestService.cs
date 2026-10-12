@@ -248,23 +248,12 @@ public sealed class MediaIngestService(
     /// </summary>
     public async Task<long> UsedBytesAsync(Guid tenantId, CancellationToken ct)
     {
-        // rls: request tenant. Every caller ingests into the tenant the request is already
-        // scoped to (a plugin's Caller.TenantId is that same tenant), so the explicit TenantId
-        // filter and the database policy agree; IgnoreQueryFilters only drops the ambient filter
-        // for the Meta-sync-style caller that names its tenant. tenancy.tenants carries no policy.
-        var originals = await db.Assets.IgnoreQueryFilters()
-            .Where(a => a.TenantId == tenantId && a.OriginalDeletedAt == null)
-            .SumAsync(a => (long?)a.SizeBytes, ct) ?? 0;
-        var renditions = await db.Variants.IgnoreQueryFilters()
-            .Where(v => v.TenantId == tenantId).SumAsync(v => (long?)v.SizeBytes, ct) ?? 0;
+        var (originals, renditions) = await MediaFootprint.OfAsync(db, tenantId, ct);
         return originals + renditions;
     }
 
-    public async Task<long> QuotaBytesAsync(Guid tenantId, CancellationToken ct) =>
-        await tenancy.Tenants.IgnoreQueryFilters()
-            .Where(t => t.Id == tenantId.ToString())
-            .Select(t => (long?)t.StorageQuotaBytes)
-            .FirstOrDefaultAsync(ct) ?? Tenant.DefaultStorageQuotaBytes;
+    public Task<long> QuotaBytesAsync(Guid tenantId, CancellationToken ct) =>
+        MediaFootprint.QuotaAsync(tenancy, tenantId, ct);
 
     /// <summary>
     /// The refusal message when <paramref name="incoming"/> does not fit under the cap, else null.

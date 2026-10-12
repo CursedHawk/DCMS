@@ -281,6 +281,28 @@ namespace Dcms.Shared.Data.Migrations
                     b.ToTable("tenant_role_permissions", "tenancy");
                 });
 
+            modelBuilder.Entity("Dcms.Shared.Data.Tenancy.TenantUsage", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CategoriesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("Categories");
+
+                    b.Property<DateTimeOffset>("MeasuredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("TotalBytes")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("TenantId");
+
+                    b.ToTable("tenant_usage", "tenancy");
+                });
+
             modelBuilder.Entity("Dcms.Shared.Data.Tenancy.MemberRole", b =>
                 {
                     b.HasOne("Dcms.Shared.Data.Tenancy.TenantMembership", "Membership")

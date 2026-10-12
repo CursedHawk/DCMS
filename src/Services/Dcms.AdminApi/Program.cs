@@ -10,6 +10,7 @@ using Dcms.AdminApi.Notifications;
 using Dcms.AdminApi.Openapi;
 using Dcms.AdminApi.Plugins;
 using Dcms.AdminApi.Tenancy;
+using Dcms.AdminApi.Tenancy.Usage;
 using Dcms.Plugins.All;
 using Dcms.PluginSdk.Runtime;
 using Dcms.PluginSdk.Runtime.Contracts;
@@ -301,6 +302,8 @@ builder.Services.AddScoped<Dcms.AdminApi.Sites.SiteDeleter>();
 // event consumers reach it from background scopes.
 builder.Services.AddSingleton<Dcms.AdminApi.Sites.SiteLiveUpdates>();
 builder.Services.AddScoped<TenantDeleter>();
+builder.Services.AddScoped<TenantUsageMeasurer>();
+builder.Services.AddHostedService<TenantUsageWorker>();
 
 var app = builder.Build();
 
@@ -373,6 +376,7 @@ app.UseRateLimiter();
 app.MapDcmsDefaultEndpoints();
 app.MapTenancyEndpoints();
 app.MapTenantAdminEndpoints();
+app.MapTenantUsageEndpoints();
 app.MapMyAccountEndpoints();
 app.MapInvitationEndpoints();
 app.MapDomainEndpoints();
