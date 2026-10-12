@@ -214,13 +214,42 @@ public sealed class QueryCompiler
             }
             var (type, values) = (ScalarType(kind), items.Select(i => Scalar(kind, i, field)).ToArray());
             var list = Parameter(ToArray(kind, values), NpgsqlDbType.Array | type);
+            if (op == "in" && member is not null && kind is Kind.Text or Kind.Choice)
+            {
+                // The indexed prefix narrows, the whole value decides.
+                var prefixes = Parameter(values.Cast<string>().Select(Prefix).Distinct().ToArray(), NpgsqlDbType.Array | NpgsqlDbType.Text);
+                return $"({Indexed(alias, member)} = ANY({prefixes}) AND {sql} = ANY({list}))";
+            }
             return op == "in" ? $"{sql} = ANY({list})" : $"({sql} IS NULL OR NOT ({sql} = ANY({list})))";
         }
         if (kind == Kind.Multi)
         {
             return $"""jsonb_exists({alias}."Data" -> {Key(member!)}, {Parameter(Scalar(Kind.Text, value, field), NpgsqlDbType.Text)})""";
         }
+        if (member is not null && kind is Kind.Date or Kind.DateTime)
+        {
+            // The stored ISO text, written as RecordCodec writes it.
+            var stored = Parameter(Scalar(kind, value, field) switch
+            {
+                DateOnly d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                DateTime t => t.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
+                var other => other.ToString()!,
+            }, NpgsqlDbType.Text);
+            return op switch
+            {
+                "eq" => $"{sql} = {stored}",
+                "ne" => $"{sql} IS DISTINCT FROM {stored}",
+                "gt" => $"{sql} > {stored}",
+                "gte" => $"{sql} >= {stored}",
+                "lt" => $"{sql} < {stored}",
+                _ => $"{sql} <= {stored}",
+            };
+        }
         var p = Parameter(Scalar(kind, value, field), ScalarType(kind));
+        if (op == "eq" && member is not null && kind is Kind.Text or Kind.Choice)
+        {
+            return $"({Indexed(alias, member)} = {Parameter(Prefix((string)Scalar(kind, value, field)), NpgsqlDbType.Text)} AND {sql} = {p})";
+        }
         return op switch
         {
             "eq" => $"{sql} = {p}",
@@ -259,17 +288,29 @@ public sealed class QueryCompiler
         {
             throw Invalid($"'{field}' cannot be sorted on.");
         }
-        var text = $"({alias}.\"Data\" ->> {Key(member)})";
+        // Number, date and text keys are written exactly as RecordIndexes indexes them, so the planner
+        // can use a sortable or filterable field's index. Dates are compared as their stored ISO text
+        // (fixed width, so it orders as they do): a cast to date or timestamptz depends on session
+        // settings, and Postgres indexes nothing that does.
+        var data = $"{alias}.\"Data\"";
+        var text = $"({data} ->> {Key(member)})";
         var sql = kind switch
         {
-            Kind.Number => $"{text}::numeric",
+            Kind.Number => RecordIndexes.KeySql(data, Key(member), RecordIndexes.KeyKind.Number),
             Kind.Bool => $"{text}::boolean",
-            Kind.Date => $"{text}::date",
-            Kind.DateTime => $"{text}::timestamptz",
+            Kind.Date or Kind.DateTime => RecordIndexes.KeySql(data, Key(member), RecordIndexes.KeyKind.Text),
+            // Text sorts by its indexed prefix; filters other than equality need the whole value.
+            Kind.Text or Kind.Choice when sorting => RecordIndexes.KeySql(data, Key(member), RecordIndexes.KeyKind.Text),
             _ => text,
         };
         return (sql, kind, member);
     }
+
+    /// <summary>A text or choice field's indexed key (RecordIndexes): its first characters.</summary>
+    private string Indexed(string alias, RuntimeMember member) =>
+        RecordIndexes.KeySql($"{alias}.\"Data\"", Key(member), RecordIndexes.KeyKind.Text);
+
+    private static string Prefix(string value) => value.Length > RecordIndexes.PrefixChars ? value[..RecordIndexes.PrefixChars] : value;
 
     private static Kind KindOf(RuntimeMember member) => member.IsLookup
         ? Kind.Ref

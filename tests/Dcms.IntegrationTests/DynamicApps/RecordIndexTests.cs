@@ -1,0 +1,110 @@
+using System.Net;
+using System.Text.Json;
+using Dcms.IntegrationTests.Cms;
+
+namespace Dcms.IntegrationTests.DynamicApps;
+
+/// <summary>
+/// The Postgres indexes behind sortable and filterable fields (RecordIndexes): the automation worker
+/// makes them for what is published and drops them with the field, queries answer exactly as before,
+/// and the planner uses them.
+/// </summary>
+[Collection(ContentFlowCollection.Name)]
+public sealed class RecordIndexTests(ContentFlowFixture fixture)
+{
+    private const string Model = """
+        [
+          { "op": "create", "type": "choiceSet", "value": { "apiName": "stage", "displayName": "Stage",
+              "options": [ { "value": "lead", "label": "Lead" }, { "value": "won", "label": "Won" } ] } },
+          { "op": "create", "type": "table", "value": { "apiName": "deals", "displayName": "Deal", "primaryFieldId": "title",
+              "fields": [
+                { "apiName": "title", "displayName": "Title", "required": true, "sortable": true },
+                { "apiName": "amount", "displayName": "Amount", "type": "decimal", "sortable": true, "filterable": true },
+                { "apiName": "stage", "displayName": "Stage", "type": "choice", "choiceSetId": "stage", "filterable": true },
+                { "apiName": "closes", "displayName": "Closes", "type": "date", "sortable": true },
+                { "apiName": "won", "displayName": "Won", "type": "boolean", "sortable": true } ] } }
+        ]
+        """;
+
+    [DockerFact]
+    public async Task Sortable_and_filterable_fields_are_indexed_used_and_dropped_with_the_field()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.PublishAsync(Model, ct);
+        var table = (await app.JsonAsync(HttpMethod.Get, "/_model/published", ct)).GetProperty("config").GetProperty("tables")[0].GetProperty("id").GetString()!;
+
+        // title 2, amount 2, stage 1, closes 2; the boolean none.
+        await WaitAsync(async () => await IndexesAsync(table, ct) == 7, ct, "the worker makes the indexes");
+
+        var rows = Enumerable.Range(1, 300).Select(i => new
+        {
+            title = $"Deal {i:000}", amount = (i * 37) % 1000, stage = i % 3 == 0 ? "won" : "lead",
+            closes = new DateOnly(2026, 1, 1).AddDays(i % 200).ToString("yyyy-MM-dd"), won = i % 2 == 0,
+        }).ToList();
+        await app.JsonAsync(HttpMethod.Post, "/_records/deals/import?dryRun=false", ct, new { rows });
+        await Analyze(ct);
+        var before = await ScansAsync(table, ct);
+
+        var byAmount = await Items(app, "/_records/deals?sort=-amount&pageSize=5&select=amount", ct);
+        byAmount.Select(d => d.GetProperty("amount").GetDecimal()).Should().Equal(rows.Select(r => (decimal)r.amount).OrderDescending().Take(5));
+        var byTitle = await Items(app, "/_records/deals?sort=title&pageSize=3&select=title", ct);
+        byTitle.Select(d => d.GetProperty("title").GetString()).Should().Equal("Deal 001", "Deal 002", "Deal 003");
+        var range = await app.JsonAsync(HttpMethod.Post, "/_records/deals/query", ct, new
+        {
+            filter = new { and = new object[] { new { field = "closes", op = "gte", value = "2026-07-01" }, new { field = "stage", op = "eq", value = "won" } } },
+            sort = new[] { new { field = "closes" } }, pageSize = 200,
+        });
+        var expected = rows.Where(r => string.CompareOrdinal(r.closes, "2026-07-01") >= 0 && r.stage == "won").ToList();
+        range.GetProperty("total").GetInt32().Should().Be(expected.Count);
+        range.GetProperty("items").EnumerateArray().Select(d => d.GetProperty("closes").GetString()).Should().BeInAscendingOrder();
+
+        (await ScansAsync(table, ct)).Should().BeGreaterThan(before, "the planner reads these indexes");
+
+        // A field that goes takes its indexes with it.
+        var hash = (await app.JsonAsync(HttpMethod.Get, "/_model", ct)).GetProperty("hash").GetString();
+        var draft = (await app.JsonAsync(HttpMethod.Post, "/_model/draft/changes", ct, new
+        {
+            expectedHash = hash,
+            operations = AppHarness.Operations("""[ { "op": "delete", "type": "field", "target": "deals.amount" } ]"""),
+        })).GetProperty("draft").GetProperty("hash").GetString();
+        await app.JsonAsync(HttpMethod.Post, "/_model/draft/publish", ct, new { expectedHash = draft });
+        await WaitAsync(async () => await IndexesAsync(table, ct) == 5, ct, "the worker drops the field's indexes");
+    }
+
+    private static async Task<List<JsonElement>> Items(AppHarness app, string path, CancellationToken ct) =>
+        (await app.JsonAsync(HttpMethod.Get, path, ct)).GetProperty("items").EnumerateArray().ToList();
+
+    private async Task<long> IndexesAsync(string table, CancellationToken ct) =>
+        await ScalarAsync($"SELECT count(*) FROM pg_indexes WHERE schemaname = 'apps' AND indexname LIKE 'ix_da_%' AND indexdef LIKE '%{table}%'", ct);
+
+    private async Task<long> ScansAsync(string table, CancellationToken ct) =>
+        await ScalarAsync($"""
+            SELECT coalesce(sum(s.idx_scan), 0) FROM pg_stat_user_indexes s JOIN pg_indexes i ON i.indexname = s.indexrelname
+            WHERE i.schemaname = 'apps' AND i.indexname LIKE 'ix_da_%' AND i.indexdef LIKE '%{table}%'
+            """, ct);
+
+    private async Task Analyze(CancellationToken ct) => await ScalarAsync("SELECT 0 FROM (SELECT 1) x; ANALYZE apps.records", ct);
+
+    private async Task<long> ScalarAsync(string sql, CancellationToken ct)
+    {
+        await using var conn = new Npgsql.NpgsqlConnection(fixture.PostgresConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct) ?? 0);
+    }
+
+    private static async Task WaitAsync(Func<Task<bool>> condition, CancellationToken ct, string what)
+    {
+        for (var i = 0; i < 120; i++)
+        {
+            if (await condition())
+            {
+                return;
+            }
+            await Task.Delay(500, ct);
+        }
+        throw new Xunit.Sdk.XunitException($"Timed out: {what}.");
+    }
+}

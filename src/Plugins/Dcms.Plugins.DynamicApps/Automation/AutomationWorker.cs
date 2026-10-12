@@ -1,5 +1,7 @@
 using System.Text.Json;
 using Dcms.Plugins.DynamicApps.Api;
+using Dcms.Plugins.DynamicApps.Data;
+using Dcms.Plugins.DynamicApps.Metadata;
 using Dcms.PluginSdk.Runtime.Hosting;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Propagation;
@@ -38,6 +40,11 @@ public sealed class AutomationWorker(
 
     private DateTimeOffset _nextCleanup = DateTimeOffset.UtcNow.AddMinutes(5);
 
+    private static readonly TimeSpan IndexSyncEvery = TimeSpan.FromSeconds(10);
+    private const int IndexBuildsPerCall = 8;
+    private DateTimeOffset _nextIndexSync = DateTimeOffset.UtcNow.AddSeconds(5);
+    private string? _indexedRevisions;
+
     /// <summary>
     /// Two loops: routing (with schedules and cleanup) and running. Apart, so a long routing pass
     /// over a backlog does not hold runs back; each goes again at once while it finds full batches.
@@ -53,6 +60,15 @@ public sealed class AutomationWorker(
             {
                 await CleanupAsync(ct);
                 _nextCleanup = DateTimeOffset.UtcNow.AddHours(1);
+            }
+            if (DateTimeOffset.UtcNow >= _nextIndexSync)
+            {
+                // Set first: a failing sync is retried at its pace, not every tick.
+                _nextIndexSync = DateTimeOffset.UtcNow.Add(IndexSyncEvery);
+                if (await SyncIndexesAsync(ct))
+                {
+                    _nextIndexSync = DateTimeOffset.UtcNow.AddSeconds(2);
+                }
             }
             return routed == OutboxBatch;
         }, stoppingToken),
@@ -83,6 +99,67 @@ public sealed class AutomationWorker(
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    // ------------------------------------------------------------------ indexes
+
+    /// <summary>
+    /// Brings the indexes behind sortable and filterable fields (RecordIndexes) in line with every
+    /// published revision, when one has changed since the last complete pass. Returns true while work
+    /// is left: builds over the per-call budget, a lock not granted, or another replica at it.
+    /// </summary>
+    public async Task<bool> SyncIndexesAsync(CancellationToken ct)
+    {
+        using var scope = services.CreateScope();
+        using var platform = RlsScope.Platform();
+        var db = scope.ServiceProvider.GetRequiredService<AppsDbContext>();
+        var live = await db.Revisions.AsNoTracking().IgnoreQueryFilters() // rls: RlsScope.Platform, every tenant's published revision
+            .Where(r => r.Status == AppRevisionStatus.Published)
+            .OrderBy(r => r.Id)
+            .Select(r => new { r.Id, r.Hash })
+            .ToListAsync(ct);
+        var state = string.Join(",", live.Select(r => $"{r.Id:N}:{r.Hash}"));
+        if (state == _indexedRevisions)
+        {
+            return false;
+        }
+
+        var wanted = new List<RecordIndexes.Spec>();
+        foreach (var id in live.Select(r => r.Id))
+        {
+            var snapshot = await db.Revisions.AsNoTracking().IgnoreQueryFilters() // rls: RlsScope.Platform, as above
+                .Where(r => r.Id == id).Select(r => r.Snapshot).SingleAsync(ct);
+            wanted.AddRange(RecordIndexes.For(ConfigJson.Parse(snapshot), out _));
+        }
+        var json = JsonSerializer.Serialize(wanted.Select(w => new
+        {
+            name = w.Name,
+            table = w.TableId.ToString(),
+            key = w.Key,
+            kind = w.Kind == RecordIndexes.KeyKind.Number ? "number" : "text",
+            descending = w.Descending,
+        }));
+        var report = await db.Database
+            .SqlQuery<string>($"SELECT unnest(apps.sync_record_indexes({json}::jsonb, {IndexBuildsPerCall})) AS \"Value\"")
+            .ToListAsync(ct);
+        foreach (var line in report.Where(l => l.StartsWith("failed", StringComparison.Ordinal)))
+        {
+            logger.LogWarning("Dynamic Apps index sync: {Line}", line);
+        }
+        if (report.Any(l => l.StartsWith("created", StringComparison.Ordinal) || l.StartsWith("dropped", StringComparison.Ordinal)))
+        {
+            logger.LogInformation("Dynamic Apps index sync: {Created} created, {Dropped} dropped, {Wanted} wanted.",
+                report.Count(l => l.StartsWith("created", StringComparison.Ordinal)),
+                report.Count(l => l.StartsWith("dropped", StringComparison.Ordinal)), wanted.Count);
+        }
+        // Retried soon: the budget ran out, another replica holds the lock, or a build waited too long
+        // for apps.records. Any other failure (data the key cannot take) waits for the next publish.
+        var more = report.Any(l => l is "more" or "busy" || (l.StartsWith("failed", StringComparison.Ordinal) && l.Contains("lock timeout", StringComparison.Ordinal)));
+        if (!more)
+        {
+            _indexedRevisions = state;
+        }
+        return more;
     }
 
     // ------------------------------------------------------------------ outbox → runs

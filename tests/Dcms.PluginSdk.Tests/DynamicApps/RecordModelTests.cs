@@ -163,8 +163,49 @@ public sealed class RecordModelTests
 
         compiled.Where.Should().NotContain(Hostile).And.NotContain("10000").And.NotContain("lead").And.Contain("EXISTS");
         compiled.Specs.Select(p => p.Value).Should().Contain(Hostile);
-        compiled.OrderBy.Should().StartWith("(r.\"Data\" ->> @").And.Contain("::numeric DESC NULLS LAST").And.EndWith("r.\"Id\"");
+        compiled.OrderBy.Should().StartWith("((r.\"Data\" ->> @").And.Contain("::numeric DESC NULLS LAST").And.EndWith("r.\"Id\"");
         (compiled.Limit, compiled.Offset).Should().Be((25, 25));
+    }
+
+    [Fact]
+    public void Sorts_and_filters_are_written_as_the_field_indexes_are()
+    {
+        // Text sorts by its indexed prefix, dates compare as their stored ISO text (no casts, which
+        // cannot be indexed), and text equality narrows by the prefix and decides by the whole value.
+        var sorted = Compile("""{ "sort": [ { "field": "title" } ] }""");
+        sorted.OrderBy.Should().StartWith("left((r.\"Data\" ->> @").And.Contain($", {RecordIndexes.PrefixChars}) ASC NULLS LAST");
+
+        var dated = Compile(
+            """{ "filter": { "and": [ { "field": "closes", "op": "gte", "value": "2026-01-01" }, { "field": "signed_at", "op": "lt", "value": "2026-10-06T12:00:00+02:00" } ] } }""");
+        dated.Where.Should().NotContain("::date").And.NotContain("::timestamptz");
+        dated.Specs.Select(p => p.Value).Should().Contain(["2026-01-01", "2026-10-06T10:00:00.000Z"]);
+
+        var titled = Compile("""{ "filter": { "field": "title", "op": "eq", "value": "Big one" } }""");
+        titled.Where.Should().Contain("(left((r.\"Data\" ->> @").And.Contain(" AND (r.\"Data\" ->> @");
+    }
+
+    [Fact]
+    public void Sortable_and_filterable_fields_get_indexes_up_to_the_cap()
+    {
+        var config = ChangeApplier.Apply(new AppConfig(), JsonSerializer.Deserialize<List<ChangeOperation>>("""
+            [ { "op": "create", "type": "table", "value": { "apiName": "deals", "displayName": "Deal", "fields": [
+                { "apiName": "title", "displayName": "Title", "sortable": true },
+                { "apiName": "amount", "displayName": "Amount", "type": "decimal", "filterable": true },
+                { "apiName": "won", "displayName": "Won", "type": "boolean", "sortable": true, "filterable": true },
+                { "apiName": "notes", "displayName": "Notes" } ] } } ]
+            """, ConfigJson.Options)!);
+        var specs = RecordIndexes.For(config, out var wanted);
+        specs.Select(s => (s.Kind, s.Descending)).Should().Equal(
+            (RecordIndexes.KeyKind.Text, false), (RecordIndexes.KeyKind.Text, true), (RecordIndexes.KeyKind.Number, false));
+        wanted.Should().Be(3, "a boolean and an unflagged field get none");
+        specs.Select(s => s.Name).Should().OnlyHaveUniqueItems().And.AllSatisfy(n => n.Should().MatchRegex("^ix_da_[0-9a-f]{24}$"));
+        RecordIndexes.For(config, out _).Select(s => s.Name).Should().Equal(specs.Select(s => s.Name), "names are stable");
+
+        var big = config with { Tables = Enumerable.Range(0, 40).Select(i => config.Tables[0] with { Id = Guid.NewGuid() }).ToList() };
+        RecordIndexes.For(big, out var many).Should().HaveCount(RecordIndexes.MaxPerApp);
+        many.Should().Be(120);
+        ConfigValidator.Validate(config).Should().NotContain(i => i.Code == "index-limit");
+        ConfigValidator.Validate(big).Should().Contain(i => i.Code == "index-limit" && i.Severity == IssueSeverity.Warning);
     }
 
     [Fact]

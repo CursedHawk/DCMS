@@ -40,6 +40,13 @@ then has two screens:
 | Choice set | Named options that choice fields share. |
 | View | A saved filter, sort and column list over a table; one view per table is the default. |
 
+**Sortable and filterable fields get database indexes.** After a publish, the automation
+worker gives each sortable field two indexes (ascending and descending) and each filterable one
+an index, so a page sorted or filtered by it reads its rows from the index instead of sorting the
+whole table. Text-like values are indexed by their first 200 characters. An app gets at most 64
+indexes; validation warns (`index-limit`) when its flags want more. Booleans, multi-choice, json and
+lookups are not indexed. Flag only what lists really sort and filter by: every index costs writes.
+
 **Renaming a field's api name once it is published is refused.** Add a new field and mark the
 old one deprecated instead: clients and flows depend on the name.
 
@@ -233,6 +240,10 @@ with a stage choice; email the deal owner when a deal over 10 000 is won."*
   security.
   - The outbox and the flow-schedule queue are drained across tenants.
   - Routed events are kept for 7 days, and finished runs for 30.
+- **Indexes:** `apps.sync_record_indexes`, a function the migration creates with the owner's
+  rights, makes and drops them (admin-api's own role may create no index). Builds are not
+  concurrent, so each holds writes to `apps.records` while it reads the table; the worker makes at
+  most 8 per call and gives up on a lock after 500 ms, and retries.
 - **Where it runs:** the automation worker runs inside admin-api, with no extra service. The
   database is its queue (`FOR UPDATE SKIP LOCKED` with a lease), so replicas share the work.
 - **Traces:** spans are `dcms.dynamicapp.query|mutation|flow|flow.step`. They are tagged with
