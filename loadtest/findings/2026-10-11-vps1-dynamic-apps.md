@@ -24,7 +24,7 @@ Tooling (this commit): `seed/dynamic-apps.mjs` + `seed/da-model.mjs` (the tenant
 | app `crm` | 12 tables, every field type and flag, 6 choice sets, 9 relationships (m:1 restrict / setNull / cascade / required, 1:1, m:n), 3 views, 16 flows covering every trigger (row.*, relation.created, revision.published, flow.event, form.submitted, user.invited/activated, schedule, manual, flow.invoke, a self-retriggering loop) and actions (records.*, event.publish, notifications, email) |
 | public access | `products` read all (hidden `cost`), `leads` create-only, `tickets` own records, `companies`/`contacts`/`deals`/`activities` **row rules** through the permission table `company_access` (1 and 2 hops) |
 | data | 5,000 companies, 2,000 profiles (1:1), 20,000 contacts, 500 products, 30,000 deals, 50,000 activities, 5,000 tickets, 3,905 access grants (sales01–07: 200 companies each, **sales08: 2,500**, guest01: 5), 3,000 deal↔product links |
-| app `limits` | the configuration ceiling: 80 tables × 200 fields, all public, 1,000 rows of all 200 fields in `t000` |
+| app `limits` | the configuration ceiling: 100 tables × 200 fields since 2026-10-12 (80 before the cap was raised), all public, 1,000 rows of all 200 fields in `t000` |
 
 Seeding took 7 min 22 s. Revisions 1–2 are the seed; later ones come from the probe's rollback test.
 
@@ -48,6 +48,46 @@ limit and email all behave.
 | 7 | **Import is N+1 and planner-sensitive**: one query per lookup and per unique key per row; contacts calls ran 6–9.4 s until autoanalyze, then 2.1 s | §2 | `Data/RecordService.cs:360-363`, name lookup `:435` (unindexed `lower(Data->>k)`) | batch the existence/uniqueness checks per call; `ANALYZE` after large imports |
 | 8 | **Storage bloat**: 89 % of `flow_runs` (54,531 of 61,558) are terminated noise; `outbox` (252 MB) is twice the records (125 MB) | §4 | follows from #2; envelopes carry whole records | don't write runs refused by a limit (count them); trim envelopes |
 | 9 | **Public writes: 120/h per address per app, shared by signed-in users** — an office behind one NAT gets 120 site writes an hour for everyone | probe: 120 then 429; a realm user got 429 on the same address | `Endpoints/PublicEndpoints.cs:172-188` | by design for anonymous visitors; consider a separate budget for role-holding realm users |
+
+---
+
+## Fixed and re-measured — 2026-10-12
+
+Every finding was fixed, deployed (pipelines 778 and 779, master `651c8ae`) and the same campaign was
+run again on the same tenant. **63/63 probe checks pass** (41 functional, 13 limits, the automation
+and contention checks, scale and model).
+
+| # | fix | commit | before | after |
+|---|---|---|---|---|
+| 1 | row-rule hops: equality join, then `(x IN (uncorrelated set)) IS TRUE` so Postgres hashes the set once whatever the page's ORDER BY … LIMIT | `e10a342`, `651c8ae` | sales08 deals page **15,173 ms**, company search page 714 ms (EXPLAIN) | **205 ms**, **12 ms** (EXPLAIN); k6 rule-bound search p95 at 5 VUs 20 s → **179 ms** |
+| 2 | each record of an import / bulk update / bulk delete is its own action for the run limits | `a4a0b4f` | 100 imported → 20 escalated; 500 bulk-won → 20 ran, 480 terminated | **100/100**; **500/500** `deal_won` + 500/500 `on_deal_closed` |
+| 3, 4 | routing and execution are separate loops that go again while batches are full | `ed62921` | 100 events/s, 3.9 runs/s; 3,000 runs in 760 s with the host idle | 1,500 runs (bulk) in **40 s**; 3,000 runs (per record) in **86 s, 34.8 runs/s** |
+| 5 | a step whose record another write changed reads its earlier read-only steps again and retries (up to 10, growing pause); read-modify-write passes `version` | `cd45bee`, `92fb59b` | 15/50 runs failed, 10/10 totals wrong | **0 failed, 0 wrong** (50 deals on 10 companies at once) |
+| 6 | document cap 4 M → 8 M characters | `205be90` | 80 × 200 fields fit | **100 × 200** fit and publish |
+| 7 | import checks lookups and unique values once per call | `9047d3b` | activities (2 name lookups) 448 rows/s, 1.9–2.8 s per 1,000 | **1,073–1,536 rows/s**, 0.65–0.93 s per 1,000 |
+| 8 | (follows from 2: no more terminated noise per bulk row) | — | 89 % of runs terminated | storms leave no terminated runs |
+| 9 | a role holder's writes count against their User Authentication account; role holders share 1,200/h per address (security review of `abedcbe` → `84a7bb6`) | `abedcbe`, `84a7bb6` | 120/h per address for everyone | role holder writes with the address exhausted; a plain signed-in user still shares it |
+| — | `eq null` means `isNull`; `rule-writable` warns only about what a rule reads; site API answers carry each security header once | `2372405`, `7672325`, `439f09d` | | headers checked live: once each |
+| new | **OpenAPI at the new ceiling OOM'd content-api** (10 MB document cached as a JSON string, 640 MB container): written compact into gzip, cached and served as those bytes | `88f1403` | 500 `OutOfMemoryException`; content-api 535 MiB | **284 KB** gzipped (4.4 MB plain), 0.2–0.3 s warm; content-api 292 MiB |
+
+**k6 staircase on `651c8ae`** (same scenario and steps):
+
+| VUs | req/s | errors | p95 | site anon | site own | rule-bound search | rule-bound deals | admin query |
+|---|---|---|---|---|---|---|---|---|
+| 5 | **24.4** (was 2.7) | 0 % | **414 ms** (was 16 s) | 90 | 81 | 179 (was 20,001) | 409 (was 24,076) | 511 |
+| 10 | **27.0** (was 3.1) | 0 % (was 2.7 %) | 849 ms (was 26.7 s) | 131 | 137 | 287 | 743 | 1,096 |
+| 20 | **30.4** (was 4.9) | 0 % (was 4.7 %) | 1.6 s (was 14.8 s) | 141 | 180 | 483 | 1,385 | 2,109 |
+| 40 | **30.8** (was 5.9) | 0.5 % (was 4.6 %) | 3.4 s (was 27.7 s) | 240 (was 9,935) | 331 (was 12,143) | 795 | 2,776 | 4,347 |
+| 80 | **30.7** | 1.35 % | 6.0 s | 298 | 374 | 1,051 | 3,221 | 7,164 |
+
+Throughput is ~6× higher and holds flat past the knee instead of timing out. The site API stays
+sub-second to 80 VUs. **What now sets the ceiling is Postgres CPU on the admin plane's list shapes**
+(all at 2.4–3 of vps1's 4 cores in the 20-VU bundle): every list page runs an exact `COUNT(*)` plus a
+sort over the table's jsonb rows, and the app's configured `indexes` create no Postgres indexes. Next
+steps, if that matters: expression indexes for sortable/filterable fields (or for configured
+indexes), and an estimated or capped count for large tables. A large import now also drains its
+flows in minutes rather than hours, which means it competes for the same CPU while it does (the
+5-VU step that overlapped one measured 14.6 req/s instead of 24.4).
 
 ---
 
