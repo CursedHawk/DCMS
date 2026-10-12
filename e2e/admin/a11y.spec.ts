@@ -30,6 +30,7 @@ const PAGES: [string, string][] = [
   ['the media library', '/media'],
   ['the marketplace', '/marketplace'],
   ['settings', '/settings/general'],
+  ['usage', '/settings/usage'],
 ];
 
 for (const [name, path] of PAGES) {

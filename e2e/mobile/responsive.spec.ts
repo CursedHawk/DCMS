@@ -80,7 +80,7 @@ test('the IDE refuses the screen instead of rendering badly on it', async ({ pag
 const PAGES = [
   '/', '/content', '/media', '/sites', '/plugins', '/plugins/press-room', '/marketplace',
   '/marketplace/forms', '/notifications', '/settings/members', '/settings/roles',
-  '/settings/domains', '/app/forms/inbox',
+  '/settings/domains', '/settings/usage', '/app/forms/inbox',
 ];
 
 test.describe('at 360px', () => {
@@ -171,6 +171,8 @@ test('a long provisioned domain wraps, and opens the site in a new tab', async (
   await expect(link).toHaveAttribute('href', `https://${host}`);
   await expect(link).toHaveAttribute('target', '_blank');
   await expect(link).toHaveAttribute('rel', /noopener/);
+  // Below the Settings list on a phone; what matters is that it fits once it is on screen.
+  await link.scrollIntoViewIfNeeded();
   await expect(link).toBeInViewport({ ratio: 1 });
   const record = page.getByText(`_dcms-verify.${custom}`);
   await record.scrollIntoViewIfNeeded();

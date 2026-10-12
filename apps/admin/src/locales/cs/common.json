@@ -27,7 +27,8 @@
     "language": "Jazyk",
     "marketplace": "Tržiště",
     "assistant": "Asistent",
-    "connections": "Propojení"
+    "connections": "Propojení",
+    "usage": "Využití dat"
   },
   "actions": {
     "create": "Vytvořit",
@@ -1365,7 +1366,8 @@
     "aiHint": "Model a API klíče",
     "auditHint": "Co se tu dělo",
     "apiHint": "Endpointy, které tento prostor nabízí",
-    "connectionsHint": "Externí API, ze kterých weby čtou; klíče zůstávají na serveru."
+    "connectionsHint": "Externí API, ze kterých weby čtou; klíče zůstávají na serveru.",
+    "usageHint": "Co tento prostor ukládá a kde"
   },
   "pluginReference": {
     "back": "Tržiště",
@@ -1973,5 +1975,59 @@
     "confirmDelete": "Odebrat „{{name}}“? Weby, které ho používají, přijdou o jeho data.",
     "failing": "Selhává",
     "synced": "Synchronizováno {{when}}"
+  },
+  "usage": {
+    "title": "Využití dat",
+    "description": "Vše, co tento prostor ukládá, od největšího. Otevřením kategorie uvidíte, co obsahuje.",
+    "total": "Uloženo celkem",
+    "measured": "Změřeno {{when}}",
+    "never": "Zatím nezměřeno",
+    "neverHint": "Využití se měří jednou denně. Změřte ho teď a uvidíte rozpad.",
+    "recalculate": "Změřit teď",
+    "recalculated": "Využití změřeno",
+    "tooSoon": "Využití bylo změřeno před chvílí. Zkuste to znovu za pár minut.",
+    "limit": "Limit úložiště",
+    "limitHint": "Limit úložiště počítá jen soubory médií. Vše ostatní je tu vidět, abyste věděli, kolik to stojí, ale nic dalšího omezené není.",
+    "rows_one": "{{count, number}} řádek",
+    "rows_few": "{{count, number}} řádky",
+    "rows_many": "{{count, number}} řádku",
+    "rows_other": "{{count, number}} řádků",
+    "kind": {
+      "database": "Databáze",
+      "files": "Soubory",
+      "git": "Git repozitář"
+    },
+    "category": {
+      "media": "Média",
+      "sites": "Weby",
+      "plugins": "Pluginy",
+      "dynamicApps": "Dynamické aplikace",
+      "ai": "AI asistent",
+      "audit": "Auditní záznam",
+      "workspace": "Pracovní prostor"
+    },
+    "item": {
+      "domains": "Domény",
+      "members": "Členové, role a pozvánky",
+      "settings": "Snímek využití",
+      "connections": "API propojení",
+      "notifications": "Oznámení",
+      "index": "Záznamy knihovny médií",
+      "originals": "Původní soubory",
+      "renditions": "Optimalizované kopie",
+      "definitions": "Definice webů a historie sestavení",
+      "assistant": "Konverzace s AI asistentem",
+      "social": "Instagram a Facebook",
+      "auditLog": "Auditní záznam",
+      "configuration": "Konfigurace a historie aplikací",
+      "records": "Záznamy",
+      "automation": "Běhy automatizací",
+      "deletedPlugins": "Obsah smazaných pluginů"
+    },
+    "site": {
+      "live": "{{name}} (zveřejněné sestavení)",
+      "history": "{{name}} (starší sestavení)",
+      "git": "{{name}} (git repozitář)"
+    }
   }
 }

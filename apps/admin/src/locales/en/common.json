@@ -27,7 +27,8 @@
     "language": "Language",
     "marketplace": "Marketplace",
     "assistant": "Assistant",
-    "connections": "Connections"
+    "connections": "Connections",
+    "usage": "Usage"
   },
   "actions": {
     "create": "Create",
@@ -1334,7 +1335,8 @@
     "aiHint": "Model and API keys",
     "auditHint": "What has been done here",
     "apiHint": "The endpoints this workspace exposes",
-    "connectionsHint": "External APIs your sites read, with their keys kept on the server."
+    "connectionsHint": "External APIs your sites read, with their keys kept on the server.",
+    "usageHint": "What this workspace stores, and where"
   },
   "pluginReference": {
     "back": "Marketplace",
@@ -1930,5 +1932,57 @@
     "confirmDelete": "Remove “{{name}}”? Sites using it lose its data.",
     "failing": "Failing",
     "synced": "Synced {{when}}"
+  },
+  "usage": {
+    "title": "Usage",
+    "description": "Everything this workspace stores, largest first. Open a category to see what is in it.",
+    "total": "Stored in total",
+    "measured": "Measured {{when}}",
+    "never": "Not measured yet",
+    "neverHint": "Usage is measured once a day. Measure it now to see the breakdown.",
+    "recalculate": "Measure now",
+    "recalculated": "Usage measured",
+    "tooSoon": "Usage was measured moments ago. Try again in a couple of minutes.",
+    "limit": "Storage limit",
+    "limitHint": "The storage limit counts media files only. Everything else is shown here so you can see what it costs, but nothing else is limited.",
+    "rows_one": "{{count, number}} row",
+    "rows_other": "{{count, number}} rows",
+    "kind": {
+      "database": "Database",
+      "files": "Files",
+      "git": "Git repository"
+    },
+    "category": {
+      "media": "Media",
+      "sites": "Sites",
+      "plugins": "Plugins",
+      "dynamicApps": "Dynamic Apps",
+      "ai": "AI assistant",
+      "audit": "Audit log",
+      "workspace": "Workspace"
+    },
+    "item": {
+      "domains": "Domains",
+      "members": "Members, roles and invitations",
+      "settings": "Usage snapshot",
+      "connections": "API connections",
+      "notifications": "Notifications",
+      "index": "Media library records",
+      "originals": "Original files",
+      "renditions": "Optimized copies",
+      "definitions": "Site definitions and build history",
+      "assistant": "AI assistant conversations",
+      "social": "Instagram and Facebook",
+      "auditLog": "Audit log",
+      "configuration": "App configuration and history",
+      "records": "Records",
+      "automation": "Automation runs",
+      "deletedPlugins": "Content of deleted plugins"
+    },
+    "site": {
+      "live": "{{name}} (published build)",
+      "history": "{{name}} (earlier builds)",
+      "git": "{{name}} (git repository)"
+    }
   }
 }

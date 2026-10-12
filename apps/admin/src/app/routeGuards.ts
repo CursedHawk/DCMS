@@ -74,6 +74,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     descriptionKey: 'settings.connectionsHint',
     perm: Perm.PluginsManage,
   },
+  // What the workspace stores. Measuring it scans every table, so it sits with the other
+  // workspace settings rather than in front of everyone.
+  {
+    to: '/settings/usage',
+    labelKey: 'nav.usage',
+    descriptionKey: 'settings.usageHint',
+    perm: Perm.TenantSettings,
+  },
   // No permission: the API reference describes the endpoints this workspace exposes, and every
   // member can already call them. It is also why /settings is never empty for anybody.
   { to: '/settings/api', labelKey: 'nav.openapi', descriptionKey: 'settings.apiHint' },

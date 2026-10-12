@@ -126,6 +126,33 @@ export const MEDIA_USAGE = {
   byCategory: [{ category: 'Image', count: 2, originalBytes: 71_680 }],
 };
 
+export const USAGE = {
+  measuredAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
+  totalBytes: 6 * 1024 ** 2,
+  quotaBytes: 5 * 1024 ** 3,
+  mediaBytes: 83_968,
+  categories: [
+    {
+      key: 'dynamicApps', bytes: 4 * 1024 ** 2,
+      items: [
+        { key: 'records', label: 'Records', kind: 'database', bytes: 3 * 1024 ** 2, rows: 12_400 },
+        { key: 'automation', label: 'Automation runs', kind: 'database', bytes: 1024 ** 2, rows: 310 },
+      ],
+    },
+    {
+      key: 'sites', bytes: 2 * 1024 ** 2 - 83_968,
+      items: [
+        { key: 'site:aaaaaaaa-0000-0000-0000-000000000001:history', label: 'Marketing', kind: 'files', bytes: 1024 ** 2 },
+        { key: 'site:aaaaaaaa-0000-0000-0000-000000000001:git', label: 'Marketing', kind: 'git', bytes: 1024 ** 2 - 83_968 },
+      ],
+    },
+    {
+      key: 'media', bytes: 83_968,
+      items: [{ key: 'originals', label: 'Original files', kind: 'files', bytes: 83_968 }],
+    },
+  ],
+};
+
 export const INSTANCE_BLOG = 'cccccccc-0000-0000-0000-000000000001';
 
 export const PLUGIN_INSTANCES = [

@@ -197,6 +197,8 @@ public sealed class TenantUsageMeasurer(
             .ToListAsync(ct);
 
         var bucket = storageOptions.Value.SitesBucket;
+        // Labelled with the site's name alone; the key's suffix (live, history, git) says which
+        // part of the site it is, and the consoles phrase that in their own language.
         foreach (var site in list)
         {
             // Every build ever published stays under the site's prefix until the site is deleted.
@@ -206,8 +208,8 @@ public sealed class TenantUsageMeasurer(
                 : await TryAsync(() => Storage.SizeOfPrefixAsync(bucket, site.Live.TrimEnd('/') + "/", ct), "site files", ct) ?? 0;
             if (all is not null)
             {
-                items.Add(new Item("sites", $"site:{site.Id}:live", $"{site.Name} — published build", "files", live, null));
-                items.Add(new Item("sites", $"site:{site.Id}:history", $"{site.Name} — earlier builds", "files", Math.Max(0, all.Value - live), null));
+                items.Add(new Item("sites", $"site:{site.Id}:live", site.Name, "files", live, null));
+                items.Add(new Item("sites", $"site:{site.Id}:history", site.Name, "files", Math.Max(0, all.Value - live), null));
             }
 
             if (forgejoOptions.Value.Enabled && site.GitRepoFullName?.Split('/') is [var owner, var repo])
@@ -215,7 +217,7 @@ public sealed class TenantUsageMeasurer(
                 var info = await TryAsync(async () => (await forgejo.GetRepoAsync(owner, repo, ct))?.Size, "git repository", ct);
                 if (info is > 0)
                 {
-                    items.Add(new Item("sites", $"site:{site.Id}:git", $"{site.Name} — git repository", "git", info.Value * 1024, null));
+                    items.Add(new Item("sites", $"site:{site.Id}:git", site.Name, "git", info.Value * 1024, null));
                 }
             }
         }

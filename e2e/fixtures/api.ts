@@ -214,6 +214,8 @@ export function adminApi(
     })
     .on('GET', '/api/admin/media/folders', data.MEDIA_FOLDERS)
     .on('GET', '/api/admin/media/usage', data.MEDIA_USAGE)
+    .on('GET', '/api/admin/usage', data.USAGE)
+    .on('POST', '/api/admin/usage/recalculate', { ...data.USAGE, measuredAt: new Date().toISOString() })
     .on('GET', '/api/admin/media/:id', ({ params }) => {
       const asset = data.MEDIA_ASSETS.find((a) => a.id === params.id);
       return { ...asset, contentType: 'image/png', originalDeletedAt: null, variants: [] };
