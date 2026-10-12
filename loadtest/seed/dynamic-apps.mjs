@@ -83,9 +83,9 @@ async function ensureModel(app) {
   return { state, timings };
 }
 
-/** Sorted-key JSON, so a flow compares equal whatever order the server writes its keys in. */
-const canonical = (v) => JSON.stringify(v, (_, x) => (x && typeof x === 'object' && !Array.isArray(x)
-  ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
+/** Sorted-key JSON without nulls, so a flow compares equal however the server writes it (`"condition": null`). */
+const canonical = (v) => JSON.stringify(v, (_, x) => (x === null ? undefined
+  : x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
 
 /** Brings every fixture flow's steps and condition up to da-model.mjs, in one published change set. */
 async function ensureFlowsCurrent(app) {

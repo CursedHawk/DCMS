@@ -224,6 +224,25 @@ public sealed class PublicApiTests(ContentFlowFixture fixture)
         return (Guid)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
+    [DockerFact]
+    public async Task The_openapi_document_is_served_gzipped_to_clients_that_accept_it()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.PublishAsync(Model, ct);
+
+        var plain = await Json(await app.SiteAsync(HttpMethod.Get, "/api/openapi.json", ct), ct);
+        var req = new HttpRequestMessage(HttpMethod.Get, "/api/openapi.json");
+        req.Headers.Add("X-Dcms-Tenant", app.Tenant);
+        req.Headers.Add("Accept-Encoding", "br;q=0, gzip;q=0.8");
+        var res = await fixture.Content.CreateClient().SendAsync(req, ct);
+        res.Content.Headers.ContentEncoding.Should().Equal("gzip");
+        await using var unzipped = new System.IO.Compression.GZipStream(await res.Content.ReadAsStreamAsync(ct), System.IO.Compression.CompressionMode.Decompress);
+        var gzipped = await JsonDocument.ParseAsync(unzipped, cancellationToken: ct);
+        gzipped.RootElement.GetProperty("paths").EnumerateObject().Select(p => p.Name)
+            .Should().Equal(plain.GetProperty("paths").EnumerateObject().Select(p => p.Name), "the same document either way");
+    }
+
     private static async Task<string> ClientSourceAsync(AppHarness app, CancellationToken ct)
     {
         var res = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, "/api/admin/api-client.zip", app.Owner, app.Tenant), ct);

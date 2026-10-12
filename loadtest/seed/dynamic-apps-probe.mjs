@@ -464,6 +464,20 @@ async function scale() {
   measure('uniqueOverData', { rows: fx.counts.contacts, applyMs: applied.ms, validateMs: v.ms, previewMs: pv.ms, publishMs: pub.ms, publishStatus: pub.status, revertPublishMs: pub2.ms });
   await check('a new unique constraint over existing rows publishes (and reverts)', async () => pub.status === 200 && pub2.status === 200 || { ok: false, detail: `${pub.status} ${pub.text.slice(0, 200)} / ${pub2.status}` });
 
+  // Import throughput on the heaviest path: 5 calls of 1,000 activities, each naming its company
+  // and its deal by name (two lookups resolved per row), into a 50k-row table.
+  const titles = (await call('GET', '/_records/deals?pageSize=200&select=title')).body.items.map((d) => d.title);
+  const companies = (await call('GET', '/_records/companies?pageSize=200&select=name')).body.items.map((c) => c.name);
+  const tag = `imp-${Date.now()}`;
+  const importCalls = [];
+  for (let k = 0; k < 5; k++) {
+    const rows = Array.from({ length: 1000 }, (_, i) => ({ subject: `${tag} ${k}-${i}`, kind: i % 4 === 0 ? 'meeting' : 'call',
+      company: companies[(k * 1000 + i) % companies.length], deal: titles[(k * 1000 + i) % titles.length] }));
+    const r = await call('POST', '/_records/activities/import?dryRun=false', { rows });
+    importCalls.push({ status: r.status, ms: r.ms, rowsPerSec: Math.round(1000 / (r.ms / 1000)), error: r.status === 200 ? undefined : r.text.slice(0, 160) });
+  }
+  measure('importActivities5x1000', importCalls);
+
   // Parallel imports: 4 calls of 1,000 rows at once into one table.
   const par = await Promise.all([0, 1, 2, 3].map((k) => call('POST', '/_records/audit_log/import?dryRun=false', { rows: Array.from({ length: 1000 }, (_, i) => ({ message: `parallel ${k}-${i}`, level: 'debug' })) })));
   measure('parallelImport4x1000', par.map((r) => ({ status: r.status, ms: r.ms })));
@@ -487,10 +501,11 @@ async function model() {
     fields: Array.from({ length: fields }, (_, k) => ({ apiName: `f${String(k).padStart(3, '0')}`, displayName: `Field ${k}`, type: k === 0 ? 'text' : types[k % types.length],
       sortable: k < 5, filterable: k < 5, searchable: k === 0 })) } });
   let st = (await call('GET', `${L}/_model`)).body;
-  if (st.draft && !st.published) { await call('POST', `${L}/_model/draft/discard`, { expectedHash: st.hash }); st = (await call('GET', `${L}/_model`)).body; }
+  if (st.draft) { await call('POST', `${L}/_model/draft/discard`, { expectedHash: st.draft.hash }); st = (await call('GET', `${L}/_model`)).body; }
   let tables = st.published ? (await call('GET', `${L}/_model/published`)).body.config.tables.length : 0;
-  if (!st.published) {
-    // The validator allows 100 tables of 200 fields; add them 5 at a time until something refuses.
+  if (tables < 100) {
+    // The validator allows 100 tables of 200 fields; add them 5 at a time (from wherever an
+    // earlier run stopped) until something refuses, then publish what fits.
     const applyMs = [];
     let hash = st.hash, refusal = null;
     while (tables < 100) {
@@ -502,11 +517,11 @@ async function model() {
     const v = await call('POST', `${L}/_model/draft/validate`);
     const pub = await call('POST', `${L}/_model/draft/publish`, { expectedHash: hash });
     measure('modelCeiling', { tablesOf200Fields: tables, fields: tables * 200, refusal, draftDocChars: draft.text.length,
-      charsPerField: Math.round(draft.text.length / (tables * 200)), applyMsFirstLast: [applyMs[0], applyMs.at(-1)], validateMs: v.ms,
+      applyMsFirstLast: [applyMs[0], applyMs.at(-1)], validateMs: v.ms,
       validationErrors: v.body?.issues?.filter((x) => x.severity === 'error').length, publishMs: pub.ms, publishStatus: pub.status });
-    await check('validator maximum (100 tables x 200 fields) fits in a configuration', async () => tables === 100 || { ok: false, detail: `${tables} tables fit: ${refusal}` });
     st = (await call('GET', `${L}/_model`)).body;
   }
+  await check('validator maximum (100 tables x 200 fields) fits in a configuration', async () => tables === 100 || { ok: false, detail: `${tables} tables fit` });
   const live = await call('GET', `${L}/_model/published`);
   const openapi = await site('GET', '/api/openapi.json');
   const pubModel = await site('GET', '/api/limits/_model');

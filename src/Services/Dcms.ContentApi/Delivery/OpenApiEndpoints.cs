@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -34,7 +35,13 @@ public static class OpenApiEndpoints
                 return Results.StatusCode(StatusCodes.Status304NotModified);
             }
             http.Response.Headers.ETag = built.Value.Etag;
-            return Results.Text(built.Value.Json, "application/json");
+            http.Response.Headers.Vary = "Accept-Encoding";
+            if (AcceptsGzip(http))
+            {
+                http.Response.Headers.ContentEncoding = "gzip";
+                return Results.Bytes(built.Value.Gzip, "application/json");
+            }
+            return Results.Stream(new GZipStream(new MemoryStream(built.Value.Gzip), CompressionMode.Decompress), "application/json");
         });
 
         app.MapGet("/api/openapi.yaml", async (HttpContext http, ITenantContext tenant, CmsDbContext db,
@@ -46,7 +53,8 @@ public static class OpenApiEndpoints
                 return Results.NotFound();
             }
             http.Response.Headers.ETag = built.Value.Etag;
-            return Results.Text(YamlConverter.JsonToYaml(built.Value.Json), "application/yaml");
+            using var json = new StreamReader(new GZipStream(new MemoryStream(built.Value.Gzip), CompressionMode.Decompress), Encoding.UTF8);
+            return Results.Text(YamlConverter.JsonToYaml(await json.ReadToEndAsync(ct)), "application/yaml");
         });
 
         // Lightweight Scalar viewer pointing at the per-tenant JSON spec.
@@ -55,7 +63,13 @@ public static class OpenApiEndpoints
         return app;
     }
 
-    private static async Task<(string Json, string Etag)?> BuildAsync(
+    /// <summary>
+    /// The document, gzipped, and its ETag. Kept and served compressed: a tenant at the Dynamic Apps
+    /// limits (100 public tables of 200 fields) has a 10 MB document, and caching it as a JSON string
+    /// turned every request into tens of megabytes of string copies — content-api ran out of memory
+    /// at 640 MB on vps1 (2026-10-12). Compressed it is a few hundred kilobytes.
+    /// </summary>
+    private static async Task<(byte[] Gzip, string Etag)?> BuildAsync(
         ITenantContext tenant, CmsDbContext db, OpenApiAssembler assembler, ICacheService cache, IServiceProvider services, CancellationToken ct)
     {
         if (tenant.TenantId is not { } tenantId)
@@ -81,18 +95,28 @@ public static class OpenApiEndpoints
         var versions = await assembler.ApiVersionsAsync(contexts, services, ct);
         var hash = PluginInstanceFingerprint.Of(instances) + (tagging ? "t" : "")
                    + (versions.Length > 0 ? PluginInstanceFingerprint.Hash(versions)[..12] : "");
-        var cacheKey = $"t:{tenantId}:openapi:{hash}";
-        var cached = await cache.GetAsync<string>(cacheKey, ct);
+        var cacheKey = $"t:{tenantId}:openapi.gz:{hash}";
+        var cached = await cache.GetAsync<byte[]>(cacheKey, ct);
         if (cached is not null)
         {
             return (cached, Quote(hash));
         }
 
         var doc = await assembler.BuildAsync(tenant.TenantSlug ?? tenantId.ToString(), contexts, services, tagging: tagging, ct: ct);
-        var json = doc.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-        await cache.SetAsync(cacheKey, json, TimeSpan.FromHours(24), ct);
-        return (json, Quote(hash));
+        using var buffer = new MemoryStream();
+        await using (var gzip = new GZipStream(buffer, CompressionLevel.Optimal, leaveOpen: true))
+        await using (var writer = new Utf8JsonWriter(gzip))
+        {
+            doc.WriteTo(writer);
+        }
+        var compressed = buffer.ToArray();
+        await cache.SetAsync(cacheKey, compressed, TimeSpan.FromHours(24), ct);
+        return (compressed, Quote(hash));
     }
+
+    private static bool AcceptsGzip(HttpContext http) =>
+        http.Request.GetTypedHeaders().AcceptEncoding.Any(e =>
+            string.Equals(e.Value.Value, "gzip", StringComparison.OrdinalIgnoreCase) && (e.Quality ?? 1) > 0);
 
     private static string Quote(string hash) => $"\"{hash}\"";
 
