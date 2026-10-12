@@ -43,7 +43,8 @@ then has two screens:
 **Sortable and filterable fields get database indexes.** After a publish, the automation
 worker gives each sortable field two indexes (ascending and descending) and each filterable one
 an index, so a page sorted or filtered by it reads its rows from the index instead of sorting the
-whole table. Text-like values are indexed by their first 200 characters. An app gets at most 64
+whole table. Each searchable text field (or the primary field, when none is searchable) gets a
+trigram index, so free-text search does not read every record. Text-like values are indexed by their first 200 characters. An app gets at most 64
 indexes; validation warns (`index-limit`) when its flags want more. Booleans, multi-choice, json and
 lookups are not indexed. Flag only what lists really sort and filter by: every index costs writes.
 

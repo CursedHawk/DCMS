@@ -35,6 +35,9 @@ public sealed class RecordService(
 {
     public const int MaxBulk = 500;
 
+    /// <summary>Where a page's total stops counting (RecordPage.TotalCapped).</summary>
+    public const int MaxCount = 5_000;
+
     /// <summary>The most records one import creates.</summary>
     public const int MaxImport = 1000;
 
@@ -99,18 +102,19 @@ public sealed class RecordService(
             SELECT r.* FROM apps.records r WHERE {compiled.Where}
             ORDER BY {compiled.OrderBy} LIMIT {compiled.Limit} OFFSET {compiled.Offset}
             """;
-        var countSql = $"""SELECT COUNT(*)::int AS "Value" FROM apps.records r WHERE {compiled.Where}""";
+        // Counted up to MaxCount + 1 rows and no further: an exact count read every matching row.
+        var countSql = $"""SELECT COUNT(*)::int AS "Value" FROM (SELECT 1 FROM apps.records r WHERE {compiled.Where} LIMIT {MaxCount + 1}) s""";
         var rows = await db.Records
             .FromSqlRaw(pageSql, compiled.Parameters())
             .IgnoreQueryFilters() // the tenant is in the compiled WHERE, under this method's RlsScope
             .AsNoTracking()
             .ToListAsync(ct);
-        var total = await db.Database.SqlQueryRaw<int>(countSql, compiled.Parameters()).SingleAsync(ct);
+        var counted = await db.Database.SqlQueryRaw<int>(countSql, compiled.Parameters()).SingleAsync(ct);
 
         var items = rows.Select(r => RecordCodec.Read(table, r, plane, query.Select)).ToList();
         await ExpandAsync(model, table, rows, items, query.Expand, plane, ct);
         activity?.SetTag("dcms.dynamicapp.rows", rows.Count);
-        return new RecordPage(items, total, query.Page, query.PageSize);
+        return new RecordPage(items, Math.Min(counted, MaxCount), query.Page, query.PageSize, counted > MaxCount);
     }
 
     public async Task<JsonObject?> GetAsync(string tableName, Guid id, IReadOnlyList<string> expand, RecordPlane plane, CancellationToken ct)
@@ -173,10 +177,10 @@ public sealed class RecordService(
                 related = Records(model, other, plane).Where(r => ids.Contains(r.Id));
                 break;
         }
-        var total = await related.CountAsync(ct);
+        var counted = await related.Take(MaxCount + 1).CountAsync(ct);
         var rows = await related.AsNoTracking().OrderByDescending(r => r.CreatedAt).ThenBy(r => r.Id)
             .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
-        return new RecordPage(rows.Select(r => RecordCodec.Read(other, r, plane)).ToList(), total, page, pageSize);
+        return new RecordPage(rows.Select(r => RecordCodec.Read(other, r, plane)).ToList(), Math.Min(counted, MaxCount), page, pageSize, counted > MaxCount);
     }
 
     // ------------------------------------------------------------------ writes

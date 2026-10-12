@@ -246,11 +246,12 @@ public static class PublicApi
         ["properties"] = new JsonObject
         {
             ["items"] = new JsonObject { ["type"] = "array", ["items"] = Ref(record) },
-            ["total"] = new JsonObject { ["type"] = "integer" },
+            ["total"] = new JsonObject { ["type"] = "integer", ["description"] = "Matching records, counted up to 5,000." },
             ["page"] = new JsonObject { ["type"] = "integer" },
             ["pageSize"] = new JsonObject { ["type"] = "integer" },
+            ["totalCapped"] = new JsonObject { ["type"] = "boolean", ["description"] = "More than total match; page on while pages come back full." },
         },
-        ["required"] = new JsonArray("items", "total", "page", "pageSize"),
+        ["required"] = new JsonArray("items", "total", "page", "pageSize", "totalCapped"),
     };
 
     private static JsonObject QuerySchema() => new()

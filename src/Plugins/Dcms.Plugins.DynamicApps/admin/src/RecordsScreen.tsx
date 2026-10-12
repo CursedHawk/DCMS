@@ -142,7 +142,10 @@ export function RecordsScreen({ instance }: PluginScreenProps) {
   }
 
   const total = records.data?.total ?? 0;
+  const capped = records.data?.totalCapped ?? false;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Past a capped total the last page is unknown: go on while pages come back full.
+  const hasNext = capped ? (records.data?.items.length ?? 0) === PAGE_SIZE : page < pages;
   const searchable = table!.fields.some((f) => f.searchable) || table!.primaryFieldId !== undefined;
 
   return (
@@ -183,12 +186,14 @@ export function RecordsScreen({ instance }: PluginScreenProps) {
         empty={t('records.none')} onRowClick={(row) => setEditing(row)} />
 
       <div className="flex items-center justify-end gap-2 text-sm">
-        <span className="text-muted-foreground">{t('records.count', { count: total })}</span>
+        <span className="text-muted-foreground">
+          {capped ? t('records.countCapped', { count: total }) : t('records.count', { count: total })}
+        </span>
         <Button variant="outline" size="icon" aria-label={t('records.previous')} disabled={page <= 1} onClick={() => setPage(page - 1)}>
           <ChevronLeft className="size-4" />
         </Button>
-        <span>{page} / {pages}</span>
-        <Button variant="outline" size="icon" aria-label={t('records.next')} disabled={page >= pages} onClick={() => setPage(page + 1)}>
+        <span>{capped ? t('records.pageCapped', { page, pages }) : `${page} / ${pages}`}</span>
+        <Button variant="outline" size="icon" aria-label={t('records.next')} disabled={!hasNext} onClick={() => setPage(page + 1)}>
           <ChevronRight className="size-4" />
         </Button>
       </div>

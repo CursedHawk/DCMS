@@ -253,6 +253,8 @@ export type RecordRow = Record<string, unknown> & { id: string; version: number;
 export interface RecordPage {
   items: RecordRow[];
   total: number;
+  /** More than `total` match: the server stopped counting there. */
+  totalCapped?: boolean;
   page: number;
   pageSize: number;
 }

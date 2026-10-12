@@ -377,8 +377,11 @@ public sealed class QueryCompiler
         {
             throw Invalid($"{_table.ApiName} has no searchable text fields.");
         }
-        var p = Parameter(text, NpgsqlDbType.Text);
-        return "(" + string.Join(" OR ", members.Select(m => $"""strpos(lower(r."Data" ->> {Key(m)}), lower({p})) > 0""")) + ")";
+        // LIKE, with the term's own wildcards escaped, finds exactly what strpos did, and a field's
+        // trigram index (RecordIndexes, KeyKind.Search) can answer it; strpos no index can.
+        var p = Parameter(text.Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_"), NpgsqlDbType.Text);
+        return "(" + string.Join(" OR ", members.Select(m =>
+            $"""{RecordIndexes.KeySql("r.\"Data\"", Key(m), RecordIndexes.KeyKind.Search)} LIKE ('%' || lower({p}) || '%')""")) + ")";
     }
 
     // ------------------------------------------------------------------ helpers

@@ -63,7 +63,10 @@ public sealed record RecordSort(string Field, SortDirection Direction = SortDire
 /// A page of records. Each record is an object of api names to values, plus <c>id</c>,
 /// <c>version</c>, <c>created_at</c>, <c>updated_at</c> and <c>created_by</c>.
 /// </summary>
-public sealed record RecordPage(IReadOnlyList<JsonObject> Items, int Total, int Page, int PageSize);
+/// <param name="Total">How many records match, counted up to 5,000.</param>
+/// <param name="TotalCapped">More than <paramref name="Total"/> match: counting stopped there, because an exact
+/// count of a large table costs every request a read of every matching row. Page on while pages come back full.</param>
+public sealed record RecordPage(IReadOnlyList<JsonObject> Items, int Total, int Page, int PageSize, bool TotalCapped = false);
 
 public sealed record BulkUpdateRequest(IReadOnlyList<Guid> Ids, JsonObject Values);
 

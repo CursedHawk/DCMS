@@ -365,7 +365,7 @@ internal sealed class RecordsLookupAction : FlowAction<RecordFind>
 internal sealed class RecordsQueryAction : FlowAction<RecordFind>
 {
     public override string Id => "records.query";
-    public override string Description => "Records matching a filter, up to 50. Output: { items, total }.";
+    public override string Description => "Records matching a filter, up to 50. Output: { items, total, totalCapped } (total stops at 5,000; totalCapped says more match).";
     public override OpRisk Risk => OpRisk.Read;
     protected override string Schema => """{"type":"object","required":["table"],"properties":{"table":{"type":"string"},"filter":{"type":"object"},"sort":{"type":"array"},"pageSize":{"type":"integer","minimum":1,"maximum":50}}}""";
 
@@ -373,7 +373,7 @@ internal sealed class RecordsQueryAction : FlowAction<RecordFind>
     {
         var page = await context.Services.GetRequiredService<RecordService>().QueryAsync(input.Table,
             new RecordQuery { Filter = input.Filter, Sort = input.Sort ?? [], PageSize = Math.Clamp(input.PageSize, 1, 50) }, RecordPlane.System, ct);
-        return new JsonObject { ["items"] = new JsonArray(page.Items.Select(i => (JsonNode)i).ToArray()), ["total"] = page.Total };
+        return new JsonObject { ["items"] = new JsonArray(page.Items.Select(i => (JsonNode)i).ToArray()), ["total"] = page.Total, ["totalCapped"] = page.TotalCapped };
     }
 }
 

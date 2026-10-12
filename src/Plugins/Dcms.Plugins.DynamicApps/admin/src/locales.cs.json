@@ -314,6 +314,8 @@
     "new": "Nový záznam",
     "none": "Žádné záznamy.",
     "count": "{{count}} záznam(ů)",
+    "countCapped": "{{count, number}}+ záznamů",
+    "pageCapped": "{{page}} / {{pages}}+",
     "previous": "Předchozí stránka",
     "next": "Další stránka",
     "create": "Nový záznam: {{table}}",

@@ -31,7 +31,8 @@ public static class RecordIndexes
     /// </summary>
     public const int MaxPerTenant = 128;
 
-    public enum KeyKind { Text, Number }
+    /// <summary>Text and Number are btree keys for sorting and filtering; Search is a trigram index for free-text search.</summary>
+    public enum KeyKind { Text, Number, Search }
 
     /// <param name="Name">A stable name from the tenant, app, table, field, kind and direction: <c>ix_da_</c> + 24 hex.</param>
     /// <remarks>
@@ -54,12 +55,18 @@ public static class RecordIndexes
     /// The key over <paramref name="data"/> (<c>r."Data"</c>) at <paramref name="key"/> (an SQL text
     /// literal or parameter). The index and the compiler both use this, character for character.
     /// </summary>
-    public static string KeySql(string data, string key, KeyKind kind) => kind == KeyKind.Number
-        ? $"(({data} ->> {key}))::numeric"
-        : $"left(({data} ->> {key}), {PrefixChars})";
+    public static string KeySql(string data, string key, KeyKind kind) => kind switch
+    {
+        KeyKind.Number => $"(({data} ->> {key}))::numeric",
+        KeyKind.Search => $"lower(({data} ->> {key}))",
+        _ => $"left(({data} ->> {key}), {PrefixChars})",
+    };
+
+    /// <summary>The field types free-text search reads (QueryCompiler.Search), so the ones a trigram index serves.</summary>
+    public static bool Searchable(FieldType type) => type is FieldType.Text or FieldType.LongText or FieldType.Email or FieldType.Url;
 
     /// <summary>How many indexes a configuration's flags ask for, before <see cref="MaxPerApp"/>.</summary>
-    public static int Wanted(AppConfig config) => Fields(config).Sum(f => f.Field.Sortable ? 2 : 1);
+    public static int Wanted(AppConfig config) => Fields(config).Sum(f => f.Kind == KeyKind.Search ? 1 : f.Field.Sortable ? 2 : 1);
 
     /// <summary>
     /// The indexes an app's configuration wants, in table and field order: ascending for a sortable or
@@ -72,7 +79,7 @@ public static class RecordIndexes
         {
             var key = field.Id.ToString();
             all.Add(Make(tenantId, instanceId, table.Id, key, kind, descending: false));
-            if (field.Sortable)
+            if (kind != KeyKind.Search && field.Sortable)
             {
                 all.Add(Make(tenantId, instanceId, table.Id, key, kind, descending: true));
             }
@@ -90,6 +97,16 @@ public static class RecordIndexes
                 {
                     yield return (table, field, kind);
                 }
+            }
+            // Search reads the searchable text fields, or the primary field when there are none.
+            var searched = table.Fields.Where(f => f.Searchable && Searchable(f.Type)).ToList();
+            if (searched.Count == 0 && table.Fields.FirstOrDefault(f => f.Id == table.PrimaryFieldId) is { } primary && Searchable(primary.Type))
+            {
+                searched.Add(primary);
+            }
+            foreach (var field in searched)
+            {
+                yield return (table, field, KeyKind.Search);
             }
         }
     }

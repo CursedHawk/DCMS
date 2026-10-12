@@ -34,14 +34,16 @@ public sealed class RecordIndexTests(ContentFlowFixture fixture)
         await app.PublishAsync(Model, ct);
         var table = (await app.JsonAsync(HttpMethod.Get, "/_model/published", ct)).GetProperty("config").GetProperty("tables")[0].GetProperty("id").GetString()!;
 
-        // title 2, amount 2, stage 1, closes 2; the boolean none.
-        await WaitAsync(async () => await IndexesAsync(table, ct) == 7, ct, "the worker makes the indexes");
+        // title 2 (+1 search: it is the primary field and nothing is searchable), amount 2, stage 1, closes 2; the boolean none.
+        await WaitAsync(async () => await IndexesAsync(table, ct) == 8, ct, "the worker makes the indexes");
 
         var rows = Enumerable.Range(1, 300).Select(i => new
         {
             title = $"Deal {i:000}", amount = (i * 37) % 1000, stage = i % 3 == 0 ? "won" : "lead",
             closes = new DateOnly(2026, 1, 1).AddDays(i % 200).ToString("yyyy-MM-dd"), won = i % 2 == 0,
         }).ToList();
+        rows.Add(new { title = "Zed 100% done", amount = 1, stage = "lead", closes = "2026-01-01", won = false });
+        rows.Add(new { title = "Zed 100 percent", amount = 1, stage = "lead", closes = "2026-01-01", won = false });
         await app.JsonAsync(HttpMethod.Post, "/_records/deals/import?dryRun=false", ct, new { rows });
         await Analyze(ct);
         var before = await ScansAsync(table, ct);
@@ -56,6 +58,17 @@ public sealed class RecordIndexTests(ContentFlowFixture fixture)
             sort = new[] { new { field = "closes" } }, pageSize = 200,
         });
         var expected = rows.Where(r => string.CompareOrdinal(r.closes, "2026-07-01") >= 0 && r.stage == "won").ToList();
+
+        // Search: as many as contain the term, and a literal % is a literal.
+        (await app.JsonAsync(HttpMethod.Get, "/_records/deals?search=deal%2001&pageSize=50", ct)).GetProperty("total").GetInt32()
+            .Should().Be(rows.Count(r => r.title.Contains("deal 01", StringComparison.OrdinalIgnoreCase)));
+        (await Items(app, "/_records/deals?search=100%25&select=title", ct)).Select(d => d.GetProperty("title").GetString()).Should().Equal("Zed 100% done");
+        // The title's trigram index (its primary field, nothing being searchable). Whether the planner
+        // reads it is a matter of size: with 300 rows the table index is cheaper, so that is checked on vps1.
+        (await ScalarAsync($"""
+            SELECT count(*) FROM pg_indexes WHERE indexname LIKE 'ix_da_%' AND indexdef LIKE '%{table}%'
+              AND indexdef LIKE '%USING gin (lower(("Data" ->> %' AND indexdef LIKE '%gin_trgm_ops%'
+            """, ct)).Should().Be(1);
         range.GetProperty("total").GetInt32().Should().Be(expected.Count);
         range.GetProperty("items").EnumerateArray().Select(d => d.GetProperty("closes").GetString()).Should().BeInAscendingOrder();
 
@@ -71,7 +84,28 @@ public sealed class RecordIndexTests(ContentFlowFixture fixture)
             operations = AppHarness.Operations("""[ { "op": "delete", "type": "field", "target": "deals.amount" } ]"""),
         })).GetProperty("draft").GetProperty("hash").GetString();
         await app.JsonAsync(HttpMethod.Post, "/_model/draft/publish", ct, new { expectedHash = draft });
-        await WaitAsync(async () => await IndexesAsync(table, ct) == 5, ct, "the worker drops the field's indexes");
+        await WaitAsync(async () => await IndexesAsync(table, ct) == 6, ct, "the worker drops the field's indexes");
+    }
+
+    [DockerFact]
+    public async Task A_total_stops_counting_at_the_cap_and_says_so()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.PublishAsync(Model, ct);
+        var cap = Dcms.Plugins.DynamicApps.Data.RecordService.MaxCount;
+        for (var from = 0; from <= cap; from += 1000)
+        {
+            var rows = Enumerable.Range(from, Math.Min(1000, cap + 1 - from)).Select(i => new { title = $"Deal {i:00000}", amount = i % 10 }).ToList();
+            await app.JsonAsync(HttpMethod.Post, "/_records/deals/import?dryRun=false", ct, new { rows });
+        }
+
+        var all = await app.JsonAsync(HttpMethod.Get, "/_records/deals?pageSize=10", ct);
+        all.GetProperty("total").GetInt32().Should().Be(cap);
+        all.GetProperty("totalCapped").GetBoolean().Should().BeTrue("one more matches than the count went to");
+        var few = await app.JsonAsync(HttpMethod.Post, "/_records/deals/query", ct, new { filter = new { field = "amount", op = "eq", value = 3 } });
+        few.GetProperty("total").GetInt32().Should().Be((cap + 1) / 10);
+        few.GetProperty("totalCapped").GetBoolean().Should().BeFalse("under the cap the count is exact");
     }
 
     private static async Task<List<JsonElement>> Items(AppHarness app, string path, CancellationToken ct) =>

@@ -156,7 +156,7 @@ public sealed class AutomationWorker(
             instance = w.InstanceId.ToString(),
             table = w.TableId.ToString(),
             key = w.Key,
-            kind = w.Kind == RecordIndexes.KeyKind.Number ? "number" : "text",
+            kind = w.Kind switch { RecordIndexes.KeyKind.Number => "number", RecordIndexes.KeyKind.Search => "search", _ => "text" },
             descending = w.Descending,
         }));
 

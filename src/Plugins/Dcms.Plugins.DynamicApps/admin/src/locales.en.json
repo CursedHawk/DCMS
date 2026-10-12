@@ -314,6 +314,8 @@
     "new": "New record",
     "none": "No records.",
     "count": "{{count}} record(s)",
+    "countCapped": "{{count, number}}+ records",
+    "pageCapped": "{{page}} / {{pages}}+",
     "previous": "Previous page",
     "next": "Next page",
     "create": "New {{table}}",

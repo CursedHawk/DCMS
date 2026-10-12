@@ -185,6 +185,23 @@ public sealed class RecordModelTests
     }
 
     [Fact]
+    public void Search_is_a_like_with_the_terms_wildcards_escaped()
+    {
+        var compiled = Compile("""{ "search": "50%_x\\" }""");
+        compiled.Where.Should().Contain("lower((r.\"Data\" ->> @").And.Contain(" LIKE ('%' || lower(@").And.NotContain("strpos");
+        compiled.Specs.Select(p => p.Value).Should().Contain(@"50\%\_x\\", "the term's own % and _ match only themselves");
+    }
+
+    [Fact]
+    public void Searchable_fields_or_else_the_primary_field_get_a_search_index()
+    {
+        var specs = RecordIndexes.For(Model.Config, Guid.NewGuid(), Guid.NewGuid()).Where(s => s.Kind == RecordIndexes.KeyKind.Search).ToList();
+        // companies.name is searchable; deals has no searchable field, so its primary field (title).
+        specs.Select(s => s.Key).Should().BeEquivalentTo([Model.Table("companies")!.ByName["name"].Key, Deals.ByName["title"].Key]);
+        specs.Should().OnlyContain(s => !s.Descending);
+    }
+
+    [Fact]
     public void Sortable_and_filterable_fields_get_indexes_up_to_the_cap()
     {
         var config = ChangeApplier.Apply(new AppConfig(), JsonSerializer.Deserialize<List<ChangeOperation>>("""
