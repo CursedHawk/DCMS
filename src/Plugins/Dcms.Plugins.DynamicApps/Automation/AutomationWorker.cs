@@ -13,9 +13,9 @@ using Microsoft.Extensions.Logging;
 namespace Dcms.Plugins.DynamicApps.Automation;
 
 /// <summary>
-/// The automation engine's one background loop, in admin-api (ADR 0021). Each tick it:
-/// routes outbox events to the flows they trigger, starts due schedules, and claims runnable
-/// runs and executes them. The database is the queue throughout: rows are claimed with
+/// The automation engine's background loops, in admin-api (ADR 0021): one routes outbox events
+/// to the flows they trigger and starts due schedules, the other claims runnable runs and
+/// executes them. Each repeats at once while it finds a full batch, else waits for the tick. The database is the queue throughout: rows are claimed with
 /// <c>FOR UPDATE SKIP LOCKED</c> (runs additionally with a lease), so any number of replicas
 /// share the work and a crashed one's runs are picked up when its lease ends.
 ///
@@ -38,29 +38,48 @@ public sealed class AutomationWorker(
 
     private DateTimeOffset _nextCleanup = DateTimeOffset.UtcNow.AddMinutes(5);
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Two loops: routing (with schedules and cleanup) and running. Apart, so a long routing pass
+    /// over a backlog does not hold runs back; each goes again at once while it finds full batches.
+    /// Paced by the tick alone, they were capped at 100 events and 4 runs a second whatever the
+    /// host could do — an import's 84k events took 14 minutes to route on vps1.
+    /// </summary>
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.WhenAll(
+        LoopAsync(async ct =>
+        {
+            var routed = await RouteAsync(ct);
+            await ScheduleAsync(ct);
+            if (DateTimeOffset.UtcNow >= _nextCleanup)
+            {
+                await CleanupAsync(ct);
+                _nextCleanup = DateTimeOffset.UtcNow.AddHours(1);
+            }
+            return routed == OutboxBatch;
+        }, stoppingToken),
+        LoopAsync(async ct => await ExecuteRunsAsync(ct) == Concurrency, stoppingToken));
+
+    /// <summary>Runs <paramref name="pass"/> every tick, and again at once while it reports more waiting.</summary>
+    private async Task LoopAsync(Func<CancellationToken, Task<bool>> pass, CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(Tick);
         do
         {
-            try
+            var more = true;
+            while (more && !stoppingToken.IsCancellationRequested)
             {
-                await RouteAsync(stoppingToken);
-                await ScheduleAsync(stoppingToken);
-                await ExecuteRunsAsync(stoppingToken);
-                if (DateTimeOffset.UtcNow >= _nextCleanup)
+                try
                 {
-                    await CleanupAsync(stoppingToken);
-                    _nextCleanup = DateTimeOffset.UtcNow.AddHours(1);
+                    more = await pass(stoppingToken);
                 }
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Dynamic Apps automation pass failed; retrying.");
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    more = false;
+                    logger.LogWarning(ex, "Dynamic Apps automation pass failed; retrying.");
+                }
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
