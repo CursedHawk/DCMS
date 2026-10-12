@@ -139,14 +139,14 @@ public sealed class PublicApiTests(ContentFlowFixture fixture)
         var last = HttpStatusCode.OK;
         for (var i = 0; i <= Dcms.Plugins.DynamicApps.Endpoints.PublicEndpointsLimits.MaxWritesPerHour; i++)
         {
-            last = (await app.SiteAsync(HttpMethod.Post, "/api/crm/data/leads", ct, new { email = $"lead{i}@example.com" })).StatusCode;
+            last = (await LeadAsync(app, $"lead{i}@example.com", ct)).StatusCode;
         }
         last.Should().Be(HttpStatusCode.TooManyRequests);
 
         // Signing in does not buy a fresh allowance from the same address.
         await app.InstallAsync("visitor-auth", "members", "{}", ct);
         var fresh = await app.VisitorAsync("fresh@example.com", ct);
-        (await app.SiteAsync(HttpMethod.Post, "/api/crm/data/leads", ct, new { email = "again@example.com" }, fresh))
+        (await LeadAsync(app, "again@example.com", ct, visitor: fresh))
             .StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         (await app.JsonAsync(HttpMethod.Post, "/_records/leads", ct, new { email = "admin@example.com" }, HttpStatusCode.Created))
             .GetProperty("email").GetString().Should().Be("admin@example.com", "members in the admin are not throttled");
@@ -164,9 +164,9 @@ public sealed class PublicApiTests(ContentFlowFixture fixture)
         // The address has used its hour (an office NAT, say).
         for (var i = 0; i <= Dcms.Plugins.DynamicApps.Endpoints.PublicEndpointsLimits.MaxWritesPerHour; i++)
         {
-            await app.SiteAsync(HttpMethod.Post, "/api/crm/data/leads", ct, new { email = $"anon{i}@example.com" });
+            await LeadAsync(app, $"anon{i}@example.com", ct);
         }
-        (await app.SiteAsync(HttpMethod.Post, "/api/crm/data/leads", ct, new { email = "late@example.com" })).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        (await LeadAsync(app, "late@example.com", ct)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
 
         var reps = Guid.NewGuid();
         var role = await Json(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/users/roles", app.Owner, app.Tenant,
@@ -176,30 +176,40 @@ public sealed class PublicApiTests(ContentFlowFixture fixture)
 
         var rep = UserAuth.RealmTokens.Mint(tenantId, Guid.NewGuid(), [reps], email: "rep@corp.test");
         var plain = UserAuth.RealmTokens.Mint(tenantId, Guid.NewGuid(), email: "plain@corp.test");
-        (await RealmWriteAsync(app, rep, "rep-lead@example.com", ct)).StatusCode.Should().Be(HttpStatusCode.Created, "a role holder counts against themselves");
-        (await RealmWriteAsync(app, plain, "plain-lead@example.com", ct)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
+        (await LeadAsync(app, "rep-lead@example.com", ct, rep)).StatusCode.Should().Be(HttpStatusCode.Created, "a role holder counts against themselves");
+        (await LeadAsync(app, "plain-lead@example.com", ct, plain)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
             "a signed-in user without a role still shares the address");
 
         // Their own hour is theirs alone, and a self-registered visitor account riding along on the
         // same request does not buy a fresh one: the count is the role holder's account.
         for (var i = 1; i < Dcms.Plugins.DynamicApps.Endpoints.PublicEndpointsLimits.MaxWritesPerHour; i++)
         {
-            await RealmWriteAsync(app, rep, $"rep{i}@example.com", ct);
+            await LeadAsync(app, $"rep{i}@example.com", ct, rep);
         }
-        (await RealmWriteAsync(app, rep, "rep-over@example.com", ct)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        (await LeadAsync(app, "rep-over@example.com", ct, rep)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         await app.InstallAsync("visitor-auth", "members", "{}", ct);
         var visitor = await app.VisitorAsync("fresh@example.com", ct);
-        (await RealmWriteAsync(app, rep, "rep-again@example.com", ct, visitor)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        (await LeadAsync(app, "rep-again@example.com", ct, rep, visitor)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
     }
 
-    private Task<HttpResponseMessage> RealmWriteAsync(AppHarness app, string token, string email, CancellationToken ct, string? visitorToken = null)
+    /// <summary>
+    /// A public lead write, as the site sends it. Marked rate-limit exempt, as the edge marks an exempt
+    /// client: these tests send hundreds of writes to reach the app's own write allowance, which that
+    /// header does not lift, and must not use up content-api's per-address limiter (600 a minute,
+    /// shared by every test of the fixture) for the tests after them.
+    /// </summary>
+    private Task<HttpResponseMessage> LeadAsync(AppHarness app, string email, CancellationToken ct, string? realm = null, string? visitor = null)
     {
         var req = new HttpRequestMessage(HttpMethod.Post, "/api/crm/data/leads") { Content = JsonContent.Create(new { email }) };
         req.Headers.Add("X-Dcms-Tenant", app.Tenant);
-        req.Headers.Add("X-Dcms-Realm-Token", token);
-        if (visitorToken is not null)
+        req.Headers.Add("X-Dcms-RateLimit-Exempt", "1");
+        if (realm is not null)
         {
-            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", visitorToken);
+            req.Headers.Add("X-Dcms-Realm-Token", realm);
+        }
+        if (visitor is not null)
+        {
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", visitor);
         }
         return fixture.Content.CreateClient().SendAsync(req, ct);
     }
