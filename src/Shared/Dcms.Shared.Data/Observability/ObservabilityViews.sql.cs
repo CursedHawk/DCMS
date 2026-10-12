@@ -37,7 +37,7 @@ internal static class ObservabilityViews
     /// Bumped when a view's shape changes. Recorded in <c>obs.view_version</c> so a dashboard
     /// showing nothing can be told apart from a cluster that has not run the configurator.
     /// </summary>
-    public const int Version = 3;
+    public const int Version = 4;
 
     public static readonly string[] Statements =
     [
@@ -328,6 +328,21 @@ internal static class ObservabilityViews
             r."Count"                             AS events
         FROM analytics.daily_rollups r
         LEFT JOIN tenancy.tenants t ON t."Id" = r."TenantId"::text
+        """,
+
+        // The latest usage snapshot per tenant (admin-api's TenantUsageMeasurer): every
+        // category a tenant stores, as the consoles show it. Item labels are site and plugin
+        // names, nothing more personal.
+        """
+        CREATE OR REPLACE VIEW obs.v_tenant_usage AS
+        SELECT
+            u."TenantId"    AS tenant_id,
+            t."Identifier"  AS tenant_slug,
+            u."MeasuredAt"  AS measured_at,
+            u."TotalBytes"  AS total_bytes,
+            u."Categories"  AS categories
+        FROM tenancy.tenant_usage u
+        JOIN tenancy.tenants t ON t."Id" = u."TenantId"::text
         """,
 
         // ------------------------------------------------------------------

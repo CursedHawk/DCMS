@@ -82,6 +82,12 @@ public static class DelegatedConsoleEndpoints
             PlatformConsolePermissions.TenantsLifecycle);
         Delegate(tenants, HttpMethod.Put, "/{id:guid}/storage-quota", "/api/admin/tenants/{0}/storage-quota",
             PlatformConsolePermissions.TenantsWrite);
+        // The tenant page: who and what the tenant has (emails live in admin-api, not in obs), and
+        // a fresh usage snapshot. The snapshot itself is read from obs.v_tenant_usage.
+        Delegate(tenants, HttpMethod.Get, "/{id:guid}/directory", "/api/admin/tenants/{0}/directory",
+            PlatformConsolePermissions.TenantsRead);
+        Delegate(tenants, HttpMethod.Post, "/{id:guid}/usage/recalculate", "/api/admin/tenants/{0}/usage/recalculate",
+            PlatformConsolePermissions.TenantsWrite);
 
         // ---- Retention (a batched delete on analytics.events) ----
 

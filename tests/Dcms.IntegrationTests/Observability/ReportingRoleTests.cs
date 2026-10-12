@@ -44,7 +44,7 @@ public class ReportingRoleTests(AdminApiFixture fixture)
 
             var created = await ViewNamesAsync(owner, ct);
 
-            // Nine, not thirteen. This fixture boots admin-api alone, and identity owns its own
+            // Ten, not fourteen. This fixture boots admin-api alone, and identity owns its own
             // migrations, so identity's tables do not exist here — which takes out exactly the
             // four views that read them. That is not a defect in the views: the configurator
             // skips an undefined table with a warning and re-runs on every start, so on a real
@@ -57,7 +57,7 @@ public class ReportingRoleTests(AdminApiFixture fixture)
             created.Should().NotContain(needsIdentity);
             created.Should().Contain("view_version",
                 "the last statement having run is what says the configurator got to the end");
-            created.Should().HaveCount(9,
+            created.Should().HaveCount(10,
                 "every view that does not depend on identity should have been created");
         }
 

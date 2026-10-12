@@ -1,3 +1,5 @@
+using System.Data.Common;
+using System.Text.Json;
 using Dcms.Shared.Security;
 
 namespace Dcms.PlatformApi.Reporting;
@@ -44,7 +46,52 @@ public static class PlatformOverviewEndpoints
         int VisitorAccounts,
         int FormSubmissions,
         long StorageBytes,
-        long QuotaBytes);
+        long QuotaBytes,
+        // Everything the tenant stores, from its latest usage snapshot; 0 before the first one.
+        long UsageBytes);
+
+    /// <summary>The usage snapshot as admin-api measured it; <c>Categories</c> is passed through.</summary>
+    public sealed record TenantUsage(DateTimeOffset? MeasuredAt, long TotalBytes, JsonElement Categories);
+
+    /// <summary>One tenant for its console page: the directory row, the media split and the usage snapshot.</summary>
+    public sealed record TenantDetail(TenantRow Tenant, long OriginalBytes, long VariantBytes, TenantUsage? Usage);
+
+    // One SELECT for the directory and the tenant page, so the two can never disagree on a count.
+    // Public for the test that runs it against real views.
+    public const string TenantSelect = """
+        SELECT
+            i.tenant_id, i.tenant_slug, i.tenant_name, i.status, i.created_at,
+            i.members, i.domains, i.verified_domains, i.sites, i.content_items,
+            i.published_items, i.media_assets, i.enabled_plugins, i.visitor_accounts,
+            i.form_submissions,
+            COALESCE(s.total_bytes, 0) AS storage_bytes,
+            s.quota_bytes,
+            s.original_bytes, s.variant_bytes,
+            u.measured_at, COALESCE(u.total_bytes, 0) AS usage_bytes, u.categories::text AS categories
+        FROM obs.v_tenant_inventory i
+        LEFT JOIN obs.v_storage_usage s ON s.tenant_id = i.tenant_id
+        LEFT JOIN obs.v_tenant_usage u ON u.tenant_id = i.tenant_id
+        """;
+
+    private static TenantRow ReadTenant(DbDataReader r) => new(
+        r.GetGuidOrNull("tenant_id") ?? Guid.Empty,
+        r.GetStringOrNull("tenant_slug") ?? string.Empty,
+        r.GetStringOrNull("tenant_name"),
+        r.GetStringOrNull("status") ?? "Unknown",
+        r.GetDateTimeOrNull("created_at"),
+        r.GetInt32OrZero("members"),
+        r.GetInt32OrZero("domains"),
+        r.GetInt32OrZero("verified_domains"),
+        r.GetInt32OrZero("sites"),
+        r.GetInt32OrZero("content_items"),
+        r.GetInt32OrZero("published_items"),
+        r.GetInt32OrZero("media_assets"),
+        r.GetInt32OrZero("enabled_plugins"),
+        r.GetInt32OrZero("visitor_accounts"),
+        r.GetInt32OrZero("form_submissions"),
+        r.GetInt64OrZero("storage_bytes"),
+        r.GetInt64OrZero("quota_bytes"),
+        r.GetInt64OrZero("usage_bytes"));
 
     public static IEndpointRouteBuilder MapPlatformOverviewEndpoints(this IEndpointRouteBuilder app)
     {
@@ -132,16 +179,7 @@ public static class PlatformOverviewEndpoints
             // where "which tenant is using the disk" gets asked, and N+1 on a directory is how
             // a console becomes slow at exactly the scale where it starts mattering.
             var rows = await q.QueryAsync(
-                """
-                SELECT
-                    i.tenant_id, i.tenant_slug, i.tenant_name, i.status, i.created_at,
-                    i.members, i.domains, i.verified_domains, i.sites, i.content_items,
-                    i.published_items, i.media_assets, i.enabled_plugins, i.visitor_accounts,
-                    i.form_submissions,
-                    COALESCE(s.total_bytes, 0) AS storage_bytes,
-                    s.quota_bytes
-                FROM obs.v_tenant_inventory i
-                LEFT JOIN obs.v_storage_usage s ON s.tenant_id = i.tenant_id
+                TenantSelect + "\n" + """
                 -- The ::text casts are load-bearing. A parameter whose only appearance is
                 -- `@p IS NULL` gives Postgres nothing to infer a type from, and it refuses to
                 -- plan the statement at all: 42P08, "could not determine data type of
@@ -151,24 +189,7 @@ public static class PlatformOverviewEndpoints
                    OR COALESCE(i.tenant_name, '') ILIKE '%' || @search::text || '%'
                 ORDER BY i.created_at DESC NULLS LAST
                 """,
-                r => new TenantRow(
-                    r.GetGuidOrNull("tenant_id") ?? Guid.Empty,
-                    r.GetStringOrNull("tenant_slug") ?? string.Empty,
-                    r.GetStringOrNull("tenant_name"),
-                    r.GetStringOrNull("status") ?? "Unknown",
-                    r.GetDateTimeOrNull("created_at"),
-                    r.GetInt32OrZero("members"),
-                    r.GetInt32OrZero("domains"),
-                    r.GetInt32OrZero("verified_domains"),
-                    r.GetInt32OrZero("sites"),
-                    r.GetInt32OrZero("content_items"),
-                    r.GetInt32OrZero("published_items"),
-                    r.GetInt32OrZero("media_assets"),
-                    r.GetInt32OrZero("enabled_plugins"),
-                    r.GetInt32OrZero("visitor_accounts"),
-                    r.GetInt32OrZero("form_submissions"),
-                    r.GetInt64OrZero("storage_bytes"),
-                    r.GetInt64OrZero("quota_bytes")),
+                ReadTenant,
                 new Dictionary<string, object?>
                 {
                     ["search"] = string.IsNullOrWhiteSpace(search) ? null : search.Trim(),
@@ -179,6 +200,26 @@ public static class PlatformOverviewEndpoints
         })
         .RequirePlatformPermission(PlatformConsolePermissions.TenantsRead)
         .WithName("PlatformTenantDirectory");
+
+        group.MapGet("/tenants/{id:guid}", async (ObservabilityQuery q, Guid id, CancellationToken ct) =>
+        {
+            var detail = await q.SingleAsync(
+                TenantSelect + "\nWHERE i.tenant_id = @id",
+                r => new TenantDetail(
+                    ReadTenant(r),
+                    r.GetInt64OrZero("original_bytes"),
+                    r.GetInt64OrZero("variant_bytes"),
+                    r.GetStringOrNull("categories") is { } categories
+                        ? new TenantUsage(r.GetDateTimeOrNull("measured_at"), r.GetInt64OrZero("usage_bytes"),
+                            JsonDocument.Parse(categories).RootElement.Clone())
+                        : null),
+                new Dictionary<string, object?> { ["id"] = id },
+                ct);
+
+            return detail is null ? Results.NotFound() : Results.Ok(detail);
+        })
+        .RequirePlatformPermission(PlatformConsolePermissions.TenantsRead)
+        .WithName("PlatformTenantDetail");
 
         return app;
     }

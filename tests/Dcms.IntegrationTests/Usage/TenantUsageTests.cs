@@ -1,9 +1,11 @@
 extern alias AdminApiApp;
+extern alias PlatformApiApp;
 
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AdminApiApp::Dcms.AdminApi.Tenancy.Usage;
+using PlatformApiApp::Dcms.PlatformApi.Reporting;
 using Dcms.IntegrationTests.Cms;
 using Dcms.IntegrationTests.DynamicApps;
 using Dcms.Shared.Data.Rls;
@@ -54,6 +56,20 @@ public sealed class TenantUsageTests(ContentFlowFixture fixture)
         var again = await mine.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/usage/recalculate", mine.Owner, mine.Tenant), ct);
         again.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         again.Headers.RetryAfter.Should().NotBeNull();
+
+        // The console's tenant page reads the same snapshot through obs.v_tenant_usage.
+        await using (var conn = new Npgsql.NpgsqlConnection(fixture.PostgresConnectionString))
+        {
+            await conn.OpenAsync(ct);
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = PlatformOverviewEndpoints.TenantSelect + "\nWHERE i.tenant_slug = @slug";
+            cmd.Parameters.AddWithValue("slug", mine.Tenant);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            (await reader.ReadAsync(ct)).Should().BeTrue();
+            reader.GetInt64(reader.GetOrdinal("usage_bytes")).Should().Be(usage.GetProperty("totalBytes").GetInt64());
+            JsonDocument.Parse(reader.GetString(reader.GetOrdinal("categories"))).RootElement.GetArrayLength()
+                .Should().Be(categories.Count);
+        }
 
         var read = await mine.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, "/api/admin/usage", mine.Owner, mine.Tenant), ct);
         (await read.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("measuredAt").GetDateTimeOffset()
