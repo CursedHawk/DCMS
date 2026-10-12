@@ -844,7 +844,7 @@ public sealed class RecordService(
         };
         var own = Own(op) || (member && Own(PublicOp.Read));
         var rules = access.Rules.Where(r => Grants(r, op) || (member && r.Read)).ToList();
-        var (visitor, subject) = (Visitor, Subject);
+        var (visitor, subject, tenantId, instanceId) = (Visitor, Subject, context.TenantId, InstanceId);
         return parameter =>
         {
             var terms = new List<string>();
@@ -854,7 +854,7 @@ public sealed class RecordService(
             }
             if (subject is not null)
             {
-                terms.AddRange(rules.Select(rule => RowRules.Sql(model, table, rule, subject, "r", parameter)));
+                terms.AddRange(rules.Select(rule => RowRules.Sql(model, table, rule, subject, "r", tenantId, instanceId, parameter)));
             }
             return terms.Count == 0 ? "FALSE" : "(" + string.Join(" OR ", terms) + ")";
         };

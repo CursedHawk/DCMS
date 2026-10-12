@@ -184,6 +184,31 @@ public sealed class RowRuleTests(ContentFlowFixture fixture)
         roles.EnumerateArray().Select(r => r.GetProperty("bypassRowAccess").GetBoolean()).Should().BeEquivalentTo([false, true]);
     }
 
+    [DockerFact]
+    public async Task A_rule_follows_a_many_to_many_relationship()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (app, tenantId) = await SetUpAsync(ct);
+        await app.PublishAsync("""
+            [ { "op": "create", "type": "table", "value": { "apiName": "teams", "displayName": "Team",
+                  "fields": [ { "apiName": "member_email", "displayName": "Member", "type": "email", "required": true } ] } },
+              { "op": "create", "type": "table", "value": { "apiName": "projects", "displayName": "Project", "primaryFieldId": "name",
+                  "public": { "rules": [ { "path": ["teams"], "field": "member_email", "matches": "user.email" } ] },
+                  "fields": [ { "apiName": "name", "displayName": "Name", "required": true } ] } },
+              { "op": "create", "type": "relationship", "value": { "apiName": "teams", "kind": "manyToMany", "sourceTableId": "projects",
+                  "targetTableId": "teams", "inverseApiName": "projects" } } ]
+            """, ct);
+        var team = await CreateAsync(app, "teams", new { member_email = "ada@corp.test" }, ct);
+        var apollo = await CreateAsync(app, "projects", new { name = "Apollo" }, ct);
+        await CreateAsync(app, "projects", new { name = "Gemini" }, ct);
+        await app.JsonAsync(HttpMethod.Post, $"/_records/projects/{apollo}/teams", ct, new { targetId = team }, HttpStatusCode.NoContent);
+
+        var ada = RealmTokens.Mint(tenantId, Guid.NewGuid(), email: "ada@corp.test");
+        var bob = RealmTokens.Mint(tenantId, Guid.NewGuid(), email: "bob@corp.test");
+        Names(await JsonAsync(await SiteAsync(app, HttpMethod.Get, "/api/crm/data/projects", ada, ct), ct), "name").Should().Equal(["Apollo"]);
+        Names(await JsonAsync(await SiteAsync(app, HttpMethod.Get, "/api/crm/data/projects", bob, ct), ct), "name").Should().BeEmpty();
+    }
+
     private static async Task GrantAsync(AppHarness app, Guid group, string[] permissions, bool bypass, CancellationToken ct)
     {
         var res = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/users/roles", app.Owner, app.Tenant,

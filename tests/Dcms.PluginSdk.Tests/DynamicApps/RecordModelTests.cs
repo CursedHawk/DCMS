@@ -53,17 +53,17 @@ public sealed class RecordModelTests
     // ------------------------------------------------------------------ row rules
 
     [Fact]
-    public void A_rule_through_an_inverse_navigation_joins_on_an_equality_the_planner_can_hash()
+    public void A_rule_through_an_inverse_navigation_is_a_set_the_planner_hashes_once()
     {
         var parameters = new List<object>();
         var sql = RowRules.Sql(Model, Model.Table("companies")!, new RowRule { Path = ["deals"], Field = "title", Matches = "user.email" },
-            new RowSubject(Guid.NewGuid(), "ada@example.com", [], new Dictionary<string, JsonElement>()), "r",
+            new RowSubject(Guid.NewGuid(), "ada@example.com", [], new Dictionary<string, JsonElement>()), "r", Guid.NewGuid(), Guid.NewGuid(),
             (value, _) => { parameters.Add(value); return $"${parameters.Count}"; });
 
-        // Containment (`"Data" @> jsonb_build_object(…)`) cannot be hashed: it nested-looped records
-        // × grants, 15 s a page for a user with 2,500 grants on vps1 (findings 2026-10-11).
-        sql.Should().NotContain("@>");
-        sql.Should().Contain("""(ra0."Data" ->> $1) = r."Id"::text""");
+        // Containment (`"Data" @> jsonb_build_object(…)`) cannot be hashed: records × grants, 15 s a page
+        // on vps1. A correlated or join-convertible set nested-looped under ORDER BY … LIMIT: 0.7 s.
+        sql.Should().NotContain("@>").And.NotContain("r.\"TenantId\"").And.NotContain("EXISTS");
+        sql.Should().StartWith("""(r."Id"::text IN (SELECT ra0."Data" ->> $""").And.EndWith(") IS TRUE");
     }
 
     // ------------------------------------------------------------------ writing records

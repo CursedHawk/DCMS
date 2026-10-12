@@ -71,15 +71,26 @@ public static partial class RowRules
     /// The rule over the record at <paramref name="alias"/>; <c>FALSE</c> when it cannot match —
     /// the user has none of the values, or the path leads through a table that is not enabled.
     /// </summary>
+    /// <remarks>
+    /// Each hop is <c>(x IN (uncorrelated subquery)) IS TRUE</c>. The subquery does not refer to the
+    /// outer row (tenant and instance are parameters), and the <c>IS TRUE</c> keeps the planner
+    /// from turning it into a semi-join, so Postgres builds the set once as a hashed SubPlan and
+    /// probes it per record. As a semi-join under a page's ORDER BY … LIMIT it nested-looped:
+    /// 10 companies for a user with 2,500 grants took 2.3 million comparisons, 0.7 s on vps1
+    /// (12 ms hashed); as `@>` containment before that, 15 s.
+    /// ponytail: a hashed SubPlan needs the set to fit in hash memory (work_mem × hash_mem_multiplier);
+    /// a user reaching hundreds of thousands of records falls back to a rescan per record, no worse
+    /// than the nested loop it replaces. Raise work_mem for such tenants if that ever happens.
+    /// </remarks>
     public static string Sql(RuntimeModel model, RuntimeTable table, RowRule rule, RowSubject subject, string alias,
-        Func<object, NpgsqlDbType, string> parameter)
+        Guid tenantId, Guid instanceId, Func<object, NpgsqlDbType, string> parameter)
     {
         var values = subject.Values(rule.Matches);
-        return values.Length == 0 ? "FALSE" : Step(model, table, rule, values, alias, 0, parameter);
+        return values.Length == 0 ? "FALSE" : Step(model, table, rule, values, alias, 0, tenantId, instanceId, parameter);
     }
 
     private static string Step(RuntimeModel model, RuntimeTable table, RowRule rule, string[] values, string alias, int depth,
-        Func<object, NpgsqlDbType, string> parameter)
+        Guid tenantId, Guid instanceId, Func<object, NpgsqlDbType, string> parameter)
     {
         if (depth == rule.Path.Count)
         {
@@ -99,24 +110,27 @@ public static partial class RowRules
             return "FALSE";
         }
         var next = $"ra{depth}";
+        var tenant = parameter(tenantId, NpgsqlDbType.Uuid);
+        var instance = parameter(instanceId, NpgsqlDbType.Uuid);
+        var records = $"""
+            apps.records {next} WHERE {next}."TenantId" = {tenant} AND {next}."InstanceId" = {instance}
+            AND {next}."TableId" = {parameter(other.Id, NpgsqlDbType.Uuid)}
+            """;
+        var inner = Step(model, other, rule, values, next, depth + 1, tenantId, instanceId, parameter);
         var relationship = parameter(nav.Relationship.Id.ToString(), NpgsqlDbType.Text);
-        var join = nav.Kind switch
+        return nav.Kind switch
         {
-            NavigationKind.Lookup => $"""{next}."Id"::text = ({alias}."Data" ->> {relationship})""",
-            // An equality, not `"Data" @> jsonb_build_object(…)`: containment cannot be hashed, so the
-            // planner nested-looped it — records × the user's grants (15 s for 2,500 grants on vps1).
-            NavigationKind.Inverse => $"""({next}."Data" ->> {relationship}) = {alias}."Id"::text""",
+            // The record's lookup names the next record.
+            NavigationKind.Lookup => $"""(({alias}."Data" ->> {relationship}) IN (SELECT {next}."Id"::text FROM {records} AND {inner})) IS TRUE""",
+            // The next record's lookup names this one.
+            NavigationKind.Inverse => $"""({alias}."Id"::text IN (SELECT {next}."Data" ->> {relationship} FROM {records} AND {inner})) IS TRUE""",
             _ => $"""
-                EXISTS (SELECT 1 FROM apps.relation_links rl{depth} WHERE rl{depth}."TenantId" = {alias}."TenantId"
-                AND rl{depth}."InstanceId" = {alias}."InstanceId" AND rl{depth}."RelationshipId" = {parameter(nav.Relationship.Id, NpgsqlDbType.Uuid)}
-                AND rl{depth}."{(nav.FromSource ? "SourceId" : "TargetId")}" = {alias}."Id" AND rl{depth}."{(nav.FromSource ? "TargetId" : "SourceId")}" = {next}."Id")
+                ({alias}."Id" IN (SELECT rl{depth}."{(nav.FromSource ? "SourceId" : "TargetId")}" FROM apps.relation_links rl{depth}
+                WHERE rl{depth}."TenantId" = {tenant} AND rl{depth}."InstanceId" = {instance}
+                AND rl{depth}."RelationshipId" = {parameter(nav.Relationship.Id, NpgsqlDbType.Uuid)}
+                AND (rl{depth}."{(nav.FromSource ? "TargetId" : "SourceId")}" IN (SELECT {next}."Id" FROM {records} AND {inner})) IS TRUE)) IS TRUE
                 """,
         };
-        var inner = Step(model, other, rule, values, next, depth + 1, parameter);
-        return $"""
-            EXISTS (SELECT 1 FROM apps.records {next} WHERE {next}."TenantId" = {alias}."TenantId" AND {next}."InstanceId" = {alias}."InstanceId"
-            AND {next}."TableId" = {parameter(other.Id, NpgsqlDbType.Uuid)} AND {join} AND {inner})
-            """;
     }
 
     [GeneratedRegex("^[A-Za-z0-9_-]{1,64}$")]
