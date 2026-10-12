@@ -14,6 +14,66 @@ Tooling (this commit): `seed/dynamic-apps.mjs` + `seed/da-model.mjs` (the tenant
 `seed/dynamic-apps-probe.mjs` (functional / limits / automation / scale / model sections),
 `scenarios/dynamicapps.js` (k6). See the README section "Dynamic Apps".
 
+## Capacity conclusion — 2026-10-12
+
+Where Dynamic Apps stands after four rounds (findings fixed, field indexes, trigram search and capped
+counts), on vps1: 4 cores and 7.6 GB, shared with every other DCMS service and the observability stack.
+
+| | first run (`c31d326`) | now (`89236e6`) |
+|---|---|---|
+| throughput, mixed workload | 2.7–5.9 req/s | **~35 req/s** plateau (28.5 at 5 VUs) |
+| p95 at 5 / 20 / 80 VUs | 16 s / 14.8 s / — | **0.4 s / 1.7 s / 5.7 s** |
+| errors at 40 VUs | 4.6 % (timeouts) | 0.21 % |
+| site page under row rules, user with 2,500 grants | 15 s | 205 ms |
+| automation | 100 events/s routed, 3.9 runs/s | 34.8 runs/s, bulk flows 500/500 |
+| import | 448 rows/s | 1,073–1,536 rows/s |
+| concurrent flows on one record | 15/50 failed, totals wrong | 0 failed, 0 wrong |
+
+**What the load is.** A k6 VU is a closed loop with no think time, ~8.5 requests per iteration:
+59 % admin plane (sorted list, filter across a lookup, get with expand, related list, search; 7 % of
+all requests are writes) and 41 % site API (24 % under row rules, for users with 200–2,500 grants).
+That is heavier per request than real traffic, where most site reads are anonymous and cheap.
+
+**Operating points.** Comfortable: **~25 req/s**, with p95 ≈ 0.1–0.4 s on the site API and under
+~1 s on admin queries. Saturation: **~35 req/s**. Past that, throughput stays flat and latency grows
+with the queue (80 VUs: 5.7 s p95, 0.29 % errors). Nothing crashed or restarted at any step.
+
+**In people** (assumptions, not measurements):
+- **Back-office users:** about 0.3 req/s each while working (an action every ~10 s, ~3 calls each),
+  so **~70–90 working at the same moment** at the comfortable point. At a usual 10–20 % concurrency,
+  that is **a few hundred named staff accounts**.
+- **Site visitors:** about 0.05–0.1 req/s each on data-driven pages (a page every ~30 s, 1–3 data
+  calls each), so **~250–500 browsing at once** if they had the box to themselves. Mostly anonymous
+  reads should go higher; that mix was not measured on its own.
+- **One shared budget:** both groups share it, e.g. 40 staff + 200 visitors. Sustained, 25 req/s is
+  ~90k requests an hour; with ordinary daily peaks, ~0.5–1 M requests a day.
+- **Bulk work competes:** an import with its flows running halved interactive throughput
+  (14.6 vs 24.4 req/s), so schedule large imports off-peak.
+
+**Limits that hold whatever the hardware:**
+- 120 public writes an hour per address per app for anonymous visitors, 1,200 for role holders;
+- 600 requests a minute per IP on content-api;
+- 100 tables × 200 fields per app;
+- 64 field indexes per app, 128 per tenant;
+- totals counted up to 5,000.
+
+**Data size.** Measured with 128k records in one tenant (largest table 50k). Pages sorted, filtered
+or searched on flagged fields are index scans (milliseconds) and stay so as tables grow. Totals stop
+at 5,001 rows of work, and related lists use the GIN index on record data. Still proportional to
+table size: filters on fields not flagged filterable, and cross-table filters with a broad condition
+(the scenario's industry + amount ≥ X). Expect those to degrade first past ~100k rows per table;
+nothing above 50k per table was measured.
+
+**What moves the ceiling.** Postgres CPU is the limit: it averages ~2.2 of the 4 cores, and the other
+services use the rest. In order of cost:
+1. Postgres on its own host or with more cores. This read-heavy, CPU-bound load should scale close to
+   linearly with cores.
+2. Mark the fields that cross-table filters use as filterable.
+3. A read replica for the site API.
+4. Partition `apps.records` by tenant or app when the number of apps grows (see `RecordIndexes`).
+
+---
+
 ## What was built (tenant `da-stress`)
 
 | part | contents |
