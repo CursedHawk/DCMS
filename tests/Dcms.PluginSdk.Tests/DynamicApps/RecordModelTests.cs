@@ -167,6 +167,16 @@ public sealed class RecordModelTests
         (compiled.Limit, compiled.Offset).Should().Be((25, 25));
     }
 
+    [Fact]
+    public void Eq_null_means_has_no_value()
+    {
+        // A flow filtering by a template that came out empty must not fail on a refused value.
+        Compile("""{ "filter": { "field": "title", "op": "eq", "value": null } }""").Where
+            .Should().Be(Compile("""{ "filter": { "field": "title", "op": "isNull", "value": true } }""").Where);
+        Compile("""{ "filter": { "field": "company.name", "op": "ne", "value": null } }""").Where
+            .Should().Be(Compile("""{ "filter": { "field": "company.name", "op": "isNull", "value": false } }""").Where);
+    }
+
     [Theory]
     [InlineData("""{ "filter": { "field": "nope", "op": "eq", "value": 1 } }""", "no field 'nope'")]
     [InlineData("""{ "filter": { "field": "amount", "op": "contains", "value": "1" } }""", "does not support 'contains'")]

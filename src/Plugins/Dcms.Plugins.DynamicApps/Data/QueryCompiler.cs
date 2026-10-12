@@ -131,6 +131,12 @@ public sealed class QueryCompiler
         {
             throw Invalid($"A query compares at most {MaxPredicates} fields.");
         }
+        // `eq null` means "has no value": a flow filtering by a template that came out empty (a lead
+        // without a company name) would otherwise fail its step on a refused value.
+        if (node.Op is "eq" or "ne" && node.Value is null)
+        {
+            node = node with { Op = "isNull", Value = node.Op == "eq" };
+        }
         var field = node.Field!;
         var dot = field.IndexOf('.');
         if (dot > 0)
