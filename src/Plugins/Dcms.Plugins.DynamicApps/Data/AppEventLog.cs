@@ -24,6 +24,20 @@ public sealed class AppEventLog(IPluginContext context, AuditScope scope, TimePr
     /// <summary>Set by a flow run before it writes, so what it causes carries its depth and causation.</summary>
     public EventOrigin Origin { get; set; } = EventOrigin.New();
 
+    /// <summary>
+    /// For bulk calls (import, bulk update, bulk delete): each record is its own original action,
+    /// so the flow run limits (AutomationLimits.MaxRunsPerCorrelation) apply per record rather than
+    /// to the whole call — else a 1,000-row import ran its row flows for 20 rows. A flow's writes
+    /// keep the run's correlation: that is the cascade the limits exist for.
+    /// </summary>
+    public void NextAction()
+    {
+        if (Origin.Depth == 0)
+        {
+            Origin = EventOrigin.New();
+        }
+    }
+
     public void Add(AppsDbContext db, int revision, string eventName, AppEventEntity entity, JsonObject payload,
         IReadOnlyList<string>? changedFields = null) =>
         Add(db, context.Instance?.InstanceId ?? throw new InvalidOperationException("Dynamic Apps events are per instance; this context has none."),

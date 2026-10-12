@@ -147,6 +147,35 @@ public sealed class AutomationTests(ContentFlowFixture fixture)
     }
 
     [DockerFact]
+    public async Task Every_record_of_a_bulk_import_or_bulk_update_runs_its_row_flows()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.PublishAsync(Crm, ct);
+        await app.PublishAsync("""
+            [ { "op": "create", "type": "flow", "value": { "apiName": "on_new", "displayName": "On new",
+                "trigger": { "event": "row.created", "tableId": "deals" },
+                "steps": [ { "id": "log", "action": "records.create@1", "input": { "table": "log", "values": { "message": "new {{ row.title }}" } } } ] } },
+              { "op": "create", "type": "flow", "value": { "apiName": "on_change", "displayName": "On change",
+                "trigger": { "event": "row.updated", "tableId": "deals" },
+                "steps": [ { "id": "log", "action": "records.create@1", "input": { "table": "log", "values": { "message": "changed {{ row.title }}" } } } ] } } ]
+            """, ct);
+
+        // More rows than one action may set off runs (20): each record is its own action.
+        var rows = Enumerable.Range(1, 30).Select(i => new { title = $"Deal {i}" }).ToArray();
+        await app.JsonAsync(HttpMethod.Post, "/_records/deals/import?dryRun=false", ct, new { rows });
+        var created = await WaitForRunsAsync(app, "on_new", 30, ct);
+        created.Select(r => r.GetProperty("status").GetString()).Should().AllBe("succeeded");
+        created.Select(r => r.GetProperty("correlationId").GetGuid()).Distinct().Should().HaveCount(30);
+
+        var ids = (await app.JsonAsync(HttpMethod.Get, "/_records/deals?pageSize=50&select=id", ct)).GetProperty("items")
+            .EnumerateArray().Select(d => d.GetProperty("id").GetGuid()).ToArray();
+        await app.JsonAsync(HttpMethod.Post, "/_records/deals/bulk-update", ct, new { ids, values = new { amount = 5 } });
+        (await WaitForRunsAsync(app, "on_change", 30, ct)).Select(r => r.GetProperty("status").GetString()).Should().AllBe("succeeded");
+        (await app.JsonAsync(HttpMethod.Get, "/_records/log?pageSize=1", ct)).GetProperty("total").GetInt32().Should().Be(60);
+    }
+
+    [DockerFact]
     public async Task A_due_schedule_starts_its_flow_once()
     {
         var ct = TestContext.Current.CancellationToken;

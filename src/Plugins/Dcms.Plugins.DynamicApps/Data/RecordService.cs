@@ -276,6 +276,7 @@ public sealed class RecordService(
         var records = await Records(table).Where(r => ids.Contains(r.Id)).ToListAsync(ct);
         foreach (var record in records)
         {
+            events.NextAction();
             await UpdateCoreAsync(model, table, record, request.Values, plane, ct);
         }
         Declare("record.bulk_updated", table, null).With("count", records.Count);
@@ -297,6 +298,7 @@ public sealed class RecordService(
         var removed = new HashSet<Guid>();
         foreach (var record in records.Where(r => !removed.Contains(r.Id)))
         {
+            events.NextAction();
             await DeleteCoreAsync(model, table, record, removed, 0, ct);
         }
         Declare("record.bulk_deleted", table, null).With("count", records.Count).With("cascaded", removed.Count - records.Count);
@@ -404,6 +406,7 @@ public sealed class RecordService(
             {
                 db.UniqueKeys.Add(new AppUniqueKey { Id = Guid.NewGuid(), InstanceId = InstanceId, ConstraintId = constraintId, RecordId = record.Id, Key = key });
             }
+            events.NextAction();
             events.Add(db, model.Revision.Number, AppEvent.RowCreated, Entity(table, record.Id),
                 new JsonObject { ["record"] = RecordCodec.Read(table, record, RecordPlane.System) });
         }
