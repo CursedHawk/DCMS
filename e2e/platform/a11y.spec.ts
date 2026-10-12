@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { platformTest as test, expect } from '../fixtures/test';
+import { platformTest as test, expect, data } from '../fixtures/test';
 
 /**
  * The same axe pass on the operations console.
@@ -13,6 +13,7 @@ const SERIOUS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 const PAGES: [string, string][] = [
   ['the overview', '/'],
   ['the tenant list', '/tenants'],
+  ['a tenant', `/tenants/${data.TENANT.tenantId}`],
   ['the audit log', '/audit'],
 ];
 

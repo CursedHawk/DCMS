@@ -13,6 +13,7 @@ export interface RouteGuard {
 export const ROUTE_GUARDS: Readonly<Record<string, RouteGuard>> = {
   '/': { perm: Perm.OverviewRead },
   '/tenants': { perm: Perm.TenantsRead },
+  '/tenants/$tenantId': { perm: Perm.TenantsRead },
   '/users': { perm: Perm.UsersRead },
   '/audit': { perm: Perm.AuditRead },
   '/monitoring': { perm: Perm.ObservabilityRead },

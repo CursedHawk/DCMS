@@ -349,6 +349,15 @@ export function platformApi(options: { permissions?: string[]; isSuperAdmin?: bo
     .on('GET', '/api/platform/permissions/catalog', { permissions: [], readOnly: [] })
     // HealthSignals: the arrays are always present, empty when Prometheus did not answer.
     .on('GET', '/api/platform/health/signals', { reachable: false, services: [], targets: [] })
+    .on('GET', '/api/platform/tenants/:id', async ({ route, params }) => {
+      const row = data.PLATFORM_TENANTS.find((r) => r.tenantId === params.id);
+      if (row) return data.platformTenantDetail(row);
+      await route.fulfill({ status: 404, contentType: 'application/json', body: '{}' });
+      return undefined;
+    })
+    .on('GET', '/api/platform/tenants/:id/directory', data.PLATFORM_TENANT_DIRECTORY)
+    .on('POST', '/api/platform/tenants/:id/usage/recalculate', {})
+    .on('PUT', '/api/platform/tenants/:id/storage-quota', {})
     .on('POST', '/api/platform/tenants/:id/suspend', {})
     .on('POST', '/api/platform/tenants/:id/resume', {});
 

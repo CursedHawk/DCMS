@@ -20,6 +20,7 @@ const page = <T extends string>(load: () => Promise<Record<T, React.FunctionComp
 
 const OverviewPage = page(() => import('./features/overview/OverviewPage'), 'OverviewPage');
 const TenantsPage = page(() => import('./features/tenants/TenantsPage'), 'TenantsPage');
+const TenantDetailPage = page(() => import('./features/tenants/TenantDetailPage'), 'TenantDetailPage');
 const UsersPage = page(() => import('./features/users/UsersPage'), 'UsersPage');
 const AuditPage = page(() => import('./features/audit/AuditPage'), 'AuditPage');
 const MonitoringPage = page(() => import('./features/monitoring/MonitoringPage'), 'MonitoringPage');
@@ -93,6 +94,7 @@ export const routeTree = rootRoute.addChildren([
   appLayoutRoute.addChildren([
     child('/', OverviewPage),
     child('/tenants', TenantsPage),
+    child('/tenants/$tenantId', TenantDetailPage),
     child('/users', UsersPage),
     child('/audit', AuditPage),
     child('/monitoring', MonitoringPage),

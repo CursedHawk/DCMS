@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { UsageSnapshot } from '@dcms/ui';
 import { platformApi } from '../../lib/api';
 
 export interface TenantRow {
@@ -20,6 +21,24 @@ export interface TenantRow {
   storageBytes: number;
   /** The cap storageBytes is held to; uploads are refused once it is reached. */
   quotaBytes: number;
+  /** Everything the tenant stores, from its latest usage snapshot; 0 before the first one. */
+  usageBytes: number;
+}
+
+/** One tenant for its page: the directory row, the media split and the usage snapshot. */
+export interface TenantDetail {
+  tenant: TenantRow;
+  originalBytes: number;
+  variantBytes: number;
+  /** Null until the tenant has been measured once. */
+  usage: UsageSnapshot | null;
+}
+
+/** Who and what a tenant has. From admin-api, because the obs views carry no email address. */
+export interface TenantDirectory {
+  domains: { hostname: string; verified: boolean; primary: boolean; createdAt: string }[];
+  members: { userId: string; email: string; createdAt: string; roles: string[] }[];
+  plugins: { id: string; pluginId: string; name: string; slug: string; enabled: boolean; createdAt: string }[];
 }
 
 export function useTenants(search: string) {
@@ -29,6 +48,30 @@ export function useTenants(search: string) {
       platformApi.get<TenantRow[]>(
         `/tenants${search ? `?search=${encodeURIComponent(search)}` : ''}`,
       ),
+  });
+}
+
+/** Under `platform-tenants`, so the live `tenants` tag and every tenant mutation refresh it too. */
+export function useTenant(tenantId: string) {
+  return useQuery({
+    queryKey: ['platform-tenants', 'detail', tenantId],
+    queryFn: () => platformApi.get<TenantDetail>(`/tenants/${tenantId}`),
+  });
+}
+
+export function useTenantDirectory(tenantId: string) {
+  return useQuery({
+    queryKey: ['platform-tenants', 'directory', tenantId],
+    queryFn: () => platformApi.get<TenantDirectory>(`/tenants/${tenantId}/directory`),
+  });
+}
+
+/** Measures the tenant now (admin-api, at most every two minutes); the page then re-reads obs. */
+export function useRecalculateUsage(tenantId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => platformApi.post<unknown>(`/tenants/${tenantId}/usage/recalculate`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['platform-tenants'] }),
   });
 }
 

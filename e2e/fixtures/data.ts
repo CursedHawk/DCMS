@@ -317,12 +317,35 @@ const tenantRow = (t: typeof TENANT, status: string, createdAt: string) => ({
   formSubmissions: 4,
   storageBytes: 83_968,
   quotaBytes: 5 * 1024 ** 3,
+  usageBytes: 6 * 1024 ** 2,
 });
 
 export const PLATFORM_TENANTS = [
   tenantRow(TENANT, 'Active', '2026-01-04T09:00:00Z'),
   tenantRow(OTHER_TENANT, 'Suspended', '2026-02-11T09:00:00Z'),
 ];
+
+/** GET /api/platform/tenants/{id}: the row, the media split, the usage snapshot. */
+export const platformTenantDetail = (row: (typeof PLATFORM_TENANTS)[number]) => ({
+  tenant: row,
+  originalBytes: 71_680,
+  variantBytes: 12_288,
+  usage: { measuredAt: USAGE.measuredAt, totalBytes: USAGE.totalBytes, categories: USAGE.categories },
+});
+
+export const PLATFORM_TENANT_DIRECTORY = {
+  domains: [
+    { hostname: 'acme.dcms.highgeek.eu', verified: true, primary: true, createdAt: '2026-01-04T09:00:00Z' },
+    { hostname: 'www.acme.example', verified: false, primary: false, createdAt: '2026-03-01T09:00:00Z' },
+  ],
+  members: [
+    { userId: '11111111-0000-0000-0000-000000000001', email: 'owner@acme.example', createdAt: '2026-01-04T09:00:00Z', roles: ['Owner'] },
+    { userId: '11111111-0000-0000-0000-000000000002', email: 'editor@acme.example', createdAt: '2026-02-04T09:00:00Z', roles: [] },
+  ],
+  plugins: [
+    { id: 'cccccccc-0000-0000-0000-000000000001', pluginId: 'blog', name: 'Press room', slug: 'press-room', enabled: true, createdAt: '2026-01-05T09:00:00Z' },
+  ],
+};
 
 export const PLATFORM_OVERVIEW = {
   tenants: 2,

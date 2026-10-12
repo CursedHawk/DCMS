@@ -1,4 +1,4 @@
-import { platformTest as test, expect } from '../fixtures/test';
+import { platformTest as test, expect, data } from '../fixtures/test';
 import { spillingContent, unreachableControls } from '../fixtures/layout';
 
 /**
@@ -112,6 +112,7 @@ test.beforeEach(({ api }) => {
 const PAGES = [
   '/',
   '/tenants',
+  `/tenants/${data.TENANT.tenantId}`,
   '/users',
   '/audit',
   '/monitoring',
@@ -137,7 +138,7 @@ test('the dialogs fit the phone they open on', async ({ page }) => {
   const opens = [
     { path: '/rate-limits', button: 'Add exemption' },
     { path: '/certificates', button: 'Add' },
-    { path: '/tenants', button: 'Storage limit' },
+    { path: `/tenants/${data.TENANT.tenantId}`, button: 'Change limit' },
   ];
   for (const { path, button } of opens) {
     await page.goto(path);
