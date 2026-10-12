@@ -209,7 +209,10 @@ services:
       timeout: 5s
       retries: 6
       start_period: 30s
-    image: codeberg.org/forgejo/forgejo:11
+    # From our registry (scripts/mirror-image.sh): codeberg.org answering 503 failed a deploy's
+    # `compose pull` (pipeline 784). The bytes vps1 ran as forgejo:11; upgrading is mirroring a new
+    # version and changing this tag.
+    image: registry-gitlab.highgeek.eu/cursedhawk/baas-dcms/mirror/forgejo:11.0.16
     logging: *default-logging
     restart: unless-stopped
     environment:
