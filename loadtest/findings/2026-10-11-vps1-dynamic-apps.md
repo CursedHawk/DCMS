@@ -132,6 +132,31 @@ estimated or capped count for large result sets.
 
 ---
 
+## Trigram search and capped counts — 2026-10-12
+
+Commit `89236e6` (pipeline 783). Search compiles to `lower(x) LIKE ('%' || lower(term) || '%')` with
+the term's `\ % _` escaped (same matches as the old `strpos`), and each searchable text field (or the
+primary field when none is) gets a `pg_trgm` GIN index through the same rationed
+`apps.sync_record_indexes`. A page's `total` stops at 5,000 with `totalCapped: true` (lists, queries,
+related lists, site API schema, `records.query` in flows); the Records screen shows "5,000+".
+
+On vps1: 164 indexes (32 trigram) built, 3.5 s of DDL, 0 failures.
+
+| check | before | after |
+|---|---|---|
+| contacts search (20k rows, 3 searchable fields), count | 42 ms (reads every row) | **1.1 ms** (BitmapOr of 3 trigram indexes) |
+| contacts search, page | — | **2.7 ms** |
+| 30k deals, total | exact 30,000 | **5,000, totalCapped true** |
+| won deals, total | 3,100 | 3,100, exact |
+
+k6 staircase: **28.5 / 31.6 / 34.3 / 35.0 / 35.7 req/s** at 5 / 10 / 20 / 40 / 80 VUs (previous build
+25.0 / 29.7 / 31.8 / 32.3 / 31.7), 0 % errors to 20 VUs, 0.29 % at 80 (was 0.47 %). Postgres still
+averages 2.2 cores: what is left is the scenario's lookup-filtered query (EXISTS into companies over
+a non-selective amount range) and the related lists, per request now tens of milliseconds, under load
+queued behind each other on four cores.
+
+---
+
 ## 1. Row rules (finding 1)
 
 Latency of one site-API page at full size (10 sequential calls, p50 / p90):
