@@ -497,26 +497,31 @@ public static partial class ConfigValidator
                     error("invalid-rule", at, $"A rule's path follows at most {Data.RowRules.MaxPath} relationships.");
                     continue;
                 }
+                // What decides who a rule lets in is what it reads: at each hop the lookup it follows
+                // (stored on the relationship's source table) and, at the end, the field it tests. A
+                // table on the path that the site may write but that holds neither — companies in the
+                // permission-table pattern — decides nothing. The rule's own table is not counted:
+                // site writes there are held to the writer's reach.
                 var current = table;
                 var written = new List<string>();
                 foreach (var step in rule.Path)
                 {
-                    var next = config.Relationships
-                        .Where(r => (r.SourceTableId == current.Id && r.ApiName == step) || (r.TargetTableId == current.Id && r.InverseApiName == step))
-                        .Select(r => r.SourceTableId == current.Id && r.ApiName == step ? r.TargetTableId : r.SourceTableId)
-                        .Select(id => tables.GetValueOrDefault(id))
-                        .FirstOrDefault();
+                    var relationship = config.Relationships.FirstOrDefault(r =>
+                        (r.SourceTableId == current.Id && r.ApiName == step) || (r.TargetTableId == current.Id && r.InverseApiName == step));
+                    var forward = relationship is not null && relationship.SourceTableId == current.Id && relationship.ApiName == step;
+                    var next = relationship is null ? null : tables.GetValueOrDefault(forward ? relationship.TargetTableId : relationship.SourceTableId);
                     if (next is null)
                     {
                         error("invalid-rule", at, $"{current.ApiName} has no relationship '{step}'.");
                         current = null;
                         break;
                     }
-                    current = next;
-                    if (current.Public.Create || current.Public.UpdateOwn || current.Public.Rules.Any(r => r.Update))
+                    // Many-to-many links are never written from the site.
+                    if (relationship!.Kind != RelationshipKind.ManyToMany && (forward ? current : next) is var holder && holder != table && SiteWrites(holder))
                     {
-                        written.Add(current.ApiName);
+                        written.Add(holder.ApiName);
                     }
+                    current = next;
                 }
                 if (current is null)
                 {
@@ -529,6 +534,10 @@ public static partial class ConfigValidator
                         ? $"{current.ApiName} has no field '{rule.Field}'."
                         : $"{current.ApiName}.{field.ApiName} is {Camel(field.Type)}; a rule tests a text, email, choice or multiChoice field.");
                 }
+                else if (current != table && SiteWrites(current) && !field.ReadOnly && !field.HiddenFromPublic)
+                {
+                    written.Add(current.ApiName);
+                }
                 foreach (var name in written.Distinct())
                 {
                     warn("rule-writable", at, $"The site may write {name}, which this rule reads: whoever writes it decides who the rule lets in. "
@@ -537,6 +546,9 @@ public static partial class ConfigValidator
             }
         }
     }
+
+    private static bool SiteWrites(TableDef table) =>
+        table.Public.Create || table.Public.UpdateOwn || table.Public.Rules.Any(r => r.Update);
 
     private static void CheckCopies(AppConfig config, AppConfig? published, Action<string, string, string> error)
     {

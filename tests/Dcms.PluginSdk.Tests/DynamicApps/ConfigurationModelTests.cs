@@ -110,6 +110,16 @@ public sealed class ConfigurationModelTests
         var writable = Build("""[ { "op": "update", "type": "table", "target": "companies", "value": { "public": { "create": true } } } ]""",
             Build(Rule("""{ "path": ["company"], "field": "name", "matches": "user.email" }"""), config));
         ConfigValidator.Validate(writable).Should().Contain(i => i.Code == "rule-writable" && i.Severity == IssueSeverity.Warning);
+
+        // The permission-table pattern: the rule follows contacts.company back from companies and
+        // tests contacts.email. Companies being writable decides nothing (it holds neither); the
+        // table holding the link and the field does.
+        var permissionTable = Build(
+            """[ { "op": "update", "type": "table", "target": "companies", "value": { "public": { "create": true, "rules": [ { "path": ["contacts"], "field": "email", "matches": "user.email", "update": true } ] } } } ]""",
+            config);
+        ConfigValidator.Validate(permissionTable).Should().NotContain(i => i.Code == "rule-writable");
+        ConfigValidator.Validate(Build("""[ { "op": "update", "type": "table", "target": "contacts", "value": { "public": { "create": true } } } ]""", permissionTable))
+            .Should().Contain(i => i.Code == "rule-writable" && i.Message.Contains("contacts"));
     }
 
     [Fact]
