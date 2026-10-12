@@ -25,10 +25,12 @@ public static class ChangeApplier
     /// <summary>
     /// The most a change set may carry, and the largest configuration document, in serialized
     /// characters. Every cost below is linear in these, so they bound the work a request can ask
-    /// for. The document cap clears the validator's own limits (100 tables of 200 fields).
+    /// for. The document cap clears the validator's own limits: 100 tables of 200 plain fields are
+    /// 5.3 M characters, and the rest leaves room for descriptions, views and flows (at 4 M, only 80
+    /// such tables fit; ConfigurationModelTests holds the line).
     /// </summary>
     public const int MaxChangeSetChars = 1_000_000;
-    public const int MaxDocumentChars = 4_000_000;
+    public const int MaxDocumentChars = 8_000_000;
 
     /// <exception cref="ContractValidationException">An operation is malformed or names something that does not exist.</exception>
     public static AppConfig Apply(AppConfig config, IReadOnlyList<ChangeOperation> operations)

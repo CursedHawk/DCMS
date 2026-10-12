@@ -34,6 +34,37 @@ public sealed class ConfigurationModelTests
         ]
         """;
 
+    [Fact]
+    public void The_largest_model_the_validator_allows_fits_in_a_configuration()
+    {
+        // 100 tables of 200 fields, built 5 tables a change set as the probe does. On vps1 only 80
+        // fit under the old 4,000,000-character cap (findings 2026-10-11).
+        string[] types = ["text", "integer", "decimal", "boolean", "date", "dateTime", "email", "url", "longText", "json"];
+        var config = new AppConfig();
+        for (var t = 0; t < ConfigValidator.MaxTables; t += 5)
+        {
+            var ops = Enumerable.Range(t, 5).Select(i => new ChangeOperation
+            {
+                Op = "create",
+                Type = "table",
+                Value = JsonNode.Parse(JsonSerializer.Serialize(new
+                {
+                    apiName = $"table_{i:000}", displayName = $"Table number {i}", primaryFieldId = "field_000", @public = new { read = "all" },
+                    fields = Enumerable.Range(0, ConfigValidator.MaxFieldsPerTable).Select(k => new
+                    {
+                        apiName = $"field_{k:000}", displayName = $"Field number {k}", type = k == 0 ? "text" : types[k % types.Length],
+                        sortable = k < 5, filterable = k < 5, searchable = k == 0,
+                    }),
+                }))!.AsObject(),
+            }).ToList();
+            config = ChangeApplier.Apply(config, ops);
+        }
+        config.Tables.Should().HaveCount(ConfigValidator.MaxTables);
+        ConfigValidator.Validate(config).Where(i => i.Severity == IssueSeverity.Error).Should().BeEmpty();
+        ConfigJson.ToNode(config).ToJsonString().Length.Should().BeLessThan(ChangeApplier.MaxDocumentChars * 3 / 4,
+            "room is left for descriptions, views and flows");
+    }
+
     private static IReadOnlyList<ChangeOperation> Ops(string json) =>
         JsonSerializer.Deserialize<List<ChangeOperation>>(json, ConfigJson.Options)!;
 
@@ -203,10 +234,16 @@ public sealed class ConfigurationModelTests
         var tooBig = () => Build(BigTable("big", 25_000));
         tooBig.Should().Throw<ContractValidationException>().Which.Message.Should().Contain("at most");
 
-        // Each half fits; together they would not.
-        var half = Build(BigTable("first", 15_000));
-        var both = () => Build(BigTable("second", 15_000), half);
-        both.Should().Throw<ContractValidationException>().Which.Message.Should().Contain("would exceed");
+        // Each change set fits; the document they add up to does not.
+        var config = new AppConfig();
+        var grow = () =>
+        {
+            for (var i = 0; i * 15_000 * 200 <= ChangeApplier.MaxDocumentChars * 2; i++)
+            {
+                config = Build(BigTable($"part_{i}", 15_000), config);
+            }
+        };
+        grow.Should().Throw<ContractValidationException>().Which.Message.Should().Contain("would exceed");
     }
 
     // ------------------------------------------------------------------ canonical form and hash
