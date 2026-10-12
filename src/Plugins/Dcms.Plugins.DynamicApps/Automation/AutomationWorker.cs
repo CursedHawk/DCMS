@@ -43,8 +43,7 @@ public sealed class AutomationWorker(
 
     private static readonly TimeSpan IndexSyncEvery = TimeSpan.FromSeconds(10);
     private const int IndexOpsPerCall = 4;
-    private const int IndexOpsPerHour = 240;
-    private readonly Queue<DateTimeOffset> _indexOps = new();
+    private static readonly TimeSpan IndexCallTimeout = TimeSpan.FromSeconds(15); // = the SET LOCAL below
     private DateTimeOffset _nextIndexSync = DateTimeOffset.UtcNow.AddSeconds(5);
     private string? _indexedRevisions;
 
@@ -112,10 +111,11 @@ public sealed class AutomationWorker(
     /// is left: the per-call budget ran out, a lock was not granted, or another replica is at it.
     /// </summary>
     /// <remarks>
-    /// Index DDL holds apps.records for every tenant, so it is rationed: at most
-    /// <see cref="IndexOpsPerCall"/> builds or drops a call and <see cref="IndexOpsPerHour"/> an hour,
-    /// and a call that fails as a whole is not repeated until a revision changes. A tenant toggling
-    /// flags can delay its own indexes, not stall everyone's writes.
+    /// Index DDL holds apps.records for every tenant, so the database rations its time for the whole
+    /// platform (apps.sync_record_indexes: 2 minutes an hour, at most a tenth of the time). Here: at
+    /// most <see cref="IndexOpsPerCall"/> builds or drops a call, each call cut off after
+    /// <see cref="IndexCallTimeout"/> and charged in full when it is, and the tenants' indexes taken in
+    /// turn, so one tenant toggling flags delays its own indexes, not everyone's.
     /// </remarks>
     public async Task<bool> SyncIndexesAsync(CancellationToken ct)
     {
@@ -133,17 +133,7 @@ public sealed class AutomationWorker(
         {
             return false;
         }
-        while (_indexOps.Count > 0 && _indexOps.Peek() < DateTimeOffset.UtcNow.AddHours(-1))
-        {
-            _indexOps.Dequeue();
-        }
-        var budget = Math.Min(IndexOpsPerCall, IndexOpsPerHour - _indexOps.Count);
-        if (budget <= 0)
-        {
-            return false;
-        }
-
-        var wanted = new List<RecordIndexes.Spec>();
+        var perTenant = new List<List<RecordIndexes.Spec>>();
         foreach (var tenant in live.GroupBy(r => r.TenantId))
         {
             var mine = new List<RecordIndexes.Spec>();
@@ -153,8 +143,12 @@ public sealed class AutomationWorker(
                     .Where(r => r.Id == revision.Id).Select(r => r.Snapshot).SingleAsync(ct);
                 mine.AddRange(RecordIndexes.For(ConfigJson.Parse(snapshot), revision.TenantId, revision.InstanceId));
             }
-            wanted.AddRange(mine.Take(RecordIndexes.MaxPerTenant));
+            perTenant.Add(mine.Take(RecordIndexes.MaxPerTenant).ToList());
         }
+        // Round robin over tenants: the function builds in this order, so each tenant gets a turn.
+        var wanted = Enumerable.Range(0, perTenant.Count == 0 ? 0 : perTenant.Max(t => t.Count))
+            .SelectMany(i => perTenant.Where(t => i < t.Count).Select(t => t[i]))
+            .ToList();
         var json = JsonSerializer.Serialize(wanted.Select(w => new
         {
             name = w.Name,
@@ -169,22 +163,30 @@ public sealed class AutomationWorker(
         List<string> report;
         try
         {
+            // Here, not in the function: a statement_timeout set inside it would not apply to the
+            // statement already running.
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            // A constant: SET takes no parameters.
+            const string limit = "SET LOCAL statement_timeout = 15000";
+            await db.Database.ExecuteSqlRawAsync(limit, ct);
             report = await db.Database
-                .SqlQuery<string>($"SELECT unnest(apps.sync_record_indexes({json}::jsonb, {budget})) AS \"Value\"")
+                .SqlQuery<string>($"SELECT unnest(apps.sync_record_indexes({json}::jsonb, {IndexOpsPerCall})) AS \"Value\"")
                 .ToListAsync(ct);
+            await tx.CommitAsync(ct);
         }
         catch (PostgresException e)
         {
-            // The call as a whole failed (its 15 s ran out, say): not again until a revision changes.
+            // The call as a whole failed. Cancelled, its rollback took its accounting with it: charge
+            // the time it held, so the ration still holds. Not again until a revision changes.
+            if (e.SqlState == PostgresErrorCodes.QueryCanceled)
+            {
+                await db.Database.ExecuteSqlAsync($"SELECT apps.record_index_charge({(int)IndexCallTimeout.TotalMilliseconds})", ct);
+            }
             logger.LogWarning("Dynamic Apps index sync failed with SQLSTATE {SqlState}; it waits for the next publish.", e.SqlState);
             _indexedRevisions = state;
             return false;
         }
         var done = report.Count(l => l.StartsWith("created", StringComparison.Ordinal) || l.StartsWith("dropped", StringComparison.Ordinal));
-        for (var i = 0; i < done; i++)
-        {
-            _indexOps.Enqueue(DateTimeOffset.UtcNow);
-        }
         foreach (var line in report.Where(l => l.StartsWith("failed", StringComparison.Ordinal)))
         {
             logger.LogWarning("Dynamic Apps index sync: {Line}", line); // index name and SQLSTATE only
@@ -193,9 +195,9 @@ public sealed class AutomationWorker(
         {
             logger.LogInformation("Dynamic Apps index sync: {Done} built or dropped, {Wanted} wanted.", done, wanted.Count);
         }
-        // Retried soon: the budget ran out, another replica holds the lock, or a lock was not granted
-        // (55P03). Any other failure waits for the next publish.
-        var more = report.Any(l => l is "more" or "busy" || (l.StartsWith("failed", StringComparison.Ordinal) && l.EndsWith(" 55P03", StringComparison.Ordinal)));
+        // Retried soon: the budget or the ration ran out, another replica holds the lock, or a lock was
+        // not granted (55P03). Any other failure waits for the next publish.
+        var more = report.Any(l => l is "more" or "busy" or "wait" || (l.StartsWith("failed", StringComparison.Ordinal) && l.EndsWith(" 55P03", StringComparison.Ordinal)));
         if (!more)
         {
             _indexedRevisions = state;
