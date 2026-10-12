@@ -397,6 +397,33 @@ async function automation() {
     runsExecuted: ran, runsPerSec: +(ran / (totalMs / 1000)).toFixed(1), runs: storm, ...stormDrain });
   await check('per-record storm: every deal_won ran, none failed', async () =>
     (storm.deal_won?.succeeded ?? 0) === ids.length || { ok: false, detail: storm });
+  // 4. Contention: every deal of 10 companies won at once, so concurrent deal_won runs update the
+  // same company. Each must succeed, and each company's total must be the exact sum.
+  const base = 2000 + Math.floor(Date.now() / 1000) % 2900;
+  const names = Array.from({ length: 10 }, (_, k) => `Company ${String(base + k * 7).padStart(6, '0')}`);
+  const targets = (await call('POST', '/_records/companies/query', { filter: { field: 'name', op: 'in', value: names }, select: ['name', 'total_won'], pageSize: 10 })).body.items;
+  const contended = [];
+  for (const c of targets) {
+    const r = (await call('POST', '/_records/deals/query', { filter: { and: [{ field: 'company', op: 'eq', value: c.id }, { field: 'stage', op: 'ne', value: 'won' }] }, select: ['amount'], pageSize: 20 })).body;
+    contended.push(...r.items.map((d) => ({ ...d, company: c.id, before: Number(c.total_won ?? 0) })));
+  }
+  const failedBefore = await runs('deal_won', 'failed');
+  const cBase = await runs('deal_won');
+  const cs = Date.now();
+  await pool(contended, 8, (d) => call('PATCH', `/_records/deals/${d.id}`, { stage: 'won' }));
+  await drain(cs, 'contention', 'deal_won', cBase, contended.length);
+  const failedRuns = (await runs('deal_won', 'failed')) - failedBefore;
+  let wrong = 0;
+  for (const c of targets) {
+    const mine = contended.filter((d) => d.company === c.id);
+    const want = mine[0]?.before + mine.reduce((a, d) => a + Number(d.amount), 0);
+    const got = Number((await call('GET', `/_records/companies/${c.id}`)).body.total_won ?? 0);
+    if (mine.length && Math.abs(want - got) > 0.01) wrong++;
+  }
+  measure('contention', { companies: targets.length, deals: contended.length, failedRuns, companiesWithWrongTotal: wrong, ms: Date.now() - cs });
+  await check('contention: concurrent runs on one company all succeed and add up exactly', async () =>
+    failedRuns === 0 && wrong === 0 || { ok: false, detail: `${failedRuns} failed runs, ${wrong} wrong totals` });
+
   await check('storm side effects: won_at stamped, companies totalled, audit rows written', async () => {
     const d = (await call('GET', `/_records/deals/${ids[0]}?expand=company`)).body;
     const audit = (await call('POST', '/_records/audit_log/query', { filter: { field: 'ref', op: 'eq', value: ids[0] }, pageSize: 5 })).body.total;

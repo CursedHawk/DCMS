@@ -148,10 +148,17 @@ An action is named with its major version. Its meaning never changes within that
 - **Failure handling** depends on the cause:
   - A step that fails on bad input or a missing record fails the run at once.
   - Passing trouble, such as the database or a rate limit, is retried up to three attempts.
+  - A step whose record another write changed first (two runs updating the same company) reads
+    again: the earlier read-only steps (`records.lookup`, `records.query`, …) run again and the
+    step is retried, up to five times. Writes before it are not repeated.
   - A failed run can be retried by hand. That needs the `flows-run` permission.
+- **Read-modify-write needs the version.** A flow that adds to a running total reads the record,
+  then writes the sum. Pass the version it read, and a write that another run beat is refused
+  and done again with fresh values instead of overwriting that run's sum:
+  `"values": { "total_won": "{{ coalesce(steps.company.total_won, 0) + row.amount }}", "version": "{{ steps.company.version }}" }`.
 - **Limits** stop runaway cascades: 5 flows deep, 20 runs per original action, 100 record
-  writes and 60 seconds per run. A run stopped by a limit ends as *terminated* and records the
-  reason.
+  writes and 60 seconds per run. Each record of an import, bulk update or bulk delete is its
+  own original action. A run stopped by a limit ends as *terminated* and records the reason.
 
 ## Records and the public API
 
@@ -192,7 +199,9 @@ An action is named with its major version. Its meaning never changes within that
   and keep the tables a rule reads admin-only (the validator warns otherwise).
 - **The site API** is `/api/{slug}/data/{table}` on content-api. It is generated from the live
   revision only, and it is in the site's OpenAPI document and generated client.
-- **Public writes are throttled** to 120 an hour per visitor and per IP.
+- **Public writes are throttled** to 120 an hour per visitor and per IP. A signed-in user holding
+  a role on the app (below) counts against their own 120 instead, and role holders together
+  against 1,200 an hour per IP, so an office behind one address is not limited to 120.
 - **Enterprise users get more through roles** (User Authentication, [user-auth.md](user-auth.md)).
   A role holding `dynamic-apps:{slug}:table:{table}:read|create|update|delete` lets its holders do
   that through the site API whatever the table's public access, on every record. On a table with

@@ -37,7 +37,8 @@ public sealed record RecordQuery
 /// </summary>
 /// <remarks>
 /// Operators: <c>eq ne gt gte lt lte in nin contains startsWith isNull</c>. Which apply depends
-/// on the field's type; <c>in</c>/<c>nin</c> take a list, <c>isNull</c> takes true or false.
+/// on the field's type; <c>in</c>/<c>nin</c> take a list, <c>isNull</c> takes true or false,
+/// and <c>eq</c>/<c>ne</c> with a null value mean <c>isNull</c> true/false.
 /// </remarks>
 public sealed record RecordFilter
 {

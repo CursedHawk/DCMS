@@ -147,7 +147,8 @@ export const MODEL = [
       { id: 'company', action: 'records.lookup@1', input: { table: 'companies', id: '{{ row.company }}' } },
       { id: 'stamp', action: 'records.update@1', input: { table: 'deals', id: '{{ row.id }}', values: { won_at: '{{ now() }}' } } },
       { id: 'total', action: 'records.update@1', input: { table: 'companies', id: '{{ row.company }}',
-        values: { total_won: '{{ coalesce(steps.company.total_won, 0) + coalesce(row.amount, 0) }}' } } },
+        // The version read in step `company`: a run that another beat reads again instead of overwriting its sum.
+        values: { total_won: '{{ coalesce(steps.company.total_won, 0) + coalesce(row.amount, 0) }}', version: '{{ steps.company.version }}' } } },
       { id: 'note', action: 'records.create@1', input: { table: 'activities',
         values: { subject: 'Won {{ row.title }}', kind: 'note', company: '{{ row.company }}', deal: '{{ row.id }}' } } },
       { id: 'tell', action: 'dcms.notifications.raise@1', condition: 'row.amount >= 90000',

@@ -83,6 +83,24 @@ async function ensureModel(app) {
   return { state, timings };
 }
 
+/** Sorted-key JSON, so a flow compares equal whatever order the server writes its keys in. */
+const canonical = (v) => JSON.stringify(v, (_, x) => (x && typeof x === 'object' && !Array.isArray(x)
+  ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b))) : x));
+
+/** Brings every fixture flow's steps and condition up to da-model.mjs, in one published change set. */
+async function ensureFlowsCurrent(app) {
+  const live = new Map((await app.get('/_model/published')).config.flows.map((f) => [f.apiName, f]));
+  const ops = MODEL.filter((o) => o.type === 'flow')
+    .filter((o) => canonical(o.value.steps) !== canonical(live.get(o.value.apiName)?.steps ?? null)
+      || (o.value.condition ?? null) !== (live.get(o.value.apiName)?.condition ?? null))
+    .map((o) => ({ op: 'update', type: 'flow', target: o.value.apiName, value: { steps: o.value.steps, condition: o.value.condition ?? null } }));
+  if (!ops.length) return;
+  const state = await app.get('/_model');
+  const applied = await app.post('/_model/draft/changes', { expectedHash: state.hash, operations: ops, description: 'DA stress: flows brought up to date' });
+  const published = await app.post('/_model/draft/publish', { expectedHash: applied.draft.hash });
+  log(`updated ${ops.length} flow(s) (${ops.map((o) => o.target).join(', ')}) in revision ${published.revision.number}`);
+}
+
 /** v2 goes on AFTER the data, so its publish reconciles against every imported row. */
 async function ensureModelV2(app) {
   const live = await app.get('/_model/published');
@@ -325,6 +343,7 @@ async function main() {
 
   const { N, timings } = await seedData(app, da.scale, signedIn);
   const v2 = await ensureModelV2(app);
+  await ensureFlowsCurrent(app);
 
   const sample = async (table) => ids(app, table, 200);
   const fixtures = {
