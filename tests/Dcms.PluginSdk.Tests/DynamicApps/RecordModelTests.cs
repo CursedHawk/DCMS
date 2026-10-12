@@ -50,6 +50,22 @@ public sealed class RecordModelTests
     private static IReadOnlyDictionary<string, string> Refused(string json, RecordPlane plane = RecordPlane.Admin) =>
         Assert.Throws<RecordValidationException>(() => RecordCodec.Write(Deals, Obj(json), null, plane)).Errors;
 
+    // ------------------------------------------------------------------ row rules
+
+    [Fact]
+    public void A_rule_through_an_inverse_navigation_joins_on_an_equality_the_planner_can_hash()
+    {
+        var parameters = new List<object>();
+        var sql = RowRules.Sql(Model, Model.Table("companies")!, new RowRule { Path = ["deals"], Field = "title", Matches = "user.email" },
+            new RowSubject(Guid.NewGuid(), "ada@example.com", [], new Dictionary<string, JsonElement>()), "r",
+            (value, _) => { parameters.Add(value); return $"${parameters.Count}"; });
+
+        // Containment (`"Data" @> jsonb_build_object(…)`) cannot be hashed: it nested-looped records
+        // × grants, 15 s a page for a user with 2,500 grants on vps1 (findings 2026-10-11).
+        sql.Should().NotContain("@>");
+        sql.Should().Contain("""(ra0."Data" ->> $1) = r."Id"::text""");
+    }
+
     // ------------------------------------------------------------------ writing records
 
     [Fact]

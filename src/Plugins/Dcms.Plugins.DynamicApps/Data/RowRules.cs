@@ -103,7 +103,9 @@ public static partial class RowRules
         var join = nav.Kind switch
         {
             NavigationKind.Lookup => $"""{next}."Id"::text = ({alias}."Data" ->> {relationship})""",
-            NavigationKind.Inverse => $"""{next}."Data" @> jsonb_build_object({relationship}::text, {alias}."Id"::text)""",
+            // An equality, not `"Data" @> jsonb_build_object(…)`: containment cannot be hashed, so the
+            // planner nested-looped it — records × the user's grants (15 s for 2,500 grants on vps1).
+            NavigationKind.Inverse => $"""({next}."Data" ->> {relationship}) = {alias}."Id"::text""",
             _ => $"""
                 EXISTS (SELECT 1 FROM apps.relation_links rl{depth} WHERE rl{depth}."TenantId" = {alias}."TenantId"
                 AND rl{depth}."InstanceId" = {alias}."InstanceId" AND rl{depth}."RelationshipId" = {parameter(nav.Relationship.Id, NpgsqlDbType.Uuid)}
