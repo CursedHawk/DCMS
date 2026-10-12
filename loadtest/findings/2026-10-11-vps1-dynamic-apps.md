@@ -91,6 +91,47 @@ flows in minutes rather than hours, which means it competes for the same CPU whi
 
 ---
 
+## Indexes for sortable and filterable fields — 2026-10-12
+
+Commits `081d08a`, `5c5996c`, `bedd3a7` (pipeline 781). Each sortable field gets two partial
+expression indexes on `apps.records` (ascending and descending, `NULLS LAST`, then `"Id"`, as the
+compiler orders), each filterable field one, scoped to tenant + instance + table. The key is the
+compiler's own SQL (`RecordIndexes.KeySql`): numbers `::numeric`, text-like values `left(…, 200)`,
+dates as their fixed-width ISO text. admin-api runs as `dcms_app`, so a migration-owned
+`SECURITY DEFINER` function `apps.sync_record_indexes` builds and drops them; the automation worker
+calls it when a published revision changes. Index DDL time is rationed platform-wide in
+`apps.record_index_sync` (2 min/hour, ≤ a tenth of the time), 64 indexes per app, 128 per tenant.
+Two background security reviews shaped this: scope by tenant/instance (authors choose table ids),
+no `SQLERRM` in logs, and a time ration enforced by the database (a `statement_timeout` attribute on
+the function does not apply to the running statement).
+
+On vps1: **139 indexes built in 9.8 s of DDL**, 0 failures. Plans, single query, sales data:
+
+| shape | before | after |
+|---|---|---|
+| deals sorted by amount, page 11 | ~280 ms (sort 30k rows) | **4.3 ms** (index scan) |
+| deals filtered via company industry + amount, sorted by close date | ~280 ms | **34 ms** (bitmap scans on two field indexes) |
+| activities sorted by due date | ~180 ms | **0.33 ms** |
+| planning, warm | — | 1.6–2.6 ms with 139 extra indexes (10.9 ms on a cold connection) |
+
+k6 staircase (previous build in parentheses):
+
+| VUs | req/s | errors | p95 | admin list | rule-bound deals |
+|---|---|---|---|---|---|
+| 5 | 25.0 (24.4) | 0 % | 440 ms | 201 (347) | 335 (409) |
+| 20 | 31.8 (30.4) | 0 % | 1.8 s | 474 (1,346) | 1,088 (1,385) |
+| 40 | 32.3 (30.8) | 0.21 % (0.5 %) | 3.8 s | 1,081 (2,797) | 2,015 (2,776) |
+| 80 | 31.7 (30.7) | 0.47 % (1.35 %) | 6.4 s | 3,678 (4,880) | 2,441 (3,221) |
+
+Sorted pages are 2–3× faster under load and errors at 80 VUs fell by two-thirds, but **mixed-workload
+throughput rose ~4 %**: Postgres is still the limit, now spread over shapes these indexes do not
+cover. The heaviest per request: exact `COUNT(*)` over non-selective filters (amount ≥ 40,000 matches
+60 % of deals, 47 ms), free-text search (`strpos` over every searchable field, unindexed), and
+rule-bound site pages. Next steps if that matters: a trigram index for searchable fields, and an
+estimated or capped count for large result sets.
+
+---
+
 ## 1. Row rules (finding 1)
 
 Latency of one site-API page at full size (10 sequential calls, p50 / p90):
