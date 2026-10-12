@@ -152,6 +152,53 @@ public sealed class PublicApiTests(ContentFlowFixture fixture)
             .GetProperty("email").GetString().Should().Be("admin@example.com", "members in the admin are not throttled");
     }
 
+    [DockerFact]
+    public async Task A_user_holding_a_role_writes_on_their_own_allowance_not_their_address()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.InstallAsync("user-auth", "users", "{}", ct);
+        await app.PublishAsync(Model, ct);
+        var tenantId = await TenantIdAsync(app, ct);
+
+        // The address has used its hour (an office NAT, say).
+        for (var i = 0; i <= Dcms.Plugins.DynamicApps.Endpoints.PublicEndpointsLimits.MaxWritesPerHour; i++)
+        {
+            await app.SiteAsync(HttpMethod.Post, "/api/crm/data/leads", ct, new { email = $"anon{i}@example.com" });
+        }
+        (await app.SiteAsync(HttpMethod.Post, "/api/crm/data/leads", ct, new { email = "late@example.com" })).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+
+        var reps = Guid.NewGuid();
+        var role = await Json(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/users/roles", app.Owner, app.Tenant,
+            body: new { key = "reps", name = "Reps", permissions = new[] { "dynamic-apps:crm:table:leads:create" } }), ct), ct, HttpStatusCode.Created);
+        (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/plugins/users/roles/{role.GetProperty("id").GetGuid()}/grants",
+            app.Owner, app.Tenant, body: new { subjectType = "group", subjectId = reps }), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var rep = UserAuth.RealmTokens.Mint(tenantId, Guid.NewGuid(), [reps], email: "rep@corp.test");
+        var plain = UserAuth.RealmTokens.Mint(tenantId, Guid.NewGuid(), email: "plain@corp.test");
+        (await RealmWriteAsync(app, rep, "rep-lead@example.com", ct)).StatusCode.Should().Be(HttpStatusCode.Created, "a role holder counts against themselves");
+        (await RealmWriteAsync(app, plain, "plain-lead@example.com", ct)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
+            "a signed-in user without a role still shares the address");
+    }
+
+    private Task<HttpResponseMessage> RealmWriteAsync(AppHarness app, string token, string email, CancellationToken ct)
+    {
+        var req = new HttpRequestMessage(HttpMethod.Post, "/api/crm/data/leads") { Content = JsonContent.Create(new { email }) };
+        req.Headers.Add("X-Dcms-Tenant", app.Tenant);
+        req.Headers.Add("X-Dcms-Realm-Token", token);
+        return fixture.Content.CreateClient().SendAsync(req, ct);
+    }
+
+    private async Task<Guid> TenantIdAsync(AppHarness app, CancellationToken ct)
+    {
+        await using var conn = new Npgsql.NpgsqlConnection(fixture.PostgresConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """SELECT "Id"::uuid FROM tenancy.tenants WHERE "Identifier" = @p""";
+        cmd.Parameters.AddWithValue("p", app.Tenant);
+        return (Guid)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
     private static async Task<string> ClientSourceAsync(AppHarness app, CancellationToken ct)
     {
         var res = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, "/api/admin/api-client.zip", app.Owner, app.Tenant), ct);

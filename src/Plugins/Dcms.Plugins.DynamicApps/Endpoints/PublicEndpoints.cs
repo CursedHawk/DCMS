@@ -175,10 +175,18 @@ internal static class PublicEndpoints
             // Every write counts against the address it comes from, and a signed-in visitor's
             // against them too; both must have room. Keyed by the visitor alone, one address
             // could register accounts and multiply its allowance.
+            //
+            // Except a user holding a role on this app: an operator granted it (users.access@1), so
+            // they cannot be minted at will, and an office behind one address must not share 120
+            // writes an hour among all its staff. They count against themselves alone.
             var cache = context.Contracts.Get<IPluginCache>();
             var app = context.Instance!.InstanceId.ToString("N");
-            var address = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-            var used = (await cache.IncrementAsync(new CacheIncrement($"writes:{app}:ip:{address}", 1, 3600), ct)).Value;
+            long used = 0;
+            if (records.Visitor is null || records.Members.Count == 0)
+            {
+                var address = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+                used = (await cache.IncrementAsync(new CacheIncrement($"writes:{app}:ip:{address}", 1, 3600), ct)).Value;
+            }
             if (records.Visitor is { } visitor)
             {
                 used = Math.Max(used, (await cache.IncrementAsync(new CacheIncrement($"writes:{app}:visitor:{visitor:N}", 1, 3600), ct)).Value);
