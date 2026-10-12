@@ -176,22 +176,35 @@ internal static class PublicEndpoints
             // against them too; both must have room. Keyed by the visitor alone, one address
             // could register accounts and multiply its allowance.
             //
-            // Except a user holding a role on this app: an operator granted it (users.access@1), so
-            // they cannot be minted at will, and an office behind one address must not share 120
-            // writes an hour among all its staff. They count against themselves alone.
+            // A user holding a role on this app (users.access@1) counts against themselves — keyed by
+            // the User Authentication account the role came from, never by a visitor id a request
+            // might also carry — and against a ten times larger allowance for role holders at their
+            // address: an office behind one NAT must not share 120 writes an hour among all its
+            // staff, and one address still cannot write without bound through many accounts.
             var cache = context.Contracts.Get<IPluginCache>();
             var app = context.Instance!.InstanceId.ToString("N");
-            long used = 0;
-            if (records.Visitor is null || records.Members.Count == 0)
+            var address = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            async Task<long> Count(string key) => (await cache.IncrementAsync(new CacheIncrement(key, 1, 3600), ct)).Value;
+            var holder = records.Members.Count > 0 && context.Contracts.TryGet<IUserIdentity>() is { } identity
+                ? (await identity.GetCurrentAsync(ct)).User?.Id
+                : null;
+            bool over;
+            if (holder is { } user)
             {
-                var address = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-                used = (await cache.IncrementAsync(new CacheIncrement($"writes:{app}:ip:{address}", 1, 3600), ct)).Value;
+                var mine = await Count($"writes:{app}:member:{user:N}");
+                var atAddress = await Count($"writes:{app}:members-ip:{address}");
+                over = mine > PublicEndpointsLimits.MaxWritesPerHour || atAddress > PublicEndpointsLimits.MaxMemberWritesPerAddressPerHour;
             }
-            if (records.Visitor is { } visitor)
+            else
             {
-                used = Math.Max(used, (await cache.IncrementAsync(new CacheIncrement($"writes:{app}:visitor:{visitor:N}", 1, 3600), ct)).Value);
+                var used = await Count($"writes:{app}:ip:{address}");
+                if (records.Visitor is { } visitor)
+                {
+                    used = Math.Max(used, await Count($"writes:{app}:visitor:{visitor:N}"));
+                }
+                over = used > PublicEndpointsLimits.MaxWritesPerHour;
             }
-            return used > PublicEndpointsLimits.MaxWritesPerHour
+            return over
                 ? Results.Json(new { error = "Too many changes from here for now; try again within the hour." }, statusCode: 429)
                 : await handler();
         });
@@ -228,4 +241,7 @@ public static class PublicEndpointsLimits
 {
     /// <summary>Writes from the public site, per app and per client (a visitor, else an address), in an hour.</summary>
     public const int MaxWritesPerHour = 120;
+
+    /// <summary>Writes from the public site by users holding a role on the app, together, per address in an hour.</summary>
+    public const int MaxMemberWritesPerAddressPerHour = 10 * MaxWritesPerHour;
 }

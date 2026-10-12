@@ -179,13 +179,28 @@ public sealed class PublicApiTests(ContentFlowFixture fixture)
         (await RealmWriteAsync(app, rep, "rep-lead@example.com", ct)).StatusCode.Should().Be(HttpStatusCode.Created, "a role holder counts against themselves");
         (await RealmWriteAsync(app, plain, "plain-lead@example.com", ct)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests,
             "a signed-in user without a role still shares the address");
+
+        // Their own hour is theirs alone, and a self-registered visitor account riding along on the
+        // same request does not buy a fresh one: the count is the role holder's account.
+        for (var i = 1; i < Dcms.Plugins.DynamicApps.Endpoints.PublicEndpointsLimits.MaxWritesPerHour; i++)
+        {
+            await RealmWriteAsync(app, rep, $"rep{i}@example.com", ct);
+        }
+        (await RealmWriteAsync(app, rep, "rep-over@example.com", ct)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        await app.InstallAsync("visitor-auth", "members", "{}", ct);
+        var visitor = await app.VisitorAsync("fresh@example.com", ct);
+        (await RealmWriteAsync(app, rep, "rep-again@example.com", ct, visitor)).StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
     }
 
-    private Task<HttpResponseMessage> RealmWriteAsync(AppHarness app, string token, string email, CancellationToken ct)
+    private Task<HttpResponseMessage> RealmWriteAsync(AppHarness app, string token, string email, CancellationToken ct, string? visitorToken = null)
     {
         var req = new HttpRequestMessage(HttpMethod.Post, "/api/crm/data/leads") { Content = JsonContent.Create(new { email }) };
         req.Headers.Add("X-Dcms-Tenant", app.Tenant);
         req.Headers.Add("X-Dcms-Realm-Token", token);
+        if (visitorToken is not null)
+        {
+            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", visitorToken);
+        }
         return fixture.Content.CreateClient().SendAsync(req, ct);
     }
 
