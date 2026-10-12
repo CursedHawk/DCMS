@@ -56,7 +56,7 @@ public sealed class FlowExecutor(
             .With("attempt", run.Attempts)
             .With("correlation", run.CorrelationId);
 
-        var (status, error, retry) = await ExecuteAsync(run, ct);
+        var (status, error, retry, _) = await ExecuteAsync(run, ct);
 
         var now = clock.GetUtcNow();
         if (status == FlowRunStatus.Failed && retry && run.Attempts < AutomationLimits.MaxAttempts)
@@ -79,7 +79,10 @@ public sealed class FlowExecutor(
     }
 
     /// <summary>How the run ended, and whether a failure is worth another attempt.</summary>
-    private readonly record struct Outcome(FlowRunStatus Status, string? Error = null, bool Retry = false);
+    private readonly record struct Outcome(FlowRunStatus Status, string? Error = null, bool Retry = false, bool ChangedElsewhere = false);
+
+    /// <summary>How often one run reads again and retries a step whose record another write changed first.</summary>
+    private const int MaxRereads = 5;
 
     private async Task<Outcome> ExecuteAsync(FlowRun run, CancellationToken stopping)
     {
@@ -121,20 +124,44 @@ public sealed class FlowExecutor(
                 return new(FlowRunStatus.Skipped);
             }
 
-            var done = await db.FlowRunSteps.AsNoTracking()
-                .Where(s => s.RunId == run.Id && s.Status == FlowRunStatus.Succeeded)
-                .ToDictionaryAsync(s => s.StepId, s => s.OutputJson, ct);
+            // The latest success per step: a read step that was read again after a conflict succeeded more than once.
+            var done = (await db.FlowRunSteps.AsNoTracking()
+                    .Where(s => s.RunId == run.Id && s.Status == FlowRunStatus.Succeeded)
+                    .Select(s => new { s.StepId, s.Attempt, s.OutputJson })
+                    .ToListAsync(ct))
+                .GroupBy(s => s.StepId, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.MaxBy(s => s.Attempt)!.OutputJson, StringComparer.Ordinal);
 
-            foreach (var step in flow.Steps)
+            var rereads = 0;
+            for (var i = 0; i < flow.Steps.Count; i++)
             {
+                var step = flow.Steps[i];
                 if (done.TryGetValue(step.Id, out var previousOutput))
                 {
                     outputs[step.Id] = previousOutput is null ? null : JsonNode.Parse(previousOutput);
                     continue;
                 }
-                if (await StepAsync(run, step, scope, outputs, ct) is { } failure)
+                var failure = await StepAsync(run, step, scope, outputs, ct);
+                if (failure is { ChangedElsewhere: true } && rereads++ < MaxRereads)
                 {
-                    return failure;
+                    // Another write got to the record first (concurrent runs updating one company, say).
+                    // Read again what the step was computed from — the earlier read-only steps, which
+                    // change nothing — then try the step again. Writes before it are not repeated.
+                    await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.Next(20, 100) * rereads), ct);
+                    foreach (var earlier in flow.Steps.Take(i))
+                    {
+                        if ((await ActionCatalog.FindAsync(context, earlier.Action, ct))?.Risk == OpRisk.Read
+                            && await StepAsync(run, earlier, scope, outputs, ct) is { } readFailure)
+                        {
+                            return readFailure;
+                        }
+                    }
+                    i--;
+                    continue;
+                }
+                if (failure is { } failed)
+                {
+                    return failed;
                 }
             }
             return new(FlowRunStatus.Succeeded);
@@ -209,8 +236,10 @@ public sealed class FlowExecutor(
             var error = $"Step '{step.Id}' ({step.Action}): {row.Error}";
             return e switch
             {
+                // Reading again resolves it: the run retries in place (ExecuteAsync), then later.
+                _ when RecordService.IsChangedElsewhere(e) => new Outcome(FlowRunStatus.Failed, error, Retry: true, ChangedElsewhere: true),
                 FlowFatalException { Limit: true } => new Outcome(FlowRunStatus.Terminated, error),
-                // The same input will fail the same way: bad input, a refused record, a conflict.
+                // The same input will fail the same way: bad input, a refused record, a unique value taken.
                 FlowFatalException or ExpressionException or RecordValidationException
                     or ContractValidationException or ContractConflictException => new Outcome(FlowRunStatus.Failed, error),
                 // Anything else may be passing trouble — the database, a contract's rate limit.

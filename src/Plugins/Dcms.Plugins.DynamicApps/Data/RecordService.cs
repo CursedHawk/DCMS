@@ -676,7 +676,7 @@ public sealed class RecordService(
         }
         catch (DbUpdateConcurrencyException)
         {
-            throw new ContractConflictException("The record changed while you were editing it. Read it again and retry.");
+            throw ChangedElsewhere("The record changed while you were editing it. Read it again and retry.");
         }
         catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
@@ -903,7 +903,22 @@ public sealed class RecordService(
     }
 
     private static ContractConflictException Stale(AppRecord record) =>
-        new($"The record changed since you read it; it is at version {record.Version}. Read it again and retry.");
+        ChangedElsewhere($"The record changed since you read it; it is at version {record.Version}. Read it again and retry.");
+
+    private const string ChangedElsewhereKey = "dcms.dynamicapp.changed-elsewhere";
+
+    /// <summary>
+    /// A conflict that reading again resolves — another write got to the record first — as against
+    /// one that will repeat (a unique value taken). Flows retry the first kind (FlowExecutor).
+    /// </summary>
+    private static ContractConflictException ChangedElsewhere(string message)
+    {
+        var e = new ContractConflictException(message);
+        e.Data[ChangedElsewhereKey] = true;
+        return e;
+    }
+
+    public static bool IsChangedElsewhere(Exception e) => e.Data.Contains(ChangedElsewhereKey);
 
     private AuditEntry Declare(string action, RuntimeTable table, Guid? id) =>
         (audit.Declared ?? audit.Record($"plugin.{DynamicAppsPlugin.PluginId}.{action}"))

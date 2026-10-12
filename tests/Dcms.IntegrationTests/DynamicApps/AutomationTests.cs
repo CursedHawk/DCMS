@@ -176,6 +176,32 @@ public sealed class AutomationTests(ContentFlowFixture fixture)
     }
 
     [DockerFact]
+    public async Task Concurrent_runs_updating_one_record_read_again_and_add_up()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.PublishAsync(Crm, ct);
+        // Read-modify-write, guarded by the version read: a stale write conflicts, and the run reads
+        // the company again and retries instead of failing or overwriting another run's sum.
+        await app.PublishAsync("""
+            [ { "op": "create", "type": "field", "target": "companies", "value": { "apiName": "total", "displayName": "Total", "type": "decimal" } },
+              { "op": "create", "type": "flow", "value": { "apiName": "add_up", "displayName": "Add up",
+                "trigger": { "event": "row.created", "tableId": "deals" },
+                "steps": [
+                  { "id": "company", "action": "records.lookup@1", "input": { "table": "companies", "id": "{{ row.company }}" } },
+                  { "id": "total", "action": "records.update@1", "input": { "table": "companies", "id": "{{ row.company }}",
+                    "values": { "total": "{{ coalesce(steps.company.total, 0) + row.amount }}", "version": "{{ steps.company.version }}" } } } ] } } ]
+            """, ct);
+        var acme = await Create(app, "companies", new { name = "Acme" }, ct);
+
+        await Task.WhenAll(Enumerable.Range(1, 12).Select(i => Create(app, "deals", new { title = $"Deal {i}", amount = i, company = acme }, ct)));
+
+        var runs = await WaitForRunsAsync(app, "add_up", 12, ct);
+        runs.Select(r => r.GetProperty("status").GetString()).Should().AllBe("succeeded", string.Join("; ", runs.Select(r => r.ToString())));
+        (await app.JsonAsync(HttpMethod.Get, $"/_records/companies/{acme}", ct)).GetProperty("total").GetDecimal().Should().Be(78);
+    }
+
+    [DockerFact]
     public async Task A_due_schedule_starts_its_flow_once()
     {
         var ct = TestContext.Current.CancellationToken;
