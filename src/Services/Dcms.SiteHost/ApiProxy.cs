@@ -77,5 +77,19 @@ public static class ApiProxy
             proxyRequest.Headers.Remove("X-Forwarded-Proto");
             proxyRequest.Headers.TryAddWithoutValidation("X-Forwarded-Proto", httpContext.Request.Scheme);
         }
+
+        public override ValueTask<bool> TransformResponseAsync(HttpContext httpContext, HttpResponseMessage? proxyResponse, CancellationToken cancellationToken)
+        {
+            // Site-host's own hardening headers were set before the proxy ran, and content-api sends
+            // the same ones: the base copy appends, so every API answer carried each twice. Upstream wins.
+            if (proxyResponse is not null)
+            {
+                foreach (var (name, _) in proxyResponse.Headers.Concat(proxyResponse.Content.Headers))
+                {
+                    httpContext.Response.Headers.Remove(name);
+                }
+            }
+            return base.TransformResponseAsync(httpContext, proxyResponse, cancellationToken);
+        }
     }
 }
