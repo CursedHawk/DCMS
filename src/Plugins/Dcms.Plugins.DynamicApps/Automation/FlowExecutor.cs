@@ -81,8 +81,12 @@ public sealed class FlowExecutor(
     /// <summary>How the run ended, and whether a failure is worth another attempt.</summary>
     private readonly record struct Outcome(FlowRunStatus Status, string? Error = null, bool Retry = false, bool ChangedElsewhere = false);
 
-    /// <summary>How often one run reads again and retries a step whose record another write changed first.</summary>
-    private const int MaxRereads = 5;
+    /// <summary>
+    /// How often one run reads again and retries a step whose record another write changed first.
+    /// Generous, with a growing pause (at most ~1.6 s): several runs on one hot record take turns,
+    /// and a run that gives up waits out the run backoff (30 s) instead.
+    /// </summary>
+    private const int MaxRereads = 10;
 
     private async Task<Outcome> ExecuteAsync(FlowRun run, CancellationToken stopping)
     {
@@ -147,7 +151,7 @@ public sealed class FlowExecutor(
                     // Another write got to the record first (concurrent runs updating one company, say).
                     // Read again what the step was computed from — the earlier read-only steps, which
                     // change nothing — then try the step again. Writes before it are not repeated.
-                    await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.Next(20, 100) * rereads), ct);
+                    await Task.Delay(TimeSpan.FromMilliseconds(Random.Shared.Next(10, 50) << Math.Min(rereads, 5)), ct);
                     foreach (var earlier in flow.Steps.Take(i))
                     {
                         if ((await ActionCatalog.FindAsync(context, earlier.Action, ct))?.Risk == OpRisk.Read
