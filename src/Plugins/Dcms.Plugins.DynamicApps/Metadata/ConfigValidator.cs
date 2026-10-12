@@ -66,7 +66,7 @@ public static partial class ConfigValidator
         Limit(config.Relationships.Count, MaxRelationships, "relationships", Error);
         Limit(config.Views.Count, MaxViews, "views", Error);
         Limit(config.ChoiceSets.Count, MaxChoiceSets, "choiceSets", Error);
-        if (Data.RecordIndexes.For(config, out var indexes).Count < indexes)
+        if (Data.RecordIndexes.Wanted(config) is var indexes && indexes > Data.RecordIndexes.MaxPerApp)
         {
             Warn("index-limit", "tables", $"Sortable and filterable fields want {indexes} database indexes; an app gets at most "
                 + $"{Data.RecordIndexes.MaxPerApp} (two per sortable field, one per filterable one). The fields past that, in table "

@@ -25,10 +25,20 @@ public static class RecordIndexes
 
     public const int MaxPerApp = 64;
 
+    /// <summary>
+    /// All of a tenant's apps together, oldest app first: every index on the shared table costs every
+    /// tenant's queries some planning, so one tenant's many apps must not add without bound.
+    /// </summary>
+    public const int MaxPerTenant = 128;
+
     public enum KeyKind { Text, Number }
 
-    /// <param name="Name">A stable name from the table, field, kind and direction: <c>ix_da_</c> + 24 hex.</param>
-    public sealed record Spec(string Name, Guid TableId, string Key, KeyKind Kind, bool Descending);
+    /// <param name="Name">A stable name from the tenant, app, table, field, kind and direction: <c>ix_da_</c> + 24 hex.</param>
+    /// <remarks>
+    /// Partial over the tenant, the instance AND the table: authors may choose table ids, so a table id
+    /// alone could put another tenant's rows under this app's index (and its cast).
+    /// </remarks>
+    public sealed record Spec(string Name, Guid TenantId, Guid InstanceId, Guid TableId, string Key, KeyKind Kind, bool Descending);
 
     /// <summary>What a field of this type is indexed as, or null for types an index does not help.</summary>
     public static KeyKind? KindOf(FieldType type) => type switch
@@ -48,37 +58,45 @@ public static class RecordIndexes
         ? $"(({data} ->> {key}))::numeric"
         : $"left(({data} ->> {key}), {PrefixChars})";
 
+    /// <summary>How many indexes a configuration's flags ask for, before <see cref="MaxPerApp"/>.</summary>
+    public static int Wanted(AppConfig config) => Fields(config).Sum(f => f.Field.Sortable ? 2 : 1);
+
     /// <summary>
-    /// The indexes a configuration wants, in table and field order: ascending for a sortable or
-    /// filterable field, descending as well for a sortable one. Past <see cref="MaxPerApp"/> the rest
-    /// are left out; <paramref name="wanted"/> says how many there would have been.
+    /// The indexes an app's configuration wants, in table and field order: ascending for a sortable or
+    /// filterable field, descending as well for a sortable one, the first <see cref="MaxPerApp"/>.
     /// </summary>
-    public static IReadOnlyList<Spec> For(AppConfig config, out int wanted)
+    public static IReadOnlyList<Spec> For(AppConfig config, Guid tenantId, Guid instanceId)
     {
         var all = new List<Spec>();
+        foreach (var (table, field, kind) in Fields(config))
+        {
+            var key = field.Id.ToString();
+            all.Add(Make(tenantId, instanceId, table.Id, key, kind, descending: false));
+            if (field.Sortable)
+            {
+                all.Add(Make(tenantId, instanceId, table.Id, key, kind, descending: true));
+            }
+        }
+        return all.Take(MaxPerApp).ToList();
+    }
+
+    private static IEnumerable<(TableDef Table, FieldDef Field, KeyKind Kind)> Fields(AppConfig config)
+    {
         foreach (var table in config.Tables.Where(t => t.Enabled))
         {
             foreach (var field in table.Fields.Where(f => f.Sortable || f.Filterable))
             {
-                if (KindOf(field.Type) is not { } kind)
+                if (KindOf(field.Type) is { } kind)
                 {
-                    continue;
-                }
-                var key = field.Id.ToString();
-                all.Add(Make(table.Id, key, kind, descending: false));
-                if (field.Sortable)
-                {
-                    all.Add(Make(table.Id, key, kind, descending: true));
+                    yield return (table, field, kind);
                 }
             }
         }
-        wanted = all.Count;
-        return all.Take(MaxPerApp).ToList();
     }
 
-    private static Spec Make(Guid table, string key, KeyKind kind, bool descending)
+    private static Spec Make(Guid tenant, Guid instance, Guid table, string key, KeyKind kind, bool descending)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{table:N}|{key}|{kind}|{descending}"));
-        return new Spec("ix_da_" + Convert.ToHexStringLower(hash)[..24], table, key, kind, descending);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{tenant:N}|{instance:N}|{table:N}|{key}|{kind}|{descending}"));
+        return new Spec("ix_da_" + Convert.ToHexStringLower(hash)[..24], tenant, instance, table, key, kind, descending);
     }
 }

@@ -194,16 +194,21 @@ public sealed class RecordModelTests
                 { "apiName": "won", "displayName": "Won", "type": "boolean", "sortable": true, "filterable": true },
                 { "apiName": "notes", "displayName": "Notes" } ] } } ]
             """, ConfigJson.Options)!);
-        var specs = RecordIndexes.For(config, out var wanted);
+        var (tenant, instance) = (Guid.NewGuid(), Guid.NewGuid());
+        var specs = RecordIndexes.For(config, tenant, instance);
+        var wanted = RecordIndexes.Wanted(config);
         specs.Select(s => (s.Kind, s.Descending)).Should().Equal(
             (RecordIndexes.KeyKind.Text, false), (RecordIndexes.KeyKind.Text, true), (RecordIndexes.KeyKind.Number, false));
         wanted.Should().Be(3, "a boolean and an unflagged field get none");
         specs.Select(s => s.Name).Should().OnlyHaveUniqueItems().And.AllSatisfy(n => n.Should().MatchRegex("^ix_da_[0-9a-f]{24}$"));
-        RecordIndexes.For(config, out _).Select(s => s.Name).Should().Equal(specs.Select(s => s.Name), "names are stable");
+        RecordIndexes.For(config, tenant, instance).Select(s => s.Name).Should().Equal(specs.Select(s => s.Name), "names are stable");
+        RecordIndexes.For(config, Guid.NewGuid(), instance).Select(s => s.Name).Should().NotIntersectWith(specs.Select(s => s.Name),
+            "another tenant's same table id is another index");
+        specs.Should().OnlyContain(s => s.TenantId == tenant && s.InstanceId == instance);
 
         var big = config with { Tables = Enumerable.Range(0, 40).Select(i => config.Tables[0] with { Id = Guid.NewGuid() }).ToList() };
-        RecordIndexes.For(big, out var many).Should().HaveCount(RecordIndexes.MaxPerApp);
-        many.Should().Be(120);
+        RecordIndexes.For(big, tenant, instance).Should().HaveCount(RecordIndexes.MaxPerApp);
+        RecordIndexes.Wanted(big).Should().Be(120);
         ConfigValidator.Validate(config).Should().NotContain(i => i.Code == "index-limit");
         ConfigValidator.Validate(big).Should().Contain(i => i.Code == "index-limit" && i.Severity == IssueSeverity.Warning);
     }

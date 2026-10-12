@@ -59,7 +59,9 @@ public sealed class RecordIndexTests(ContentFlowFixture fixture)
         range.GetProperty("total").GetInt32().Should().Be(expected.Count);
         range.GetProperty("items").EnumerateArray().Select(d => d.GetProperty("closes").GetString()).Should().BeInAscendingOrder();
 
-        (await ScansAsync(table, ct)).Should().BeGreaterThan(before, "the planner reads these indexes");
+        // Index statistics reach pg_stat_user_indexes when admin-api's pooled connections flush them
+        // (at most once a second, later while idle), so wait for them rather than read them once.
+        await WaitAsync(async () => await ScansAsync(table, ct) > before, ct, "the planner reads these indexes");
 
         // A field that goes takes its indexes with it.
         var hash = (await app.JsonAsync(HttpMethod.Get, "/_model", ct)).GetProperty("hash").GetString();

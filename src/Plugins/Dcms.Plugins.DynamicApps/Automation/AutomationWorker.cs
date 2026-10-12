@@ -8,6 +8,7 @@ using Dcms.Shared.Audit.Propagation;
 using Dcms.Shared.Data.DynamicApps;
 using Dcms.Shared.Data.Rls;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -41,7 +42,9 @@ public sealed class AutomationWorker(
     private DateTimeOffset _nextCleanup = DateTimeOffset.UtcNow.AddMinutes(5);
 
     private static readonly TimeSpan IndexSyncEvery = TimeSpan.FromSeconds(10);
-    private const int IndexBuildsPerCall = 8;
+    private const int IndexOpsPerCall = 4;
+    private const int IndexOpsPerHour = 240;
+    private readonly Queue<DateTimeOffset> _indexOps = new();
     private DateTimeOffset _nextIndexSync = DateTimeOffset.UtcNow.AddSeconds(5);
     private string? _indexedRevisions;
 
@@ -106,55 +109,93 @@ public sealed class AutomationWorker(
     /// <summary>
     /// Brings the indexes behind sortable and filterable fields (RecordIndexes) in line with every
     /// published revision, when one has changed since the last complete pass. Returns true while work
-    /// is left: builds over the per-call budget, a lock not granted, or another replica at it.
+    /// is left: the per-call budget ran out, a lock was not granted, or another replica is at it.
     /// </summary>
+    /// <remarks>
+    /// Index DDL holds apps.records for every tenant, so it is rationed: at most
+    /// <see cref="IndexOpsPerCall"/> builds or drops a call and <see cref="IndexOpsPerHour"/> an hour,
+    /// and a call that fails as a whole is not repeated until a revision changes. A tenant toggling
+    /// flags can delay its own indexes, not stall everyone's writes.
+    /// </remarks>
     public async Task<bool> SyncIndexesAsync(CancellationToken ct)
     {
         using var scope = services.CreateScope();
         using var platform = RlsScope.Platform();
         var db = scope.ServiceProvider.GetRequiredService<AppsDbContext>();
-        var live = await db.Revisions.AsNoTracking().IgnoreQueryFilters() // rls: RlsScope.Platform, every tenant's published revision
-            .Where(r => r.Status == AppRevisionStatus.Published)
-            .OrderBy(r => r.Id)
-            .Select(r => new { r.Id, r.Hash })
+        var live = await (from r in db.Revisions.AsNoTracking().IgnoreQueryFilters() // rls: RlsScope.Platform, every tenant's published revision
+                          join a in db.Apps.AsNoTracking().IgnoreQueryFilters() on r.AppId equals a.Id // rls: as above
+                          where r.Status == AppRevisionStatus.Published
+                          orderby r.TenantId, a.CreatedAt, a.Id
+                          select new { r.Id, r.Hash, r.TenantId, a.InstanceId })
             .ToListAsync(ct);
         var state = string.Join(",", live.Select(r => $"{r.Id:N}:{r.Hash}"));
         if (state == _indexedRevisions)
         {
             return false;
         }
+        while (_indexOps.Count > 0 && _indexOps.Peek() < DateTimeOffset.UtcNow.AddHours(-1))
+        {
+            _indexOps.Dequeue();
+        }
+        var budget = Math.Min(IndexOpsPerCall, IndexOpsPerHour - _indexOps.Count);
+        if (budget <= 0)
+        {
+            return false;
+        }
 
         var wanted = new List<RecordIndexes.Spec>();
-        foreach (var id in live.Select(r => r.Id))
+        foreach (var tenant in live.GroupBy(r => r.TenantId))
         {
-            var snapshot = await db.Revisions.AsNoTracking().IgnoreQueryFilters() // rls: RlsScope.Platform, as above
-                .Where(r => r.Id == id).Select(r => r.Snapshot).SingleAsync(ct);
-            wanted.AddRange(RecordIndexes.For(ConfigJson.Parse(snapshot), out _));
+            var mine = new List<RecordIndexes.Spec>();
+            foreach (var revision in tenant)
+            {
+                var snapshot = await db.Revisions.AsNoTracking().IgnoreQueryFilters() // rls: RlsScope.Platform, as above
+                    .Where(r => r.Id == revision.Id).Select(r => r.Snapshot).SingleAsync(ct);
+                mine.AddRange(RecordIndexes.For(ConfigJson.Parse(snapshot), revision.TenantId, revision.InstanceId));
+            }
+            wanted.AddRange(mine.Take(RecordIndexes.MaxPerTenant));
         }
         var json = JsonSerializer.Serialize(wanted.Select(w => new
         {
             name = w.Name,
+            tenant = w.TenantId.ToString(),
+            instance = w.InstanceId.ToString(),
             table = w.TableId.ToString(),
             key = w.Key,
             kind = w.Kind == RecordIndexes.KeyKind.Number ? "number" : "text",
             descending = w.Descending,
         }));
-        var report = await db.Database
-            .SqlQuery<string>($"SELECT unnest(apps.sync_record_indexes({json}::jsonb, {IndexBuildsPerCall})) AS \"Value\"")
-            .ToListAsync(ct);
+
+        List<string> report;
+        try
+        {
+            report = await db.Database
+                .SqlQuery<string>($"SELECT unnest(apps.sync_record_indexes({json}::jsonb, {budget})) AS \"Value\"")
+                .ToListAsync(ct);
+        }
+        catch (PostgresException e)
+        {
+            // The call as a whole failed (its 15 s ran out, say): not again until a revision changes.
+            logger.LogWarning("Dynamic Apps index sync failed with SQLSTATE {SqlState}; it waits for the next publish.", e.SqlState);
+            _indexedRevisions = state;
+            return false;
+        }
+        var done = report.Count(l => l.StartsWith("created", StringComparison.Ordinal) || l.StartsWith("dropped", StringComparison.Ordinal));
+        for (var i = 0; i < done; i++)
+        {
+            _indexOps.Enqueue(DateTimeOffset.UtcNow);
+        }
         foreach (var line in report.Where(l => l.StartsWith("failed", StringComparison.Ordinal)))
         {
-            logger.LogWarning("Dynamic Apps index sync: {Line}", line);
+            logger.LogWarning("Dynamic Apps index sync: {Line}", line); // index name and SQLSTATE only
         }
-        if (report.Any(l => l.StartsWith("created", StringComparison.Ordinal) || l.StartsWith("dropped", StringComparison.Ordinal)))
+        if (done > 0)
         {
-            logger.LogInformation("Dynamic Apps index sync: {Created} created, {Dropped} dropped, {Wanted} wanted.",
-                report.Count(l => l.StartsWith("created", StringComparison.Ordinal)),
-                report.Count(l => l.StartsWith("dropped", StringComparison.Ordinal)), wanted.Count);
+            logger.LogInformation("Dynamic Apps index sync: {Done} built or dropped, {Wanted} wanted.", done, wanted.Count);
         }
-        // Retried soon: the budget ran out, another replica holds the lock, or a build waited too long
-        // for apps.records. Any other failure (data the key cannot take) waits for the next publish.
-        var more = report.Any(l => l is "more" or "busy" || (l.StartsWith("failed", StringComparison.Ordinal) && l.Contains("lock timeout", StringComparison.Ordinal)));
+        // Retried soon: the budget ran out, another replica holds the lock, or a lock was not granted
+        // (55P03). Any other failure waits for the next publish.
+        var more = report.Any(l => l is "more" or "busy" || (l.StartsWith("failed", StringComparison.Ordinal) && l.EndsWith(" 55P03", StringComparison.Ordinal)));
         if (!more)
         {
             _indexedRevisions = state;

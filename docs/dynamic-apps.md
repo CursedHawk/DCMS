@@ -243,7 +243,7 @@ with a stage choice; email the deal owner when a deal over 10 000 is won."*
 - **Indexes:** `apps.sync_record_indexes`, a function the migration creates with the owner's
   rights, makes and drops them (admin-api's own role may create no index). Builds are not
   concurrent, so each holds writes to `apps.records` while it reads the table; the worker makes at
-  most 8 per call and gives up on a lock after 500 ms, and retries.
+  most 4 per call and 240 an hour, gives up on a lock after 500 ms and on a call after 15 s, and logs index names and SQLSTATEs only. A tenant gets at most 128 indexes across its apps.
 - **Where it runs:** the automation worker runs inside admin-api, with no extra service. The
   database is its queue (`FOR UPDATE SKIP LOCKED` with a lease), so replicas share the work.
 - **Traces:** spans are `dcms.dynamicapp.query|mutation|flow|flow.step`. They are tagged with
