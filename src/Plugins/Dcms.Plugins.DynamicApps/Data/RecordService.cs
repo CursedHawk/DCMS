@@ -334,12 +334,15 @@ public sealed class RecordService(
 
         var errors = new List<ImportError>();
         var names = await ResolveLookupNamesAsync(model, table, rows, ct);
-        var claimed = new HashSet<(Guid, string)>();
-        var accepted = new List<JsonObject>();
+
+        // Every row encoded first; then one query per lookup and one for unique values, for all rows
+        // at once. Checked row by row they were a query each: 1,000 rows cost thousands of round trips.
+        var rowErrors = new Dictionary<string, string>[rows.Count];
+        var writes = new RecordCodec.WriteResult?[rows.Count];
         for (var i = 0; i < rows.Count; i++)
         {
             var values = rows[i].DeepClone().AsObject();
-            var rowErrors = new Dictionary<string, string>(StringComparer.Ordinal);
+            rowErrors[i] = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var member in table.Members.Where(m => m.IsLookup))
             {
                 if (values[member.ApiName] is JsonValue v && v.TryGetValue<string>(out var raw) && raw.Trim() is var text && !Guid.TryParse(text, out _))
@@ -350,7 +353,7 @@ public sealed class RecordService(
                     }
                     else
                     {
-                        rowErrors[member.ApiName] = id is null && names.ContainsKey((member.Id, text.ToLowerInvariant()))
+                        rowErrors[i][member.ApiName] = id is null && names.ContainsKey((member.Id, text.ToLowerInvariant()))
                             ? $"more than one record is called '{text}'; use its id."
                             : $"there is no record called '{text}'.";
                     }
@@ -358,28 +361,58 @@ public sealed class RecordService(
             }
             try
             {
-                var write = RecordCodec.Write(table, values, null, RecordPlane.Admin);
-                await CheckLookupsAsync(model, table, write.Data, write.Changed, RecordPlane.Admin, ct);
-                foreach (var key in RecordCodec.UniqueKeys(table, write.Data))
-                {
-                    if (!claimed.Add(key) || await db.UniqueKeys.AnyAsync(k => k.InstanceId == InstanceId && k.ConstraintId == key.ConstraintId && k.Key == key.Key, ct))
-                    {
-                        rowErrors["_record"] = $"another {table.ApiName} record already has this {Describe(table, key.ConstraintId)}.";
-                    }
-                }
-                if (rowErrors.Count == 0)
-                {
-                    accepted.Add(write.Data);
-                }
+                writes[i] = RecordCodec.Write(table, values, null, RecordPlane.Admin);
             }
             catch (RecordValidationException e)
             {
                 foreach (var (field, message) in e.Errors)
                 {
-                    rowErrors.TryAdd(field, message);
+                    rowErrors[i].TryAdd(field, message);
                 }
             }
-            errors.AddRange(rowErrors.Select(e => new ImportError(i + 1, e.Key, e.Value)));
+        }
+
+        var encoded = writes.OfType<RecordCodec.WriteResult>().ToList();
+        var missing = await MissingLookupsAsync(model, table, encoded, RecordPlane.Admin, ct);
+        var wantedKeys = encoded.SelectMany(w => RecordCodec.UniqueKeys(table, w.Data)).Select(k => k.Key).Distinct().ToList();
+        var taken = wantedKeys.Count == 0
+            ? []
+            : (await db.UniqueKeys.Where(k => k.InstanceId == InstanceId && wantedKeys.Contains(k.Key))
+                    .Select(k => new { k.ConstraintId, k.Key }).ToListAsync(ct))
+                .Select(k => (k.ConstraintId, k.Key)).ToHashSet();
+
+        var claimed = new HashSet<(Guid, string)>();
+        var accepted = new List<JsonObject>();
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (writes[i] is { } write)
+            {
+                var lookups = table.Members
+                    .Where(m => m.IsLookup && write.Changed.Contains(m.ApiName)
+                                && write.Data[m.Key] is JsonValue value && Guid.TryParse(value.GetValue<string>(), out var target)
+                                && missing.Contains((m.Id, target)))
+                    .ToList();
+                foreach (var member in lookups)
+                {
+                    rowErrors[i].TryAdd(member.ApiName,
+                        $"there is no {(model.ById.TryGetValue(member.Lookup!.TargetTableId, out var targetTable) ? targetTable.ApiName : "target")} record {write.Data[member.Key]!.GetValue<string>()}.");
+                }
+                if (lookups.Count == 0)
+                {
+                    foreach (var key in RecordCodec.UniqueKeys(table, write.Data))
+                    {
+                        if (!claimed.Add(key) || taken.Contains(key))
+                        {
+                            rowErrors[i]["_record"] = $"another {table.ApiName} record already has this {Describe(table, key.ConstraintId)}.";
+                        }
+                    }
+                }
+                if (rowErrors[i].Count == 0)
+                {
+                    accepted.Add(write.Data);
+                }
+            }
+            errors.AddRange(rowErrors[i].Select(e => new ImportError(i + 1, e.Key, e.Value)));
         }
         activity?.SetTag("dcms.dynamicapp.rows", rows.Count);
         if (errors.Count > 0 || dryRun)
@@ -617,6 +650,33 @@ public sealed class RecordService(
         // Set-based, under the record.deleted entry the caller declares.
         await db.UniqueKeys.Where(k => k.InstanceId == InstanceId && k.RecordId == record.Id).ExecuteDeleteAsync(ct);
         await db.RelationLinks.Where(l => l.InstanceId == InstanceId && (l.SourceId == record.Id || l.TargetId == record.Id)).ExecuteDeleteAsync(ct);
+    }
+
+    /// <summary>
+    /// The lookup targets the writes point at that do not exist (or, from the site, cannot be read
+    /// there): CheckLookupsAsync for many records, one query per lookup.
+    /// </summary>
+    private async Task<HashSet<(Guid Member, Guid Target)>> MissingLookupsAsync(RuntimeModel model, RuntimeTable table,
+        IReadOnlyList<RecordCodec.WriteResult> writes, RecordPlane plane, CancellationToken ct)
+    {
+        var missing = new HashSet<(Guid, Guid)>();
+        foreach (var member in table.Members.Where(m => m.IsLookup))
+        {
+            var targets = writes
+                .Where(w => w.Changed.Contains(member.ApiName))
+                .Select(w => w.Data[member.Key] is JsonValue value && Guid.TryParse(value.GetValue<string>(), out var id) ? id : (Guid?)null)
+                .OfType<Guid>().Distinct().ToList();
+            if (targets.Count == 0)
+            {
+                continue;
+            }
+            var found = model.ById.TryGetValue(member.Lookup!.TargetTableId, out var targetTable)
+                ? (await (Readable(targetTable, plane) ? Records(model, targetTable, plane) : Records(targetTable))
+                    .Where(r => targets.Contains(r.Id)).Select(r => r.Id).ToListAsync(ct)).ToHashSet()
+                : [];
+            missing.UnionWith(targets.Where(t => !found.Contains(t)).Select(t => (member.Id, t)));
+        }
+        return missing;
     }
 
     /// <summary>Every lookup the write changed points at an existing record of its target table.</summary>

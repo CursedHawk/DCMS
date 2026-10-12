@@ -74,11 +74,13 @@ public sealed class ImportTests(ContentFlowFixture fixture)
                 new { email = "twice@example.com", company = "Nobody Ltd" },
                 new { email = "twice@example.com", vip = "maybe" },
                 new { email = "fine@example.com" },
+                new { email = "ghost@example.com", company = Guid.NewGuid().ToString() },
             },
         }, dryRun: false, ct);
         result.GetProperty("created").GetInt32().Should().Be(0);
         result.GetProperty("errors").EnumerateArray().Select(e => $"{e.GetProperty("row").GetInt32()}:{e.GetProperty("field").GetString()}")
-            .Should().BeEquivalentTo(["2:_record", "3:company", "4:vip", "5:_record"], "taken in the table, and twice in the import");
+            .Should().BeEquivalentTo(["2:_record", "3:company", "4:vip", "5:_record", "6:company"],
+                "taken in the table, twice in the import, and a lookup id with no record behind it");
         (await app.JsonAsync(HttpMethod.Get, "/_records/contacts", ct)).GetProperty("total").GetInt32().Should().Be(1, "not even the good row");
 
         (await app.SendAsync(HttpMethod.Post, "/_records/contacts/import", new { csv = "nickname\nx\n" }, ct))
