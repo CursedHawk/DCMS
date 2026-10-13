@@ -208,7 +208,7 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
   {
     name: 'search_media',
     description:
-      'Search the media library by file name, optionally within one folder. Returns id, file name, category, size and folderId.',
+      'Search the media library by file name, optionally within one folder. Paged: returns total, offset, nextOffset (null on the last page) and assets with id, file name, category, size and folderId. Call again with offset = nextOffset for the next page.',
     permission: Perm.MediaRead,
     input_schema: {
       type: 'object',
@@ -218,6 +218,12 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
           type: 'string',
           description: 'Only assets directly in this folder (from list_media_folders).',
         },
+        limit: {
+          type: 'number',
+          enum: [50, 100, 200],
+          description: 'Page size. Defaults to 200 within a folder, 50 otherwise.',
+        },
+        offset: { type: 'number', description: 'How many matches to skip. Defaults to 0.' },
       },
       additionalProperties: false,
     },
@@ -231,10 +237,22 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
       const matching = needle
         ? assets.filter((a) => a.fileName.toLowerCase().includes(needle))
         : assets;
-      // Capped rather than paged: this is context for a sentence, not a listing, and a
-      // thousand file names would crowd out the actual question. A folder's contents are the
-      // listing itself, so that cap is higher.
-      return JSON.stringify(matching.slice(0, folderId ? 200 : 50));
+      // Paged here, not on the server: the endpoint returns the whole list, and a thousand
+      // file names in one result would crowd out the actual question.
+      const limit = [50, 100, 200].includes(input.limit as number)
+        ? (input.limit as number)
+        : folderId
+          ? 200
+          : 50;
+      const offset =
+        typeof input.offset === 'number' && input.offset > 0 ? Math.floor(input.offset) : 0;
+      const end = offset + limit;
+      return JSON.stringify({
+        total: matching.length,
+        offset,
+        nextOffset: end < matching.length ? end : null,
+        assets: matching.slice(offset, end),
+      });
     },
   },
 

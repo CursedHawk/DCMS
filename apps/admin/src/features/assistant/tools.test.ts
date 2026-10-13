@@ -153,6 +153,34 @@ describe('canWrite', () => {
   });
 });
 
+describe('search_media', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  const photos = Array.from({ length: 250 }, (_, i) => ({ id: `a${i}`, fileName: `p${i}.jpg` }));
+  const page = async (input: Record<string, unknown>) =>
+    JSON.parse(await tool('search_media').run(input, noContext));
+
+  it('pages through a folder larger than one page', async () => {
+    vi.mocked(api.get).mockResolvedValue(photos);
+    const first = await page({ folderId: 'f1' });
+    expect(api.get).toHaveBeenCalledWith('/admin/media?folderId=f1');
+    expect(first).toMatchObject({ total: 250, offset: 0, nextOffset: 200 });
+    expect(first.assets).toHaveLength(200);
+
+    const last = await page({ folderId: 'f1', offset: first.nextOffset });
+    expect(last).toMatchObject({ offset: 200, nextOffset: null });
+    expect(last.assets.map((a: { id: string }) => a.id)).toEqual(
+      photos.slice(200).map((a) => a.id),
+    );
+  });
+
+  it('takes only the offered page sizes', async () => {
+    vi.mocked(api.get).mockResolvedValue(photos);
+    expect((await page({ limit: 100 })).assets).toHaveLength(100);
+    expect((await page({ limit: 7 })).assets).toHaveLength(50);
+  });
+});
+
 describe('the writing tools', () => {
   beforeEach(() => vi.resetAllMocks());
 
