@@ -158,6 +158,18 @@ public static class BffAuthentication
                 return Results.Unauthorized();
             }
 
+            // Asked afresh, not from the cookie check's cache: the console asks this when it loads
+            // and whenever its tab comes back, which is exactly when a sign-out or an account
+            // switch made elsewhere has to show. The platform console gets the same answer from
+            // its refresh at the same moments — the two consoles follow a switch identically.
+            if (context.User.FindFirst(EdgeAuthentication.LoginSessionClaim)?.Value is { Length: > 0 } login
+                && await context.RequestServices.GetRequiredService<LoginSessionCheck>()
+                    .StateAsync(login, context.RequestAborted, fresh: true) is var state and not LoginState.Live)
+            {
+                await LoginSessionCheck.EndAsync(context, context.User, state);
+                return Results.Unauthorized();
+            }
+
             // The cookie alone is not the session: the row behind it is, and it can be deleted
             // from another device — or its login ended by signing out of the platform console,
             // which identity reports by refusing the next refresh. Asking for a usable token
@@ -165,15 +177,6 @@ public static class BffAuthentication
             // every API call 401s.
             if (await tokens.GetAccessTokenAsync(context.User, context.RequestAborted) is null)
             {
-                // The refresh may have been refused because the browser switched accounts
-                // before the cookie check's cached answer caught up. Asked afresh — a 401 here
-                // is rare — so the console follows the switch rather than signing out.
-                if (context.User.FindFirst(EdgeAuthentication.LoginSessionClaim)?.Value is { Length: > 0 } login
-                    && await context.RequestServices.GetRequiredService<LoginSessionCheck>()
-                        .StateAsync(login, context.RequestAborted, fresh: true) == LoginState.Switched)
-                {
-                    context.Response.Headers[LoginSessionCheck.SwitchedHeader] = LoginSessionCheck.SwitchedValue;
-                }
                 return Results.Unauthorized();
             }
 

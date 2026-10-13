@@ -111,26 +111,33 @@ public sealed class LoginSessionCheck(
             return;
         }
 
-        var services = context.HttpContext.RequestServices;
-        var state = await services.GetRequiredService<LoginSessionCheck>()
+        var state = await context.HttpContext.RequestServices.GetRequiredService<LoginSessionCheck>()
             .StateAsync(loginSessionId, context.HttpContext.RequestAborted);
         if (state == LoginState.Live)
         {
             return;
         }
+        context.RejectPrincipal();
+        await EndAsync(context.HttpContext, context.Principal, state);
+    }
+
+    /// <summary>
+    /// Ends this browser's edge session for a login that is no longer live: the BFF row too, so
+    /// the admin console's tokens die with the cookie rather than sitting in Redis (and on the
+    /// account page's device list) until their own expiry. A switch is said so on the response,
+    /// for the admin console to sign in again rather than out.
+    /// </summary>
+    public static async Task EndAsync(HttpContext http, System.Security.Claims.ClaimsPrincipal? principal, LoginState state)
+    {
         if (state == LoginState.Switched)
         {
-            context.HttpContext.Response.Headers[SwitchedHeader] = SwitchedValue;
+            http.Response.Headers[SwitchedHeader] = SwitchedValue;
         }
-
-        // The BFF row too, so the admin console's tokens die with the cookie rather than
-        // sitting in Redis until their own expiry.
-        if (BffTokenProvider.SessionIdOf(context.Principal) is { Length: > 0 } sessionId)
+        if (BffTokenProvider.SessionIdOf(principal) is { Length: > 0 } sessionId)
         {
-            await services.GetRequiredService<BffSessionStore>().RemoveAsync(sessionId);
+            await http.RequestServices.GetRequiredService<BffSessionStore>().RemoveAsync(sessionId);
         }
-        context.RejectPrincipal();
-        await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+        await http.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     }
 
     private sealed record Answer(bool Ended, bool Switched);

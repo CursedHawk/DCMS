@@ -1,6 +1,7 @@
 using Dcms.Shared.Data.DataProtection;
 using Dcms.Shared.Data.Edge;
 using Dcms.Shared.Vault;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.DataProtection;
@@ -218,10 +219,18 @@ public static class EdgeAuthentication
                     // somebody needs them to diagnose why Redis is down.
                     OnTokenValidated = async context =>
                     {
+                        // The session this sign-in replaces. Authenticated here, explicitly:
+                        // the callback is handled before the authentication middleware sets
+                        // HttpContext.User, which is therefore always empty at this point — and
+                        // reading it is how every "Switch account" used to leave the previous
+                        // session behind in Redis, one more device on the account page each time.
+                        var previous = (await context.HttpContext
+                            .AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme)).Principal;
+
                         // Signing in over a session for another login (Switch account, or a
                         // silent re-sign-in after one): that login's cached "still live" must
                         // not keep the Grafana and git cookies on it for another 15 seconds.
-                        if (context.HttpContext.User.FindFirst(LoginSessionClaim)?.Value is { Length: > 0 } previousLogin
+                        if (previous?.FindFirst(LoginSessionClaim)?.Value is { Length: > 0 } previousLogin
                             && previousLogin != context.Principal?.FindFirst(LoginSessionClaim)?.Value)
                         {
                             context.HttpContext.RequestServices.GetRequiredService<LoginSessionCheck>().Forget(previousLogin);
@@ -287,11 +296,11 @@ public static class EdgeAuthentication
                         // old row would otherwise sit in Redis holding the previous account's
                         // tokens, unreachable from this browser and still listed on its account
                         // page until it expired.
-                        if (BffTokenProvider.SessionIdOf(context.HttpContext.User) is { Length: > 0 } previous)
+                        if (BffTokenProvider.SessionIdOf(previous) is { Length: > 0 } previousSession)
                         {
                             await context.HttpContext.RequestServices
                                 .GetRequiredService<BffSessionStore>()
-                                .RemoveAsync(previous);
+                                .RemoveAsync(previousSession);
                         }
 
                         var sessionId = Guid.NewGuid().ToString("N");

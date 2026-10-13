@@ -322,7 +322,6 @@ public sealed class BrowserAccountsTests : IAsyncLifetime
     private static string CsrfToken(string page)
         => Regex.Match(page, """name="__RequestVerificationToken" value="([^"]+)""").Groups[1].Value;
 
-    /// <summary>Posts the switch, returning where it redirected.</summary>
     /// <summary>What the edge is told about a login: (ended, switched).</summary>
     private async Task<(bool Ended, bool Switched)> EdgeAskAsync(string loginSessionId, CancellationToken ct)
     {
@@ -335,6 +334,7 @@ public sealed class BrowserAccountsTests : IAsyncLifetime
         return (body.GetProperty("ended").GetBoolean(), body.GetProperty("switched").GetBoolean());
     }
 
+    /// <summary>Posts the switch, returning where it redirected.</summary>
     private static async Task<string> SwitchAsync(HttpClient browser, Guid id, CancellationToken ct)
     {
         var page = await browser.GetStringAsync("/account/login", ct);
