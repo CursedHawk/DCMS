@@ -70,6 +70,48 @@ test('switching workspace changes the tenant header every later request carries'
   expect(after?.headers['x-dcms-tenant']).toBe(data.OTHER_TENANT.slug);
 });
 
+test('switching workspace from a page of the old one lands on the dashboard', async ({ page }) => {
+  // A route like /sites/<id> names something the next workspace does not have; reloading it
+  // under the new tenant showed an error page.
+  await page.goto('/media');
+  await expect(page.getByText('logo.png')).toBeVisible();
+
+  await page.getByRole('button', { name: data.TENANT.name }).click();
+  await page.getByRole('button', { name: data.OTHER_TENANT.name }).click();
+
+  await expect(page.getByRole('heading', { name: /Welcome back/ })).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole('button', { name: data.OTHER_TENANT.name })).toBeVisible();
+});
+
+test.describe('a remembered workspace this account is not a member of', () => {
+  // What localStorage still holds after switching to an account outside that workspace.
+  test.use({ tenantSlug: 'initech' });
+
+  test('falls back to one of the account\'s own workspaces, on the dashboard', async ({ page, api }) => {
+    await page.goto('/media');
+
+    await expect(page.getByRole('heading', { name: /Welcome back/ })).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByRole('button', { name: data.TENANT.name })).toBeVisible();
+    const last = api.requestsTo('GET', '/api/admin/me/permissions').at(-1);
+    expect(last?.headers['x-dcms-tenant']).toBe(data.TENANT.slug);
+  });
+
+  test.describe('as a SuperAdmin', () => {
+    test.use({ superAdmin: true });
+
+    test('keeps it: the platform console opens any workspace this way', async ({ page }) => {
+      await page.goto('/media');
+      await expect(page.getByText('logo.png')).toBeVisible();
+      await page.waitForLoadState('networkidle');
+
+      await expect(page).toHaveURL(/\/media$/);
+      expect(await page.evaluate(() => localStorage.getItem('dcms.tenant'))).toBe('initech');
+    });
+  });
+});
+
 test.describe('storage notice', () => {
   // Every other spec starts with it dismissed: it is a fixed bar over the foot of every page.
   test.use({ dismissStorageNotice: false });

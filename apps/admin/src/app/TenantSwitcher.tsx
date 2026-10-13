@@ -3,35 +3,55 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Button, cn, Popover, PopoverContent, PopoverTrigger } from '@dcms/ui';
+import { useMyPermissions } from '../lib/permissions';
 import {
   getCurrentTenantSlug,
   setCurrentTenantSlug,
   useMyTenants,
 } from '../tenants';
 
+/**
+ * A full load of the home page. Full, because permissions and almost every query are
+ * tenant-scoped; home, because the current route usually names something of the old tenant
+ * (a site, a plugin instance, a record) that the new one does not have.
+ */
+function goHome() {
+  window.location.assign('/');
+}
+
 export function TenantSwitcher() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const tenants = useMyTenants(true);
+  const me = useMyPermissions(true);
   const [open, setOpen] = useState(false);
   const [current, setCurrent] = useState(getCurrentTenantSlug() ?? '');
 
-  // Auto-select the first tenant if none chosen yet.
+  // Select the first tenant when none is chosen, and replace a selection that is not this
+  // account's. The slug lives in localStorage, so it outlives an account switch and a removal
+  // from the workspace; every switch path ends in a full page load, which is why checking once
+  // the list arrives is enough. SuperAdmins are exempt: they may hold any tenant, which is what
+  // the platform console's ?tenant= links rely on.
   useEffect(() => {
-    if (!current && tenants.data?.length) {
-      const first = tenants.data[0].slug;
-      setCurrent(first);
-      setCurrentTenantSlug(first);
-    }
-  }, [tenants.data, current]);
+    const list = tenants.data;
+    if (!list || !me.data || list.some((x) => x.slug === current)) return;
+    if (current && me.data.isSuperAdmin) return;
+    const next = list[0]?.slug ?? null;
+    setCurrentTenantSlug(next);
+    // Also settles this effect: storing the slug changes the permissions query's key, and a
+    // second run that still saw the stale slug would start a second navigation mid-load.
+    setCurrent(next ?? '');
+    // This page loaded under a tenant the account cannot use, and its route may not exist in
+    // the next one.
+    if (current) goHome();
+  }, [tenants.data, me.data, current]);
 
   const active = tenants.data?.find((x) => x.slug === current);
 
   function pick(slug: string) {
     setCurrentTenantSlug(slug);
     setOpen(false);
-    // Permissions + most data are tenant-scoped; reload to refetch cleanly.
-    window.location.reload();
+    goHome();
   }
 
   return (
