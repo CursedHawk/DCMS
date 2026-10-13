@@ -1,4 +1,17 @@
-import { UserManager, WebStorageStateStore, type User } from 'oidc-client-ts';
+import { ErrorResponse, UserManager, WebStorageStateStore, type User } from 'oidc-client-ts';
+
+/**
+ * Identity's refusal for a login whose browser has since switched to another account. Matched
+ * verbatim — it mirrors `LoginSessions.SwitchedAway` in Dcms.Identity; keep the two equal.
+ *
+ * <p>Switching is for the whole browser: whichever console the account was picked in, the
+ * others follow. So this refusal signs the console IN again, which identity completes without a
+ * prompt as the browser's account — where an ended login signs it out.</p>
+ */
+export const SWITCHED_AWAY = 'This browser has switched to another account.';
+
+/** The edge's equivalent, as a header on the BFF's 401. Mirrors `LoginSessionCheck` there. */
+const SWITCHED_HEADER = 'X-Dcms-Session';
 
 export interface AuthOptions {
   /** The identity service origin. Resolved at RUNTIME so one image serves every environment. */
@@ -97,10 +110,22 @@ export function createAuth(options: AuthOptions): BearerAuthClient {
   // call 401s. Renew on read instead, using the refresh token (offline_access).
   let renewal: Promise<User | null> | null = null;
 
+  /** A refusal because the browser switched accounts: sign in as that account instead. */
+  function followSwitch(err: unknown): boolean {
+    if (!(err instanceof ErrorResponse) || err.error_description !== SWITCHED_AWAY) return false;
+    void userManager.signinRedirect();
+    return true;
+  }
+  // Background renewals too, not only the ones renewSilently starts.
+  userManager.events.addSilentRenewError((err) => {
+    followSwitch(err);
+  });
+
   function renewSilently(): Promise<User | null> {
     renewal ??= userManager
       .signinSilent()
       .catch(async (err: unknown) => {
+        if (followSwitch(err)) return null;
         // Refresh token expired/revoked, or no session at the identity server:
         // drop the stale user so the UI falls back to the sign-in screen.
         console.warn('OIDC silent renew failed; signing out locally.', err);
@@ -127,6 +152,7 @@ export function createAuth(options: AuthOptions): BearerAuthClient {
       // A background renewal that failed leaves an unusable token in the store. Dropping it is
       // what makes the shell show the sign-in screen instead of 401-ing forever.
       const onRenewError = (err: unknown) => {
+        if (err instanceof ErrorResponse && err.error_description === SWITCHED_AWAY) return;
         console.warn('OIDC silent renew failed; signing out locally.', err);
         void userManager.removeUser();
       };
@@ -225,6 +251,12 @@ export function createBffAuth(options: BffAuthOptions = {}): AuthClient {
   async function me(): Promise<AuthSession | null> {
     try {
       const response = await fetch(`${base}/me`, { headers: { Accept: 'application/json' } });
+      if (response.status === 401 && response.headers.get(SWITCHED_HEADER) === 'switched') {
+        // The browser switched accounts elsewhere. Signing in again lands on that account
+        // without a prompt; the shell keeps what it shows until the page navigates away.
+        window.location.assign(`${base}/signin?returnUrl=${returnHere()}`);
+        return current;
+      }
       if (!response.ok) return publish(null);
       const body = (await response.json()) as { sub?: string; name?: string; email?: string };
       if (!body.sub) return publish(null);

@@ -151,3 +151,20 @@ test('"Switch account" asks the edge for identity\'s account list and comes back
   expect(url.searchParams.get('prompt')).toBe('select_account');
   expect(url.searchParams.get('returnUrl')).toBe('/sites');
 });
+
+test('follows an account switch made elsewhere by signing in again, not out', async ({ page }) => {
+  // The browser picked another account in the platform console (or on the sign-in page). The
+  // edge drops this session and says why; signing in again is completed by identity without a
+  // prompt as the browser's account, so this console lands on it too. Registered after
+  // useBffMode's routes, so it wins.
+  await useBffMode(page);
+  await page.route('**/.edge/me', (route) =>
+    route.fulfill({ status: 401, headers: { 'X-Dcms-Session': 'switched' }, body: '' }),
+  );
+  const signin = page.waitForRequest((r) => r.url().includes('/.edge/signin'));
+  await page.goto('/sites');
+
+  const url = new URL((await signin).url());
+  expect(url.searchParams.get('prompt')).toBeNull();
+  expect(url.searchParams.get('returnUrl')).toBe('/sites');
+});

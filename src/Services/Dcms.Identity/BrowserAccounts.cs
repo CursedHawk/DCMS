@@ -42,6 +42,11 @@ public sealed class BrowserAccount
 
     public DateTimeOffset LastUsedAt { get; set; }
 
+    /// <summary>When this account last became the one identity's cookie is signed in as on this
+    /// browser. The row with the latest value is the browser's account; every other row's login
+    /// has been switched away from — see <see cref="BrowserAccounts.HasSwitchedAwayAsync"/>.</summary>
+    public DateTimeOffset SelectedAt { get; set; }
+
     /// <summary>Slides with use: every sign-in, authorization and token refresh from this
     /// login pushes it out by <see cref="BrowserAccounts.Lifetime"/>.</summary>
     public DateTimeOffset ExpiresAt { get; set; }
@@ -143,6 +148,7 @@ public sealed class BrowserAccounts(
         row.LoginSessionId = loginSessionId;
         row.SecurityStamp = user.SecurityStamp;
         row.LastUsedAt = now;
+        row.SelectedAt = now;
         row.ExpiresAt = now + Lifetime;
     }
 
@@ -249,6 +255,20 @@ public sealed class BrowserAccounts(
         return await users.FindByIdAsync(row.UserId.ToString()) is not { } user
                || !await IsLiveAsync(row, user, ct);
     }
+
+    /// <summary>
+    /// Whether this browser has since signed in as a different account. Such a login is still
+    /// alive — "Logged in" on the sign-in page, one click to switch back to — but nothing may
+    /// keep acting on it: switching is for the whole browser, so the admin console, the platform
+    /// console, Grafana and Forgejo all follow the account picked last, in whichever of them it
+    /// was picked. The token endpoint refuses its refreshes and the edge drops its sessions,
+    /// each saying <see cref="LoginSessions.SwitchedAway"/> so the console signs in again —
+    /// silently, as the browser's account — instead of showing its sign-in screen.
+    /// </summary>
+    public Task<bool> HasSwitchedAwayAsync(string loginSessionId, CancellationToken ct = default)
+        => db.BrowserAccounts.AsNoTracking()
+            .Where(r => r.LoginSessionId == loginSessionId)
+            .AnyAsync(r => db.BrowserAccounts.Any(o => o.DeviceHash == r.DeviceHash && o.SelectedAt > r.SelectedAt), ct);
 
     private async Task<bool> IsLiveAsync(BrowserAccount row, DcmsUser user, CancellationToken ct)
         => row.ExpiresAt > clock.GetUtcNow()

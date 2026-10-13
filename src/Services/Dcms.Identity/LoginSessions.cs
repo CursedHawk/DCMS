@@ -46,6 +46,13 @@ public static class LoginSessions
     public const string ClaimType = "dcms_lsid";
 
     /// <summary>
+    /// The refusal for a login its browser has switched away from (see
+    /// <c>BrowserAccounts.HasSwitchedAwayAsync</c>). Matched verbatim by <c>@dcms/core</c>'s
+    /// <c>SWITCHED_AWAY</c>, which signs the console in again rather than out — keep the two equal.
+    /// </summary>
+    public const string SwitchedAway = "This browser has switched to another account.";
+
+    /// <summary>
     /// How long an ended login stays on the revocation list. Must outlast the cookie it refuses,
     /// or a forgotten row lets an expired-but-presented cookie back in — see
     /// <c>Program.cs</c>, where the cookie lifetime is pinned to the same span.

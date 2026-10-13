@@ -14,11 +14,12 @@ import { CSRF_HEADER, createBffAuth, csrfHeader } from './auth';
 const fetchMock = vi.fn();
 const assign = vi.fn();
 
-/** A Response stand-in; this client only reads `ok` and `json()`. */
-function res(status: number, body?: unknown): Response {
+/** A Response stand-in; this client only reads `ok`, `status`, a header and `json()`. */
+function res(status: number, body?: unknown, headers: Record<string, string> = {}): Response {
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: new Headers(headers),
     json: async () => body,
   } as unknown as Response;
 }
@@ -53,6 +54,19 @@ describe('createBffAuth', () => {
     fetchMock.mockResolvedValue(res(401));
 
     await expect(createBffAuth().getUser()).resolves.toBeNull();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('signs in again when the browser switched accounts elsewhere, rather than signing out', async () => {
+    // Picked another account in the platform console or on the sign-in page: identity
+    // completes this sign-in silently as that account, so this console follows the switch.
+    const auth = createBffAuth();
+    fetchMock.mockResolvedValueOnce(res(200, { sub: 'user-1' }));
+    await auth.getUser();
+
+    fetchMock.mockResolvedValueOnce(res(401, undefined, { 'X-Dcms-Session': 'switched' }));
+    await expect(auth.getUser()).resolves.toEqual({ profile: { sub: 'user-1' } });
+    expect(assign).toHaveBeenCalledWith('/.edge/signin?returnUrl=%2Fsites%2F42%3Ftab%3Dfiles');
   });
 
   it('treats a session with no subject as no session', async () => {

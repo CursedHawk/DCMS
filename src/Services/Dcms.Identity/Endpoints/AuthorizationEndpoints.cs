@@ -236,6 +236,20 @@ public static class AuthorizationEndpoints
                     }));
             }
 
+            // Still alive, but this browser has since picked another account: the console
+            // signs in again and lands on that one, so a switch made anywhere reaches it.
+            if (!string.IsNullOrEmpty(loginSessionId)
+                && await browserAccounts.HasSwitchedAwayAsync(loginSessionId, context.RequestAborted))
+            {
+                return Results.Forbid(
+                    authenticationSchemes: [OpenIddictServerAspNetCoreDefaults.AuthenticationScheme],
+                    properties: new AuthenticationProperties(new Dictionary<string, string?>
+                    {
+                        [OpenIddictServerAspNetCoreConstants.Properties.Error] = Errors.InvalidGrant,
+                        [OpenIddictServerAspNetCoreConstants.Properties.ErrorDescription] = LoginSessions.SwitchedAway,
+                    }));
+            }
+
             // A console renewing from this login keeps its account "Logged in" on the sign-in
             // page for as long as the refresh token it just got.
             if (!string.IsNullOrEmpty(loginSessionId))

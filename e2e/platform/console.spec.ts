@@ -89,3 +89,23 @@ test('"Switch account" sends the operator to identity\'s account list', async ({
   expect(url.searchParams.get('prompt')).toBe('select_account');
   expect(url.searchParams.get('client_id')).toBe('dcms-platform-spa');
 });
+
+test('follows an account switch made elsewhere by signing in again, not out', async ({ page }) => {
+  // The browser picked another account in the admin console (or on the sign-in page), so
+  // identity refuses this login's refresh with the switched-away reason. The console must sign
+  // in again — identity completes it silently as the browser's account — instead of showing
+  // its sign-in screen. Registered after the fixture's token route, so it wins.
+  await page.route('**/connect/token', (route) =>
+    route.fulfill({
+      status: 400,
+      headers: { 'Access-Control-Allow-Origin': '*' },
+      json: { error: 'invalid_grant', error_description: 'This browser has switched to another account.' },
+    }),
+  );
+  const authorize = page.waitForRequest((r) => r.url().includes('/connect/authorize'));
+  await page.goto('/');
+
+  const url = new URL((await authorize).url());
+  expect(url.searchParams.get('client_id')).toBe('dcms-platform-spa');
+  expect(url.searchParams.get('prompt')).toBeNull();
+});

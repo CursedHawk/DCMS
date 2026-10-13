@@ -19,10 +19,10 @@ public class LoginSessionCheckTests
     [Fact]
     public async Task Asks_identity_as_the_edge_client_and_reports_an_ended_login()
     {
-        var stub = new Stub(HttpStatusCode.OK, """{"ended":true}""");
+        var stub = new Stub(HttpStatusCode.OK, """{"ended":true,"switched":false}""");
         var check = Build(stub);
 
-        (await check.HasEndedAsync(LoginId, TestContext.Current.CancellationToken)).Should().BeTrue();
+        (await check.StateAsync(LoginId, TestContext.Current.CancellationToken)).Should().Be(LoginState.Ended);
 
         var request = stub.Requests.Single();
         request.RequestUri!.ToString().Should()
@@ -33,18 +33,32 @@ public class LoginSessionCheckTests
     }
 
     [Fact]
-    public async Task One_question_per_login_per_minute()
+    public async Task Reports_a_login_its_browser_switched_away_from()
+    {
+        // Still alive, so not "ended" — but the session gives way to the browser's account.
+        var check = Build(new Stub(HttpStatusCode.OK, """{"ended":false,"switched":true}"""));
+        (await check.StateAsync(LoginId, TestContext.Current.CancellationToken)).Should().Be(LoginState.Switched);
+    }
+
+    [Fact]
+    public async Task One_question_per_login_until_forgotten()
     {
         // A dashboard is a hundred panel queries in a second; each one must not be a call.
-        var stub = new Stub(HttpStatusCode.OK, """{"ended":false}""");
+        var stub = new Stub(HttpStatusCode.OK, """{"ended":false,"switched":false}""");
         var check = Build(stub);
         var ct = TestContext.Current.CancellationToken;
 
         for (var i = 0; i < 20; i++)
         {
-            (await check.HasEndedAsync(LoginId, ct)).Should().BeFalse();
+            (await check.StateAsync(LoginId, ct)).Should().Be(LoginState.Live);
         }
         stub.Requests.Should().ContainSingle();
+
+        // Signing in at the edge as another login forgets this one's answer, so a switch made
+        // in the admin console reaches the Grafana and git cookies on their next request.
+        check.Forget(LoginId);
+        await check.StateAsync(LoginId, ct);
+        stub.Requests.Should().HaveCount(2);
     }
 
     [Theory]
@@ -55,7 +69,7 @@ public class LoginSessionCheckTests
         // Fail open: the edge is how an operator reaches Grafana to find out why identity is
         // down. Refusing every session then would remove the tool along with the service.
         var check = Build(new Stub(status, "nope"));
-        (await check.HasEndedAsync(LoginId, TestContext.Current.CancellationToken)).Should().BeFalse();
+        (await check.StateAsync(LoginId, TestContext.Current.CancellationToken)).Should().Be(LoginState.Live);
     }
 
     private static LoginSessionCheck Build(Stub stub) => new(

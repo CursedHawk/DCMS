@@ -21,6 +21,14 @@ namespace Dcms.Edge.Auth;
 /// issued with (<see cref="EdgeAuthentication.LoginSessionClaim"/>). One question per login per
 /// <see cref="Fresh"/>, from a cache, so a dashboard's hundred panel queries cost one lookup.</para>
 ///
+/// <para><b>Switching follows too.</b> Picking another account — on the sign-in page, from either
+/// console — switches the whole browser. The previous account's login stays alive (it is one
+/// click away on the account list), so it is not "ended"; identity reports it as
+/// <see cref="LoginState.Switched"/> instead, and the session is dropped the same way. On the
+/// Grafana and git hosts the next request then challenges, which identity completes silently as
+/// the browser's account; the admin console is told by <see cref="SwitchedHeader"/> to do the
+/// same.</para>
+///
 /// <para><b>Fails open.</b> If identity cannot be asked, the session stands. The edge is how an
 /// operator reaches Grafana to find out why identity is down; refusing every session at that
 /// moment would take the diagnostic tool away with the thing being diagnosed. The cost is that a
@@ -32,17 +40,24 @@ public sealed class LoginSessionCheck(
     IOptions<EdgeAuthOptions> options,
     ILogger<LoginSessionCheck> logger)
 {
-    /// <summary>How stale an answer may be: the longest a signed-out session survives.</summary>
-    public static readonly TimeSpan Fresh = TimeSpan.FromSeconds(60);
+    /// <summary>How stale an answer may be: the longest a signed-out or switched-away session
+    /// survives. Short, because a switch is something the operator does and then looks for.</summary>
+    public static readonly TimeSpan Fresh = TimeSpan.FromSeconds(15);
+
+    /// <summary>On a response whose session was dropped because the browser switched accounts,
+    /// so the admin console signs in again (silently, as that account) instead of showing its
+    /// sign-in screen. Read by <c>@dcms/core</c>'s BFF client.</summary>
+    public const string SwitchedHeader = "X-Dcms-Session";
+    public const string SwitchedValue = "switched";
 
     /// <summary>After a failed lookup, how long to stop asking — so an identity outage is one
     /// timeout a quarter-minute, not one per request.</summary>
     private static readonly TimeSpan Backoff = TimeSpan.FromSeconds(15);
 
-    public async Task<bool> HasEndedAsync(string loginSessionId, CancellationToken ct)
+    public async Task<LoginState> StateAsync(string loginSessionId, CancellationToken ct, bool fresh = false)
     {
-        var key = $"edge:lsid:{loginSessionId}";
-        if (cache.TryGetValue(key, out bool cached))
+        var key = KeyOf(loginSessionId);
+        if (!fresh && cache.TryGetValue(key, out LoginState cached))
         {
             return cached;
         }
@@ -59,18 +74,31 @@ public sealed class LoginSessionCheck(
 
             using var response = await http.SendAsync(request, ct);
             response.EnsureSuccessStatusCode();
-            var ended = (await response.Content.ReadFromJsonAsync<Answer>(ct))?.Ended ?? false;
-            cache.Set(key, ended, Fresh);
-            return ended;
+            var answer = await response.Content.ReadFromJsonAsync<Answer>(ct);
+            var state = answer switch
+            {
+                { Ended: true } => LoginState.Ended,
+                { Switched: true } => LoginState.Switched,
+                _ => LoginState.Live,
+            };
+            cache.Set(key, state, Fresh);
+            return state;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException
                                    && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Could not ask identity whether a login has ended; keeping the session for now.");
-            cache.Set(key, false, Backoff);
-            return false;
+            cache.Set(key, LoginState.Live, Backoff);
+            return LoginState.Live;
         }
     }
+
+    /// <summary>Drops a cached answer. Called when this browser signs in at the edge as someone
+    /// — the login it held until now has just been switched away from, and the Grafana and git
+    /// cookies still carrying it should find out on their next request, not a minute later.</summary>
+    public void Forget(string loginSessionId) => cache.Remove(KeyOf(loginSessionId));
+
+    private static string KeyOf(string loginSessionId) => $"edge:lsid:{loginSessionId}";
 
     /// <summary>
     /// The cookie handler's validation hook. A ticket with no login id (issued before identity
@@ -84,10 +112,15 @@ public sealed class LoginSessionCheck(
         }
 
         var services = context.HttpContext.RequestServices;
-        if (!await services.GetRequiredService<LoginSessionCheck>()
-                .HasEndedAsync(loginSessionId, context.HttpContext.RequestAborted))
+        var state = await services.GetRequiredService<LoginSessionCheck>()
+            .StateAsync(loginSessionId, context.HttpContext.RequestAborted);
+        if (state == LoginState.Live)
         {
             return;
+        }
+        if (state == LoginState.Switched)
+        {
+            context.HttpContext.Response.Headers[SwitchedHeader] = SwitchedValue;
         }
 
         // The BFF row too, so the admin console's tokens die with the cookie rather than
@@ -100,5 +133,14 @@ public sealed class LoginSessionCheck(
         await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
     }
 
-    private sealed record Answer(bool Ended);
+    private sealed record Answer(bool Ended, bool Switched);
+}
+
+public enum LoginState
+{
+    Live,
+    /// <summary>Signed out, removed, expired, or its password changed.</summary>
+    Ended,
+    /// <summary>Alive, but its browser has signed in as another account since.</summary>
+    Switched,
 }

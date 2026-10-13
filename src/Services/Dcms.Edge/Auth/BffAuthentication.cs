@@ -165,6 +165,15 @@ public static class BffAuthentication
             // every API call 401s.
             if (await tokens.GetAccessTokenAsync(context.User, context.RequestAborted) is null)
             {
+                // The refresh may have been refused because the browser switched accounts
+                // before the cookie check's cached answer caught up. Asked afresh — a 401 here
+                // is rare — so the console follows the switch rather than signing out.
+                if (context.User.FindFirst(EdgeAuthentication.LoginSessionClaim)?.Value is { Length: > 0 } login
+                    && await context.RequestServices.GetRequiredService<LoginSessionCheck>()
+                        .StateAsync(login, context.RequestAborted, fresh: true) == LoginState.Switched)
+                {
+                    context.Response.Headers[LoginSessionCheck.SwitchedHeader] = LoginSessionCheck.SwitchedValue;
+                }
                 return Results.Unauthorized();
             }
 

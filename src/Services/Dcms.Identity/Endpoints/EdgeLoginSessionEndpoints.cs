@@ -31,7 +31,13 @@ public static class EdgeLoginSessionEndpoints
             {
                 return Results.Unauthorized();
             }
-            return Results.Ok(new { ended = await accounts.HasEndedAsync(id, ct) });
+            // `switched`: alive, but its browser has signed in as another account since, so
+            // the edge's session for it must give way to that one.
+            return Results.Ok(new
+            {
+                ended = await accounts.HasEndedAsync(id, ct),
+                switched = await accounts.HasSwitchedAwayAsync(id, ct),
+            });
         }).AuditExempt("A read the edge makes about once a minute per signed-in browser; the "
                        + "sign-out that changes its answer is the record worth having.");
         return app;

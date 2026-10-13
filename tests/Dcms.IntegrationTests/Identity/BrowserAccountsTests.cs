@@ -111,6 +111,40 @@ public sealed class BrowserAccountsTests : IAsyncLifetime
     }
 
     [DockerFact]
+    public async Task Switching_moves_the_whole_browser_and_every_session_on_the_previous_account_follows()
+    {
+        // Switching in one console must reach the others: the platform console's refresh and
+        // the edge's sessions (admin, Grafana, Forgejo) for the previous account give way, each
+        // told "switched" so it signs in again — silently, as the browser's account.
+        var ct = TestContext.Current.CancellationToken;
+        var browser = Browser();
+        await SignInAsync(browser, Ada, ct);
+        var adaAuth = await AuthorizeAsync(browser, ct);
+        var adaTokens = await ExchangeAsync(browser, CodeFrom(adaAuth.Location), adaAuth.Verifier, ct);
+        var adaLogin = IdTokenClaim(adaTokens, "dcms_lsid")!;
+        (await EdgeAskAsync(adaLogin, ct)).Should().Be((false, false));
+
+        await SignInAsync(browser, Grace, ct); // "Use another account"
+        var graceLogin = (await LoginIdOfNextAuthorizationAsync(browser, ct))!;
+
+        using (var refresh = await RefreshAsync(adaTokens, ct))
+        {
+            refresh.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await refresh.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("error_description").GetString()
+                .Should().Be("This browser has switched to another account.", "the consoles match this verbatim");
+        }
+        (await EdgeAskAsync(adaLogin, ct)).Should().Be((false, true), "alive, but no longer the browser's account");
+        (await EdgeAskAsync(graceLogin, ct)).Should().Be((false, false));
+        (await ChooserAsync(browser, ct))[Ada].LoggedIn.Should().BeTrue("switched away from is not signed out");
+
+        // And back: Ada's same login is the browser's again, and Grace's gives way.
+        await SwitchAsync(browser, (await ChooserAsync(browser, ct))[Ada].Id, ct);
+        (await LoginIdOfNextAuthorizationAsync(browser, ct)).Should().Be(adaLogin);
+        (await EdgeAskAsync(adaLogin, ct)).Should().Be((false, false));
+        (await EdgeAskAsync(graceLogin, ct)).Should().Be((false, true));
+    }
+
+    [DockerFact]
     public async Task Signing_out_marks_only_that_account_signed_out_and_it_then_needs_a_password()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -289,6 +323,18 @@ public sealed class BrowserAccountsTests : IAsyncLifetime
         => Regex.Match(page, """name="__RequestVerificationToken" value="([^"]+)""").Groups[1].Value;
 
     /// <summary>Posts the switch, returning where it redirected.</summary>
+    /// <summary>What the edge is told about a login: (ended, switched).</summary>
+    private async Task<(bool Ended, bool Switched)> EdgeAskAsync(string loginSessionId, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/edge/login-sessions/{Uri.EscapeDataString(loginSessionId)}");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Client}:{Secret}")));
+        using var response = await _factory.CreateClient().SendAsync(request, ct);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+        return (body.GetProperty("ended").GetBoolean(), body.GetProperty("switched").GetBoolean());
+    }
+
     private static async Task<string> SwitchAsync(HttpClient browser, Guid id, CancellationToken ct)
     {
         var page = await browser.GetStringAsync("/account/login", ct);

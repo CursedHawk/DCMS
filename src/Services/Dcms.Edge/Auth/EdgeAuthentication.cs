@@ -218,6 +218,15 @@ public static class EdgeAuthentication
                     // somebody needs them to diagnose why Redis is down.
                     OnTokenValidated = async context =>
                     {
+                        // Signing in over a session for another login (Switch account, or a
+                        // silent re-sign-in after one): that login's cached "still live" must
+                        // not keep the Grafana and git cookies on it for another 15 seconds.
+                        if (context.HttpContext.User.FindFirst(LoginSessionClaim)?.Value is { Length: > 0 } previousLogin
+                            && previousLogin != context.Principal?.FindFirst(LoginSessionClaim)?.Value)
+                        {
+                            context.HttpContext.RequestServices.GetRequiredService<LoginSessionCheck>().Forget(previousLogin);
+                        }
+
                         var edge = context.HttpContext.RequestServices
                             .GetRequiredService<IOptions<EdgeOptions>>().Value;
                         if (!auth.Bff
