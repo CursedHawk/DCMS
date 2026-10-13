@@ -30,6 +30,7 @@ const TENANT_PREFIXES = [
   'get_analytics',
   'list_sites',
   'search_media',
+  'list_media_folders',
   'upload_media',
   'create_media_folder',
   'move_media',

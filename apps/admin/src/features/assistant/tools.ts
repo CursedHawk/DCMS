@@ -83,7 +83,10 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
       properties: {
         instanceId: { type: 'string', description: 'Plugin instance id to list from.' },
         contentType: { type: 'string', description: 'Content type name, e.g. "article".' },
-        cursor: { type: 'string', description: 'The nextCursor of the previous page, to continue.' },
+        cursor: {
+          type: 'string',
+          description: 'The nextCursor of the previous page, to continue.',
+        },
       },
       additionalProperties: false,
     },
@@ -195,27 +198,43 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
     run: async () => JSON.stringify(await api.get('/admin/sites')),
   },
   {
+    name: 'list_media_folders',
+    description:
+      'List the folders in the media library. Returns id, name, parentId and assetCount. Pass a folder id to search_media to list what is inside it.',
+    permission: Perm.MediaRead,
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+    run: async () => JSON.stringify(await api.get('/admin/media/folders')),
+  },
+  {
     name: 'search_media',
-    description: 'Search the media library by file name. Returns id, file name, category and size.',
+    description:
+      'Search the media library by file name, optionally within one folder. Returns id, file name, category, size and folderId.',
     permission: Perm.MediaRead,
     input_schema: {
       type: 'object',
-      properties: { query: { type: 'string', description: 'Part of a file name.' } },
+      properties: {
+        query: { type: 'string', description: 'Part of a file name.' },
+        folderId: {
+          type: 'string',
+          description: 'Only assets directly in this folder (from list_media_folders).',
+        },
+      },
       additionalProperties: false,
     },
     run: async (input) => {
       const query = str(input, 'query');
-      const assets =
-        await api.get<{ id: string; fileName: string; category: string; sizeBytes: number }[]>(
-          '/admin/media',
-        );
+      const folderId = str(input, 'folderId');
+      const assets = await api.get<{ fileName: string }[]>(
+        folderId ? `/admin/media?folderId=${encodeURIComponent(folderId)}` : '/admin/media',
+      );
       const needle = query?.toLowerCase();
       const matching = needle
         ? assets.filter((a) => a.fileName.toLowerCase().includes(needle))
         : assets;
       // Capped rather than paged: this is context for a sentence, not a listing, and a
-      // thousand file names would crowd out the actual question.
-      return JSON.stringify(matching.slice(0, 50));
+      // thousand file names would crowd out the actual question. A folder's contents are the
+      // listing itself, so that cap is higher.
+      return JSON.stringify(matching.slice(0, folderId ? 200 : 50));
     },
   },
 
