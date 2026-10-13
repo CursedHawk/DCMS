@@ -65,6 +65,18 @@ describe('SidebarNav', () => {
     expect(screen.queryByRole('heading', { name: 'Nothing here' })).not.toBeInTheDocument();
   });
 
+  it('draws a group without a label as items with no heading, in its place in the order', () => {
+    render(
+      <Nav
+        items={[{ ...items[0], group: 'overview' }, ...items.slice(1)]}
+        groups={[{ id: 'overview' }, ...groups]}
+      />,
+    );
+    expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual(['Build', 'Administer']);
+    const links = screen.getAllByRole('link').map((l) => l.textContent);
+    expect(links[0]).toMatch(/Dashboard/);
+  });
+
   it('renders ungrouped items even when no groups are given at all', () => {
     render(<Nav items={[items[0]]} groups={[]} />);
     expect(screen.getByRole('link', { name: /Dashboard/ })).toBeInTheDocument();

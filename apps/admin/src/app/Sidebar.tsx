@@ -8,7 +8,7 @@ import {
   usePermissions,
   type ShellNavItem,
 } from '@dcms/ui';
-import { NAV, NAV_GROUPS } from './nav';
+import { NAV, NAV_GROUPS, navGroup } from './nav';
 import { iconByName, navLabel, useNavigation } from './navApi';
 import { can } from '../lib/permissions';
 
@@ -59,7 +59,7 @@ export function Sidebar({
           // their own titles, and a per-instance entry its instance's name.
           label: navLabel(item, i18n.language, t),
           icon: iconByName(item.icon),
-          group: item.group,
+          group: navGroup(item.group),
           exact: item.to === '/',
         }))
       : NAV.filter((item) => !item.superAdmin && (!item.perm || can(me, item.perm))).map((item) => ({
@@ -76,7 +76,7 @@ export function Sidebar({
             to: '/tenants',
             label: t('nav.tenants'),
             icon: iconByName('Boxes'),
-            group: 'admin',
+            group: 'platform',
             exact: false,
           },
         ]
@@ -86,7 +86,7 @@ export function Sidebar({
   return (
     <SidebarNav
       items={items}
-      groups={NAV_GROUPS.map((g) => ({ id: g.id, label: t(g.labelKey) }))}
+      groups={NAV_GROUPS.map((g) => ({ id: g.id, label: g.labelKey ? t(g.labelKey) : undefined }))}
       pathname={pathname}
       collapsed={isCollapsed}
       onToggleCollapse={inDrawer ? undefined : onToggle}

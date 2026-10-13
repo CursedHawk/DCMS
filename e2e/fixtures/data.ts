@@ -25,7 +25,7 @@ export const PLUGIN_UI = [
     screens: [
       {
         id: 'inbox', title: 'Forms', titles: { cs: 'Formuláře' }, description: null, scope: 'plugin',
-        icon: 'Inbox', permission: 'content:read', nav: { group: 'main', order: 20 }, allowed: true,
+        icon: 'Inbox', permission: 'content:read', nav: { group: 'apps', order: 20 }, allowed: true,
       },
     ],
     instances: [{ id: 'cccccccc-0000-0000-0000-0000000000f1', slug: 'contact', name: 'Contact', enabled: true }],
@@ -36,7 +36,7 @@ export const PLUGIN_UI = [
     screens: [
       {
         id: 'console', title: 'Chat', titles: null, description: null, scope: 'plugin',
-        icon: 'MessagesSquare', permission: 'chat:read', nav: { group: 'main', order: 40 }, allowed: true,
+        icon: 'MessagesSquare', permission: 'chat:read', nav: { group: 'apps', order: 40 }, allowed: true,
       },
     ],
     // Installed, but switched off: its screen says so instead of rendering.
@@ -73,23 +73,24 @@ export const FORM_SUBMISSIONS = {
 
 export const NAVIGATION = {
   items: [
-    { to: '/', labelKey: 'nav.dashboard', icon: 'LayoutDashboard', group: 'main', label: null },
-    // Plugins' own screens (ADR 0019): their own titles, translated by the plugin, no i18n key.
-    { to: '/app/forms/inbox', labelKey: null, icon: 'Inbox', group: 'main', label: 'Forms', labels: { cs: 'Formuláře' } },
-    { to: '/app/analytics/dashboard', labelKey: null, icon: 'TrendingUp', group: 'main', label: 'Analytics', labels: { cs: 'Analytika' } },
-    { to: '/content', labelKey: 'nav.content', icon: 'FileText', group: 'build', label: null },
-    { to: '/media', labelKey: 'nav.media', icon: 'Image', group: 'build', label: null },
-    { to: '/sites', labelKey: 'nav.sites', icon: 'PanelsTopLeft', group: 'build', label: null },
-    { to: '/marketplace', labelKey: 'nav.marketplace', icon: 'Store', group: 'build', label: null },
-    // One Settings entry over seven sections; the SPA draws that sub-navigation itself.
-    { to: '/settings', labelKey: 'nav.settings', icon: 'Settings', group: 'admin', label: null },
+    { to: '/', labelKey: 'nav.dashboard', icon: 'LayoutDashboard', group: 'overview', label: null },
+    { to: '/sites', labelKey: 'nav.sites', icon: 'PanelsTopLeft', group: 'manage', label: null },
+    { to: '/content', labelKey: 'nav.content', icon: 'FileText', group: 'manage', label: null },
+    { to: '/media', labelKey: 'nav.media', icon: 'Image', group: 'manage', label: null },
     // One plugin instance's own entry. `label` is the tenant's name for it and is deliberately
     // not an i18n key — this is the case the hard-coded nav array could not express, so it is
     // the case the shell spec asserts on.
     {
       to: '/content?instance=cccccccc-0000-0000-0000-000000000001',
-      labelKey: 'nav.content', icon: 'Newspaper', group: 'build', label: 'Press room',
+      labelKey: 'nav.content', icon: 'Newspaper', group: 'manage', label: 'Press room',
     },
+    // Plugins' own screens (ADR 0019): their own titles, translated by the plugin, no i18n key.
+    { to: '/app/forms/inbox', labelKey: null, icon: 'Inbox', group: 'apps', label: 'Forms', labels: { cs: 'Formuláře' } },
+    { to: '/app/analytics/dashboard', labelKey: null, icon: 'TrendingUp', group: 'apps', label: 'Analytics', labels: { cs: 'Analytika' } },
+    { to: '/plugins', labelKey: 'nav.plugins', icon: 'Plug', group: 'extend', label: null },
+    { to: '/marketplace', labelKey: 'nav.marketplace', icon: 'Store', group: 'extend', label: null },
+    // One Settings entry over seven sections; the SPA draws that sub-navigation itself.
+    { to: '/settings', labelKey: 'nav.settings', icon: 'Settings', group: 'workspace', label: null },
   ],
 };
 

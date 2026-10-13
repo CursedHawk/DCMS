@@ -23,6 +23,15 @@ test.describe('a member who may only read content', () => {
     await expect(page.getByRole('heading', { name: 'Content', exact: true })).toBeVisible();
   });
 
+  test('is offered only the dashboard shortcuts it can follow', async ({ page }) => {
+    await page.goto('/');
+    const main = page.getByRole('main');
+    await expect(main.getByRole('link', { name: 'Content' })).toBeVisible();
+    for (const name of ['Media', 'Sites', 'Plugins', 'Domains']) {
+      await expect(main.getByRole('link', { name })).toHaveCount(0);
+    }
+  });
+
   test('is refused the media library, by name', async ({ page, api }) => {
     await page.goto('/media');
 

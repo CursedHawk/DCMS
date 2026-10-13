@@ -34,15 +34,21 @@ public static class NavigationEndpoints
     /// </summary>
     public static readonly NavEntry[] Platform =
     [
-        new("/", "nav.dashboard", "LayoutDashboard", null, "main"),
-        new("/content", "nav.content", "FileText", PlatformPermissions.ContentRead, "build"),
-        new("/media", "nav.media", "Image", PlatformPermissions.MediaRead, "build"),
-        new("/sites", "nav.sites", "PanelsTopLeft", PlatformPermissions.SiteEdit, "build"),
-        new("/marketplace", "nav.marketplace", "Store", PlatformPermissions.PluginsManage, "build"),
+        new("/", "nav.dashboard", "LayoutDashboard", null, "overview"),
 
         // Gated on the same permission as the model proxy, so the menu never offers a history
         // page to a member who cannot hold a conversation in the first place.
-        new("/assistant", "nav.assistant", "Sparkles", PlatformPermissions.SiteEdit, "main"),
+        new("/assistant", "nav.assistant", "Sparkles", PlatformPermissions.SiteEdit, "overview"),
+
+        new("/sites", "nav.sites", "PanelsTopLeft", PlatformPermissions.SiteEdit, "manage"),
+        new("/content", "nav.content", "FileText", PlatformPermissions.ContentRead, "manage"),
+        new("/media", "nav.media", "Image", PlatformPermissions.MediaRead, "manage"),
+
+        // The installed instances and the shopfront are two different questions — "what do I
+        // have" and "what could I add" — and the first one was missing from this list, so it was
+        // drawn on first paint from the SPA's fallback and then vanished when this answered.
+        new("/plugins", "nav.plugins", "Plug", PlatformPermissions.PluginsManage, "extend"),
+        new("/marketplace", "nav.marketplace", "Store", PlatformPermissions.PluginsManage, "extend"),
 
         /*
          * One Settings entry, not seven.
@@ -57,8 +63,21 @@ public static class NavigationEndpoints
          * No permission on the entry: the landing page forwards to the first section the caller
          * may open, and the API reference names none, so it is never a link to nothing.
          */
-        new("/settings", "nav.settings", "Settings", null, "admin"),
+        new("/settings", "nav.settings", "Settings", null, "workspace"),
     ];
+
+    /// <summary>
+    /// Where a plugin's screen goes: <c>apps</c> or <c>manage</c>. A section an older SDK
+    /// offered maps to its successor — <c>build</c> was Sites/Content/Media, so <c>manage</c>;
+    /// <c>main</c> and <c>admin</c> to <c>apps</c>. A plugin must not be able to add a heading
+    /// to the menu or sit beside Dashboard, and an entry in a section the console does not draw
+    /// would silently vanish.
+    /// </summary>
+    public static string PluginGroup(string? declared) => declared switch
+    {
+        "manage" or "build" => "manage",
+        _ => "apps",
+    };
 
     public sealed record NavEntry(
         string To, string LabelKey, string Icon, string? Permission, string Group);
@@ -126,13 +145,13 @@ public static class NavigationEndpoints
                     var icon = screen.IconName ?? manifest.IconName ?? "Plug";
                     if (screen.Scope == AdminScreenScope.Plugin)
                     {
-                        items.Add(new NavItem($"/app/{manifest.Id}/{screen.Id}", null, icon, nav.Group, nav.Order,
+                        items.Add(new NavItem($"/app/{manifest.Id}/{screen.Id}", null, icon, PluginGroup(nav.Group), nav.Order,
                             screen.Title, screen.Titles));
                         continue;
                     }
                     foreach (var instance in group)
                     {
-                        items.Add(new NavItem($"/plugins/{instance.Slug}/{screen.Id}", null, icon, nav.Group, nav.Order,
+                        items.Add(new NavItem($"/plugins/{instance.Slug}/{screen.Id}", null, icon, PluginGroup(nav.Group), nav.Order,
                             screen.Title, screen.Titles, instance.Name));
                     }
                 }

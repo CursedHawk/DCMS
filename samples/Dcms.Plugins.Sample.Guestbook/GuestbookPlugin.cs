@@ -133,7 +133,7 @@ public sealed class GuestbookPlugin : IPlugin
         adminScreens:
         [
             new AdminScreen("overview", "Guestbooks", AdminScreenScope.Plugin, Permission: "read", IconName: "BookOpen",
-                Nav: new AdminNavPlacement("main", 60), Titles: new Dictionary<string, string> { ["cs"] = "Knihy návštěv" },
+                Nav: new AdminNavPlacement("apps", 60), Titles: new Dictionary<string, string> { ["cs"] = "Knihy návštěv" },
                 Description: "Every guestbook with what waits for approval."),
             new AdminScreen("moderation", "Moderation", AdminScreenScope.Instance, Permission: "moderate", IconName: "ShieldCheck",
                 Titles: new Dictionary<string, string> { ["cs"] = "Moderace" },

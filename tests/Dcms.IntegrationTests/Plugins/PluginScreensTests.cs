@@ -39,6 +39,10 @@ public sealed class PluginScreensTests(ContentFlowFixture fixture)
 
         var menu = await Menu();
         menu.Should().Contain("/app/forms/inbox");
+        (await Json(admin, Req(HttpMethod.Get, "/api/admin/navigation", owner, tenant), ct))
+            .GetProperty("items").EnumerateArray()
+            .Single(i => i.GetProperty("to").GetString() == "/app/forms/inbox")
+            .GetProperty("group").GetString().Should().Be("apps", "a plugin's screens sit under Apps, not beside Dashboard");
         menu.Should().NotContain("/forms", "the inbox is the plugin's screen now, not a platform section");
 
         (await admin.SendAsync(Req(HttpMethod.Post, $"/api/admin/plugins/instances/{id}/disable", owner, tenant), ct))

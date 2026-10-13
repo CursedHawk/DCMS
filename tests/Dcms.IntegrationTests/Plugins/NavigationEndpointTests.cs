@@ -44,9 +44,34 @@ public sealed class NavigationEndpointTests
     {
         // A group the sidebar does not know renders nothing at all — the items are filtered
         // into a heading that is never drawn, so they silently vanish from the menu.
-        string[] known = ["main", "build", "admin", "plugins"];
+        string[] known = ["overview", "manage", "apps", "extend", "workspace"];
         NavigationEndpoints.Platform.Should().AllSatisfy(
             e => known.Should().Contain(e.Group, $"'{e.To}' is in group '{e.Group}'"));
+    }
+
+    [Theory]
+    [InlineData("apps", "apps")]
+    [InlineData("manage", "manage")]
+    // What SDKs before apps/manage offered: a plugin built against one keeps a menu entry.
+    [InlineData("main", "apps")]
+    [InlineData("admin", "apps")]
+    [InlineData("build", "manage")]
+    // A plugin cannot add a heading, or put itself in a platform section.
+    [InlineData("overview", "apps")]
+    [InlineData("workspace", "apps")]
+    [InlineData("anything", "apps")]
+    [InlineData(null, "apps")]
+    public void Plugins_place_themselves_in_apps_or_manage_only(string? declared, string expected)
+    {
+        NavigationEndpoints.PluginGroup(declared).Should().Be(expected);
+    }
+
+    [Fact]
+    public void Installed_plugins_and_the_marketplace_are_both_in_the_menu()
+    {
+        // /plugins was missing here while the SPA's first-paint list had it, so it was drawn and
+        // then removed on every cold load.
+        NavigationEndpoints.Platform.Select(e => e.To).Should().Contain(["/plugins", "/marketplace"]);
     }
 
     [Fact]

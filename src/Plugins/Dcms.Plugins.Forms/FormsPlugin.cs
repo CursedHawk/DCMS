@@ -150,7 +150,7 @@ public sealed class FormsPlugin : IPlugin
         adminScreens:
         [
             new AdminScreen("inbox", "Forms", Permission: FormsPermissions.SubmissionsRead, IconName: "Inbox",
-                Nav: new AdminNavPlacement("main", 20), Titles: new Dictionary<string, string> { ["cs"] = "Formuláře" },
+                Nav: new AdminNavPlacement("apps", 20), Titles: new Dictionary<string, string> { ["cs"] = "Formuláře" },
                 Description: "Submissions from every form on your sites."),
         ]);
 

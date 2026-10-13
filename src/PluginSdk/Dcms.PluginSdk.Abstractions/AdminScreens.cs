@@ -38,6 +38,10 @@ public enum AdminScreenScope
 }
 
 /// <summary>A menu entry for a screen.</summary>
-/// <param name="Group">The sidebar section: <c>main</c> (daily work), <c>build</c> (sites and content) or <c>admin</c>.</param>
-/// <param name="Order">Position within the section; platform entries use 0–99.</param>
-public sealed record AdminNavPlacement(string Group = "main", int Order = 100);
+/// <param name="Group">
+/// The sidebar section: <c>apps</c> (a plugin's own work — an inbox, a dashboard, an app's
+/// records) or <c>manage</c> (beside Sites, Content and Media). Any other value is placed in
+/// <c>apps</c>; a plugin cannot add a section of its own.
+/// </param>
+/// <param name="Order">Position within the section.</param>
+public sealed record AdminNavPlacement(string Group = "apps", int Order = 100);

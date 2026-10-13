@@ -24,7 +24,7 @@ test.beforeEach(async ({ api, page }) => {
         screens: [
           {
             id: 'dashboard', title: 'Analytics', titles: null, description: null, scope: 'plugin',
-            icon: 'TrendingUp', permission: 'analytics:read', nav: { group: 'main', order: 30 }, allowed: true,
+            icon: 'TrendingUp', permission: 'analytics:read', nav: { group: 'apps', order: 30 }, allowed: true,
           },
         ],
         instances: [{ id: 'cccccccc-0000-0000-0000-0000000000f3', slug: 'analytics', name: 'Analytics', enabled: true }],

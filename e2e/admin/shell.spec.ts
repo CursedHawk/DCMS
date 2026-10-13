@@ -37,6 +37,25 @@ test('draws the menu the server sent, including a plugin instance entry', async 
   await expect(nav.getByRole('link', { name: 'Chat' })).toHaveCount(0);
 });
 
+test('groups the menu by kind of work, and an unknown section still shows its entries', async ({ page, api }) => {
+  api.on('GET', '/api/admin/navigation', {
+    items: [
+      ...data.NAVIGATION.items,
+      // A section this console has never heard of: drawn under Apps rather than dropped.
+      { to: '/app/guestbook/overview', labelKey: null, icon: 'BookOpen', group: 'somewhere-new', label: 'Guestbooks' },
+    ],
+  });
+  await page.goto('/');
+  const nav = page.getByRole('navigation', { name: 'Sections' });
+
+  await expect(nav.getByRole('heading')).toHaveText(['Create & manage', 'Apps', 'Extend', 'Workspace']);
+  await expect(nav.getByRole('link', { name: 'Guestbooks' })).toBeVisible();
+  // Installed plugins stay in the menu once the server has answered: it used to be drawn on
+  // first paint from the bundle's list and then removed because the server's list lacked it.
+  await expect(nav.getByRole('link', { name: 'Plugins' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Marketplace' })).toBeVisible();
+});
+
 test('navigates without a page reload and marks the current section', async ({ page }) => {
   await page.goto('/');
   const nav = page.getByRole('navigation', { name: 'Sections' });

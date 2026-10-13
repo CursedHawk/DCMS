@@ -115,7 +115,7 @@ public sealed class LiveChatPlugin : IPlugin
         adminScreens:
         [
             new AdminScreen("console", "Chat", Permission: PlatformPermissions.ChatRead, IconName: "MessagesSquare",
-                Nav: new AdminNavPlacement("main", 40), Titles: new Dictionary<string, string> { ["cs"] = "Chat" },
+                Nav: new AdminNavPlacement("apps", 40), Titles: new Dictionary<string, string> { ["cs"] = "Chat" },
                 Description: "Live conversations with your site's visitors; take over from the chatbot."),
         ]);
 

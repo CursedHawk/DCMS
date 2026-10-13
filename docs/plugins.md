@@ -415,7 +415,7 @@ adminScreens:
 [
     // One page for the tenant, /app/{pluginId}/{id}, with a menu entry.
     new AdminScreen("overview", "Guestbooks", AdminScreenScope.Plugin, Permission: "read", IconName: "BookOpen",
-        Nav: new AdminNavPlacement("main", 60), Titles: new Dictionary<string, string> { ["cs"] = "Knihy návštěv" }),
+        Nav: new AdminNavPlacement("apps", 60), Titles: new Dictionary<string, string> { ["cs"] = "Knihy návštěv" }),
     // A tab on each instance's page, /plugins/{slug}/{id}.
     new AdminScreen("moderation", "Moderation", AdminScreenScope.Instance, Permission: "moderate"),
 ],
@@ -432,8 +432,9 @@ export default definePluginAdmin({
 ```
 
 - **Menu entries appear only while an instance of the plugin is enabled**, in the section and
-  order `Nav` names (`main`, `build` or `admin`; platform entries use orders 0–99), titled in the
-  reader's language. A switched-off plugin's plugin-wide screen says so and links to its page;
+  order `Nav` names — `apps` (the default: an inbox, a dashboard, an app's records) or `manage`
+  (beside Sites, Content and Media) — titled in the reader's language. A plugin cannot add a
+  section; the older `main`/`build`/`admin` still load and are placed in `apps`/`manage`. A switched-off plugin's plugin-wide screen says so and links to its page;
   its instance screens stay reachable from that page.
 - A screen renders behind the permission its manifest names (default `plugins:manage`) and in its
   own error boundary; a plugin that throws does not take the console down.

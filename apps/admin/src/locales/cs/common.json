@@ -28,7 +28,14 @@
     "marketplace": "Tržiště",
     "assistant": "Asistent",
     "connections": "Propojení",
-    "usage": "Využití dat"
+    "usage": "Využití dat",
+    "groups": {
+      "manage": "Tvorba a správa",
+      "apps": "Aplikace",
+      "extend": "Rozšíření",
+      "workspace": "Pracovní prostor",
+      "platform": "Platforma"
+    }
   },
   "actions": {
     "create": "Vytvořit",

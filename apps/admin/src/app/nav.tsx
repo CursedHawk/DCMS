@@ -20,7 +20,7 @@ export interface NavItem {
   perm?: string;
   /** Only the platform SuperAdmin sees this. */
   superAdmin?: boolean;
-  group: 'main' | 'build' | 'admin';
+  group: NavGroupId;
 }
 
 /**
@@ -36,19 +36,20 @@ export interface NavItem {
  * `NavigationEndpointTests` on the server side.</p>
  */
 export const NAV: NavItem[] = [
-  { to: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard, group: 'main' },
-
-  { to: '/content', labelKey: 'nav.content', icon: FileText, perm: Perm.ContentRead, group: 'build' },
-  { to: '/media', labelKey: 'nav.media', icon: Image, perm: Perm.MediaRead, group: 'build' },
-  { to: '/plugins', labelKey: 'nav.plugins', icon: Plug, perm: Perm.PluginsManage, group: 'build' },
-  { to: '/marketplace', labelKey: 'nav.marketplace', icon: Store, perm: Perm.PluginsManage, group: 'build' },
-  { to: '/sites', labelKey: 'nav.sites', icon: PanelsTopLeft, perm: Perm.SiteEdit, group: 'build' },
+  { to: '/', labelKey: 'nav.dashboard', icon: LayoutDashboard, group: 'overview' },
 
   /*
    * In the sidebar as well as behind ⌘J. The dock answers a question about the page you are on;
    * this is where the history lives, and history nobody can find is history nobody keeps.
    */
-  { to: '/assistant', labelKey: 'nav.assistant', icon: Sparkles, perm: Perm.SiteEdit, group: 'main' },
+  { to: '/assistant', labelKey: 'nav.assistant', icon: Sparkles, perm: Perm.SiteEdit, group: 'overview' },
+
+  { to: '/sites', labelKey: 'nav.sites', icon: PanelsTopLeft, perm: Perm.SiteEdit, group: 'manage' },
+  { to: '/content', labelKey: 'nav.content', icon: FileText, perm: Perm.ContentRead, group: 'manage' },
+  { to: '/media', labelKey: 'nav.media', icon: Image, perm: Perm.MediaRead, group: 'manage' },
+
+  { to: '/plugins', labelKey: 'nav.plugins', icon: Plug, perm: Perm.PluginsManage, group: 'extend' },
+  { to: '/marketplace', labelKey: 'nav.marketplace', icon: Store, perm: Perm.PluginsManage, group: 'extend' },
 
   /*
    * One Settings entry, not six.
@@ -62,12 +63,34 @@ export const NAV: NavItem[] = [
    * may open, and one of them — the API reference — is open to every member, so it is never a
    * link to nothing.
    */
-  { to: '/settings', labelKey: 'nav.settings', icon: Settings, group: 'admin' },
-  { to: '/tenants', labelKey: 'nav.tenants', icon: Boxes, superAdmin: true, group: 'admin' },
+  { to: '/settings', labelKey: 'nav.settings', icon: Settings, group: 'workspace' },
+  { to: '/tenants', labelKey: 'nav.tenants', icon: Boxes, superAdmin: true, group: 'platform' },
 ];
 
-export const NAV_GROUPS: { id: NavItem['group']; labelKey: string }[] = [
-  { id: 'main', labelKey: 'nav.dashboard' },
-  { id: 'build', labelKey: 'nav.sites' },
-  { id: 'admin', labelKey: 'nav.settings' },
-];
+/**
+ * The sidebar's sections, in order.
+ *
+ * <p>Headings name a kind of work, not one of the destinations under them — this list used to
+ * borrow "Dashboard", "Sites" and "Settings" as headings, so Content and Media read as parts of
+ * Sites and every plugin's inbox as part of the Dashboard.</p>
+ *
+ * <p>`apps` is where plugins' screens go; the server lets a plugin choose only `apps` or
+ * `manage` (NavigationEndpoints.PluginGroup), and `navGroup` below puts anything else there too,
+ * so an entry can never land in a section that is not drawn. `overview` has no heading: two
+ * entries at the top of a menu do not need a title.</p>
+ */
+export const NAV_GROUPS = [
+  { id: 'overview', labelKey: null },
+  { id: 'manage', labelKey: 'nav.groups.manage' },
+  { id: 'apps', labelKey: 'nav.groups.apps' },
+  { id: 'extend', labelKey: 'nav.groups.extend' },
+  { id: 'workspace', labelKey: 'nav.groups.workspace' },
+  { id: 'platform', labelKey: 'nav.groups.platform' },
+] as const;
+
+export type NavGroupId = (typeof NAV_GROUPS)[number]['id'];
+
+/** The section an entry from the server is drawn in; one this console does not know becomes `apps`. */
+export function navGroup(id: string): NavGroupId {
+  return NAV_GROUPS.some((g) => g.id === id) ? (id as NavGroupId) : 'apps';
+}

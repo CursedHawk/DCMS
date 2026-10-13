@@ -69,7 +69,7 @@ test.beforeEach(async ({ api }) => {
         screens: [
           {
             id: 'overview', title: 'Guestbooks', titles: { cs: 'Knihy návštěv' }, description: null, scope: 'plugin',
-            icon: 'BookOpen', permission: 'plugin:sample-guestbook:read', nav: { group: 'main', order: 60 }, allowed: true,
+            icon: 'BookOpen', permission: 'plugin:sample-guestbook:read', nav: { group: 'apps', order: 60 }, allowed: true,
           },
           {
             id: 'moderation', title: 'Moderation', titles: null, description: null, scope: 'instance',

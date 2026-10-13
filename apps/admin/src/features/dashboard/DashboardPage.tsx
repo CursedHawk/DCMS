@@ -2,7 +2,9 @@ import { Link } from '@tanstack/react-router';
 import { motion } from 'framer-motion';
 import { FileText, Globe, Image, PanelsTopLeft, Plug, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Card, Page, PageHeader } from '@dcms/ui';
+import { Card, Page, PageHeader, usePermissions } from '@dcms/ui';
+import { ROUTE_GUARDS } from '../../app/routeGuards';
+import { can } from '../../lib/permissions';
 import { useAuth } from '../../useAuth';
 
 const QUICK: { to: string; icon: LucideIcon; key: string; tone: string }[] = [
@@ -16,6 +18,20 @@ const QUICK: { to: string; icon: LucideIcon; key: string; tone: string }[] = [
 export function DashboardPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const me = usePermissions();
+
+  /*
+   * Only the shortcuts this member can follow.
+   *
+   * Read from the router's own guards rather than a second list, so a shortcut and the page it
+   * opens can never disagree: a tile that leads to "You don't have access" is worse than no tile.
+   */
+  const quick = QUICK.filter((q) => {
+    const guard = ROUTE_GUARDS[q.to];
+    if (!guard) return true;
+    if (guard.superAdmin && !me?.isSuperAdmin) return false;
+    return !guard.perm || can(me, guard.perm);
+  });
 
   return (
     <Page>
@@ -24,9 +40,11 @@ export function DashboardPage() {
         description={t('app.tagline')}
       />
 
-      <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{t('dashboard.quickActions')}</h2>
+      {quick.length > 0 ? (
+        <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{t('dashboard.quickActions')}</h2>
+      ) : null}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        {QUICK.map((q, i) => (
+        {quick.map((q, i) => (
           <motion.div
             key={q.to}
             initial={{ opacity: 0, y: 10 }}

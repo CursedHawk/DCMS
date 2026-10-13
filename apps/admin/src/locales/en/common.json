@@ -28,7 +28,14 @@
     "marketplace": "Marketplace",
     "assistant": "Assistant",
     "connections": "Connections",
-    "usage": "Usage"
+    "usage": "Usage",
+    "groups": {
+      "manage": "Create & manage",
+      "apps": "Apps",
+      "extend": "Extend",
+      "workspace": "Workspace",
+      "platform": "Platform"
+    }
   },
   "actions": {
     "create": "Create",
