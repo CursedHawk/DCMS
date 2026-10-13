@@ -71,7 +71,7 @@ test.beforeEach(async ({ api }) => {
           { id: 'configuration', title: 'Configuration', titles: { cs: 'Konfigurace' }, description: null, scope: 'instance',
             icon: 'Blocks', permission: 'plugin:dynamic-apps:model-read', nav: null, allowed: true },
           { id: 'records', title: 'Records', titles: { cs: 'Záznamy' }, description: null, scope: 'instance',
-            icon: 'Table', permission: 'plugin:dynamic-apps:data-read', nav: null, allowed: true },
+            icon: 'Table', permission: 'plugin:dynamic-apps:data-read', nav: { group: 'apps', order: 10 }, allowed: true },
         ],
         instances: [{ id: INSTANCE.id, slug: 'crm', name: 'CRM', enabled: true }],
       },
@@ -87,6 +87,7 @@ test.beforeEach(async ({ api }) => {
     .on('GET', '/api/admin/plugins/crm/_model', { draft: DRAFT, published: LIVE, hash: DRAFT.hash })
     .on('GET', '/api/admin/plugins/crm/_model/draft', { revision: DRAFT, config: CONFIG })
     .on('GET', '/api/admin/plugins/crm/_model/published', { revision: LIVE, config: CONFIG })
+    .on('GET', '/api/admin/plugins/crm/_model/records', { revision: LIVE, config: CONFIG })
     .on('GET', '/api/admin/plugins/crm/_model/revisions', { items: [DRAFT, LIVE], total: 2 })
     .on('GET', '/api/admin/plugins/crm/_automation/actions', [])
     .on('GET', '/api/admin/plugins/crm/_automation/runs', { items: [], total: 0, page: 1, pageSize: 50 })
@@ -291,4 +292,32 @@ test('a CSV file is checked, then imported into the table', async ({ page, api }
   expect(check!.query.get('dryRun')).toBe('true');
   expect(run!.query.get('dryRun')).toBe('false');
   expect(run!.body).toEqual({ csv: 'title,amount\nBig one,100\nSmall one,5\n' });
+});
+
+test.describe('a member who may read the app\'s records and nothing else', () => {
+  test.use({ grants: ['plugin:dynamic-apps:data-read'] });
+
+  test('opens them from the menu, without the plugin management around them', async ({ page, api }) => {
+    const record = { id: 'dddddddd-0000-0000-0000-000000000002', version: 1, created_at: '2026-10-07T10:00:00Z',
+      updated_at: '2026-10-07T10:00:00Z', title: 'Small one', amount: 10 };
+    api
+      .on('GET', '/api/admin/navigation', {
+        items: [
+          { to: '/', labelKey: 'nav.dashboard', icon: 'LayoutDashboard', group: 'overview', label: null },
+          { to: '/plugins/crm/records', labelKey: null, icon: 'Table', group: 'apps', label: 'Records', detail: 'CRM' },
+          { to: '/settings', labelKey: 'nav.settings', icon: 'Settings', group: 'workspace', label: null },
+        ],
+      })
+      .on('POST', '/api/admin/plugins/crm/_records/deals/query', { items: [record], total: 1, page: 1, pageSize: 25 });
+    await page.goto('/');
+
+    await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Records (CRM)' }).click();
+
+    await expect(page).toHaveURL(/\/plugins\/crm\/records$/);
+    await expect(page.getByRole('heading', { name: 'Records', level: 1 })).toBeVisible();
+    await expect(page.getByRole('table').getByText('Small one')).toBeVisible();
+    // Not the instance page: its tabs are plugin management, which this member does not hold.
+    await expect(page.getByRole('tab', { name: 'Configuration' })).toHaveCount(0);
+    expect(api.requestsTo('GET', '/api/admin/plugins/crm/_model/published')).toHaveLength(0);
+  });
 });

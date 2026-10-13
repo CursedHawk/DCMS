@@ -123,7 +123,10 @@ public sealed class DynamicAppsPlugin : IPlugin
             new AdminScreen("configuration", "Configuration", AdminScreenScope.Instance, Permission: "model-read", IconName: "Blocks",
                 Titles: new Dictionary<string, string> { ["cs"] = "Konfigurace" },
                 Description: "Tables, relationships, views, automations, public access and revisions."),
+            // In the menu, one entry per app: the records are the app, for the people who use it
+            // every day and may never touch its configuration (or hold plugins:manage).
             new AdminScreen("records", "Records", AdminScreenScope.Instance, Permission: "data-read", IconName: "Table",
+                Nav: new AdminNavPlacement("apps", 10),
                 Titles: new Dictionary<string, string> { ["cs"] = "Záznamy" },
                 Description: "Browse and edit the app's records."),
         ],

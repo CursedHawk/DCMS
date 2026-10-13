@@ -29,6 +29,19 @@ internal static class ModelEndpoints
                 Run(async () => await service.GetPublishedAsync(ct) is { } live ? Results.Ok(live) : NotFound("Nothing has been published yet.")))
             .RequirePluginPermission("model-read");
 
+        /*
+         * The published model as somebody browsing records needs it — tables, fields, choices,
+         * relationships and views — for a member who may read the app's data but not its
+         * configuration. The Records screen used /_model/published, which is model-read, so a
+         * data-read member reached a screen that could not draw. Flows are left out: they are
+         * configuration (an automation can name a webhook target), not the shape of the data.
+         */
+        endpoints.MapGet("/_model/records", (ConfigurationService service, CancellationToken ct) =>
+                Run(async () => await service.GetPublishedAsync(ct) is { } live
+                    ? Results.Ok(live with { Config = live.Config with { Flows = [] } })
+                    : NotFound("Nothing has been published yet.")))
+            .RequirePluginPermission("data-read");
+
         endpoints.MapGet("/_model/public", async (RuntimeModelProvider models, CancellationToken ct) =>
                 await models.GetAsync(ct) is { } model ? Results.Ok(PublicApi.Model(model)) : NotFound("Nothing has been published yet."))
             .RequirePluginPermission("model-read");

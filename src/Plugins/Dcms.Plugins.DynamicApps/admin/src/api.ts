@@ -433,14 +433,27 @@ export function useRecords(slug: string, table: string | null, query: RecordQuer
   });
 }
 
-/** Published model for the records screen: what the data plane serves now. */
+/** Published model: what the data plane serves now. Needs model-read. */
 export function usePublished(slug: string) {
+  return usePublishedFrom(slug, '/_model/published');
+}
+
+/**
+ * The published model as the records screen needs it, for anyone who may read records (data-read)
+ * — without flows, which are configuration. A member who may read the data but not the
+ * configuration would otherwise reach a records screen that cannot draw.
+ */
+export function useRecordsModel(slug: string) {
+  return usePublishedFrom(slug, '/_model/records');
+}
+
+function usePublishedFrom(slug: string, path: '/_model/published' | '/_model/records') {
   const api = usePluginApi();
   return useQuery({
-    queryKey: [rootKey(slug), 'document', 'published-only'],
+    queryKey: [rootKey(slug), 'document', 'published-only', path],
     queryFn: async () => {
       try {
-        return await api.get<RevisionDocument>(instancePath(slug, '/_model/published'));
+        return await api.get<RevisionDocument>(instancePath(slug, path));
       } catch (error) {
         if ((error as { status?: number }).status === 404) return null;
         throw error;

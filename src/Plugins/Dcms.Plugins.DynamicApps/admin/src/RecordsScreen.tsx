@@ -41,7 +41,7 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { ImportDialog } from './ImportDialog';
 import {
   rootKey,
-  usePublished,
+  useRecordsModel,
   useRecords,
   type AppConfig,
   type FieldDef,
@@ -85,7 +85,7 @@ function membersOf(config: AppConfig, table: TableDef): Member[] {
 export function RecordsScreen({ instance }: PluginScreenProps) {
   const { t, i18n } = usePluginT();
   const slug = instance!.slug;
-  const published = usePublished(slug);
+  const published = useRecordsModel(slug);
   const config = published.data?.config ?? null;
   const mayWrite = useCan('data-write');
   const mayImport = useCan('data-import');

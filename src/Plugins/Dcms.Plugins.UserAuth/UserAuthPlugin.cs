@@ -60,6 +60,7 @@ public sealed class UserAuthPlugin : IPlugin
         adminScreens:
         [
             new AdminScreen("users", "Users", AdminScreenScope.Instance, Permission: "users-read", IconName: "Users",
+                Nav: new AdminNavPlacement("apps", 50),
                 Titles: new Dictionary<string, string> { ["cs"] = "Uživatelé" },
                 Description: "The people who can sign in to your sites, and their groups."),
             new AdminScreen("access", "Access", AdminScreenScope.Instance, Permission: "users-read", IconName: "ShieldCheck",

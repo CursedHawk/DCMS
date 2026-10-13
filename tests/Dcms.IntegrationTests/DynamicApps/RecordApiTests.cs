@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using Dcms.IntegrationTests.Cms;
 
@@ -188,6 +189,41 @@ public sealed class RecordApiTests(ContentFlowFixture fixture)
         await other.PublishAsync(Crm, ct);
         (await other.JsonAsync(HttpMethod.Get, "/_records/companies", ct)).GetProperty("total").GetInt32().Should().Be(0);
         (await other.SendAsync(HttpMethod.Get, $"/_records/companies/{id}", null, ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [DockerFact]
+    public async Task A_record_reader_finds_the_app_in_the_menu_and_can_draw_its_records()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.PublishAsync(Crm, ct);
+        var reader = await app.AddMemberAsync(["plugin:dynamic-apps:data-read"], ct);
+
+        // The menu offers the app's records to the people who use them, under Apps.
+        var entry = (await Menu(app, reader, ct))
+            .Single(i => i.GetProperty("to").GetString() == "/plugins/crm/records");
+        entry.GetProperty("group").GetString().Should().Be("apps");
+        entry.GetProperty("detail").GetString().Should().Be("CRM");
+
+        // And the screen behind it can draw: the published model without its configuration-only
+        // parts — never the configuration itself.
+        var model = await app.JsonAsync(HttpMethod.Get, "/_model/records", ct, @as: reader);
+        model.GetProperty("config").GetProperty("tables").GetArrayLength().Should().BeGreaterThan(0);
+        model.GetProperty("config").GetProperty("flows").GetArrayLength().Should().Be(0);
+        (await app.SendAsync(HttpMethod.Get, "/_model/published", null, ct, reader)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // Somebody who may not read the records gets neither.
+        var outsider = await app.AddMemberAsync(["content:read"], ct);
+        (await app.SendAsync(HttpMethod.Get, "/_model/records", null, ct, outsider)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await Menu(app, outsider, ct)).Select(i => i.GetProperty("to").GetString())
+            .Should().NotContain("/plugins/crm/records");
+    }
+
+    private static async Task<List<JsonElement>> Menu(AppHarness app, Guid who, CancellationToken ct)
+    {
+        var res = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, "/api/admin/navigation", who, app.Tenant), ct);
+        res.StatusCode.Should().Be(HttpStatusCode.OK, await res.Content.ReadAsStringAsync(ct));
+        return (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("items").EnumerateArray().ToList();
     }
 
     private static async Task<string> Create(AppHarness app, string table, object values, CancellationToken ct) =>

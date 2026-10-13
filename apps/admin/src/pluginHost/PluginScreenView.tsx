@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { PackageX, PowerOff } from 'lucide-react';
-import { CenteredSpinner, EmptyState, Page, RequirePermission } from '@dcms/ui';
+import { CenteredSpinner, EmptyState, Page, PageHeader, RequirePermission } from '@dcms/ui';
 import type { PluginInstanceRef } from '@dcms/plugin-ui';
 import { iconByName } from '../app/navApi';
 import { screenTitle, usePluginUi, type PluginUiInfo } from './api';
@@ -107,4 +107,46 @@ export function PluginAppPage({ pluginId, screenId }: { pluginId: string; screen
     );
   }
   return <PluginScreenView plugin={plugin} screenId={screenId} instance={null} />;
+}
+
+/**
+ * `/plugins/{slug}/{screenId}` for a member who does not manage plugins: the screen alone.
+ *
+ * <p>An app's records or a realm's users are daily work for people who may never configure the
+ * plugin — and the instance page around these screens (settings, wiring, data sets, history) is
+ * plugin management, gated on plugins:manage. So a menu entry for "Records (CRM)" used to lead
+ * those people to a refusal. Here they get the screen under a plain header; the screen's own
+ * permission still guards it (PluginScreenView), and the server guards every call it makes.</p>
+ *
+ * <p>Everything comes from `/admin/plugin-ui`, which any member may read — not from the plugin
+ * management endpoints the full instance page uses.</p>
+ */
+export function PluginInstanceScreenPage({ slug, screenId }: { slug: string; screenId: string }) {
+  const { t, i18n } = useTranslation();
+  const ui = usePluginUi();
+
+  if (ui.isLoading) return <CenteredSpinner />;
+  const plugin = ui.data?.find((p) => p.instances.some((i) => i.slug === slug));
+  const instance = plugin?.instances.find((i) => i.slug === slug);
+  if (!plugin || !instance) {
+    return (
+      <Page>
+        <EmptyState icon={PackageX} title={t('pluginPage.notFound')} description={t('pluginPage.notFoundHint', { slug })} />
+      </Page>
+    );
+  }
+  if (!instance.enabled) {
+    return (
+      <Page>
+        <EmptyState icon={PowerOff} title={t('pluginHost.off', { plugin: instance.name })} description={t('pluginHost.offHint')} />
+      </Page>
+    );
+  }
+  const screen = plugin.screens.find((s) => s.id === screenId);
+  return (
+    <Page className="max-w-7xl">
+      <PageHeader title={screen ? screenTitle(screen, i18n.language) : screenId} description={instance.name} />
+      <PluginScreenView plugin={plugin} screenId={screenId} instance={instance} />
+    </Page>
+  );
 }

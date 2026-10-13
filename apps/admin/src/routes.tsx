@@ -1,9 +1,10 @@
 import { Outlet, createRootRoute, createRoute, redirect, useParams } from '@tanstack/react-router';
 import { lazy } from 'react';
-import { RequirePermission } from '@dcms/ui';
+import { CenteredSpinner, RequirePermission, usePermissions } from '@dcms/ui';
 import { AppShell } from './app/AppShell';
 import { LEGACY_PLUGIN_PATHS, LEGACY_SETTINGS_PATHS, ROUTE_GUARDS, type RouteGuard } from './app/routeGuards';
 import { DashboardPage } from './features/dashboard/DashboardPage';
+import { can } from './lib/permissions';
 
 /*
  * Every page except the dashboard is loaded on demand.
@@ -58,6 +59,9 @@ const PluginReferencePage = lazy(() =>
 );
 const PluginAppPage = lazy(() =>
   import('./pluginHost/PluginScreenView').then((m) => ({ default: m.PluginAppPage })),
+);
+const PluginInstanceScreenPage = lazy(() =>
+  import('./pluginHost/PluginScreenView').then((m) => ({ default: m.PluginInstanceScreenPage })),
 );
 const PluginInstancePage = lazy(() =>
   import('./features/plugins/PluginInstancePage').then((m) => ({ default: m.PluginInstancePage })),
@@ -143,16 +147,22 @@ const pluginInstanceRoute = createRoute({
     );
   },
 });
-/** An instance screen a plugin adds: a tab of the instance's page. */
+/**
+ * An instance screen a plugin adds. For a plugin manager, a tab of the instance's page; for
+ * anyone else — the people an app's records or a realm's users are for — the screen alone,
+ * guarded by the screen's own permission rather than plugins:manage.
+ */
 const pluginInstanceScreenRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/plugins/$slug/$screen',
   component: function PluginInstanceScreen() {
     const { slug, screen } = useParams({ strict: false });
-    return (
-      <RequirePermission perm={ROUTE_GUARDS['/plugins/$slug'].perm}>
-        <PluginInstancePage slug={slug as string} screen={screen as string} />
-      </RequirePermission>
+    const me = usePermissions();
+    if (!me) return <CenteredSpinner />;
+    return can(me, ROUTE_GUARDS['/plugins/$slug'].perm!) ? (
+      <PluginInstancePage slug={slug as string} screen={screen as string} />
+    ) : (
+      <PluginInstanceScreenPage slug={slug as string} screenId={screen as string} />
     );
   },
 });
