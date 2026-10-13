@@ -148,3 +148,25 @@ test.describe('storage notice', () => {
     await expect(page.getByRole('status').filter({ hasText: /stores only what it needs/i })).toHaveCount(0);
   });
 });
+
+test.describe('the command palette', () => {
+  test('finds a settings section by name, and remembers where you have been', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Media' }).click();
+    await expect(page).toHaveURL(/\/media$/);
+    await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Marketplace' }).click();
+    await expect(page).toHaveURL(/\/marketplace$/);
+
+    await page.keyboard.press('ControlOrMeta+k');
+    const palette = page.getByRole('dialog');
+    // Grouped, with where you were before this page first.
+    await expect(palette.getByRole('group', { name: 'Recent' }).getByRole('option', { name: 'Media' })).toBeVisible();
+    await expect(palette.getByRole('group', { name: 'Apps' }).getByRole('option', { name: 'Forms' })).toBeVisible();
+
+    // Members, Domains and the rest have no sidebar line; the palette is how you reach them.
+    await palette.getByRole('combobox').fill('domains');
+    await expect(palette.getByRole('group', { name: 'Recent' })).toHaveCount(0);
+    await palette.getByRole('option', { name: 'Domains' }).click();
+    await expect(page).toHaveURL(/\/settings\/domains$/);
+  });
+});

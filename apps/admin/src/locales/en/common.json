@@ -38,6 +38,10 @@
       "platform": "Platform"
     }
   },
+  "palette": {
+    "pages": "Pages",
+    "recent": "Recent"
+  },
   "actions": {
     "create": "Create",
     "save": "Save",

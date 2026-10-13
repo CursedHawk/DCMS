@@ -38,6 +38,10 @@
       "platform": "Platforma"
     }
   },
+  "palette": {
+    "pages": "Stránky",
+    "recent": "Nedávné"
+  },
   "actions": {
     "create": "Vytvořit",
     "save": "Uložit",

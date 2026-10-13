@@ -19,6 +19,7 @@ import { LANGUAGES, setLanguage } from '../lib/i18n';
 import { logout, switchAccount } from '../auth';
 import { useAuth } from '../useAuth';
 import { useAi } from '../features/assistant/context';
+import { modifierLabel } from '../features/ide/commands';
 import { TenantSwitcher } from './TenantSwitcher';
 
 export function Topbar({
@@ -71,7 +72,7 @@ export function Topbar({
           >
             <Search className="h-4 w-4" aria-hidden />
             {t('actions.search')}
-            <kbd className="ml-6 rounded border bg-background px-1.5 text-[10px]">⌘K</kbd>
+            <kbd className="ml-6 rounded border bg-background px-1.5 text-[10px]">{modifierLabel()} K</kbd>
           </button>
 
           {/* Below md the labelled search box does not fit; the shortcut is also unavailable
