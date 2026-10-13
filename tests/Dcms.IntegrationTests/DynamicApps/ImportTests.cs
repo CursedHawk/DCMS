@@ -58,6 +58,25 @@ public sealed class ImportTests(ContentFlowFixture fixture)
     }
 
     [DockerFact]
+    public async Task Names_that_differ_only_in_case_are_told_apart_by_their_exact_spelling()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.PublishAsync(Model, ct);
+        // A unique field compares exactly, so both may exist.
+        (await ImportAsync(app, "companies", new { rows = new[] { new { name = "Alder S.R.L." }, new { name = "Alder S.r.l." } } }, dryRun: false, ct))
+            .GetProperty("created").GetInt32().Should().Be(2);
+
+        var bad = await ImportAsync(app, "contacts", new { rows = new[] { new { email = "c@example.com", company = "ALDER S.R.L." } } }, dryRun: true, ct);
+        bad.GetProperty("errors")[0].GetProperty("message").GetString().Should().Contain("more than one record", "neither is spelled so");
+
+        (await ImportAsync(app, "contacts", new { rows = new[] { new { email = "a@example.com", company = "Alder S.R.L." },
+            new { email = "b@example.com", company = "Alder S.r.l." } } }, dryRun: false, ct)).GetProperty("created").GetInt32().Should().Be(2);
+        var items = (await app.JsonAsync(HttpMethod.Get, "/_records/contacts?sort=email&expand=company", ct)).GetProperty("items");
+        items.EnumerateArray().Select(i => i.GetProperty("company").GetProperty("name").GetString()).Should().Equal("Alder S.R.L.", "Alder S.r.l.");
+    }
+
+    [DockerFact]
     public async Task One_bad_row_imports_nothing_and_every_problem_is_reported_by_row()
     {
         var ct = TestContext.Current.CancellationToken;

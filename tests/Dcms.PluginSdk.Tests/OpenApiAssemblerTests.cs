@@ -40,6 +40,20 @@ public class OpenApiAssemblerTests
     }
 
     [Fact]
+    public void An_instance_without_operations_adds_no_tag()
+    {
+        var assembler = new OpenApiAssembler(new PluginRegistry([new BlogPlugin(), new Dcms.Plugins.Search.SearchPlugin()]));
+
+        var doc = assembler.Build("Acme", [
+            Instance("blog", "devblog", "Dev Blog", "Engineering deep dives."),
+            Instance("search", "search", "Site search", "Full-text search."),
+        ]);
+
+        // Search serves no public operation: it used to leave { "name": "", "description": "" } behind.
+        doc["tags"]!.AsArray().Select(t => t!["name"]!.GetValue<string>()).Should().Equal("Dev Blog");
+    }
+
+    [Fact]
     public void Types_the_item_data_schema_from_the_content_type_fields()
     {
         var assembler = new OpenApiAssembler(new PluginRegistry([new BlogPlugin()]));

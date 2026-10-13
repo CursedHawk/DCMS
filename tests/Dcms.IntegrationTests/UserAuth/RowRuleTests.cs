@@ -209,6 +209,26 @@ public sealed class RowRuleTests(ContentFlowFixture fixture)
         Names(await JsonAsync(await SiteAsync(app, HttpMethod.Get, "/api/crm/data/projects", bob, ct), ct), "name").Should().BeEmpty();
     }
 
+    [DockerFact]
+    public async Task Anyone_may_file_a_record_into_a_create_only_table_with_rules()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (app, tenantId) = await SetUpAsync(ct);
+        await app.PublishAsync("""
+            [ { "op": "create", "type": "table", "value": { "apiName": "leads", "displayName": "Lead", "primaryFieldId": "email",
+                  "public": { "create": true, "rules": [ { "path": [], "field": "owner_email", "matches": "user.email", "update": true } ] },
+                  "fields": [ { "apiName": "email", "displayName": "Email", "type": "email", "required": true },
+                              { "apiName": "owner_email", "displayName": "Owner", "type": "email" } ] } } ]
+            """, ct);
+        var ada = RealmTokens.Mint(tenantId, Guid.NewGuid(), email: "ada@corp.test");
+
+        // Web-to-lead: the visitor files it and never sees it again; the rep it names does.
+        (await SiteAsync(app, HttpMethod.Post, "/api/crm/data/leads", null, ct, new { email = "prospect@example.test", owner_email = "ada@corp.test" }))
+            .StatusCode.Should().Be(HttpStatusCode.Created, "a create the table allows needs no rule to reach the new record");
+        (await SiteAsync(app, HttpMethod.Get, "/api/crm/data/leads", null, ct)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        Names(await JsonAsync(await SiteAsync(app, HttpMethod.Get, "/api/crm/data/leads", ada, ct), ct), "email").Should().Equal(["prospect@example.test"]);
+    }
+
     private static async Task GrantAsync(AppHarness app, Guid group, string[] permissions, bool bypass, CancellationToken ct)
     {
         var res = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/users/roles", app.Owner, app.Tenant,

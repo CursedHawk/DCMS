@@ -99,13 +99,14 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
             }
 
             var fragment = fragmentOf(plugin, instance);
-            tags.Add(new JsonObject { ["name"] = fragment.TagName, ["description"] = fragment.TagDescription });
+            // A plugin without a fragment of its own (OpenApiFragment.Empty) is tagged by the instance.
+            var (tag, tagDescription) = fragment.TagName.Length > 0 ? (fragment.TagName, fragment.TagDescription) : (instance.Name, instance.Description);
 
             foreach (var path in fragment.Paths)
             {
                 var fullPath = $"/api/{instance.Slug}{path.RelativePath}";
                 var pathItem = paths[fullPath] as JsonObject ?? [];
-                pathItem[path.Method] = BuildOperation(fragment.TagName, path, tagging && IsListOperation(path, fragment.Schemas));
+                pathItem[path.Method] = BuildOperation(tag, path, tagging && IsListOperation(path, fragment.Schemas));
                 paths[fullPath] = pathItem;
             }
 
@@ -114,7 +115,12 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
                 schemas[name] = schema.DeepClone();
             }
 
-            AddContractOperations(plugin, instance, fragment, tags, paths);
+            // Only an instance with operations gets a tag: one without (Search, Google Analytics) would
+            // leave an empty or unused tag in the document.
+            if (AddContractOperations(plugin, instance, tag, paths) || fragment.Paths.Count > 0)
+            {
+                tags.Add(new JsonObject { ["name"] = tag, ["description"] = tagDescription });
+            }
         }
 
         if (tagging)
@@ -164,13 +170,13 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
     /// <c>/api/{slug}/_contracts/{contractId}/{operation}</c> (served by the contract dispatcher),
     /// so a site's generated client can call them like any other route of the instance.
     /// </summary>
-    private void AddContractOperations(IPlugin plugin, PluginInstanceContext instance, OpenApiFragment fragment, JsonArray tags, JsonObject paths)
+    /// <returns>Whether the instance exposes any.</returns>
+    private bool AddContractOperations(IPlugin plugin, PluginInstanceContext instance, string tag, JsonObject paths)
     {
         var contracts = (plugin.Manifest.Provides ?? [])
             .Select(p => registry.FindContract(p.Contract)?.Descriptor)
             .OfType<ContractDescriptor>()
             .ToList();
-        var tag = fragment.TagName.Length > 0 ? fragment.TagName : instance.Name;
         var added = false;
         foreach (var contract in contracts)
         {
@@ -205,10 +211,7 @@ public sealed class OpenApiAssembler(PluginRegistry registry)
                 added = true;
             }
         }
-        if (added && fragment.TagName.Length == 0)
-        {
-            tags.Add(new JsonObject { ["name"] = tag, ["description"] = instance.Description });
-        }
+        return added;
     }
 
     /// <summary>The last dotted segment of a name, camel-cased: "visitors.identity" → "identity", "GetCurrent" → "getCurrent".</summary>

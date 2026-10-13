@@ -138,6 +138,9 @@ public sealed class AutomationTests(ContentFlowFixture fixture)
         var failed = (await WaitForRunsAsync(app, "fix", 1, ct, done: r => r.All(x => x.GetProperty("status").GetString() == "failed"))).Single();
         failed.GetProperty("error").GetString().Should().Contain("There is no deals record");
         failed.GetProperty("attempts").GetInt32().Should().Be(1, "a missing record is not retried automatically");
+        (await app.JsonAsync(HttpMethod.Get, "/_automation/runs?status=Failed", ct)).GetProperty("total").GetInt32().Should().Be(1);
+        (await app.SendAsync(HttpMethod.Get, "/_automation/runs?status=queued", null, ct)).StatusCode
+            .Should().Be(HttpStatusCode.BadRequest, "an unknown status is refused, not ignored");
 
         await app.JsonAsync(HttpMethod.Post, $"/_automation/runs/{runId}/retry", ct, expect: HttpStatusCode.Accepted);
         await WaitAsync(async () => (await app.JsonAsync(HttpMethod.Get, $"/_automation/runs/{runId}", ct))

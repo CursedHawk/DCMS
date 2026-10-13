@@ -434,7 +434,8 @@ public static class Expressions
 
         /// <summary>
         /// Comparisons take plain values: a deep comparison of two large objects is work the
-        /// evaluation's step limit does not see, so it is not offered.
+        /// evaluation's step limit does not see, so it is not offered. Against null anything
+        /// compares (<c>steps.lookup != null</c>): that is a presence check, not a deep comparison.
         /// </summary>
         private static JsonNode? Scalar(JsonNode? value, Node at) => value is null or JsonValue
             ? value
@@ -451,8 +452,8 @@ public static class Expressions
         {
             switch (b.Op)
             {
-                case "==": return Same(Scalar(left, b), Scalar(right, b));
-                case "!=": return !Same(Scalar(left, b), Scalar(right, b));
+                case "==": return left is null || right is null ? left is null && right is null : Same(Scalar(left, b), Scalar(right, b));
+                case "!=": return left is null || right is null ? !(left is null && right is null) : !Same(Scalar(left, b), Scalar(right, b));
                 case "in":
                     Scalar(left, b);
                     return right switch

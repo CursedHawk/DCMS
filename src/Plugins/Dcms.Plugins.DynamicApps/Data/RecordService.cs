@@ -215,7 +215,6 @@ public sealed class RecordService(
 
         Declare("record.created", table, record.Id);
         await SaveAsync(ct);
-        await CheckReachAsync(model, table, record.Id, plane, PublicOp.Create, ct);
         await tx.CommitAsync(ct);
         return RecordCodec.Read(table, record, plane);
     }
@@ -237,7 +236,7 @@ public sealed class RecordService(
         await UpdateCoreAsync(model, table, record, values, plane, ct);
         Declare("record.updated", table, record.Id);
         await SaveAsync(ct);
-        await CheckReachAsync(model, table, record.Id, plane, PublicOp.Update, ct);
+        await CheckReachAsync(model, table, record.Id, plane, ct);
         await tx.CommitAsync(ct);
         return RecordCodec.Read(table, record, plane);
     }
@@ -351,13 +350,13 @@ public sealed class RecordService(
             {
                 if (values[member.ApiName] is JsonValue v && v.TryGetValue<string>(out var raw) && raw.Trim() is var text && !Guid.TryParse(text, out _))
                 {
-                    if (names.TryGetValue((member.Id, text.ToLowerInvariant()), out var id) && id is { } target)
+                    if (names.Find(member.Id, text, out var ambiguous) is { } target)
                     {
                         values[member.ApiName] = target.ToString();
                     }
                     else
                     {
-                        rowErrors[i][member.ApiName] = id is null && names.ContainsKey((member.Id, text.ToLowerInvariant()))
+                        rowErrors[i][member.ApiName] = ambiguous
                             ? $"more than one record is called '{text}'; use its id."
                             : $"there is no record called '{text}'.";
                     }
@@ -454,12 +453,41 @@ public sealed class RecordService(
     }
 
     /// <summary>
-    /// The records the import's lookups name by their primary field rather than by id:
-    /// (lookup, lower-cased name) → the id, or null when the name is not unique.
+    /// The records an import's lookups name by their primary field: (lookup, name) → id, or null
+    /// when more than one record has the name. Names match without regard to case; when that is
+    /// ambiguous, the record spelled exactly so wins, so "Acme S.R.L." and "Acme S.r.l." (both
+    /// allowed by a case-sensitive unique field) can each be named.
     /// </summary>
-    private async Task<Dictionary<(Guid, string), Guid?>> ResolveLookupNamesAsync(RuntimeModel model, RuntimeTable table, IReadOnlyList<JsonObject> rows, CancellationToken ct)
+    private sealed class LookupNames
     {
-        var found = new Dictionary<(Guid, string), Guid?>();
+        public Dictionary<(Guid, string), Guid?> Folded { get; } = [];
+        public Dictionary<(Guid, string), Guid?> Exact { get; } = [];
+
+        public void Add(Guid member, string name, Guid id)
+        {
+            Folded[(member, name.ToLowerInvariant())] = Folded.ContainsKey((member, name.ToLowerInvariant())) ? null : id;
+            Exact[(member, name)] = Exact.ContainsKey((member, name)) ? null : id;
+        }
+
+        public Guid? Find(Guid member, string name, out bool ambiguous)
+        {
+            ambiguous = false;
+            if (Folded.TryGetValue((member, name.ToLowerInvariant()), out var folded) && folded is { } id)
+            {
+                return id;
+            }
+            if (Exact.TryGetValue((member, name), out var exact) && exact is { } exactId)
+            {
+                return exactId;
+            }
+            ambiguous = Folded.ContainsKey((member, name.ToLowerInvariant()));
+            return null;
+        }
+    }
+
+    private async Task<LookupNames> ResolveLookupNamesAsync(RuntimeModel model, RuntimeTable table, IReadOnlyList<JsonObject> rows, CancellationToken ct)
+    {
+        var found = new LookupNames();
         foreach (var member in table.Members.Where(m => m.IsLookup))
         {
             var wanted = rows.Select(r => r[member.ApiName] is JsonValue v && v.TryGetValue<string>(out var t) ? t.Trim() : null)
@@ -484,10 +512,10 @@ public sealed class RecordService(
                 .ToListAsync(ct);
             foreach (var match in matches)
             {
-                var name = (JsonNode.Parse(match.Data)?[primary.Key] as JsonValue)?.GetValue<object>()?.ToString()?.ToLowerInvariant();
+                var name = (JsonNode.Parse(match.Data)?[primary.Key] as JsonValue)?.GetValue<object>()?.ToString();
                 if (name is not null)
                 {
-                    found[(member.Id, name)] = found.ContainsKey((member.Id, name)) ? null : match.Id;
+                    found.Add(member.Id, name, match.Id);
                 }
             }
         }
@@ -865,26 +893,22 @@ public sealed class RecordService(
     }
 
     /// <summary>
-    /// A site write to a table with row rules must leave the record where the writer can still
-    /// reach it — a create readable or changeable by them, an update still changeable — as a
-    /// database policy's WITH CHECK would. Otherwise a user could file a record under a company
-    /// they cannot see, or hand one out of their reach. Runs inside the write's transaction, so a
-    /// refusal undoes it.
+    /// A site update to a table with row rules must leave the record where the writer can still
+    /// change it, as a database policy's WITH CHECK would: otherwise a user could hand a record out
+    /// of their reach. Runs inside the write's transaction, so a refusal undoes it.
     /// </summary>
-    private async Task CheckReachAsync(RuntimeModel model, RuntimeTable table, Guid id, RecordPlane plane, PublicOp op, CancellationToken ct)
+    /// <remarks>
+    /// A create is not checked. The site creates only where the table allows it (its public create,
+    /// or a role holding create), and a create-only table is meant to take records the writer never
+    /// sees again, e.g. web-to-lead; what a create may point at is held to what the writer can read
+    /// by <see cref="CheckLookupsAsync"/>, so it cannot file a record under someone else's.
+    /// </remarks>
+    private async Task CheckReachAsync(RuntimeModel model, RuntimeTable table, Guid id, RecordPlane plane, CancellationToken ct)
     {
-        // A role holding create may add records the rules do not show them; its lookups are still
-        // held to records they can read, so it cannot file them under someone else's.
-        if (plane != RecordPlane.Public || table.Def.Public.Rules.Count == 0 || Unscoped(table, op) || (op == PublicOp.Create && Member(table, op)))
+        if (plane != RecordPlane.Public || table.Def.Public.Rules.Count == 0 || Unscoped(table, PublicOp.Update)
+            || Scope(model, table, plane, PublicOp.Update) is null || await Records(model, table, plane, PublicOp.Update).AnyAsync(r => r.Id == id, ct))
         {
             return;
-        }
-        foreach (var reach in op == PublicOp.Create ? [PublicOp.Read, PublicOp.Update] : new[] { op })
-        {
-            if (Scope(model, table, plane, reach) is null || await Records(model, table, plane, reach).AnyAsync(r => r.Id == id, ct))
-            {
-                return;
-            }
         }
         throw new PublicAccessException(403, $"That would leave the {table.ApiName} record out of your reach.");
     }

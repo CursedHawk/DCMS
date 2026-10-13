@@ -34,8 +34,12 @@ public sealed class FlowRunService(
         {
             runs = runs.Where(r => r.FlowApiName == flow);
         }
-        if (Enum.TryParse<FlowRunStatus>(status, ignoreCase: true, out var wanted))
+        if (!string.IsNullOrWhiteSpace(status))
         {
+            // An unknown status is refused, not ignored: ignoring it answered "queued" with every run.
+            var wanted = Enum.GetValues<FlowRunStatus>().Cast<FlowRunStatus?>().FirstOrDefault(v => string.Equals(v.ToString(), status, StringComparison.OrdinalIgnoreCase))
+                ?? throw new ContractValidationException(
+                    $"There is no run status '{status}'; it is one of {string.Join(", ", Enum.GetValues<FlowRunStatus>().Select(Status))}.");
             runs = runs.Where(r => r.Status == wanted);
         }
         var total = await runs.CountAsync(ct);
