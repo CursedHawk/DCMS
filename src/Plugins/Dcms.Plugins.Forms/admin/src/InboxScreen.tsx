@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, Inbox, Mail, Search, Trash2, Undo2 } from 'lucide-react';
+import { AlertTriangle, Check, Inbox, Mail, Search, Trash2, Undo2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Badge,
@@ -31,6 +31,7 @@ import {
   type HandledFilter,
   PAGE_SIZE,
   type Submission,
+  type SubmissionSort,
   extraKeys,
   formatValue,
   useFormsInstances,
@@ -59,6 +60,7 @@ export function InboxScreen() {
   const [selected, setSelected] = useState<Selection | null>(null);
   const [handled, setHandled] = useState<HandledFilter>('all');
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<SubmissionSort | null>(null);
   const [query, setQuery] = useState('');
   // Held by id, not by value, so the open dialog reflects a mark-handled toggle
   // as soon as the list refetches.
@@ -84,7 +86,7 @@ export function InboxScreen() {
       ?.forms.find((f) => f.name === selected.formName);
   }, [instances.data, selected]);
 
-  const submissions = useSubmissions(selected?.instanceId, selected?.formName, handled, page);
+  const submissions = useSubmissions(selected?.instanceId, selected?.formName, handled, page, sort);
 
   const refresh = async () => {
     await Promise.all([
@@ -148,7 +150,7 @@ export function InboxScreen() {
           {new Date(s.submittedAt).toLocaleString()}
         </span>
       ),
-      sortValue: (s) => s.submittedAt,
+      sortable: true,
     },
     ...inlineFields.map((c, i): Column<Submission> => ({
       id: `field:${c.name}`,
@@ -156,13 +158,14 @@ export function InboxScreen() {
       // The first answer heads the card, because it is what an author recognises the
       // submission by — a name, an email, a subject line.
       primary: i === 0,
+      // Not sortable: the inbox is paged, so ordering by an answer would order only this page,
+      // and the answers are free-form JSON the server does not order by.
       cell: (s) => (
         <span className="block max-w-[16rem] truncate">{formatValue(s.data[c.name], yes, no)}</span>
       ),
-      sortValue: (s) => formatValue(s.data[c.name], yes, no).toLowerCase(),
     })),
     {
-      id: 'status',
+      id: 'handled',
       header: t('common.status'),
       width: 'w-28',
       cell: (s) => (
@@ -170,7 +173,7 @@ export function InboxScreen() {
           {s.handledAt ? t('forms.handled') : t('forms.new')}
         </Badge>
       ),
-      sortValue: (s) => (s.handledAt ? 1 : 0),
+      sortable: true,
     },
     {
       id: 'actions',
@@ -323,6 +326,18 @@ export function InboxScreen() {
           {/* `!form` covers the first render, before the effect picks a form. */}
           {submissions.isLoading || !form ? (
             <CenteredSpinner />
+          ) : submissions.isError ? (
+            // Not "no submissions": an inbox that failed to load and an empty one must not look
+            // the same, and the empty one is the more damaging to get wrong.
+            <EmptyState
+              icon={AlertTriangle}
+              title={t('common.loadFailed')}
+              action={
+                <Button variant="outline" size="sm" onClick={() => void submissions.refetch()}>
+                  {t('common.retry')}
+                </Button>
+              }
+            />
           ) : rows.length === 0 ? (
             <EmptyState
               icon={Inbox}
@@ -336,6 +351,11 @@ export function InboxScreen() {
                 columns={submissionColumns}
                 rowKey={(s) => s.id}
                 onRowClick={(s) => setDetailId(s.id)}
+                sort={sort ? { columnId: sort.column, direction: sort.direction } : null}
+                onSortChange={(next) => {
+                  setSort(next ? { column: next.columnId as SubmissionSort['column'], direction: next.direction } : null);
+                  setPage(1);
+                }}
                 caption={t('forms.title')}
                 labels={{ loading: t('common.loading'), sortBy: (column) => t('common.sortBy', { column }) }}
               />

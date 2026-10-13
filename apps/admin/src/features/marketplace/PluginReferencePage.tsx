@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
-import { ArrowLeft, Play } from 'lucide-react';
+import { Play } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   Badge,
@@ -26,6 +25,7 @@ import {
   TabsTrigger,
   toastApiError,
 } from '@dcms/ui';
+import { Breadcrumbs } from '../../app/Breadcrumbs';
 import {
   runContractOperation,
   useAdminContractCatalog,
@@ -66,13 +66,7 @@ export function PluginReferencePage({ pluginId }: { pluginId: string }) {
 
   return (
     <Page>
-      <Link
-        to={'/marketplace' as string}
-        className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden />
-        {t('pluginReference.back')}
-      </Link>
+      <Breadcrumbs items={[{ label: t('nav.marketplace'), to: '/marketplace' }, { label: r.name }]} />
       <PageHeader
         title={t('pluginReference.title', { name: r.name })}
         description={r.description}

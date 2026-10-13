@@ -29,6 +29,7 @@
     "assistant": "Asistent",
     "connections": "Propojení",
     "usage": "Využití dat",
+    "breadcrumbs": "Drobečková navigace",
     "groups": {
       "manage": "Tvorba a správa",
       "apps": "Aplikace",
@@ -1377,7 +1378,6 @@
     "usageHint": "Co tento prostor ukládá a kde"
   },
   "pluginReference": {
-    "back": "Tržiště",
     "title": "{{name}}: referenční příručka API",
     "notFound": "Takový plugin neexistuje.",
     "tabs": {

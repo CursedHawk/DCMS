@@ -13,6 +13,7 @@ import {
   toast,
   toastApiError,
   type Column,
+  LoadFailed,
 } from '@dcms/ui';
 import { instancePath, useCan, usePluginApi, usePluginT } from '@dcms/plugin-ui';
 import { ConfirmDialog } from '../ConfirmDialog';
@@ -123,6 +124,7 @@ export function AutomationTab({ slug, config, editable, onSelect }: {
             </div>
           </div>
           <DataTable rows={runs.data?.items ?? []} columns={runColumns} rowKey={(r) => r.id} isLoading={runs.isLoading}
+        error={runs.isError ? <LoadFailed title={t('common.loadFailed')} retryLabel={t('common.retry')} onRetry={() => void runs.refetch()} /> : undefined}
             empty={t('automation.noRuns')} onRowClick={(r) => setOpenRun(r.id)} />
         </section>
       ) : null}

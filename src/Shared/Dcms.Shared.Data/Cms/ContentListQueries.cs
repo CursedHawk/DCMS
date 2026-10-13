@@ -54,7 +54,19 @@ public static class ContentListQueries
     /// </param>
     public sealed record Cursor(DateTimeOffset UpdatedAt, Guid Id);
 
-    public sealed record Page(IReadOnlyList<ContentRow> Items, Cursor? NextCursor, int Total);
+    /// <summary>What a collection page is ordered by. Ties are broken by id, in the same direction.</summary>
+    public enum Sort { Updated, Title, Slug }
+
+    /// <summary>
+    /// Where a sorted page ends: the order it belongs to, and the last row's sort key and id. A
+    /// cursor is only meaningful under the order that produced it — "after 'Mango' by title" says
+    /// nothing about where to resume by date — so it carries that order and the caller refuses
+    /// one that does not match.
+    /// </summary>
+    /// <param name="Key">The last row's sort value: a round-trip timestamp, a title or a slug.</param>
+    public sealed record PageCursor(Sort Sort, bool Descending, string Key, Guid Id);
+
+    public sealed record Page(IReadOnlyList<ContentRow> Items, PageCursor? NextCursor, int Total);
 
     /// <summary>
     /// The synthetic status the console filters on, which no column holds.
@@ -81,7 +93,9 @@ public static class ContentListQueries
         string? search,
         string? status,
         IReadOnlyCollection<Guid>? itemIds,
-        Cursor? after,
+        Sort sort,
+        bool descending,
+        PageCursor? after,
         int limit,
         CancellationToken ct = default)
     {
@@ -158,8 +172,16 @@ public static class ContentListQueries
             LEFT JOIN cms.content_versions v
                    ON v."Id" = COALESCE(i."CurrentDraftVersionId", i."PublishedVersionId")
             """;
-        // Only a search reads the title, so only a search needs the version row to FIND the page.
-        var findJoin = string.IsNullOrWhiteSpace(search) ? string.Empty : VersionJoin;
+        // Only a search, or an order by title, reads the title — so only they need the version
+        // row to FIND the page. The count never orders anything, so only a search needs it there.
+        //
+        // Ordering by title is the one order no index serves: the title is a regexp over a jsonb
+        // key known only at query time, so every row the filters keep is titled before the page
+        // is cut. That is the price of a list sorted by what people read rather than by when it
+        // changed, paid only by whoever asks for it; the default order still walks
+        // ix_content_items_collection_recent and costs the page, not the collection.
+        var countJoin = string.IsNullOrWhiteSpace(search) ? string.Empty : VersionJoin;
+        var findJoin = sort == Sort.Title ? VersionJoin : countJoin;
         // Dressing the page needs each row's own version, by primary key. As a plain join the
         // planner hash-joined against a sequential scan of content_versions -- every tenant's
         // versions, several per item -- to title 51 rows. Two scalar subqueries, one per id
@@ -175,12 +197,27 @@ public static class ContentListQueries
             ) v ON true
             """;
 
+        var sortKey = sort switch
+        {
+            Sort.Title => title,
+            Sort.Slug => """i."Slug" """,
+            _ => """i."UpdatedAt" """,
+        };
+        var direction = descending ? "DESC" : "ASC";
+        var orderBy = $"""ORDER BY {sortKey} {direction}, i."Id" {direction}""";
+
         var keyset = after is null
             ? string.Empty
-            : """AND (i."UpdatedAt", i."Id") < (@cursorAt, @cursorId)""";
+            : $"""AND ({sortKey}, i."Id") {(descending ? "<" : ">")} (@cursorKey, @cursorId)""";
         if (after is { } cursor)
         {
-            parameters.Add(("@cursorAt", cursor.UpdatedAt));
+            if (cursor.Sort != sort || cursor.Descending != descending)
+            {
+                throw new ArgumentException("The cursor belongs to a different order.", nameof(after));
+            }
+            parameters.Add(("@cursorKey", sort == Sort.Updated
+                ? DateTimeOffset.Parse(cursor.Key, null, System.Globalization.DateTimeStyles.RoundtripKind)
+                : cursor.Key));
             parameters.Add(("@cursorId", cursor.Id));
         }
 
@@ -196,7 +233,7 @@ public static class ContentListQueries
                 {findJoin}
                 {where}
                   {keyset}
-                ORDER BY i."UpdatedAt" DESC, i."Id" DESC
+                {orderBy}
                 LIMIT {take + 1}
             )
             SELECT i."Id", i."ContentType", i."Slug", {title} AS title, i."Status",
@@ -204,7 +241,7 @@ public static class ContentListQueries
             FROM page p
             JOIN cms.content_items i ON i."Id" = p."Id"
             {PageVersionJoin}
-            ORDER BY i."UpdatedAt" DESC, i."Id" DESC
+            {orderBy}
             """;
 
         var rows = await QueryAsync(db, sql, parameters, reader => new ContentRow(
@@ -225,7 +262,7 @@ public static class ContentListQueries
         var countSql = $"""
             SELECT count(*)::int
             FROM cms.content_items i
-            {findJoin}
+            {countJoin}
             {where}
             """;
 
@@ -233,9 +270,16 @@ public static class ContentListQueries
 
         return new Page(
             page,
-            hasMore ? new Cursor(page[^1].UpdatedAt, page[^1].Id) : null,
+            hasMore ? new PageCursor(sort, descending, KeyOf(page[^1], sort), page[^1].Id) : null,
             total);
     }
+
+    private static string KeyOf(ContentRow row, Sort sort) => sort switch
+    {
+        Sort.Title => row.Title,
+        Sort.Slug => row.Slug,
+        _ => row.UpdatedAt.ToString("O"),
+    };
 
     /// <param name="Instance">The plugin instance the item belongs to, for a workspace-wide list.</param>
     /// <param name="PublishAt">When the worker will publish it.</param>

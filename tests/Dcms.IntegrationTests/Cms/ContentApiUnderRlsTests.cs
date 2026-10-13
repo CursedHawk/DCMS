@@ -49,6 +49,54 @@ public class ContentApiUnderRlsTests(ContentFlowFixture fixture)
         (await listed.Content.ReadAsStringAsync(ct)).Should().Contain(marker);
     }
 
+    /// <summary>
+    /// The inbox is paged, so it is ordered on the server: sorting in the browser ordered only
+    /// the page on screen.
+    /// </summary>
+    [DockerFact]
+    public async Task The_inbox_is_ordered_by_the_server()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (slug, owner) = await TenantAsync(ct);
+        var instanceId = await InstanceAsync(slug, owner, "forms", "contact",
+            """{"forms":[{"name":"hello","fields":[{"name":"message","required":true}]}]}""", ct);
+        foreach (var message in new[] { "first", "second", "third" })
+        {
+            var submitted = await fixture.Content.CreateClient().SendAsync(
+                Req(HttpMethod.Post, slug, "/api/contact/forms/hello", new { message }), ct);
+            ((int)submitted.StatusCode).Should().BeInRange(200, 299);
+        }
+        var admin = fixture.Admin.CreateClient();
+
+        async Task<List<string>> Messages(string query)
+        {
+            var res = await admin.SendAsync(AdminReq(HttpMethod.Get,
+                $"/api/admin/forms/{instanceId}/submissions?formName=hello{query}", owner, slug), ct);
+            res.StatusCode.Should().Be(HttpStatusCode.OK, await res.Content.ReadAsStringAsync(ct));
+            return (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("items").EnumerateArray()
+                .Select(i => i.GetProperty("data").GetProperty("message").GetString()!).ToList();
+        }
+
+        (await Messages("")).Should().Equal("third", "second", "first");
+        (await Messages("&sort=submittedAt&dir=asc")).Should().Equal("first", "second", "third");
+        // One row a page, so this is the server's order and not the browser's.
+        (await Messages("&sort=submittedAt&dir=asc&pageSize=1&page=2")).Should().Equal("second");
+
+        var res = await admin.SendAsync(AdminReq(HttpMethod.Get,
+            $"/api/admin/forms/{instanceId}/submissions?formName=hello", owner, slug), ct);
+        var second = (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("items").EnumerateArray()
+            .Single(i => i.GetProperty("data").GetProperty("message").GetString() == "second").GetProperty("id").GetGuid();
+        (await admin.SendAsync(AdminReq(HttpMethod.Post, $"/api/admin/forms/submissions/{second}/handled", owner, slug), ct))
+            .EnsureSuccessStatusCode();
+
+        (await Messages("&sort=handled&dir=desc")).Should().Equal("second", "third", "first");
+        (await Messages("&sort=handled&dir=asc")).Should().Equal("third", "first", "second");
+
+        (await admin.SendAsync(AdminReq(HttpMethod.Get,
+            $"/api/admin/forms/{instanceId}/submissions?formName=hello&sort=message", owner, slug), ct))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     /// <summary>The background path: SearchIndexer acts as the event's tenant, off any request.</summary>
     [DockerFact]
     public async Task Published_content_is_indexed_and_found()

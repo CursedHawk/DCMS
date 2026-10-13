@@ -88,9 +88,18 @@ internal static class FormReviewEndpoints
         }).RequirePermission(PlatformPermissions.ContentRead);
 
         app.MapGet("/api/admin/forms/{instanceId:guid}/submissions", async (
-            Guid instanceId, string? formName, string? handled, int? page, int? pageSize,
+            Guid instanceId, string? formName, string? handled, string? sort, string? dir, int? page, int? pageSize,
             CmsDbContext cms, FormsDbContext db, CancellationToken ct) =>
         {
+            // Ordered here because the inbox is paged: sorting in the browser ordered only the
+            // page on screen. Submitted (newest first) and handled are the orders a column can
+            // ask for; a submission's own fields are free-form JSON and are not sortable.
+            if (sort is not (null or "" or "submittedAt" or "handled") || dir is not (null or "" or "asc" or "desc"))
+            {
+                return Results.BadRequest(new { error = "sort is submittedAt or handled; dir is asc or desc." });
+            }
+            var descending = dir is null or "" ? sort is not "handled" : dir == "desc";
+
             var instance = await cms.PluginInstances.AsNoTracking()
                 .FirstOrDefaultAsync(p => p.Id == instanceId && p.PluginId == FormsPlugin.PluginId, ct);
             if (instance is null)
@@ -114,8 +123,15 @@ internal static class FormReviewEndpoints
             };
 
             var total = await query.LongCountAsync(ct);
-            var rows = await query
-                .OrderByDescending(s => s.SubmittedAt)
+            // Id last, so equal keys keep one order from page to page.
+            var ordered = (sort, descending) switch
+            {
+                ("handled", false) => query.OrderBy(s => s.HandledAt != null).ThenByDescending(s => s.SubmittedAt),
+                ("handled", true) => query.OrderByDescending(s => s.HandledAt != null).ThenByDescending(s => s.SubmittedAt),
+                (_, false) => query.OrderBy(s => s.SubmittedAt),
+                _ => query.OrderByDescending(s => s.SubmittedAt),
+            };
+            var rows = await ordered.ThenBy(s => s.Id)
                 .Skip((current - 1) * size)
                 .Take(size)
                 .ToListAsync(ct);

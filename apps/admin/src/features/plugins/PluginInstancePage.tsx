@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ArrowRight, Database, ExternalLink, FileText } from 'lucide-react';
+import { ArrowRight, Database, ExternalLink, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import {
@@ -29,6 +29,7 @@ import {
 import { api } from '../../lib/api';
 import { Perm, can, useMyPermissions } from '../../lib/permissions';
 import { getCurrentTenantSlug } from '../../tenants';
+import { Breadcrumbs } from '../../app/Breadcrumbs';
 import { iconByName } from '../../app/navApi';
 import { SchemaForm } from '../../components/SchemaForm';
 import { ResourceHistory } from '../audit/ResourceHistory';
@@ -94,16 +95,24 @@ export function PluginInstancePage({ slug, screen }: { slug: string; screen?: st
   if (!instance || !manifest) {
     return (
       <Page>
-        <BackLink />
+        <Breadcrumbs items={[{ label: t('plugins.title'), to: '/plugins' }, { label: slug }]} />
         <EmptyState title={t('pluginPage.notFound')} description={t('pluginPage.notFoundHint', { slug })} />
       </Page>
     );
   }
 
   const dataSets = sets.data ?? [];
+  const openScreen = screen ? instanceScreens.find((s) => s.id === screen) : undefined;
   return (
     <Page className="max-w-7xl">
-      <BackLink />
+      <Breadcrumbs
+        items={[
+          { label: t('plugins.title'), to: '/plugins' },
+          ...(openScreen
+            ? [{ label: instance.name, to: `/plugins/${slug}` }, { label: screenTitle(openScreen, i18n.language) }]
+            : [{ label: instance.name }]),
+        ]}
+      />
       <Nameplate instance={instance} manifest={manifest} reference={reference.data} />
 
       <Tabs value={screen ? SCREEN_TAB + screen : tab} onValueChange={onTab} className="mt-6">
@@ -179,19 +188,6 @@ export function PluginInstancePage({ slug, screen }: { slug: string; screen?: st
         </TabsContent>
       </Tabs>
     </Page>
-  );
-}
-
-function BackLink() {
-  const { t } = useTranslation();
-  return (
-    <Link
-      to={'/plugins' as string}
-      className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-    >
-      <ArrowLeft className="h-4 w-4" aria-hidden />
-      {t('plugins.title')}
-    </Link>
   );
 }
 

@@ -19,6 +19,7 @@ import {
   Page,
   PageHeader,
   toastApiError,
+  LoadFailed,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { type Role, usePermissionCatalog, useRoles } from '../rbac/api';
@@ -173,6 +174,7 @@ export function RolesPage() {
         columns={columns}
         rowKey={(r) => r.id}
         isLoading={roles.isLoading}
+        error={roles.isError ? <LoadFailed title={t('common.loadFailed')} retryLabel={t('common.retry')} onRetry={() => void roles.refetch()} /> : undefined}
         caption={t('roles.title')}
         defaultSort={{ columnId: 'name' }}
         labels={{ loading: t('common.loading'), sortBy: (column) => t('common.sortBy', { column }) }}

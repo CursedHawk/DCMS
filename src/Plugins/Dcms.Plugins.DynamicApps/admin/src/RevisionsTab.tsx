@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Badge, Button, DataTable, toast, type Column } from '@dcms/ui';
+import { Badge, Button, DataTable, LoadFailed, toast, type Column } from '@dcms/ui';
 import { instancePath, usePluginApi, usePluginT } from '@dcms/plugin-ui';
 import { ConfirmDialog } from './ConfirmDialog';
 import { refusedOf, useModelAction, useRevisionChanges, useRevisions, type PublishResult, type RevisionInfo } from './api';
@@ -43,6 +43,7 @@ export function RevisionsTab({ slug, mayRollback }: { slug: string; mayRollback:
   return (
     <div className="space-y-4 pt-2">
       <DataTable rows={revisions.data?.items ?? []} columns={columns} rowKey={(r) => r.id} isLoading={revisions.isLoading}
+        error={revisions.isError ? <LoadFailed title={t('common.loadFailed')} retryLabel={t('common.retry')} onRetry={() => void revisions.refetch()} /> : undefined}
         empty={t('revisions.empty')} onRowClick={(r) => setOpen(r.number === open ? null : r.number)} />
       {open !== null ? (
         <section className="space-y-2">

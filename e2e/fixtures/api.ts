@@ -284,6 +284,12 @@ export function adminApi(
       let items = data.CONTENT_ROWS;
       if (search) items = items.filter((r) => r.title.toLowerCase().includes(search));
       if (status && status !== 'all') items = items.filter((r) => r.status === status);
+      const sort = query.get('sort') as 'title' | 'slug' | 'updated' | null;
+      if (sort) {
+        const key = sort === 'updated' ? 'updatedAt' : sort;
+        const factor = query.get('dir') === 'desc' ? -1 : 1;
+        items = [...items].sort((a, b) => factor * String(a[key]).localeCompare(String(b[key])));
+      }
       return { items, nextCursor: null, total: items.length };
     })
     .on('GET', '/api/admin/content/counts', { post: data.CONTENT_ROWS.length })

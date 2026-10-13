@@ -120,6 +120,14 @@ export interface ContentListFilters {
   status: string;
   /** A tag, or `all`. */
   tag: string;
+  /** Ordered by the server, because the list is paged; absent is newest first. */
+  sort?: ContentSort | null;
+}
+
+export type ContentSortColumn = 'title' | 'slug' | 'updated';
+export interface ContentSort {
+  column: ContentSortColumn;
+  direction: 'asc' | 'desc';
 }
 
 /**
@@ -151,6 +159,10 @@ export function useContentPage(
       if (filters.search.trim()) params.set('search', filters.search.trim());
       if (filters.status !== 'all') params.set('status', filters.status);
       if (filters.tag !== 'all') params.set('tag', filters.tag);
+      if (filters.sort) {
+        params.set('sort', filters.sort.column);
+        params.set('dir', filters.sort.direction);
+      }
       if (pageParam) params.set('cursor', pageParam);
       return api.get<ContentPage>(`/admin/content/page?${params.toString()}`);
     },

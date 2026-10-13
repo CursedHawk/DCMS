@@ -29,6 +29,33 @@ test('the list asks the server to filter, rather than filtering what it already 
   expect(search, 'the search reached the server').toBeTruthy();
 });
 
+test('the order is asked of the server, and the list keeps its filters in the URL', async ({ page, api }) => {
+  await openCollection(page);
+  const table = page.getByRole('table');
+
+  await table.getByRole('button', { name: 'Sort by Title' }).click();
+  await expect.poll(() => api.requestsTo('GET', '/api/admin/content/page').some(
+    (r) => r.query.get('sort') === 'title' && r.query.get('dir') === 'asc')).toBe(true);
+  await table.getByRole('button', { name: 'Sort by Title' }).click();
+  await expect.poll(() => api.requestsTo('GET', '/api/admin/content/page').some(
+    (r) => r.query.get('sort') === 'title' && r.query.get('dir') === 'desc')).toBe(true);
+
+  // The rows are drawn in the order the server answered, not re-sorted in the browser: the
+  // list is paged, and sorting what has loaded would order only that.
+  const titles = await table.getByRole('row').locator('td:nth-child(2)').allTextContents();
+  expect(titles).toEqual([...titles].sort((a, b) => b.localeCompare(a)));
+
+  await page.getByPlaceholder('Search by title or slug…').fill('launch');
+  await expect(page).toHaveURL(/q=launch/);
+  await expect(page).toHaveURL(/sort=title/);
+
+  // A reload — or a link someone shared — lands on the same list.
+  await page.reload();
+  await expect(page.getByPlaceholder('Search by title or slug…')).toHaveValue('launch');
+  await expect(page.getByRole('cell', { name: 'Launch notes' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'Hello, world' })).toHaveCount(0);
+});
+
 test('typing is a pause, not a request per keystroke', async ({ page, api }) => {
   await openCollection(page);
   const before = api.requestsTo('GET', '/api/admin/content/page').length;

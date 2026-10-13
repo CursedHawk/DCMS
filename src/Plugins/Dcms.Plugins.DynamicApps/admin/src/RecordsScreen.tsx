@@ -28,6 +28,7 @@ import {
   toast,
   toastApiError,
   type Column,
+  LoadFailed,
 } from '@dcms/ui';
 import {
   instancePath,
@@ -183,6 +184,7 @@ export function RecordsScreen({ instance }: PluginScreenProps) {
       {importing ? <ImportDialog slug={slug} table={table!} onClose={() => setImporting(false)} /> : null}
 
       <DataTable rows={records.data?.items ?? []} columns={columns} rowKey={(r) => r.id} isLoading={records.isLoading}
+        error={records.isError ? <LoadFailed title={t('common.loadFailed')} retryLabel={t('common.retry')} onRetry={() => void records.refetch()} /> : undefined}
         empty={t('records.none')} onRowClick={(row) => setEditing(row)} />
 
       <div className="flex items-center justify-end gap-2 text-sm">

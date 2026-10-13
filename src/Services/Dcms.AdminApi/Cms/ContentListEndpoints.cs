@@ -35,6 +35,8 @@ public static class ContentListEndpoints
             string? search,
             string? status,
             string? tag,
+            string? sort,
+            string? dir,
             string? cursor,
             int? limit,
             CmsDbContext db,
@@ -45,6 +47,36 @@ public static class ContentListEndpoints
             if (tenant.TenantId is not { } tenantId)
             {
                 return Results.BadRequest(new { error = "Select a tenant first." });
+            }
+
+            // Sorted on the server because the list is paged: ordering in the browser would order
+            // only the rows already loaded, and "A to Z" would restart on every page.
+            ContentListQueries.Sort order;
+            switch (sort)
+            {
+                case null or "" or "updated": order = ContentListQueries.Sort.Updated; break;
+                case "title": order = ContentListQueries.Sort.Title; break;
+                case "slug": order = ContentListQueries.Sort.Slug; break;
+                default: return Results.BadRequest(new { error = "sort is one of updated, title, slug." });
+            }
+            if (dir is not (null or "" or "asc" or "desc"))
+            {
+                return Results.BadRequest(new { error = "dir is asc or desc." });
+            }
+            // Newest first, and A to Z: what each order means when nobody says otherwise.
+            var descending = dir is null or "" ? order == ContentListQueries.Sort.Updated : dir == "desc";
+
+            ContentListQueries.PageCursor? after = null;
+            if (!string.IsNullOrWhiteSpace(cursor))
+            {
+                after = ParsePageCursor(cursor);
+                if (after is null || after.Sort != order || after.Descending != descending)
+                {
+                    // Resuming one order from a position in another would silently skip or repeat
+                    // rows; the console restarts the list when its order changes, so this is a
+                    // stale or hand-made cursor.
+                    return Results.BadRequest(new { error = "The cursor does not belong to this order; start the list again." });
+                }
             }
 
             var instance = await db.PluginInstances.FindAsync([instanceId], ct);
@@ -71,7 +103,9 @@ public static class ContentListEndpoints
                 search,
                 status,
                 itemIds,
-                ParseCursor(cursor),
+                order,
+                descending,
+                after,
                 limit ?? ContentListQueries.DefaultPageSize,
                 ct);
 
@@ -88,7 +122,7 @@ public static class ContentListEndpoints
                     publishedAt = r.PublishedAt,
                     scheduledPublishAt = r.ScheduledPublishAt,
                 }),
-                nextCursor = page.NextCursor is { } next ? FormatCursor(next) : null,
+                nextCursor = page.NextCursor is { } next ? FormatPageCursor(next) : null,
                 total = page.Total,
             });
         }).RequirePermission(PlatformPermissions.ContentRead);
@@ -226,4 +260,28 @@ public static class ContentListEndpoints
 
     internal static string FormatCursor(ContentListQueries.Cursor cursor) =>
         $"{cursor.UpdatedAt:O}|{cursor.Id}";
+
+    /// <summary>
+    /// <c>s1|{sort}|{a|d}|{id}|{key}</c>. The key goes last because it is the only part that may
+    /// contain the separator — a title can hold anything.
+    /// </summary>
+    internal static string FormatPageCursor(ContentListQueries.PageCursor cursor) =>
+        $"s1|{cursor.Sort.ToString().ToLowerInvariant()}|{(cursor.Descending ? 'd' : 'a')}|{cursor.Id}|{cursor.Key}";
+
+    internal static ContentListQueries.PageCursor? ParsePageCursor(string cursor)
+    {
+        var parts = cursor.Split('|', 5);
+        if (parts.Length != 5 || parts[0] != "s1" || parts[2] is not ("a" or "d")
+            || !Enum.TryParse<ContentListQueries.Sort>(parts[1], ignoreCase: true, out var sort)
+            || !Guid.TryParse(parts[3], out var id))
+        {
+            return null;
+        }
+        if (sort == ContentListQueries.Sort.Updated
+            && !DateTimeOffset.TryParse(parts[4], null, System.Globalization.DateTimeStyles.RoundtripKind, out _))
+        {
+            return null;
+        }
+        return new ContentListQueries.PageCursor(sort, parts[2] == "d", parts[4], id);
+    }
 }

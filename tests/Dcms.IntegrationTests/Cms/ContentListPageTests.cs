@@ -179,6 +179,88 @@ public class ContentListPageTests(ContentFlowFixture fixture)
     }
 
     /// <summary>
+    /// Sorting a paged list in the browser orders only the rows already loaded, so "A to Z"
+    /// restarted on every page. The server orders now, and each page has to continue the order
+    /// of the one before — including across rows whose sort keys are equal.
+    /// </summary>
+    [DockerFact]
+    public async Task A_sorted_list_continues_its_order_across_pages()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // One collection, every order: a plain [Theory] in a Docker collection fails CI
+        // (DockerCollectionTests), and the rows do not change between orders.
+        var t = await CollectionAsync(ct);
+
+        // Titles out of slug order, one written in markup, and two equal titles: the tiebreak.
+        string[][] items =
+        [
+            ["e-post", "Mango"], ["a-post", "<b>Kiwi</b>"], ["d-post", "apple"], ["b-post", "Banana"],
+            ["c-post", "Cherry"], ["g-post", "Banana"], ["f-post", "Date"],
+        ];
+        foreach (var item in items)
+        {
+            await CreateAsync(t, item[0], new { title = item[1], body = "<p>x</p>" }, ct);
+        }
+
+        foreach (var (sort, dir) in new[] { ("title", "asc"), ("title", "desc"), ("slug", "asc"), ("slug", "desc"), ("updated", "asc") })
+        {
+            await WalkAsync(t, sort, dir, ct);
+        }
+    }
+
+    private async Task WalkAsync(Collection t, string sort, string dir, CancellationToken ct)
+    {
+        var all = await PageAsync(t, $"?sort={sort}&dir={dir}&limit=50", ct);
+        var expected = all.GetProperty("items").EnumerateArray()
+            .Select(i => i.GetProperty(sort == "updated" ? "updatedAt" : sort).GetString()!).ToList();
+        if (sort != "updated")
+        {
+            // Postgres orders by the database's collation, which is not ordinal; what matters is
+            // that one request and the paged walk agree, and that the order is the one asked for.
+            expected.Should().HaveCount(7);
+            (dir == "asc" ? expected.First() : expected.Last()).Should().BeOneOf(sort == "title" ? ["apple"] : ["a-post"]);
+        }
+
+        var walked = new List<string>();
+        string? cursor = null;
+        var pages = 0;
+        do
+        {
+            var query = $"?sort={sort}&dir={dir}&limit=2" + (cursor is null ? "" : $"&cursor={Uri.EscapeDataString(cursor)}");
+            var page = await PageAsync(t, query, ct);
+            walked.AddRange(page.GetProperty("items").EnumerateArray()
+                .Select(i => i.GetProperty(sort == "updated" ? "updatedAt" : sort).GetString()!));
+            cursor = page.GetProperty("nextCursor").GetString();
+            pages++;
+        }
+        while (cursor is not null && pages < 10);
+
+        walked.Should().Equal(expected, $"sorted by {sort} {dir}");
+        pages.Should().Be(4, "seven rows at two a page");
+    }
+
+    [DockerFact]
+    public async Task A_cursor_from_another_order_is_refused_rather_than_misread()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t = await CollectionAsync(ct);
+        for (var i = 0; i < 3; i++)
+        {
+            await CreateAsync(t, $"item-{i}", new { title = $"Item {i}", body = "<p>x</p>" }, ct);
+        }
+
+        var byTitle = (await PageAsync(t, "?sort=title&limit=1", ct)).GetProperty("nextCursor").GetString()!;
+
+        (await StatusAsync(t, $"?sort=updated&limit=1&cursor={Uri.EscapeDataString(byTitle)}", ct))
+            .Should().Be(HttpStatusCode.BadRequest);
+        (await StatusAsync(t, $"?sort=title&dir=desc&limit=1&cursor={Uri.EscapeDataString(byTitle)}", ct))
+            .Should().Be(HttpStatusCode.BadRequest);
+        (await StatusAsync(t, "?sort=title&limit=1&cursor=garbage", ct)).Should().Be(HttpStatusCode.BadRequest);
+        (await StatusAsync(t, "?sort=status", ct)).Should().Be(HttpStatusCode.BadRequest);
+        (await StatusAsync(t, "?dir=sideways", ct)).Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    /// <summary>
     /// The picker route (items WITH drafts) is paged too: unpaged, concurrent pickers on a
     /// 6,400-item tenant held every draft in memory and crashed admin-api. Its callers that need
     /// everything follow the cursor, so the walk must still reach every item once, drafts and all.
@@ -416,6 +498,12 @@ public class ContentListPageTests(ContentFlowFixture fixture)
         var res = await fixture.Admin.CreateClient().SendAsync(Req(HttpMethod.Get, url, t.Owner, t.Slug), ct);
         res.IsSuccessStatusCode.Should().BeTrue(await res.Content.ReadAsStringAsync(ct));
         return await res.Content.ReadFromJsonAsync<JsonElement>(ct);
+    }
+
+    private async Task<HttpStatusCode> StatusAsync(Collection t, string query, CancellationToken ct)
+    {
+        var url = $"/api/admin/content/page?instanceId={t.InstanceId}&contentType=post&{query.TrimStart('?')}";
+        return (await fixture.Admin.CreateClient().SendAsync(Req(HttpMethod.Get, url, t.Owner, t.Slug), ct)).StatusCode;
     }
 
     private async Task<List<string>> SlugsAsync(Collection t, string query, CancellationToken ct) =>

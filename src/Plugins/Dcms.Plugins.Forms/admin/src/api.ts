@@ -57,15 +57,22 @@ export function useFormsInstances() {
   });
 }
 
+/** Ordered by the server, because the inbox is paged; absent is newest first. */
+export interface SubmissionSort {
+  column: 'submittedAt' | 'handled';
+  direction: 'asc' | 'desc';
+}
+
 export function useSubmissions(
   instanceId: string | undefined,
   formName: string | undefined,
   handled: HandledFilter,
   page: number,
+  sort: SubmissionSort | null = null,
 ) {
   const api = usePluginApi();
   return useQuery({
-    queryKey: ['form-submissions', instanceId, formName, handled, page],
+    queryKey: ['form-submissions', instanceId, formName, handled, page, sort],
     enabled: !!instanceId && !!formName,
     queryFn: () => {
       const params = new URLSearchParams({
@@ -74,6 +81,10 @@ export function useSubmissions(
         pageSize: String(PAGE_SIZE),
       });
       if (handled !== 'all') params.set('handled', handled);
+      if (sort) {
+        params.set('sort', sort.column);
+        params.set('dir', sort.direction);
+      }
       return api.get<SubmissionPage>(`/admin/forms/${instanceId}/submissions?${params}`);
     },
   });

@@ -29,6 +29,7 @@
     "assistant": "Assistant",
     "connections": "Connections",
     "usage": "Usage",
+    "breadcrumbs": "Breadcrumbs",
     "groups": {
       "manage": "Create & manage",
       "apps": "Apps",
@@ -1346,7 +1347,6 @@
     "usageHint": "What this workspace stores, and where"
   },
   "pluginReference": {
-    "back": "Marketplace",
     "title": "{{name}}: API reference",
     "notFound": "No such plugin.",
     "tabs": {

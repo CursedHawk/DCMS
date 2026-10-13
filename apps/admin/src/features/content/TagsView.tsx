@@ -9,6 +9,7 @@ import {
   EmptyState,
   FilterBar,
   useDebounced,
+  LoadFailed,
 } from '@dcms/ui';
 import { type TagSuggestion, useTenantTags } from './api';
 
@@ -107,6 +108,8 @@ export function TagsView() {
         rows={rows}
         columns={columns}
         rowKey={(row) => row.tag}
+        isLoading={tags.isLoading}
+        error={tags.isError ? <LoadFailed title={t('common.loadFailed')} retryLabel={t('common.retry')} onRetry={() => void tags.refetch()} /> : undefined}
         caption={t('content.tags.title')}
         defaultSort={{ columnId: 'uses', direction: 'desc' }}
         labels={{ loading: t('common.loading'), sortBy: (column) => t('common.sortBy', { column }) }}

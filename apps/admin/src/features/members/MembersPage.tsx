@@ -25,6 +25,7 @@ import {
   Page,
   PageHeader,
   toastApiError,
+  LoadFailed,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { type Invitation, type Member, useInvitations, useMembers, useRoles } from '../rbac/api';
@@ -323,6 +324,7 @@ export function MembersPage() {
         columns={memberColumns}
         rowKey={(m) => m.membershipId}
         isLoading={members.isLoading}
+        error={members.isError ? <LoadFailed title={t('common.loadFailed')} retryLabel={t('common.retry')} onRetry={() => void members.refetch()} /> : undefined}
         caption={t('members.title')}
         labels={{ loading: t('common.loading'), sortBy: (column) => t('common.sortBy', { column }) }}
         empty={<EmptyState icon={Users} title={t('members.title')} />}
@@ -340,6 +342,7 @@ export function MembersPage() {
           columns={invitationColumns}
           rowKey={(inv) => inv.id}
           isLoading={invitations.isLoading}
+        error={invitations.isError ? <LoadFailed title={t('common.loadFailed')} retryLabel={t('common.retry')} onRetry={() => void invitations.refetch()} /> : undefined}
           caption={t('members.pending')}
           labels={{ loading: t('common.loading'), sortBy: (column) => t('common.sortBy', { column }) }}
           empty={

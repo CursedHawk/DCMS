@@ -41,6 +41,8 @@ const ScheduledView = lazy(() =>
 );
 import {
   type ContentRow,
+  type ContentSort,
+  type ContentSortColumn,
   useCollectionTags,
   useContentCounts,
   useContentPage,
@@ -85,11 +87,7 @@ export function ContentPage() {
   // Deep link from a notification: ?instance=<pluginInstanceId>&type=<contentType>&item=<id>.
   // `strict: false` because no route here declares a search schema — these params are optional
   // everywhere and only this page reads them.
-  const deepLink = useSearch({ strict: false }) as {
-    instance?: string;
-    type?: string;
-    item?: string;
-  };
+  const deepLink = useSearch({ strict: false }) as ContentSearch;
 
   const manifestFor = (pluginId: string) => catalog.data?.find((m) => m.id === pluginId);
 
@@ -123,15 +121,16 @@ export function ContentPage() {
       }
       // A deep link names an item to open, so it has to bring the collection tab with it.
       // Without this a row clicked in the publishing queue selects a collection nobody can see
-      // and the click looks like it did nothing.
-      setTab('items');
+      // and the click looks like it did nothing. Only then: the collection stays in the URL
+      // while it is open, and a refetch must not pull the reader off the tab they chose.
+      if (deepLink.item) setTab('items');
       return;
     }
 
     if (selected) return;
     const first = authorable.find((g) => g.types.length > 0);
     if (first) setSelected({ instanceId: first.instance.id, type: first.types[0].name });
-  }, [authorable, selected, deepLink.instance, deepLink.type]);
+  }, [authorable, selected, deepLink.instance, deepLink.type, deepLink.item]);
 
   const activeGroup = authorable.find((g) => g.instance.id === selected?.instanceId);
   const activeType = activeGroup?.types.find((ct) => ct.name === selected?.type);
@@ -196,7 +195,14 @@ export function ContentPage() {
                   instance={group.instance}
                   types={group.types}
                   selectedType={selected?.instanceId === group.instance.id ? selected.type : null}
-                  onSelect={(type) => setSelected({ instanceId: group.instance.id, type })}
+                  // Into the URL, so a link or the back button returns to this collection. Its
+                  // filters and order belong to the collection left behind, so they go.
+                  onSelect={(type) =>
+                    void navigate({
+                      to: '/content' as string,
+                      search: { instance: group.instance.id, type } as never,
+                    })
+                  }
                 />
               ))}
             </nav>
@@ -212,7 +218,11 @@ export function ContentPage() {
                   deepLink.instance === activeGroup.instance.id ? deepLink.item : undefined
                 }
                 onDeepLinkConsumed={() =>
-                  void navigate({ to: '/content' as string, search: {} as never, replace: true })
+                  void navigate({
+                    to: '/content' as string,
+                    search: ((prev: ContentSearch) => ({ ...prev, item: undefined })) as never,
+                    replace: true,
+                  })
                 }
               />
             ) : (
@@ -294,17 +304,39 @@ function CollectionView({
   onDeepLinkConsumed?: () => void;
 }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [editorItem, setEditorItem] = useState<string | null | undefined>(undefined);
-  const [query, setQuery] = useState('');
-  const [status, setStatus] = useState('all');
-  const [tag, setTag] = useState('all');
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+
+  /*
+   * Filters and order live in the URL, so a shared link, a reload and the back button all land
+   * on the same list. Replace, not push: a history entry per keystroke or per click on a column
+   * header would make Back step through every intermediate list.
+   */
+  const params = useSearch({ strict: false }) as ContentSearch;
+  const setParams = (next: Partial<ContentSearch>) =>
+    void navigate({
+      to: '/content' as string,
+      search: ((prev: ContentSearch) => ({ ...prev, ...next })) as never,
+      replace: true,
+    });
+  const status = params.status ?? 'all';
+  const tag = params.tag ?? 'all';
+  const sort: ContentSort | null = isSortColumn(params.sort)
+    ? { column: params.sort, direction: params.dir === 'desc' ? 'desc' : 'asc' }
+    : null;
 
   // Typing is a pause, not a keystroke: without this every character is a request, the
   // answers race, and the list flickers through the results of prefixes nobody asked about.
+  const [query, setQuery] = useState(params.q ?? '');
   const search = useDebounced(query);
+  useEffect(() => {
+    if (search !== (params.q ?? '')) setParams({ q: search || undefined });
+    // Keyed on the debounced value: the URL follows the search box, not the other way round.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
-  const page = useContentPage(instance.id, contentType.name, { search, status, tag });
+  const page = useContentPage(instance.id, contentType.name, { search, status, tag, sort });
   const tags = useCollectionTags(instance.id, contentType.name);
 
   // Open the linked item, then strip the link out of the URL. Stripping it matters: without
@@ -345,13 +377,13 @@ function CollectionView({
       header: t('content.itemTitle'),
       primary: true,
       cell: (row) => <span className="font-medium">{row.title}</span>,
-      sortValue: (row) => row.title.toLowerCase(),
+      sortable: true,
     },
     {
       id: 'slug',
       header: t('common.slug'),
       cell: (row) => <span className="font-mono text-xs text-muted-foreground">{row.slug}</span>,
-      sortValue: (row) => row.slug,
+      sortable: true,
     },
     {
       id: 'status',
@@ -364,7 +396,6 @@ function CollectionView({
           {effectiveStatus(row)}
         </Badge>
       ),
-      sortValue: (row) => effectiveStatus(row),
     },
     {
       id: 'updated',
@@ -373,7 +404,7 @@ function CollectionView({
       cell: (row) => (
         <span className="text-muted-foreground tabular-nums">{dateTime(row.updatedAt)}</span>
       ),
-      sortValue: (row) => row.updatedAt,
+      sortable: true,
     },
   ];
 
@@ -396,13 +427,10 @@ function CollectionView({
         onSearchChange={setQuery}
         searchPlaceholder={t('content.searchPlaceholder')}
         activeCount={(status === 'all' ? 0 : 1) + (tag === 'all' ? 0 : 1)}
-        onClear={() => {
-          setStatus('all');
-          setTag('all');
-        }}
+        onClear={() => setParams({ status: undefined, tag: undefined })}
         clearLabel={t('common.clearFilters')}
       >
-        <Select value={status} onValueChange={setStatus}>
+        <Select value={status} onValueChange={(v) => setParams({ status: v === 'all' ? undefined : v })}>
           <SelectTrigger className="w-40">
             <SelectValue />
           </SelectTrigger>
@@ -414,7 +442,7 @@ function CollectionView({
           </SelectContent>
         </Select>
         {(tags.data?.length ?? 0) > 0 && (
-          <Select value={tag} onValueChange={setTag}>
+          <Select value={tag} onValueChange={(v) => setParams({ tag: v === 'all' ? undefined : v })}>
             <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
@@ -443,6 +471,15 @@ function CollectionView({
         columns={columns}
         rowKey={(row) => row.id}
         isLoading={page.isLoading}
+        // Ordered by the server: the list is paged, and sorting what has loaded would order
+        // only that.
+        sort={sort ? { columnId: sort.column, direction: sort.direction } : null}
+        onSortChange={(next) =>
+          setParams({
+            sort: (next?.columnId as ContentSortColumn | undefined) ?? undefined,
+            dir: next?.direction,
+          })
+        }
         selection={{ selected, onChange: setSelected }}
         labels={{
           loading: t('common.loading'),
@@ -510,4 +547,20 @@ function CollectionView({
       ) : null}
     </div>
   );
+}
+
+/** What `/content` keeps in its URL: the open collection, an item to open, and the list's filters. */
+interface ContentSearch {
+  instance?: string;
+  type?: string;
+  item?: string;
+  q?: string;
+  status?: string;
+  tag?: string;
+  sort?: string;
+  dir?: string;
+}
+
+function isSortColumn(value: string | undefined): value is ContentSortColumn {
+  return value === 'title' || value === 'slug' || value === 'updated';
 }

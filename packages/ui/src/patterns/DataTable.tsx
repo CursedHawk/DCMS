@@ -55,9 +55,10 @@ type Direction = 'asc' | 'desc';
  * becomes a card with one column as its heading and the rest as labelled fields, which is the
  * same information in the shape a narrow screen can hold.</p>
  *
- * <p>Sorting is client-side and lives here. Every list in these consoles fetches a page and
- * sorts what it has; a server-sorted table would need its own component and neither app has
- * one yet.</p>
+ * <p>Sorting is client-side by default (`sortValue`), which is right only when the table holds
+ * the whole list. A list the server pages must sort on the server instead — `sortable` columns
+ * plus `sort`/`onSortChange` — or "A to Z" orders only the rows already loaded and restarts on
+ * every page.</p>
  */
 export function DataTable<T>({
   rows,
