@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { Button, cn, useHubConnected, useHubRevalidation } from '@dcms/ui';
 import type { GitBuild, GitBuildStatus } from './git';
 import { gitApi } from './git';
+import { PublishBranchesPanel } from './PublishBranchesPanel';
+import { RELEASE_BRANCH } from './constants';
 import { SITE_HUB } from './useSiteLiveUpdates';
 import { useRelativeTime } from './useRelativeTime';
 
@@ -73,6 +75,8 @@ export function DeploymentsView({ siteId }: { siteId: string }) {
         </p>
       )}
 
+      <PublishBranchesPanel siteId={siteId} />
+
       {builds.isLoading && <p className="p-3 text-xs text-muted-foreground">{t('common.loading')}</p>}
       {!builds.isLoading && list.length === 0 && (
         <p className="p-3 text-xs text-muted-foreground">{t('ide.deploy.empty')}</p>
@@ -126,6 +130,11 @@ function BuildRow({
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 text-xs">
             <StatusLabel status={build.status} />
+            {build.branch && build.branch !== RELEASE_BRANCH && (
+              <span className="min-w-0 truncate rounded bg-muted px-1 py-px text-[9px] font-medium text-muted-foreground">
+                {build.branch}
+              </span>
+            )}
             {build.active && (
               <span className="rounded bg-green-500/15 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-green-600 dark:text-green-400">
                 {t('ide.git.live')}

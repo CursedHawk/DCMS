@@ -45,6 +45,8 @@ import {
   toastApiError,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
+import { gitApi } from '../site-source/git';
+import { RELEASE_BRANCH } from '../site-source/constants';
 interface Domain {
   id: string;
   hostname: string;
@@ -53,6 +55,8 @@ interface Domain {
   managed: boolean;
   /** The site served on this hostname, or null when the domain is not linked yet. */
   siteId: string | null;
+  /** The site's publishing branch it serves (#277); null for the released site. */
+  branch: string | null;
   /** Resolved server-side: listing sites needs SiteEdit, managing domains does not. */
   siteName: string | null;
   txtRecord: string;
@@ -145,8 +149,8 @@ export function DomainsPage() {
   });
 
   const linkSite = useMutation({
-    mutationFn: ({ id, siteId }: { id: string; siteId: string | null }) =>
-      api.post(`/admin/domains/${id}/site`, { siteId }),
+    mutationFn: ({ id, siteId, branch }: { id: string; siteId: string | null; branch?: string | null }) =>
+      api.post(`/admin/domains/${id}/site`, { siteId, branch }),
     onSuccess: async () => {
       toast.success(t('common.saved'));
       await qc.invalidateQueries({ queryKey: ['domains'] });
@@ -238,7 +242,7 @@ export function DomainsPage() {
                     Only offered where it can succeed: a domain that serves no site
                     has nothing to be canonical for, and the server rejects it.
                   */}
-                    {d.verified && d.siteId && !d.isPrimary ? (
+                    {d.verified && d.siteId && !d.branch && !d.isPrimary ? (
                       <Button
                         size="sm"
                         variant="outline"
@@ -308,6 +312,13 @@ export function DomainsPage() {
                     ) : (
                       <span className="text-sm">{d.siteName ?? t('domains.notLinked')}</span>
                     )}
+                    {d.siteId && sites.data ? (
+                      <BranchSelect
+                        siteId={d.siteId}
+                        value={d.branch}
+                        onChange={(branch) => linkSite.mutate({ id: d.id, siteId: d.siteId, branch })}
+                      />
+                    ) : null}
                     {/* Linked, but the site itself is gone — say so rather than blank. */}
                     {d.siteId && sites.data && !d.siteName ? (
                       <span className="text-sm text-destructive">{t('domains.siteMissing')}</span>
@@ -579,6 +590,42 @@ function UploadCertificateDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Which of the site's publishing branches the domain serves (#277): release, the site itself,
+ * or a branch like `dev`. Shown only once the site publishes more than release.
+ */
+function BranchSelect({
+  siteId,
+  value,
+  onChange,
+}: {
+  siteId: string;
+  value: string | null;
+  onChange: (branch: string | null) => void;
+}) {
+  const { t } = useTranslation();
+  const targets = useQuery({
+    queryKey: ['publish-branches', siteId],
+    queryFn: () => gitApi.publishBranches(siteId),
+  });
+  const rows = targets.data ?? [];
+  if (rows.length < 2 && !value) return null;
+  return (
+    <Select value={value ?? RELEASE_BRANCH} onValueChange={(v) => onChange(v === RELEASE_BRANCH ? null : v)}>
+      <SelectTrigger className="w-44" aria-label={t('domains.branch')}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {rows.map((r) => (
+          <SelectItem key={r.branch} value={r.branch}>
+            {r.release ? t('domains.branchRelease') : r.branch}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 

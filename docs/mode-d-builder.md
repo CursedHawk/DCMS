@@ -188,6 +188,7 @@ A developer writes a React component in TSX; authors place and configure it like
 
 Publish is gated on zero errors. It merges the draft into the release branch; the build is
 `ReactAppBuilder`'s sandboxed Vite build, exactly as for Mode B.
+Other branches can publish to their own domains: [publishing-branches.md](publishing-branches.md).
 
 ## Acceptance (P6)
 

@@ -225,7 +225,9 @@
     "certRemoveConfirm": "Odebrat nahraný certifikát pro {{hostname}}? DCMS pak bude vystavovat a obnovovat vlastní.",
     "certRemoved": "Nahraný certifikát odebrán, DCMS vystaví vlastní",
     "certLastError": "Poslední chyba",
-    "certVerifyFirst": "Nejdřív doménu ověřte, pak může získat certifikát."
+    "certVerifyFirst": "Nejdřív doménu ověřte, pak může získat certifikát.",
+    "branch": "Větev",
+    "branchRelease": "Web (release)"
   },
   "plugins": {
     "aiTools": {
@@ -802,7 +804,18 @@
       "liveStarted": "Bylo spuštěno nové nasazení",
       "liveSucceeded": "Nasazení bylo dokončeno a je nyní živé",
       "liveFailed": "Nasazení selhalo",
-      "notLive": "Živé aktualizace nejsou dostupné — seznam se obnoví po obnovení spojení."
+      "notLive": "Živé aktualizace nejsou dostupné — seznam se obnoví po obnovení spojení.",
+      "branchesTitle": "Kde je živě",
+      "branchesHint": "Commit do publikující větve ji nasadí na její domény. Ty jsou skryté před vyhledávači.",
+      "noDomain": "Zatím bez domény",
+      "addSubdomain": "Přidat subdoménu",
+      "pickBranch": "Publikovat další větev…",
+      "noOtherBranches": "Žádné další větve",
+      "publishBranch": "Publikovat",
+      "branchAdded": "Větev se nyní publikuje; první sestavení začalo",
+      "redeployBranch": "Nasadit znovu {{branch}}",
+      "removeBranch": "Přestat publikovat {{branch}}",
+      "removeBranchConfirm": "Přestat publikovat {{branch}}? Její domény se odpojí a přestanou ji servírovat; sestavení zůstanou v historii."
     },
     "explorer": "Průzkumník",
     "restored": "Koncept obnoven z této verze",

@@ -76,6 +76,8 @@ export type GitBuildStatus = 'Queued' | 'Building' | 'Succeeded' | 'Failed';
 
 export interface GitBuild {
   id: string;
+  /** The branch built: `release`, or one of the site's publishing branches (#277). */
+  branch: string;
   status: GitBuildStatus;
   gitCommitSha?: string | null;
   shortSha?: string | null;
@@ -134,6 +136,26 @@ export const gitApi = {
   // Full build log (install + build output) as plain text.
   buildLog: (siteId: string, buildId: string) =>
     api.get<string>(`/admin/sites/${siteId}/builds/${buildId}/log`),
-  // Force a fresh build+deploy of the current release head (recovers a failed/wedged build).
-  rebuild: (siteId: string) => api.post<{ buildId: string }>(`/admin/sites/${siteId}/builds`, {}),
+  // Force a fresh build+deploy of the current release head (recovers a failed/wedged build),
+  // or of a publishing branch's.
+  rebuild: (siteId: string, branch?: string) =>
+    api.post<{ buildId: string }>(
+      `/admin/sites/${siteId}/builds${branch ? `?branch=${encodeURIComponent(branch)}` : ''}`,
+      {},
+    ),
+  // Release, then every branch that publishes to its own domains (#277).
+  publishBranches: (siteId: string) =>
+    api.get<PublishBranch[]>(`/admin/sites/${siteId}/publish-branches`),
+  addPublishBranch: (siteId: string, branch: string) =>
+    api.post<{ branch: string; buildId: string }>(`/admin/sites/${siteId}/publish-branches`, { branch }),
+  removePublishBranch: (siteId: string, branch: string) =>
+    api.del(`/admin/sites/${siteId}/publish-branches/${branch.split('/').map(encodeURIComponent).join('/')}`),
 };
+
+export interface PublishBranch {
+  branch: string;
+  /** `release`: the site itself, on its own domains. */
+  release: boolean;
+  activeBuildId: string | null;
+  domains: { id: string; hostname: string; verified: boolean; primary: boolean }[];
+}

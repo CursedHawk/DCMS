@@ -154,8 +154,10 @@ export function useSiteLiveUpdates({
         mergeBuild(qc, siteId, update);
         void qc.invalidateQueries({ queryKey: ['site-builds', siteId] });
         // A finished build changes which one is live, so the site row is stale too.
-        if (update.status === 'Succeeded')
+        if (update.status === 'Succeeded') {
           void qc.invalidateQueries({ queryKey: ['site', siteId] });
+          void qc.invalidateQueries({ queryKey: ['publish-branches', siteId] });
+        }
 
         // Toast only for somebody else's build. Your own publish already told you it was
         // queued, and saying so twice is how a useful notification becomes noise.

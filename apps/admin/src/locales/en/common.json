@@ -224,7 +224,9 @@
     "certRemoveConfirm": "Remove the uploaded certificate for {{hostname}}? DCMS will issue and renew one automatically instead.",
     "certRemoved": "Uploaded certificate removed; DCMS will issue one",
     "certLastError": "Last error",
-    "certVerifyFirst": "Verify the domain before it can get a certificate."
+    "certVerifyFirst": "Verify the domain before it can get a certificate.",
+    "branch": "Branch",
+    "branchRelease": "Site (release)"
   },
   "plugins": {
     "aiTools": {
@@ -782,7 +784,18 @@
       "liveStarted": "A new deployment was started",
       "liveSucceeded": "A deployment finished and is now live",
       "liveFailed": "A deployment failed",
-      "notLive": "Not receiving live updates — this list refreshes when the connection returns."
+      "notLive": "Not receiving live updates — this list refreshes when the connection returns.",
+      "branchesTitle": "Where it is live",
+      "branchesHint": "A commit to a publishing branch deploys it to its domains. Their domains are kept out of search engines.",
+      "noDomain": "No domain yet",
+      "addSubdomain": "Add a subdomain",
+      "pickBranch": "Publish another branch…",
+      "noOtherBranches": "No other branches",
+      "publishBranch": "Publish",
+      "branchAdded": "The branch publishes now; its first build has started",
+      "redeployBranch": "Redeploy {{branch}}",
+      "removeBranch": "Stop publishing {{branch}}",
+      "removeBranchConfirm": "Stop publishing {{branch}}? Its domains are unlinked and stop serving it; its builds stay in the history."
     },
     "explorer": "Explorer",
     "restored": "Draft restored from this version",
