@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { sameDefinition, type SavedView, type ViewDefinition, type ViewSharing } from '@dcms/ui';
-import { api } from '../../lib/api';
+import type { ApiClient } from '@dcms/core';
+import { sameDefinition, type SavedView, type ViewDefinition } from './model';
+import type { ViewSharing } from './ViewBar';
 
-/** Saved views of console tables (#278), from /api/admin/views. */
-export const viewsApi = {
+/** Saved views of console tables (#278), from /api/admin/views, through the console's client. */
+export const viewsApi = (api: ApiClient) => ({
   list: (table: string) =>
     api.get<{ views: SavedView[]; defaultView: string | null }>(`/admin/views?table=${encodeURIComponent(table)}`),
   create: (table: string, name: string, definition: ViewDefinition) =>
@@ -15,7 +16,7 @@ export const viewsApi = {
   setDefault: (table: string, view: string | null) => api.put('/admin/views/default', { table, view }),
   audience: () =>
     api.get<{ people: { id: string; label: string }[]; roles: { id: string; label: string }[] }>('/admin/views/audience'),
-};
+});
 
 /**
  * A table's views and what is on screen: `definition` is the working copy every control edits,
@@ -24,22 +25,29 @@ export const viewsApi = {
  * and are never saved over.
  */
 export function useTableViews({
+  api,
   table,
   baseline,
   systemViews = [],
   initialViewId,
+  fallbackViewId,
   onViewChange,
 }: {
+  /** The admin API client (the console's, or a plugin screen's `usePluginApi()`). */
+  api: ApiClient;
   table: string;
   /** What the table shows with no view chosen. */
   baseline: ViewDefinition;
   systemViews?: SavedView[];
   initialViewId?: string | null;
+  /** Opened when neither a link nor the member's own default names a view (a maker's default view). */
+  fallbackViewId?: string | null;
   onViewChange?: (id: string | null) => void;
 }) {
   const qc = useQueryClient();
   const key = useMemo(() => ['table-views', table], [table]);
-  const list = useQuery({ queryKey: key, queryFn: () => viewsApi.list(table) });
+  const calls = useMemo(() => viewsApi(api), [api]);
+  const list = useQuery({ queryKey: key, queryFn: () => calls.list(table) });
   const views = useMemo(() => [...systemViews.map((v) => ({ ...v, system: true })), ...(list.data?.views ?? [])], [systemViews, list.data]);
 
   const [currentId, setCurrentId] = useState<string | null>(initialViewId ?? null);
@@ -61,18 +69,18 @@ export function useTableViews({
   const opened = useRef(false);
   useEffect(() => {
     if (opened.current || !list.data) return;
-    const wanted = initialViewId ?? list.data.defaultView;
+    const wanted = initialViewId ?? list.data.defaultView ?? fallbackViewId;
     opened.current = true;
     if (wanted && views.some((v) => v.id === wanted)) select(wanted);
-  }, [list.data, initialViewId, views, select]);
+  }, [list.data, initialViewId, fallbackViewId, views, select]);
 
   const refresh = () => qc.invalidateQueries({ queryKey: key });
   const save = useMutation({
-    mutationFn: () => viewsApi.update(current!.id, current!.name, definition),
+    mutationFn: () => calls.update(current!.id, current!.name, definition),
     onSuccess: refresh,
   });
   const saveAs = useMutation({
-    mutationFn: (name: string) => viewsApi.create(table, name, definition),
+    mutationFn: (name: string) => calls.create(table, name, definition),
     onSuccess: async (view) => {
       await refresh();
       setCurrentId(view.id);
@@ -80,18 +88,18 @@ export function useTableViews({
     },
   });
   const remove = useMutation({
-    mutationFn: (id: string) => viewsApi.remove(id),
+    mutationFn: (id: string) => calls.remove(id),
     onSuccess: async () => {
       await refresh();
       select(null);
     },
   });
   const setDefault = useMutation({
-    mutationFn: (id: string | null) => viewsApi.setDefault(table, id),
+    mutationFn: (id: string | null) => calls.setDefault(table, id),
     onSuccess: refresh,
   });
   const share = useMutation({
-    mutationFn: ({ id, sharing }: { id: string; sharing: ViewSharing }) => viewsApi.share(id, sharing),
+    mutationFn: ({ id, sharing }: { id: string; sharing: ViewSharing }) => calls.share(id, sharing),
     onSuccess: refresh,
   });
 
@@ -110,6 +118,7 @@ export function useTableViews({
     setDefault,
     share,
     error: list.error,
+    audience: calls.audience,
   };
 }
 

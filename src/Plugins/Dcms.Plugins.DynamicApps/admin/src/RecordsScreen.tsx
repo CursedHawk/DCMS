@@ -29,6 +29,12 @@ import {
   toastApiError,
   type Column,
   LoadFailed,
+  TableViewControls,
+  cleanFilter,
+  useTableViews,
+  type SavedView,
+  type ViewDefinition,
+  type ViewField,
 } from '@dcms/ui';
 import {
   instancePath,
@@ -84,84 +90,151 @@ function membersOf(config: AppConfig, table: TableDef): Member[] {
 
 /** The app's records (instance screen "records"), as the published model defines them. */
 export function RecordsScreen({ instance }: PluginScreenProps) {
-  const { t, i18n } = usePluginT();
+  const { t } = usePluginT();
   const slug = instance!.slug;
   const published = useRecordsModel(slug);
   const config = published.data?.config ?? null;
+  const [tableId, setTableId] = useState<string>('');
+
+  const tables = config?.tables.filter((x) => x.enabled) ?? [];
+  const table = tables.find((x) => x.id === tableId) ?? tables[0] ?? null;
+
+  if (published.isLoading) return <CenteredSpinner />;
+  if (!config || !table) {
+    return <EmptyState title={t('records.emptyTitle')} description={t('records.emptyHint')} />;
+  }
+  // Keyed by table: a table's views, filters and page are its own.
+  return (
+    <TableRecords key={table.id} instance={instance!} config={config} table={table} tables={tables}
+      onTableChange={setTableId} />
+  );
+}
+
+/** How the view kit compares a field: the records query's own operators per type. */
+function viewFieldOf(m: Member): ViewField | null {
+  if (m.lookup) return { key: m.apiName, label: m.label, kind: 'reference', sortable: false };
+  const f = m.field!;
+  const base = { key: m.apiName, label: m.label, sortable: f.sortable, filterable: f.filterable };
+  switch (f.type) {
+    case 'text': case 'longText': case 'email': case 'url':
+      return { ...base, kind: 'text', ops: ['contains', 'eq', 'ne', 'startsWith', 'in', 'nin', 'isEmpty', 'isNotEmpty'] };
+    case 'integer': case 'decimal':
+      return { ...base, kind: 'number' };
+    case 'boolean':
+      return { ...base, kind: 'boolean' };
+    case 'date': case 'dateTime':
+      return { ...base, kind: 'date', ops: ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'isEmpty', 'isNotEmpty'] };
+    case 'choice':
+      return { ...base, kind: 'choice', options: m.options ?? [] };
+    case 'multiChoice':
+      return { ...base, kind: 'choice', options: m.options ?? [], ops: ['contains', 'isEmpty', 'isNotEmpty'] };
+    case 'media':
+      return { ...base, kind: 'reference' };
+    default:
+      return null;
+  }
+}
+
+function TableRecords({ instance, config, table, tables, onTableChange }: {
+  instance: NonNullable<PluginScreenProps['instance']>;
+  config: AppConfig;
+  table: TableDef;
+  tables: TableDef[];
+  onTableChange: (id: string) => void;
+}) {
+  const { t, i18n } = usePluginT();
+  const api = usePluginApi();
+  const slug = instance.slug;
   const mayWrite = useCan('data-write');
   const mayImport = useCan('data-import');
   const [importing, setImporting] = useState(false);
-  const [tableId, setTableId] = useState<string>('');
-  const [viewId, setViewId] = useState<string>('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<RecordRow | 'new' | null>(null);
   // The options picked per choice field: records shown have one of them.
   const [choices, setChoices] = useState<Choices>({});
 
-  const tables = config?.tables.filter((x) => x.enabled) ?? [];
-  const table = tables.find((x) => x.id === tableId) ?? tables[0] ?? null;
-  const views = config?.views.filter((v) => v.tableId === table?.id) ?? [];
-  const view = views.find((v) => v.id === viewId) ?? views.find((v) => v.isDefault) ?? null;
-  useEffect(() => setChoices({}), [table?.id]);
-  useEffect(() => setPage(1), [table?.id, view?.id, search, choices]);
-
   usePluginAiContext(useMemo(() => ({
     area: 'data-platform',
-    summary: `the records of the ${instance!.name} app (Dynamic Apps instance "${slug}")${table ? `, table ${table.apiName}` : ''}`,
-    selection: [instance!.id, ...(table ? [table.id] : []), ...(editing && editing !== 'new' ? [editing.id] : [])],
+    summary: `the records of the ${instance.name} app (Dynamic Apps instance "${slug}"), table ${table.apiName}`,
+    selection: [instance.id, table.id, ...(editing && editing !== 'new' ? [editing.id] : [])],
   }), [instance, slug, table, editing]));
 
-  const members = useMemo(() => (config && table ? membersOf(config, table) : []), [config, table]);
-  const shown = useMemo(() => {
-    if (view && view.columns.length > 0) return view.columns.map((id) => members.find((m) => m.id === id)).filter((m): m is Member => !!m);
-    return members.slice(0, 6);
-  }, [view, members]);
-  const sortBy = view?.sort[0];
-  const sortMember = sortBy ? members.find((m) => m.id === sortBy.fieldId) : undefined;
+  const members = useMemo(() => membersOf(config, table), [config, table]);
+  const fields = useMemo(() => [
+    ...members.map(viewFieldOf).filter((f): f is ViewField => !!f),
+    { key: 'created_at', label: t('records.createdAt'), kind: 'date' as const },
+    { key: 'updated_at', label: t('records.updatedAt'), kind: 'date' as const },
+  ], [members, t]);
+  const columnFields = useMemo(() => fields.filter((f) => members.some((m) => m.apiName === f.key)), [fields, members]);
 
-  const records = useRecords(slug, table?.apiName ?? null, {
+  /*
+   * Views (#278): the maker's views are built in and read-only here; a member saves and shares
+   * their own on top. A member's own default wins over the maker's.
+   */
+  const apiName = (id: string) => members.find((m) => m.id === id)?.apiName;
+  const makerViews = config.views.filter((v) => v.tableId === table.id);
+  const systemViews = useMemo<SavedView[]>(() => makerViews.map((v) => ({
+    id: `system:${v.id}`,
+    name: v.displayName,
+    mine: false,
+    system: true,
+    definition: {
+      columns: v.columns.map(apiName).filter((x): x is string => !!x),
+      sort: v.sort.flatMap((s) => { const f = apiName(s.fieldId); return f ? [{ field: f, direction: s.descending ? 'desc' as const : 'asc' as const }] : []; }),
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  })), [config, table]);
+  const baseline = useMemo<ViewDefinition>(() => ({ columns: members.slice(0, 6).map((m) => m.apiName), sort: [] }), [members]);
+  const makerDefault = makerViews.find((v) => v.isDefault);
+  const views = useTableViews({
+    api,
+    table: `apps:${slug}:${table.apiName}`,
+    baseline,
+    systemViews,
+    fallbackViewId: makerDefault ? `system:${makerDefault.id}` : null,
+  });
+  const definition = views.definition;
+  useEffect(() => setPage(1), [definition, search, choices]);
+
+  const shown = definition.columns.map((k) => members.find((m) => m.apiName === k)).filter((m): m is Member => !!m);
+  const viewFilter = cleanFilter(definition.filter);
+  const quick = choiceFilter(members, choices);
+  const filter = viewFilter && quick ? { and: [viewFilter, quick] } : (viewFilter ?? quick);
+
+  const records = useRecords(slug, table.apiName, {
     search: search.trim() || undefined,
     page,
     pageSize: PAGE_SIZE,
-    sort: sortMember ? [{ field: sortMember.apiName, direction: sortBy!.descending ? 'desc' : 'asc' }] : undefined,
-    filter: choiceFilter(members, choices),
+    sort: definition.sort.length > 0 ? definition.sort.map((s) => ({ field: s.field, direction: s.direction })) : undefined,
+    filter,
   });
 
   const columns = useMemo<Column<RecordRow>[]>(() => shown.map((m, i) => ({
     id: m.apiName,
     header: m.label,
     primary: i === 0,
+    sortable: !!m.field?.sortable,
     cell: (row) => mayWrite && isChoice(m) && !m.field?.readOnly
-      ? <InlineChoice slug={slug} table={table!.apiName} member={m} row={row} />
+      ? <InlineChoice slug={slug} table={table.apiName} member={m} row={row} />
       : <span className="line-clamp-1">{display(row[m.apiName], m, i18n.language)}</span>,
   })), [shown, i18n.language, mayWrite, slug, table]);
-
-  if (published.isLoading) return <CenteredSpinner />;
-  if (!config || tables.length === 0) {
-    return <EmptyState title={t('records.emptyTitle')} description={t('records.emptyHint')} />;
-  }
 
   const total = records.data?.total ?? 0;
   const capped = records.data?.totalCapped ?? false;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   // Past a capped total the last page is unknown: go on while pages come back full.
   const hasNext = capped ? (records.data?.items.length ?? 0) === PAGE_SIZE : page < pages;
-  const searchable = table!.fields.some((f) => f.searchable) || table!.primaryFieldId !== undefined;
+  const searchable = table.fields.some((f) => f.searchable) || table.primaryFieldId !== undefined;
+  const sort = definition.sort[0];
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <div className="w-56">
-          <SelectField id="records-table" label={t('records.table')} value={table!.id} onChange={(v) => { setTableId(v); setViewId(''); }}
+          <SelectField id="records-table" label={t('records.table')} value={table.id} onChange={onTableChange}
             options={tables.map((x) => ({ value: x.id, label: x.pluralName ?? x.displayName }))} />
         </div>
-        {views.length > 0 ? (
-          <div className="w-48">
-            <SelectField id="records-view" label={t('records.view')} value={view?.id ?? '*'} onChange={(v) => setViewId(v === '*' ? '' : v)}
-              options={[{ value: '*', label: t('records.allFields') }, ...views.map((v) => ({ value: v.id, label: v.displayName }))]} />
-          </div>
-        ) : null}
         {searchable ? (
           <div className="w-64 space-y-1">
             <Label htmlFor="records-search">{t('records.search')}</Label>
@@ -181,9 +254,12 @@ export function RecordsScreen({ instance }: PluginScreenProps) {
           ) : null}
         </div>
       </div>
-      {importing ? <ImportDialog slug={slug} table={table!} onClose={() => setImporting(false)} /> : null}
+      <TableViewControls views={views} fields={fields} columnFields={columnFields} />
+      {importing ? <ImportDialog slug={slug} table={table} onClose={() => setImporting(false)} /> : null}
 
       <DataTable rows={records.data?.items ?? []} columns={columns} rowKey={(r) => r.id} isLoading={records.isLoading}
+        sort={sort ? { columnId: sort.field, direction: sort.direction } : null}
+        onSortChange={(next) => views.setDefinition((d) => ({ ...d, sort: next ? [{ field: next.columnId, direction: next.direction }] : [] }))}
         error={records.isError ? <LoadFailed title={t('common.loadFailed')} retryLabel={t('common.retry')} onRetry={() => void records.refetch()} /> : undefined}
         empty={t('records.none')} onRowClick={(row) => setEditing(row)} />
 
@@ -201,7 +277,7 @@ export function RecordsScreen({ instance }: PluginScreenProps) {
       </div>
 
       {editing ? (
-        <RecordSheet slug={slug} config={config} table={table!} members={members} record={editing === 'new' ? null : editing}
+        <RecordSheet slug={slug} config={config} table={table} members={members} record={editing === 'new' ? null : editing}
           editable={mayWrite} onClose={() => setEditing(null)} />
       ) : null}
     </div>

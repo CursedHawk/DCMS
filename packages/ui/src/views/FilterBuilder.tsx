@@ -183,7 +183,7 @@ function Condition({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {(field ? opsFor(field.kind) : [op]).map((o) => (
+          {(field ? (field.ops ?? opsFor(field.kind)) : [op]).map((o) => (
             <SelectItem key={o} value={o}>
               {labels.op[o]}
             </SelectItem>

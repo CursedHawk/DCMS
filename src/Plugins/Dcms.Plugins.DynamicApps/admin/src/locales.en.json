@@ -308,8 +308,6 @@
   },
   "records": {
     "table": "Table",
-    "view": "View",
-    "allFields": "All fields",
     "search": "Search",
     "new": "New record",
     "none": "No records.",
@@ -329,7 +327,9 @@
     "emptyHint": "Records belong to the published tables. Publish the app's configuration first.",
     "filterBy": "Filter by {{field}}",
     "any": "Any",
-    "editField": "Change {{field}}"
+    "editField": "Change {{field}}",
+    "createdAt": "Created",
+    "updatedAt": "Updated"
   },
   "ai": {
     "enableTitle": "Let the assistant work on this app?",

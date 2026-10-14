@@ -308,8 +308,6 @@
   },
   "records": {
     "table": "Tabulka",
-    "view": "Pohled",
-    "allFields": "Všechna pole",
     "search": "Hledat",
     "new": "Nový záznam",
     "none": "Žádné záznamy.",
@@ -329,7 +327,9 @@
     "emptyHint": "Záznamy patří publikovaným tabulkám. Nejdřív publikujte konfiguraci aplikace.",
     "filterBy": "Filtrovat podle: {{field}}",
     "any": "Cokoli",
-    "editField": "Změnit: {{field}}"
+    "editField": "Změnit: {{field}}",
+    "createdAt": "Vytvořeno",
+    "updatedAt": "Upraveno"
   },
   "ai": {
     "enableTitle": "Povolit asistentovi pracovat s touto aplikací?",

@@ -159,7 +159,7 @@ test('a record is edited with the version it was read at', async ({ page, api })
   await page.goto('/plugins/crm/records');
 
   await page.getByRole('table').getByText('Big one').click();
-  await page.getByLabel('Title').fill('Bigger one');
+  await page.getByRole('dialog').getByLabel('Title').fill('Bigger one');
   await page.getByRole('button', { name: 'Save' }).click();
 
   await expect.poll(() => api.requestsTo('PATCH', `/api/admin/plugins/crm/_records/deals/${record.id}`).length).toBe(1);
@@ -319,5 +319,45 @@ test.describe('a member who may read the app\'s records and nothing else', () =>
     // Not the instance page: its tabs are plugin management, which this member does not hold.
     await expect(page.getByRole('tab', { name: 'Configuration' })).toHaveCount(0);
     expect(api.requestsTo('GET', '/api/admin/plugins/crm/_model/published')).toHaveLength(0);
+  });
+});
+
+test("the maker's default view opens the table, and a member filters and saves a view of their own", async ({ page, api }) => {
+  const BIG = { id: 'aaaaaaaa-0000-0000-0000-0000000000a1', apiName: 'big', displayName: 'Big deals', tableId: TABLE_ID,
+    columns: [TITLE_ID, AMOUNT_ID], sort: [{ fieldId: AMOUNT_ID, descending: true }], isDefault: true };
+  api
+    .on('GET', '/api/admin/plugins/crm/_model/records', { revision: LIVE, config: { ...CONFIG, views: [BIG] } })
+    .on('POST', '/api/admin/plugins/crm/_records/deals/query', {
+      items: [{ id: 'dddddddd-0000-0000-0000-000000000009', version: 1, created_at: '2026-10-07T10:00:00Z', updated_at: '2026-10-07T10:00:00Z', title: 'Huge', amount: 9000, stage: 'won' }],
+      total: 1, page: 1, pageSize: 25,
+    })
+    .on('POST', '/api/admin/views', ({ body }) => ({ id: 'v9', mine: true, ...(body as object) }));
+  await page.goto('/plugins/crm/records');
+
+  // Built in, read-only here, and the table opens with it: its columns and its order.
+  await expect(page.getByRole('button', { name: 'View: Big deals' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: /Amount/ })).toBeVisible();
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/plugins/crm/_records/deals/query')
+    .some((r) => JSON.stringify((r.body as { sort?: unknown }).sort) === JSON.stringify([{ field: 'amount', direction: 'desc' }])))
+    .toBe(true);
+
+  // Only what the table may filter on is offered: Stage is filterable, Title is not.
+  await page.getByRole('button', { name: 'Filters' }).click();
+  await page.getByRole('button', { name: 'Add condition' }).click();
+  await page.getByRole('combobox', { name: 'Field' }).click();
+  await expect(page.getByRole('option', { name: 'Title' })).toHaveCount(0);
+  await page.getByRole('option', { name: 'Stage' }).click();
+  await page.getByRole('checkbox', { name: 'Won' }).click();
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/plugins/crm/_records/deals/query')
+    .some((r) => JSON.stringify((r.body as { filter?: unknown }).filter) === JSON.stringify({ and: [{ field: 'stage', op: 'in', value: ['won'] }] })))
+    .toBe(true);
+
+  await page.getByRole('button', { name: 'Save as…' }).click();
+  await page.getByLabel('Name').fill('Won big deals');
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/views').length).toBe(1);
+  expect(api.requestsTo('POST', '/api/admin/views')[0]!.body).toMatchObject({
+    table: 'apps:crm:deals',
+    definition: { columns: ['title', 'amount'], sort: [{ field: 'amount', direction: 'desc' }], filter: { and: [{ field: 'stage', op: 'in', value: ['won'] }] } },
   });
 });

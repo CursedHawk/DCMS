@@ -2,26 +2,20 @@ import { useQuery } from '@tanstack/react-query';
 import { Filter } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
-import {
-  Badge,
-  Button,
-  ColumnChooser,
-  FilterBuilder,
-  ShareViewDialog,
-  ViewBar,
-  countConditions,
-  toastApiError,
-  type SavedView,
-  type UiOp,
-  type ViewField,
-  type ViewLabels,
-} from '@dcms/ui';
-import { viewsApi, type TableViews } from './useTableViews';
+import { toastApiError } from '../errors';
+import { toast } from '../Toaster';
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
+import { ColumnChooser } from './ColumnChooser';
+import { FilterBuilder } from './FilterBuilder';
+import type { ViewLabels } from './labels';
+import { countConditions, type SavedView, type UiOp, type ViewField } from './model';
+import { ShareViewDialog, ViewBar } from './ViewBar';
+import type { TableViews } from './useTableViews';
 
-/** The view kit's words, from the console's locale. */
+/** The view kit's words, from the console's `views.*` locale keys (plugin screens fall back to them). */
 export function useViewLabels(): ViewLabels {
-  const { t } = useTranslation();
+  const { t } = useTranslation('common');
   return useMemo(() => {
     const ops: UiOp[] = ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'nin', 'contains', 'startsWith', 'isEmpty', 'isNotEmpty'];
     const w = (k: string) => t(`views.${k}`);
@@ -90,7 +84,7 @@ export function TableViewControls({
   /** What may be shown as a column, when not the same. */
   columnFields?: ViewField[];
 }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation('common');
   const labels = useViewLabels();
   const [filtering, setFiltering] = useState(false);
   const [sharing, setSharing] = useState<SavedView | null>(null);
@@ -143,6 +137,7 @@ export function TableViewControls({
       )}
       {sharing && (
         <ShareDialog
+          load={views.audience}
           view={sharing}
           labels={labels}
           busy={views.share.isPending}
@@ -160,19 +155,21 @@ export function TableViewControls({
 }
 
 function ShareDialog({
+  load,
   view,
   labels,
   busy,
   onClose,
   onSave,
 }: {
+  load: TableViews['audience'];
   view: SavedView;
   labels: ViewLabels;
   busy: boolean;
   onClose: () => void;
   onSave: (next: { workspace: boolean; userIds: string[]; roleIds: string[] }) => void;
 }) {
-  const audience = useQuery({ queryKey: ['view-audience'], queryFn: viewsApi.audience });
+  const audience = useQuery({ queryKey: ['view-audience'], queryFn: load });
   if (!audience.data) return null;
   return (
     <ShareViewDialog

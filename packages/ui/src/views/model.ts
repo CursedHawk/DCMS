@@ -16,6 +16,8 @@ export interface ViewField {
   filterable?: boolean;
   /** False when the table cannot sort on it. */
   sortable?: boolean;
+  /** The operators the table takes for it, when fewer than its kind's (`opsFor`). */
+  ops?: UiOp[];
 }
 
 export type ViewOp = 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'nin' | 'contains' | 'startsWith' | 'isNull';
@@ -94,7 +96,7 @@ export function withOp(c: ViewCondition, op: UiOp): ViewCondition {
 
 export function newCondition(field: ViewField): ViewCondition {
   if (field.kind === 'boolean') return { field: field.key, op: 'eq', value: true };
-  return withOp({ field: field.key, op: 'eq' }, opsFor(field.kind)[0]);
+  return withOp({ field: field.key, op: 'eq' }, (field.ops ?? opsFor(field.kind))[0]);
 }
 
 export function isCondition(f: ViewFilter): f is ViewCondition {

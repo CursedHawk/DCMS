@@ -23,7 +23,9 @@ import {
   TabsList,
   TabsTrigger,
   cleanFilter,
+  TableViewControls,
   useDebounced,
+  useTableViews,
   type ViewDefinition,
 } from '@dcms/ui';
 import { dateTime } from '@dcms/core';
@@ -33,7 +35,7 @@ import {
   usePluginCatalog,
   usePluginInstances,
 } from '../plugins/api';
-import { TableViewControls, useTableViews } from '../views';
+import { api } from '../../lib/api';
 import { BulkActions } from './BulkActions';
 import {
   BUILT_IN_COLUMNS,
@@ -338,6 +340,7 @@ function CollectionView({
     sort: isSortColumn(params.sort) ? [{ field: sortFieldOf(params.sort), direction: params.dir === 'desc' ? 'desc' : 'asc' }] : [],
   }));
   const views = useTableViews({
+    api,
     table: `content:${instance.slug}:${contentType.name}`,
     baseline,
     initialViewId: params.view,
