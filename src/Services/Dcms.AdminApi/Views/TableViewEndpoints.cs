@@ -6,6 +6,7 @@ using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Tenancy;
+using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Kernel.Views;
 using Dcms.Shared.Security;
 using Dcms.Shared.Security.Authorization;
@@ -36,16 +37,17 @@ public static partial class TableViewEndpoints
             if (await ctx.DenyAsync(table, ct) is { } denied) return denied;
             var me = ctx.UserId;
             var roles = await ctx.MyRolesAsync(ct);
+            var tenantId = ctx.TenantId;
             var views = await ctx.Db.TableViews.AsNoTracking().Include(v => v.Shares)
-                .Where(v => v.TableKey == table && (v.OwnerUserId == me || v.SharedWithWorkspace
+                .Where(v => v.TenantId == tenantId && v.TableKey == table && (v.OwnerUserId == me || v.SharedWithWorkspace
                     || v.Shares.Any(s => s.UserId == me || (s.RoleId != null && roles.Contains(s.RoleId.Value)))))
                 .OrderBy(v => v.Name)
                 .ToListAsync(ct);
             var owners = views.Select(v => v.OwnerUserId).Distinct().ToList();
-            var emails = await ctx.Db.Memberships.AsNoTracking().Where(m => owners.Contains(m.UserId))
+            var emails = await ctx.Db.Memberships.AsNoTracking().Where(m => m.TenantId == tenantId && owners.Contains(m.UserId))
                 .ToDictionaryAsync(m => m.UserId, m => m.Email, ct);
             var fallback = await ctx.Db.TableViewDefaults.AsNoTracking()
-                .Where(d => d.UserId == me && d.TableKey == table).Select(d => d.ViewKey).FirstOrDefaultAsync(ct);
+                .Where(d => d.TenantId == tenantId && d.UserId == me && d.TableKey == table).Select(d => d.ViewKey).FirstOrDefaultAsync(ct);
 
             return Results.Ok(new
             {
@@ -61,6 +63,7 @@ public static partial class TableViewEndpoints
             var view = new TableView
             {
                 Id = Guid.NewGuid(),
+                TenantId = ctx.TenantId,
                 TableKey = body.Table!,
                 Name = body.Name!.Trim(),
                 OwnerUserId = ctx.UserId,
@@ -91,7 +94,7 @@ public static partial class TableViewEndpoints
             if (await ctx.OwnedAsync(view, ct) is { } refused) return refused;
             // Nobody opens a table with a view that is gone.
             var key = view!.Id.ToString();
-            await ctx.Db.TableViewDefaults.Where(d => d.ViewKey == key).ExecuteDeleteAsync(ct);
+            await ctx.Db.TableViewDefaults.Where(d => d.TenantId == view.TenantId && d.ViewKey == key).ExecuteDeleteAsync(ct);
             ctx.Db.TableViews.Remove(view);
             audit.Declared?.For("view", view.Id, view.Name).With("table", view.TableKey);
             await ctx.Db.SaveChangesAsync(ct);
@@ -108,14 +111,16 @@ public static partial class TableViewEndpoints
             var roleIds = (body.RoleIds ?? []).Distinct().ToList();
             if (userIds.Count + roleIds.Count > 100)
                 return Results.BadRequest(new { error = "Share with at most 100 members and roles; share with the workspace instead." });
-            if (await ctx.Db.Memberships.CountAsync(m => userIds.Contains(m.UserId), ct) != userIds.Count)
+            // Only this workspace's members and roles: a view never leaves the workspace it was made in.
+            var tenantId = ctx.TenantId;
+            if (await ctx.Db.Memberships.CountAsync(m => m.TenantId == tenantId && userIds.Contains(m.UserId), ct) != userIds.Count)
                 return Results.BadRequest(new { error = "Someone named is not a member of this workspace." });
-            if (await ctx.Db.TenantRoles.CountAsync(r => roleIds.Contains(r.Id), ct) != roleIds.Count)
+            if (await ctx.Db.TenantRoles.CountAsync(r => r.TenantId == tenantId && roleIds.Contains(r.Id), ct) != roleIds.Count)
                 return Results.BadRequest(new { error = "A role named does not exist in this workspace." });
 
             // The old set goes with ExecuteDelete, the new one is added as new rows (see the EF trap below).
             await using var tx = await ctx.Db.Database.BeginTransactionAsync(ct);
-            await ctx.Db.TableViewShares.Where(x => x.ViewId == view!.Id).ExecuteDeleteAsync(ct);
+            await ctx.Db.TableViewShares.Where(x => x.TenantId == tenantId && x.ViewId == view!.Id).ExecuteDeleteAsync(ct);
             view!.SharedWithWorkspace = body.Workspace;
             view.UpdatedAt = DateTimeOffset.UtcNow;
             // Added through the set, not the navigation: a child with its id already set, found
@@ -137,11 +142,13 @@ public static partial class TableViewEndpoints
         // names and emails only, and only to a member of the workspace.
         group.MapGet("/audience", async (ViewContext ctx, CurrentUser user, CancellationToken ct) =>
         {
+            if (ctx.NoWorkspace() is { } none) return none;
             var me = ctx.UserId;
-            if (!user.IsSuperAdmin && !await ctx.Db.Memberships.AnyAsync(m => m.UserId == me, ct)) return Results.Forbid();
-            var people = await ctx.Db.Memberships.AsNoTracking().Where(m => m.UserId != me)
+            var tenantId = ctx.TenantId;
+            if (!user.IsSuperAdmin && !await ctx.Db.Memberships.AnyAsync(m => m.TenantId == tenantId && m.UserId == me, ct)) return Results.Forbid();
+            var people = await ctx.Db.Memberships.AsNoTracking().Where(m => m.TenantId == tenantId && m.UserId != me)
                 .OrderBy(m => m.Email).Select(m => new { id = m.UserId, label = m.Email }).ToListAsync(ct);
-            var roles = await ctx.Db.TenantRoles.AsNoTracking()
+            var roles = await ctx.Db.TenantRoles.AsNoTracking().Where(r => r.TenantId == tenantId)
                 .OrderBy(r => r.Name).Select(r => new { id = r.Id, label = r.Name }).ToListAsync(ct);
             return Results.Ok(new { people, roles });
         });
@@ -155,21 +162,23 @@ public static partial class TableViewEndpoints
             if (body.View is { } key && !key.StartsWith("system:", StringComparison.Ordinal))
             {
                 var roles = await ctx.MyRolesAsync(ct);
+                var tenantOfView = ctx.TenantId;
                 var visible = Guid.TryParse(key, out var viewId) && await ctx.Db.TableViews.AnyAsync(v => v.Id == viewId
-                    && v.TableKey == body.Table && (v.OwnerUserId == me || v.SharedWithWorkspace
+                    && v.TenantId == tenantOfView && v.TableKey == body.Table && (v.OwnerUserId == me || v.SharedWithWorkspace
                         || v.Shares.Any(s => s.UserId == me || (s.RoleId != null && roles.Contains(s.RoleId.Value)))), ct);
                 if (!visible) return Results.BadRequest(new { error = "No such view on this table." });
             }
             if (body.View?.Length > 100) return Results.BadRequest(new { error = "No such view on this table." });
 
-            var row = await ctx.Db.TableViewDefaults.FirstOrDefaultAsync(d => d.UserId == me && d.TableKey == body.Table, ct);
+            var tenantId = ctx.TenantId;
+            var row = await ctx.Db.TableViewDefaults.FirstOrDefaultAsync(d => d.TenantId == tenantId && d.UserId == me && d.TableKey == body.Table, ct);
             if (body.View is null)
             {
                 if (row is not null) ctx.Db.TableViewDefaults.Remove(row);
             }
             else if (row is null)
             {
-                ctx.Db.TableViewDefaults.Add(new TableViewDefault { Id = Guid.NewGuid(), UserId = me, TableKey = body.Table!, ViewKey = body.View });
+                ctx.Db.TableViewDefaults.Add(new TableViewDefault { Id = Guid.NewGuid(), TenantId = tenantId, UserId = me, TableKey = body.Table!, ViewKey = body.View });
             }
             else
             {
@@ -232,21 +241,33 @@ public static partial class TableViewEndpoints
 /// <summary>Who is asking, and whether they may read a table, for <see cref="TableViewEndpoints"/>.</summary>
 public sealed class ViewContext(
     TenancyDbContext db, CmsDbContext cms, CurrentUser user, IPluginCatalog catalog,
-    IAuthorizationService authz, IHttpContextAccessor http)
+    IAuthorizationService authz, IHttpContextAccessor http, ITenantContext tenant)
 {
     public TenancyDbContext Db => db;
     public Guid UserId => user.RequireUserId();
 
+    /// <summary>
+    /// The workspace the request is in. A view lives in one workspace and is seen, shared and
+    /// opened only there: every read and write names it, not only the context's query filter.
+    /// </summary>
+    public Guid TenantId => tenant.TenantId ?? throw new InvalidOperationException("No workspace.");
+
+    /// <summary>Null when the request names a workspace; else the answer to give.</summary>
+    public IResult? NoWorkspace() =>
+        tenant.TenantId is null ? Results.BadRequest(new { error = "Select a workspace first." }) : null;
+
     public async Task<HashSet<Guid>> MyRolesAsync(CancellationToken ct)
     {
         var me = UserId;
+        var tenantId = TenantId;
         return (await db.MemberRoles.AsNoTracking()
-            .Where(r => r.Membership!.UserId == me).Select(r => r.TenantRoleId).ToListAsync(ct)).ToHashSet();
+            .Where(r => r.TenantId == tenantId && r.Membership!.UserId == me).Select(r => r.TenantRoleId).ToListAsync(ct)).ToHashSet();
     }
 
     /// <summary>Null when the caller may read the table; else the answer to give.</summary>
     public async Task<IResult?> DenyAsync(string? table, CancellationToken ct)
     {
+        if (NoWorkspace() is { } none) return none;
         if (table is null || !TableViewEndpoints.TableKeyPattern().IsMatch(table))
             return Results.BadRequest(new { error = "Name the table: content:{instance}:{type}, apps:{instance}:{table} or dataset:{instance}:{set}." });
         var permission = await ReadPermissionAsync(table, ct);
@@ -258,7 +279,8 @@ public sealed class ViewContext(
     /// <summary>Not found for a view that is not there or not the caller's to change, so ids are not probed.</summary>
     public async Task<IResult?> OwnedAsync(TableView? view, CancellationToken ct)
     {
-        if (view is null || view.OwnerUserId != UserId) return Results.NotFound();
+        if (NoWorkspace() is { } none) return none;
+        if (view is null || view.TenantId != TenantId || view.OwnerUserId != UserId) return Results.NotFound();
         return await DenyAsync(view.TableKey, ct);
     }
 

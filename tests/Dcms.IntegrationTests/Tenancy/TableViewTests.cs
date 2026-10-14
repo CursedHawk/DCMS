@@ -111,6 +111,53 @@ public sealed class TableViewTests(AdminApiFixture fixture)
         list.GetProperty("defaultView").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
+    [DockerFact]
+    public async Task A_view_stays_in_the_workspace_it_was_made_in()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var person = Guid.NewGuid();
+        // The same person owns two workspaces; a stranger is in the second only.
+        var (_, home) = await CreateTenantAsync(client, person, ct);
+        var (awayId, away) = await CreateTenantAsync(client, person, ct);
+        var stranger = await SeedMemberAsync(awayId, "Owner", ct);
+
+        var created = await client.SendAsync(Req(HttpMethod.Post, "/api/admin/views", home, person,
+            new { table = Table, name = "Home only", definition = Definition }), ct);
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var id = (await created.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetGuid();
+
+        // From the other workspace it is not there: not listed, not changeable, not shareable.
+        (await ViewsAsync(client, away, person, ct)).Should().BeEmpty();
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/views/{id}", away, person, new { name = "Moved", definition = Definition }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/views/{id}/sharing", away, person, new { workspace = true }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await client.SendAsync(Req(HttpMethod.Delete, $"/api/admin/views/{id}", away, person, null), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await client.SendAsync(Req(HttpMethod.Put, "/api/admin/views/default", away, person, new { table = Table, view = id.ToString() }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // Nor can it be shared, from home, with someone of the other workspace.
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/views/{id}/sharing", home, person,
+            new { workspace = false, userIds = new[] { stranger }, roleIds = Array.Empty<Guid>() }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var awayRole = await RoleIdAsync(awayId, "Owner", ct);
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/views/{id}/sharing", home, person,
+            new { workspace = false, userIds = Array.Empty<Guid>(), roleIds = new[] { awayRole } }), ct))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await ViewsAsync(client, away, stranger, ct)).Should().BeEmpty();
+
+        // And nothing happens without a workspace at all, SuperAdmin or not.
+        var bare = new HttpRequestMessage(HttpMethod.Post, "/api/admin/views")
+        {
+            Content = JsonContent.Create(new { table = Table, name = "Nowhere", definition = Definition }),
+        };
+        bare.Headers.Add("X-Test-Sub", person.ToString());
+        bare.Headers.Add("X-Test-Roles", "SuperAdmin");
+        (await client.SendAsync(bare, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private static async Task<List<JsonElement>> ViewsAsync(HttpClient client, string slug, Guid user, CancellationToken ct)
     {
         var res = await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/views?table={Table}", slug, user, null), ct);
