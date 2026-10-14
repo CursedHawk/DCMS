@@ -18,7 +18,7 @@ import {
   toastApiError,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
-import { fileStem, useAutoSlug } from '../../lib/slug';
+import { fileStem, randomSlugId, slugify, useAutoSlug } from '../../lib/slug';
 import {
   type ContentFieldDef,
   type ContentTypeDef,
@@ -86,19 +86,22 @@ export function ContentEditor({
   }, [detail.data]);
 
   /*
-   * A new item's slug is filled in for the author, who can still change it: from the file of a
-   * picked media field (a slide, a download, a track is its file), otherwise from the title or
-   * name. An existing item's slug is fixed — it is in published URLs.
+   * A new item's slug is generated, and the author can still change it: the title or name, else
+   * the file of a picked media field, always followed by a random id of eight — so it is never
+   * empty and two items called "News" do not collide. An existing item's slug is fixed: it is in
+   * published URLs.
    */
+  const [slugId] = useState(randomSlugId);
   const textOf = (v: unknown) => (typeof v === 'string' ? v : '');
   const titleField = contentType.fields.find((f) => f.type === 'Text');
   const pickedFile = Object.values(mediaNames)[0];
-  const slugSource =
-    (pickedFile && fileStem(pickedFile)) ||
+  const slugBase =
     textOf(data.title) ||
     textOf(data.name) ||
-    (titleField ? textOf(data[titleField.name]) : '');
-  const [autoSlug, setSlug] = useAutoSlug(slugSource, 256);
+    (titleField ? textOf(data[titleField.name]) : '') ||
+    (pickedFile ? fileStem(pickedFile) : '');
+  // The base is cut first, so a long title never cuts off the id.
+  const [autoSlug, setSlug] = useAutoSlug(`${slugify(slugBase, 256 - 9)} ${slugId}`, 256);
   const slug = isNew ? autoSlug : (detail.data?.slug ?? '');
 
   const noteMedia = (key: string, v: unknown, fileName?: string) =>
@@ -248,17 +251,6 @@ export function ContentEditor({
           <CenteredSpinner />
         ) : (
           <DialogBody className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="content-slug">{t('common.slug')}</Label>
-              <Input
-                id="content-slug"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-                disabled={!isNew}
-                placeholder="my-first-post"
-              />
-            </div>
-
             {contentType.fields
               // The custom values are edited field by field below, never as raw JSON.
               .filter((f) => f.name !== valuesField)
@@ -296,6 +288,17 @@ export function ContentEditor({
                 )}
               </div>
             ) : null}
+
+            <div className="space-y-1.5">
+              <Label htmlFor="content-slug">{t('common.slug')}</Label>
+              <Input
+                id="content-slug"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                disabled={!isNew}
+                placeholder="my-first-post"
+              />
+            </div>
 
             {!isNew ? (
               <div className="rounded-md border p-3">

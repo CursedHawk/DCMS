@@ -151,7 +151,7 @@ test('the types and tags views read data the page already had', async ({ page, a
   expect(api.requestsTo('GET', '/api/admin/plugins/catalog').length).toBeLessThanOrEqual(1);
 });
 
-test('a new item is given a slug from its media, else its title, until the author writes one', async ({
+test('a new item is given a generated slug: title, else media, then an id, until the author writes one', async ({
   page,
   api,
 }) => {
@@ -160,16 +160,21 @@ test('a new item is given a slug from its media, else its title, until the autho
   await page.getByRole('button', { name: 'New item' }).first().click();
   const dialog = page.getByRole('dialog');
   const slug = dialog.getByLabel('Slug');
-  // The fields are drawn in the type's order: the slug, then the title.
-  const title = dialog.getByRole('textbox').nth(1);
+  // The type's fields come first, the generated slug last: the title is the first textbox.
+  const title = dialog.getByRole('textbox').first();
 
-  await title.fill('Příliš žluťoučký kůň');
-  await expect(slug).toHaveValue('prilis-zlutoucky-kun');
+  // Before anything is written the slug is already there: the item's random id.
+  await expect(slug).toHaveValue(/^[a-z0-9]{8}$/);
+  const id = (await slug.inputValue()).trim();
 
-  // A picked file names the item: a slide, a download, a track is its file.
+  // A picked file names an untitled item.
   await dialog.getByRole('button', { name: 'Select media' }).click();
   await page.getByRole('button', { name: /logo\.png/ }).click();
-  await expect(slug).toHaveValue('logo');
+  await expect(slug).toHaveValue(`logo-${id}`);
+
+  // The title wins over the file, and the id stays the same.
+  await title.fill('Příliš žluťoučký kůň');
+  await expect(slug).toHaveValue(`prilis-zlutoucky-kun-${id}`);
 
   // What the author types is theirs.
   await slug.fill('kun');

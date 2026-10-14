@@ -18,6 +18,13 @@ export function slugify(input: string, max = 64): string {
     .replace(/^-+|-+$/g, '');
 }
 
+const ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+/** Eight random slug-safe characters: what keeps two items both titled "News" apart. */
+export function randomSlugId(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => ID_ALPHABET[b % 36]).join('');
+}
+
 /** A file name as slug material: "Hero shot_02.final.JPG" → "Hero shot_02.final". */
 export function fileStem(fileName: string): string {
   return fileName.replace(/\.[a-z0-9]{1,8}$/i, '');

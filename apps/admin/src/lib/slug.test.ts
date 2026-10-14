@@ -1,6 +1,6 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { fileStem, slugify, useAutoSlug } from './slug';
+import { fileStem, randomSlugId, slugify, useAutoSlug } from './slug';
 
 describe('slugify', () => {
   it('folds diacritics and collapses everything else into single hyphens', () => {
@@ -16,6 +16,11 @@ describe('slugify', () => {
   it('takes a file name without its extension, and only the extension', () => {
     expect(slugify(fileStem('Hero shot_02.final.JPG'))).toBe('hero-shot-02-final');
   });
+});
+
+it('a random id is eight slug-safe characters, and not the same twice', () => {
+  expect(randomSlugId()).toMatch(/^[a-z0-9]{8}$/);
+  expect(randomSlugId()).not.toBe(randomSlugId());
 });
 
 describe('useAutoSlug', () => {
