@@ -30,6 +30,9 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options, ITenan
     public DbSet<MemberRole> MemberRoles => Set<MemberRole>();
     public DbSet<Invitation> Invitations => Set<Invitation>();
     public DbSet<TenantUsage> Usage => Set<TenantUsage>();
+    public DbSet<TableView> TableViews => Set<TableView>();
+    public DbSet<TableViewShare> TableViewShares => Set<TableViewShare>();
+    public DbSet<TableViewDefault> TableViewDefaults => Set<TableViewDefault>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -119,6 +122,36 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options, ITenan
             e.HasKey(u => u.TenantId);
             e.Property(u => u.CategoriesJson).HasColumnName("Categories").HasColumnType("jsonb");
             e.HasQueryFilter(u => u.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<TableView>(e =>
+        {
+            e.ToTable("table_views");
+            e.HasKey(v => v.Id);
+            e.Property(v => v.TableKey).HasMaxLength(300).IsRequired();
+            e.Property(v => v.Name).HasMaxLength(128).IsRequired();
+            e.Property(v => v.DefinitionJson).HasColumnName("Definition").HasColumnType("jsonb");
+            e.HasIndex(v => new { v.TenantId, v.TableKey });
+            e.HasMany(v => v.Shares).WithOne().HasForeignKey(s => s.ViewId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(v => v.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<TableViewShare>(e =>
+        {
+            e.ToTable("table_view_shares");
+            e.HasKey(s => s.Id);
+            e.HasIndex(s => s.ViewId);
+            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<TableViewDefault>(e =>
+        {
+            e.ToTable("table_view_defaults");
+            e.HasKey(d => d.Id);
+            e.Property(d => d.TableKey).HasMaxLength(300).IsRequired();
+            e.Property(d => d.ViewKey).HasMaxLength(100).IsRequired();
+            e.HasIndex(d => new { d.TenantId, d.UserId, d.TableKey }).IsUnique();
+            e.HasQueryFilter(d => d.TenantId == CurrentTenantId);
         });
     }
 

@@ -39,6 +39,10 @@ public static class RlsConfigurator
         ("tenancy", "invitations"),
         // What each tenant stores, down to site and plugin names.
         ("tenancy", "tenant_usage"),
+        // Saved console table views, their shares and defaults (#278).
+        ("tenancy", "table_views"),
+        ("tenancy", "table_view_shares"),
+        ("tenancy", "table_view_defaults"),
         ("plugins", "plugin_instances"),
         // Every plugin's private documents and Transit-encrypted credentials, all tenants in
         // two tables: the policy is the only thing between one tenant's plugin state and another's.

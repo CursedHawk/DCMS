@@ -173,6 +173,104 @@ namespace Dcms.Shared.Data.Migrations
                     b.ToTable("member_roles", "tenancy");
                 });
 
+            modelBuilder.Entity("Dcms.Shared.Data.Tenancy.TableView", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DefinitionJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("Definition");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("SharedWithWorkspace")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("TableKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "TableKey");
+
+                    b.ToTable("table_views", "tenancy");
+                });
+
+            modelBuilder.Entity("Dcms.Shared.Data.Tenancy.TableViewDefault", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TableKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ViewKey")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "UserId", "TableKey")
+                        .IsUnique();
+
+                    b.ToTable("table_view_defaults", "tenancy");
+                });
+
+            modelBuilder.Entity("Dcms.Shared.Data.Tenancy.TableViewShare", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("RoleId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ViewId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ViewId");
+
+                    b.ToTable("table_view_shares", "tenancy");
+                });
+
             modelBuilder.Entity("Dcms.Shared.Data.Tenancy.Tenant", b =>
                 {
                     b.Property<string>("Id")
@@ -326,6 +424,15 @@ namespace Dcms.Shared.Data.Migrations
                     b.Navigation("Role");
                 });
 
+            modelBuilder.Entity("Dcms.Shared.Data.Tenancy.TableViewShare", b =>
+                {
+                    b.HasOne("Dcms.Shared.Data.Tenancy.TableView", null)
+                        .WithMany("Shares")
+                        .HasForeignKey("ViewId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Dcms.Shared.Data.Tenancy.TenantRolePermission", b =>
                 {
                     b.HasOne("Dcms.Shared.Data.Tenancy.TenantRole", null)
@@ -333,6 +440,11 @@ namespace Dcms.Shared.Data.Migrations
                         .HasForeignKey("TenantRoleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Dcms.Shared.Data.Tenancy.TableView", b =>
+                {
+                    b.Navigation("Shares");
                 });
 
             modelBuilder.Entity("Dcms.Shared.Data.Tenancy.TenantMembership", b =>

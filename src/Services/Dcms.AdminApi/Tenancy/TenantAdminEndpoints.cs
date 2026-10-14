@@ -398,6 +398,9 @@ public sealed class TenantDeleter(
             ("visitors.Accounts", () => visitors.Accounts.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)));
 
         await SweepAsync(tenancy, manifest, ct,
+            ("tenancy.TableViewShares", () => tenancy.TableViewShares.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.TableViewDefaults", () => tenancy.TableViewDefaults.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.TableViews", () => tenancy.TableViews.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.MemberRoles", () => tenancy.MemberRoles.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.TenantRolePermissions", () => tenancy.TenantRolePermissions.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.Memberships", () => tenancy.Memberships.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
