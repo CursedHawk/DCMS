@@ -377,7 +377,9 @@
         "delete_one": "{{count}} item deleted.",
         "delete_other": "{{count}} items deleted."
       }
-    }
+    },
+    "archived": "Archived",
+    "publishedAt": "Published on"
   },
   "media": {
     "title": "Media library",

@@ -387,7 +387,9 @@
         "delete_few": "Smazány {{count}} položky.",
         "delete_other": "Smazáno {{count}} položek."
       }
-    }
+    },
+    "archived": "Archivováno",
+    "publishedAt": "Publikováno dne"
   },
   "media": {
     "title": "Knihovna médií",

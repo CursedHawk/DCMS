@@ -221,3 +221,61 @@ test('a taken slug is explained at the field, and the filled form stays to fix i
   await expect(dialog).toBeHidden();
   expect(api.requestsTo('POST', '/api/admin/content').at(-1)?.body).toMatchObject({ slug: 'hello-world-2' });
 });
+
+test('a view filters on a field, shows it as a column, and is saved and shared', async ({ page, api }) => {
+  let saved: Record<string, unknown>[] = [];
+  api
+    .on('GET', '/api/admin/views', () => ({ views: saved, defaultView: null }))
+    .on('POST', '/api/admin/views', ({ body }) => {
+      const view = { id: 'v1', mine: true, sharedWithWorkspace: false, sharedWith: { userIds: [], roleIds: [] }, ...(body as object) };
+      saved = [view];
+      return view;
+    })
+    .on('PUT', '/api/admin/views/:id/sharing', ({ body }) => ({ ...saved[0], sharedWithWorkspace: (body as { workspace: boolean }).workspace }))
+    .on('GET', '/api/admin/views/audience', {
+      people: [{ id: 'u2', label: 'colleague@acme.test' }],
+      roles: [{ id: 'r1', label: 'Editor' }],
+    });
+  await openCollection(page);
+
+  // Filter: tags contains "launch", asked of the server as the view's filter tree.
+  await page.getByRole('button', { name: 'Filters' }).click();
+  await page.getByRole('button', { name: 'Add condition' }).click();
+  await page.getByRole('combobox', { name: 'Field' }).click();
+  await page.getByRole('option', { name: 'Tags' }).click();
+  await page.getByRole('textbox', { name: 'Value' }).fill('launch');
+  await expect.poll(() =>
+    api.requestsTo('GET', '/api/admin/content/page').some((r) => {
+      const f = r.query.get('filter');
+      return !!f && JSON.stringify(JSON.parse(f)) === JSON.stringify({ and: [{ field: 'tags', op: 'contains', value: 'launch' }] });
+    })).toBe(true);
+
+  // A field as a column.
+  await page.getByRole('button', { name: 'Columns' }).click();
+  await page.getByRole('checkbox', { name: 'Show Tags' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('columnheader', { name: /Tags/ })).toBeVisible();
+  await expect.poll(() => api.requestsTo('GET', '/api/admin/content/page').some((r) => r.query.get('columns') === 'tags')).toBe(true);
+
+  // Saved as a personal view, for this collection.
+  await page.getByRole('button', { name: 'Save as…' }).click();
+  await page.getByLabel('Name').fill('Launch posts');
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/views').length).toBe(1);
+  const [create] = api.requestsTo('POST', '/api/admin/views');
+  expect(create.body).toMatchObject({
+    table: expect.stringMatching(/^content:[a-z0-9-]+:post$/),
+    name: 'Launch posts',
+    definition: { columns: ['title', 'slug', 'status', 'updated', 'tags'], filter: { and: [{ field: 'tags', op: 'contains', value: 'launch' }] } },
+  });
+  await expect(page.getByRole('button', { name: 'View: Launch posts' })).toBeVisible();
+  await expect(page).toHaveURL(/view=v1/);
+
+  // Shared with the whole workspace.
+  await page.getByRole('button', { name: 'View actions' }).click();
+  await page.getByRole('menuitem', { name: 'Share…' }).click();
+  await page.getByRole('dialog').getByRole('checkbox', { name: 'Everyone in the workspace' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Save' }).click();
+  await expect.poll(() => api.requestsTo('PUT', '/api/admin/views/v1/sharing').map((r) => r.body))
+    .toEqual([{ workspace: true, userIds: [], roleIds: [] }]);
+});

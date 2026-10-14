@@ -1,3 +1,4 @@
+import type { ViewFilter } from '@dcms/ui';
 import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../lib/api';
 
@@ -104,6 +105,8 @@ export interface ContentRow {
   updatedAt: string;
   publishedAt?: string | null;
   scheduledPublishAt?: string | null;
+  /** A saved view's extra columns, by field key (#278); absent when none were asked for. */
+  values?: Record<string, unknown> | null;
 }
 
 export interface ContentPage {
@@ -122,9 +125,14 @@ export interface ContentListFilters {
   tag: string;
   /** Ordered by the server, because the list is paged; absent is newest first. */
   sort?: ContentSort | null;
+  /** A saved view's filter, already cleaned of half-made conditions (#278). */
+  filter?: ViewFilter;
+  /** A saved view's field columns, by key. */
+  columns?: string[];
 }
 
-export type ContentSortColumn = 'title' | 'slug' | 'updated';
+/** The built-in orders, or `field:{key}` for one of the collection's fields (#278). */
+export type ContentSortColumn = 'title' | 'slug' | 'updated' | `field:${string}`;
 export interface ContentSort {
   column: ContentSortColumn;
   direction: 'asc' | 'desc';
@@ -163,6 +171,8 @@ export function useContentPage(
         params.set('sort', filters.sort.column);
         params.set('dir', filters.sort.direction);
       }
+      if (filters.filter) params.set('filter', JSON.stringify(filters.filter));
+      if (filters.columns?.length) params.set('columns', filters.columns.join(','));
       if (pageParam) params.set('cursor', pageParam);
       return api.get<ContentPage>(`/admin/content/page?${params.toString()}`);
     },

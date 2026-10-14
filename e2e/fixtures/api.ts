@@ -322,6 +322,7 @@ export function adminApi(
     .on('GET', '/api/admin/sites/:id/publish-branches', [
       { branch: 'release', release: true, activeBuildId: null, domains: [] },
     ])
+    .on('GET', '/api/admin/views', { views: [], defaultView: null })
     .on('GET', '/api/admin/domains', [])
     .on('GET', '/api/admin/domains/certificates', [])
     .on('GET', '/api/admin/domains/provisioned', []);

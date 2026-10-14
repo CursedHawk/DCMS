@@ -79,7 +79,17 @@ export function useViewLabels(): ViewLabels {
  * A table's view controls (#278): which view, its filters (in a panel under the bar), its
  * columns, saving and sharing. The table itself reads `views.definition`.
  */
-export function TableViewControls({ views, fields }: { views: TableViews; fields: ViewField[] }) {
+export function TableViewControls({
+  views,
+  fields,
+  columnFields = fields,
+}: {
+  views: TableViews;
+  /** What may be filtered on. */
+  fields: ViewField[];
+  /** What may be shown as a column, when not the same. */
+  columnFields?: ViewField[];
+}) {
   const { t } = useTranslation();
   const labels = useViewLabels();
   const [filtering, setFiltering] = useState(false);
@@ -110,7 +120,7 @@ export function TableViewControls({ views, fields }: { views: TableViews; fields
           {count > 0 && <Badge tone="default">{count}</Badge>}
         </Button>
         <ColumnChooser
-          fields={fields}
+          fields={columnFields}
           value={views.definition.columns}
           labels={labels}
           onChange={(columns) => views.setDefinition((d) => ({ ...d, columns }))}

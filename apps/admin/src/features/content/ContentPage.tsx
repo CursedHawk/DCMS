@@ -22,7 +22,9 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
+  cleanFilter,
   useDebounced,
+  type ViewDefinition,
 } from '@dcms/ui';
 import { dateTime } from '@dcms/core';
 import {
@@ -31,7 +33,17 @@ import {
   usePluginCatalog,
   usePluginInstances,
 } from '../plugins/api';
+import { TableViewControls, useTableViews } from '../views';
 import { BulkActions } from './BulkActions';
+import {
+  BUILT_IN_COLUMNS,
+  CellValue,
+  collectionColumnFields,
+  collectionDataFields,
+  collectionFilterFields,
+  columnDataFields,
+  humanize,
+} from './collectionView';
 import { ContentEditor } from './ContentEditor';
 
 const TypesView = lazy(() => import('./TypesView').then((m) => ({ default: m.TypesView })));
@@ -48,14 +60,6 @@ import {
   useContentPage,
 } from './api';
 
-/** Turn a machine name ("blogPost", "gig_line-up") into a readable label. */
-function humanize(name: string): string {
-  const spaced = name
-    .replace(/[_-]+/g, ' ')
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .trim();
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-}
 
 /*
  * "Scheduled" is not a ContentStatus — the enum is Draft/Published/Archived, and
@@ -322,9 +326,30 @@ function CollectionView({
     });
   const status = params.status ?? 'all';
   const tag = params.tag ?? 'all';
-  const sort: ContentSort | null = isSortColumn(params.sort)
-    ? { column: params.sort, direction: params.dir === 'desc' ? 'desc' : 'asc' }
+
+  /*
+   * Saved views (#278): the view is what the list shows — its columns, order and filter — and
+   * `views.definition` is the working copy every control edits. A link's own sort still wins
+   * over no view, so a shared "sorted by title" link keeps meaning that.
+   */
+  const dataFields = useMemo(() => collectionDataFields(instance, contentType), [instance, contentType]);
+  const [baseline] = useState<ViewDefinition>(() => ({
+    columns: [...BUILT_IN_COLUMNS],
+    sort: isSortColumn(params.sort) ? [{ field: sortFieldOf(params.sort), direction: params.dir === 'desc' ? 'desc' : 'asc' }] : [],
+  }));
+  const views = useTableViews({
+    table: `content:${instance.slug}:${contentType.name}`,
+    baseline,
+    initialViewId: params.view,
+    // The view carries its own order; a link's sort only stood in while there was none.
+    onViewChange: (id) => setParams({ view: id ?? undefined, sort: undefined, dir: undefined }),
+  });
+  const viewSort = views.definition.sort[0];
+  const sort: ContentSort | null = viewSort
+    ? { column: sortColumnOf(viewSort.field), direction: viewSort.direction }
     : null;
+  const viewFilter = cleanFilter(views.definition.filter);
+  const fieldColumns = views.definition.columns.filter((c) => columnDataFields(dataFields).some((f) => f.key === c));
 
   // Typing is a pause, not a keystroke: without this every character is a request, the
   // answers race, and the list flickers through the results of prefixes nobody asked about.
@@ -336,7 +361,14 @@ function CollectionView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  const page = useContentPage(instance.id, contentType.name, { search, status, tag, sort });
+  const page = useContentPage(instance.id, contentType.name, {
+    search,
+    status,
+    tag,
+    sort,
+    filter: viewFilter,
+    columns: fieldColumns,
+  });
   const tags = useCollectionTags(instance.id, contentType.name);
 
   // Open the linked item, then strip the link out of the URL. Stripping it matters: without
@@ -356,7 +388,7 @@ function CollectionView({
   // the same shape that took the media library down through `useAiPageContext`.
   const rows = useMemo(() => page.data?.pages.flatMap((p) => p.items) ?? [], [page.data]);
   const total = page.data?.pages[0]?.total ?? 0;
-  const filtered = status !== 'all' || tag !== 'all' || search.trim().length > 0;
+  const filtered = status !== 'all' || tag !== 'all' || search.trim().length > 0 || !!viewFilter;
 
   /*
    * Only what is still on screen counts as selected.
@@ -371,7 +403,7 @@ function CollectionView({
     return [...selected].filter((id) => onScreen.has(id));
   }, [rows, selected]);
 
-  const columns: Column<ContentRow>[] = [
+  const builtIn: Column<ContentRow>[] = [
     {
       id: 'title',
       header: t('content.itemTitle'),
@@ -407,6 +439,22 @@ function CollectionView({
       sortable: true,
     },
   ];
+  // The view's columns in its order: the built-in ones, then any of the collection's fields.
+  const columns: Column<ContentRow>[] = views.definition.columns.flatMap((id): Column<ContentRow>[] => {
+    const own = builtIn.find((c) => c.id === id);
+    if (own) return [own];
+    const field = columnDataFields(dataFields).find((f) => f.key === id);
+    if (!field) return [];
+    return [
+      {
+        id: field.key,
+        header: field.label,
+        cell: (row) => <CellValue kind={field.kind} value={row.values?.[field.key]} />,
+        sortable: field.sortable !== false,
+      },
+    ];
+  });
+  if (columns.length === 0) columns.push(builtIn[0]);
 
   return (
     <div className="space-y-4">
@@ -458,6 +506,12 @@ function CollectionView({
         )}
       </FilterBar>
 
+      <TableViewControls
+        views={views}
+        fields={collectionFilterFields(dataFields, t)}
+        columnFields={collectionColumnFields(dataFields, t)}
+      />
+
       {visible.length > 0 ? (
         <BulkActions
           ids={visible}
@@ -473,13 +527,11 @@ function CollectionView({
         isLoading={page.isLoading}
         // Ordered by the server: the list is paged, and sorting what has loaded would order
         // only that.
-        sort={sort ? { columnId: sort.column, direction: sort.direction } : null}
-        onSortChange={(next) =>
-          setParams({
-            sort: (next?.columnId as ContentSortColumn | undefined) ?? undefined,
-            dir: next?.direction,
-          })
-        }
+        sort={viewSort ? { columnId: viewSort.field, direction: viewSort.direction } : null}
+        onSortChange={(next) => {
+          views.setDefinition((d) => ({ ...d, sort: next ? [{ field: next.columnId, direction: next.direction }] : [] }));
+          setParams({ sort: next ? sortColumnOf(next.columnId) : undefined, dir: next?.direction });
+        }}
         selection={{ selected, onChange: setSelected }}
         labels={{
           loading: t('common.loading'),
@@ -559,8 +611,20 @@ interface ContentSearch {
   tag?: string;
   sort?: string;
   dir?: string;
+  /** The saved view on screen (#278). */
+  view?: string;
 }
 
 function isSortColumn(value: string | undefined): value is ContentSortColumn {
-  return value === 'title' || value === 'slug' || value === 'updated';
+  return value === 'title' || value === 'slug' || value === 'updated' || (!!value && value.startsWith('field:'));
+}
+
+/** A column id as the server's order: built-in orders by name, a collection field as `field:{key}`. */
+function sortColumnOf(columnId: string): ContentSortColumn {
+  return columnId === 'title' || columnId === 'slug' || columnId === 'updated' ? columnId : `field:${columnId}`;
+}
+
+/** The column an order sorts: the inverse of `sortColumnOf`. */
+function sortFieldOf(column: ContentSortColumn): string {
+  return column.startsWith('field:') ? column.slice(6) : column;
 }
