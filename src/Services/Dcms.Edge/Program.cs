@@ -110,6 +110,8 @@ builder.AddEdgeAuthentication();
 builder.AddBff();
 // Tenant sites' enterprise sign-in and path rules (ADR 0022).
 builder.AddSiteAuthentication(builder.Configuration.GetSection(EdgeAuthOptions.SectionName).Get<EdgeAuthOptions>() ?? new EdgeAuthOptions());
+// The same sign-in for a site builder's preview, on the console's host (#269).
+builder.AddPreviewAuthentication(builder.Configuration.GetSection(EdgeAuthOptions.SectionName).Get<EdgeAuthOptions>() ?? new EdgeAuthOptions());
 
 // Shedding load costs nothing downstream, and this is the only hop where the client address is
 // the actual TCP peer rather than a header the edge itself assembled.
@@ -197,6 +199,7 @@ if (EdgeOutputCache.IsEnabled(app.Configuration))
 app.MapEdgeAuthEndpoints();
 app.MapBffEndpoints();
 app.MapSiteAuthEndpoints();
+app.MapPreviewAuthEndpoints();
 
 // Before the proxy, and matched ahead of every host route. The certificate authority fetches
 // this on the domain it is validating, which is by definition a hostname the proxy would
@@ -221,6 +224,7 @@ app.MapReverseProxy(proxyPipeline =>
 
     // After the scrubbers, so the realm token header is the edge's own.
     proxyPipeline.UseSiteSessionForwarding();
+    proxyPipeline.UsePreviewSessionForwarding();
 });
 
 app.Run();

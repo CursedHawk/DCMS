@@ -123,6 +123,9 @@ public sealed class SiteGates
     /// </summary>
     public SiteGateEntry? For(string host) => _hosts?.GetValueOrDefault(host.TrimEnd('.').ToLowerInvariant());
 
+    /// <summary>Whether the tenant has site sign-in at all: User Authentication publishes a row for each of its hosts.</summary>
+    public bool HasTenant(Guid tenantId) => _hosts?.Values.Any(e => e.TenantId == tenantId) == true;
+
     public void Replace(IReadOnlyDictionary<string, SiteGateEntry> hosts) => _hosts = hosts;
 
     internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);

@@ -316,7 +316,7 @@ public static class BffAuthentication
     /// <para>Not a WebSocket handshake and never a safe method, so both checks are unconditional
     /// here — which is why this is three lines rather than a copy of that middleware.</para>
     /// </summary>
-    private static bool IsTrustedWrite(
+    internal static bool IsTrustedWrite(
         HttpContext context, IDataProtectionProvider protection, string sessionId)
         => BffGuard.IsSameOrigin(
                context.Request.Method,
