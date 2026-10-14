@@ -82,6 +82,7 @@
     "optional": "volitelné",
     "name": "Název",
     "slug": "Slug",
+    "slugTaken": "„{{slug}}“ se už používá a slug musí být jedinečný. Upravte ho a zkuste to znovu.",
     "status": "Stav",
     "actions": "Akce",
     "updated": "Aktualizováno",

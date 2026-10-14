@@ -36,7 +36,8 @@ import { configWidgets } from './configWidgets';
 import { usePluginUi } from '../../pluginHost/api';
 import { usePluginWidgets } from '../../pluginHost/host';
 import { api } from '../../lib/api';
-import { useAutoSlug } from '../../lib/slug';
+import { SlugField } from '../../components/SlugField';
+import { isSlugTaken, useAutoSlug } from '../../lib/slug';
 import {
   type PluginManifest,
   parseConfigSchema,
@@ -262,6 +263,7 @@ function InstallDialog({
   const { t } = useTranslation();
   const [name, setName] = useState(manifest.name);
   const [slug, setSlug] = useAutoSlug(name);
+  const [takenSlug, setTakenSlug] = useState<string | null>(null);
   const [description, setDescription] = useState('');
   const [config, setConfig] = useState<unknown>({});
   const schema = parseConfigSchema(manifest.configJsonSchema);
@@ -285,7 +287,7 @@ function InstallDialog({
       toast.success(t('common.saved'));
       onDone();
     },
-    onError: (e) => toastApiError(e, t),
+    onError: (e) => (isSlugTaken(e) ? setTakenSlug(slug.trim()) : toastApiError(e, t)),
   });
 
   return (
@@ -303,10 +305,7 @@ function InstallDialog({
               <Label>{t('common.name')}</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} />
             </div>
-            <div className="space-y-1.5">
-              <Label>{t('common.slug')}</Label>
-              <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="blog" />
-            </div>
+            <SlugField id="instance-slug" value={slug} onChange={setSlug} taken={takenSlug} placeholder="blog" />
           </div>
           <div className="space-y-1.5">
             <Label>

@@ -28,6 +28,7 @@ import {
   toastApiError,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
+import { SlugField } from '../../components/SlugField';
 import { useAutoSlug } from '../../lib/slug';
 import { CONNECTIONS_KEY, type ApiConnection } from './api';
 
@@ -122,17 +123,33 @@ export function ConnectionsPage() {
       ) : (
         <EmptyState icon={Plug} title={t('connections.none')} description={t('connections.noneHint')} />
       )}
-      {editing && <ConnectionDialog connection={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && (
+        <ConnectionDialog
+          connection={editing === 'new' ? null : editing}
+          existing={(connections.data ?? []).map((c) => c.slug)}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </Page>
   );
 }
 
-function ConnectionDialog({ connection, onClose }: { connection: ApiConnection | null; onClose: () => void }) {
+function ConnectionDialog({
+  connection,
+  existing,
+  onClose,
+}: {
+  connection: ApiConnection | null;
+  /** Slugs already used. Saving is a PUT by slug, so a new one with a taken slug would overwrite that connection. */
+  existing: readonly string[];
+  onClose: () => void;
+}) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [name, setName] = useState(connection?.name ?? '');
   const [autoSlug, setSlug] = useAutoSlug(name, 48);
   const slug = connection?.slug ?? autoSlug;
+  const [takenSlug, setTakenSlug] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState(connection?.baseUrl ?? 'https://');
   const [authKind, setAuthKind] = useState(connection?.authKind ?? 'none');
   const [authName, setAuthName] = useState(connection?.authName ?? '');
@@ -171,7 +188,8 @@ function ConnectionDialog({ connection, onClose }: { connection: ApiConnection |
           className="space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
-            save.mutate();
+            if (!connection && existing.includes(slug.trim())) setTakenSlug(slug.trim());
+            else save.mutate();
           }}
         >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -179,10 +197,15 @@ function ConnectionDialog({ connection, onClose }: { connection: ApiConnection |
               <Label htmlFor="conn-name">{t('connections.name')}</Label>
               <Input id="conn-name" value={name} onChange={(e) => setName(e.target.value)} required />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="conn-slug">{t('connections.slug')}</Label>
-              <Input id="conn-slug" value={slug} disabled={!!connection} placeholder="tickets" onChange={(e) => setSlug(e.target.value)} required />
-            </div>
+            <SlugField
+              id="conn-slug"
+              label={t('connections.slug')}
+              value={slug}
+              onChange={setSlug}
+              taken={takenSlug}
+              disabled={!!connection}
+              placeholder="tickets"
+            />
           </div>
           <div className="space-y-1">
             <Label htmlFor="conn-url">{t('connections.baseUrl')}</Label>

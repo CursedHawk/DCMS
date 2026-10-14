@@ -18,7 +18,8 @@ import {
   toastApiError,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
-import { fileStem, randomSlugId, slugify, useAutoSlug } from '../../lib/slug';
+import { SlugField } from '../../components/SlugField';
+import { fileStem, isSlugTaken, randomSlugId, slugify, useAutoSlug } from '../../lib/slug';
 import {
   type ContentFieldDef,
   type ContentTypeDef,
@@ -103,6 +104,7 @@ export function ContentEditor({
   // The base is cut first, so a long title never cuts off the id.
   const [autoSlug, setSlug] = useAutoSlug(`${slugify(slugBase, 256 - 9)} ${slugId}`, 256);
   const slug = isNew ? autoSlug : (detail.data?.slug ?? '');
+  const [takenSlug, setTakenSlug] = useState<string | null>(null);
 
   const noteMedia = (key: string, v: unknown, fileName?: string) =>
     setMediaNames(({ [key]: _, ...rest }) => (v && fileName ? { ...rest, [key]: fileName } : rest));
@@ -169,7 +171,7 @@ export function ContentEditor({
       await invalidate();
       onSaved();
     },
-    onError: (e) => toastApiError(e, t),
+    onError: (e) => (isSlugTaken(e) ? setTakenSlug(slug.trim()) : toastApiError(e, t)),
   });
 
   // Publishing carries the current form state, so it is "save and publish" in one
@@ -289,16 +291,14 @@ export function ContentEditor({
               </div>
             ) : null}
 
-            <div className="space-y-1.5">
-              <Label htmlFor="content-slug">{t('common.slug')}</Label>
-              <Input
-                id="content-slug"
-                value={slug}
-                onChange={(e) => setSlug(e.target.value)}
-                disabled={!isNew}
-                placeholder="my-first-post"
-              />
-            </div>
+            <SlugField
+              id="content-slug"
+              value={slug}
+              onChange={setSlug}
+              taken={takenSlug}
+              disabled={!isNew}
+              placeholder="my-first-post"
+            />
 
             {!isNew ? (
               <div className="rounded-md border p-3">

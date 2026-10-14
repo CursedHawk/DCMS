@@ -184,3 +184,40 @@ test('a new item is given a generated slug: title, else media, then an id, until
   await dialog.getByRole('button', { name: 'Save', exact: true }).click();
   await expect.poll(() => api.requestsTo('POST', '/api/admin/content').at(-1)?.body).toMatchObject({ slug: 'kun' });
 });
+
+test('a taken slug is explained at the field, and the filled form stays to fix it', async ({ page, api }) => {
+  let attempts = 0;
+  api.on('POST', '/api/admin/content', ({ route }) => {
+    if (attempts++ === 0) {
+      void route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'Slug already exists for this content type.' }),
+      });
+      return undefined;
+    }
+    return { id: 'new-item' };
+  });
+  await openCollection(page);
+  await page.getByRole('button', { name: 'New item' }).first().click();
+  const dialog = page.getByRole('dialog');
+  const slug = dialog.getByLabel('Slug');
+  const title = dialog.getByRole('textbox').first();
+
+  await title.fill('Hello, world');
+  await slug.fill('hello-world');
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+
+  await expect(dialog.getByRole('alert')).toHaveText(
+    '“hello-world” is already in use, and a slug has to be unique. Change it and try again.',
+  );
+  await expect(slug).toBeFocused();
+  await expect(slug).toHaveAttribute('aria-invalid', 'true');
+  await expect(title).toHaveValue('Hello, world');
+
+  await slug.fill('hello-world-2');
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(api.requestsTo('POST', '/api/admin/content').at(-1)?.body).toMatchObject({ slug: 'hello-world-2' });
+});

@@ -82,6 +82,7 @@
     "optional": "optional",
     "name": "Name",
     "slug": "Slug",
+    "slugTaken": "“{{slug}}” is already in use, and a slug has to be unique. Change it and try again.",
     "status": "Status",
     "actions": "Actions",
     "updated": "Updated",

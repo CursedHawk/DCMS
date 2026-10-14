@@ -98,3 +98,23 @@ test('a collection reads a connection’s synced operation, and binds its fields
   await expect(page.frameLocator('iframe[title="Preview"]').getByRole('heading', { level: 2 })).toHaveText(['Shows', 'Gala night', 'Jam session']);
   await expect(page.getByRole('button', { name: /problems?$/ })).toHaveCount(0);
 });
+
+test('a new connection cannot take an existing one’s address name, and is told why', async ({ page, api }) => {
+  // Saving is a PUT by slug: sending it would overwrite the Ticket shop connection.
+  api.on('GET', '/api/admin/connections', [TICKETS]).on('PUT', '/api/admin/connections/:slug', TICKETS);
+  await page.goto('/settings/connections');
+  await page.getByRole('button', { name: 'Add connection' }).first().click();
+
+  await page.getByLabel('Name', { exact: true }).fill('Tickets');
+  await expect(page.getByLabel('Address name')).toHaveValue('tickets');
+  await page.getByLabel('Base URL (https)').fill('https://other.example');
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  await expect(page.getByRole('alert')).toContainText('“tickets” is already in use');
+  await expect(page.getByLabel('Address name')).toBeFocused();
+  expect(api.requestsTo('PUT', '/api/admin/connections/tickets')).toHaveLength(0);
+
+  await page.getByLabel('Address name').fill('tickets-2');
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect.poll(() => api.requestsTo('PUT', '/api/admin/connections/tickets-2').length).toBe(1);
+});

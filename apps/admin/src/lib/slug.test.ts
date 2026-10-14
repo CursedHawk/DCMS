@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { fileStem, randomSlugId, slugify, useAutoSlug } from './slug';
+import { ApiError } from '@dcms/core';
+import { fileStem, isSlugTaken, randomSlugId, slugify, useAutoSlug } from './slug';
 
 describe('slugify', () => {
   it('folds diacritics and collapses everything else into single hyphens', () => {
@@ -44,4 +45,11 @@ describe('useAutoSlug', () => {
     act(() => result.current[1](null));
     expect(result.current[0]).toBe('autumn-launch');
   });
+});
+
+it('a taken slug is a 409 about the slug, not any conflict', () => {
+  expect(isSlugTaken(new ApiError(409, 'slug already in use.'))).toBe(true);
+  expect(isSlugTaken(new ApiError(409, 'Slug already exists for this content type.'))).toBe(true);
+  expect(isSlugTaken(new ApiError(409, 'This plugin allows only a single instance.'))).toBe(false);
+  expect(isSlugTaken(new ApiError(400, "slug 'forms' is reserved"))).toBe(false);
 });

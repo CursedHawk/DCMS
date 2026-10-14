@@ -24,7 +24,8 @@ import {
   toastApiError,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
-import { useAutoSlug } from '../../lib/slug';
+import { SlugField } from '../../components/SlugField';
+import { isSlugTaken, useAutoSlug } from '../../lib/slug';
 import { Perm, can, useMyPermissions } from '../../lib/permissions';
 import { setCurrentTenantSlug } from '../../tenants';
 import { AuditLogViewer } from '../audit/AuditLogViewer';
@@ -42,6 +43,7 @@ export function TenantsPage() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [slug, setSlug] = useAutoSlug(name);
+  const [takenSlug, setTakenSlug] = useState<string | null>(null);
   const [auditing, setAuditing] = useState<TenantRow | null>(null);
 
   const me = useMyPermissions(true);
@@ -63,7 +65,7 @@ export function TenantsPage() {
       await qc.invalidateQueries({ queryKey: ['tenants'] });
       await qc.invalidateQueries({ queryKey: ['me-tenants'] });
     },
-    onError: (e) => toastApiError(e, t),
+    onError: (e) => (isSlugTaken(e) ? setTakenSlug(slug.trim()) : toastApiError(e, t)),
   });
 
   const columns: Column<TenantRow>[] = [
@@ -137,10 +139,7 @@ export function TenantsPage() {
                   <Label>{t('tenant.displayName')}</Label>
                   <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme Co." />
                 </div>
-                <div className="space-y-1.5">
-                  <Label>{t('common.slug')}</Label>
-                  <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="acme-co" />
-                </div>
+                <SlugField id="tenant-slug" value={slug} onChange={setSlug} taken={takenSlug} placeholder="acme-co" />
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setOpen(false)}>

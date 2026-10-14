@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ApiError } from '@dcms/core';
 
 // Unicode combining marks, written from a string so the range stays legible in source.
 const COMBINING_MARKS = new RegExp('[\\u0300-\\u036f]', 'g');
@@ -40,4 +41,13 @@ export function useAutoSlug(source: string, max?: number): [string, (typed: stri
   const [typed, setTyped] = useState<string | null>(null);
   const slug = typed ?? slugify(source, max);
   return [slug, setTyped];
+}
+
+/**
+ * The server refused a create because the slug is already used: content in the same collection,
+ * a plugin instance, a tenant. Every one of those answers 409 with a message naming the slug.
+ */
+// ponytail: matches the server's English message; give the 409s a `code` if a second slug-less 409 says "slug".
+export function isSlugTaken(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && /slug/i.test(error.message);
 }
