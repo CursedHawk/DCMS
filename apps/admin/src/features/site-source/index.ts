@@ -39,3 +39,4 @@ export { SourceControlView } from './SourceControlView';
 export { StatusBar } from './StatusBar';
 export { applyEditorTheme, monaco, setupMonaco } from './monaco-setup';
 export * from './previewAuth';
+export * from './PreviewAddressBar';

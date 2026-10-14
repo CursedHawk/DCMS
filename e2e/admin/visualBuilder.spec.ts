@@ -282,6 +282,20 @@ test('preview runs the site: a button navigates to another page', async ({ page,
   await expect(preview.getByRole('heading', { name: 'Welcome home' })).toBeVisible();
   await preview.getByRole('link', { name: 'Read about us' }).click();
   await expect(preview.getByRole('heading', { name: 'About us' })).toBeVisible();
+
+  // An address bar, as a browser has: where the site is, back, a typed path, and a reload that
+  // stays on the page.
+  const address = page.getByRole('textbox', { name: 'Page address' });
+  await expect(address).toHaveValue('/about');
+  await page.getByRole('button', { name: 'Back' }).click();
+  await expect(preview.getByRole('heading', { name: 'Welcome home' })).toBeVisible();
+  await expect(address).toHaveValue('/');
+  await address.fill('/about');
+  await address.press('Enter');
+  await expect(preview.getByRole('heading', { name: 'About us' })).toBeVisible();
+  await page.getByRole('button', { name: 'Reload' }).click();
+  await expect(preview.getByRole('heading', { name: 'About us' })).toBeVisible();
+  await expect(address).toHaveValue('/about');
 });
 
 test('the preview signs in as the site’s users: its main domain’s rules, and View as', async ({ page, api }) => {

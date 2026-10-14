@@ -1,11 +1,12 @@
-import { AlertTriangle, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useRef } from 'react';
+import { AlertTriangle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { renewSilently } from '../../auth';
 import { adminHeaders } from '../../tenants';
+import { PreviewAddressBar } from '../site-source/PreviewAddressBar';
 import { PreviewIdentityMenu, usePreviewAuth } from '../site-source/previewAuth';
-import { attachPreview, type PreviewFetchProxy } from './preview/previewBridge';
+import { attachPreview, previewGo, type PreviewFetchProxy } from './preview/previewBridge';
 import { previewEdgeTarget, previewProxyTarget } from './preview/proxyTarget';
 import type { PreviewControls } from './preview/usePreview';
 
@@ -19,6 +20,31 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
   const { t } = useTranslation();
   const { srcdoc, error, building, refresh } = preview;
   const frameRef = useRef<HTMLIFrameElement>(null);
+
+  /*
+   * The address bar. The app's router reports where it is; a rebuild or a reload starts the
+   * new document on that same page (window.__dcmsPreviewPath, read by the router shim), the way
+   * a browser's reload stays where it was. Reload also remounts the frame, so it is a real
+   * reload even when the build came out the same.
+   */
+  const [path, setPath] = useState('/');
+  const pathRef = useRef('/');
+  const onNav = useCallback((at: string) => {
+    pathRef.current = at;
+    setPath(at);
+  }, []);
+  const [reloads, setReloads] = useState(0);
+  const doc = useMemo(
+    () =>
+      srcdoc?.replace(
+        '<head>',
+        // Escaped so a path can never close the script it is written into.
+        `<head><script>window.__dcmsPreviewPath=${JSON.stringify(pathRef.current).replace(/</g, '\\u003c')}</script>`,
+      ) ?? null,
+    // Re-read on every new build and every reload; the path is taken as it is at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [srcdoc, reloads],
+  );
   // Who the preview is on the site (#269): its edge questions and its sign-in go here.
   const auth = usePreviewAuth(siteId);
   const edgeBase = auth.base;
@@ -109,34 +135,30 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
    * longer on screen.
    */
   useEffect(() => {
-    if (!srcdoc) return;
-    return attachPreview(frameRef.current?.contentWindow ?? null, proxyFetch, onEdgeNav);
-  }, [srcdoc, proxyFetch, onEdgeNav]);
+    if (!doc) return;
+    return attachPreview(frameRef.current?.contentWindow ?? null, proxyFetch, onEdgeNav, onNav);
+  }, [doc, proxyFetch, onEdgeNav, onNav]);
 
   return (
     <div className="relative flex h-full flex-col bg-white">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b bg-card px-3 text-xs text-muted-foreground">
-        <button
-          type="button"
-          onClick={refresh}
-          disabled={building}
-          title={t('ide.refresh')}
-          aria-label={t('ide.refresh')}
-          className="inline-flex items-center rounded p-0.5 transition-colors hover:text-foreground disabled:cursor-default disabled:opacity-70"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${building ? 'animate-spin' : ''}`} />
-        </button>
-        <span>{building ? t('ide.building') : t('ide.preview')}</span>
-        <div className="ml-auto min-w-0">
-          <PreviewIdentityMenu auth={auth} />
-        </div>
-      </div>
+      <PreviewAddressBar
+        path={path}
+        onGo={previewGo}
+        reloading={building}
+        onReload={() => {
+          refresh();
+          setReloads((n) => n + 1);
+        }}
+      >
+        <PreviewIdentityMenu auth={auth} />
+      </PreviewAddressBar>
       <div className="relative min-h-0 flex-1">
-        {srcdoc ? (
+        {doc ? (
           <iframe
+            key={reloads}
             ref={frameRef}
             title={t('ide.preview')}
-            srcDoc={srcdoc}
+            srcDoc={doc}
             /* No allow-same-origin: the preview runs tenant- and CDN-authored code, so it must
                execute in an opaque origin — otherwise it shares this admin origin and can read
                the OIDC tokens in localStorage and script the parent. The agent bridge talks to

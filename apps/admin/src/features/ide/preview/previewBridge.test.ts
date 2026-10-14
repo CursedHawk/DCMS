@@ -4,6 +4,7 @@ import {
   BRIDGE_SCRIPT,
   clearPreviewMessages,
   previewAttached,
+  previewGo,
   previewMessages,
   queryPreview,
   resetBridge,
@@ -269,5 +270,26 @@ describe('edge navigation', () => {
     expect(BRIDGE_SCRIPT).toContain("__dcms: 'edge-nav'");
     expect(BRIDGE_SCRIPT).toContain('window.__dcmsPreviewLeave');
     expect(BRIDGE_SCRIPT).toContain("u.indexOf('/.edge/site/') === 0");
+  });
+});
+
+describe('address bar', () => {
+  it('hears where the app has gone, and sends it back, forward or to a typed path', () => {
+    const postMessage = vi.fn();
+    const onNav = vi.fn();
+    attachPreview({ postMessage } as unknown as Window, undefined, undefined, onNav);
+
+    fromFrame({ __dcms: 'preview-nav', path: '/events/summer?tab=1' });
+    expect(onNav).toHaveBeenCalledWith('/events/summer?tab=1');
+
+    previewGo('/about');
+    previewGo(-1);
+    expect(postMessage).toHaveBeenCalledWith({ __dcms: 'preview-go', to: '/about' }, '*');
+    expect(postMessage).toHaveBeenCalledWith({ __dcms: 'preview-go', to: -1 }, '*');
+  });
+
+  it('only follows a preview-go to a path of the site itself', () => {
+    // The injected script refuses anything that is not a path or a step through history.
+    expect(BRIDGE_SCRIPT).toContain("data.to.charAt(0) === '/'");
   });
 });

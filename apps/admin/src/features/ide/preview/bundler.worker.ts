@@ -144,14 +144,33 @@ function vfsPlugin(
       // from `export *`, so everything else passes through unchanged.
       build.onLoad({ filter: /.*/, namespace: 'rr-shim' }, (args) => {
         const real = JSON.stringify(cdnUrl(args.path, versions));
+        // The preview's address bar (previewBridge): the router starts where the preview was
+        // (window.__dcmsPreviewPath, so a reload stays on the page), reports every move
+        // (__dcmsPreviewNav) and takes the bar's back, forward and typed paths (__dcmsPreviewGo).
         const contents = `
           export * from ${real};
-          import { createMemoryRouter as __mem, MemoryRouter as __MR } from ${real};
-          export const createBrowserRouter = (routes, opts = {}) =>
-            __mem(routes, { ...opts, initialEntries: opts.initialEntries ?? ['/'] });
+          import { createMemoryRouter as __mem, MemoryRouter as __MR, useLocation as __useLoc, useNavigate as __useNav } from ${real};
+          import { createElement as __h, useEffect as __eff } from 'react';
+          const __start = () => (typeof window !== 'undefined' && window.__dcmsPreviewPath) || '/';
+          const __report = (l) => { try { window.__dcmsPreviewNav && window.__dcmsPreviewNav(l.pathname + l.search + l.hash); } catch (e) {} };
+          export const createBrowserRouter = (routes, opts = {}) => {
+            const r = __mem(routes, { ...opts, initialEntries: opts.initialEntries ?? [__start()] });
+            window.__dcmsPreviewGo = (to) => r.navigate(to);
+            r.subscribe((s) => __report(s.location));
+            __report(r.state.location);
+            return r;
+          };
           export const createHashRouter = createBrowserRouter;
-          export const BrowserRouter = __MR;
-          export const HashRouter = __MR;
+          function __Reporter() {
+            const l = __useLoc();
+            const n = __useNav();
+            window.__dcmsPreviewGo = (to) => n(to);
+            __eff(() => __report(l), [l]);
+            return null;
+          }
+          export const BrowserRouter = ({ children, ...props }) =>
+            __h(__MR, { ...props, initialEntries: [__start()] }, __h(__Reporter), children);
+          export const HashRouter = BrowserRouter;
         `;
         return { contents, loader: 'js', resolveDir: '/' };
       });

@@ -16,7 +16,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { useTranslation } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
 import { Button } from '@dcms/ui';
-import { PreviewIdentityMenu, usePreviewAuth, useVfs } from '../site-source';
+import { PreviewAddressBar, PreviewIdentityMenu, usePreviewAuth, useVfs } from '../site-source';
 import { assetIdOf, resolveMedia } from '../builder/panels/media';
 import { useVisual } from './store';
 
@@ -42,6 +42,16 @@ export function VisualPreview({ siteId, initialPath, width }: { siteId: string; 
   const auth = usePreviewAuth(siteId);
   const [blocked, setBlocked] = useState<SiteAccess | null>(null);
   const root = useRef<Root | null>(null);
+  // Where the preview is, as a browser shows it; a redraw (an edit, a reload, someone else to
+  // preview as) stays on this page instead of going back to the one the builder opened.
+  const [path, setPath] = useState(initialPath);
+  const current = useRef(initialPath);
+  const router = useRef<ReturnType<typeof createMemoryRouter> | null>(null);
+  const [reloads, setReloads] = useState(0);
+  useEffect(() => {
+    current.current = initialPath;
+    setPath(initialPath);
+  }, [initialPath]);
   const dcmsFiles = useVfs((s) => s.files);
   const registry = useVisual((s) => s.registry);
   const dataClient = useVisual((s) => s.dataClient);
@@ -77,16 +87,23 @@ export function VisualPreview({ siteId, initialPath, width }: { siteId: string; 
       root.current = createRoot(doc.getElementById('root')!);
       watchMedia(doc);
     }
-    const router = createMemoryRouter(guardedRoutes(siteRoutes(documents, registry)).routes, { initialEntries: [initialPath] });
+    const next = createMemoryRouter(guardedRoutes(siteRoutes(documents, registry)).routes, { initialEntries: [current.current] });
+    router.current = next;
+    const stop = next.subscribe((state) => {
+      const at = state.location.pathname + state.location.search + state.location.hash;
+      current.current = at;
+      setPath(at);
+    });
     root.current.render(
       <DataClientContext.Provider value={dataClient}>
         <SiteContext.Provider value={{ app: documents.app, titles: routeTitles(documents) }}>
           <SiteStyles theme={documents.theme} />
-          <RouterProvider router={router} />
+          <RouterProvider router={next} />
         </SiteContext.Provider>
       </DataClientContext.Provider>,
     );
-  }, [documents, initialPath, registry, dataClient, auth.version]);
+    return stop;
+  }, [documents, initialPath, registry, dataClient, auth.version, reloads]);
 
   useEffect(
     () => () => {
@@ -98,18 +115,21 @@ export function VisualPreview({ siteId, initialPath, width }: { siteId: string; 
   );
 
   return (
-    <div className="relative flex h-full justify-center overflow-auto bg-muted/40">
+    <div className="flex h-full flex-col">
+      <PreviewAddressBar
+        path={path}
+        onGo={(to) => void router.current?.navigate(to as never)}
+        onReload={() => setReloads((n) => n + 1)}
+      >
+        {auth.identity?.available ? <PreviewIdentityMenu auth={auth} /> : null}
+      </PreviewAddressBar>
+    <div className="relative flex min-h-0 flex-1 justify-center overflow-auto bg-muted/40">
       <iframe
         ref={frame}
         title="Preview"
         className="h-full border-0 bg-white shadow-sm"
         style={{ width: width || '100%' }}
       />
-      {auth.identity?.available ? (
-        <div className="absolute right-2 top-2 z-10 max-w-[60%] rounded-md border bg-card shadow-sm">
-          <PreviewIdentityMenu auth={auth} />
-        </div>
-      ) : null}
       {blocked && blocked !== 'allow' ? (
         <div className="absolute inset-0 flex items-center justify-center bg-background/80 p-6">
           <div role="status" className="max-w-sm space-y-3 rounded-lg border bg-card p-5 text-center shadow-sm">
@@ -123,6 +143,7 @@ export function VisualPreview({ siteId, initialPath, width }: { siteId: string; 
           </div>
         </div>
       ) : null}
+    </div>
     </div>
   );
 }

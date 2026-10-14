@@ -2091,5 +2091,11 @@
     "saved": "View saved",
     "shared": "Sharing saved",
     "defaultSet": "This table now opens with that view"
+  },
+  "previewBar": {
+    "back": "Back",
+    "forward": "Forward",
+    "reload": "Reload",
+    "address": "Page address"
   }
 }

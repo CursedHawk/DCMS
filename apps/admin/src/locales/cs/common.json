@@ -2136,5 +2136,11 @@
     "saved": "Zobrazení uloženo",
     "shared": "Sdílení uloženo",
     "defaultSet": "Tabulka se nyní otevírá tímto zobrazením"
+  },
+  "previewBar": {
+    "back": "Zpět",
+    "forward": "Vpřed",
+    "reload": "Načíst znovu",
+    "address": "Adresa stránky"
   }
 }

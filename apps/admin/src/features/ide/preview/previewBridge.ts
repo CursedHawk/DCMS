@@ -180,6 +180,11 @@ export const BRIDGE_SCRIPT = `
     try { parent.postMessage({ __dcms: 'edge-nav', url: String(url) }, '*'); } catch (e) {}
   };
   window.__dcmsPreviewLeave = leave;
+  // The address bar: the app's router (the bundler's router shim) reports where it is, and the
+  // bar's back, forward and typed paths come back as 'preview-go'.
+  window.__dcmsPreviewNav = function (path) {
+    try { parent.postMessage({ __dcms: 'preview-nav', path: String(path) }, '*'); } catch (e) {}
+  };
   document.addEventListener('click', function (e) {
     var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
     var href = a ? a.getAttribute('href') || '' : '';
@@ -224,6 +229,12 @@ export const BRIDGE_SCRIPT = `
     // preview forged API responses or driving its query surface.
     if (ev.source && ev.source !== parent) return;
     var data = ev.data;
+    if (data && data.__dcms === 'preview-go') {
+      if (window.__dcmsPreviewGo && (typeof data.to === 'number' || (typeof data.to === 'string' && data.to.charAt(0) === '/'))) {
+        window.__dcmsPreviewGo(data.to);
+      }
+      return;
+    }
     if (data && data.__dcms === 'proxy-reply' && proxyPending[data.id]) {
       var cb = proxyPending[data.id];
       delete proxyPending[data.id];
@@ -258,7 +269,13 @@ export const BRIDGE_SCRIPT = `
  * errors from the previous version of the code are worse than no errors — the agent would try to
  * fix something it has already fixed.</p>
  */
-export function attachPreview(target: Window | null, proxy?: PreviewFetchProxy, onEdgeNav?: (url: string) => void): () => void {
+export function attachPreview(
+  target: Window | null,
+  proxy?: PreviewFetchProxy,
+  onEdgeNav?: (url: string) => void,
+  /** Where the app's router is now, for the preview's address bar. */
+  onNav?: (path: string) => void,
+): () => void {
   // Detach whatever was listening first.
   //
   // The caller is expected to run the teardown, and in the app React does. But a re-attach
@@ -286,6 +303,7 @@ export function attachPreview(target: Window | null, proxy?: PreviewFetchProxy, 
         text?: string;
         id?: number;
         url?: string;
+        path?: string;
         method?: string;
         headers?: Record<string, string>;
         body?: string | null;
@@ -295,6 +313,10 @@ export function attachPreview(target: Window | null, proxy?: PreviewFetchProxy, 
     if (data.__dcms === 'preview' && data.kind) {
       messages.push({ kind: data.kind, text: data.text ?? '', at: Date.now() });
       if (messages.length > MAX_MESSAGES) messages = messages.slice(-MAX_MESSAGES);
+      return;
+    }
+    if (data.__dcms === 'preview-nav' && typeof data.path === 'string') {
+      onNav?.(data.path);
       return;
     }
     // The site leaving for its edge's sign-in, sign-out or a page it may not open (#269).
@@ -382,4 +404,13 @@ export function resetBridge(): void {
   messages = [];
   frame = null;
   pending.clear();
+}
+
+/** Moves the attached preview's router: a path, or -1 / 1 for back and forward (the address bar). */
+export function previewGo(to: string | number): void {
+  try {
+    frame?.postMessage({ __dcms: 'preview-go', to }, '*');
+  } catch {
+    // The frame went away mid-rebuild; the next attach has the new one.
+  }
 }
