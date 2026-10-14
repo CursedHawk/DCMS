@@ -380,10 +380,36 @@ public sealed class SubscribersDataSet(IPluginContext context, MyDbContext db) :
   (download, delete). An installed plugin has a data view without writing any of the above.
 
 Served at `/api/admin/plugins/{slug}/_data` (list sets with schemas), `…/_data/{set}` (query:
-`search`, `sort`, `desc`, `page`, `pageSize`, `f.{filter}`), `…/{set}/row?key=` (GET, PUT,
+`search`, `sort`, `desc`, `page`, `pageSize`, `f.{filter}`, `where` — a view's filter), `…/{set}/row?key=` (GET, PUT,
 DELETE), `…/{set}/rows` (POST), `…/{set}/actions/{action}` (`{ keys, input }`),
 `…/{set}/download?key=`. A switched-off instance's data stays browsable and editable: it is
 hidden from sites, not from its owners.
+
+### Saved views over a data set
+
+Members save views of any data set — columns, order and a filter — and share them
+([table-views.md](table-views.md)). Columns and order need nothing from the plugin. A **filter**
+reaches only columns you mark `Filterable`, and then you must apply it: the conditions arrive in
+`DataQuery.Where`, already checked (only filterable columns, only their kind's operators). For an
+EF query, name each filterable column's property and let `DataQueryFilter` do it:
+
+```csharp
+new DataColumn("email", "Email", DataColumnKinds.Email, Sortable: true) { Filterable = true },
+new DataColumn("status", "Status", DataColumnKinds.Badge)
+{
+    Filterable = true,
+    Options = [new DataFilterOption("open", "Open"), new DataFilterOption("closed", "Closed")],
+},
+
+rows = DataQueryFilter.Apply(rows, query.Where, new Dictionary<string, LambdaExpression>
+{
+    ["email"] = (Expression<Func<Subscriber, string>>)(s => s.Email),
+    ["status"] = (Expression<Func<Subscriber, string>>)(s => s.ClosedAt == null ? "open" : "closed"),
+});
+```
+
+A column marked filterable whose filter is ignored shows a member rows their view says are not
+there; leave `Filterable` off rather than half-apply it.
 
 ## Permissions a plugin adds
 
