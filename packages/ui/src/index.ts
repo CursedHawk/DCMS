@@ -19,6 +19,7 @@ export * from './HostLink';
 export * from './Toaster';
 export * from './live';
 export * from './patterns';
+export * from './views';
 export * from './permissions';
 export * from './shell';
 export * from './tour';

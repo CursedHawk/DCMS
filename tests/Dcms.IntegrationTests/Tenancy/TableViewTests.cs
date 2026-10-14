@@ -59,6 +59,14 @@ public sealed class TableViewTests(AdminApiFixture fixture)
 
         (await ViewsAsync(client, slug, colleague, ct)).Should().BeEmpty("a new view is its owner's alone");
 
+        // Whom it could be shared with: any member may ask, an outsider may not.
+        var audience = await (await client.SendAsync(Req(HttpMethod.Get, "/api/admin/views/audience", slug, reader, null), ct))
+            .Content.ReadFromJsonAsync<JsonElement>(ct);
+        audience.GetProperty("people").GetArrayLength().Should().Be(3, "everyone but the asker");
+        audience.GetProperty("roles").EnumerateArray().Select(r => r.GetProperty("label").GetString()).Should().Contain("Owner");
+        (await client.SendAsync(Req(HttpMethod.Get, "/api/admin/views/audience", slug, Guid.NewGuid(), null), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
         // Shared with the Owner role: the colleague sees it, cannot change it, and can open with it.
         var ownerRole = await RoleIdAsync(tenantId, "Owner", ct);
         (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/views/{id}/sharing", slug, owner,

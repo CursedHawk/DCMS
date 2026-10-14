@@ -132,6 +132,20 @@ public static partial class TableViewEndpoints
             return Results.Ok(Shape(view, ctx.UserId, null));
         }).WithAudit(AuditActions.TableViewShared, "view");
 
+        // Who a view can be shared with: the workspace's members and roles. Listing members takes
+        // members:manage elsewhere; sharing a view is open to every member, so it gets this —
+        // names and emails only, and only to a member of the workspace.
+        group.MapGet("/audience", async (ViewContext ctx, CurrentUser user, CancellationToken ct) =>
+        {
+            var me = ctx.UserId;
+            if (!user.IsSuperAdmin && !await ctx.Db.Memberships.AnyAsync(m => m.UserId == me, ct)) return Results.Forbid();
+            var people = await ctx.Db.Memberships.AsNoTracking().Where(m => m.UserId != me)
+                .OrderBy(m => m.Email).Select(m => new { id = m.UserId, label = m.Email }).ToListAsync(ct);
+            var roles = await ctx.Db.TenantRoles.AsNoTracking()
+                .OrderBy(r => r.Name).Select(r => new { id = r.Id, label = r.Name }).ToListAsync(ct);
+            return Results.Ok(new { people, roles });
+        });
+
         // The view this member opens the table with: a view they can see, a table's own built-in
         // view (system:…), or null for the table's default.
         group.MapPut("/default", async (DefaultViewRequest body, ViewContext ctx, CancellationToken ct) =>
