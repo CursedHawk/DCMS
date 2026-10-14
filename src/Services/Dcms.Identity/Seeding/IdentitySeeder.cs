@@ -1,5 +1,6 @@
 using Dcms.Identity.Data;
 using Dcms.Identity.Domain;
+using Dcms.Identity.Realms;
 using Dcms.Shared.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -72,10 +73,26 @@ public sealed class IdentitySeeder(
         await SeedSuperAdminAsync(sp);
         await SeedScopesAsync(sp, cancellationToken);
         await SeedClientsAsync(sp, cancellationToken);
+        await ConvergeRealmClientsAsync(sp, cancellationToken);
         logger.LogInformation("Identity seeding complete.");
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>
+    /// Every realm's site client in line with this deploy's configuration. A client is otherwise
+    /// only rewritten when its realm is saved, so a redirect URI added by a release — the
+    /// console's preview callback (#269) — would reach no realm that already exists.
+    /// </summary>
+    private static async Task ConvergeRealmClientsAsync(IServiceProvider sp, CancellationToken ct)
+    {
+        var manager = sp.GetRequiredService<IOpenIddictApplicationManager>();
+        var configuration = sp.GetRequiredService<IConfiguration>();
+        foreach (var realm in await sp.GetRequiredService<IdentityDbContext>().Realms.AsNoTracking().ToListAsync(ct))
+        {
+            await RealmClients.EnsureAsync(manager, configuration, realm, ct);
+        }
+    }
 
     private static async Task SeedRolesAsync(IServiceProvider sp)
     {

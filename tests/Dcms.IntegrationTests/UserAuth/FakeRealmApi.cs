@@ -22,6 +22,9 @@ public sealed class FakeRealmApi : HttpMessageHandler
     /// <summary>Every call, as "METHOD /path", for tests that care what admin-api asked.</summary>
     public ConcurrentQueue<string> Calls { get; } = new();
 
+    /// <summary>Every "View as" token asked for: whose, and by which administrator.</summary>
+    public ConcurrentQueue<(Guid User, Guid RequestedBy)> PreviewRequests { get; } = new();
+
     public RealmInfo? RealmOf(Guid tenantId) => _realms.TryGetValue(tenantId, out var realm) ? realm.Info : null;
 
     private sealed class Realm(Guid tenantId)
@@ -105,6 +108,10 @@ public sealed class FakeRealmApi : HttpMessageHandler
                     DisplayName = patch.DisplayName ?? existing.DisplayName, Status = patch.Status ?? existing.Status,
                 };
                 return Ok(WithGroups(realm, existing));
+            case ("POST", ["users", var id, "preview-token"]) when realm.Users.ContainsKey(Guid.Parse(id)):
+                var asked = (await Body<RealmPreviewTokenRequest>(request, ct))!;
+                PreviewRequests.Enqueue((Guid.Parse(id), asked.RequestedBy));
+                return Ok(new RealmPreviewToken($"preview:{id}", DateTimeOffset.UtcNow.AddMinutes(15)));
             case ("DELETE", ["users", var id]):
                 return realm.Users.Remove(Guid.Parse(id)) ? Status(HttpStatusCode.NoContent) : Status(HttpStatusCode.NotFound);
             case ("GET", ["groups"]):

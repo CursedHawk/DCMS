@@ -33,6 +33,15 @@ public static class RealmClients
     public const string CallbackPath = "/.edge/site/signin-oidc";
     public const string SignedOutPath = "/.edge/site/signout-callback-oidc";
 
+    /// <summary>
+    /// The console's host, where a site builder's preview signs in (#269): the edge runs the same
+    /// realm sign-in there, under its own paths, for a preview of the tenant's site. Every realm's
+    /// client accepts it — the code still only goes to the console, and only for this realm.
+    /// </summary>
+    public const string PreviewHostSetting = "Identity:EdgeSites:PreviewHost";
+    public const string PreviewCallbackPath = "/.edge/preview/signin-oidc";
+    public const string PreviewSignedOutPath = "/.edge/preview/signout-callback-oidc";
+
     public static string IdFor(Guid tenantId) => Prefix + tenantId.ToString("N");
 
     public static bool TryParse(string? clientId, out Guid tenantId)
@@ -79,6 +88,11 @@ public static class RealmClients
         {
             descriptor.RedirectUris.Add(new Uri($"https://{host}{CallbackPath}"));
             descriptor.PostLogoutRedirectUris.Add(new Uri($"https://{host}{SignedOutPath}"));
+        }
+        if (configuration[PreviewHostSetting] is { Length: > 0 } preview)
+        {
+            descriptor.RedirectUris.Add(new Uri($"https://{preview}{PreviewCallbackPath}"));
+            descriptor.PostLogoutRedirectUris.Add(new Uri($"https://{preview}{PreviewSignedOutPath}"));
         }
 
         if (await manager.FindByClientIdAsync(clientId, ct) is { } existing)

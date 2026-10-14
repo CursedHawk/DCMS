@@ -252,6 +252,9 @@ public static class AuditActions
 
     /// <summary>Every session of one user ended by an administrator.</summary>
     public const string RealmUserSignedOut = "realm.user.signed_out";
+
+    /// <summary>A short-lived token for one user, minted for an administrator's "View as" in a site preview.</summary>
+    public const string RealmUserPreviewed = "realm.user.previewed";
     public const string RealmProviderSaved = "realm.provider.saved";
     public const string RealmProviderDeleted = "realm.provider.deleted";
     public const string RealmGroupCreated = "realm.group.created";

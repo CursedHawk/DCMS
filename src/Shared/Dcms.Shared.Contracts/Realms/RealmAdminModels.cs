@@ -40,3 +40,9 @@ public sealed record RealmUserPatch(string? DisplayName, string? Status);
 public sealed record RealmGroupWrite(string Name, string? Description);
 
 public sealed record RealmGroupInfo(Guid Id, string Name, string? Description, int Members);
+
+/// <summary>"View as" in a site preview: which administrator is asking, for the token's <c>act</c> and the audit log.</summary>
+public sealed record RealmPreviewTokenRequest(Guid RequestedBy);
+
+/// <summary>A short-lived realm access token for one user, for a site preview; there is no refresh token.</summary>
+public sealed record RealmPreviewToken(string AccessToken, DateTimeOffset ExpiresAt);

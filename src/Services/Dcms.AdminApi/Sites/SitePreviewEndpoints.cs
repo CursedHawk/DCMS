@@ -4,6 +4,7 @@ using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Chat;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Sites;
+using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Data.Visitors;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
@@ -28,6 +29,9 @@ public static class SitePreviewEndpoints
 {
     private static readonly string[] ProxyMethods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"];
 
+    /// <summary>A site user's realm access token (ADR 0022); the same name the edge and content-api use.</summary>
+    private const string RealmTokenHeader = "X-Dcms-Realm-Token";
+
     public static IEndpointRouteBuilder MapSitePreview(this IEndpointRouteBuilder app)
     {
         app.MapMethods("/api/admin/sites/{siteId:guid}/preview/api/{**path}", ProxyMethods, ProxyAsync)
@@ -40,6 +44,29 @@ public static class SitePreviewEndpoints
             .AuditExempt("Transparent proxy to content-api. The real action is recorded there, "
                        + "against the sandbox tenant; recording it here too would double every "
                        + "preview interaction.");
+
+        /*
+         * Which tenant a preview's site belongs to, and the domain whose site access rules it
+         * follows: its primary verified one, so a preview shows what that site shows (#269). Asked
+         * by the edge, with the member's own session, before it signs a preview in or answers what
+         * a preview may see — so site:edit on this site is the gate for all of that.
+         */
+        app.MapGet("/api/admin/sites/{siteId:guid}/preview/realm", async (
+            Guid siteId, SitesDbContext sites, TenancyDbContext tenancy, ITenantContext tenant, CancellationToken ct) =>
+        {
+            // The tenant query filter: a site in another tenant is not found.
+            if (tenant.TenantId is not { } tenantId || !await sites.Sites.AsNoTracking().AnyAsync(s => s.Id == siteId, ct))
+            {
+                return Results.NotFound();
+            }
+            var host = await tenancy.Domains.AsNoTracking()
+                .Where(d => d.SiteId == siteId && d.VerifiedAt != null)
+                .OrderByDescending(d => d.IsPrimary)
+                .ThenBy(d => d.Hostname)
+                .Select(d => d.Hostname)
+                .FirstOrDefaultAsync(ct);
+            return Results.Ok(new { tenantId, host });
+        }).RequirePermission(PlatformPermissions.SiteEdit);
 
         // Wipe the tenant's preview sandbox (forms / visitors / chat / plugin documents). Destructive, so it
         // takes site:edit like every other site endpoint — a bare RequireAuthorization() here
@@ -132,6 +159,13 @@ public static class SitePreviewEndpoints
         }
         request.Headers.TryAddWithoutValidation("X-Dcms-Tenant", slug);
         request.Headers.TryAddWithoutValidation("X-Dcms-Sandbox", "1");
+        // The site user the preview is signed in as (#269). Only the edge sets this header — it
+        // strips any copy a browser sends — from the preview session it holds for this browser;
+        // content-api accepts it only for this tenant's realm.
+        if (http.Request.Headers.TryGetValue(RealmTokenHeader, out var realmToken))
+        {
+            request.Headers.TryAddWithoutValidation(RealmTokenHeader, realmToken.ToArray());
+        }
         if (http.Request.Headers.Accept.Count > 0)
         {
             request.Headers.TryAddWithoutValidation("Accept", http.Request.Headers.Accept.ToArray());

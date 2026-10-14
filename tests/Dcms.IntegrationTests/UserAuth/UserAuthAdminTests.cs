@@ -134,6 +134,41 @@ public sealed class UserAuthAdminTests(ContentFlowFixture fixture)
         JsonDocument.Parse((await EdgeRowAsync(host, ct))!.RulesJson).RootElement.GetArrayLength().Should().Be(1);
     }
 
+    /// <summary>
+    /// What the edge asks before a site builder's preview signs in or is viewed as someone (#269):
+    /// which tenant the site is and whose rules it follows — for whoever may edit the site — and a
+    /// "View as" token, for whoever may manage the site's users.
+    /// </summary>
+    [DockerFact]
+    public async Task A_preview_learns_its_realm_and_views_as_a_user_only_for_those_allowed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (app, tenantId) = await SetUpAsync(ct);
+        var site = await CreateSiteAsync(app, ct);
+        var host = $"{app.Tenant}.preview.test";
+        await LinkDomainAsync(app, host, site, ct);
+
+        var realm = await JsonAsync(await app.Admin.SendAsync(
+            AppHarness.Req(HttpMethod.Get, $"/api/admin/sites/{site}/preview/realm", app.Owner, app.Tenant), ct), HttpStatusCode.OK, ct);
+        realm.GetProperty("tenantId").GetGuid().Should().Be(tenantId);
+        realm.GetProperty("host").GetString().Should().Be(host, "the primary domain's rules are the preview's");
+        var viewer = await app.AddMemberAsync([], ct);
+        (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, $"/api/admin/sites/{site}/preview/realm", viewer, app.Tenant), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, $"/api/admin/sites/{Guid.NewGuid()}/preview/realm", app.Owner, app.Tenant), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var userId = (await JsonAsync(await SendAsync(app, HttpMethod.Post, "/users/invite", ct, new { email = "viewed@corp.test" }), HttpStatusCode.OK, ct))
+            .GetProperty("user").GetProperty("id").GetGuid();
+        var token = await JsonAsync(await SendAsync(app, HttpMethod.Post, $"/users/{userId}/preview-token", ct), HttpStatusCode.OK, ct);
+        token.GetProperty("accessToken").GetString().Should().Be($"preview:{userId}");
+        fixture.Realms.PreviewRequests.Should().Contain((userId, app.Owner), "identity is told which administrator asked");
+
+        var reader = await app.AddMemberAsync(["plugin:user-auth:users-read"], ct);
+        (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/plugins/users/users/{userId}/preview-token", reader, app.Tenant), ct))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden, "acting as a user takes managing them");
+    }
+
     private async Task<(AppHarness App, Guid TenantId)> SetUpAsync(CancellationToken ct)
     {
         var app = await AppHarness.CreateAsync(fixture, ct);

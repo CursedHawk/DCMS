@@ -192,6 +192,85 @@ public sealed class RealmTests(IdentityAppFixture fixture)
         refused.StatusCode.Should().Be(HttpStatusCode.BadRequest, await refused.Content.ReadAsStringAsync(ct));
     }
 
+    /// <summary>
+    /// A site builder's preview signs in on the console's host (#269): the realm's client accepts
+    /// that one callback as well as its own site hosts — and still nobody else's.
+    /// </summary>
+    [DockerFact]
+    public async Task A_preview_on_the_console_can_sign_in_to_the_realm()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var a = await RealmAsync(ct);
+        var (_, invite) = await InviteAsync(a, $"{Guid.NewGuid():N}@corp.test", ct);
+        var browser = Browser();
+        await AcceptAsync(browser, invite, ct);
+
+        var preview = $"https://{IdentityAppFixture.PreviewHost}{RealmClients.PreviewCallbackPath}";
+        var (location, verifier) = await AuthorizeAsync(browser, a, ct, preview);
+        location.Should().StartWith(preview);
+        var tokens = await ExchangeAsync(a, location, verifier, ct, preview);
+        Claims(tokens.GetProperty("access_token").GetString()!).GetProperty("realm").GetString().Should().Be(a.TenantId.ToString());
+
+        // Only the console's preview path: the console's own sign-in callback is not the realm's.
+        using var foreign = await browser.GetAsync(QueryHelpers.AddQueryString("/connect/authorize", new Dictionary<string, string?>
+        {
+            ["client_id"] = a.ClientId,
+            ["redirect_uri"] = $"https://{IdentityAppFixture.PreviewHost}/.edge/signin-oidc",
+            ["response_type"] = "code",
+            ["scope"] = "openid",
+            ["code_challenge"] = Base64Url(SHA256.HashData(Encoding.ASCII.GetBytes(verifier))),
+            ["code_challenge_method"] = "S256",
+        }), ct);
+        foreign.StatusCode.Should().NotBe(HttpStatusCode.Found);
+    }
+
+    /// <summary>
+    /// "View as" (#269): a token for one user, minted for an administrator, that a resource server
+    /// takes exactly as it takes the user's own — and that says it is a preview, and whose.
+    /// </summary>
+    [DockerFact]
+    public async Task A_preview_token_is_the_users_own_shape_and_says_who_asked()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var a = await RealmAsync(ct);
+        var staff = await GroupAsync(a, "Staff", ct);
+        var (userId, invite) = await InviteAsync(a, $"{Guid.NewGuid():N}@corp.test", ct, staff);
+        var admin = Guid.NewGuid();
+
+        // Invited, not yet in: there is no site they could see.
+        (await AdminStatusAsync(HttpMethod.Post, $"/api/realms/{a.TenantId}/users/{userId}/preview-token", new { requestedBy = admin }, ct))
+            .Should().Be(HttpStatusCode.Conflict);
+
+        var browser = Browser();
+        await AcceptAsync(browser, invite, ct);
+        var (location, verifier) = await AuthorizeAsync(browser, a, ct);
+        var own = (await ExchangeAsync(a, location, verifier, ct)).GetProperty("access_token").GetString()!;
+
+        var minted = await AdminAsync(HttpMethod.Post, $"/api/realms/{a.TenantId}/users/{userId}/preview-token", new { requestedBy = admin }, ct);
+        var token = minted.GetProperty("accessToken").GetString()!;
+        minted.GetProperty("expiresAt").GetDateTimeOffset().Should().BeCloseTo(DateTimeOffset.UtcNow.AddMinutes(15), TimeSpan.FromMinutes(1));
+
+        var claims = Claims(token);
+        claims.GetProperty("sub").GetString().Should().Be(userId.ToString());
+        claims.GetProperty("realm").GetString().Should().Be(a.TenantId.ToString());
+        claims.GetProperty("iss").GetString().Should().Be(Claims(own).GetProperty("iss").GetString());
+        Values(claims, "aud").Should().Equal($"dcms.realm:{a.TenantId}");
+        Values(claims, "groups").Should().Equal(staff.ToString());
+        claims.GetProperty("dcms_preview").GetBoolean().Should().BeTrue();
+        claims.GetProperty("act").GetProperty("sub").GetString().Should().Be(admin.ToString());
+
+        // Signed with identity's published key, as the user's own token is.
+        var keys = new Microsoft.IdentityModel.Tokens.JsonWebKeySet(await fixture.Factory.CreateClient().GetStringAsync("/.well-known/jwks", ct));
+        var result = await new Microsoft.IdentityModel.JsonWebTokens.JsonWebTokenHandler().ValidateTokenAsync(token,
+            new Microsoft.IdentityModel.Tokens.TokenValidationParameters
+            {
+                ValidIssuer = Claims(own).GetProperty("iss").GetString(),
+                ValidAudience = $"dcms.realm:{a.TenantId}",
+                IssuerSigningKeys = keys.GetSigningKeys(),
+            });
+        result.IsValid.Should().BeTrue(result.Exception?.Message);
+    }
+
     // ---- helpers ----
 
     private sealed record TestRealm(Guid TenantId, string Slug, string Host)
@@ -238,6 +317,16 @@ public sealed class RealmTests(IdentityAppFixture fixture)
         return text.Length == 0 ? default : JsonDocument.Parse(text).RootElement.Clone();
     }
 
+    private async Task<HttpStatusCode> AdminStatusAsync(HttpMethod method, string path, object? body, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(method, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer",
+            await ServiceTokenAsync("dcms-realm-admin", "dcms-realm-admin-dev-secret", "dcms.realms", ct));
+        request.Content = JsonContent.Create(body);
+        using var response = await fixture.Factory.CreateClient().SendAsync(request, ct);
+        return response.StatusCode;
+    }
+
     private async Task<string> ServiceTokenAsync(string clientId, string secret, string scope, CancellationToken ct)
     {
         using var response = await fixture.Factory.CreateClient().PostAsync("/connect/token",
@@ -273,13 +362,14 @@ public sealed class RealmTests(IdentityAppFixture fixture)
         return response.Headers.Location!.ToString();
     }
 
-    private static async Task<(string Location, string Verifier)> AuthorizeAsync(HttpClient browser, TestRealm realm, CancellationToken ct)
+    private static async Task<(string Location, string Verifier)> AuthorizeAsync(HttpClient browser, TestRealm realm, CancellationToken ct,
+        string? redirectUri = null)
     {
         var verifier = Base64Url(RandomNumberGenerator.GetBytes(32));
         var url = QueryHelpers.AddQueryString("/connect/authorize", new Dictionary<string, string?>
         {
             ["client_id"] = realm.ClientId,
-            ["redirect_uri"] = $"https://{realm.Host}{RealmClients.CallbackPath}",
+            ["redirect_uri"] = redirectUri ?? $"https://{realm.Host}{RealmClients.CallbackPath}",
             ["response_type"] = "code",
             ["scope"] = "openid profile email offline_access",
             ["state"] = "s",
@@ -291,12 +381,13 @@ public sealed class RealmTests(IdentityAppFixture fixture)
         return (response.Headers.Location!.ToString(), verifier);
     }
 
-    private async Task<JsonElement> ExchangeAsync(TestRealm realm, string location, string verifier, CancellationToken ct)
+    private async Task<JsonElement> ExchangeAsync(TestRealm realm, string location, string verifier, CancellationToken ct,
+        string? redirectUri = null)
     {
         using var response = await fixture.Factory.CreateClient().PostAsync("/connect/token", Form(
             ("grant_type", "authorization_code"),
             ("code", QueryHelpers.ParseQuery(new Uri(location).Query)["code"].ToString()),
-            ("redirect_uri", $"https://{realm.Host}{RealmClients.CallbackPath}"),
+            ("redirect_uri", redirectUri ?? $"https://{realm.Host}{RealmClients.CallbackPath}"),
             ("client_id", realm.ClientId),
             ("client_secret", RealmClients.SecretFor(IdentityAppFixture.EdgeSitesSecret, realm.ClientId)),
             ("code_verifier", verifier)), ct);

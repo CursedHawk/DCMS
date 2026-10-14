@@ -114,6 +114,41 @@ public sealed class ApiAccessTests(ContentFlowFixture fixture)
         (await AdminAsync(app, HttpMethod.Put, $"/api-access/{Guid.NewGuid()}", ct, new { access = "signedIn" })).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    /// <summary>
+    /// A site builder's preview reads through admin-api's proxy, not the edge's site route. The
+    /// realm token the edge puts on it from the preview's sign-in (#269) reaches content-api, so a
+    /// restricted instance answers the preview as it would answer that user on the site.
+    /// </summary>
+    [DockerFact]
+    public async Task A_preview_reads_restricted_data_as_the_user_it_is_signed_in_as()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (app, tenantId) = await SetUpAsync(ct);
+        await app.InstallAsync("blog", "news", "{}", ct);
+        await PublishPostAsync(app, "okapi" + Guid.NewGuid().ToString("N")[..6], ct);
+        await SetAccessAsync(app, (await InstanceAsync(app, "news", ct)).GetProperty("instanceId").GetGuid(), "permission", ct);
+        var readers = Guid.NewGuid();
+        await GrantAsync(app, readers, ["blog:news:api:read"], ct);
+        var reader = RealmTokens.Mint(tenantId, Guid.NewGuid(), [readers]);
+
+        var site = (await JsonAsync(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/sites", app.Owner, app.Tenant,
+            body: new { name = "Portal", renderMode = "StaticPrerender" }), ct), HttpStatusCode.Created, ct)).GetProperty("id").GetGuid();
+        Task<HttpResponseMessage> Preview(string? token)
+        {
+            var req = AppHarness.Req(HttpMethod.Get, $"/api/admin/sites/{site}/preview/api/news/post/secret", app.Owner, app.Tenant);
+            if (token is not null)
+            {
+                req.Headers.Add("X-Dcms-Realm-Token", token);
+            }
+            return app.Admin.SendAsync(req, ct);
+        }
+
+        await PollAsync(async () => (await Preview(null)).StatusCode == HttpStatusCode.Unauthorized, ct);
+        (await Preview(reader)).StatusCode.Should().Be(HttpStatusCode.OK, "the signed-in user's own access, in the preview");
+        (await Preview(RealmTokens.Mint(Guid.NewGuid(), Guid.NewGuid(), [readers]))).StatusCode
+            .Should().Be(HttpStatusCode.Unauthorized, "another tenant's user is nobody here");
+    }
+
     private async Task<(AppHarness App, Guid TenantId)> SetUpAsync(CancellationToken ct)
     {
         var app = await AppHarness.CreateAsync(fixture, ct);

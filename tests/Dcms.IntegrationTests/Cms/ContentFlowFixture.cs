@@ -93,6 +93,10 @@ public sealed class ContentFlowFixture : IAsyncLifetime
                 // No identity here: the realm admin API is an in-memory fake (UserAuth tests).
                 services.AddSingleton(new Dcms.Shared.Security.Realms.RealmAdminClient(
                     new HttpClient(Realms) { BaseAddress = new Uri("http://identity.test/") }, new StubServiceTokenProvider()));
+                // The site preview proxy's way to content-api: the in-memory one, started below.
+                services.AddHttpClient("content-api")
+                    .ConfigurePrimaryHttpMessageHandler(() => new ContentServerHandler(this))
+                    .ConfigureHttpClient(client => client.BaseAddress = new Uri("http://content.test/"));
             });
         });
 
@@ -152,6 +156,16 @@ public sealed class ContentFlowFixture : IAsyncLifetime
     {
         public Task<string> GetTokenAsync(string scope, CancellationToken ct = default) =>
             Task.FromResult($"stub-{scope}");
+    }
+
+    /// <summary>admin-api's requests to content-api, into the content test server (created after admin-api, so resolved on first use).</summary>
+    private sealed class ContentServerHandler(ContentFlowFixture fixture) : DelegatingHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            InnerHandler ??= fixture.Content.Server.CreateHandler();
+            return base.SendAsync(request, ct);
+        }
     }
 
     /// <summary>

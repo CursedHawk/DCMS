@@ -77,6 +77,9 @@ x-vps-identity-seed: &vps-identity-seed
   # one variable rather than a variable plus a client-registration change.
   Identity__Edge__Secret: "${EDGE_OIDC_CLIENT_SECRET:-}"
   Identity__EdgeSites__Secret: "${EDGE_SITES_SECRET:-}"
+  # Where a site builder's preview signs in (#269): every realm's client accepts the console's
+  # /.edge/preview/signin-oidc as well as its own site hosts.
+  Identity__EdgeSites__PreviewHost: "${ADMIN_HOST:-admin.highgeek.eu}"
   Identity__Edge__RedirectUris: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}/.edge/signin-oidc;https://${GIT_HOST:-git.highgeek.eu}/.edge/signin-oidc;https://${ADMIN_HOST:-admin.highgeek.eu}/.edge/signin-oidc"
   Identity__Edge__PostLogoutUris: "https://${GRAFANA_DOMAIN:-grafana.highgeek.eu}/.edge/signout-callback-oidc;https://${GIT_HOST:-git.highgeek.eu}/.edge/signout-callback-oidc;https://${ADMIN_HOST:-admin.highgeek.eu}/.edge/signout-callback-oidc"
 

@@ -6,7 +6,9 @@ using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Contracts.Realms;
 using Dcms.Shared.Messaging.Email;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
+using OpenIddict.Server;
 
 namespace Dcms.Identity.Realms;
 
@@ -221,6 +223,29 @@ public static partial class RealmAdminEndpoints
             await UserSessionRevoker.RevokeSubjectAsync(tokens, authorizations, user.Id.ToString(), ct);
             return Results.NoContent();
         }).WithAudit(AuditActions.RealmUserSignedOut, "realm_user", AuditCategory.Auth);
+
+        // "View as" in a site builder's preview: a short-lived token for this user, for the
+        // administrator named in the body (see RealmPreviewTokens). Only an account that could sign
+        // in itself: previewing as a disabled one would show a site nobody can see.
+        realms.MapPost("/users/{userId:guid}/preview-token", async (Guid tenantId, Guid userId, RealmPreviewTokenRequest body,
+            HttpContext http, RealmStore store, IOptionsMonitor<OpenIddictServerOptions> server, TimeProvider clock,
+            IAuditRecorder audit, CancellationToken ct) =>
+        {
+            if (await store.FindUserAsync(tenantId, userId, ct) is not { } user)
+            {
+                return Results.NotFound();
+            }
+            if (!store.CanSignIn(user))
+            {
+                return Results.Conflict(new { error = "This user cannot sign in, so there is nothing to preview as them." });
+            }
+            audit.Declared?.InTenant(tenantId).About(user.Id).With("requestedBy", body.RequestedBy);
+            var options = server.CurrentValue;
+            var now = clock.GetUtcNow();
+            var token = RealmPreviewTokens.Mint(options, RealmPreviewTokens.IssuerOf(options, http.Request), user,
+                await store.GroupIdsAsync(user, ct), body.RequestedBy, now);
+            return Results.Ok(new RealmPreviewToken(token, now + RealmPreviewTokens.Lifetime));
+        }).WithAudit(AuditActions.RealmUserPreviewed, "realm_user", AuditCategory.Auth);
 
         realms.MapDelete("/users/{userId:guid}", async (Guid tenantId, Guid userId, IdentityDbContext db,
             IOpenIddictTokenManager tokens, IOpenIddictAuthorizationManager authorizations, IAuditRecorder audit, CancellationToken ct) =>

@@ -83,6 +83,15 @@ internal static partial class UserAuthAdminEndpoints
                 relay.SendAsync(HttpMethod.Post, $"/users/{userId}/sign-out", null, ct))
             .RequirePluginPermission("users-manage")
             .AuditAs("user.signed_out");
+        // "View as" in a site builder's preview (#269): a short-lived token for this user, asked for
+        // by the edge with the member's own session and kept in the edge's preview session — never
+        // handed to the browser. Managing users is the bar: it is acting as one of them.
+        endpoints.MapPost("/users/{userId:guid}/preview-token", (Guid userId, HttpContext http, RealmRelay relay, CancellationToken ct) =>
+                Guid.TryParse(http.User.FindFirst("sub")?.Value, out var me)
+                    ? relay.SendAsync(HttpMethod.Post, $"/users/{userId}/preview-token", new RealmPreviewTokenRequest(me), ct)
+                    : Task.FromResult(Results.Unauthorized()))
+            .RequirePluginPermission("users-manage")
+            .AuditAs("user.previewed");
         // Their direct grants go with them, once identity has let them go.
         endpoints.MapDelete("/users/{userId:guid}", (Guid userId, RealmRelay relay, UserAuthDbContext db, CancellationToken ct) =>
                 relay.SendAsync(HttpMethod.Delete, $"/users/{userId}", null, ct,
