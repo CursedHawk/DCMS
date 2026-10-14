@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.AdminApi.Tenancy;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Runtime;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Cms;
@@ -160,7 +161,7 @@ public static class ContentEndpoints
         // the same word.
         app.MapGet("/api/admin/content/tags", async (
             Guid? instanceId, string? contentType, string? field, CmsDbContext db,
-            ITenantContext tenant, CancellationToken ct) =>
+            IPluginCatalog catalog, ITenantContext tenant, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
             {
@@ -170,7 +171,7 @@ public static class ContentEndpoints
             // Drafts included: an author should be offered a tag they typed five
             // minutes ago and have not published yet.
             var rows = await TagQueries.OccurrencesAsync(
-                db, tenantId, publishedOnly: false,
+                db, tenantId, catalog.TagFields(), publishedOnly: false,
                 instanceId: instanceId,
                 contentType: string.IsNullOrWhiteSpace(contentType) ? null : contentType,
                 field: string.IsNullOrWhiteSpace(field) ? null : field,

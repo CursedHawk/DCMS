@@ -1,3 +1,5 @@
+using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Runtime;
 using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Shared.Caching;
 using Dcms.Shared.Data.Cms;
@@ -31,7 +33,8 @@ public static class TagDeliveryEndpoints
     {
         app.MapGet("/api/tags", async (
             string? contentType, string? field, ITenantContext tenant, CmsDbContext db,
-            ICacheService cache, UserAuthDbContext userAuth, PluginContextFactory plugins, HttpContext http, CancellationToken ct) =>
+            ICacheService cache, UserAuthDbContext userAuth, PluginContextFactory plugins, IPluginCatalog catalog,
+            HttpContext http, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
             {
@@ -43,7 +46,7 @@ public static class TagDeliveryEndpoints
             if (cached is null)
             {
                 var rows = await TagQueries.OccurrencesAsync(
-                    db, tenantId, publishedOnly: true, contentType: contentType, field: field, ct: ct);
+                    db, tenantId, catalog.TagFields(), publishedOnly: true, contentType: contentType, field: field, ct: ct);
 
                 // Grouped case-insensitively but reported under the spelling used
                 // most: a vocabulary that lists "Live" and "live" separately is not
@@ -102,14 +105,14 @@ public static class TagDeliveryEndpoints
     /// so it is consulted even on a hit.
     /// </summary>
     public static async Task<bool> HasTagsAsync(
-        Guid tenantId, CmsDbContext db, ICacheService cache, CancellationToken ct)
+        Guid tenantId, CmsDbContext db, ICacheService cache, TagQueries.TagFields tagFields, CancellationToken ct)
     {
         var cached = await cache.GetAsync<bool?>(AnyKey(tenantId), ct);
         if (cached is { } known)
         {
             return known;
         }
-        var any = await TagQueries.AnyAsync(db, tenantId, publishedOnly: true, ct);
+        var any = await TagQueries.AnyAsync(db, tenantId, tagFields, publishedOnly: true, ct);
         await cache.SetAsync(AnyKey(tenantId), (bool?)any, Ttl, ct);
         return any;
     }

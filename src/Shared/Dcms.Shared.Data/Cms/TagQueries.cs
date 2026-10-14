@@ -12,7 +12,7 @@ namespace Dcms.Shared.Data.Cms;
 /// belongs to the item, and a separate table would need a migration every time a
 /// plugin added a field. The cost is that "which tags does this tenant use" is a
 /// question no navigation property can answer, so it is asked here: unnest every
-/// array-valued field of every item and group.
+/// field declared as tags (see <c>IsTagField</c>) of every item and group.
 ///
 /// Raw ADO rather than EF, because that is `jsonb_array_elements_text` over a
 /// lateral join, which LINQ cannot express and `Database.SqlQuery` cannot project
@@ -50,16 +50,48 @@ public static class TagQueries
             CROSS JOIN LATERAL jsonb_each(e.value) n
             WHERE jsonb_typeof(e.value) = 'object' AND jsonb_typeof(n.value) = 'array'
         ) entry
-        CROSS JOIN LATERAL jsonb_array_elements_text(entry.arr) AS tag
+        CROSS JOIN LATERAL (
+            -- Strings only. An array of objects is a repeater (a line-up, a gallery), and
+            -- jsonb_array_elements_text would hand each object back as its JSON text.
+            SELECT el #>> '{}' AS value
+            FROM jsonb_array_elements(entry.arr) el
+            WHERE jsonb_typeof(el) = 'string'
+        ) AS tag
         """;
 
     /// <summary>
-    /// What an array of strings has to look like to be a vocabulary.
+    /// Only fields declared as tags count: a plugin's <c>Tags</c> fields, and a tenant's own
+    /// custom fields of type <c>tags</c> (read from the instance's config, where they are
+    /// defined). Any other array — an event's line-up, a gallery's photos, a list a plugin
+    /// keeps as Json — is data, and its values are not a vocabulary for every tag input in
+    /// the workspace.
     ///
-    /// Nothing in the data says "this field holds tags" — a `MediaRef[]` is an
-    /// array of strings exactly like a `Tags[]` is, so the first version of this
-    /// indexed every photo on the site as a tag and buried the real vocabulary
-    /// under a wall of asset ids. These are the shapes a tag provably never has:
+    /// Needs <c>i</c> (the item) and <c>p</c> (its plugin instance) in scope.
+    /// </summary>
+    private const string IsTagField = """
+        AND (
+            EXISTS (
+                SELECT 1 FROM unnest(@tfPlugin, @tfType, @tfField) AS tf(plugin, type, field)
+                WHERE tf.plugin = p."PluginId" AND tf.type = i."ContentType" AND tf.field = entry.field)
+            OR EXISTS (
+                SELECT 1
+                FROM unnest(@cfPlugin, @cfType, @cfValues, @cfConfig) AS cf(plugin, type, vals, ckey)
+                CROSS JOIN LATERAL jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(p."ConfigJson" -> cf.ckey) = 'array'
+                         THEN p."ConfigJson" -> cf.ckey ELSE '[]'::jsonb END) d
+                WHERE cf.plugin = p."PluginId" AND cf.type = i."ContentType"
+                  AND d ->> 'type' = 'tags'
+                  AND entry.field = cf.vals || '.' || (d ->> 'key'))
+        )
+        """;
+
+    /// <summary>
+    /// What a value in a tag field has to look like to be offered as a tag.
+    ///
+    /// The second guard, behind <c>IsTagField</c>: it dates from when every array was
+    /// scanned and a `MediaRef[]` indexed every photo on the site as a tag. It still
+    /// keeps out what a tag field should never hold but an import might have put there.
+    /// These are the shapes a tag provably never has:
     /// a GUID (an asset or content reference), a URL or a path, and anything long
     /// enough to be prose. Deliberately a rule about the *value* rather than the
     /// field name — a guess at "photos"/"images" would misfire on the tenant that
@@ -84,6 +116,18 @@ public static class TagQueries
     private const string FieldMatches =
         "AND (entry.field = @field OR split_part(entry.field, '.', 2) = @field)";
 
+    /// <summary>A plugin field declared as <c>Tags</c>.</summary>
+    public sealed record DeclaredTagField(string PluginId, string ContentType, string Field);
+
+    /// <summary>
+    /// Where a content type keeps a tenant's own fields: their definitions in the instance
+    /// config under <c>ConfigKey</c>, their values in the item under <c>ValuesField</c>.
+    /// </summary>
+    public sealed record CustomFieldSource(string PluginId, string ContentType, string ValuesField, string ConfigKey);
+
+    /// <summary>Which fields hold tags. Built from the plugin manifests by the caller.</summary>
+    public sealed record TagFields(IReadOnlyList<DeclaredTagField> Declared, IReadOnlyList<CustomFieldSource> Custom);
+
     /// <summary>One tag, and one place it is used.</summary>
     public sealed record TagOccurrence(
         string Tag, string InstanceSlug, string ContentType, string Field, int Count);
@@ -98,6 +142,7 @@ public static class TagQueries
     public static async Task<List<TagOccurrence>> OccurrencesAsync(
         DbContext db,
         Guid tenantId,
+        TagFields tagFields,
         bool publishedOnly,
         Guid? instanceId = null,
         string? contentType = null,
@@ -114,6 +159,7 @@ public static class TagQueries
         // Each optional filter is a clause that is present or absent, never a
         // parameter compared against NULL — see FieldMatches.
         var parameters = new List<(string, object?)> { ("@tenantId", tenantId) };
+        parameters.AddRange(TagFieldParameters(tagFields));
         var filters = new List<string>();
         if (publishedOnly)
         {
@@ -145,9 +191,7 @@ public static class TagQueries
             WHERE i."TenantId" = @tenantId
               AND p."Enabled"
               {string.Join("\n              ", filters)}
-              -- An array of objects is a repeater (a line-up, a gallery), not a
-              -- vocabulary; jsonb_array_elements_text stringifies those into whole
-              -- JSON objects, so the length cap is part of what keeps them out.
+              {IsTagField}
               {LooksLikeATag}
             GROUP BY tag.value, p."Slug", i."ContentType", entry.field
             ORDER BY count(*) DESC, tag.value
@@ -164,7 +208,8 @@ public static class TagQueries
     /// endpoint that answers with an empty list on every site that has no tags is
     /// noise in every one of those tenants' API docs.
     /// </summary>
-    public static async Task<bool> AnyAsync(DbContext db, Guid tenantId, bool publishedOnly, CancellationToken ct = default)
+    public static async Task<bool> AnyAsync(
+        DbContext db, Guid tenantId, TagFields tagFields, bool publishedOnly, CancellationToken ct = default)
     {
         // Deliberately not OccurrencesAsync(): this only needs to know whether one
         // row exists, and grouping a tenant's whole content to answer yes/no is
@@ -178,9 +223,11 @@ public static class TagQueries
             SELECT 1
             FROM cms.content_items i
             {versionJoin}
+            JOIN plugins.plugin_instances p ON p."Id" = i."PluginInstanceId"
             {ArrayFields}
             WHERE i."TenantId" = @tenantId
               {statusFilter}
+              {IsTagField}
               {LooksLikeATag}
             LIMIT 1
             """;
@@ -200,6 +247,10 @@ public static class TagQueries
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
             Bind(command, "@tenantId", tenantId);
+            foreach (var (name, value) in TagFieldParameters(tagFields))
+            {
+                Bind(command, name, value);
+            }
             return await command.ExecuteScalarAsync(ct) is not null;
         }
         finally
@@ -320,6 +371,18 @@ public static class TagQueries
             }
         }
     }
+
+    /// <summary><see cref="IsTagField"/>'s parameters: one text[] per column, unnested together.</summary>
+    private static IEnumerable<(string, object?)> TagFieldParameters(TagFields f) =>
+    [
+        ("@tfPlugin", f.Declared.Select(d => d.PluginId).ToArray()),
+        ("@tfType", f.Declared.Select(d => d.ContentType).ToArray()),
+        ("@tfField", f.Declared.Select(d => d.Field).ToArray()),
+        ("@cfPlugin", f.Custom.Select(c => c.PluginId).ToArray()),
+        ("@cfType", f.Custom.Select(c => c.ContentType).ToArray()),
+        ("@cfValues", f.Custom.Select(c => c.ValuesField).ToArray()),
+        ("@cfConfig", f.Custom.Select(c => c.ConfigKey).ToArray()),
+    ];
 
     private static void Bind(DbCommand command, string name, object? value)
     {

@@ -85,7 +85,8 @@ public static class OpenApiEndpoints
         // Part of the key, not just the document: the tag index appears in the spec
         // the moment a tenant publishes its first tag, and a key that ignored it
         // would serve the pre-tag document for another 24 hours.
-        var tagging = await TagDeliveryEndpoints.HasTagsAsync(tenantId, db, cache, ct);
+        var tagging = await TagDeliveryEndpoints.HasTagsAsync(
+            tenantId, db, cache, services.GetRequiredService<IPluginCatalog>().TagFields(), ct);
         var contexts = instances.Select(p => new PluginInstanceContext(
             p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description,
             JsonDocument.Parse(string.IsNullOrWhiteSpace(p.ConfigJson) ? "{}" : p.ConfigJson))).ToList();

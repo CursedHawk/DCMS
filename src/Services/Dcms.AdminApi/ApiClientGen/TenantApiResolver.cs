@@ -66,7 +66,7 @@ public sealed class TenantApiResolver(
             .ToList();
 
         // Same rule as content-api's own document, or the two disagree about what exists.
-        var tagging = await TagQueries.AnyAsync(db, tenantId, publishedOnly: true, ct);
+        var tagging = await TagQueries.AnyAsync(db, tenantId, catalog.TagFields(), publishedOnly: true, ct);
 
         var contexts = instances.Select(p => new PluginInstanceContext(
             p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description,
