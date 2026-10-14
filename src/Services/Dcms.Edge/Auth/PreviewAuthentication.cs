@@ -46,6 +46,13 @@ public static partial class PreviewAuthentication
     public const string DoneMessage = "dcms:preview-auth";
 
     private const string SessionClaim = "dcms_preview_sid";
+
+    /// <summary>
+    /// The console session the preview was signed in under. A preview session is only ever used
+    /// alongside that same console session: signing out of the console, or someone else signing
+    /// in on this browser, leaves it behind rather than handing them the site user.
+    /// </summary>
+    private const string ConsoleClaim = "dcms_console_sid";
     private const string TenantItem = "dcms.preview.tenant";
 
     public static void AddPreviewAuthentication(this WebApplicationBuilder builder, EdgeAuthOptions auth)
@@ -124,6 +131,11 @@ public static partial class PreviewAuthentication
                             context.Fail("The sign-in is not for this preview.");
                             return;
                         }
+                        if (await ConsoleSessionAsync(context.HttpContext) is null)
+                        {
+                            context.Fail("A preview signs in under a console session.");
+                            return;
+                        }
                         var session = new SiteSession(tenantId, subject, principal.FindFirst("name")?.Value, principal.FindFirst("email")?.Value,
                             SiteAuthentication.GroupsOf(principal), access, refresh,
                             DateTimeOffset.UtcNow.AddSeconds(int.TryParse(response.ExpiresIn, out var seconds) ? seconds : 600));
@@ -155,10 +167,17 @@ public static partial class PreviewAuthentication
 
     private static async Task<ClaimsPrincipal> PrincipalAsync(HttpContext context, SiteSession session)
     {
+        // At the OIDC callback the console's cookie has not been read yet: remote handlers run first.
+        var console = await ConsoleSessionAsync(context) ?? throw new InvalidOperationException("No console session to bind the preview to.");
         var id = await context.RequestServices.GetRequiredService<SiteSessionStore>().CreateAsync(session);
         return new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(SessionClaim, id), new Claim("realm", session.TenantId.ToString())], CookieScheme));
+            [new Claim(SessionClaim, id), new Claim(ConsoleClaim, console), new Claim("realm", session.TenantId.ToString())], CookieScheme));
     }
+
+    private static async Task<string?> ConsoleSessionAsync(HttpContext context) =>
+        BffTokenProvider.SessionIdOf(context.User) is { Length: > 0 } known
+            ? known
+            : BffTokenProvider.SessionIdOf((await context.AuthenticateAsync()).Principal);
 
     /// <summary>The preview's session for this tenant, renewed when its token is about to lapse; null when there is none.</summary>
     private static async Task<SiteSession?> CurrentAsync(HttpContext context, Guid tenantId, EdgeAuthOptions auth)
@@ -184,7 +203,11 @@ public static partial class PreviewAuthentication
     private static async Task<string?> SessionIdAsync(HttpContext context)
     {
         var result = await context.AuthenticateAsync(CookieScheme);
-        return result.Succeeded ? result.Principal?.FindFirst(SessionClaim)?.Value : null;
+        return result.Succeeded
+               && result.Principal?.FindFirst(ConsoleClaim)?.Value is { Length: > 0 } console
+               && console == await ConsoleSessionAsync(context)
+            ? result.Principal.FindFirst(SessionClaim)?.Value
+            : null;
     }
 
     /// <summary>

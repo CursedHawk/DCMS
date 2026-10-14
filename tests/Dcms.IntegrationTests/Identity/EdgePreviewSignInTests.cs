@@ -228,6 +228,12 @@ public sealed class EdgePreviewSignInTests : IAsyncLifetime
         token.GetProperty("sub").GetString().Should().Be(pat.Id.ToString());
         token.GetProperty("act").GetProperty("sub").GetString().Should().Be(_ada, "identity was told who asked");
 
+        // A new console session in this browser does not inherit the preview's site user.
+        await SignInToConsoleAsync(browser, ct);
+        (await WhoAmIAsync(browser, ct)).Should().BeEmpty("the preview session belonged to the console session that made it");
+        (await JsonAsync(browser, $"/.edge/preview/{Tenant}/{Site}/me", ct)).GetProperty("signedIn").GetBoolean().Should().BeFalse();
+        csrf = await CsrfAsync(browser, ct);
+
         // Someone who cannot sign in has no site to preview.
         var invited = await InviteAsync($"{Guid.NewGuid():N}@corp.test", ct);
         (await ViewAsAsync(browser, invited.Id, csrf, ct)).StatusCode.Should().Be(HttpStatusCode.Conflict);
@@ -244,6 +250,10 @@ public sealed class EdgePreviewSignInTests : IAsyncLifetime
     private static async Task SignInToConsoleAsync(Browser browser, CancellationToken ct)
     {
         var page = await browser.GetAsync(new Uri(Admin, "/.edge/signin?returnUrl=/"), ct);
+        if (page.Uri.Host == AdminHost)
+        {
+            return; // identity still knew the browser: a new console session, without a form
+        }
         var landed = await browser.PostAsync(new Uri(Auth, "/account/login"), new Dictionary<string, string>
         {
             ["email"] = Ada,

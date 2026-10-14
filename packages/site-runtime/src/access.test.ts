@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { guardSiteRoute, guardedRoutes } from './access';
+import { configureSiteEdge, guardSiteRoute, guardedRoutes, resetSiteAccess } from './access';
 
 const assign = vi.fn();
 const answers = new Map<string, () => Promise<Response>>();
@@ -59,5 +59,22 @@ describe('guardedRoutes', () => {
     expect(revalidate(args('/a', '/b'))).toBe(true);
     expect(revalidate(args('/a', '/a?page=2'))).toBe(false);
     expect(routes[1]).toEqual({ path: '*' });
+  });
+});
+
+describe('configureSiteEdge', () => {
+  it("asks a preview's own edge, and hands leaving to the preview instead of navigating", async () => {
+    const leave = vi.fn();
+    configureSiteEdge({ base: '/.edge/preview/corp/s1', leave });
+    answers.set('/members', () => Promise.resolve(Response.json({ '/members': 'signin' })));
+    expect(await decided(guardSiteRoute('/members'))).toBe('pending');
+    expect(fetchMock.mock.calls.at(-1)![0]).toBe('/.edge/preview/corp/s1/access?path=%2Fmembers');
+    expect(leave).toHaveBeenCalledWith('/.edge/preview/corp/s1/signin?returnUrl=%2Fmembers', 'signin');
+    expect(assign).not.toHaveBeenCalled();
+
+    // Signed in: the answer is asked afresh.
+    answers.set('/members', () => Promise.resolve(Response.json({ '/members': 'allow' })));
+    resetSiteAccess();
+    expect(await guardSiteRoute('/members')).toBe(true);
   });
 });

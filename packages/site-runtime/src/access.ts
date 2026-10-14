@@ -13,11 +13,38 @@ export type SiteAccess = 'allow' | 'signin' | 'forbidden' | 'unavailable';
 
 const known = new Map<string, Promise<SiteAccess>>();
 
+/** Where the site's edge answers, and what leaving the app for one of its answers means. */
+export interface SiteEdge {
+  /** `/.edge/site` on a published site; a builder's preview has its own (#269). */
+  base: string;
+  /** Leave the app for the edge's sign-in (`access` = `signin`) or its "no access" page load. */
+  leave: (url: string, access: SiteAccess) => void;
+}
+
+let edge: SiteEdge = {
+  base: '/.edge/site',
+  leave: (url) => window.location.assign(url),
+};
+
+/**
+ * Points the runtime at another edge: a builder's preview asks the console's preview endpoints,
+ * and opens sign-in in a popup rather than navigating its frame away. Forgets every answer.
+ */
+export function configureSiteEdge(next: Partial<SiteEdge>): void {
+  edge = { ...edge, ...next };
+  known.clear();
+}
+
+/** Forgets every answer: the visitor has signed in or out. */
+export function resetSiteAccess(): void {
+  known.clear();
+}
+
 /** The site's rules on `path` for this visitor, asked once per path per page load. */
 export function siteAccess(path: string): Promise<SiteAccess> {
   let answer = known.get(path);
   if (!answer) {
-    answer = fetch(`/.edge/site/access?path=${encodeURIComponent(path)}`, {
+    answer = fetch(`${edge.base}/access?path=${encodeURIComponent(path)}`, {
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
     }).then(async (res) => {
@@ -34,13 +61,13 @@ export function siteAccess(path: string): Promise<SiteAccess> {
 }
 
 /**
- * Resolves true when `path` may be drawn; otherwise sends the browser to the edge and never
- * resolves. If the edge cannot be asked the route is drawn: the server still guards its data.
+ * Resolves true when `path` may be drawn; otherwise leaves for the edge (see {@link SiteEdge}) and
+ * never resolves. If the edge cannot be asked the route is drawn: the server still guards its data.
  */
 export async function guardSiteRoute(path: string): Promise<boolean> {
   const access = await siteAccess(path).catch(() => 'allow' as const);
   if (access === 'allow') return true;
-  window.location.assign(access === 'signin' ? `/.edge/site/signin?returnUrl=${encodeURIComponent(path)}` : path);
+  edge.leave(access === 'signin' ? `${edge.base}/signin?returnUrl=${encodeURIComponent(path)}` : path, access);
   return new Promise<never>(() => {});
 }
 
