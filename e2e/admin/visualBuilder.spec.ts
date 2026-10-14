@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import type { MockApi } from '../fixtures/api';
-import { test, expect } from '../fixtures/test';
+import { test, expect, data } from '../fixtures/test';
 import { API_MANIFEST, HOME, IDE_FILES, RUNTIME_MANIFEST, SITE, builderServer, doc, open, saved } from '../fixtures/visualSite';
 
 /**
@@ -282,6 +282,57 @@ test('preview runs the site: a button navigates to another page', async ({ page,
   await expect(preview.getByRole('heading', { name: 'Welcome home' })).toBeVisible();
   await preview.getByRole('link', { name: 'Read about us' }).click();
   await expect(preview.getByRole('heading', { name: 'About us' })).toBeVisible();
+});
+
+test('the preview signs in as the site’s users: its main domain’s rules, and View as', async ({ page, api }) => {
+  // The edge's preview endpoints (#269): signed out, a page only signed-in users may open, and
+  // a View as that makes the preview Pat.
+  let me = { available: true, signedIn: false, name: null as string | null, email: null as string | null, groups: [], viewAs: false };
+  let csrf: string | undefined;
+  await page.route('**/.edge/preview/**', async (route, request) => {
+    const url = new URL(request.url());
+    if (url.pathname.endsWith('/me')) return route.fulfill({ json: me });
+    if (url.pathname.endsWith('/access')) {
+      const path = url.searchParams.get('path')!;
+      return route.fulfill({ json: { [path]: me.signedIn ? 'allow' : 'signin' } });
+    }
+    if (url.pathname.endsWith('/view-as') && request.method() === 'POST') {
+      csrf = request.headers()['x-dcms-csrf'];
+      me = { ...me, signedIn: true, name: 'Pat', email: 'pat@corp.test', viewAs: true };
+      return route.fulfill({ json: me });
+    }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  api
+    .on('GET', '/api/admin/plugin-ui', [
+      ...data.PLUGIN_UI,
+      { pluginId: 'user-auth', name: 'User Authentication', icon: null, source: 'builtin', module: null, screens: [],
+        instances: [{ id: 'ua', slug: 'users', name: 'Site users', enabled: true }] },
+    ])
+    .on('GET', '/api/admin/plugins/users/users', {
+      items: [
+        { id: 'u1', email: 'pat@corp.test', displayName: 'Pat', status: 'active' },
+        { id: 'u2', email: 'new@corp.test', displayName: null, status: 'invited' },
+      ],
+      total: 2, page: 1, pageSize: 20,
+    });
+
+  await open(page, api, twoPages);
+  await page.getByRole('group', { name: 'View' }).getByTitle('Preview').click();
+  await expect(page.getByText('On the live site, this page is only for signed-in users.')).toBeVisible();
+  const who = page.getByRole('button', { name: 'Who the preview is signed in as' });
+  await expect(who).toContainText('Signed out');
+
+  await who.click();
+  await page.getByRole('menuitem', { name: 'View as…' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('button', { name: /new@corp\.test/ })).toBeDisabled();
+  await dialog.getByRole('button', { name: /Pat/ }).click();
+
+  await expect(page.frameLocator('iframe[title="Preview"]').getByRole('heading', { name: 'Welcome home' })).toBeVisible();
+  await expect(page.getByText('On the live site, this page is only for signed-in users.')).toHaveCount(0);
+  await expect(who).toContainText('Viewing as Pat');
+  expect(csrf, 'View as is a write: it carries the console CSRF token').toBeTruthy();
 });
 
 test('publishing is refused while the site has errors, and says where they are', async ({ page, api }) => {

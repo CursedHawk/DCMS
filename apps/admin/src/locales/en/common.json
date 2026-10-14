@@ -1996,5 +1996,22 @@
       "history": "{{name}} (earlier builds)",
       "git": "{{name}} (git repository)"
     }
+  },
+  "previewAuth": {
+    "menu": "Who the preview is signed in as",
+    "signedOut": "Signed out",
+    "signedInAs": "Signed in as {{name}}",
+    "viewingAs": "Viewing as {{name}}",
+    "hint": "See the site as one of its users. Uses the site's own sign-in and the access rules of its main domain.",
+    "signIn": "Sign in…",
+    "viewAs": "View as…",
+    "signOut": "Sign out",
+    "viewAsTitle": "View the preview as a site user",
+    "viewAsHint": "The preview shows what this user would see, for 15 minutes, without their password. It needs permission to manage site users and is recorded in the audit log.",
+    "usersFailed": "The site's users could not be loaded. Viewing as someone needs permission to manage site users.",
+    "cannotSignIn": "Can't sign in",
+    "viewAsFailed": "Could not view as this user: {{reason}}",
+    "pageNeedsSignIn": "On the live site, this page is only for signed-in users.",
+    "pageForbidden": "On the live site, the person you are previewing as can't open this page."
   }
 }

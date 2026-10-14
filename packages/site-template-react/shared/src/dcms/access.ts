@@ -23,6 +23,16 @@ if (typeof window !== 'undefined') {
   known.set(window.location.pathname, Promise.resolve('allow'));
 }
 
+/**
+ * Leaves the app for the edge. Inside a site builder's preview there is nowhere to leave to — the
+ * preview's frame is not the site — so the preview is asked to do it (a popup sign-in) instead.
+ */
+function leave(url: string): void {
+  const preview = (window as { __dcmsPreviewLeave?: (url: string) => void }).__dcmsPreviewLeave;
+  if (preview) preview(url);
+  else window.location.assign(url);
+}
+
 /** The site's rules on `path` for this visitor, asked once per path per page load. */
 export function siteAccess(path: string): Promise<SiteAccess> {
   let answer = known.get(path);
@@ -44,7 +54,7 @@ export function siteAccess(path: string): Promise<SiteAccess> {
 export async function guardSiteRoute(path: string): Promise<boolean> {
   const access = await siteAccess(path).catch(() => 'allow' as const);
   if (access === 'allow') return true;
-  window.location.assign(access === 'signin' ? edge.siteSignInUrl(path) : path);
+  leave(access === 'signin' ? edge.siteSignInUrl(path) : path);
   return new Promise<never>(() => {});
 }
 
@@ -107,6 +117,6 @@ export function useSiteAccess(path: string): SiteAccess | undefined {
  */
 export function signInIfRequired(error: unknown): boolean {
   if (!(error instanceof ApiError) || !error.signInRequired) return false;
-  window.location.assign(edge.siteSignInUrl());
+  leave(edge.siteSignInUrl());
   return true;
 }

@@ -2041,5 +2041,22 @@
       "history": "{{name}} (starší sestavení)",
       "git": "{{name}} (git repozitář)"
     }
+  },
+  "previewAuth": {
+    "menu": "Za koho je náhled přihlášen",
+    "signedOut": "Nepřihlášen",
+    "signedInAs": "Přihlášen jako {{name}}",
+    "viewingAs": "Zobrazeno jako {{name}}",
+    "hint": "Prohlédněte si web jako jeden z jeho uživatelů. Používá přihlášení webu a pravidla přístupu jeho hlavní domény.",
+    "signIn": "Přihlásit se…",
+    "viewAs": "Zobrazit jako…",
+    "signOut": "Odhlásit se",
+    "viewAsTitle": "Zobrazit náhled jako uživatel webu",
+    "viewAsHint": "Náhled ukáže, co by tento uživatel viděl, po dobu 15 minut a bez jeho hesla. Vyžaduje oprávnění spravovat uživatele webu a zapisuje se do auditního záznamu.",
+    "usersFailed": "Uživatele webu se nepodařilo načíst. Zobrazení jako jiný uživatel vyžaduje oprávnění spravovat uživatele webu.",
+    "cannotSignIn": "Nemůže se přihlásit",
+    "viewAsFailed": "Zobrazit jako tento uživatel se nepodařilo: {{reason}}",
+    "pageNeedsSignIn": "Na živém webu je tato stránka jen pro přihlášené uživatele.",
+    "pageForbidden": "Na živém webu tuto stránku osoba, za kterou se díváte, otevřít nemůže."
   }
 }

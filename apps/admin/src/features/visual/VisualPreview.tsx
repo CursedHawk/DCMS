@@ -1,8 +1,22 @@
-import { DataClientContext, SiteContext, SiteStyles, loadDocuments, routeTitles, siteRoutes } from '@dcms/site-runtime';
-import { useEffect, useMemo, useRef } from 'react';
+import {
+  DataClientContext,
+  SiteContext,
+  SiteStyles,
+  configureSiteEdge,
+  guardedRoutes,
+  loadDocuments,
+  resetSiteAccess,
+  routeTitles,
+  siteRoutes,
+  type SiteAccess,
+} from '@dcms/site-runtime';
+import { LogIn, Lock } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { useTranslation } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
-import { useVfs } from '../site-source';
+import { Button } from '@dcms/ui';
+import { PreviewIdentityMenu, usePreviewAuth, useVfs } from '../site-source';
 import { assetIdOf, resolveMedia } from '../builder/panels/media';
 import { useVisual } from './store';
 
@@ -17,9 +31,16 @@ import { useVisual } from './store';
  * document through a portal.
  *
  * Only DCMS's own runtime code runs here (ADR 0020): the documents are data.
+ *
+ * Signed in as the site's visitors are (#269): the preview asks its own edge endpoints, follows
+ * the access rules of the site's main domain, and when a page is not open to whoever it is
+ * previewing as, says so over the frame and offers to sign in.
  */
-export function VisualPreview({ initialPath, width }: { initialPath: string; width?: string }) {
+export function VisualPreview({ siteId, initialPath, width }: { siteId: string; initialPath: string; width?: string }) {
+  const { t } = useTranslation();
   const frame = useRef<HTMLIFrameElement>(null);
+  const auth = usePreviewAuth(siteId);
+  const [blocked, setBlocked] = useState<SiteAccess | null>(null);
   const root = useRef<Root | null>(null);
   const dcmsFiles = useVfs((s) => s.files);
   const registry = useVisual((s) => s.registry);
@@ -39,8 +60,16 @@ export function VisualPreview({ initialPath, width }: { initialPath: string; wid
   }, [dcmsFiles]);
 
   useEffect(() => {
+    if (!auth.base) return;
+    configureSiteEdge({ base: auth.base, leave: (_url, access) => setBlocked(access) });
+  }, [auth.base]);
+
+  useEffect(() => {
     const doc = frame.current?.contentDocument;
     if (!doc) return;
+    // Signed in, out or as someone else since the last draw: ask the rules afresh.
+    resetSiteAccess();
+    setBlocked(null);
     if (!root.current) {
       doc.open();
       doc.write('<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div></body></html>');
@@ -48,7 +77,7 @@ export function VisualPreview({ initialPath, width }: { initialPath: string; wid
       root.current = createRoot(doc.getElementById('root')!);
       watchMedia(doc);
     }
-    const router = createMemoryRouter(siteRoutes(documents, registry), { initialEntries: [initialPath] });
+    const router = createMemoryRouter(guardedRoutes(siteRoutes(documents, registry)).routes, { initialEntries: [initialPath] });
     root.current.render(
       <DataClientContext.Provider value={dataClient}>
         <SiteContext.Provider value={{ app: documents.app, titles: routeTitles(documents) }}>
@@ -57,7 +86,7 @@ export function VisualPreview({ initialPath, width }: { initialPath: string; wid
         </SiteContext.Provider>
       </DataClientContext.Provider>,
     );
-  }, [documents, initialPath, registry, dataClient]);
+  }, [documents, initialPath, registry, dataClient, auth.version]);
 
   useEffect(
     () => () => {
@@ -69,13 +98,31 @@ export function VisualPreview({ initialPath, width }: { initialPath: string; wid
   );
 
   return (
-    <div className="flex h-full justify-center overflow-auto bg-muted/40">
+    <div className="relative flex h-full justify-center overflow-auto bg-muted/40">
       <iframe
         ref={frame}
         title="Preview"
         className="h-full border-0 bg-white shadow-sm"
         style={{ width: width || '100%' }}
       />
+      {auth.identity?.available ? (
+        <div className="absolute right-2 top-2 z-10 max-w-[60%] rounded-md border bg-card shadow-sm">
+          <PreviewIdentityMenu auth={auth} />
+        </div>
+      ) : null}
+      {blocked && blocked !== 'allow' ? (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/80 p-6">
+          <div role="status" className="max-w-sm space-y-3 rounded-lg border bg-card p-5 text-center shadow-sm">
+            <Lock className="mx-auto h-5 w-5 text-muted-foreground" aria-hidden />
+            <p className="text-sm">{t(blocked === 'signin' ? 'previewAuth.pageNeedsSignIn' : 'previewAuth.pageForbidden')}</p>
+            {blocked === 'signin' ? (
+              <Button size="sm" onClick={auth.signIn}>
+                <LogIn className="h-4 w-4" /> {t('previewAuth.signIn')}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

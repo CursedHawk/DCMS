@@ -33,3 +33,21 @@ export function previewProxyTarget(rawUrl: string, prefix: string, origin: strin
   if (!path.startsWith(prefix)) return null;
   return `${path}${resolved.search}`;
 }
+
+/**
+ * The site's own edge questions — who is signed in (`/.edge/site/me`) and what they may open
+ * (`/.edge/site/access`) — asked of the preview's edge endpoints instead (#269). Those two only:
+ * sign-in and sign-out are navigations the parent runs in a popup, and nothing else under
+ * `/.edge/` is a preview's to reach. Null refuses.
+ */
+export function previewEdgeTarget(rawUrl: string, edgeBase: string, origin: string): string | null {
+  let resolved: URL;
+  try {
+    resolved = new URL(rawUrl, origin);
+  } catch {
+    return null;
+  }
+  if (resolved.origin !== origin) return null;
+  const match = /^\/\.edge\/site\/(me|access)$/.exec(resolved.pathname);
+  return match ? `${edgeBase}/${match[1]}${resolved.search}` : null;
+}

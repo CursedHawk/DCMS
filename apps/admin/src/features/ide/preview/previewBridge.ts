@@ -117,9 +117,10 @@ export const BRIDGE_SCRIPT = `
   var fetchOriginal = window.fetch;
   window.fetch = function (input, init) {
     var u = urlOf(input);
-    // Same-origin API paths only. A tenant site never legitimately fetches another absolute path
-    // from the opaque origin, and the parent enforces the exact preview subtree besides.
-    if (typeof u === 'string' && u.indexOf('/api/') === 0) {
+    // Same-origin API paths only, and the site's own edge questions (who is signed in, what may
+    // they open), which the parent asks of the preview's sign-in. A tenant site never legitimately
+    // fetches another absolute path from the opaque origin, and the parent enforces both besides.
+    if (typeof u === 'string' && (u.indexOf('/api/') === 0 || u.indexOf('/.edge/site/') === 0)) {
       var method = (init && init.method) || (input && input.method) || 'GET';
       var body = init && typeof init.body === 'string' ? init.body : null;
       var headers = headersOf(init, input);
@@ -172,6 +173,21 @@ export const BRIDGE_SCRIPT = `
   // An <img src="/api/media/..."> never reaches the fetch above: the browser loads it against
   // the admin origin with no token, and it breaks. So such sources are fetched through the proxy
   // and swapped for a blob: URL made here, in the preview's own origin.
+  // Leaving for the site's sign-in, sign-out or a "no access" page is a navigation the preview
+  // cannot make: it would take this frame to the console's host. The parent does it instead (a
+  // popup). Links are caught here; the site runtime calls __dcmsPreviewLeave when it is defined.
+  var leave = function (url) {
+    try { parent.postMessage({ __dcms: 'edge-nav', url: String(url) }, '*'); } catch (e) {}
+  };
+  window.__dcmsPreviewLeave = leave;
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    var href = a ? a.getAttribute('href') || '' : '';
+    if (href.indexOf('/.edge/site/') === 0) {
+      e.preventDefault();
+      leave(href);
+    }
+  }, true);
   var mediaCache = {};
   var viaProxy = function (u) {
     if (!mediaCache[u]) {
@@ -242,7 +258,7 @@ export const BRIDGE_SCRIPT = `
  * errors from the previous version of the code are worse than no errors — the agent would try to
  * fix something it has already fixed.</p>
  */
-export function attachPreview(target: Window | null, proxy?: PreviewFetchProxy): () => void {
+export function attachPreview(target: Window | null, proxy?: PreviewFetchProxy, onEdgeNav?: (url: string) => void): () => void {
   // Detach whatever was listening first.
   //
   // The caller is expected to run the teardown, and in the app React does. But a re-attach
@@ -279,6 +295,11 @@ export function attachPreview(target: Window | null, proxy?: PreviewFetchProxy):
     if (data.__dcms === 'preview' && data.kind) {
       messages.push({ kind: data.kind, text: data.text ?? '', at: Date.now() });
       if (messages.length > MAX_MESSAGES) messages = messages.slice(-MAX_MESSAGES);
+      return;
+    }
+    // The site leaving for its edge's sign-in, sign-out or a page it may not open (#269).
+    if (data.__dcms === 'edge-nav' && typeof data.url === 'string') {
+      onEdgeNav?.(data.url);
       return;
     }
     if (data.__dcms === 'reply' && typeof data.id === 'number') {

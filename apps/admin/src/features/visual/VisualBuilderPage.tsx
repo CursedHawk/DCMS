@@ -602,7 +602,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
               {hasCode ? (
                 <SandboxPreview siteId={siteId} />
               ) : (
-                <VisualPreview initialPath={previewPath} width={VISUAL_DEVICES.find((d) => d.id === device)?.width} />
+                <VisualPreview siteId={siteId} initialPath={previewPath} width={VISUAL_DEVICES.find((d) => d.id === device)?.width} />
               )}
             </div>
           )}

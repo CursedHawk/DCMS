@@ -103,6 +103,28 @@ What stays true however it is configured:
   forbidden / unavailable per path). Refusals of API calls, at the edge and by API access, are
   `application/problem+json` with `error` = `signin_required` or `forbidden` and a `signInUrl`.
 
+## In a site builder's preview
+
+A preview runs inside the console, not on the site's domain, so it has its own sign-in. The
+preview's toolbar shows who it is on the site (**Signed out**, **Signed in as …**, **Viewing as …**):
+
+- **Sign in…** runs the site's own sign-in (the same providers and accounts) in a popup. You sign in
+  as a site user — your console account is never one.
+- **View as…** shows the preview as any active site user, for 15 minutes, without their password.
+  It needs **Manage site users**, and each one is in the audit log (`realm.user.previewed`).
+- **Sign out** ends the preview's sign-in; for a real sign-in, the site sign-in as well.
+
+A preview follows the page rules of the site's **main domain** (its primary verified domain; with
+none, no page rules apply), and its API calls carry the signed-in user, so **API access** answers
+as it would on the site. A visual site says so over the page when its rules keep the person you
+are previewing as out; a React app in the IDE preview does what it does on the site, with
+sign-in in the popup. The preview's sign-in belongs to your console session: signing out of the
+console ends it.
+
+Under the hood: the edge's `/.edge/preview/{workspace}/{site}/…` (`signin`, `signout`, `me`,
+`access`, `view-as`) on the console's host. Every realm's client accepts that host's
+`/.edge/preview/signin-oidc` (`Identity__EdgeSites__PreviewHost`, set from `ADMIN_HOST`).
+
 ## Automation and the assistant
 
 - Flow triggers: `user.invited`, `user.activated` (an invitation accepted, or a first sign-in that

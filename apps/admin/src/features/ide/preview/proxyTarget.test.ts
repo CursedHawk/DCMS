@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { previewProxyTarget } from './proxyTarget';
+import { previewEdgeTarget, previewProxyTarget } from './proxyTarget';
 
 const ORIGIN = 'https://admin.example';
 const PREFIX = '/api/admin/sites/abc/preview/';
@@ -52,5 +52,28 @@ describe('previewProxyTarget', () => {
 
   it('refuses input that is not a resolvable URL', () => {
     expect(previewProxyTarget('http://', PREFIX, ORIGIN)).toBeNull();
+  });
+});
+
+describe('previewEdgeTarget', () => {
+  const base = '/.edge/preview/corp/s1';
+  const origin = 'https://admin.test';
+
+  it("asks the preview's edge who is signed in and what they may open", () => {
+    expect(previewEdgeTarget('/.edge/site/me', base, origin)).toBe(`${base}/me`);
+    expect(previewEdgeTarget('/.edge/site/access?path=%2Fportal', base, origin)).toBe(`${base}/access?path=%2Fportal`);
+  });
+
+  it('refuses everything else, however it is spelled', () => {
+    for (const url of [
+      '/.edge/site/signin',
+      '/.edge/site/me/../../me',
+      '/.edge/me',
+      '/.edge/site/access/../../../api/admin/tenants',
+      'https://elsewhere.test/.edge/site/me',
+      '//elsewhere.test/.edge/site/me',
+    ]) {
+      expect(previewEdgeTarget(url, base, origin), url).toBeNull();
+    }
   });
 });

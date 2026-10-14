@@ -250,3 +250,24 @@ describe('injected script', () => {
     expect(BRIDGE_SCRIPT).not.toMatch(/wrap\('log'/);
   });
 });
+
+describe('edge navigation', () => {
+  it("hands the site's sign-in and sign-out to the parent, from the attached frame only", () => {
+    const frame = { postMessage: vi.fn() } as unknown as Window;
+    const onEdgeNav = vi.fn();
+    attachPreview(frame, undefined, onEdgeNav);
+
+    fromFrame({ __dcms: 'edge-nav', url: '/.edge/site/signin?returnUrl=%2Fportal' });
+    expect(onEdgeNav).toHaveBeenCalledWith('/.edge/site/signin?returnUrl=%2Fportal');
+
+    // Another window cannot make the console open popups.
+    window.dispatchEvent(new MessageEvent('message', { data: { __dcms: 'edge-nav', url: '/.edge/site/signout' }, source: window }));
+    expect(onEdgeNav).toHaveBeenCalledTimes(1);
+  });
+
+  it('is asked for by the injected script, for links and for the runtime', () => {
+    expect(BRIDGE_SCRIPT).toContain("__dcms: 'edge-nav'");
+    expect(BRIDGE_SCRIPT).toContain('window.__dcmsPreviewLeave');
+    expect(BRIDGE_SCRIPT).toContain("u.indexOf('/.edge/site/') === 0");
+  });
+});

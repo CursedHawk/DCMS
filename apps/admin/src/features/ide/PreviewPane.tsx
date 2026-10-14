@@ -1,10 +1,12 @@
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { renewSilently } from '../../auth';
 import { adminHeaders } from '../../tenants';
+import { PreviewIdentityMenu, usePreviewAuth } from '../site-source/previewAuth';
 import { attachPreview, type PreviewFetchProxy } from './preview/previewBridge';
-import { previewProxyTarget } from './preview/proxyTarget';
+import { previewEdgeTarget, previewProxyTarget } from './preview/proxyTarget';
 import type { PreviewControls } from './preview/usePreview';
 
 // Live client-side preview: the esbuild-wasm worker bundles the project and we
@@ -17,6 +19,9 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
   const { t } = useTranslation();
   const { srcdoc, error, building, refresh } = preview;
   const frameRef = useRef<HTMLIFrameElement>(null);
+  // Who the preview is on the site (#269): its edge questions and its sign-in go here.
+  const auth = usePreviewAuth(siteId);
+  const edgeBase = auth.base;
 
   /*
    * Serve the sandboxed preview's API calls from the admin session.
@@ -32,6 +37,13 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
    */
   const proxyFetch = useCallback<PreviewFetchProxy>(
     async (req) => {
+      // The site asking its edge who is signed in or what they may open: the preview's sign-in
+      // answers instead, with this console's cookies (no token involved).
+      const edge = edgeBase ? previewEdgeTarget(req.url, edgeBase, window.location.origin) : null;
+      if (edge !== null) {
+        const res = await fetch(edge, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+        return { status: res.status, statusText: res.statusText, headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' }, body: await res.arrayBuffer() };
+      }
       // Confused-deputy guard: normalise the attacker-controlled URL and confirm it stays inside
       // this site's own preview subtree before replaying it with the admin token. See
       // previewProxyTarget — a raw startsWith() would let `${prefix}../../tenants` reach another
@@ -66,8 +78,28 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
       if (responseType) headers['content-type'] = responseType;
       return { status: res.status, statusText: res.statusText, headers, body: await res.arrayBuffer() };
     },
-    [siteId],
+    [siteId, edgeBase],
   );
+
+  // The site leaving for its sign-in, sign-out or a page it may not open: a popup for the first
+  // two, and a word for the third — the preview cannot follow the site off its own frame.
+  const { signIn, signOut } = auth;
+  const onEdgeNav = useCallback(
+    (url: string) => {
+      if (url.startsWith('/.edge/site/signin')) signIn();
+      else if (url.startsWith('/.edge/site/signout')) signOut();
+      else toast.info(t('previewAuth.pageForbidden'));
+    },
+    [signIn, signOut, t],
+  );
+
+  // Signed in, out or as someone else: draw the page again as them.
+  const version = useRef(auth.version);
+  useEffect(() => {
+    if (version.current === auth.version) return;
+    version.current = auth.version;
+    refresh();
+  }, [auth.version, refresh]);
 
   /*
    * Connect the running page to the agent's preview tools and the API proxy above.
@@ -78,8 +110,8 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
    */
   useEffect(() => {
     if (!srcdoc) return;
-    return attachPreview(frameRef.current?.contentWindow ?? null, proxyFetch);
-  }, [srcdoc, proxyFetch]);
+    return attachPreview(frameRef.current?.contentWindow ?? null, proxyFetch, onEdgeNav);
+  }, [srcdoc, proxyFetch, onEdgeNav]);
 
   return (
     <div className="relative flex h-full flex-col bg-white">
@@ -95,6 +127,9 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
           <RefreshCw className={`h-3.5 w-3.5 ${building ? 'animate-spin' : ''}`} />
         </button>
         <span>{building ? t('ide.building') : t('ide.preview')}</span>
+        <div className="ml-auto min-w-0">
+          <PreviewIdentityMenu auth={auth} />
+        </div>
       </div>
       <div className="relative min-h-0 flex-1">
         {srcdoc ? (

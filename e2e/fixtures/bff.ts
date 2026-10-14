@@ -123,6 +123,12 @@ export async function useBffMode(page: Page, options: EdgeOptions = {}): Promise
     });
   });
 
+  // A builder preview's site sign-in (#269): none unless a spec says otherwise — the answer the
+  // edge gives a workspace without User Authentication.
+  await page.route('**/.edge/preview/**', (route) =>
+    route.fulfill({ status: 404, contentType: 'application/json', body: '{}' }),
+  );
+
   for (const path of ['**/.edge/signin*', '**/.edge/signout*']) {
     await page.route(path, (route) =>
       route.fulfill({ status: 200, contentType: 'text/html', body: '<title>edge</title>' }),
