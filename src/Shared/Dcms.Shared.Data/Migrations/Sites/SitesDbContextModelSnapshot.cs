@@ -18,10 +18,45 @@ namespace Dcms.Shared.Data.Migrations.Sites
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("sites")
-                .HasAnnotation("ProductVersion", "10.0.9")
+                .HasAnnotation("ProductVersion", "10.0.11")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("Dcms.Shared.Data.Audit.AuditOutboxMessage", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("audit_outbox", "audit", t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
 
             modelBuilder.Entity("Dcms.Shared.Data.Sites.Site", b =>
                 {
@@ -99,6 +134,10 @@ namespace Dcms.Shared.Data.Migrations.Sites
 
                     b.Property<string>("ArtifactPrefix")
                         .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("Branch")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
@@ -183,10 +222,50 @@ namespace Dcms.Shared.Data.Migrations.Sites
                     b.ToTable("site_drafts", "sites");
                 });
 
+            modelBuilder.Entity("Dcms.Shared.Data.Sites.SitePublishBranch", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ActiveBuildId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Branch")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("SiteId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SiteId", "Branch")
+                        .IsUnique();
+
+                    b.ToTable("site_publish_branches", "sites");
+                });
+
             modelBuilder.Entity("Dcms.Shared.Data.Sites.SiteBuild", b =>
                 {
                     b.HasOne("Dcms.Shared.Data.Sites.Site", null)
                         .WithMany("Builds")
+                        .HasForeignKey("SiteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Dcms.Shared.Data.Sites.SitePublishBranch", b =>
+                {
+                    b.HasOne("Dcms.Shared.Data.Sites.Site", null)
+                        .WithMany()
                         .HasForeignKey("SiteId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

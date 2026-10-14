@@ -37,6 +37,7 @@ public static class DomainEndpoints
                     isPrimary = d.IsPrimary,
                     managed = d.VerificationToken == "dcms-managed",
                     siteId = d.SiteId,
+                    branch = d.Branch,
                     txtRecord = $"{TxtPrefix}.{d.Hostname}",
                     txtValue = d.VerificationToken,
                 })
@@ -55,6 +56,8 @@ public static class DomainEndpoints
                 d.isPrimary,
                 d.managed,
                 d.siteId,
+                // Null for release; else the publishing branch it serves (#277).
+                d.branch,
                 // Null when the linked site has been deleted out from under the
                 // domain — the SPA shows that as "unlinked" rather than a blank row.
                 siteName = d.siteId is { } id && names.TryGetValue(id, out var n) ? n : null,
@@ -195,25 +198,38 @@ public static class DomainEndpoints
                 return Results.BadRequest(new { error = "Unknown site." });
             }
 
+            // A domain serves release (null) or one of the site's publishing branches (#277).
+            var branch = body.SiteId is null || string.IsNullOrWhiteSpace(body.Branch)
+                ? null
+                : Dcms.AdminApi.Sites.SiteEndpoints.PublishBranchKey(body.Branch.Trim());
+            if (branch is not null &&
+                !await sites.PublishBranches.AnyAsync(p => p.SiteId == body.SiteId && p.Branch == branch, ct))
+            {
+                return Results.BadRequest(new { error = $"The branch {branch} does not publish. Add it on the site's Deploy screen first." });
+            }
+
             var previousSiteId = domain.SiteId;
+            var previousBranch = domain.Branch;
             domain.SiteId = body.SiteId;
+            domain.Branch = branch;
 
             // "Primary" is the canonical hostname *of a site*, so a domain that moves
-            // to another site (or is unlinked) cannot carry the flag with it.
-            if (previousSiteId != body.SiteId)
+            // to another site (or is unlinked) cannot carry the flag with it. Nor can one that
+            // now serves a branch: that is a working copy, not the site.
+            if (previousSiteId != body.SiteId || branch is not null)
             {
                 domain.IsPrimary = false;
             }
             // First domain on a site becomes its primary: a site with domains but no
             // canonical one would leave the OpenAPI server list arbitrarily ordered.
-            if (body.SiteId is { } siteId &&
+            if (body.SiteId is { } siteId && branch is null &&
                 !await db.Domains.AnyAsync(d => d.SiteId == siteId && d.IsPrimary && d.Id != domain.Id, ct))
             {
                 domain.IsPrimary = true;
             }
 
             await db.SaveChangesAsync(ct);
-            if (previousSiteId is { } orphaned && orphaned != body.SiteId)
+            if (previousSiteId is { } orphaned && (orphaned != body.SiteId || (previousBranch is null && branch is not null)))
             {
                 await PromotePrimaryAsync(db, orphaned, ct);
             }
@@ -260,6 +276,10 @@ public static class DomainEndpoints
             {
                 return Results.BadRequest(new { error = "Verify the domain before making it primary." });
             }
+            if (domain.Branch is not null)
+            {
+                return Results.BadRequest(new { error = "This domain serves the branch " + domain.Branch + ", not the site. Only a domain of the released site can be its primary." });
+            }
 
             var siblings = await db.Domains.Where(d => d.SiteId == siteId).ToListAsync(ct);
             foreach (var sibling in siblings)
@@ -304,7 +324,7 @@ public static class DomainEndpoints
     private static async Task PromotePrimaryAsync(TenancyDbContext db, Guid siteId, CancellationToken ct)
     {
         var remaining = await db.Domains
-            .Where(d => d.SiteId == siteId)
+            .Where(d => d.SiteId == siteId && d.Branch == null)
             .OrderBy(d => d.Hostname)
             .ToListAsync(ct);
         if (remaining.Count == 0 || remaining.Any(d => d.IsPrimary))
@@ -320,5 +340,5 @@ public static class DomainEndpoints
     }
 
     private sealed record AddDomainRequest(string Hostname);
-    private sealed record LinkSiteRequest(Guid? SiteId);
+    private sealed record LinkSiteRequest(Guid? SiteId, string? Branch = null);
 }

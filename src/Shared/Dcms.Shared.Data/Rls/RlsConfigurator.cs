@@ -54,6 +54,7 @@ public static class RlsConfigurator
         ("sites", "sites"),
         ("sites", "site_builds"),
         ("sites", "site_drafts"),
+        ("sites", "site_publish_branches"),
         ("ai", "tenant_ai_settings"),
         // Holds every user's Vault-Transit-encrypted provider key. Added a release after its
         // sibling above and missed here, which mattered because 01-rls.sql grants SELECT on

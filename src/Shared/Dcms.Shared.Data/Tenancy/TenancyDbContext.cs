@@ -55,6 +55,7 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options, ITenan
             e.ToTable("domains");
             e.HasKey(d => d.Id);
             e.Property(d => d.Hostname).HasMaxLength(253).IsRequired();
+            e.Property(d => d.Branch).HasMaxLength(256);
             e.HasIndex(d => d.Hostname).IsUnique();
             e.HasIndex(d => new { d.TenantId, d.IsPrimary });
             e.HasQueryFilter(d => d.TenantId == CurrentTenantId);

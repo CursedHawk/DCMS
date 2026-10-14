@@ -71,6 +71,7 @@ public sealed class SiteDeleter(
         await using var tx = await sites.Database.BeginTransactionAsync(ct);
         var builds = await sites.Builds.Where(b => b.SiteId == siteId).ExecuteDeleteAsync(ct);
         var drafts = await sites.Drafts.Where(d => d.SiteId == siteId).ExecuteDeleteAsync(ct);
+        await sites.PublishBranches.Where(p => p.SiteId == siteId).ExecuteDeleteAsync(ct);
 
         // Before the save, so the record commits in the same transaction as the deletion.
         // Declared is null when a tenant purge is walking the tenant's sites; then this is the
@@ -104,6 +105,7 @@ public sealed class SiteDeleter(
         foreach (var domain in domains)
         {
             domain.SiteId = null;
+            domain.Branch = null;
             domain.IsPrimary = false;
         }
 

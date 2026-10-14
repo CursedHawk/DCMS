@@ -404,6 +404,7 @@ app.MapContentListEndpoints();
 app.MapMediaEndpoints();
 app.MapGoogleDriveImport();
 app.MapSiteEndpoints();
+app.MapPublishBranchEndpoints();
 app.MapSiteDeletion();
 app.MapNotificationEndpoints();
 app.MapPlatformNotificationEndpoints();

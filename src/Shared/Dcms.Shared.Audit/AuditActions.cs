@@ -121,6 +121,8 @@ public static class AuditActions
     public const string SiteBuildFailed = "site.build.failed";
     public const string SiteBuildActivated = "site.build.activated";
     public const string SiteBuildCreated = "site.build.created";
+    public const string SitePublishBranchAdded = "site.publish_branch.added";
+    public const string SitePublishBranchRemoved = "site.publish_branch.removed";
     public const string SiteFilesChanged = "site.files.changed";
     public const string SiteUploaded = "site.uploaded";
     public const string SitePreviewReset = "site.preview.reset";

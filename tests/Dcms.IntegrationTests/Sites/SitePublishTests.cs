@@ -1,6 +1,9 @@
+extern alias SiteHostApp;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.IntegrationTests.Sites;
 
@@ -93,6 +96,92 @@ public class SitePublishTests(SitePublishFixture fixture)
             req.Headers.Host = hostname;
             return (await hostClient.SendAsync(req, ct)).StatusCode == HttpStatusCode.NotFound;
         }, TimeSpan.FromSeconds(15));
+    }
+
+    [DockerFact]
+    public async Task A_publishing_branch_domain_serves_the_branch_build_and_is_kept_out_of_search()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var admin = fixture.Admin.CreateClient();
+        var hostClient = fixture.Host.CreateClient();
+        var slug = "branch-" + Guid.NewGuid().ToString("N")[..8];
+        var tenantId = await Id(admin, Admin(HttpMethod.Post, "/api/admin/tenants", slug,
+            new { slug, name = slug, ownerUserId = Owner, ownerEmail = "o@dcms.test" }, superAdmin: true), ct);
+
+        string Definition(string heading) => JsonSerializer.Serialize(new
+        {
+            files = new Dictionary<string, string>
+            {
+                ["site.json"] = """{ "version": 2, "theme": { "colors": {}, "fonts": {} }, "nav": [], "pages": [ { "id": "home", "slug": "home", "path": "/", "title": "Home", "home": true } ] }""",
+                ["pages/home.html"] = $"<h1>{heading}</h1>",
+                ["styles/global.css"] = "",
+            },
+        });
+        var siteId = await Id(admin, Admin(HttpMethod.Post, "/api/admin/sites", slug,
+            new { name = "Main", renderMode = "StaticPrerender", definition = Definition("Released") }), ct);
+
+        var release = $"{slug}.example.com";
+        var dev = $"dev.{slug}.example.com";
+        foreach (var hostname in new[] { release, dev })
+        {
+            var domainId = await Id(admin, Admin(HttpMethod.Post, "/api/admin/domains", slug, new { hostname }), ct);
+            (await admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/domains/{domainId}/verify", slug, null), ct)).EnsureSuccessStatusCode();
+            (await admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/domains/{domainId}/site", slug, new { siteId }), ct)).EnsureSuccessStatusCode();
+        }
+
+        // Two builds: the released one, then the one the branch will serve.
+        async Task<Guid> PublishAsync()
+        {
+            var res = await admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/sites/{siteId}/publish", slug, null), ct);
+            res.EnsureSuccessStatusCode();
+            var buildId = (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("buildId").GetGuid();
+            await PollUntil(async () =>
+            {
+                using var scope = fixture.Admin.Services.CreateScope();
+                using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(tenantId);
+                var db = scope.ServiceProvider.GetRequiredService<Dcms.Shared.Data.Sites.SitesDbContext>();
+                return await db.Builds.IgnoreQueryFilters().AnyAsync(
+                    b => b.Id == buildId && b.Status == Dcms.Shared.Data.Sites.SiteBuildStatus.Succeeded, ct);
+            }, TimeSpan.FromSeconds(30));
+            return buildId;
+        }
+        var released = await PublishAsync();
+        (await admin.SendAsync(Admin(HttpMethod.Put, $"/api/admin/sites/{siteId}/definition", slug,
+            JsonDocument.Parse(Definition("On dev")).RootElement), ct)).EnsureSuccessStatusCode();
+        var devBuild = await PublishAsync();
+
+        // The branch and its domain, as the publish-branch endpoints leave them (they need git,
+        // which this fixture does not run), with release put back on the first build.
+        using (var scope = fixture.Admin.Services.CreateScope())
+        using (Dcms.Shared.Data.Rls.RlsScope.Tenant(tenantId))
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Dcms.Shared.Data.Sites.SitesDbContext>();
+            db.PublishBranches.Add(new Dcms.Shared.Data.Sites.SitePublishBranch
+            {
+                Id = Guid.NewGuid(), TenantId = tenantId, SiteId = siteId, Branch = "dev", ActiveBuildId = devBuild,
+            });
+            var site = await db.Sites.IgnoreQueryFilters().SingleAsync(s => s.Id == siteId, ct);
+            site.ActiveBuildId = released;
+            await db.SaveChangesAsync(ct);
+            var tenancy = scope.ServiceProvider.GetRequiredService<Dcms.Shared.Data.Tenancy.TenancyDbContext>();
+            await tenancy.Domains.IgnoreQueryFilters().Where(d => d.Hostname == dev)
+                .ExecuteUpdateAsync(u => u.SetProperty(d => d.Branch, "dev"), ct);
+        }
+
+        async Task<HttpResponseMessage> GetAsync(string hostname)
+        {
+            fixture.Host.Services.GetRequiredService<SiteHostApp::Dcms.SiteHost.DomainResolver>().Invalidate(hostname);
+            var req = new HttpRequestMessage(HttpMethod.Get, "/");
+            req.Headers.Host = hostname;
+            return await hostClient.SendAsync(req, ct);
+        }
+        var onRelease = await GetAsync(release);
+        (await onRelease.Content.ReadAsStringAsync(ct)).Should().Contain("Released");
+        onRelease.Headers.Contains("X-Robots-Tag").Should().BeFalse();
+
+        var onDev = await GetAsync(dev);
+        (await onDev.Content.ReadAsStringAsync(ct)).Should().Contain("On dev");
+        onDev.Headers.GetValues("X-Robots-Tag").Should().ContainSingle().Which.Should().Contain("noindex");
     }
 
     private static HttpRequestMessage Admin(HttpMethod method, string url, string slug, object? body, bool superAdmin = false)

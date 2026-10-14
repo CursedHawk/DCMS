@@ -21,6 +21,11 @@ public static class SiteHostEndpoints
             {
                 return Results.NotFound("No site is published for this domain.");
             }
+            // A branch's domain is a working copy of the site, not the site (#277).
+            if (route.NoIndex)
+            {
+                http.Response.Headers["X-Robots-Tag"] = "noindex, nofollow";
+            }
             return await ServeAsync(http, path, route.ArtifactPrefix, cache, storage, storageOptions.Value.SitesBucket, ct);
         });
 

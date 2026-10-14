@@ -15,7 +15,9 @@ public sealed record BuildUpdate(
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
     bool Active,
-    Guid? ActorUserId);
+    Guid? ActorUserId,
+    /// <summary>The git branch the build published (#277): <c>release</c> or a publishing branch.</summary>
+    string Branch = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch);
 
 /// <summary>A commit that landed on a branch, so anyone editing that branch learns it moved.</summary>
 public sealed record CommitUpdate(
@@ -107,7 +109,8 @@ public sealed class SiteLiveUpdates(
             CompletedAt: null,
             // A build that has not run cannot be the live one, whatever the site row says.
             Active: false,
-            ActorUserId: actorUserId), ct);
+            ActorUserId: actorUserId,
+            Branch: build.Branch ?? Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch), ct);
 
     public static string? Short(string? sha) => sha is { Length: >= 7 } ? sha[..7] : sha;
 

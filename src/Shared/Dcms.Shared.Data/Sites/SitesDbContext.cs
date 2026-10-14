@@ -18,6 +18,7 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options, ITenantCon
     public DbSet<Site> Sites => Set<Site>();
     public DbSet<SiteBuild> Builds => Set<SiteBuild>();
     public DbSet<SiteDraft> Drafts => Set<SiteDraft>();
+    public DbSet<SitePublishBranch> PublishBranches => Set<SitePublishBranch>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -51,6 +52,7 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options, ITenantCon
             e.Property(b => b.ArtifactPrefix).HasMaxLength(256);
             e.Property(b => b.LogObjectKey).HasMaxLength(256);
             e.Property(b => b.GitCommitSha).HasMaxLength(64);
+            e.Property(b => b.Branch).HasMaxLength(256);
             e.HasIndex(b => new { b.SiteId, b.CreatedAt });
             e.HasQueryFilter(b => b.TenantId == CurrentTenantId);
         });
@@ -65,6 +67,16 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options, ITenantCon
             // One working draft per (site, user, branch); the IDE loads/saves by this key.
             e.HasIndex(d => new { d.TenantId, d.SiteId, d.UserId, d.Branch }).IsUnique();
             e.HasQueryFilter(d => d.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<SitePublishBranch>(e =>
+        {
+            e.ToTable("site_publish_branches");
+            e.HasKey(b => b.Id);
+            e.Property(b => b.Branch).HasMaxLength(256);
+            e.HasIndex(b => new { b.SiteId, b.Branch }).IsUnique();
+            e.HasOne<Site>().WithMany().HasForeignKey(b => b.SiteId).OnDelete(DeleteBehavior.Cascade);
+            e.HasQueryFilter(b => b.TenantId == CurrentTenantId);
         });
     }
 

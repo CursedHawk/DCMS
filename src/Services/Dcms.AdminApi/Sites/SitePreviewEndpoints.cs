@@ -60,7 +60,7 @@ public static class SitePreviewEndpoints
                 return Results.NotFound();
             }
             var host = await tenancy.Domains.AsNoTracking()
-                .Where(d => d.SiteId == siteId && d.VerifiedAt != null)
+                .Where(d => d.SiteId == siteId && d.VerifiedAt != null && d.Branch == null)
                 .OrderByDescending(d => d.IsPrimary)
                 .ThenBy(d => d.Hostname)
                 .Select(d => d.Hostname)

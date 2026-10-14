@@ -81,10 +81,25 @@ public sealed class Site : TenantEntity
     public List<SiteBuild> Builds { get; set; } = [];
 }
 
+/// <summary>
+/// A git branch besides <c>release</c> that publishes to its own domains (#277): pushes to it
+/// build, and its active build is what a domain linked to the branch serves. Release itself is
+/// not one of these; its active build stays <see cref="Site.ActiveBuildId"/>.
+/// </summary>
+public sealed class SitePublishBranch : TenantEntity
+{
+    public Guid SiteId { get; set; }
+    public string Branch { get; set; } = string.Empty;
+    public Guid? ActiveBuildId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 /// <summary>One publish attempt: an immutable snapshot of the definition and its rendered artifacts.</summary>
 public sealed class SiteBuild : TenantEntity
 {
     public Guid SiteId { get; set; }
+    /// <summary>The publishing branch built (<see cref="SitePublishBranch"/>); null for release.</summary>
+    public string? Branch { get; set; }
     public SiteBuildStatus Status { get; set; } = SiteBuildStatus.Queued;
     public string DefinitionSnapshotJson { get; set; } = "{}";
     /// <summary>Git commit the build was sourced from (Mode B git-backed sites), for provenance/rollback.</summary>

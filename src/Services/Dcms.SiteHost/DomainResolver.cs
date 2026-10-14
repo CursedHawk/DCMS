@@ -6,7 +6,8 @@ using Dcms.Shared.Data.Rls;
 
 namespace Dcms.SiteHost;
 
-public sealed record SiteRoute(Guid TenantId, string TenantSlug, Guid SiteId, string ArtifactPrefix);
+/// <param name="NoIndex">The domain serves a publishing branch, not release: kept out of search.</param>
+public sealed record SiteRoute(Guid TenantId, string TenantSlug, Guid SiteId, string ArtifactPrefix, bool NoIndex = false);
 
 /// <summary>
 /// Resolves an incoming Host header to the tenant + active build artifacts.
@@ -103,7 +104,14 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
 
         var site = await sites.Sites.IgnoreQueryFilters().AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == siteId, ct);
-        if (site?.ActiveBuildId is not { } buildId)
+        // A domain linked to a publishing branch serves that branch's live build (#277).
+        var activeBuildId = domain.Branch is null
+            ? site?.ActiveBuildId
+            : await sites.PublishBranches.IgnoreQueryFilters().AsNoTracking()
+                .Where(b => b.SiteId == siteId && b.Branch == domain.Branch)
+                .Select(b => b.ActiveBuildId)
+                .FirstOrDefaultAsync(ct);
+        if (site is null || activeBuildId is not { } buildId)
         {
             return null;
         }
@@ -135,7 +143,7 @@ public sealed class DomainResolver(IServiceProvider services, IMemoryCache cache
             return null;
         }
 
-        return new SiteRoute(domain.TenantId, tenant.Identifier, siteId, build.ArtifactPrefix);
+        return new SiteRoute(domain.TenantId, tenant.Identifier, siteId, build.ArtifactPrefix, NoIndex: domain.Branch is not null);
     }
 
     private static string Normalize(string host)

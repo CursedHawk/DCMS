@@ -188,6 +188,10 @@ public static class SiteEndpoints
             {
                 return Results.NotFound();
             }
+            // Each publishing branch has its own live build (#277); release's is the site's.
+            var live = await db.PublishBranches.Where(p => p.SiteId == id && p.ActiveBuildId != null)
+                .Select(p => p.ActiveBuildId!.Value).ToListAsync(ct);
+            if (site.ActiveBuildId is { } releaseLive) live.Add(releaseLive);
             var take = Math.Clamp(limit ?? 30, 1, 100);
             var builds = await db.Builds
                 .Where(b => b.SiteId == id)
@@ -196,6 +200,7 @@ public static class SiteEndpoints
                 .Select(b => new
                 {
                     id = b.Id,
+                    branch = b.Branch,
                     status = b.Status.ToString(),
                     gitCommitSha = b.GitCommitSha,
                     error = b.Error,
@@ -207,6 +212,7 @@ public static class SiteEndpoints
             return Results.Ok(builds.Select(b => new
             {
                 b.id,
+                branch = b.branch ?? Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch,
                 b.status,
                 b.gitCommitSha,
                 shortSha = b.gitCommitSha is { Length: >= 7 } ? b.gitCommitSha[..7] : b.gitCommitSha,
@@ -215,8 +221,8 @@ public static class SiteEndpoints
                 b.createdAt,
                 b.completedAt,
                 // `active` for the IDE panel; `isActive` kept for the existing rollback UI.
-                active = site.ActiveBuildId == b.id,
-                isActive = site.ActiveBuildId == b.id,
+                active = live.Contains(b.id),
+                isActive = live.Contains(b.id),
             }));
         }).RequirePermission(PlatformPermissions.SiteEdit);
 
@@ -239,7 +245,20 @@ public static class SiteEndpoints
             {
                 return Results.BadRequest(new { error = "Only a succeeded build can be activated." });
             }
-            site.ActiveBuildId = build.Id;
+            if (build.Branch is not null)
+            {
+                // A branch's build goes live on that branch's domains, never on release's.
+                var target = await db.PublishBranches.FirstOrDefaultAsync(p => p.SiteId == id && p.Branch == build.Branch, ct);
+                if (target is null)
+                {
+                    return Results.BadRequest(new { error = $"The branch {build.Branch} no longer publishes, so its builds cannot go live." });
+                }
+                target.ActiveBuildId = build.Id;
+            }
+            else
+            {
+                site.ActiveBuildId = build.Id;
+            }
             site.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
@@ -474,7 +493,7 @@ public static class SiteEndpoints
                 {
                     // Already on release: deploy the current release head (force a fresh build
                     // even if the tree is unchanged — this is the "redeploy" affordance).
-                    var buildId = await EnqueueReleaseBuildAsync(db, cms, events, git, site, live, user.UserId, ct);
+                    var buildId = await EnqueueBranchBuildAsync(db, cms, events, git, site, live, user.UserId, null, ct);
                     return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{buildId}", new { released = true, buildId });
                 }
 
@@ -1043,9 +1062,17 @@ public static class SiteEndpoints
             if (site is null) return Results.Ok(new { ignored = "unknown repo" });
             using var rls = RlsScope.Tenant(site.TenantId);
 
-            // Only pushes to the release (production) branch build+deploy.
-            var branch = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
-            if (gitRef != $"refs/heads/{branch}") return Results.Ok(new { ignored = "not release branch" });
+            // Pushes to release build+deploy, and so do pushes to the site's publishing branches
+            // (#277), each onto its own domains. Every other branch is work in progress.
+            const string heads = "refs/heads/";
+            if (!gitRef.StartsWith(heads, StringComparison.Ordinal)) return Results.Ok(new { ignored = "not a branch" });
+            var branch = gitRef[heads.Length..];
+            var publishBranch = PublishBranchKey(branch);
+            if (publishBranch is not null &&
+                !await db.PublishBranches.IgnoreQueryFilters().AnyAsync(p => p.SiteId == site.Id && p.Branch == publishBranch, ct))
+            {
+                return Results.Ok(new { ignored = "not a publishing branch" });
+            }
 
             // The push is news for anyone with the site open regardless of what happens to the
             // build below -- including a push made with a plain `git push` from outside the
@@ -1064,9 +1091,9 @@ public static class SiteEndpoints
             // forever otherwise).
             await ReapStaleBuildsAsync(db, site.Id, ct);
 
-            // Coalesce: never stack builds for the same site.
+            // Coalesce: never stack builds for the same site and branch.
             var inFlight = await db.Builds.IgnoreQueryFilters().AnyAsync(
-                b => b.SiteId == site.Id &&
+                b => b.SiteId == site.Id && b.Branch == publishBranch &&
                      (b.Status == SiteBuildStatus.Queued || b.Status == SiteBuildStatus.Building), ct);
             if (inFlight) return Results.Ok(new { skipped = "build in flight" });
 
@@ -1076,6 +1103,7 @@ public static class SiteEndpoints
                 Id = Guid.NewGuid(),
                 TenantId = site.TenantId,
                 SiteId = site.Id,
+                Branch = publishBranch,
                 Status = SiteBuildStatus.Queued,
                 DefinitionSnapshotJson = SiteFileMap.Serialize(files),
                 GitCommitSha = afterSha,
@@ -1135,14 +1163,17 @@ public static class SiteEndpoints
         // unchanged (recovers from a failed build or a wedged queue — the tree-diff no-op
         // in the normal push path can't otherwise re-trigger).
         app.MapPost("/api/admin/sites/{id:guid}/builds", async (
-            Guid id, SitesDbContext db, CmsDbContext cms, IEventPublisher events, CurrentUser user,
+            Guid id, string? branch, SitesDbContext db, CmsDbContext cms, IEventPublisher events, CurrentUser user,
             Dcms.AdminApi.Sites.Git.SiteGitService git, SiteLiveUpdates live, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
             if (!site.RenderMode.IsGitBacked() || site.GitRepoFullName is null || !git.Enabled)
                 return Results.BadRequest(new { error = "This site has no git-backed release to rebuild." });
-            var buildId = await EnqueueReleaseBuildAsync(db, cms, events, git, site, live, user.UserId, ct);
+            var publishBranch = string.IsNullOrWhiteSpace(branch) ? null : PublishBranchKey(branch.Trim());
+            if (publishBranch is not null && !await db.PublishBranches.AnyAsync(p => p.SiteId == id && p.Branch == publishBranch, ct))
+                return Results.BadRequest(new { error = $"The branch {publishBranch} does not publish." });
+            var buildId = await EnqueueBranchBuildAsync(db, cms, events, git, site, live, user.UserId, publishBranch, ct);
             return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{buildId}", new { buildId });
         }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteBuildCreated, "site");
 
@@ -1190,22 +1221,31 @@ public static class SiteEndpoints
             ? name.GetString()
             : null;
 
-    /// <summary>Queue a build of the current <c>release</c> tree and request it. Reaps any
-    /// stale in-flight builds first so a wedged queue can't block the new one.</summary>
-    private static async Task<Guid> EnqueueReleaseBuildAsync(
+    /// <summary>
+    /// A publishing branch's key: null for <c>release</c>, whose builds and domains are the
+    /// site's own, else the branch name (#277).
+    /// </summary>
+    internal static string? PublishBranchKey(string branch) =>
+        branch == Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch ? null : branch;
+
+    /// <summary>Queue a build of the current tree of <c>release</c> (<paramref name="publishBranch"/>
+    /// null) or of a publishing branch, and request it. Reaps any stale in-flight builds first so a
+    /// wedged queue can't block the new one.</summary>
+    internal static async Task<Guid> EnqueueBranchBuildAsync(
         SitesDbContext db, CmsDbContext cms, IEventPublisher events,
         Dcms.AdminApi.Sites.Git.SiteGitService git, Site site, SiteLiveUpdates live,
-        Guid? actorUserId, CancellationToken ct)
+        Guid? actorUserId, string? publishBranch, CancellationToken ct)
     {
         await ReapStaleBuildsAsync(db, site.Id, ct);
-        var release = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
-        var head = await git.HeadShaAsync(site.GitRepoFullName!, release, ct);
-        var files = await git.ReadFilesAsync(site.GitRepoFullName!, release, ct);
+        var gitBranch = publishBranch ?? Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
+        var head = await git.HeadShaAsync(site.GitRepoFullName!, gitBranch, ct);
+        var files = await git.ReadFilesAsync(site.GitRepoFullName!, gitBranch, ct);
         var build = new SiteBuild
         {
             Id = Guid.NewGuid(),
             TenantId = site.TenantId,
             SiteId = site.Id,
+            Branch = publishBranch,
             Status = SiteBuildStatus.Queued,
             DefinitionSnapshotJson = SiteFileMap.Serialize(files),
             GitCommitSha = head,
@@ -1251,12 +1291,20 @@ public static class SiteEndpoints
                 .FirstOrDefaultAsync(s => s.Id == siteId && s.TenantId == tenantId, ct);
             if (site is null || !site.RenderMode.IsGitBacked() || site.GitRepoFullName is null) return;
 
-            var builtSha = await db.Builds.AsNoTracking().IgnoreQueryFilters()
+            var built = await db.Builds.AsNoTracking().IgnoreQueryFilters()
                 .Where(b => b.Id == completedBuildId)
-                .Select(b => b.GitCommitSha)
+                .Select(b => new { b.GitCommitSha, b.Branch })
                 .FirstOrDefaultAsync(ct);
+            var builtSha = built?.GitCommitSha;
 
-            var release = Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
+            // The branch the finished build published (#277); one that stopped publishing since
+            // has nothing to catch up.
+            var publishBranch = built?.Branch;
+            if (publishBranch is not null &&
+                !await db.PublishBranches.IgnoreQueryFilters().AnyAsync(p => p.SiteId == site.Id && p.Branch == publishBranch, ct))
+                return;
+
+            var release = publishBranch ?? Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch;
             var head = await git.HeadShaAsync(site.GitRepoFullName, release, ct);
             if (string.IsNullOrEmpty(head) ||
                 string.Equals(head, builtSha, StringComparison.OrdinalIgnoreCase))
@@ -1266,18 +1314,18 @@ public static class SiteEndpoints
             // terminal event that already queued the catch-up): let it be — its own completion
             // re-checks the head, so the chain still converges on the latest commit.
             var inFlight = await db.Builds.IgnoreQueryFilters().AnyAsync(
-                b => b.SiteId == site.Id &&
+                b => b.SiteId == site.Id && b.Branch == publishBranch &&
                      (b.Status == SiteBuildStatus.Queued || b.Status == SiteBuildStatus.Building), ct);
             if (inFlight) return;
 
             var cms = scope.GetRequiredService<CmsDbContext>();
             var events = scope.GetRequiredService<IEventPublisher>();
             var live = scope.GetRequiredService<SiteLiveUpdates>();
-            var buildId = await EnqueueReleaseBuildAsync(db, cms, events, git, site, live, null, ct);
+            var buildId = await EnqueueBranchBuildAsync(db, cms, events, git, site, live, null, publishBranch, ct);
 
             scope.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(SiteEndpoints)).LogInformation(
-                "Release head {Head} landed while build {Prev} was running; queued catch-up build {Build} for site {Site}.",
-                SiteLiveUpdates.Short(head), completedBuildId, buildId, site.Id);
+                "{Branch} head {Head} landed while build {Prev} was running; queued catch-up build {Build} for site {Site}.",
+                release, SiteLiveUpdates.Short(head), completedBuildId, buildId, site.Id);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

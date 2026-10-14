@@ -149,10 +149,16 @@ internal static class SiteBuildBroadcast
                 .FirstOrDefaultAsync(b => b.Id == buildId && b.SiteId == siteId, ct);
             if (build is null) return;
 
-            var activeBuildId = await db.Sites.AsNoTracking().IgnoreQueryFilters()
-                .Where(s => s.Id == siteId && s.TenantId == tenantId)
-                .Select(s => s.ActiveBuildId)
-                .FirstOrDefaultAsync(ct);
+            // A publishing branch's build is live on that branch's domains (#277).
+            var activeBuildId = build.Branch is null
+                ? await db.Sites.AsNoTracking().IgnoreQueryFilters()
+                    .Where(s => s.Id == siteId && s.TenantId == tenantId)
+                    .Select(s => s.ActiveBuildId)
+                    .FirstOrDefaultAsync(ct)
+                : await db.PublishBranches.AsNoTracking().IgnoreQueryFilters()
+                    .Where(p => p.SiteId == siteId && p.TenantId == tenantId && p.Branch == build.Branch)
+                    .Select(p => p.ActiveBuildId)
+                    .FirstOrDefaultAsync(ct);
 
             var live = scope.GetRequiredService<SiteLiveUpdates>();
             await live.BuildChangedAsync(tenantId, new BuildUpdate(
@@ -166,7 +172,8 @@ internal static class SiteBuildBroadcast
                 CreatedAt: build.CreatedAt,
                 CompletedAt: build.CompletedAt,
                 Active: activeBuildId == build.Id,
-                ActorUserId: null), ct);
+                ActorUserId: null,
+                Branch: build.Branch ?? Dcms.AdminApi.Sites.Git.SiteGitService.ReleaseBranch), ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -246,11 +246,17 @@ public sealed class SitePublishConsumer(
         // advance the active build when this one is at least as new as the current active build,
         // so a slower, older build (two run concurrently in the static lane) or a build that
         // finishes after a manual rollback cannot overwrite a newer live artifact.
+        //
+        // A publishing branch's build (#277) advances that branch's pointer, never release's.
         var site = await db.Sites.IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Id == build.SiteId, ct);
-        if (site is not null)
+        var target = site is null || build.Branch is null ? null
+            : await db.PublishBranches.IgnoreQueryFilters()
+                .FirstOrDefaultAsync(b => b.SiteId == site.Id && b.Branch == build.Branch, ct);
+        if (site is not null && (build.Branch is null || target is not null))
         {
+            var current = build.Branch is null ? site.ActiveBuildId : target!.ActiveBuildId;
             var supersedes = true;
-            if (site.ActiveBuildId is { } activeId && activeId != build.Id)
+            if (current is { } activeId && activeId != build.Id)
             {
                 var activeCreatedAt = await db.Builds.IgnoreQueryFilters().AsNoTracking()
                     .Where(b => b.Id == activeId)
@@ -261,7 +267,8 @@ public sealed class SitePublishConsumer(
 
             if (supersedes)
             {
-                site.ActiveBuildId = build.Id;
+                if (target is not null) target.ActiveBuildId = build.Id;
+                else site.ActiveBuildId = build.Id;
                 site.UpdatedAt = DateTimeOffset.UtcNow;
             }
             else
