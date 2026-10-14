@@ -24,6 +24,7 @@ import {
   toastApiError,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
+import { useAutoSlug } from '../../lib/slug';
 import { Perm, can, useMyPermissions } from '../../lib/permissions';
 import { setCurrentTenantSlug } from '../../tenants';
 import { AuditLogViewer } from '../audit/AuditLogViewer';
@@ -39,8 +40,8 @@ export function TenantsPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [slug, setSlug] = useState('');
   const [name, setName] = useState('');
+  const [slug, setSlug] = useAutoSlug(name);
   const [auditing, setAuditing] = useState<TenantRow | null>(null);
 
   const me = useMyPermissions(true);
@@ -57,7 +58,7 @@ export function TenantsPage() {
       setCurrentTenantSlug(slug.trim());
       toast.success(t('common.saved'));
       setOpen(false);
-      setSlug('');
+      setSlug(null);
       setName('');
       await qc.invalidateQueries({ queryKey: ['tenants'] });
       await qc.invalidateQueries({ queryKey: ['me-tenants'] });
@@ -133,12 +134,12 @@ export function TenantsPage() {
               </DialogHeader>
               <div className="space-y-3">
                 <div className="space-y-1.5">
-                  <Label>{t('common.slug')}</Label>
-                  <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="acme-co" />
-                </div>
-                <div className="space-y-1.5">
                   <Label>{t('tenant.displayName')}</Label>
                   <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme Co." />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>{t('common.slug')}</Label>
+                  <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="acme-co" />
                 </div>
               </div>
               <DialogFooter>

@@ -82,7 +82,8 @@ export function ContentFieldInput({
 }: {
   field: ContentFieldDef;
   value: unknown;
-  onChange: (v: unknown) => void;
+  /** `fileName` accompanies a media pick, so the editor can name the item after the file. */
+  onChange: (v: unknown, fileName?: string) => void;
   /**
    * Config of the instance the item belongs to — where a field referencing
    * another plugin names the instance it points at.
@@ -171,7 +172,7 @@ export function ContentFieldInput({
         return (
           <MediaPicker
             value={value as string | undefined}
-            onChange={(id) => onChange(id)}
+            onChange={(id, fileName) => onChange(id, fileName)}
             category={(field.reference?.mediaCategory as MediaCategory) ?? undefined}
           />
         );

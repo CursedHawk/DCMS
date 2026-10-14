@@ -1,0 +1,36 @@
+import { useState } from 'react';
+
+// Unicode combining marks, written from a string so the range stays legible in source.
+const COMBINING_MARKS = new RegExp('[\\u0300-\\u036f]', 'g');
+
+/**
+ * A URL-safe slug: lower-case ASCII letters, digits and single hyphens. Diacritics are folded
+ * rather than dropped, so "Příspěvky" becomes "prispevky", not "p-sp-vky". Empty when nothing
+ * usable is left — the caller's placeholder says what to type, not a made-up "page".
+ */
+export function slugify(input: string, max = 64): string {
+  return input
+    .normalize('NFKD')
+    .replace(COMBINING_MARKS, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .slice(0, max)
+    .replace(/^-+|-+$/g, '');
+}
+
+/** A file name as slug material: "Hero shot_02.final.JPG" → "Hero shot_02.final". */
+export function fileStem(fileName: string): string {
+  return fileName.replace(/\.[a-z0-9]{1,8}$/i, '');
+}
+
+/**
+ * A slug that follows `source` (a name, a title, a file name) until the user types their own.
+ * Once they have, it is theirs — even emptied: retitling the item afterwards never overwrites
+ * what they typed, and backspacing over it does not refill the field under their cursor.
+ * Setting `null` hands it back to the source (a dialog reset for the next entry).
+ */
+export function useAutoSlug(source: string, max?: number): [string, (typed: string | null) => void] {
+  const [typed, setTyped] = useState<string | null>(null);
+  const slug = typed ?? slugify(source, max);
+  return [slug, setTyped];
+}

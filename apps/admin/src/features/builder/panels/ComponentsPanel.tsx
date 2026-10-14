@@ -13,6 +13,7 @@ import { Button, cn, Input } from '@dcms/ui';
 import { useVfs } from '../../site-source';
 import { useContentSources } from '../plugins/fields';
 import { useBuilder } from '../store';
+import { slugify } from '../../../lib/slug';
 
 /**
  * The tenant's own components: create one, open it on the canvas, delete it.
@@ -160,7 +161,7 @@ function NewComponent({ onDone }: { onDone: () => void }) {
     const project = useBuilder.getState().project;
     if (!project) return;
 
-    const name = uniqueName(slugify(trimmed), project.components);
+    const name = uniqueName(slugify(trimmed) || 'component', project.components);
     const definition: ComponentDefinition = {
       ...emptyComponentDefinition(name, trimmed),
       source: chosen
@@ -442,16 +443,6 @@ function starterTemplate(name: string, mode: 'list' | 'detail' | null): string {
 `;
 }
 
-function slugify(value: string): string {
-  return (
-    value
-      .normalize('NFKD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') || 'component'
-  );
-}
 
 function uniqueName(base: string, existing: readonly ComponentDefinition[]): string {
   const taken = new Set(existing.map((c) => c.name));

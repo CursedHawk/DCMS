@@ -36,6 +36,7 @@ import { configWidgets } from './configWidgets';
 import { usePluginUi } from '../../pluginHost/api';
 import { usePluginWidgets } from '../../pluginHost/host';
 import { api } from '../../lib/api';
+import { useAutoSlug } from '../../lib/slug';
 import {
   type PluginManifest,
   parseConfigSchema,
@@ -259,8 +260,8 @@ function InstallDialog({
   onDone: () => void;
 }) {
   const { t } = useTranslation();
-  const [slug, setSlug] = useState('');
   const [name, setName] = useState(manifest.name);
+  const [slug, setSlug] = useAutoSlug(name);
   const [description, setDescription] = useState('');
   const [config, setConfig] = useState<unknown>({});
   const schema = parseConfigSchema(manifest.configJsonSchema);
@@ -299,12 +300,12 @@ function InstallDialog({
         <DialogBody className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>{t('common.slug')}</Label>
-              <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="blog" />
-            </div>
-            <div className="space-y-1.5">
               <Label>{t('common.name')}</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t('common.slug')}</Label>
+              <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="blog" />
             </div>
           </div>
           <div className="space-y-1.5">

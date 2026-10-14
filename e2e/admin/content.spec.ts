@@ -150,3 +150,32 @@ test('the types and tags views read data the page already had', async ({ page, a
   // of it rather than a second request.
   expect(api.requestsTo('GET', '/api/admin/plugins/catalog').length).toBeLessThanOrEqual(1);
 });
+
+test('a new item is given a slug from its media, else its title, until the author writes one', async ({
+  page,
+  api,
+}) => {
+  api.on('POST', '/api/admin/content', { id: 'new-item' });
+  await openCollection(page);
+  await page.getByRole('button', { name: 'New item' }).first().click();
+  const dialog = page.getByRole('dialog');
+  const slug = dialog.getByLabel('Slug');
+  // The fields are drawn in the type's order: the slug, then the title.
+  const title = dialog.getByRole('textbox').nth(1);
+
+  await title.fill('Příliš žluťoučký kůň');
+  await expect(slug).toHaveValue('prilis-zlutoucky-kun');
+
+  // A picked file names the item: a slide, a download, a track is its file.
+  await dialog.getByRole('button', { name: 'Select media' }).click();
+  await page.getByRole('button', { name: /logo\.png/ }).click();
+  await expect(slug).toHaveValue('logo');
+
+  // What the author types is theirs.
+  await slug.fill('kun');
+  await title.fill('Something else');
+  await expect(slug).toHaveValue('kun');
+
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/content').at(-1)?.body).toMatchObject({ slug: 'kun' });
+});

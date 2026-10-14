@@ -26,7 +26,8 @@ export function MediaPicker({
   category,
 }: {
   value?: string;
-  onChange: (id: string | undefined) => void;
+  /** `fileName` comes with a pick or an upload, for a form that names things after the file. */
+  onChange: (id: string | undefined, fileName?: string) => void;
   category?: MediaCategory;
 }) {
   const { t } = useTranslation();
@@ -80,7 +81,7 @@ export function MediaPicker({
           <div className="mb-1">
             <MediaUploader
               folderId={folder !== 'all' && folder !== ROOT_FOLDER ? folder : null}
-              onUploaded={(id) => onChange(id)}
+              onUploaded={(id, fileName) => onChange(id, fileName)}
               multiple={false}
             />
           </div>
@@ -93,7 +94,7 @@ export function MediaPicker({
                   key={a.id}
                   type="button"
                   onClick={() => {
-                    onChange(a.id);
+                    onChange(a.id, a.fileName);
                     setOpen(false);
                   }}
                   className={cn(

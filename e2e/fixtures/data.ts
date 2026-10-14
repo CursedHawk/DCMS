@@ -178,6 +178,7 @@ export const PLUGIN_CATALOG = [
           { name: 'tags', type: 'Tags', required: false },
           // A list of pictures: a Json array of asset ids, as Events' photos are.
           { name: 'photos', type: 'Json', required: false, reference: { mediaCategory: 'Image' } },
+          { name: 'cover', type: 'MediaRef', required: false, reference: { mediaCategory: 'Image' } },
         ],
       },
     ],

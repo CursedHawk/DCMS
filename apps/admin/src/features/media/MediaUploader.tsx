@@ -58,7 +58,7 @@ export function MediaUploader({
   folderId,
   multiple = true,
 }: {
-  onUploaded?: (id: string) => void;
+  onUploaded?: (id: string, fileName: string) => void;
   folderId?: string | null;
   /** False where only one file can be the answer (the single media picker). */
   multiple?: boolean;
@@ -117,7 +117,7 @@ export function MediaUploader({
         try {
           const res = await job.send((fraction) => patch(item.id, { progress: fraction }));
           patch(item.id, { status: 'done', progress: 1 });
-          onUploaded?.(res.id);
+          onUploaded?.(res.id, job.name);
         } catch (e) {
           // Most likely the token expired mid-batch; the next pick signs in afresh.
           if (job.source === 'drive') forgetDriveToken();

@@ -18,6 +18,7 @@ import {
   toastApiError,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
+import { fileStem, useAutoSlug } from '../../lib/slug';
 import {
   type ContentFieldDef,
   type ContentTypeDef,
@@ -74,19 +75,39 @@ export function ContentEditor({
   const isNew = itemId === null;
   const detail = useContentItem(itemId ?? undefined);
 
-  const [slug, setSlug] = useState('');
   const [data, setData] = useState<Record<string, unknown>>({});
   const [showVersions, setShowVersions] = useState(false);
   const [scheduleAt, setScheduleAt] = useState('');
+  // The file name of each media field picked in this editor, keyed by field.
+  const [mediaNames, setMediaNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    if (detail.data) {
-      setSlug(detail.data.slug);
-      setData(detail.data.draft ?? {});
-    }
+    if (detail.data) setData(detail.data.draft ?? {});
   }, [detail.data]);
 
-  const setField = (name: string, v: unknown) => setData((d) => ({ ...d, [name]: v }));
+  /*
+   * A new item's slug is filled in for the author, who can still change it: from the file of a
+   * picked media field (a slide, a download, a track is its file), otherwise from the title or
+   * name. An existing item's slug is fixed — it is in published URLs.
+   */
+  const textOf = (v: unknown) => (typeof v === 'string' ? v : '');
+  const titleField = contentType.fields.find((f) => f.type === 'Text');
+  const pickedFile = Object.values(mediaNames)[0];
+  const slugSource =
+    (pickedFile && fileStem(pickedFile)) ||
+    textOf(data.title) ||
+    textOf(data.name) ||
+    (titleField ? textOf(data[titleField.name]) : '');
+  const [autoSlug, setSlug] = useAutoSlug(slugSource, 256);
+  const slug = isNew ? autoSlug : (detail.data?.slug ?? '');
+
+  const noteMedia = (key: string, v: unknown, fileName?: string) =>
+    setMediaNames(({ [key]: _, ...rest }) => (v && fileName ? { ...rest, [key]: fileName } : rest));
+
+  const setField = (name: string, v: unknown, fileName?: string) => {
+    noteMedia(name, v, fileName);
+    setData((d) => ({ ...d, [name]: v }));
+  };
 
   // The instance config both declares this type's tenant-defined fields and,
   // for a gig, names the Roster instance its line-up is picked from.
@@ -97,11 +118,13 @@ export function ContentEditor({
   const valuesField = contentType.customFields?.valuesField;
   const customFields = customFieldsOf(contentType, instanceConfig);
   const customValues = (valuesField ? data[valuesField] : null) as Record<string, unknown> | null;
-  const setCustom = (key: string, v: unknown) =>
+  const setCustom = (key: string, v: unknown, fileName?: string) => {
+    noteMedia(`custom:${key}`, v, fileName);
     setData((d) => ({
       ...d,
       [valuesField!]: { ...((d[valuesField!] as Record<string, unknown>) ?? {}), [key]: v },
     }));
+  };
 
   /*
    * One request per Tags field, keyed by field name — a content type can have more
@@ -226,8 +249,9 @@ export function ContentEditor({
         ) : (
           <DialogBody className="space-y-4">
             <div className="space-y-1.5">
-              <Label>{t('common.slug')}</Label>
+              <Label htmlFor="content-slug">{t('common.slug')}</Label>
               <Input
+                id="content-slug"
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
                 disabled={!isNew}
@@ -244,7 +268,7 @@ export function ContentEditor({
                   field={f}
                   instanceConfig={instanceConfig}
                   value={data[f.name]}
-                  onChange={(v) => setField(f.name, v)}
+                  onChange={(v, fileName) => setField(f.name, v, fileName)}
                   tagSuggestions={tagSuggestions[f.name]}
                 />
               ))}
@@ -263,7 +287,7 @@ export function ContentEditor({
                       field={asFieldDef(f)}
                       instanceConfig={instanceConfig}
                       value={customValues?.[f.key]}
-                      onChange={(v) => setCustom(f.key, v)}
+                      onChange={(v, fileName) => setCustom(f.key, v, fileName)}
                       tagSuggestions={
                         tagSuggestions[valuesField ? `${valuesField}.${f.key}` : f.key]
                       }

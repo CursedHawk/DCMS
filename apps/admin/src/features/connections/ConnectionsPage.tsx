@@ -28,6 +28,7 @@ import {
   toastApiError,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
+import { useAutoSlug } from '../../lib/slug';
 import { CONNECTIONS_KEY, type ApiConnection } from './api';
 
 /**
@@ -129,8 +130,9 @@ export function ConnectionsPage() {
 function ConnectionDialog({ connection, onClose }: { connection: ApiConnection | null; onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const [slug, setSlug] = useState(connection?.slug ?? '');
   const [name, setName] = useState(connection?.name ?? '');
+  const [autoSlug, setSlug] = useAutoSlug(name, 48);
+  const slug = connection?.slug ?? autoSlug;
   const [baseUrl, setBaseUrl] = useState(connection?.baseUrl ?? 'https://');
   const [authKind, setAuthKind] = useState(connection?.authKind ?? 'none');
   const [authName, setAuthName] = useState(connection?.authName ?? '');
