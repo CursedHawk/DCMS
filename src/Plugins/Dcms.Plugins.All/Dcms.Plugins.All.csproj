@@ -26,4 +26,10 @@
     <ProjectReference Include="$(DcmsSrcRoot)Plugins\Dcms.Plugins.VisitorAuth\Dcms.Plugins.VisitorAuth.csproj" />
   </ItemGroup>
 
+  <!-- A plain SDK project, so DataProtection's Xml is a package here, not pruned into the
+       ASP.NET framework: the security floor (Directory.Packages.props) has to be direct. -->
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.Xml" />
+  </ItemGroup>
+
 </Project>

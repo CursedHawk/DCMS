@@ -6,6 +6,8 @@
 
   <ItemGroup>
     <PackageReference Include="MailKit" />
+    <!-- Floor for MimeKit's Pkcs (security; see Directory.Packages.props). -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="NATS.Net" />
   </ItemGroup>
 

@@ -47,7 +47,12 @@
          mutation-XSS quirks a browser would, which a hand-rolled stripper cannot. -->
     <PackageVersion Include="HtmlSanitizer" Version="9.2.1039" />
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
-    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.11" />
+    <!-- Advisories of 2026-10-13 (GHSA-2fmv-rv2c-59x7, -846f-f764-76mx; Xml: -7hqp-7c5m-4vq6,
+         -c399-9853-6jmj, -r955-8q5j-3h83): both first patched in 10.0.13. Pkcs comes in through
+         MailKit → MimeKit (Dcms.Shared.Messaging) at 10.0.0, Xml through DataProtection
+         (Dcms.Shared.Data); each is referenced directly there to raise the floor. -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.13" />
   </ItemGroup>
 
   <ItemGroup Label="Multi-tenancy / Auth">
