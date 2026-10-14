@@ -127,6 +127,52 @@ public sealed class PluginDataSetEndpointsTests(ContentFlowFixture fixture)
 
     // ---- helpers ----
 
+    /// <summary>#278: a saved view filters a set only on the columns it declares filterable.</summary>
+    [DockerFact]
+    public async Task A_view_filters_a_set_on_its_filterable_columns_only()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (tenant, owner) = await SiteAsync(ct);
+        var content = fixture.Content.CreateClient();
+        await RegisterAsync(content, tenant, "ann@site.test", ct);
+        await RegisterAsync(content, tenant, "bob@other.test", ct);
+        await RegisterAsync(content, tenant, "cyd@site.test", ct);
+        var admin = fixture.Admin.CreateClient();
+
+        var sets = await JsonAsync(admin, AdminReq(HttpMethod.Get, "/api/admin/plugins/members/_data", owner, tenant), ct);
+        var email = sets.EnumerateArray().Single(s => s.GetProperty("id").GetString() == "visitors")
+            .GetProperty("columns").EnumerateArray().Single(c => c.GetProperty("key").GetString() == "email");
+        email.GetProperty("filterable").GetBoolean().Should().BeTrue();
+
+        async Task<List<string>> EmailsAsync(object where)
+        {
+            var url = "/api/admin/plugins/members/_data/visitors?where=" + Uri.EscapeDataString(JsonSerializer.Serialize(where));
+            var page = await JsonAsync(admin, AdminReq(HttpMethod.Get, url, owner, tenant), ct);
+            return [.. page.GetProperty("rows").EnumerateArray().Select(r => r.GetProperty("values").GetProperty("email").GetString()!)];
+        }
+        (await EmailsAsync(new { field = "email", op = "contains", value = "@SITE" })).Should().BeEquivalentTo("ann@site.test", "cyd@site.test");
+        (await EmailsAsync(new
+        {
+            or = new object[]
+            {
+                new { field = "email", op = "startsWith", value = "bob" },
+                new { and = new object[] { new { field = "email", op = "contains", value = "site" }, new { field = "email", op = "ne", value = "ann@site.test" } } },
+            },
+        })).Should().BeEquivalentTo("bob@other.test", "cyd@site.test");
+        (await EmailsAsync(new { field = "createdAt", op = "lt", value = "2000-01-01T00:00:00Z" })).Should().BeEmpty();
+
+        // A column the set does not filter on, or an operator its kind does not take: refused.
+        foreach (var bad in new object[]
+        {
+            new { field = "emailVerified", op = "eq", value = true },
+            new { field = "createdAt", op = "contains", value = "2026" },
+        })
+        {
+            var url = "/api/admin/plugins/members/_data/visitors?where=" + Uri.EscapeDataString(JsonSerializer.Serialize(bad));
+            (await admin.SendAsync(AdminReq(HttpMethod.Get, url, owner, tenant), ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+    }
+
     private static async Task<JsonElement> JsonAsync(HttpClient client, HttpRequestMessage req, CancellationToken ct)
     {
         var res = await client.SendAsync(req, ct);

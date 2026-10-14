@@ -31,8 +31,14 @@ import {
   SheetHeader,
   SheetTitle,
   toastApiError,
+  TableViewControls,
+  cleanFilter,
+  useTableViews,
   type Column,
+  type ViewField,
+  type ViewFieldKind,
 } from '@dcms/ui';
+import { api } from '../../lib/api';
 import { AuthedImage } from '../../components/AuthedImage';
 import { SchemaForm } from '../../components/SchemaForm';
 import { configWidgets } from './configWidgets';
@@ -51,6 +57,25 @@ import { formatSize } from '../media/api';
 const PAGE_SIZE = 25;
 const ALL = '__all';
 
+/** A data set column as the view kit compares it; only columns the plugin declares filterable filter. */
+function viewFieldOf(c: DataColumn): ViewField {
+  const kind: ViewFieldKind =
+    c.kind === 'number' || c.kind === 'bytes' ? 'number'
+      : c.kind === 'datetime' ? 'date'
+        : c.kind === 'boolean' ? 'boolean'
+          : c.kind === 'badge' && c.options?.length ? 'choice'
+            : c.kind === 'media' ? 'reference'
+              : 'text';
+  return {
+    key: c.key,
+    label: c.label,
+    kind,
+    options: c.options ?? undefined,
+    sortable: c.sortable,
+    filterable: !!c.filterable && c.kind !== 'json',
+  };
+}
+
 /**
  * Any plugin's data set, rendered from the schema the plugin describes: filters and search
  * above, a server-paged and server-sorted table, and a sheet to read, edit, act on or delete
@@ -63,9 +88,19 @@ export function DataSetView({ slug, set }: { slug: string; set: DataSet }) {
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [filters, setFilters] = useState<Record<string, string>>({});
-  const [sort, setSort] = useState<{ columnId: string; direction: 'asc' | 'desc' } | null>(
-    set.defaultSort ? { columnId: set.defaultSort, direction: set.defaultDescending ? 'desc' : 'asc' } : null,
-  );
+
+  // Saved views (#278): columns, order and a filter over what the plugin declares filterable.
+  const baseline = useMemo(() => ({
+    columns: set.columns.map((c) => c.key),
+    sort: set.defaultSort ? [{ field: set.defaultSort, direction: set.defaultDescending ? ('desc' as const) : ('asc' as const) }] : [],
+  }), [set]);
+  const views = useTableViews({ api, table: `dataset:${slug}:${set.id}`, baseline });
+  const fields = useMemo(() => set.columns.map(viewFieldOf), [set.columns]);
+  const viewSort = views.definition.sort[0];
+  const sort = viewSort ? { columnId: viewSort.field, direction: viewSort.direction } : null;
+  const setSort = (next: { columnId: string; direction: 'asc' | 'desc' } | null) =>
+    views.setDefinition((d) => ({ ...d, sort: next ? [{ field: next.columnId, direction: next.direction }] : [] }));
+  const where = cleanFilter(views.definition.filter);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openKey, setOpenKey] = useState<string | null>(null);
@@ -76,7 +111,7 @@ export function DataSetView({ slug, set }: { slug: string; set: DataSet }) {
   useEffect(() => {
     setPage(1);
     setSelected(new Set());
-  }, [deferredSearch, filters, sort]);
+  }, [deferredSearch, filters, views.definition]);
 
   const query: DataQuery = {
     search: deferredSearch,
@@ -85,6 +120,7 @@ export function DataSetView({ slug, set }: { slug: string; set: DataSet }) {
     filters,
     page,
     pageSize: PAGE_SIZE,
+    where,
   };
   const data = useDataPage(slug, set.id, query);
   const refresh = () => qc.invalidateQueries({ queryKey: ['plugin-data'] });
@@ -92,7 +128,7 @@ export function DataSetView({ slug, set }: { slug: string; set: DataSet }) {
   const bulkActions = set.canWrite ? set.actions.filter((a) => a.bulk) : [];
   const columns = useMemo<Column<DataRow>[]>(
     () =>
-      set.columns.map((c) => ({
+      views.definition.columns.flatMap((key) => set.columns.filter((c) => c.key === key)).map((c) => ({
         id: c.key,
         header: c.label,
         primary: c.primary,
@@ -100,7 +136,7 @@ export function DataSetView({ slug, set }: { slug: string; set: DataSet }) {
         align: c.kind === 'number' || c.kind === 'bytes' ? 'right' : 'left',
         cell: (row) => <Value column={c} value={row.values[c.key]} />,
       })),
-    [set.columns],
+    [set.columns, views.definition.columns],
   );
 
   const total = data.data?.total ?? 0;
@@ -161,6 +197,8 @@ export function DataSetView({ slug, set }: { slug: string; set: DataSet }) {
         ))}
       </FilterBar>
 
+      <TableViewControls views={views} fields={fields} />
+
       <DataTable
         rows={data.data?.rows}
         columns={columns}
@@ -169,7 +207,7 @@ export function DataSetView({ slug, set }: { slug: string; set: DataSet }) {
         error={data.isError ? <EmptyState title={t('pluginPage.data.loadFailed')} /> : undefined}
         empty={
           <EmptyState
-            title={activeFilters || deferredSearch ? t('common.noResults') : t('pluginPage.data.empty', { title: set.title })}
+            title={activeFilters || deferredSearch || where ? t('common.noResults') : t('pluginPage.data.empty', { title: set.title })}
           />
         }
         onRowClick={(r) => setOpenKey(r.key)}

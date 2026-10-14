@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -59,8 +60,8 @@ public sealed class VisitorsDataSet(IPluginContext context, VisitorsDbContext db
         return Task.FromResult(new DataSetSchema(
             Columns:
             [
-                new DataColumn("email", "Email", DataColumnKinds.Email, Sortable: true, Primary: true),
-                new DataColumn("displayName", "Name", Sortable: true),
+                new DataColumn("email", "Email", DataColumnKinds.Email, Sortable: true, Primary: true) { Filterable = true },
+                new DataColumn("displayName", "Name", Sortable: true) { Filterable = true },
                 new DataColumn("emailVerified", "Verified", DataColumnKinds.Boolean),
                 .. definitions.Select(d => new DataColumn($"attributes.{d.Key}", d.Label, d.Type switch
                 {
@@ -69,7 +70,7 @@ public sealed class VisitorsDataSet(IPluginContext context, VisitorsDbContext db
                     AttributeType.Select => DataColumnKinds.Badge,
                     _ => DataColumnKinds.Text,
                 })),
-                new DataColumn("createdAt", "Registered", DataColumnKinds.DateTime, Sortable: true),
+                new DataColumn("createdAt", "Registered", DataColumnKinds.DateTime, Sortable: true) { Filterable = true },
             ],
             ItemSchema: new JsonObject { ["type"] = "object", ["properties"] = properties },
             Filters:
@@ -89,6 +90,14 @@ public sealed class VisitorsDataSet(IPluginContext context, VisitorsDbContext db
             DefaultDescending: true));
     }
 
+    /// <summary>What a saved view filters on (#278), as the columns read.</summary>
+    private static readonly Dictionary<string, LambdaExpression> Filterable = new()
+    {
+        ["email"] = (Expression<Func<VisitorAccount, string>>)(a => a.Email),
+        ["displayName"] = (Expression<Func<VisitorAccount, string?>>)(a => a.DisplayName),
+        ["createdAt"] = (Expression<Func<VisitorAccount, DateTimeOffset>>)(a => a.CreatedAt),
+    };
+
     public async Task<DataPage> ListAsync(DataQuery query, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
@@ -104,6 +113,7 @@ public sealed class VisitorsDataSet(IPluginContext context, VisitorsDbContext db
             "no" => accounts.Where(a => a.EmailVerifiedAt == null),
             _ => accounts,
         };
+        accounts = DataQueryFilter.Apply(accounts, query.Where, Filterable);
         accounts = (query.Sort, query.Descending) switch
         {
             ("email", false) => accounts.OrderBy(a => a.Email),

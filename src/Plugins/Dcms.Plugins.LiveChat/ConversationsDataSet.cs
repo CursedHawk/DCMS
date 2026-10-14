@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Text;
 using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -23,11 +24,15 @@ public sealed class ConversationsDataSet(ChatDbContext db) : IPluginDataSet
     public Task<DataSetSchema> DescribeAsync(CancellationToken ct) => Task.FromResult(new DataSetSchema(
         Columns:
         [
-            new DataColumn("visitorName", "Visitor", Sortable: true, Primary: true),
-            new DataColumn("status", "Status", DataColumnKinds.Badge),
+            new DataColumn("visitorName", "Visitor", Sortable: true, Primary: true) { Filterable = true },
+            new DataColumn("status", "Status", DataColumnKinds.Badge)
+            {
+                Filterable = true,
+                Options = [new DataFilterOption("open", "Open"), new DataFilterOption("closed", "Closed")],
+            },
             new DataColumn("messages", "Messages", DataColumnKinds.Number),
-            new DataColumn("lastMessageAt", "Last message", DataColumnKinds.DateTime, Sortable: true),
-            new DataColumn("createdAt", "Started", DataColumnKinds.DateTime, Sortable: true),
+            new DataColumn("lastMessageAt", "Last message", DataColumnKinds.DateTime, Sortable: true) { Filterable = true },
+            new DataColumn("createdAt", "Started", DataColumnKinds.DateTime, Sortable: true) { Filterable = true },
         ],
         Filters:
         [
@@ -38,6 +43,15 @@ public sealed class ConversationsDataSet(ChatDbContext db) : IPluginDataSet
         CanDelete: true,
         DefaultSort: "lastMessageAt",
         DefaultDescending: true));
+
+    /// <summary>What a saved view filters on (#278), as the columns read.</summary>
+    private static readonly Dictionary<string, LambdaExpression> Filterable = new()
+    {
+        ["visitorName"] = (Expression<Func<ChatConversation, string>>)(c => c.VisitorName),
+        ["status"] = (Expression<Func<ChatConversation, string>>)(c => c.Status == ChatConversationStatus.Open ? "open" : "closed"),
+        ["lastMessageAt"] = (Expression<Func<ChatConversation, DateTimeOffset>>)(c => c.LastMessageAt),
+        ["createdAt"] = (Expression<Func<ChatConversation, DateTimeOffset>>)(c => c.CreatedAt),
+    };
 
     public async Task<DataPage> ListAsync(DataQuery query, CancellationToken ct)
     {
@@ -52,6 +66,7 @@ public sealed class ConversationsDataSet(ChatDbContext db) : IPluginDataSet
             "closed" => rows.Where(c => c.Status == ChatConversationStatus.Closed),
             _ => rows,
         };
+        rows = DataQueryFilter.Apply(rows, query.Where, Filterable);
         rows = (query.Sort, query.Descending) switch
         {
             ("visitorName", false) => rows.OrderBy(c => c.VisitorName),

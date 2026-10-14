@@ -1,3 +1,4 @@
+import type { ViewFilter } from '@dcms/ui';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { RJSFSchema } from '@rjsf/utils';
 import { api } from '../../lib/api';
@@ -16,6 +17,10 @@ export interface DataColumn {
   kind: string;
   sortable: boolean;
   primary: boolean;
+  /** A saved view may filter on it (#278). */
+  filterable?: boolean;
+  /** A badge column's values, offered when filtering on it. */
+  options?: { value: string; label: string }[] | null;
 }
 
 export interface DataFilter {
@@ -74,6 +79,8 @@ export interface DataQuery {
   filters: Record<string, string>;
   page: number;
   pageSize: number;
+  /** A saved view's filter over the filterable columns (#278). */
+  where?: ViewFilter;
 }
 
 const base = (slug: string, set?: string) =>
@@ -98,6 +105,7 @@ export function dataQueryString(q: DataQuery): string {
   for (const [key, value] of Object.entries(q.filters)) {
     if (value) params.set(`f.${key}`, value);
   }
+  if (q.where) params.set('where', JSON.stringify(q.where));
   return params.toString();
 }
 

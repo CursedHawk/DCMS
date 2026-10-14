@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions.Contracts;
@@ -31,9 +32,17 @@ public sealed class SubmissionsDataSet(IPluginContext context, FormsDbContext db
         Columns:
         [
             new DataColumn("summary", "Submission", Primary: true),
-            new DataColumn("form", "Form", DataColumnKinds.Badge),
-            new DataColumn("status", "Status", DataColumnKinds.Badge),
-            new DataColumn("submittedAt", "Received", DataColumnKinds.DateTime, Sortable: true),
+            new DataColumn("form", "Form", DataColumnKinds.Badge)
+            {
+                Filterable = true,
+                Options = Forms.Select(f => new DataFilterOption(f.Name, f.Title ?? f.Name)).ToList(),
+            },
+            new DataColumn("status", "Status", DataColumnKinds.Badge)
+            {
+                Filterable = true,
+                Options = [new DataFilterOption(Unhandled, "To do"), new DataFilterOption(Handled, "Handled")],
+            },
+            new DataColumn("submittedAt", "Received", DataColumnKinds.DateTime, Sortable: true) { Filterable = true },
         ],
         Filters:
         [
@@ -63,12 +72,21 @@ public sealed class SubmissionsDataSet(IPluginContext context, FormsDbContext db
             Unhandled => rows.Where(s => s.HandledAt == null),
             _ => rows,
         };
+        rows = DataQueryFilter.Apply(rows, query.Where, Filterable);
         rows = query.Descending ? rows.OrderByDescending(s => s.SubmittedAt) : rows.OrderBy(s => s.SubmittedAt);
         var total = await rows.LongCountAsync(ct);
         var page = await rows.Skip(query.Skip).Take(query.PageSize).ToListAsync(ct);
         var forms = Forms;
         return new DataPage(page.Select(s => ToRow(s, forms)).ToList(), total);
     }
+
+    /// <summary>What a saved view filters on (#278), as the columns read.</summary>
+    private static readonly Dictionary<string, LambdaExpression> Filterable = new()
+    {
+        ["form"] = (Expression<Func<FormSubmission, string>>)(s => s.FormName),
+        ["status"] = (Expression<Func<FormSubmission, string>>)(s => s.HandledAt == null ? Unhandled : Handled),
+        ["submittedAt"] = (Expression<Func<FormSubmission, DateTimeOffset>>)(s => s.SubmittedAt),
+    };
 
     public async Task<DataRow?> GetAsync(string key, CancellationToken ct)
     {

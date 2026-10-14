@@ -191,7 +191,7 @@ export const PLUGIN_DATA_SETS = [
     id: 'subscribers', title: 'Subscribers', description: 'People who asked for new posts by email.',
     icon: 'Users', platform: false, canWrite: true,
     columns: [
-      { key: 'email', label: 'Email', kind: 'email', sortable: true, primary: true },
+      { key: 'email', label: 'Email', kind: 'email', sortable: true, primary: true, filterable: true },
       { key: 'name', label: 'Name', kind: 'text', sortable: true, primary: false },
       { key: 'confirmed', label: 'Confirmed', kind: 'boolean', sortable: false, primary: false },
     ],

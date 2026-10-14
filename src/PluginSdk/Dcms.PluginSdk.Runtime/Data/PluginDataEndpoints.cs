@@ -1,3 +1,4 @@
+using Dcms.Shared.Kernel.Views;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -93,13 +94,33 @@ public static class PluginDataEndpoints
                 }
             }
 
+            // A saved view's filter (#278): only over columns the set declares filterable, with
+            // their kind's operators, so a plugin only ever sees conditions it said it can apply.
+            ViewFilter? where = null;
+            if (q["where"].ToString() is { Length: > 0 } raw)
+            {
+                try
+                {
+                    where = JsonSerializer.Deserialize<ViewFilter>(raw, WhereJson);
+                    where?.Validate();
+                    if (where is not null) CheckWhere(where, schema);
+                }
+                catch (Exception e) when (e is JsonException or ViewDefinitionException)
+                {
+                    return Results.BadRequest(new { error = e is ViewDefinitionException ? e.Message : "where is not a filter." });
+                }
+            }
+
             var query = new DataQuery(
                 Search: schema.Searchable && q["search"].ToString() is { Length: > 0 } search ? search.Trim() : null,
                 Sort: sort,
                 Descending: descending,
                 Filters: filters,
                 Page: Math.Max(int.TryParse(q["page"], out var page) ? page : 1, 1),
-                PageSize: Math.Clamp(int.TryParse(q["pageSize"], out var size) ? size : 25, 1, MaxPageSize));
+                PageSize: Math.Clamp(int.TryParse(q["pageSize"], out var size) ? size : 25, 1, MaxPageSize))
+            {
+                Where = where,
+            };
             var result = await data.ListAsync(query, ct);
             return Results.Ok(new { rows = result.Rows, total = result.Total, page = query.Page, pageSize = query.PageSize });
         });
@@ -277,6 +298,38 @@ public static class PluginDataEndpoints
         catch (NotSupportedException)
         {
             return NotSupported();
+        }
+    }
+
+    private static readonly JsonSerializerOptions WhereJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>The operators each column kind takes in a view's filter.</summary>
+    private static readonly Dictionary<string, string[]> WhereOps = new(StringComparer.Ordinal)
+    {
+        [DataColumnKinds.Text] = ["eq", "ne", "in", "nin", "contains", "startsWith", "isNull"],
+        [DataColumnKinds.Email] = ["eq", "ne", "in", "nin", "contains", "startsWith", "isNull"],
+        [DataColumnKinds.Url] = ["eq", "ne", "in", "nin", "contains", "startsWith", "isNull"],
+        [DataColumnKinds.Number] = ["eq", "ne", "gt", "gte", "lt", "lte", "isNull"],
+        [DataColumnKinds.Bytes] = ["eq", "ne", "gt", "gte", "lt", "lte", "isNull"],
+        [DataColumnKinds.DateTime] = ["eq", "ne", "gt", "gte", "lt", "lte", "isNull"],
+        [DataColumnKinds.Boolean] = ["eq", "ne", "isNull"],
+        [DataColumnKinds.Badge] = ["eq", "ne", "in", "nin", "isNull"],
+        [DataColumnKinds.Media] = ["eq", "ne", "isNull"],
+    };
+
+    /// <exception cref="ViewDefinitionException">A column the set does not filter on, or an operator its kind does not take.</exception>
+    internal static void CheckWhere(ViewFilter node, DataSetSchema schema)
+    {
+        foreach (var child in node.And ?? node.Or ?? (node.Not is { } n ? [n] : []))
+        {
+            CheckWhere(child, schema);
+        }
+        if (node.Field is not { } field) return;
+        var column = schema.Columns.FirstOrDefault(c => c.Key == field && c.Filterable)
+            ?? throw new ViewDefinitionException($"This data set does not filter on '{field}'.");
+        if (!WhereOps.TryGetValue(column.Kind, out var ops) || !ops.Contains(node.Op))
+        {
+            throw new ViewDefinitionException($"'{node.Op}' does not apply to the column '{field}'.");
         }
     }
 

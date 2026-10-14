@@ -87,7 +87,18 @@ public sealed record DataColumn(
     string Label,
     string Kind = DataColumnKinds.Text,
     bool Sortable = false,
-    bool Primary = false);
+    bool Primary = false)
+{
+    /// <summary>
+    /// A saved view may filter on this column (#278): its conditions arrive in
+    /// <see cref="DataQuery.Where"/>, and the plugin must apply them (<see cref="DataQueryFilter"/>
+    /// does for an EF query). Only filterable columns, with their kind's operators, ever arrive.
+    /// </summary>
+    public bool Filterable { get; init; }
+
+    /// <summary>A badge column's values, offered as choices when filtering on it.</summary>
+    public IReadOnlyList<DataFilterOption>? Options { get; init; }
+}
 
 public static class DataColumnKinds
 {
@@ -141,6 +152,12 @@ public sealed record DataQuery(
     int Page,
     int PageSize)
 {
+    /// <summary>
+    /// A saved view's filter over <see cref="DataColumn.Filterable"/> columns, already checked:
+    /// only those columns, only their kind's operators. Null when the view filters nothing.
+    /// </summary>
+    public Dcms.Shared.Kernel.Views.ViewFilter? Where { get; init; }
+
     public int Skip => (Page - 1) * PageSize;
 
     public string? Filter(string key) => Filters.TryGetValue(key, out var value) ? value : null;
