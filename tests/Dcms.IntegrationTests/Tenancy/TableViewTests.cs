@@ -12,7 +12,7 @@ namespace Dcms.IntegrationTests.Tenancy;
 [Collection(AdminApiCollection.Name)]
 public sealed class TableViewTests(AdminApiFixture fixture)
 {
-    private const string Table = "content:post";
+    private const string Table = "content:blog:post";
 
     private static readonly object Definition = new
     {

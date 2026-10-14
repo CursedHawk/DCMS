@@ -7,7 +7,7 @@ namespace Dcms.Shared.Data.Tenancy;
 /// changes it.
 /// </summary>
 /// <remarks>
-/// <see cref="TableKey"/> names the table: <c>content:{type}</c>, <c>apps:{instance}:{table}</c>,
+/// <see cref="TableKey"/> names the table: <c>content:{instance}:{type}</c>, <c>apps:{instance}:{table}</c>,
 /// <c>dataset:{instance}:{set}</c>. Seeing a view never grants the table — that is checked by key.
 /// </remarks>
 public sealed class TableView : TenantEntity

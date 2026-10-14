@@ -45,7 +45,8 @@ public static class ContentListQueries
         string Status,
         DateTimeOffset UpdatedAt,
         DateTimeOffset? PublishedAt,
-        DateTimeOffset? ScheduledPublishAt);
+        DateTimeOffset? ScheduledPublishAt,
+        string? ValuesJson = null);
 
     /// <param name="UpdatedAt">The last row's timestamp; paging continues strictly before it.</param>
     /// <param name="Id">
@@ -55,7 +56,8 @@ public static class ContentListQueries
     public sealed record Cursor(DateTimeOffset UpdatedAt, Guid Id);
 
     /// <summary>What a collection page is ordered by. Ties are broken by id, in the same direction.</summary>
-    public enum Sort { Updated, Title, Slug }
+    /// <summary><see cref="Field"/>: by one of the collection's own fields (a saved view's sort, #278).</summary>
+    public enum Sort { Updated, Title, Slug, Field }
 
     /// <summary>
     /// Where a sorted page ends: the order it belongs to, and the last row's sort key and id. A
@@ -63,7 +65,9 @@ public static class ContentListQueries
     /// nothing about where to resume by date — so it carries that order and the caller refuses
     /// one that does not match.
     /// </summary>
-    /// <param name="Key">The last row's sort value: a round-trip timestamp, a title or a slug.</param>
+    /// <param name="Key">The last row's sort value: a round-trip timestamp, a title or a slug; for
+    /// <see cref="Sort.Field"/>, how many rows came before (a field's values may be null or of
+    /// any type, so that order pages by offset).</param>
     public sealed record PageCursor(Sort Sort, bool Descending, string Key, Guid Id);
 
     public sealed record Page(IReadOnlyList<ContentRow> Items, PageCursor? NextCursor, int Total);
@@ -97,9 +101,15 @@ public static class ContentListQueries
         bool descending,
         PageCursor? after,
         int limit,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        ContentQuery? query = null)
     {
         var take = Math.Clamp(limit, 1, MaxPageSize);
+        query ??= ContentQuery.None;
+        if (sort == Sort.Field && query.SortField is null)
+        {
+            throw new ArgumentException("A field order names its field.", nameof(query));
+        }
 
         // The title expression, used by both the projection and the search so the two can never
         // disagree about what a row is called.
@@ -154,6 +164,11 @@ public static class ContentListQueries
                 parameters.Add(("@status", status));
             }
         }
+        var compiler = new ContentFilterSql(query.Fields, title, parameters);
+        if (query.Filter is { } viewFilter)
+        {
+            filters.Add("AND " + compiler.Compile(viewFilter));
+        }
         if (itemIds is not null)
         {
             // An empty set has to become a filter that matches nothing, not an absent filter:
@@ -182,6 +197,20 @@ public static class ContentListQueries
         // ix_content_items_collection_recent and costs the page, not the collection.
         var countJoin = string.IsNullOrWhiteSpace(search) ? string.Empty : VersionJoin;
         var findJoin = sort == Sort.Title ? VersionJoin : countJoin;
+        // A view's filter or field order reads every candidate's data: per-row primary-key
+        // lookups (the lateral form below), never the COALESCE join RLS will not index.
+        // Measured 2026-10-14 under RLS, 6,400 items (and 6,400 in another tenant), a loaded box:
+        // default page 36 ms, an OR/AND filter 111 ms, a field sort 90 ms, both 252 ms (median).
+        // ponytail: the count evaluates the filter a second time; cap it (as Dynamic Apps does at
+        // 5,000) if collections grow an order of magnitude.
+        if (ContentFilterSql.ReadsData(query.Filter))
+        {
+            countJoin = findJoin = PageVersionJoinText;
+        }
+        else if (sort == Sort.Field)
+        {
+            findJoin = PageVersionJoinText;
+        }
         // Dressing the page needs each row's own version, by primary key. As a plain join the
         // planner hash-joined against a sequential scan of content_versions -- every tenant's
         // versions, several per item -- to title 51 rows. Two scalar subqueries, one per id
@@ -189,24 +218,22 @@ public static class ContentListQueries
         // compares "Id" to COALESCE(draft, published) -- the planner will not push that
         // expression below the policy's security barrier, so it can never be an index condition
         // and every row became a sequential scan (measured: 200 ms for 51 rows at 6,400 items).
-        const string PageVersionJoin = """
-            LEFT JOIN LATERAL (
-                SELECT COALESCE(
-                    (SELECT d."DataJson" FROM cms.content_versions d WHERE d."Id" = i."CurrentDraftVersionId"),
-                    (SELECT p."DataJson" FROM cms.content_versions p WHERE p."Id" = i."PublishedVersionId")) AS "DataJson"
-            ) v ON true
-            """;
+        const string PageVersionJoin = PageVersionJoinText;
 
         var sortKey = sort switch
         {
+            Sort.Field => compiler.Expression(query.SortField!, out var sortKind) is var e && sortKind != ContentFieldKind.Tags
+                ? e : throw new Kernel.Views.ViewDefinitionException("Tags do not sort."),
             Sort.Title => title,
             Sort.Slug => """i."Slug" """,
             _ => """i."UpdatedAt" """,
         };
         var direction = descending ? "DESC" : "ASC";
-        var orderBy = $"""ORDER BY {sortKey} {direction}, i."Id" {direction}""";
+        var nulls = sort == Sort.Field ? " NULLS LAST" : string.Empty;
+        var orderBy = $"""ORDER BY {sortKey} {direction}{nulls}, i."Id" {direction}""";
 
-        var keyset = after is null
+        var offset = 0;
+        var keyset = after is null || sort == Sort.Field
             ? string.Empty
             : $"""AND ({sortKey}, i."Id") {(descending ? "<" : ">")} (@cursorKey, @cursorId)""";
         if (after is { } cursor)
@@ -215,10 +242,17 @@ public static class ContentListQueries
             {
                 throw new ArgumentException("The cursor belongs to a different order.", nameof(after));
             }
-            parameters.Add(("@cursorKey", sort == Sort.Updated
-                ? DateTimeOffset.Parse(cursor.Key, null, System.Globalization.DateTimeStyles.RoundtripKind)
-                : cursor.Key));
-            parameters.Add(("@cursorId", cursor.Id));
+            if (sort == Sort.Field)
+            {
+                offset = int.TryParse(cursor.Key, out var o) ? Math.Max(0, o) : 0;
+            }
+            else
+            {
+                parameters.Add(("@cursorKey", sort == Sort.Updated
+                    ? DateTimeOffset.Parse(cursor.Key, null, System.Globalization.DateTimeStyles.RoundtripKind)
+                    : cursor.Key));
+                parameters.Add(("@cursorId", cursor.Id));
+            }
         }
 
         // Find the page's ids first, then dress only those rows. In one SELECT, Postgres
@@ -234,10 +268,11 @@ public static class ContentListQueries
                 {where}
                   {keyset}
                 {orderBy}
-                LIMIT {take + 1}
+                LIMIT {take + 1} OFFSET {offset}
             )
             SELECT i."Id", i."ContentType", i."Slug", {title} AS title, i."Status",
-                   i."UpdatedAt", i."PublishedAt", {PendingSchedule} AS scheduled_at
+                   i."UpdatedAt", i."PublishedAt", {PendingSchedule} AS scheduled_at,
+                   {ColumnsSql(query, parameters)} AS values
             FROM page p
             JOIN cms.content_items i ON i."Id" = p."Id"
             {PageVersionJoin}
@@ -252,7 +287,8 @@ public static class ContentListQueries
             reader.GetString(4),
             reader.GetFieldValue<DateTimeOffset>(5),
             reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
-            reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7)), ct);
+            reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
+            reader.IsDBNull(8) ? null : reader.GetString(8)), ct);
 
         var hasMore = rows.Count > take;
         var page = hasMore ? rows.Take(take).ToList() : rows;
@@ -270,8 +306,23 @@ public static class ContentListQueries
 
         return new Page(
             page,
-            hasMore ? new PageCursor(sort, descending, KeyOf(page[^1], sort), page[^1].Id) : null,
+            hasMore ? new PageCursor(sort, descending, sort == Sort.Field ? (offset + take).ToString() : KeyOf(page[^1], sort), page[^1].Id) : null,
             total);
+    }
+
+    /// <summary>The requested columns' values, by field key, as one jsonb object (null when none were asked for).</summary>
+    private static string ColumnsSql(ContentQuery query, List<(string, object?)> parameters)
+    {
+        var pairs = new List<string>();
+        foreach (var column in query.Columns.Distinct().Take(Kernel.Views.ViewDefinition.MaxColumns))
+        {
+            if (!query.Fields.TryGetValue(column, out var field)) continue;
+            var n = pairs.Count;
+            parameters.Add(($"@col{n}", column));
+            parameters.Add(($"@colPath{n}", field.Path.ToArray()));
+            pairs.Add($"@col{n}::text, v.\"DataJson\" #> @colPath{n}");
+        }
+        return pairs.Count == 0 ? "NULL::text" : $"jsonb_build_object({string.Join(", ", pairs)})::text";
     }
 
     private static string KeyOf(ContentRow row, Sort sort) => sort switch
@@ -280,6 +331,29 @@ public static class ContentListQueries
         Sort.Slug => row.Slug,
         _ => row.UpdatedAt.ToString("O"),
     };
+
+    /// <summary>Each row's own version, by primary key (see <see cref="PageAsync"/> for why this form).</summary>
+    private const string PageVersionJoinText = """
+        LEFT JOIN LATERAL (
+            SELECT COALESCE(
+                (SELECT d."DataJson" FROM cms.content_versions d WHERE d."Id" = i."CurrentDraftVersionId"),
+                (SELECT p."DataJson" FROM cms.content_versions p WHERE p."Id" = i."PublishedVersionId")) AS "DataJson"
+        ) v ON true
+        """;
+
+    /// <summary>
+    /// A saved view's part of a page (#278): its filter, the field it sorts by and the columns it
+    /// shows, over the collection's <paramref name="Fields"/> (see <see cref="ContentFilterSql"/>).
+    /// </summary>
+    public sealed record ContentQuery(
+        IReadOnlyDictionary<string, ContentField> Fields,
+        Kernel.Views.ViewFilter? Filter = null,
+        string? SortField = null,
+        IReadOnlyList<string>? ColumnList = null)
+    {
+        public static readonly ContentQuery None = new(new Dictionary<string, ContentField>());
+        public IReadOnlyList<string> Columns => ColumnList ?? [];
+    }
 
     /// <param name="Instance">The plugin instance the item belongs to, for a workspace-wide list.</param>
     /// <param name="PublishAt">When the worker will publish it.</param>

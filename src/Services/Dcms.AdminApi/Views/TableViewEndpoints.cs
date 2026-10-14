@@ -206,8 +206,8 @@ public static partial class TableViewEndpoints
         return null;
     }
 
-    /// <summary>A table key: <c>content:{type}</c>, <c>apps:{instance}:{table}</c> or <c>dataset:{instance}:{set}</c>.</summary>
-    [GeneratedRegex("^(content:[A-Za-z0-9_-]{1,100}|(apps|dataset):[a-z0-9-]{1,100}:[A-Za-z0-9_.-]{1,100})$")]
+    /// <summary>A table key: <c>content:{instance}:{type}</c>, <c>apps:{instance}:{table}</c> or <c>dataset:{instance}:{set}</c>.</summary>
+    [GeneratedRegex("^(content|apps|dataset):[a-z0-9-]{1,100}:[A-Za-z0-9_.-]{1,100}$")]
     internal static partial Regex TableKeyPattern();
 
     private sealed record SaveViewRequest(string? Table, string? Name, ViewDefinition? Definition);
@@ -234,7 +234,7 @@ public sealed class ViewContext(
     public async Task<IResult?> DenyAsync(string? table, CancellationToken ct)
     {
         if (table is null || !TableViewEndpoints.TableKeyPattern().IsMatch(table))
-            return Results.BadRequest(new { error = "Name the table: content:{type}, apps:{instance}:{table} or dataset:{instance}:{set}." });
+            return Results.BadRequest(new { error = "Name the table: content:{instance}:{type}, apps:{instance}:{table} or dataset:{instance}:{set}." });
         var permission = await ReadPermissionAsync(table, ct);
         if (permission is null) return Results.NotFound();
         var allowed = await authz.AuthorizeAsync(http.HttpContext!.User, null, PermissionPolicyProvider.PolicyName(permission));

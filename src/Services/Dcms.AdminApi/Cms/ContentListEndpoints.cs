@@ -4,6 +4,9 @@ using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Dcms.Shared.Kernel.Views;
 
 namespace Dcms.AdminApi.Cms;
 
@@ -39,6 +42,8 @@ public static class ContentListEndpoints
             string? dir,
             string? cursor,
             int? limit,
+            string? filter,
+            string? columns,
             CmsDbContext db,
             IPluginCatalog catalog,
             ITenantContext tenant,
@@ -52,12 +57,31 @@ public static class ContentListEndpoints
             // Sorted on the server because the list is paged: ordering in the browser would order
             // only the rows already loaded, and "A to Z" would restart on every page.
             ContentListQueries.Sort order;
+            string? sortField = null;
             switch (sort)
             {
                 case null or "" or "updated": order = ContentListQueries.Sort.Updated; break;
                 case "title": order = ContentListQueries.Sort.Title; break;
                 case "slug": order = ContentListQueries.Sort.Slug; break;
-                default: return Results.BadRequest(new { error = "sort is one of updated, title, slug." });
+                // A saved view's sort by one of the collection's fields (#278).
+                case { } f when f.StartsWith("field:", StringComparison.Ordinal) && f.Length > 6:
+                    order = ContentListQueries.Sort.Field;
+                    sortField = f[6..];
+                    break;
+                default: return Results.BadRequest(new { error = "sort is one of updated, title, slug, or field:{name}." });
+            }
+            ViewFilter? viewFilter = null;
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                try
+                {
+                    viewFilter = JsonSerializer.Deserialize<ViewFilter>(filter, ViewJson);
+                    viewFilter?.Validate();
+                }
+                catch (Exception e) when (e is JsonException or ViewDefinitionException)
+                {
+                    return Results.BadRequest(new { error = e is ViewDefinitionException ? e.Message : "filter is not a filter." });
+                }
             }
             if (dir is not (null or "" or "asc" or "desc"))
             {
@@ -94,7 +118,13 @@ public static class ContentListEndpoints
                     db, tenantId, instanceId, contentType, tag, ct);
             }
 
-            var page = await ContentListQueries.PageAsync(
+            var query = new ContentListQueries.ContentQuery(
+                FieldsOf(catalog, instance, contentType), viewFilter, sortField,
+                string.IsNullOrWhiteSpace(columns) ? null : columns.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+            ContentListQueries.Page page;
+            try
+            {
+                page = await ContentListQueries.PageAsync(
                 db,
                 tenantId,
                 instanceId,
@@ -107,7 +137,13 @@ public static class ContentListEndpoints
                 descending,
                 after,
                 limit ?? ContentListQueries.DefaultPageSize,
-                ct);
+                ct,
+                query);
+            }
+            catch (ViewDefinitionException e)
+            {
+                return Results.BadRequest(new { error = e.Message });
+            }
 
             return Results.Ok(new
             {
@@ -121,6 +157,8 @@ public static class ContentListEndpoints
                     updatedAt = r.UpdatedAt,
                     publishedAt = r.PublishedAt,
                     scheduledPublishAt = r.ScheduledPublishAt,
+                    // The view's columns, by field key; absent when none were asked for.
+                    values = r.ValuesJson is null ? null : JsonNode.Parse(r.ValuesJson),
                 }),
                 nextCursor = page.NextCursor is { } next ? FormatPageCursor(next) : null,
                 total = page.Total,
@@ -222,6 +260,63 @@ public static class ContentListEndpoints
     /// under one config key and are addressed by a dotted path; picking one of those as the
     /// title would make two tenants of the same plugin disagree about what a list column means.</para>
     /// </summary>
+    private static readonly JsonSerializerOptions ViewJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// What a view may filter, sort and show in a collection (#278): the type's own fields by
+    /// name, and its tenant-defined ones as <c>custom.{key}</c>. Json fields are not comparable.
+    /// </summary>
+    internal static Dictionary<string, ContentField> FieldsOf(IPluginCatalog catalog, PluginInstance instance, string? contentType)
+    {
+        var fields = new Dictionary<string, ContentField>(StringComparer.Ordinal);
+        var type = contentType is null ? null : catalog.Find(instance.PluginId)?.ContentTypes.FirstOrDefault(t => t.Name == contentType);
+        if (type is null) return fields;
+        foreach (var f in type.Fields)
+        {
+            ContentFieldKind? kind = f.Type switch
+            {
+                ContentFieldType.Text or ContentFieldType.RichText or ContentFieldType.Markdown => ContentFieldKind.Text,
+                ContentFieldType.Number => ContentFieldKind.Number,
+                ContentFieldType.Boolean => ContentFieldKind.Boolean,
+                ContentFieldType.DateTime => ContentFieldKind.DateTime,
+                ContentFieldType.Tags => ContentFieldKind.Tags,
+                ContentFieldType.MediaRef or ContentFieldType.ContentRef => ContentFieldKind.Reference,
+                _ => null,
+            };
+            if (kind is { } k) fields[f.Name] = new ContentField([f.Name], k);
+        }
+        if (type.CustomFields is { } custom)
+        {
+            try
+            {
+                if (JsonNode.Parse(instance.ConfigJson)?[custom.ConfigKey] is JsonArray defs)
+                {
+                    foreach (var def in defs.OfType<JsonObject>())
+                    {
+                        if (def["key"]?.GetValueKind() != JsonValueKind.String) continue;
+                        var key = def["key"]!.GetValue<string>();
+                        ContentFieldKind? kind = (def["type"] as JsonValue)?.ToString() switch
+                        {
+                            "text" or "longText" or "url" => ContentFieldKind.Text,
+                            "number" => ContentFieldKind.Number,
+                            "boolean" => ContentFieldKind.Boolean,
+                            "date" => ContentFieldKind.DateTime,
+                            "tags" => ContentFieldKind.Tags,
+                            "image" => ContentFieldKind.Reference,
+                            _ => null,
+                        };
+                        if (kind is { } k) fields[$"custom.{key}"] = new ContentField([custom.ValuesField, key], k);
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // A config that is not JSON has no custom fields to filter by.
+            }
+        }
+        return fields;
+    }
+
     private static string? TitleFieldOf(IPluginCatalog catalog, string pluginId, string? contentType)
     {
         var type = catalog.Find(pluginId)?.ContentTypes
