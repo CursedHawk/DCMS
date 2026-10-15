@@ -44,16 +44,19 @@ export function ProgressRing({
         className={cn('-rotate-90', pct === null && 'motion-safe:animate-spin')}
       >
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className="stroke-muted" />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          strokeDasharray={`${filled} ${circumference}`}
-          className="stroke-primary transition-[stroke-dasharray] duration-300 ease-out"
-        />
+        {/* At 0 a round cap would still paint a dot, so there is no arc at all. */}
+        {filled > 0 ? (
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={`${filled} ${circumference}`}
+            className="stroke-primary transition-[stroke-dasharray] duration-300 ease-out"
+          />
+        ) : null}
       </svg>
       {children !== undefined ? (
         <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold leading-none">

@@ -108,15 +108,14 @@ public sealed class FlowRunQueue(AppsDbContext db, IPluginContext context, Confi
         }
         var evt = Event(DeterministicId($"{flowId}:{due.UtcTicks}"), "schedule", doc.Revision.Number,
             new JsonObject { ["due"] = due.UtcDateTime.ToString("O") }, EventOrigin.New());
-        var runId = await EnqueueAsync(flow, doc.Revision.Number, evt, ct);
-        await TrackAsync(runId, flow, ct);
-        return runId;
+        return await EnqueueAsync(flow, doc.Revision.Number, evt, ct);
     }
 
     /// <summary>
-    /// A run someone started, or a schedule did, on the workspace's jobs ledger (ADR 0024): the
-    /// runs a person waits on. Runs set off by events are not -- one import can set off tens of
-    /// thousands -- and stay on the automation page. Best-effort: the run is the record.
+    /// A run someone started, on the workspace's jobs ledger (ADR 0024): the runs a person waits
+    /// on. Scheduled and event-triggered runs are not -- a five-minute schedule is 288 a day, one
+    /// import can set off tens of thousands -- and stay on the automation page. Best-effort: the
+    /// run is the record.
     /// </summary>
     private async Task TrackAsync(Guid runId, FlowDef flow, CancellationToken ct)
     {

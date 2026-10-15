@@ -47,7 +47,7 @@ public sealed class RecordBulkJob(RecordService records) : IPluginJobHandler
         return await context.Contracts.Get<IPluginTrackedJobs>().EnqueueAsync(new TrackedJobEnqueue(
             Name,
             JsonSerializer.SerializeToElement(payload, JsonSerializerOptions.Web),
-            TitleKey: $"jobs.kinds.records.{op.Replace("-", "")}",
+            TitleKey: $"jobs.kinds.records.{op.Replace("-", "")}.title",
             TitleParams: new Dictionary<string, string> { ["table"] = table, ["count"] = count.ToString() },
             RequiredPermission: permission), ct);
     }

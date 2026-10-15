@@ -149,9 +149,10 @@ public sealed class ConfigurationRevisionTests(ContentFlowFixture fixture)
         (await other.JsonAsync(HttpMethod.Get, "/_model", ct)).GetProperty("draft").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
+    /// <summary>The audit chain is asynchronous and shared; behind this folder's bulk tests it runs well past 10 s.</summary>
     private async Task AuditedAsync(string action, CancellationToken ct)
     {
-        for (var i = 0; i < 40; i++)
+        for (var i = 0; i < 160; i++)
         {
             using var scope = fixture.Admin.Services.CreateScope();
             var audit = scope.ServiceProvider.GetRequiredService<Dcms.Shared.Data.Audit.AuditDbContext>();

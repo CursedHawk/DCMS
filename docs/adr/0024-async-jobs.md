@@ -169,8 +169,9 @@ does not belong on a ledger people read.
 - **Dynamic Apps imports, bulk updates and deletes past the request ceilings**, up to 100,000 rows
   or 20 MB of CSV. They are still all or nothing: one transaction, with the bar following the
   rows.
-- **Dynamic Apps flow runs started by hand or by a schedule.** Event-triggered runs are not: one
-  import can set off tens of thousands.
+- **Dynamic Apps flow runs started by hand.** Scheduled and event-triggered runs are not. A
+  five-minute schedule is 288 runs a day, and one import can set off tens of thousands. Scheduled
+  runs were tracked at first; on dev they filled the popover within an hour.
 
 **Left synchronous, on purpose:**
 
