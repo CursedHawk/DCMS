@@ -40,6 +40,7 @@ public sealed class PlatformSampleBroadcaster(
         (PlatformResourceTags.Health, TimeSpan.FromSeconds(30)),
         (PlatformResourceTags.Overview, TimeSpan.FromSeconds(30)),
         (PlatformResourceTags.Stores, TimeSpan.FromSeconds(30)),
+        (PlatformResourceTags.JobQueues, TimeSpan.FromSeconds(15)),
     ];
 
     /// <summary>
@@ -81,7 +82,7 @@ public sealed class PlatformSampleBroadcaster(
         }
         catch (Exception ex)
         {
-            // Losing the sample loop costs freshness on three panels and nothing else; every
+            // Losing the sample loop costs freshness on four panels and nothing else; every
             // one of them still loads, still refetches on focus, and still refetches on
             // reconnect. It is not worth taking the API down for.
             logger.LogError(ex, "Platform sample broadcaster stopped.");

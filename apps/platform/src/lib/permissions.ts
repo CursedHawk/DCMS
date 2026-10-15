@@ -23,6 +23,8 @@ export const Perm = {
   CertificatesManage: 'platform:certificates:manage',
   RateLimitsManage: 'platform:ratelimits:manage',
   NotificationsRead: 'platform:notifications:read',
+  JobsRead: 'platform:jobs:read',
+  JobsManage: 'platform:jobs:manage',
 } as const;
 
 export interface PlatformMe {

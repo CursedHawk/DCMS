@@ -31,6 +31,7 @@ const CertificatesPage = page(
   'CertificatesPage',
 );
 const RateLimitsPage = page(() => import('./features/ratelimits/RateLimitsPage'), 'RateLimitsPage');
+const JobsPage = page(() => import('./features/jobs/JobsPage'), 'JobsPage');
 const NotificationsPage = page(
   () => import('./features/notifications/NotificationsPage'),
   'NotificationsPage',
@@ -98,6 +99,7 @@ export const routeTree = rootRoute.addChildren([
     child('/users', UsersPage),
     child('/audit', AuditPage),
     child('/monitoring', MonitoringPage),
+    child('/jobs', JobsPage),
     child('/storage', StoragePage),
     child('/access', AccessPage),
     child('/certificates', CertificatesPage),

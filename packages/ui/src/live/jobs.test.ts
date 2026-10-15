@@ -1,10 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 
-vi.mock('../../tenants', () => ({ getCurrentTenantSlug: () => 'acme' }));
-vi.mock('../../lib/api', () => ({ api: {} }));
+import { patchJobCaches, type JobChangedPush, type JobDto, type JobPage } from './jobs';
 
-import { applyJobChanged, jobListKey, type Job, type JobChanged, type JobPage } from './api';
+type Job = JobDto;
+type JobChanged = JobChangedPush;
+const ROOT = ['jobs', 'acme'] as const;
+const LIST = [...ROOT, 'list', 'active', 100];
+const applyJobChanged = (qc: QueryClient, c: JobChanged) => patchJobCaches(qc, ROOT, c);
 
 const job = (over: Partial<Job> = {}): Job => ({
   id: 'j1', tenantId: 't', tenantSlug: null, tenantName: null, parentId: null, kind: 'test', lane: 'tenant',
@@ -20,13 +23,13 @@ const change = (over: Partial<JobChanged> = {}): JobChanged => ({
 
 function client(items: Job[]) {
   const qc = new QueryClient();
-  qc.setQueryData<JobPage>(jobListKey('active', 100), { items, nextCursor: null });
+  qc.setQueryData<JobPage>(LIST, { items, nextCursor: null });
   return qc;
 }
 
-const listed = (qc: QueryClient) => qc.getQueryData<JobPage>(jobListKey('active', 100))!.items[0];
+const listed = (qc: QueryClient) => qc.getQueryData<JobPage>(LIST)!.items[0];
 
-describe('applyJobChanged', () => {
+describe('patchJobCaches', () => {
   it('patches a progress tick in place without asking for a refetch', () => {
     const qc = client([job()]);
     expect(applyJobChanged(qc, change())).toBe(false);

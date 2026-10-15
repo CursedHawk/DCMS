@@ -352,6 +352,9 @@ export function platformApi(options: { permissions?: string[]; isSuperAdmin?: bo
     .on('GET', '/api/platform/tenants', data.PLATFORM_TENANTS)
     .on('GET', '/api/platform/audit', data.PLATFORM_AUDIT)
     .on('GET', '/api/platform/notifications', { items: [], unreadCount: 0, nextCursor: null })
+    // The jobs ring in the top bar, on every page.
+    .on('GET', '/api/platform/jobs', { items: [], nextCursor: null })
+    .on('GET', '/api/platform/jobs/overview', { tenants: [], queues: [] })
     .on('GET', '/api/platform/certificates', [])
     .on('GET', '/api/platform/overview', data.PLATFORM_OVERVIEW)
     .on('GET', '/api/platform/growth', data.PLATFORM_GROWTH)

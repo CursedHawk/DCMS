@@ -1,5 +1,6 @@
 import { ArrowLeftRight, ExternalLink } from 'lucide-react';
 import { ThemeControl, Topbar as ShellTopbar, UserMenu } from '@dcms/ui';
+import { JobsIndicator } from '../features/jobs/JobsIndicator';
 import { NotificationBell } from '../features/notifications/NotificationBell';
 import { logout, switchAccount } from '../auth';
 import { runtimeConfig } from '../runtime-config';
@@ -26,6 +27,10 @@ export function Topbar({ me, menuButton }: { me: PlatformMe | undefined; menuBut
               permission reaches them — but a support operator who can see that a certificate
               failed is the point of having a bell, and platform:notifications:read is what
               says so. A SuperAdmin holds it by the usual short-circuit. */}
+          {/* Every tenant's background work and the platform's own; cancel and retry for those
+              who may manage jobs. */}
+          <JobsIndicator enabled={can(me, Perm.JobsRead)} mayManage={can(me, Perm.JobsManage)} />
+
           <NotificationBell enabled={can(me, Perm.NotificationsRead)} />
 
           {/* A toggle rather than the admin's three-way menu. This console is opened, read and

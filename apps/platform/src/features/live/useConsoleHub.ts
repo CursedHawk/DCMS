@@ -1,9 +1,10 @@
 import type { HubConnection } from '@microsoft/signalr';
 import { useQueryClient } from '@tanstack/react-query';
-import { createResourceInvalidator, setHubConnected, type ResourceChange } from '@dcms/ui';
+import { createResourceInvalidator, setHubConnected, type JobChangedPush, type ResourceChange } from '@dcms/ui';
 import { useEffect, useRef, useState } from 'react';
 import { getAccessToken } from '../../auth';
 import { runtimeConfig } from '../../runtime-config';
+import { applyJobChanged, jobsRoot } from '../jobs/api';
 import { LIVE_QUERY_MAP, LIVE_THROTTLE_MS } from './liveMap';
 
 /**
@@ -66,6 +67,16 @@ export function useConsoleHub(enabled: boolean) {
         .build();
 
       connection.on('ResourceChanged', (change: ResourceChange) => invalidateRef.current(change));
+
+      // Background jobs (ADR 0024), every tenant's: patched in place, refetching the lists only
+      // for a job not yet on screen or one that just started or finished — debounced, since a
+      // group finishing arrives as a burst. Sent only to operators who may read jobs.
+      let jobRefetch: ReturnType<typeof setTimeout> | undefined;
+      connection.on('JobChanged', (change: JobChangedPush) => {
+        if (!applyJobChanged(qc, change)) return;
+        clearTimeout(jobRefetch);
+        jobRefetch = setTimeout(() => void qc.invalidateQueries({ queryKey: [...jobsRoot, 'list'] }), 300);
+      });
 
       connection.onreconnected(() => {
         setConnected(true);

@@ -20,6 +20,7 @@ export const LIVE_QUERY_MAP: TagQueryMap = {
   health: [['platform-health-signals']],
   stores: [['platform-stores'], ['platform-loki-purges']],
   overview: [['platform-overview']],
+  jobqueues: [['platform-jobs', 'overview']],
 };
 
 /**
@@ -36,6 +37,7 @@ export const LIVE_THROTTLE_MS: Readonly<Record<string, number>> = {
   health: 20_000,
   stores: 20_000,
   overview: 20_000,
+  jobqueues: 10_000,
 };
 
 /**

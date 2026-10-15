@@ -297,7 +297,7 @@ export const PLATFORM_PERMISSIONS = [
   'platform:overview:read', 'platform:tenants:read', 'platform:tenants:write', 'platform:tenants:lifecycle',
   'platform:users:read', 'platform:audit:read', 'platform:observability:read',
   'platform:logs:read', 'platform:roles:manage', 'platform:certificates:manage', 'platform:ratelimits:manage',
-  'platform:notifications:read', 'platform:ops:act',
+  'platform:notifications:read', 'platform:ops:act', 'platform:jobs:read', 'platform:jobs:manage',
 ];
 
 /** The console's tenant row carries a count per thing a tenant has; nothing is optional. */

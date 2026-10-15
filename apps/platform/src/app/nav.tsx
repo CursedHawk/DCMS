@@ -1,5 +1,5 @@
 import {
-  Activity, Building2, FileClock, Gauge, HardDrive, Lock, ScrollText, ShieldCheck, ShieldOff, Users,
+  Activity, Building2, FileClock, Gauge, HardDrive, ListChecks, Lock, ScrollText, ShieldCheck, ShieldOff, Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Perm } from '../lib/permissions';
@@ -25,6 +25,7 @@ export const NAV: NavItem[] = [
   { to: '/audit', label: 'Audit log', icon: FileClock, perm: Perm.AuditRead, group: 'platform' },
 
   { to: '/monitoring', label: 'Monitoring', icon: Activity, perm: Perm.ObservabilityRead, group: 'operations' },
+  { to: '/jobs', label: 'Background jobs', icon: ListChecks, perm: Perm.JobsRead, group: 'operations' },
   { to: '/storage', label: 'Storage', icon: HardDrive, perm: Perm.LogsRead, group: 'operations' },
   { to: '/access', label: 'Access', icon: ShieldCheck, perm: Perm.RolesManage, group: 'operations' },
   { to: '/certificates', label: 'Certificates', icon: Lock, perm: Perm.CertificatesManage, group: 'operations' },

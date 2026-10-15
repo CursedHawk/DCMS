@@ -47,6 +47,12 @@ public static class PlatformResourceTags
     public const string Overview = "overview";
 
     /// <summary>
+    /// The jobs page's backlog per queue and per tenant (ADR 0024). Sampled: queue depth is read
+    /// from JetStream, which announces nothing when it changes.
+    /// </summary>
+    public const string JobQueues = "jobqueues";
+
+    /// <summary>
     /// The class of data a platform notification kind implies has changed, beyond the bell
     /// itself.
     ///
