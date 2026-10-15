@@ -156,7 +156,7 @@ internal static class SiteViewEndpoints
                     var key = view.Id.ToString();
                     var instanceId = context.Instance!.InstanceId;
                     // Whoever opened the table with it opens it as if they had chosen nothing.
-                    await db.SiteViewDefaults.Where(d => d.InstanceId == instanceId && d.TableId == runtime.Id && d.ViewKey == key).ExecuteDeleteAsync(ct);
+                    db.SiteViewDefaults.RemoveRange(await db.SiteViewDefaults.Where(d => d.InstanceId == instanceId && d.TableId == runtime.Id && d.ViewKey == key).ToListAsync(ct));
                     db.SiteViews.Remove(view);
                     await db.SaveChangesAsync(ct);
                     return Results.NoContent();
@@ -230,12 +230,20 @@ internal static class SiteViewEndpoints
                             return Results.BadRequest(new { error = "That is not a view of this table you can use." });
                         }
                     }
-                    await db.SiteViewDefaults.Where(d => d.InstanceId == instanceId && d.TableId == runtime.Id && d.UserId == user.Id).ExecuteDeleteAsync(ct);
-                    if (key is not null)
+                    var existing = await db.SiteViewDefaults.FirstOrDefaultAsync(d => d.InstanceId == instanceId && d.TableId == runtime.Id && d.UserId == user.Id, ct);
+                    if (key is null && existing is not null)
+                    {
+                        db.SiteViewDefaults.Remove(existing);
+                    }
+                    else if (key is not null && existing is not null)
+                    {
+                        existing.ViewKey = key;
+                    }
+                    else if (key is not null)
                     {
                         db.SiteViewDefaults.Add(new AppSiteViewDefault { Id = Guid.NewGuid(), InstanceId = instanceId, TableId = runtime.Id, UserId = user.Id, ViewKey = key });
-                        await db.SaveChangesAsync(ct);
                     }
+                    await db.SaveChangesAsync(ct);
                     return Results.NoContent();
                 }))
             .WithoutPermission(Gate)
