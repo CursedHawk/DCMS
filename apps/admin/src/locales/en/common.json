@@ -2091,7 +2091,14 @@
     "viewActions": "View actions",
     "saved": "View saved",
     "shared": "Sharing saved",
-    "defaultSet": "This table now opens with that view"
+    "defaultSet": "This table now opens with that view",
+    "valueSource": "Compare with",
+    "typedValue": "A value",
+    "currentUser": {
+      "email": "Current user’s email",
+      "id": "Current user’s ID",
+      "groups": "Current user’s groups"
+    }
   },
   "previewBar": {
     "back": "Back",

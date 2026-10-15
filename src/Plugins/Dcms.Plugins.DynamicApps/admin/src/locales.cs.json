@@ -329,7 +329,8 @@
     "any": "Cokoli",
     "editField": "Změnit: {{field}}",
     "createdAt": "Vytvořeno",
-    "updatedAt": "Upraveno"
+    "updatedAt": "Upraveno",
+    "createdBy": "Vytvořil"
   },
   "ai": {
     "enableTitle": "Povolit asistentovi pracovat s touto aplikací?",

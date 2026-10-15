@@ -134,6 +134,86 @@ public sealed class SiteViewTests(ContentFlowFixture fixture)
             .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    private const string Tasks = """
+        [
+          { "op": "create", "type": "table", "value": { "apiName": "tasks", "displayName": "Task", "primaryFieldId": "title",
+              "public": { "read": "all" },
+              "fields": [ { "apiName": "title", "displayName": "Title", "required": true },
+                          { "apiName": "owner_email", "displayName": "Owner", "type": "email" },
+                          { "apiName": "team", "displayName": "Team" } ] } }
+        ]
+        """;
+
+    /// <summary>
+    /// "The current user" in a filter (#302): one shared view, and each person who opens it sees
+    /// their own rows — the server puts whoever asks in the token's place.
+    /// </summary>
+    [DockerFact]
+    public async Task A_shared_view_about_the_current_user_shows_each_viewer_their_own_rows()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (app, tenantId) = await SetUpAsync(ct);
+        await app.PublishAsync(Tasks, ct);
+        var sales = fixture.Realms.AddGroup(tenantId, "Sales");
+        var ada = RealmTokens.Mint(tenantId, fixture.Realms.AddUser(tenantId, "ada@corp.test"), email: "ada@corp.test");
+        var bob = RealmTokens.Mint(tenantId, fixture.Realms.AddUser(tenantId, "bob@corp.test", "active", sales), [sales], email: "bob@corp.test");
+        foreach (var (title, owner, team) in new[] { ("Call Acme", "ada@corp.test", ""), ("Send quote", "bob@corp.test", sales.ToString()), ("Plan", "eve@corp.test", sales.ToString()) })
+        {
+            await app.JsonAsync(HttpMethod.Post, "/_records/tasks", ct, new { title, owner_email = owner, team }, HttpStatusCode.Created);
+        }
+
+        var mine = new { field = "owner_email", op = "eq", value = new Dictionary<string, string> { ["$user"] = "email" } };
+        var saved = await JsonAsync(await SiteAsync(app, HttpMethod.Post, "/api/crm/views/tasks", ada, ct,
+            new { name = "My tasks", definition = new { columns = new[] { "title" }, filter = mine } }), ct, HttpStatusCode.Created);
+        await JsonAsync(await SiteAsync(app, HttpMethod.Put, $"/api/crm/views/tasks/{saved.GetProperty("id").GetString()}/sharing", ada, ct, new { everyone = true }), ct);
+
+        // Bob opens Ada's view and runs its filter as the table runs any view's: his rows.
+        var shared = (await JsonAsync(await SiteAsync(app, HttpMethod.Get, "/api/crm/views/tasks", bob, ct), ct)).GetProperty("views")
+            .EnumerateArray().Single(v => v.GetProperty("name").GetString() == "My tasks").GetProperty("definition").GetProperty("filter");
+        shared.GetProperty("value").GetProperty("$user").GetString().Should().Be("email", "the view keeps the token, not Ada");
+        Titles(await Query(app, ada, shared, ct)).Should().Equal("Call Acme");
+        Titles(await Query(app, bob, shared, ct)).Should().Equal("Send quote");
+        Titles(await Query(app, null, shared, ct)).Should().BeEmpty("nobody signed in is nobody's rows");
+        Titles(await Query(app, bob, new { field = "owner_email", op = "ne", value = new Dictionary<string, string> { ["$user"] = "email" } }, ct))
+            .Should().Equal("Call Acme", "Plan");
+        Titles(await Query(app, null, new { field = "owner_email", op = "ne", value = new Dictionary<string, string> { ["$user"] = "email" } }, ct))
+            .Should().HaveCount(3);
+
+        // Groups: the rows of any of the viewer's teams; none for someone in no group.
+        var myTeams = new { field = "team", op = "in", value = new Dictionary<string, string> { ["$user"] = "groups" } };
+        Titles(await Query(app, bob, myTeams, ct)).Should().Equal("Plan", "Send quote");
+        Titles(await Query(app, ada, myTeams, ct)).Should().BeEmpty();
+
+        // A token that does not fit is refused when saved, not stored.
+        (await SiteAsync(app, HttpMethod.Post, "/api/crm/views/tasks", ada, ct, new
+        {
+            name = "Bad",
+            definition = new { filter = new { field = "team", op = "eq", value = new Dictionary<string, string> { ["$user"] = "groups" } } },
+        })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    /// <summary>In the console the current user is the member: "created by me" is their own records.</summary>
+    [DockerFact]
+    public async Task In_the_console_the_current_user_is_the_member()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (app, _) = await SetUpAsync(ct);
+        await app.PublishAsync(Tasks, ct);
+        var writer = await app.AddMemberAsync(["plugin:dynamic-apps:data-read", "plugin:dynamic-apps:data-write"], ct);
+        await app.JsonAsync(HttpMethod.Post, "/_records/tasks", ct, new { title = "Owner's" }, HttpStatusCode.Created);
+        await app.JsonAsync(HttpMethod.Post, "/_records/tasks", ct, new { title = "Writer's" }, HttpStatusCode.Created, writer);
+
+        var mine = new { filter = new { field = "created_by", op = "eq", value = new Dictionary<string, string> { ["$user"] = "id" } } };
+        Titles(await app.JsonAsync(HttpMethod.Post, "/_records/tasks/query", ct, mine)).Should().Equal("Owner's");
+        Titles(await app.JsonAsync(HttpMethod.Post, "/_records/tasks/query", ct, mine, @as: writer)).Should().Equal("Writer's");
+    }
+
+    private async Task<JsonElement> Query(AppHarness app, string? token, object filter, CancellationToken ct) =>
+        await JsonAsync(await SiteAsync(app, HttpMethod.Post, "/api/crm/data/tasks/query", token, ct, new { filter, sort = new[] { new { field = "title" } } }), ct);
+
+    private static IEnumerable<string?> Titles(JsonElement page) =>
+        page.GetProperty("items").EnumerateArray().Select(i => i.GetProperty("title").GetString()).Order();
+
     private async Task<(AppHarness App, Guid TenantId)> SetUpAsync(CancellationToken ct)
     {
         var app = await AppHarness.CreateAsync(fixture, ct);

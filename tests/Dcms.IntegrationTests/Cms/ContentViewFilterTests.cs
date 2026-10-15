@@ -72,6 +72,22 @@ public class ContentViewFilterTests(ContentFlowFixture fixture)
         walked.Should().Equal("bob", "ann", "dee", "cyd");
     }
 
+    /// <summary>"The current user" in a content view (#302) is the member looking at it.</summary>
+    [DockerFact]
+    public async Task A_view_about_the_current_user_is_about_whoever_looks()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var t = await RosterAsync(ct);
+        await CreateAsync(t, "mine", new { name = "Mine", role = $"{t.Owner:N}@dcms.test" }, ct);
+        await CreateAsync(t, "theirs", new { name = "Theirs", role = "someone@else.test" }, ct);
+
+        var me = new Dictionary<string, string> { ["$user"] = "email" };
+        (await SlugsAsync(t, new { field = "role", op = "eq", value = me }, ct)).Should().BeEquivalentTo("mine");
+        (await SlugsAsync(t, new { field = "role", op = "ne", value = me }, ct)).Should().BeEquivalentTo("theirs");
+        (await StatusAsync(t, Filter(new { field = "role", op = "eq", value = new Dictionary<string, string> { ["$user"] = "password" } }), ct))
+            .Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private static string Filter(object filter) => "filter=" + Uri.EscapeDataString(JsonSerializer.Serialize(filter));
 
     private sealed record Roster(string Slug, Guid Owner, Guid InstanceId);

@@ -337,7 +337,8 @@ public static class PublicApi
     private static JsonObject QuerySchema() => new()
     {
         ["type"] = "object",
-        ["description"] = "filter: { and | or | not | field, op (eq ne gt gte lt lte in nin contains startsWith isNull), value }; sort: [{ field, direction }]",
+        ["description"] = "filter: { and | or | not | field, op (eq ne gt gte lt lte in nin contains startsWith isNull), value }; sort: [{ field, direction }]. "
+            + "A value may be the signed-in user: { \"$user\": \"email\" | \"id\" } (eq ne contains startsWith) or { \"$user\": \"groups\" } (in nin).",
         ["properties"] = new JsonObject
         {
             ["filter"] = new JsonObject { ["type"] = "object" },

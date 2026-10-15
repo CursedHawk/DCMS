@@ -136,6 +136,22 @@ describe('data table', () => {
     expect(button(root, 'Share')).toBeDefined();
   });
 
+  it('compares a text field with the current user, and sends the token for the server to fill', async () => {
+    const { client, posts } = fakeClient(true);
+    const root = await render(client, { views: false });
+    click(button(root, 'Filter'));
+    click(button(root, '+ Condition'));
+    const source = root.querySelector<HTMLSelectElement>('select[aria-label="Compare with"]')!;
+    expect(Array.from(source.options).map((o) => o.textContent)).toEqual(['a value', 'my email', 'my user ID']);
+    act(() => {
+      source.value = 'email';
+      source.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await settle();
+    expect(posts.at(-1)!.body.filter).toEqual({ and: [{ field: 'name', op: 'contains', value: { $user: 'email' } }] });
+    expect(root.querySelector('input[aria-label="Value"]')).toBeNull();
+  });
+
   it('shows nothing on the site until it is set up', async () => {
     const root = await render(fakeClient(false).client, { instance: '', table: '' });
     expect(root.textContent).toBe('');

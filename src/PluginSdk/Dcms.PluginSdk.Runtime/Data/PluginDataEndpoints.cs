@@ -103,6 +103,9 @@ public static class PluginDataEndpoints
                 {
                     where = JsonSerializer.Deserialize<ViewFilter>(raw, WhereJson);
                     where?.Validate();
+                    // "The current user" in a shared view is whoever is looking (#302); the plugin
+                    // only ever sees plain values.
+                    where = UserValue.Resolve(where, ViewUser.Member(http.User));
                     if (where is not null) CheckWhere(where, schema);
                 }
                 catch (Exception e) when (e is JsonException or ViewDefinitionException)

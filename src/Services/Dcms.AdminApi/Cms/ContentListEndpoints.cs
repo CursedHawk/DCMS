@@ -44,6 +44,7 @@ public static class ContentListEndpoints
             int? limit,
             string? filter,
             string? columns,
+            HttpContext http,
             CmsDbContext db,
             IPluginCatalog catalog,
             ITenantContext tenant,
@@ -77,6 +78,8 @@ public static class ContentListEndpoints
                 {
                     viewFilter = JsonSerializer.Deserialize<ViewFilter>(filter, ViewJson);
                     viewFilter?.Validate();
+                    // "The current user" in a shared view is whoever is looking (#302).
+                    viewFilter = UserValue.Resolve(viewFilter, ViewUser.Member(http.User));
                 }
                 catch (Exception e) when (e is JsonException or ViewDefinitionException)
                 {

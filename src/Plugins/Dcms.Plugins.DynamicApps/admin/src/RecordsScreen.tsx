@@ -34,6 +34,7 @@ import {
   useTableViews,
   type SavedView,
   type ViewDefinition,
+  type UiOp,
   type ViewField,
 } from '@dcms/ui';
 import {
@@ -165,6 +166,8 @@ function TableRecords({ instance, config, table, tables, onTableChange }: {
     ...members.map(viewFieldOf).filter((f): f is ViewField => !!f),
     { key: 'created_at', label: t('records.createdAt'), kind: 'date' as const },
     { key: 'updated_at', label: t('records.updatedAt'), kind: 'date' as const },
+    // Who made the record (a member's id): with "current user's ID", a view of one's own records (#302).
+    { key: 'created_by', label: t('records.createdBy'), kind: 'text' as const, ops: ['eq', 'ne'] satisfies UiOp[], sortable: false },
   ], [members, t]);
   const columnFields = useMemo(() => fields.filter((f) => members.some((m) => m.apiName === f.key)), [fields, members]);
 

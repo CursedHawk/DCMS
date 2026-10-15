@@ -21,6 +21,22 @@ Above the table:
 What is on screen and differs from the view says *modified*. The view in use is in the address
 (`?view=` on the content page), so a link opens the same list.
 
+### The current user
+
+A text condition can compare with **the current user** instead of a typed value: *Compare with →
+Current user's email / ID* in the console, *my email / my user ID / my groups* on a site. The view
+keeps the token `{"$user": "email" | "id" | "groups"}`, not a person, and the server puts whoever
+is looking in its place on every query — so one shared "My tasks" view shows each person their own.
+
+- **Console:** the member (their sign-in email, their account id). Dynamic Apps records also filter
+  on **Created by**, so *Created by is current user's ID* is "records I made".
+- **Sites:** the signed-in User Authentication user — email, id, and groups (*is any of* / *is none
+  of*). A visitor account's self-chosen email does not count, as for row access rules.
+- **Nobody to compare with** (not signed in, no email, no groups): the condition matches nothing —
+  and its *is not* / *is none of* everything.
+- Email and id go with is, is not, contains and starts with; groups with is any of / is none of.
+  Anything else is refused when the view is saved. Plugins' data sets only ever receive plain values.
+
 ## Sharing
 
 Only the owner changes, shares or deletes a view. **Share…** gives it, read-only, to the whole

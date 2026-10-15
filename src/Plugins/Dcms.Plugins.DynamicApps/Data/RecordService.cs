@@ -7,7 +7,9 @@ using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Data.DynamicApps;
 using Dcms.Shared.Data.Rls;
+using Dcms.Shared.Kernel.Views;
 using Dcms.Shared.Telemetry;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using NpgsqlTypes;
@@ -31,7 +33,8 @@ public sealed class RecordService(
     RuntimeModelProvider models,
     AppEventLog events,
     IAuditRecorder audit,
-    TimeProvider clock)
+    TimeProvider clock,
+    IHttpContextAccessor http)
 {
     public const int MaxBulk = 500;
 
@@ -93,6 +96,7 @@ public sealed class RecordService(
         using var rls = RlsScope.Tenant(context.TenantId);
         var (model, table) = await TableAsync(tableName, plane, PublicOp.Read, ct);
         using var activity = Span("dcms.dynamicapp.query", model, table);
+        query = query with { Filter = WithViewer(query.Filter, plane) };
 
         // Raw SQL by construction: QueryCompiler writes only its own identifiers and operators,
         // and every value — field keys included — is a parameter. Nothing the caller sent is in
@@ -803,6 +807,34 @@ public sealed class RecordService(
     /// <summary>A table the public plane may read, as its records' reads would find it: 404, 403 or 401 otherwise.</summary>
     public Task<(RuntimeModel Model, RuntimeTable Table)> ReadableTableAsync(string tableName, CancellationToken ct) =>
         TableAsync(tableName, RecordPlane.Public, PublicOp.Read, ct);
+
+    private static readonly System.Text.Json.JsonSerializerOptions FilterJson = new(System.Text.Json.JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    /// <summary>
+    /// "The current user" in a filter (#302) — a shared view's, or a site's own query — as whoever
+    /// is asking: on the site the signed-in user as row rules see them (an email and groups only
+    /// from a User Authentication sign-in), in the console the member. Same tree as a view's filter.
+    /// </summary>
+    private RecordFilter? WithViewer(RecordFilter? filter, RecordPlane plane)
+    {
+        if (filter is null) return null;
+        var view = System.Text.Json.JsonSerializer.Deserialize<ViewFilter>(System.Text.Json.JsonSerializer.Serialize(filter, FilterJson), FilterJson);
+        if (!UserValue.Mentioned(view)) return filter;
+        var viewer = plane == RecordPlane.Public
+            ? Subject is { } s ? new ViewUser(s.Id.ToString(), s.Email, s.Groups.Select(g => g.ToString()).ToList()) : null
+            : ViewUser.Member(http.HttpContext?.User);
+        return System.Text.Json.JsonSerializer.Deserialize<RecordFilter>(
+            System.Text.Json.JsonSerializer.Serialize(UserValue.Resolve(view, viewer, NoRecord("in"), NoRecord("nin")), FilterJson), FilterJson);
+    }
+
+    /// <summary>
+    /// "Nothing" and "everything" in this filter language, which refuses an empty and/or from a
+    /// caller: no record has the empty id.
+    /// </summary>
+    private static ViewFilter NoRecord(string op) => new() { Field = "id", Op = op, Value = new JsonArray(Guid.Empty.ToString()) };
 
     private async Task<(RuntimeModel Model, RuntimeTable Table)> TableAsync(string tableName, RecordPlane plane, PublicOp op, CancellationToken ct)
     {

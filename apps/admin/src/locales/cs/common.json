@@ -2136,7 +2136,14 @@
     "viewActions": "Akce zobrazení",
     "saved": "Zobrazení uloženo",
     "shared": "Sdílení uloženo",
-    "defaultSet": "Tabulka se nyní otevírá tímto zobrazením"
+    "defaultSet": "Tabulka se nyní otevírá tímto zobrazením",
+    "valueSource": "Porovnat s",
+    "typedValue": "Hodnotou",
+    "currentUser": {
+      "email": "E-mailem aktuálního uživatele",
+      "id": "ID aktuálního uživatele",
+      "groups": "Skupinami aktuálního uživatele"
+    }
   },
   "previewBar": {
     "back": "Zpět",

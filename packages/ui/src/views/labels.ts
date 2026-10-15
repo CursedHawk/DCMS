@@ -1,4 +1,4 @@
-import type { UiOp } from './model';
+import type { UiOp, UserAttribute } from './model';
 
 /** Every word the view editors show; English by default, the consoles pass their own. */
 export interface ViewLabels {
@@ -16,6 +16,10 @@ export interface ViewLabels {
   no: string;
   noConditions: string;
   op: Record<UiOp, string>;
+  /** The value of a condition: one typed in, or the current user's (#302). */
+  valueSource: string;
+  typedValue: string;
+  currentUser: Record<UserAttribute, string>;
   columns: string;
   showColumn: (label: string) => string;
   moveUp: (label: string) => string;
@@ -77,6 +81,9 @@ export const DEFAULT_VIEW_LABELS: ViewLabels = {
     isEmpty: 'is empty',
     isNotEmpty: 'is not empty',
   },
+  valueSource: 'Compare with',
+  typedValue: 'A value',
+  currentUser: { email: 'Current user’s email', id: 'Current user’s ID', groups: 'Current user’s groups' },
   columns: 'Columns',
   showColumn: (label) => `Show ${label}`,
   moveUp: (label) => `Move ${label} up`,

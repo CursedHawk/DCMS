@@ -13,7 +13,11 @@ import {
   newCondition,
   opsFor,
   uiOpOf,
+  userAttributeOf,
+  userAttributesFor,
+  userValue,
   withOp,
+  type UserAttribute,
   type ViewCondition,
   type ViewField,
   type ViewFilter,
@@ -30,6 +34,7 @@ export function FilterBuilder({
   onChange,
   labels: partial,
   maxDepth = 3,
+  userValues = ['email', 'id'],
 }: {
   fields: readonly ViewField[];
   value: ViewFilter | null | undefined;
@@ -37,6 +42,8 @@ export function FilterBuilder({
   labels?: Partial<ViewLabels>;
   /** How deep groups nest; the server allows five levels. */
   maxDepth?: number;
+  /** What of the current user a text condition may compare with (#302); the console has no groups. */
+  userValues?: readonly UserAttribute[];
 }) {
   const labels = { ...DEFAULT_VIEW_LABELS, ...partial };
   const usable = fields.filter((f) => f.filterable !== false);
@@ -49,6 +56,7 @@ export function FilterBuilder({
       labels={labels}
       depth={1}
       maxDepth={maxDepth}
+      userValues={userValues}
     />
   );
 }
@@ -61,6 +69,7 @@ function Group({
   labels,
   depth,
   maxDepth,
+  userValues,
 }: {
   group: ViewFilter;
   onChange: (next: ViewFilter) => void;
@@ -69,6 +78,7 @@ function Group({
   labels: ViewLabels;
   depth: number;
   maxDepth: number;
+  userValues: readonly UserAttribute[];
 }) {
   const { mode, items } = groupOf(group);
   const set = (next: ViewFilter[]) => onChange(makeGroup(mode, next));
@@ -107,6 +117,7 @@ function Group({
             condition={item}
             fields={fields}
             labels={labels}
+            userValues={userValues}
             onChange={(next) => replace(index, next)}
             onRemove={() => remove(index)}
           />
@@ -118,6 +129,7 @@ function Group({
             labels={labels}
             depth={depth + 1}
             maxDepth={maxDepth}
+            userValues={userValues}
             onChange={(next) => replace(index, next)}
             onRemove={() => remove(index)}
           />
@@ -149,15 +161,20 @@ function Condition({
   onRemove,
   fields,
   labels,
+  userValues,
 }: {
   condition: ViewCondition;
   onChange: (next: ViewCondition) => void;
   onRemove: () => void;
   fields: readonly ViewField[];
   labels: ViewLabels;
+  userValues: readonly UserAttribute[];
 }) {
   const field = fields.find((f) => f.key === condition.field);
   const op = uiOpOf(condition);
+  // A text field can be compared with whoever looks at the view (#302).
+  const users = field?.kind === 'text' ? userAttributesFor(op, userValues) : [];
+  const user = userAttributeOf(condition.value);
   return (
     <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-[minmax(8rem,1fr)_minmax(8rem,auto)_minmax(8rem,1.5fr)_auto]">
       <Select
@@ -190,9 +207,29 @@ function Condition({
           ))}
         </SelectContent>
       </Select>
-      <div className="min-w-0">
-        {field && op !== 'isEmpty' && op !== 'isNotEmpty' && (
-          <ValueInput field={field} condition={condition} labels={labels} onChange={(value) => onChange({ ...condition, value })} />
+      <div className="flex min-w-0 flex-wrap gap-2">
+        {users.length > 0 && (
+          <Select
+            value={user ?? 'typed'}
+            onValueChange={(v) => onChange({ ...condition, value: v === 'typed' ? undefined : userValue(v as UserAttribute) })}
+          >
+            <SelectTrigger className="h-8 w-auto min-w-0" aria-label={labels.valueSource}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="typed">{labels.typedValue}</SelectItem>
+              {users.map((a) => (
+                <SelectItem key={a} value={a}>
+                  {labels.currentUser[a]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {field && !user && op !== 'isEmpty' && op !== 'isNotEmpty' && (
+          <div className="min-w-0 flex-1">
+            <ValueInput field={field} condition={condition} labels={labels} onChange={(value) => onChange({ ...condition, value })} />
+          </div>
         )}
       </div>
       <Button size="icon" variant="ghost" className="h-8 w-8 justify-self-end" aria-label={labels.removeCondition} onClick={onRemove}>

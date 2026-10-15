@@ -329,7 +329,8 @@
     "any": "Any",
     "editField": "Change {{field}}",
     "createdAt": "Created",
-    "updatedAt": "Updated"
+    "updatedAt": "Updated",
+    "createdBy": "Created by"
   },
   "ai": {
     "enableTitle": "Let the assistant work on this app?",

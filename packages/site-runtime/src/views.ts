@@ -44,6 +44,30 @@ export interface ViewDefinition {
   filter?: ViewFilter | null;
 }
 
+/**
+ * "The current user" as a value (#302): `{ $user: 'email' | 'id' | 'groups' }`. A view keeps the
+ * token, not a person; the server puts whoever is looking in its place on every query, so a
+ * shared view shows each viewer their own rows. Email and id compare as one value (is, is not,
+ * contains, starts with); groups are a list (is any of, is none of).
+ */
+export type UserAttribute = 'email' | 'id' | 'groups';
+
+export function userValue(attribute: UserAttribute): { $user: UserAttribute } {
+  return { $user: attribute };
+}
+
+export function userAttributeOf(value: unknown): UserAttribute | null {
+  const a = value && typeof value === 'object' && !Array.isArray(value) ? (value as { $user?: unknown }).$user : undefined;
+  return a === 'email' || a === 'id' || a === 'groups' ? a : null;
+}
+
+/** The current-user values an operator takes: one person's email or id, or their groups for a list. */
+export function userAttributesFor(op: UiOp, offered: readonly UserAttribute[]): UserAttribute[] {
+  const list = op === 'in' || op === 'nin';
+  const single = op === 'eq' || op === 'ne' || op === 'contains' || op === 'startsWith';
+  return offered.filter((a) => (a === 'groups' ? list : single));
+}
+
 /** What a condition row offers: the server's operators, plus "is empty" / "is not empty" (isNull true/false). */
 export type UiOp = Exclude<ViewOp, 'isNull'> | 'isEmpty' | 'isNotEmpty';
 
@@ -76,6 +100,9 @@ export function withOp(c: ViewCondition, op: UiOp): ViewCondition {
   if (op === 'isEmpty') return { field: c.field, op: 'isNull', value: true };
   if (op === 'isNotEmpty') return { field: c.field, op: 'isNull', value: false };
   const list = op === 'in' || op === 'nin';
+  const user = userAttributeOf(c.value);
+  // The current user stays while the operator still takes them; otherwise the value starts over.
+  if (user) return { field: c.field, op, value: userAttributesFor(op, [user]).length > 0 ? c.value : undefined };
   let value: unknown = c.op === 'isNull' ? undefined : c.value;
   if (list && !Array.isArray(value)) value = value == null || value === '' ? [] : [value];
   if (!list && Array.isArray(value)) value = value[0];
@@ -103,7 +130,7 @@ export function makeGroup(mode: 'and' | 'or', items: ViewFilter[]): ViewFilter {
 }
 
 function complete(c: ViewCondition): boolean {
-  if (c.op === 'isNull') return true;
+  if (c.op === 'isNull' || userAttributeOf(c.value)) return true;
   if (c.op === 'in' || c.op === 'nin') return Array.isArray(c.value) && c.value.length > 0;
   return c.value !== undefined && c.value !== null && c.value !== '';
 }

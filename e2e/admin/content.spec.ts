@@ -279,3 +279,18 @@ test('a view filters on a field, shows it as a column, and is saved and shared',
   await expect.poll(() => api.requestsTo('PUT', '/api/admin/views/v1/sharing').map((r) => r.body))
     .toEqual([{ workspace: true, userIds: [], roleIds: [] }]);
 });
+
+test('a condition can compare with the current user, which the view keeps as a token for the server', async ({ page, api }) => {
+  await openCollection(page);
+  await page.getByRole('button', { name: 'Filters' }).click();
+  await page.getByRole('button', { name: 'Add condition' }).click();
+  // The first field is the slug, a text field: it can be compared with whoever looks at the view.
+  await page.getByRole('combobox', { name: 'Compare with' }).click();
+  await page.getByRole('option', { name: 'Current user’s email' }).click();
+  await expect(page.getByRole('textbox', { name: 'Value' })).toHaveCount(0);
+  await expect.poll(() =>
+    api.requestsTo('GET', '/api/admin/content/page').some((r) => {
+      const f = r.query.get('filter');
+      return !!f && JSON.stringify(JSON.parse(f)) === JSON.stringify({ and: [{ field: '_slug', op: 'contains', value: { $user: 'email' } }] });
+    })).toBe(true);
+});

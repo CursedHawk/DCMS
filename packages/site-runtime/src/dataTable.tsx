@@ -12,8 +12,12 @@ import {
   opsFor,
   sameDefinition,
   uiOpOf,
+  userAttributeOf,
+  userAttributesFor,
+  userValue,
   withOp,
   type UiOp,
+  type UserAttribute,
   type ViewCondition,
   type ViewDefinition,
   type ViewField,
@@ -89,6 +93,12 @@ const LABELS: Record<UiOp, string> = {
   startsWith: 'starts with',
   isEmpty: 'is empty',
   isNotEmpty: 'is not empty',
+};
+
+const CURRENT_USER: Record<UserAttribute, string> = {
+  email: 'my email',
+  id: 'my user ID',
+  groups: 'my groups',
 };
 
 const SYSTEM_FIELDS: ViewField[] = [
@@ -549,6 +559,10 @@ function Condition({ condition, fields, onChange, onRemove }: { condition: ViewC
   const field = fields.find((f) => f.key === condition.field);
   const op = uiOpOf(condition);
   const ops = field ? (field.ops ?? opsFor(field.kind)) : [op];
+  // A text field can be compared with whoever looks at the view, signed in (#302): a shared view
+  // then shows each person their own rows.
+  const users = field?.kind === 'text' ? userAttributesFor(op, ['email', 'id', 'groups']) : [];
+  const user = userAttributeOf(condition.value);
   return (
     <div className="dcms-data-table-row">
       <select
@@ -572,7 +586,21 @@ function Condition({ condition, fields, onChange, onRemove }: { condition: ViewC
           </option>
         ))}
       </select>
-      {field && op !== 'isEmpty' && op !== 'isNotEmpty' && <Value field={field} condition={condition} onChange={(value) => onChange({ ...condition, value })} />}
+      {users.length > 0 && (
+        <select
+          aria-label="Compare with"
+          value={user ?? 'typed'}
+          onChange={(e) => onChange({ ...condition, value: e.target.value === 'typed' ? undefined : userValue(e.target.value as UserAttribute) })}
+        >
+          <option value="typed">a value</option>
+          {users.map((a) => (
+            <option key={a} value={a}>
+              {CURRENT_USER[a]}
+            </option>
+          ))}
+        </select>
+      )}
+      {field && !user && op !== 'isEmpty' && op !== 'isNotEmpty' && <Value field={field} condition={condition} onChange={(value) => onChange({ ...condition, value })} />}
       <button type="button" className="dcms-button dcms-button-ghost dcms-button-sm" aria-label="Remove condition" onClick={onRemove}>
         ×
       </button>
