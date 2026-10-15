@@ -105,7 +105,7 @@ public sealed class JobMaintenanceWorker(
         {
             // Touch first, so a pass that dies after sending does not send again thirty seconds
             // later. Not a visible change, so no sequence bump and no announcement.
-            await db.Jobs.IgnoreQueryFilters().Where(j => j.Id == job.Id)
+            await db.Jobs.IgnoreQueryFilters().Where(j => j.Id == job.Id && j.TenantId == job.TenantId)
                 .ExecuteUpdateAsync(s => s.SetProperty(j => j.UpdatedAt, now), ct);
             await JobDispatch.SendAsync(events, job.Id, job.TenantId, job.Kind, job.Lane,
                 $"{job.Id}:r{now.UtcTicks}", logger, ct);
@@ -133,7 +133,8 @@ public sealed class JobMaintenanceWorker(
             if (job.Status == JobStatus.Queued)
             {
                 using var _ = JobLedger.ScopeFor(job.TenantId);
-                await db.Jobs.IgnoreQueryFilters().Where(j => j.Id == job.Id && j.Status == JobStatus.Queued)
+                await db.Jobs.IgnoreQueryFilters()
+                    .Where(j => j.Id == job.Id && j.TenantId == job.TenantId && j.Status == JobStatus.Queued)
                     .ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, JobStatus.Running), ct);
             }
             await ledger.FailAsync(job.Id, job.TenantId, "jobs.error.stale",

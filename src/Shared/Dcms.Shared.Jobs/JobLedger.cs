@@ -44,12 +44,19 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     public static IDisposable ScopeFor(Guid? tenantId) =>
         tenantId is { } tenant ? RlsScope.Tenant(tenant) : RlsScope.Platform();
 
-    private IQueryable<Job> Row(Guid id) => db.Jobs.IgnoreQueryFilters().Where(j => j.Id == id);
+    /// <summary>
+    /// One job, by id <b>and</b> tenant. The tenant is part of the predicate, not only of the RLS
+    /// scope: the owner connection bypasses row security, and a caller naming another tenant's
+    /// job id must find nothing either way. A null tenant matches only platform jobs, so a
+    /// tenant-less caller cannot reach a tenant's row by passing no tenant.
+    /// </summary>
+    private IQueryable<Job> Row(Guid id, Guid? tenantId) =>
+        db.Jobs.IgnoreQueryFilters().Where(j => j.Id == id && j.TenantId == tenantId);
 
     public async Task<Job?> FindAsync(Guid id, Guid? tenantId, CancellationToken ct)
     {
         using var _ = ScopeFor(tenantId);
-        return await Row(id).AsNoTracking().FirstOrDefaultAsync(ct);
+        return await Row(id, tenantId).AsNoTracking().FirstOrDefaultAsync(ct);
     }
 
     /// <summary>Inserts the row; a dedupe-key collision returns the job already there.</summary>
@@ -85,7 +92,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     {
         using var _ = ScopeFor(tenantId);
         var now = DateTimeOffset.UtcNow;
-        var claimed = await Row(id)
+        var claimed = await Row(id, tenantId)
             .Where(j => j.CancelRequestedAt == null
                         && (j.Status == JobStatus.Queued || (j.Status == JobStatus.Running && j.LeaseUntil < now)))
             .ExecuteUpdateAsync(s => s
@@ -100,7 +107,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
             return null;
         }
         await AnnounceAsync(id, tenantId, ct);
-        return await Row(id).AsNoTracking().FirstAsync(ct);
+        return await Row(id, tenantId).AsNoTracking().FirstAsync(ct);
     }
 
     /// <summary>
@@ -112,7 +119,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     {
         using var _ = ScopeFor(tenantId);
         var now = DateTimeOffset.UtcNow;
-        var renewed = await Row(id)
+        var renewed = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Running && j.CancelRequestedAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.LeaseUntil, now + Lease), ct);
         return renewed == 0;
@@ -123,7 +130,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     {
         using var _ = ScopeFor(tenantId);
         var now = DateTimeOffset.UtcNow;
-        var updated = await Row(id)
+        var updated = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Running)
             .ExecuteUpdateAsync(s =>
             {
@@ -149,7 +156,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     {
         using var _ = ScopeFor(tenantId);
         var now = DateTimeOffset.UtcNow;
-        var updated = await Row(id)
+        var updated = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Running)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.Status, JobStatus.Succeeded)
@@ -182,7 +189,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
 
         if (retryable)
         {
-            var requeued = await Row(id)
+            var requeued = await Row(id, tenantId)
                 .Where(j => j.Status == JobStatus.Running && j.Attempts < j.MaxAttempts && j.CancelRequestedAt == null)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(j => j.Status, JobStatus.Queued)
@@ -198,7 +205,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
             }
         }
 
-        var failed = await Row(id)
+        var failed = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Running)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.Status, JobStatus.Failed)
@@ -222,7 +229,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
         using var _ = ScopeFor(tenantId);
         var now = DateTimeOffset.UtcNow;
         // The attempt did not fail, so it is not spent either.
-        await Row(id)
+        await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Running)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.Status, JobStatus.Queued)
@@ -240,7 +247,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
 
         // Queued: nothing has started, so it simply never will. The run message still in the
         // queue finds a canceled row and is dropped by the claim.
-        var canceled = await Row(id)
+        var canceled = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Queued)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.Status, JobStatus.Canceled)
@@ -256,7 +263,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
 
         // Running: ask. The worker sees it at its next lease renewal and stops cooperatively;
         // only it can say when the work has actually stopped.
-        var requested = await Row(id)
+        var requested = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Running && j.Cancelable && j.CancelRequestedAt == null)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.CancelRequestedAt, now)
@@ -268,7 +275,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
             return CancelOutcome.Requested;
         }
 
-        return await Row(id).AnyAsync(ct) ? CancelOutcome.NotCancelable : CancelOutcome.NotFound;
+        return await Row(id, tenantId).AnyAsync(ct) ? CancelOutcome.NotCancelable : CancelOutcome.NotFound;
     }
 
     /// <summary>The worker stopped because it was asked to.</summary>
@@ -276,7 +283,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     {
         using var _ = ScopeFor(tenantId);
         var now = DateTimeOffset.UtcNow;
-        var updated = await Row(id)
+        var updated = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Running || j.Status == JobStatus.Queued)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.Status, JobStatus.Canceled)
@@ -299,7 +306,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     {
         using var _ = ScopeFor(tenantId);
         var now = DateTimeOffset.UtcNow;
-        var updated = await Row(id)
+        var updated = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Failed || j.Status == JobStatus.Canceled)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.Status, JobStatus.Queued)
@@ -328,6 +335,20 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     /// </summary>
     public async Task ApplyReportAsync(JobStateReported report, CancellationToken ct)
     {
+        // Reports speak for the queues that own their work (media, sites, flows). A job-worker
+        // job has a worker that writes the ledger itself, and nothing on the bus gets to
+        // overrule it -- whoever can publish jobs.state cannot finish or fail one.
+        using (ScopeFor(report.TenantId))
+        {
+            var lane = await Row(report.JobId, report.TenantId).Select(j => j.Lane).FirstOrDefaultAsync(ct);
+            if (lane is null || JobDispatch.IsDispatched(lane))
+            {
+                logger.LogWarning("Ignoring a bus report for job {JobId}: no such job in tenant {TenantId} on a reporting queue.",
+                    report.JobId, report.TenantId);
+                return;
+            }
+        }
+
         var status = report.Status is null ? (JobStatus?)null : Enum.Parse<JobStatus>(report.Status);
         switch (status)
         {
@@ -362,7 +383,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     {
         using var _ = ScopeFor(tenantId);
         var now = DateTimeOffset.UtcNow;
-        var started = await Row(id)
+        var started = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Queued)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.Status, JobStatus.Running)
@@ -382,7 +403,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
         try
         {
             using var _ = ScopeFor(tenantId);
-            var row = await Row(id).AsNoTracking()
+            var row = await Row(id, tenantId).AsNoTracking()
                 .Select(j => new { j.TenantId, j.ParentId, j.Status, j.Done, j.Total, j.StageKey, j.Seq })
                 .FirstOrDefaultAsync(ct);
             if (row is null)

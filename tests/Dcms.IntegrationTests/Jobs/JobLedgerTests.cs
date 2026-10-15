@@ -179,6 +179,39 @@ public class JobLedgerTests(AdminApiFixture fixture)
         (await FindAsync(platform.Id, null, ct)).Should().NotBeNull("platform scope sees it");
     }
 
+    [DockerFact]
+    public async Task Naming_another_tenant_or_no_tenant_reaches_nothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var owner = Guid.NewGuid();
+        var job = await EnqueueAsync(new JobSpec("test.isolation", owner, null, "t"), ct);
+
+        // The tenant is in every statement's predicate, not only in the RLS scope, so this holds
+        // on the owner connection too -- where row security is bypassed entirely.
+        (await ClaimAsync(job.Id, Guid.NewGuid(), ct)).Should().BeNull();
+        (await ClaimAsync(job.Id, null, ct)).Should().BeNull("a null tenant matches platform jobs only");
+        (await WithLedgerAsync(l => l.RequestCancelAsync(job.Id, Guid.NewGuid(), ct))).Should().Be(CancelOutcome.NotFound);
+        (await FindAsync(job.Id, owner, ct))!.Status.Should().Be(JobStatus.Queued);
+    }
+
+    [DockerFact]
+    public async Task A_bus_report_cannot_touch_a_job_worker_job_or_another_tenants_job()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var owner = Guid.NewGuid();
+
+        // A job a job worker runs: its worker writes the ledger, the bus does not get a say.
+        var workerJob = await EnqueueAsync(new JobSpec("test.lane", owner, null, "t"), ct);
+        await ApplyAsync(workerJob.Id, owner, "Succeeded", null, null, ct);
+        (await FindAsync(workerJob.Id, owner, ct))!.Status.Should().Be(JobStatus.Queued);
+
+        // A media job, reported with no tenant (platform scope) or the wrong one.
+        var mediaJob = await EnqueueAsync(new JobSpec("media.process.image", owner, null, "t", Lane: "media"), ct);
+        await ApplyAsync(mediaJob.Id, null, "Failed", null, null, ct);
+        await ApplyAsync(mediaJob.Id, Guid.NewGuid(), "Failed", null, null, ct);
+        (await FindAsync(mediaJob.Id, owner, ct))!.Status.Should().Be(JobStatus.Queued);
+    }
+
     private Task<JobRef> EnqueueAsync(JobSpec spec, CancellationToken ct) =>
         WithScopeAsync(sp => sp.GetRequiredService<IJobQueue>().EnqueueAsync(spec, ct));
 
