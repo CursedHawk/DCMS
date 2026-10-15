@@ -92,6 +92,8 @@ public static partial class GoogleDriveImport
         // download, ingest, then the media conversion under the same group -- so the import goes
         // on whether or not the page that started it stays open. The token travels encrypted:
         // it is a credential to the person's Drive, and it sits on the ledger until retention.
+        // The jobs require media:write, as this endpoint does: retrying one re-downloads with
+        // that person's grant, which a member who may only look must not be able to set off.
         app.MapPost("/api/admin/media/google-drive/import", async (
             ImportRequest body, IOptions<GoogleDriveOptions> options, MediaDbContext db, CurrentUser me,
             ITenantContext tenant, IJobQueue jobs, IDataProtectionProvider protection, CancellationToken ct) =>
@@ -112,7 +114,7 @@ public static partial class GoogleDriveImport
             var token = protection.CreateProtector(DriveFileJob.TokenPurpose).Protect(body.AccessToken);
             var group = await jobs.EnqueueAsync(new JobSpec(
                 "media.drive-import", tenantId, null, "jobs.kinds.driveImport.title", new { count = files.Count },
-                RequiredPermission: PlatformPermissions.MediaRead, Lane: JobLanes.Group, LinkPath: "/media"), ct);
+                RequiredPermission: PlatformPermissions.MediaWrite, Lane: JobLanes.Group, LinkPath: "/media"), ct);
             foreach (var file in files)
             {
                 // The name is the picker's, for the row until the file's own arrives; it is only
@@ -121,7 +123,7 @@ public static partial class GoogleDriveImport
                 await jobs.EnqueueAsync(new JobSpec(
                     DriveFileJob.Kind, tenantId, new DriveFilePayload(file.Id!, name, body.FolderId, token, me.UserId),
                     "jobs.kinds.driveFile.title", new { name },
-                    RequiredPermission: PlatformPermissions.MediaRead, ParentId: group.Id, LinkPath: "/media"), ct);
+                    RequiredPermission: PlatformPermissions.MediaWrite, ParentId: group.Id, LinkPath: "/media"), ct);
             }
             return Results.Accepted($"/api/admin/jobs/{group.Id}", new { jobId = group.Id });
         }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaImported, "media_asset");

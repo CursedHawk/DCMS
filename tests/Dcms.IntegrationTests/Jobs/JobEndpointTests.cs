@@ -42,6 +42,23 @@ public class JobEndpointTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task A_member_who_may_only_look_cannot_rerun_a_drive_import()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        var member = await SeedMemberAsync(tenantId, "Member", ct); // media:read, not media:write
+
+        // A failed Drive file: retrying it downloads again with the importer's own Drive grant.
+        var job = await EnqueueAsync(new JobSpec("media.drive-file", tenantId, null, "t",
+            RequiredPermission: PlatformPermissions.MediaWrite), ct);
+        await LedgerAsync(async l => { await l.ClaimAsync(job.Id, tenantId, ct); await l.FailAsync(job.Id, tenantId, "e", null, false, ct); });
+
+        (await client.SendAsync(Request(HttpMethod.Post, $"/api/admin/jobs/{job.Id}/retry", slug, member, false), ct))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [DockerFact]
     public async Task Another_tenants_job_does_not_exist_here()
     {
         var ct = TestContext.Current.CancellationToken;
