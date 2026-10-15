@@ -1,10 +1,13 @@
 using System.Security.Cryptography;
 using Dcms.Shared.Contracts.Events;
+using Dcms.Shared.Data.Jobs;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Tenancy;
+using Dcms.Shared.Jobs;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Media;
 using Dcms.Shared.Messaging;
+using Dcms.Shared.Security;
 using Dcms.Shared.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -39,7 +42,9 @@ public sealed class MediaIngestService(
     IObjectStorage storage,
     IOptions<StorageOptions> storageOptions,
     IEventPublisher events,
-    ITenantContext tenant)
+    ITenantContext tenant,
+    IJobQueue jobs,
+    JobLedger ledger)
 {
     /// <summary>
     /// The largest file the library takes. Never held in memory on this side: a form upload is
@@ -91,7 +96,8 @@ public sealed class MediaIngestService(
         Guid? folderId,
         Guid? createdBy,
         CancellationToken ct,
-        Guid? tenantId = null)
+        Guid? tenantId = null,
+        Guid? parentJobId = null)
     {
         if (length <= 0) return Result.Failed("Empty file.");
         if (length > MaxUploadBytes) return Result.Failed(TooLarge);
@@ -161,7 +167,7 @@ public sealed class MediaIngestService(
 
             return await RecordAsync(
                 assetId, effectiveTenantId, sniff, key, storeLength, Convert.ToHexStringLower(digest),
-                fileName, folderId, createdBy, ct);
+                fileName, folderId, createdBy, parentJobId, ct);
         }
         finally
         {
@@ -186,7 +192,7 @@ public sealed class MediaIngestService(
 
     private async Task<Result> RecordAsync(
         Guid assetId, Guid tenantId, SniffResult sniff, string key, long sizeBytes, string sha256,
-        string fileName, Guid? folderId, Guid? createdBy, CancellationToken ct)
+        string fileName, Guid? folderId, Guid? createdBy, Guid? parentJobId, CancellationToken ct)
     {
         // Everything with a processing pass to run starts in Processing and goes to the worker.
         // SVG is in that set now: it has no raster ladder, but it does need the XML sanitiser,
@@ -222,15 +228,29 @@ public sealed class MediaIngestService(
 
         if (needsProcessing && !string.IsNullOrEmpty(subject))
         {
+            // The conversion, on the jobs ledger (ADR 0024): created before the request goes out,
+            // so media-worker's first progress report always finds its row. Its own queue runs
+            // it; the ledger only shows it. Not cancelable: a half-converted asset is worse than
+            // a finished one.
+            var job = await jobs.EnqueueAsync(new JobSpec(
+                $"media.process.{sniff.Category.ToString().ToLowerInvariant()}", tenantId, null,
+                "jobs.kinds.mediaProcess.title", new { name = asset.FileName },
+                RequiredPermission: PlatformPermissions.MediaRead, ParentId: parentJobId,
+                Cancelable: false, Lane: "media", LinkPath: "/media",
+                DedupeKey: $"media:{assetId}"), ct);
             try
             {
                 await events.PublishAsync(subject, new MediaProcessRequested(
-                    Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, assetId, sniff.Category, key, sniff.ContentType), ct,
+                    Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, assetId, sniff.Category, key, sniff.ContentType,
+                    job.Id), ct,
                     // One upload, one processing request (ADR 0024).
                     messageId: $"media:{assetId}");
             }
             catch
             {
+                // Nothing will ever run it: say so on the ledger rather than leaving it queued.
+                await ledger.ApplyReportAsync(new JobStateReported(Guid.NewGuid(), DateTimeOffset.UtcNow, job.Id, tenantId,
+                    nameof(JobStatus.Failed), null, null, null, "jobs.error.enqueueFailed", null, null), CancellationToken.None);
                 await tx.RollbackAsync(CancellationToken.None);
                 // An object left behind costs bytes; masking why the publish failed costs the
                 // diagnosis. The publish error is the one that propagates.

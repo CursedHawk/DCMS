@@ -56,6 +56,9 @@ public interface IJobContext
     Guid JobId { get; }
     Guid? TenantId { get; }
 
+    /// <summary>The group this job belongs to, if any: work it starts can join the same group.</summary>
+    Guid? ParentId { get; }
+
     /// <summary>1 on the first run, 2 on the first retry, …</summary>
     int Attempt { get; }
 

@@ -75,7 +75,7 @@ export function useConsoleHub(enabled: boolean) {
       connection.on('JobChanged', (change: JobChangedPush) => {
         if (!applyJobChanged(qc, change)) return;
         clearTimeout(jobRefetch);
-        jobRefetch = setTimeout(() => void qc.invalidateQueries({ queryKey: [...jobsRoot, 'list'] }), 300);
+        jobRefetch = setTimeout(() => void qc.invalidateQueries({ queryKey: jobsRoot }), 300);
       });
 
       connection.onreconnected(() => {

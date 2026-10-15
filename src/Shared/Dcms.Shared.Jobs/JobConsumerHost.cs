@@ -112,7 +112,7 @@ public sealed class JobConsumerHost(
         }
 
         using var run = CancellationTokenSource.CreateLinkedTokenSource(stopping);
-        var context = new LedgerJobContext(ledger, job.Id, job.TenantId, job.Attempts, run.Token);
+        var context = new LedgerJobContext(ledger, job.Id, job.TenantId, job.ParentId, job.Attempts, run.Token);
         var cancelRequested = false;
         var started = Stopwatch.GetTimestamp();
 

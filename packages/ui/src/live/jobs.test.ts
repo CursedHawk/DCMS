@@ -14,7 +14,7 @@ const job = (over: Partial<Job> = {}): Job => ({
   source: 'admin-api', titleKey: 'k', params: {}, status: 'Running', done: 1, total: 10, stageKey: null,
   errorKey: null, errorDetail: null, linkPath: null, cancelable: true, cancelRequested: false, retryable: false,
   attempts: 1, maxAttempts: 3, actorUserId: null, createdAt: '2026-10-15T10:00:00Z', startedAt: null,
-  finishedAt: null, updatedAt: '2026-10-15T10:00:00Z', seq: 5, ...over,
+  finishedAt: null, updatedAt: '2026-10-15T10:00:00Z', seq: 5, result: null, ...over,
 });
 
 const change = (over: Partial<JobChanged> = {}): JobChanged => ({

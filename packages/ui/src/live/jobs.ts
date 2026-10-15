@@ -33,6 +33,8 @@ export interface JobDto {
   finishedAt: string | null;
   updatedAt: string;
   seq: number;
+  /** What the handler returned, e.g. `{ assetId }` for a Drive file. Null until it succeeds. */
+  result: unknown;
 }
 
 export interface JobPage {
@@ -70,7 +72,8 @@ const ACTIVE: ReadonlySet<JobStatus> = new Set(['Queued', 'Running']);
  * that moved between active and finished (it changes which list it belongs in). Anything older
  * than what the cache already holds, by `seq`, is ignored.</p>
  *
- * @returns Whether the lists need refetching, so the caller can debounce it.
+ * @returns Whether to refetch (lists and details: a job that just finished has a result the push
+ *   does not carry), so the caller can debounce it.
  */
 export function patchJobCaches(qc: QueryClient, root: readonly unknown[], change: JobChangedPush): boolean {
   let known = false;

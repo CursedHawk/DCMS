@@ -181,6 +181,8 @@ if (runsBackgroundWork)
 // secret/dcms/admin-api; unset, the console does not offer Drive.
 builder.Services.Configure<Dcms.AdminApi.Media.GoogleDriveOptions>(
     builder.Configuration.GetSection(Dcms.AdminApi.Media.GoogleDriveOptions.SectionName));
+builder.Services.AddJobHandler<Dcms.AdminApi.Media.DriveFileJob, Dcms.AdminApi.Media.DriveFilePayload>(
+    Dcms.AdminApi.Media.DriveFileJob.Kind);
 
 // Permission evaluation: dynamic policy + tenancy-backed, Redis-cached resolver.
 builder.Services.AddDcmsPermissionAuthorization();

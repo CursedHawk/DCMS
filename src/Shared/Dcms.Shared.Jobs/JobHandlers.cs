@@ -42,6 +42,7 @@ internal sealed class LedgerJobContext(
     JobLedger ledger,
     Guid jobId,
     Guid? tenantId,
+    Guid? parentId,
     int attempt,
     CancellationToken cancellation) : IJobContext
 {
@@ -54,6 +55,7 @@ internal sealed class LedgerJobContext(
 
     public Guid JobId => jobId;
     public Guid? TenantId => tenantId;
+    public Guid? ParentId => parentId;
     public int Attempt => attempt;
     public CancellationToken Cancellation => cancellation;
 

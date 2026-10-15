@@ -3,6 +3,7 @@ using Dcms.Shared.Audit;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Media;
+using Dcms.Shared.Jobs;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
 using Dcms.Shared.Telemetry;
@@ -159,9 +160,17 @@ public abstract class MediaConsumerBase(
 
         try
         {
+            if (job.JobId is { } jobId)
+            {
+                await Reporter.StartedAsync(jobId, job.TenantId, ProgressScale, "jobs.stages.converting", ct);
+            }
             await ProcessAsync(job, scope, ct);
             await msg.AckAsync(cancellationToken: ct);
             succeeded = true;
+            if (job.JobId is { } done)
+            {
+                await Reporter.SucceededAsync(done, job.TenantId, new { assetId = job.AssetId }, ct);
+            }
         }
         catch (Exception ex)
         {
@@ -172,6 +181,10 @@ public abstract class MediaConsumerBase(
 
             logger.LogError(ex, "Failed processing asset {AssetId}", job.AssetId);
             await MarkFailedAsync(job, ex.Message, ct);
+            if (job.JobId is { } failed)
+            {
+                await Reporter.FailedAsync(failed, job.TenantId, "jobs.error.mediaProcessing", ex.Message, ct);
+            }
 
             // The upload succeeded and the asset is unusable — a state the tenant will notice
             // and ask about, and one nothing else records.
@@ -196,6 +209,21 @@ public abstract class MediaConsumerBase(
     }
 
     protected abstract Task ProcessAsync(MediaProcessRequested job, IServiceScope scope, CancellationToken ct);
+
+    /// <summary>Progress is reported in thousandths: fine enough for a bar, coarse enough to read.</summary>
+    private const long ProgressScale = 1000;
+
+    private IJobReporter Reporter => services.GetRequiredService<IJobReporter>();
+
+    /// <summary>
+    /// How far the conversion is, 0 to 1, onto the job's row (ADR 0024). Free to call often: the
+    /// reporter sends at most one a second. A request from before jobs existed has no job, and
+    /// this does nothing.
+    /// </summary>
+    protected ValueTask ReportAsync(MediaProcessRequested job, double fraction, string stageKey, CancellationToken ct) =>
+        job.JobId is { } id
+            ? Reporter.ProgressAsync(id, job.TenantId, (long)(Math.Clamp(fraction, 0, 1) * ProgressScale), ProgressScale, stageKey, ct)
+            : ValueTask.CompletedTask;
 
     protected async Task<string> DownloadToTempAsync(string objectKey, string extension, CancellationToken ct)
     {

@@ -14,7 +14,9 @@ public sealed class AudioTranscoder
 {
     private const int PeakBuckets = 400;
 
-    public async Task<AudioTranscodeResult> TranscodeAsync(string inputFile, string workDir, CancellationToken ct)
+    /// <param name="progress">0 to 1 through the encode, from ffmpeg's own clock.</param>
+    public async Task<AudioTranscodeResult> TranscodeAsync(
+        string inputFile, string workDir, CancellationToken ct, Action<double>? progress = null)
     {
         var probe = await FFProbe.AnalyseAsync(inputFile, cancellationToken: ct);
         var duration = probe.Duration;
@@ -26,6 +28,7 @@ public sealed class AudioTranscoder
                 .WithAudioCodec("aac")
                 .WithAudioBitrate(192)
                 .WithCustomArgument("-vn"))
+            .NotifyOnProgress(percent => progress?.Invoke(Math.Clamp(percent, 0, 100) / 100.0), duration)
             .CancellableThrough(ct)
             .ProcessAsynchronously();
 

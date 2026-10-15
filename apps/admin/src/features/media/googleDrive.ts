@@ -38,11 +38,14 @@ export function useDriveConfig() {
   });
 }
 
-/** Server-side import of one picked file; same response as an upload. */
-export const importDriveFile = (accessToken: string, fileId: string, folderId?: string | null) =>
-  api.post<{ id: string }>('/admin/media/google-drive/import', {
+/**
+ * Queues the picked files for the server to download and ingest (ADR 0024). Returns at once with
+ * the import's job: the work goes on without this page, and the jobs ring follows it.
+ */
+export const importDriveFiles = (accessToken: string, files: DriveFile[], folderId?: string | null) =>
+  api.post<{ jobId: string }>('/admin/media/google-drive/import', {
     accessToken,
-    fileId,
+    files: files.map((f) => ({ id: f.id, name: f.name })),
     folderId: folderId ?? null,
   });
 

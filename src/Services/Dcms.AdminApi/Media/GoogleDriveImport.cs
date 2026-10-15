@@ -4,8 +4,12 @@ using System.Text.RegularExpressions;
 using Dcms.AdminApi.Tenancy;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
+using Dcms.Shared.Data.Jobs;
 using Dcms.Shared.Data.Media;
+using Dcms.Shared.Jobs;
+using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -51,7 +55,7 @@ public sealed class GoogleDriveOptions
 /// </summary>
 public static partial class GoogleDriveImport
 {
-    private const string GoogleAppsPrefix = "application/vnd.google-apps.";
+    internal const string GoogleAppsPrefix = "application/vnd.google-apps.";
 
     /// <summary>
     /// Google-native files have no bytes of their own, so Drive exports them. PDF is a type
@@ -84,88 +88,48 @@ public static partial class GoogleDriveImport
                 : Results.NotFound();
         }).RequirePermission(PlatformPermissions.MediaWrite);
 
+        // Queues the picked files and returns (ADR 0024). Each file is a job the worker runs --
+        // download, ingest, then the media conversion under the same group -- so the import goes
+        // on whether or not the page that started it stays open. The token travels encrypted:
+        // it is a credential to the person's Drive, and it sits on the ledger until retention.
         app.MapPost("/api/admin/media/google-drive/import", async (
-            ImportRequest body, IOptions<GoogleDriveOptions> options, IHttpClientFactory httpFactory,
-            MediaIngestService ingest, MediaDbContext db, CurrentUser me,
-            ILoggerFactory loggers, CancellationToken ct) =>
+            ImportRequest body, IOptions<GoogleDriveOptions> options, MediaDbContext db, CurrentUser me,
+            ITenantContext tenant, IJobQueue jobs, IDataProtectionProvider protection, CancellationToken ct) =>
         {
             if (!options.Value.IsConfigured) return Results.NotFound();
-            if (string.IsNullOrWhiteSpace(body.AccessToken)
-                || body.FileId is null || !FileIdPattern().IsMatch(body.FileId))
+            var files = body.Files ?? (body.FileId is { } single ? [new PickedFile(single, null)] : []);
+            if (string.IsNullOrWhiteSpace(body.AccessToken) || files.Count is 0 or > MaxFilesPerImport
+                || files.Any(f => f.Id is null || !FileIdPattern().IsMatch(f.Id)))
             {
-                return Results.BadRequest(new { error = "A Drive file id and access token are required." });
+                return Results.BadRequest(new { error = $"Between 1 and {MaxFilesPerImport} Drive file ids and an access token are required." });
             }
             if (body.FolderId is { } fid && !await db.Folders.AnyAsync(f => f.Id == fid, ct))
             {
                 return Results.BadRequest(new { error = "Unknown folder." });
             }
 
-            // The public-egress client: the host is fixed, but its 2-minute bound and its
-            // refusal of internal addresses cost nothing to share.
-            var http = httpFactory.CreateClient(AdminPluginMedia.HttpClientName);
-            var api = new Uri(options.Value.ApiBase);
-            var id = body.FileId;
-
-            try
+            var tenantId = tenant.TenantId!.Value;
+            var token = protection.CreateProtector(DriveFileJob.TokenPurpose).Protect(body.AccessToken);
+            var group = await jobs.EnqueueAsync(new JobSpec(
+                "media.drive-import", tenantId, null, "jobs.kinds.driveImport.title", new { count = files.Count },
+                RequiredPermission: PlatformPermissions.MediaRead, Lane: JobLanes.Group, LinkPath: "/media"), ct);
+            foreach (var file in files)
             {
-                using var metaResponse = await SendAsync(http, new Uri(api,
-                    $"files/{id}?fields=name,mimeType,size&supportsAllDrives=true"), body.AccessToken, ct);
-                if (!metaResponse.IsSuccessStatusCode) return DriveRefused(metaResponse.StatusCode);
-
-                var meta = await metaResponse.Content.ReadFromJsonAsync<DriveFile>(ct);
-                if (meta?.MimeType is null) return DriveRefused(HttpStatusCode.NotFound);
-
-                var export = ExportFor(meta.MimeType);
-                if (export is null && meta.MimeType.StartsWith(GoogleAppsPrefix, StringComparison.Ordinal))
-                {
-                    return Results.BadRequest(new { error = "This kind of Google file cannot be imported." });
-                }
-                // Drive's declared size is only an early reject (exports have none); the real
-                // limit is what DownloadCappedAsync reads.
-                if (meta.SizeBytes > MediaIngestService.MaxUploadBytes)
-                {
-                    return Results.BadRequest(new { error = MediaIngestService.TooLarge });
-                }
-
-                var source = export is { } e
-                    ? new Uri(api, $"files/{id}/export?mimeType={Uri.EscapeDataString(e.MimeType)}")
-                    : new Uri(api, $"files/{id}?alt=media&supportsAllDrives=true");
-                using var download = await SendAsync(http, source, body.AccessToken, ct);
-                if (!download.IsSuccessStatusCode) return DriveRefused(download.StatusCode);
-
-                await using var file = await AdminPluginMedia.DownloadCappedAsync(download, ct);
-                if (file is null) return Results.BadRequest(new { error = MediaIngestService.TooLarge });
-
-                var fileName = string.IsNullOrWhiteSpace(meta.Name) ? id : meta.Name;
-                if (export is { } x && !fileName.EndsWith(x.Extension, StringComparison.OrdinalIgnoreCase))
-                {
-                    fileName += x.Extension;
-                }
-
-                var result = await ingest.IngestAsync(file, file.Length, fileName, body.FolderId, me.UserId, ct);
-                if (!result.Ok) return Results.BadRequest(new { error = result.Error });
-
-                // Same body as an upload, so the console treats both identically.
-                return Results.Created($"/api/admin/media/{result.AssetId}", new
-                {
-                    id = result.AssetId,
-                    category = result.Category.ToString(),
-                    contentType = result.ContentType,
-                    status = result.Status.ToString(),
-                });
+                // The name is the picker's, for the row until the file's own arrives; it is only
+                // ever displayed, to the same workspace that picked it.
+                var name = string.IsNullOrWhiteSpace(file.Name) ? file.Id! : file.Name[..Math.Min(file.Name.Length, 200)];
+                await jobs.EnqueueAsync(new JobSpec(
+                    DriveFileJob.Kind, tenantId, new DriveFilePayload(file.Id!, name, body.FolderId, token, me.UserId),
+                    "jobs.kinds.driveFile.title", new { name },
+                    RequiredPermission: PlatformPermissions.MediaRead, ParentId: group.Id, LinkPath: "/media"), ct);
             }
-            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
-            {
-                // The id and the exception, never the token.
-                loggers.CreateLogger(typeof(GoogleDriveImport)).LogWarning(ex, "Google Drive import of {FileId} failed.", id);
-                return Results.BadRequest(new { error = "Google Drive could not be reached." });
-            }
+            return Results.Accepted($"/api/admin/jobs/{group.Id}", new { jobId = group.Id });
         }).RequirePermission(PlatformPermissions.MediaWrite).WithAudit(AuditActions.MediaImported, "media_asset");
 
         return app;
     }
 
-    private static Task<HttpResponseMessage> SendAsync(HttpClient http, Uri uri, string token, CancellationToken ct)
+    internal static Task<HttpResponseMessage> SendAsync(HttpClient http, Uri uri, string token, CancellationToken ct)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -176,16 +140,15 @@ public static partial class GoogleDriveImport
     /// Google's status, translated. 401 is the one the console acts on — the picker's token
     /// expired — so it gets its own message; the rest are "you can't have that file".
     /// </summary>
-    private static IResult DriveRefused(HttpStatusCode status) => Results.BadRequest(new
-    {
-        error = status == HttpStatusCode.Unauthorized
-            ? "Google Drive sign-in expired. Open the Drive picker again."
-            : $"Google Drive refused the file ({(int)status}).",
-    });
+    /// <summary>One request's ceiling: a picker selection, not a migration.</summary>
+    private const int MaxFilesPerImport = 100;
 
-    private sealed record ImportRequest(string? AccessToken, string? FileId, Guid? FolderId);
+    /// <param name="FileId">The single file of a request from an older console.</param>
+    private sealed record ImportRequest(string? AccessToken, IReadOnlyList<PickedFile>? Files, string? FileId, Guid? FolderId);
 
-    private sealed record DriveFile(string? Name, string? MimeType, string? Size)
+    private sealed record PickedFile(string? Id, string? Name);
+
+    internal sealed record DriveFile(string? Name, string? MimeType, string? Size)
     {
         /// <summary>Drive sends size as a string, and omits it for Google-native files.</summary>
         public long SizeBytes => long.TryParse(Size, out var n) ? n : 0;

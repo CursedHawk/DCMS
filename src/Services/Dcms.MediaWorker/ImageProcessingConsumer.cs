@@ -83,11 +83,14 @@ public sealed class ImageProcessingConsumer(
         var sanitized = sanitizer.SanitizeImage(original);
         await ReplaceOriginalAsync(db, asset, sanitized.Data, sanitized.ContentType, ct);
 
+        // Sanitized and encoded: half the work. The other half is storing each copy.
         var variants = webp.Generate(sanitized.Data);
-        foreach (var variant in variants)
+        await ReportAsync(job, 0.5, "jobs.stages.uploading", ct);
+        foreach (var (variant, index) in variants.Select((v, i) => (v, i)))
         {
             var key = StorageKeys.MediaVariant(job.TenantId, job.AssetId, $"{variant.Kind}.webp");
             await UploadBytesAsync(key, variant.Data, variant.ContentType, ct);
+            await ReportAsync(job, 0.5 + 0.5 * (index + 1) / variants.Count, "jobs.stages.uploading", ct);
             db.Variants.Add(new MediaVariant
             {
                 Id = Guid.NewGuid(),

@@ -101,7 +101,7 @@ export function useNotificationHub(enabled: boolean, myUserId: string | undefine
       connection.on('JobChanged', (change: JobChanged) => {
         if (!applyJobChanged(qc, change)) return;
         clearTimeout(jobRefetch);
-        jobRefetch = setTimeout(() => void qc.invalidateQueries({ queryKey: [...jobsKey(), 'list'] }), 300);
+        jobRefetch = setTimeout(() => void qc.invalidateQueries({ queryKey: jobsKey() }), 300);
       });
 
       connection.onreconnected(() => {

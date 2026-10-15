@@ -76,7 +76,9 @@ public sealed class AdminPluginMedia(
     /// or null when it runs past <see cref="MediaIngestService.MaxUploadBytes"/>. A temp file, not
     /// a byte[]: 1 GB in memory is more than this container has. Shared with the Drive import.
     /// </summary>
-    internal static async Task<Stream?> DownloadCappedAsync(HttpResponseMessage response, CancellationToken ct)
+    /// <param name="progress">Told the bytes read so far, after each chunk (the Drive import's bar).</param>
+    internal static async Task<Stream?> DownloadCappedAsync(
+        HttpResponseMessage response, CancellationToken ct, Func<long, ValueTask>? progress = null)
     {
         var file = new FileStream(
             Path.Combine(Path.GetTempPath(), $"dcms-import-{Guid.NewGuid():N}"),
@@ -95,6 +97,10 @@ public sealed class AdminPluginMedia(
                     return null;
                 }
                 await file.WriteAsync(chunk.AsMemory(0, read), ct);
+                if (progress is not null)
+                {
+                    await progress(file.Length);
+                }
             }
             file.Position = 0;
             return file;

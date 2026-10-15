@@ -26,7 +26,9 @@ public sealed class VideoTranscoder
         (480, 1_400_000),
     ];
 
-    public async Task<VideoTranscodeResult> TranscodeAsync(string inputFile, string workDir, CancellationToken ct)
+    /// <param name="progress">0 to 1 across every rendition, from ffmpeg's own clock.</param>
+    public async Task<VideoTranscodeResult> TranscodeAsync(
+        string inputFile, string workDir, CancellationToken ct, Action<double>? progress = null)
     {
         var hlsDir = Path.Combine(workDir, "hls");
         Directory.CreateDirectory(hlsDir);
@@ -34,15 +36,19 @@ public sealed class VideoTranscoder
         var probe = await FFProbe.AnalyseAsync(inputFile, cancellationToken: ct);
         var sourceHeight = probe.PrimaryVideoStream?.Height ?? 1080;
 
+        // Never upscale, but always produce at least one rendition: the first rung, scaled down to
+        // the source if need be. Decided up front so progress has a denominator.
+        var planned = Ladder.Select(l => l.Height)
+            .Where((height, index) => index == 0 || height <= sourceHeight)
+            .ToList();
+
         var produced = new List<int>();
-        foreach (var (height, _) in Ladder)
+        foreach (var height in planned)
         {
-            if (height > sourceHeight && produced.Count > 0)
-            {
-                continue; // never upscale, but always produce at least one rendition
-            }
             var target = Math.Min(height, sourceHeight);
-            await TranscodeRenditionAsync(inputFile, hlsDir, height, target, ct);
+            var done = produced.Count;
+            await TranscodeRenditionAsync(inputFile, hlsDir, height, target, probe.Duration,
+                percent => progress?.Invoke((done + Math.Clamp(percent, 0, 100) / 100.0) / planned.Count), ct);
             produced.Add(height);
         }
 
@@ -58,7 +64,8 @@ public sealed class VideoTranscoder
         return new VideoTranscodeResult(files, produced, poster);
     }
 
-    private static async Task TranscodeRenditionAsync(string input, string hlsDir, int label, int targetHeight, CancellationToken ct)
+    private static async Task TranscodeRenditionAsync(
+        string input, string hlsDir, int label, int targetHeight, TimeSpan duration, Action<double> percent, CancellationToken ct)
     {
         var playlist = Path.Combine(hlsDir, $"r{label}.m3u8");
         var segmentPattern = Path.Combine(hlsDir, $"r{label}_%03d.ts");
@@ -75,6 +82,7 @@ public sealed class VideoTranscoder
                 .WithCustomArgument("-hls_playlist_type vod")
                 .WithCustomArgument($"-hls_segment_filename \"{segmentPattern}\"")
                 .ForceFormat("hls"))
+            .NotifyOnProgress(percent, duration)
             .CancellableThrough(ct)
             .ProcessAsynchronously();
     }

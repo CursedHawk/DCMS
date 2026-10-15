@@ -49,7 +49,8 @@ public sealed record JobDto(
     DateTimeOffset? StartedAt,
     DateTimeOffset? FinishedAt,
     DateTimeOffset UpdatedAt,
-    long Seq)
+    long Seq,
+    JsonElement? Result)
 {
     public static JobDto From(Job j, bool forOperator, (string Slug, string? Name)? tenant = null) => new(
         j.Id, j.TenantId, tenant?.Slug, tenant?.Name, j.ParentId, j.Kind, j.Lane, j.Source, j.TitleKey,
@@ -60,7 +61,8 @@ public sealed record JobDto(
         j.Cancelable && !j.IsFinished,
         j.CancelRequestedAt is not null && !j.IsFinished,
         j.Status is JobStatus.Failed or JobStatus.Canceled && (JobDispatch.IsDispatched(j.Lane) || j.Lane == JobLanes.Group),
-        j.Attempts, j.MaxAttempts, j.ActorUserId, j.CreatedAt, j.StartedAt, j.FinishedAt, j.UpdatedAt, j.Seq);
+        j.Attempts, j.MaxAttempts, j.ActorUserId, j.CreatedAt, j.StartedAt, j.FinishedAt, j.UpdatedAt, j.Seq,
+        j.ResultJson is null ? null : JsonDocument.Parse(j.ResultJson).RootElement.Clone());
 }
 
 public sealed record JobPageDto(IReadOnlyList<JobDto> Items, string? NextCursor);

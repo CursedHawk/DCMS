@@ -38,7 +38,9 @@ public sealed class AudioProcessingConsumer(
 
         try
         {
-            var result = await transcoder.TranscodeAsync(input, workDir, ct);
+            var result = await transcoder.TranscodeAsync(input, workDir, ct,
+                fraction => _ = ReportAsync(job, fraction * 0.9, "jobs.stages.converting", ct).AsTask());
+            await ReportAsync(job, 0.9, "jobs.stages.uploading", ct);
 
             var aacKey = StorageKeys.MediaVariant(job.TenantId, job.AssetId, "audio.m4a");
             await UploadFileAsync(aacKey, result.AacPath, "audio/mp4", ct);

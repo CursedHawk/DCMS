@@ -483,8 +483,9 @@
     },
     "drive": {
       "import": "Import from Google Drive",
-      "importing": "Importing…",
-      "unavailable": "Google Drive could not be opened. Check that pop-ups are allowed for this site and try again."
+      "unavailable": "Google Drive could not be opened. Check that pop-ups are allowed for this site and try again.",
+      "queued_one": "Importing {{count}} file from Google Drive in the background.",
+      "queued_other": "Importing {{count}} files from Google Drive in the background."
     },
     "limits": {
       "tooLarge": "Files can be at most 1 GB.",
@@ -1283,9 +1284,33 @@
       "failed": "Something went wrong while running this job.",
       "stale": "The worker stopped responding.",
       "someFailed": "Some items failed.",
-      "unknownKind": "This kind of job isn't supported by the worker."
+      "unknownKind": "This kind of job isn't supported by the worker.",
+      "driveReauth": "Google Drive sign-in expired. Import the file again.",
+      "driveRefused": "Google Drive refused the file.",
+      "driveUnsupported": "This kind of Google file can't be imported.",
+      "tooLarge": "Files can be at most 1 GB.",
+      "ingestRefused": "The library refused the file.",
+      "mediaProcessing": "The file could not be converted.",
+      "enqueueFailed": "The work could not be queued."
     },
-    "kinds": {}
+    "kinds": {
+      "driveImport": {
+        "title_one": "Import of {{count}} file from Google Drive",
+        "title_other": "Import of {{count}} files from Google Drive"
+      },
+      "driveFile": {
+        "title": "{{name}}"
+      },
+      "mediaProcess": {
+        "title": "Converting {{name}}"
+      }
+    },
+    "stages": {
+      "downloading": "Downloading",
+      "saving": "Adding to the library",
+      "converting": "Converting",
+      "uploading": "Saving the copies"
+    }
   },
   "marketplace": {
     "description": "Everything this platform can do, and what each one will ask for.",

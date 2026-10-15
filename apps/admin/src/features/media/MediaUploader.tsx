@@ -5,11 +5,12 @@ import { useTranslation } from 'react-i18next';
 import { Button, cn, Progress, toast, toastApiError } from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
 import { formatSize, useMediaUsage } from './api';
+import { DriveImportProgress } from './DriveImportProgress';
 import { isInternalDrag } from './dnd';
 import {
   DriveCancelled,
   forgetDriveToken,
-  importDriveFile,
+  importDriveFiles,
   pickFromDrive,
   preloadDrive,
   useDriveConfig,
@@ -20,19 +21,16 @@ interface UploadItem {
   id: number;
   name: string;
   size: number;
-  source: 'device' | 'drive';
   /** 0–1 of bytes sent; 1 while the server is still processing the request. */
   progress: number;
   status: 'pending' | 'uploading' | 'done' | 'error';
   error?: string;
 }
 
-/** A file to add, whichever way its bytes reach the server. */
+/** A file from this device to send. (Drive imports run on the server: DriveImportProgress.) */
 interface Job {
   name: string;
   size: number;
-  source: UploadItem['source'];
-  /** Known only for files from this device; a Drive file's type is the server's to check. */
   isImage?: boolean;
   send: (onProgress: (fraction: number) => void) => Promise<{ id: string }>;
 }
@@ -69,6 +67,8 @@ export function MediaUploader({
   const [dragging, setDragging] = useState(false);
   const [items, setItems] = useState<UploadItem[]>([]);
   const [busy, setBusy] = useState(false);
+  // The Drive import the server is running for this uploader, if any.
+  const [driveJob, setDriveJob] = useState<string | null>(null);
   const drive = useDriveConfig().data;
   const usage = useMediaUsage().data;
 
@@ -82,7 +82,6 @@ export function MediaUploader({
       id: nextId++,
       name: j.name,
       size: j.size,
-      source: j.source,
       progress: 0,
       status: 'pending',
     }));
@@ -111,16 +110,12 @@ export function MediaUploader({
           continue;
         }
         room -= job.size;
-        // A Drive file is downloaded by the server, so there are no bytes to count here:
-        // it sits at "the server is processing" until the request returns.
-        patch(item.id, { status: 'uploading', progress: job.source === 'drive' ? 1 : 0 });
+        patch(item.id, { status: 'uploading', progress: 0 });
         try {
           const res = await job.send((fraction) => patch(item.id, { progress: fraction }));
           patch(item.id, { status: 'done', progress: 1 });
           onUploaded?.(res.id, job.name);
         } catch (e) {
-          // Most likely the token expired mid-batch; the next pick signs in afresh.
-          if (job.source === 'drive') forgetDriveToken();
           const message = e instanceof ApiError ? e.message : t('errors.generic');
           patch(item.id, { status: 'error', error: message });
           toastApiError(e, t, job.name);
@@ -144,7 +139,6 @@ export function MediaUploader({
       Array.from(files).map((file) => ({
         name: file.name,
         size: file.size,
-        source: 'device' as const,
         isImage: file.type.startsWith('image/'),
         send: (onProgress) => {
           const form = new FormData();
@@ -160,14 +154,17 @@ export function MediaUploader({
     if (!drive) return;
     try {
       const { token, files } = await pickFromDrive(drive, { multiple, locale: i18n.language });
-      await run(
-        files.map((f) => ({
-          name: f.name,
-          size: f.sizeBytes,
-          source: 'drive' as const,
-          send: () => importDriveFile(token, f.id, folderId),
-        })),
-      );
+      if (files.length === 0) return;
+      // One request for the whole pick: the server downloads and ingests in the background
+      // (ADR 0024), so leaving the page does not stop it.
+      try {
+        const { jobId } = await importDriveFiles(token, files, folderId);
+        setDriveJob(jobId);
+        toast(t('media.drive.queued', { count: files.length }));
+      } catch (e) {
+        forgetDriveToken();
+        toastApiError(e, t);
+      }
     } catch (e) {
       if (!(e instanceof DriveCancelled)) toast.error(t('media.drive.unavailable'));
     }
@@ -243,6 +240,19 @@ export function MediaUploader({
         ) : null}
       </div>
 
+      {driveJob ? (
+        <DriveImportProgress
+          jobId={driveJob}
+          onUploaded={onUploaded}
+          onSettled={(anyFailed) => {
+            // Failures stay on screen (they are the record of what went wrong); a clean import
+            // clears itself.
+            if (anyFailed) forgetDriveToken();
+            else setDriveJob(null);
+          }}
+        />
+      ) : null}
+
       {items.length > 0 ? (
         <ul className="divide-y rounded-lg border">
           {items.map((it) => (
@@ -252,8 +262,6 @@ export function MediaUploader({
                   <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--success))]" />
                 ) : it.status === 'error' ? (
                   <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
-                ) : it.source === 'drive' ? (
-                  <DriveGlyph className="h-3.5 w-3.5 shrink-0" />
                 ) : null}
                 <span className="min-w-0 flex-1 truncate font-medium" title={it.name}>
                   {it.name}
@@ -263,20 +271,14 @@ export function MediaUploader({
                 ) : null}
                 {it.status === 'uploading' ? (
                   <span className="shrink-0 text-right tabular-nums text-muted-foreground">
-                    {it.source === 'drive' ? t('media.drive.importing') : `${Math.round(it.progress * 100)}%`}
+                    {`${Math.round(it.progress * 100)}%`}
                   </span>
                 ) : null}
               </div>
               {it.status === 'error' ? (
                 <p className="text-xs text-destructive">{it.error}</p>
               ) : (
-                <Progress
-                  value={it.progress}
-                  label={it.name}
-                  className={cn(
-                    it.source === 'drive' && it.status === 'uploading' && 'animate-pulse motion-reduce:animate-none',
-                  )}
-                />
+                <Progress value={it.progress} label={it.name} />
               )}
             </li>
           ))}

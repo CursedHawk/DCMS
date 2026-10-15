@@ -1,3 +1,4 @@
+using Dcms.Shared.Jobs;
 using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Audit;
 using Dcms.MediaWorker;
@@ -27,6 +28,9 @@ builder.Services.AddSingleton<MediaSanitizer>();
 builder.Services.AddSingleton<WebpLadderGenerator>();
 builder.Services.AddSingleton<VideoTranscoder>();
 builder.Services.AddSingleton<AudioTranscoder>();
+// Conversion progress onto the jobs ledger (ADR 0024), over the bus: this service holds no
+// grant on the jobs schema, and admin-api folds the reports in.
+builder.Services.AddJobReporter();
 builder.Services.AddHostedService<ImageProcessingConsumer>();
 builder.Services.AddHostedService<VideoProcessingConsumer>();
 builder.Services.AddHostedService<AudioProcessingConsumer>();

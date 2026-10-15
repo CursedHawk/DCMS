@@ -502,8 +502,10 @@
     },
     "drive": {
       "import": "Importovat z Google Disku",
-      "importing": "Importuje se…",
-      "unavailable": "Google Disk se nepodařilo otevřít. Povolte pro tento web vyskakovací okna a zkuste to znovu."
+      "unavailable": "Google Disk se nepodařilo otevřít. Povolte pro tento web vyskakovací okna a zkuste to znovu.",
+      "queued_one": "Importuje se {{count}} soubor z Google Disku na pozadí.",
+      "queued_few": "Importují se {{count}} soubory z Google Disku na pozadí.",
+      "queued_other": "Importuje se {{count}} souborů z Google Disku na pozadí."
     },
     "limits": {
       "tooLarge": "Soubor může mít nejvýše 1 GB.",
@@ -1312,9 +1314,34 @@
       "failed": "Při běhu úlohy se něco pokazilo.",
       "stale": "Pracovní proces přestal odpovídat.",
       "someFailed": "Některé položky selhaly.",
-      "unknownKind": "Tento druh úlohy pracovní proces nepodporuje."
+      "unknownKind": "Tento druh úlohy pracovní proces nepodporuje.",
+      "driveReauth": "Přihlášení ke Google Disku vypršelo. Importujte soubor znovu.",
+      "driveRefused": "Google Disk soubor odmítl.",
+      "driveUnsupported": "Tento druh souboru Google nelze importovat.",
+      "tooLarge": "Soubory mohou mít nejvýše 1 GB.",
+      "ingestRefused": "Knihovna soubor odmítla.",
+      "mediaProcessing": "Soubor se nepodařilo převést.",
+      "enqueueFailed": "Práci se nepodařilo zařadit do fronty."
     },
-    "kinds": {}
+    "kinds": {
+      "driveImport": {
+        "title_one": "Import {{count}} souboru z Google Disku",
+        "title_few": "Import {{count}} souborů z Google Disku",
+        "title_other": "Import {{count}} souborů z Google Disku"
+      },
+      "driveFile": {
+        "title": "{{name}}"
+      },
+      "mediaProcess": {
+        "title": "Převod {{name}}"
+      }
+    },
+    "stages": {
+      "downloading": "Stahování",
+      "saving": "Přidávání do knihovny",
+      "converting": "Převod",
+      "uploading": "Ukládání kopií"
+    }
   },
   "marketplace": {
     "description": "Vše, co tato platforma umí, a co si každý plugin vyžádá.",

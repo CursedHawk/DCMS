@@ -108,9 +108,27 @@ test('without a Google app configured there is no Drive button', async ({ page, 
   expect(api.requestsTo('GET', '/api/admin/media/google-drive/config')).not.toHaveLength(0);
 });
 
-test('a file picked in Google Drive is imported by the server, not uploaded', async ({ page, api }) => {
+test('a file picked in Google Drive is queued for the server to import, not uploaded', async ({ page, api }) => {
   api.on('GET', '/api/admin/media/google-drive/config', { clientId: 'client', apiKey: 'key', appId: '123' });
-  api.on('POST', '/api/admin/media/google-drive/import', { id: data.ASSET_LOOSE });
+  const GROUP = 'cccccccc-0000-0000-0000-000000000001';
+  api.on('POST', '/api/admin/media/google-drive/import', { jobId: GROUP });
+  // The import as the ledger tells it (ADR 0024): one file, halfway downloaded.
+  const job = (over: Record<string, unknown>) => ({
+    id: GROUP, tenantId: 't', tenantSlug: null, tenantName: null, parentId: null, kind: 'media.drive-import',
+    lane: 'group', source: 'admin-api', titleKey: 'jobs.kinds.driveImport.title', params: { count: 1 },
+    status: 'Running', done: 50, total: 100, stageKey: null, errorKey: null, errorDetail: null, linkPath: '/media',
+    cancelable: false, cancelRequested: false, retryable: false, attempts: 0, maxAttempts: 3, actorUserId: null,
+    createdAt: '2026-10-15T10:00:00Z', startedAt: null, finishedAt: '2026-10-15T10:00:05Z',
+    updatedAt: '2026-10-15T10:00:05Z', seq: 4, result: null, ...over,
+  });
+  api.on('GET', `/api/admin/jobs/${GROUP}`, {
+    job: job({}),
+    children: [job({
+      id: 'cccccccc-0000-0000-0000-000000000002', parentId: GROUP, kind: 'media.drive-file', lane: 'tenant',
+      titleKey: 'jobs.kinds.driveFile.title', params: { name: 'beach.jpg' }, done: 1024, total: 2048,
+      stageKey: 'jobs.stages.downloading',
+    })],
+  });
 
   // Google's scripts, faked: sign-in grants a token at once, and the picker "picks" one file
   // as soon as it is shown. What is under test is everything after Google hands over.
@@ -177,9 +195,11 @@ test('a file picked in Google Drive is imported by the server, not uploaded', as
     .toBe(1);
   expect(api.requestsTo('POST', '/api/admin/media/google-drive/import')[0].body).toEqual({
     accessToken: 'drive-token',
-    fileId: 'drive-file-1',
+    files: [{ id: 'drive-file-1', name: 'beach.jpg' }],
     folderId: null,
   });
+  // The file's row follows the server's job, not a request this page is waiting on.
+  await expect(page.getByTestId('drive-import').getByText('beach.jpg')).toBeVisible();
   // The bytes never pass through the browser: no multipart upload was made.
   expect(api.requestsTo('POST', '/api/admin/media')).toEqual([]);
 });

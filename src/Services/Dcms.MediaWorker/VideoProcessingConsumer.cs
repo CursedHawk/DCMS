@@ -40,7 +40,10 @@ public sealed class VideoProcessingConsumer(
 
         try
         {
-            var result = await transcoder.TranscodeAsync(input, workDir, ct);
+            // Encoding is nearly all the time; storing the segments is the last tenth.
+            var result = await transcoder.TranscodeAsync(input, workDir, ct,
+                fraction => _ = ReportAsync(job, fraction * 0.9, "jobs.stages.converting", ct).AsTask());
+            await ReportAsync(job, 0.9, "jobs.stages.uploading", ct);
 
             // Upload the whole hls/ tree (playlists + segments).
             foreach (var file in result.HlsFiles)

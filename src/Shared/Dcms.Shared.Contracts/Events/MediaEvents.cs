@@ -15,7 +15,8 @@ public sealed record MediaProcessRequested(
     Guid AssetId,
     MediaCategory Category,
     string OriginalObjectKey,
-    string ContentType) : ITenantEvent
+    string ContentType,
+    Guid? JobId = null) : ITenantEvent
 {
     public int Version => 1;
 }

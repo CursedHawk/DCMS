@@ -54,6 +54,7 @@ public class MediaWorkerTests : IAsyncLifetime
             await js.CreateStreamAsync(new StreamConfig("MEDIA", ["media.process.>"]));
             await js.CreateStreamAsync(new StreamConfig("MEDIA_EVENTS", ["media.processed", "media.failed"]));
             await js.CreateStreamAsync(new StreamConfig("AUDIT", ["audit.>"]));
+            await js.CreateStreamAsync(new StreamConfig("JOBS_EVENTS", ["jobs.changed", "jobs.state"]));
         }
 
         await using (var db = NewDb(Guid.Empty))
@@ -185,6 +186,72 @@ public class MediaWorkerTests : IAsyncLifetime
         var kinds = await verify.Variants.IgnoreQueryFilters()
             .Where(v => v.AssetId == assetId).Select(v => v.Kind).ToListAsync(ct);
         kinds.Should().Contain(["webp-320", "webp-640", "thumb"]);
+    }
+
+    /// <summary>
+    /// The conversion reports itself onto the jobs ledger (ADR 0024): started, how far, and the
+    /// outcome with the asset it produced -- over jobs.state, since media-worker cannot write the
+    /// jobs schema. admin-api folds these in (JobLedgerTests).
+    /// </summary>
+    [DockerFact]
+    public async Task An_image_job_reports_its_start_progress_and_outcome()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var tenantId = Guid.NewGuid();
+        var assetId = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        var key = StorageKeys.MediaOriginal(tenantId, assetId, ".png");
+        var endpoint = $"{_minio.Hostname}:{_minio.GetMappedPublicPort(9000)}";
+        var png = CreatePng(1000, 800);
+        await using (var ms = new MemoryStream(png))
+        {
+            await MinioClientFactory(endpoint, _minio.GetAccessKey(), _minio.GetSecretKey()).PutObjectAsync(new PutObjectArgs()
+                .WithBucket(Bucket).WithObject(key).WithStreamData(ms).WithObjectSize(png.Length)
+                .WithContentType("image/png"), ct);
+        }
+        await using (var db = NewDb(tenantId))
+        {
+            db.Assets.Add(new MediaAsset
+            {
+                Id = assetId, TenantId = tenantId, Category = MediaCategory.Image,
+                FileName = "pic.png", ContentType = "image/png", SizeBytes = png.Length,
+                OriginalKey = key, Status = MediaStatus.Processing,
+            });
+            await db.SaveChangesAsync(ct);
+        }
+
+        await using var conn = new NatsConnection(NatsOpts.Default with
+        {
+            Url = _nats.GetConnectionString(),
+            SerializerRegistry = NatsJsonSerializerRegistry.Default,
+        });
+        var js = new NatsJSContext(conn);
+        var reports = await js.CreateOrderedConsumerAsync("JOBS_EVENTS",
+            new NatsJSOrderedConsumerOpts { FilterSubjects = ["jobs.state"] }, ct);
+
+        await js.PublishAsync("media.process.image", new MediaProcessRequested(
+            Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, assetId, MediaCategory.Image, key, "image/png", jobId),
+            cancellationToken: ct);
+
+        var seen = new List<JobStateReported>();
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        await foreach (var msg in reports.ConsumeAsync<JobStateReported>(cancellationToken: timeout.Token))
+        {
+            if (msg.Data is { } r && r.JobId == jobId)
+            {
+                seen.Add(r);
+                if (r.Status is "Succeeded" or "Failed") break;
+            }
+        }
+
+        seen.Should().NotBeEmpty();
+        seen[0].Status.Should().Be("Running");
+        seen.Should().Contain(r => r.Status == null && r.Done > 0, "the variants are reported as they are stored");
+        var outcome = seen[^1];
+        outcome.Status.Should().Be("Succeeded");
+        outcome.ResultJson.Should().Contain(assetId.ToString());
+        seen.Should().OnlyContain(r => r.TenantId == tenantId);
     }
 
     /// <summary>
