@@ -62,22 +62,30 @@ export interface ItemList {
 export interface DataClient {
   get(path: string): Promise<unknown>;
   post(path: string, body: unknown): Promise<unknown>;
+  /** Changes beyond a POST — a data table's saved views. Absent where nothing may be changed (the builder). */
+  send?(method: 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<unknown>;
 }
 
 /** Same-origin `fetch`: on a published site `/api/*` is served by site-host's proxy. */
 /** A client for the delivery API at `base` (empty: the site's own origin, which proxies /api). */
 export function createFetchDataClient(base = ''): DataClient {
+  const send: NonNullable<DataClient['send']> = async (method, path, body) => {
+    const res = await fetch(base + path, {
+      method,
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (!res.ok) throw new DataError(res.status, path, await res.json().catch(() => undefined));
+    return res.status === 204 ? undefined : res.json().catch(() => undefined);
+  };
   return {
     async get(path) {
       const res = await fetch(base + path, { headers: { Accept: 'application/json' } });
       if (!res.ok) throw new DataError(res.status, path);
       return res.json();
     },
-    async post(path, body) {
-      const res = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      if (!res.ok) throw new DataError(res.status, path, await res.json().catch(() => undefined));
-      return res.status === 204 ? undefined : res.json().catch(() => undefined);
-    },
+    post: (path, body) => send('POST', path, body),
+    send,
   };
 }
 

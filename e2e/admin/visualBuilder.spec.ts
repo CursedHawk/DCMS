@@ -502,6 +502,89 @@ function content(api: MockApi) {
     .on('GET', '/api/admin/sites/:id/preview/api/press-room/post/:slug', ({ params }) => POSTS.find((p) => p.slug === params.slug));
 }
 
+const DEALS = [
+  { id: 'd1', name: 'Acme renewal', amount: 1200, stage: 'Won' },
+  { id: 'd2', name: 'Globex pilot', amount: 300, stage: 'Lead' },
+];
+
+const tableSite = {
+  'dcms/app.json': doc({ schemaVersion: 1, routes: [{ id: 'home', path: '/', page: 'home' }] }),
+  'dcms/pages/home.json': doc({
+    schemaVersion: 1,
+    id: 'home',
+    title: 'Home',
+    root: {
+      id: 'r',
+      type: 'dcms.page',
+      slots: {
+        default: [
+          { id: 'h', type: 'dcms.heading', props: { text: 'Pipeline' } },
+          { id: 'deals', type: 'dcms.data-table', props: { instance: 'crm', table: 'deals' } },
+        ],
+      },
+    },
+  }),
+};
+
+test('a data table shows an app’s records; sorting, search and filters are asked of the server', async ({ page, api }) => {
+  api
+    .on('GET', '/api/admin/sites/:id/preview/api/crm/_model', {
+      tables: [
+        {
+          apiName: 'deals',
+          displayName: 'Deal',
+          pluralName: 'Deals',
+          primaryField: 'name',
+          fields: [
+            { apiName: 'name', displayName: 'Name', type: 'text' },
+            { apiName: 'amount', displayName: 'Amount', type: 'decimal' },
+            { apiName: 'stage', displayName: 'Stage', type: 'choice', options: ['Lead', 'Won'] },
+          ],
+        },
+      ],
+    })
+    .on('GET', '/api/admin/sites/:id/preview/api/crm/views/deals', {
+      signedIn: false,
+      views: [{ id: 'system:won', name: 'Won deals', system: true, mine: false, definition: { columns: ['name', 'stage'], sort: [], filter: { field: 'stage', op: 'eq', value: 'Won' } } }],
+      defaultView: null,
+    })
+    .on('POST', '/api/admin/sites/:id/preview/api/crm/data/deals/query', ({ body }) => {
+      const q = body as { search?: string; filter?: unknown };
+      const items = DEALS.filter((d) => (!q.search || d.name.toLowerCase().includes(q.search.toLowerCase())) && (!q.filter || d.stage === 'Won'));
+      return { items, total: items.length, page: 1, pageSize: 25 };
+    });
+  const queries = () => api.requestsTo('POST', `/api/admin/sites/${SITE}/preview/api/crm/data/deals/query`).map((r) => r.body as Record<string, unknown>);
+
+  // The canvas shows the real records, and says saving views is for the site.
+  const frame = await open(page, api, tableSite);
+  await expect(frame.getByRole('cell', { name: 'Acme renewal' })).toBeVisible();
+  await expect(frame.getByText('Signed-in visitors can save views here')).toBeVisible();
+
+  await page.getByRole('group', { name: 'View' }).getByTitle('Preview').click();
+  const preview = page.frameLocator('iframe[title="Preview"]');
+  await expect(preview.getByRole('cell', { name: 'Globex pilot' })).toBeVisible();
+
+  await preview.getByRole('button', { name: 'Amount' }).click();
+  await expect.poll(() => queries().at(-1)?.sort).toEqual([{ field: 'amount', direction: 'asc' }]);
+  await expect(preview.getByRole('columnheader', { name: /Amount/ })).toHaveAttribute('aria-sort', 'ascending');
+
+  await preview.getByRole('searchbox', { name: 'Search Deals' }).fill('globex');
+  await expect.poll(() => queries().at(-1)?.search).toBe('globex');
+  await expect(preview.getByRole('cell', { name: 'Acme renewal' })).toHaveCount(0);
+  await preview.getByRole('searchbox', { name: 'Search Deals' }).fill('');
+
+  // The app's own view: its columns and its filter, from the server.
+  await preview.getByRole('combobox', { name: 'View' }).selectOption({ label: 'Won deals' });
+  await expect.poll(() => queries().at(-1)?.filter).toEqual({ field: 'stage', op: 'eq', value: 'Won' });
+  await expect(preview.getByRole('columnheader')).toHaveText(['Name', 'Stage']);
+  await expect(preview.getByRole('cell', { name: 'Globex pilot' })).toHaveCount(0);
+  await expect(preview.getByRole('button', { name: 'Save as…' })).toHaveCount(0);
+
+  // Filters: any/all groups of conditions, each field with its own comparisons.
+  await preview.getByRole('button', { name: /^Filter/ }).click();
+  await expect(preview.getByRole('combobox', { name: 'Condition' })).toHaveValue('eq');
+});
+
 test('a collection shows real content on the canvas, and a heading in it binds to a field', async ({ page, api }) => {
   content(api);
   const frame = await open(page, api, dataSite);

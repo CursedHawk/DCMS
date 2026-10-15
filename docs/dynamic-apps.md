@@ -207,6 +207,9 @@ An action is named with its major version. Its meaning never changes within that
   and keep the tables a rule reads admin-only (the validator warns otherwise).
 - **The site API** is `/api/{slug}/data/{table}` on content-api. It is generated from the live
   revision only, and it is in the site's OpenAPI document and generated client.
+- **Saved views on the site**: `/api/{slug}/views/{table}` — the app's views for anyone who may
+  read the table, and a signed-in User Authentication user's own and shared ones. Visual sites
+  show them in the **Data table** component; see [table-views.md](table-views.md#on-the-tenants-sites).
 - **Public writes are throttled** to 120 an hour per visitor and per IP. A signed-in user holding
   a role on the app (below) counts against their own 120 instead, and role holders together
   against 1,200 an hour per IP, so an office behind one address is not limited to 120.

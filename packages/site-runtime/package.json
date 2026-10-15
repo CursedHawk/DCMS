@@ -14,6 +14,10 @@
     "./theme": {
       "types": "./src/theme.ts",
       "import": "./src/theme.ts"
+    },
+    "./views": {
+      "types": "./src/views.ts",
+      "import": "./src/views.ts"
     }
   },
   "files": [

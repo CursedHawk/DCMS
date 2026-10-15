@@ -29,6 +29,35 @@ read that table does not see its views, and the rows they see are still only tho
 permissions (and, in Dynamic Apps, the row rules) give them. Deleting a view takes it away from
 everyone it was shared with and from their "opens first".
 
+## On the tenant's sites
+
+Dynamic Apps tables have views on the sites too (#297), for the people who use them there.
+
+- **Visual sites** get the **Data table** component (palette → Data): set the app (`crm`), the
+  table's API name (`deals`), optionally the columns shown before a view is picked, rows per
+  page, and whether visitors get search, filters and columns, and saved views. Visitors sort by
+  a column's header, search, filter in all/any groups (three levels) and choose columns — the
+  same tree as in the console.
+- **Views on a site** are the app's own (everyone who may read the table picks from them) plus,
+  for a user signed in through **User Authentication**, their own and those shared with them.
+  **Save** / **Save as…**, **Share**, **Delete** and **Open with this view** work as above.
+  Visitor accounts (VisitorAuth) and anonymous visitors can use the app's views but not save.
+- **Sharing on a site** is read-only, with **everyone signed in**, with **User Authentication
+  groups**, or with **people** found by name or email. A signed-in user can therefore look up the
+  site's active users (name and email) and its group names; nobody else can. A shared view still
+  shows only the rows the table's public access, the user's roles and the row rules give each
+  person.
+- **Code sites** call the same API through their generated client — `api.{app}.{table}.views`
+  (`list`, `create`, `update`, `delete`, `share`, `setDefault`) and `api.{app}.views.people` /
+  `.groups` — and query with `api.{app}.{table}.query({ filter, sort, search, select, page })`
+  ([dynamic-apps.md](dynamic-apps.md#records-and-the-public-api)).
+
+Endpoints, on content-api through the site host: `GET|POST /api/{app}/views/{table}`,
+`PUT|DELETE /api/{app}/views/{table}/{id}`, `PUT …/{id}/sharing` (`{ everyone, groups, users }`),
+`PUT /api/{app}/views/{table}/default` (`{ viewKey }`: a view id, `system:{id}`, or null), and
+`GET /api/{app}/views/_people?search=|ids=` and `/views/_groups`. A user keeps at most 50 views
+per table; a view is shared with at most 50 groups and 50 people.
+
 ## What each table filters on
 
 | Table | Fields |
@@ -43,6 +72,11 @@ everyone it was shared with and from their "opens first".
   `table_view_defaults`), keyed by table: `content:{instance}:{type}`, `apps:{instance}:{table}`,
   `dataset:{instance}:{set}`. API: `/api/admin/views` (list, save, change, delete, `sharing`,
   `default`, `audience`).
+- Site views live in `apps.site_views` and `apps.site_view_defaults`, keyed by app instance and
+  table id and owned by the User Authentication account. Whom to share with comes from identity's
+  `/api/realm-directory/people|groups`, asked with the signed-in user's own realm token (User
+  Authentication's `users.people@1`), which opens only that user's realm and only while they may
+  sign in; no service credential reads it.
 - A view's filter is the tree `{ and | or | not | field op value }` — Dynamic Apps' record
   filter, so it reaches records unchanged. Content compiles it to SQL over the item's draft
   (`ContentFilterSql`); a data set gets it as `DataQuery.Where`.
