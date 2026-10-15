@@ -62,6 +62,8 @@ public sealed class JobControl(JobLedger ledger, JobsDbContext db, IEventPublish
         return true;
     }
 
+    // rls: JobLedger.ScopeFor enters RlsScope.Tenant (or Platform for a platform job) for the
+    // parent's own tenant, and the query names that tenant too.
     private async Task<List<Guid>> ChildrenAsync(Job parent, System.Linq.Expressions.Expression<Func<Job, bool>> filter, CancellationToken ct)
     {
         using var _ = JobLedger.ScopeFor(parent.TenantId);

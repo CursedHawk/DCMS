@@ -3,6 +3,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -77,8 +79,7 @@ public sealed class IdempotencyMiddleware(
         }
 
         // Scoped to the caller and workspace, so one person's key can never answer for another.
-        var redisKey = $"idem:{options.Service}:{context.User.FindFirst("sub")?.Value ?? "anon"}:"
-                       + $"{request.Headers["X-Dcms-Tenant"]}:{key}";
+        var redisKey = $"idem:{options.Service}:{Caller(context)}:{request.Headers["X-Dcms-Tenant"]}:{key}";
         var fingerprint = await FingerprintAsync(request, context.RequestAborted);
 
         IDatabase db;
@@ -126,13 +127,15 @@ public sealed class IdempotencyMiddleware(
         }
 
         var response = context.Response;
+        var body = KeepableBody(context, capture);
         var done = new Entry(Done, fingerprint)
         {
             Status = status,
             ContentType = response.ContentType,
             Location = response.Headers.Location.ToString() is { Length: > 0 } location ? location : null,
-            Body = capture.Overflowed ? null : Convert.ToBase64String(capture.Captured),
-            Overflowed = capture.Overflowed,
+            Body = body,
+            // Done, but its body could not be kept: a repeat hears "already processed".
+            Overflowed = body is null,
         };
         try
         {
@@ -166,12 +169,27 @@ public sealed class IdempotencyMiddleware(
         }
         if (stored.Overflowed)
         {
-            // Done, but its answer was too large to keep. Saying so beats performing it again.
+            // Done, but its answer was not kept (too large, no-store, or no protector). Saying
+            // so beats performing it again.
             await RefuseAsync(context, StatusCodes.Status409Conflict, "idempotency-already-processed");
             return;
         }
 
         var response = context.Response;
+        byte[] body;
+        try
+        {
+            body = string.IsNullOrEmpty(stored.Body)
+                ? []
+                : (Protector(context) ?? throw new System.Security.Cryptography.CryptographicException("No protector."))
+                    .Unprotect(Convert.FromBase64String(stored.Body));
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            // Kept by a replica whose key this one does not hold. Done is still done.
+            await RefuseAsync(context, StatusCodes.Status409Conflict, "idempotency-already-processed");
+            return;
+        }
         response.StatusCode = stored.Status;
         response.Headers[ReplayedHeader] = "true";
         if (stored.ContentType is not null)
@@ -182,12 +200,31 @@ public sealed class IdempotencyMiddleware(
         {
             response.Headers.Location = stored.Location;
         }
-        var body = stored.Body is null ? [] : Convert.FromBase64String(stored.Body);
         if (body.Length > 0)
         {
             await response.Body.WriteAsync(body, context.RequestAborted);
         }
     }
+
+    /// <summary>
+    /// The body as stored: encrypted with Data Protection, because a write's response can carry
+    /// what was shown once (a new API key, a one-time token) and Redis is not where that should
+    /// sit readable for a day. Not kept at all when the response says <c>no-store</c>, when it was
+    /// too large, or when this host has no protector; a repeat then hears "already processed".
+    /// </summary>
+    private static string? KeepableBody(HttpContext context, CaptureStream capture)
+    {
+        if (capture.Overflowed || capture.Captured.Length == 0
+            || context.Response.Headers.CacheControl.ToString().Contains("no-store", StringComparison.OrdinalIgnoreCase)
+            || Protector(context) is not { } protector)
+        {
+            return capture.Captured.Length == 0 && !capture.Overflowed ? "" : null;
+        }
+        return Convert.ToBase64String(protector.Protect(capture.Captured));
+    }
+
+    private static IDataProtector? Protector(HttpContext context) =>
+        context.RequestServices.GetService<IDataProtectionProvider>()?.CreateProtector("Dcms.Idempotency.v1");
 
     private async Task ReleaseAsync(IDatabase db, string redisKey)
     {
@@ -230,6 +267,22 @@ public sealed class IdempotencyMiddleware(
             hash.AppendData(Encoding.UTF8.GetBytes($"{length}\n{request.ContentType}"));
         }
         return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    /// <summary>
+    /// Who a key belongs to. A person is their user id. A service acts for many people --
+    /// platform-api delegates every operator's console writes on one client id -- so the person
+    /// it propagates is part of the scope, or one operator's key could replay another's
+    /// response. Anonymous callers are told apart by address; they share no identity at all.
+    /// </summary>
+    private static string Caller(HttpContext context)
+    {
+        var sub = context.User.FindFirst("sub")?.Value;
+        if (sub is null)
+        {
+            return $"anon@{context.Connection.RemoteIpAddress}/{context.Request.Headers["X-Forwarded-For"]}";
+        }
+        return IsUser(context.User) ? sub : $"{sub}/{context.Request.Headers["Dcms-Actor-Id"]}";
     }
 
     private static bool IsUser(ClaimsPrincipal user) =>

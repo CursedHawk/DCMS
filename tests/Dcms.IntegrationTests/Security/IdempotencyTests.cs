@@ -45,6 +45,27 @@ public sealed class IdempotencyTests(AdminApiFixture fixture) : IAsyncDisposable
     }
 
     [DockerFact]
+    public async Task What_is_kept_for_a_replay_is_not_readable_in_the_store()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = Host.CreateClient();
+        var slug = "idem-" + Guid.NewGuid().ToString("N")[..8];
+        var key = Guid.NewGuid().ToString();
+
+        var res = await client.SendAsync(CreateTenant(slug, key), ct);
+        res.EnsureSuccessStatusCode();
+        var tenantId = (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("tenantId").GetGuid();
+
+        var stored = (string?)await Host.Services.GetRequiredService<IConnectionMultiplexer>().GetDatabase()
+            .StringGetAsync($"idem:admin-api:{Operator}::{key}");
+        stored.Should().NotBeNull();
+        // A write's response can carry a secret shown once; Redis holds the body encrypted (the
+        // Location header is kept as it was -- it is a URL, not content).
+        var body = JsonDocument.Parse(stored!).RootElement.GetProperty("Body").GetString()!;
+        System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(body)).Should().NotContain(tenantId.ToString());
+    }
+
+    [DockerFact]
     public async Task The_same_key_on_a_different_request_is_refused()
     {
         var ct = TestContext.Current.CancellationToken;
