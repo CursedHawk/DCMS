@@ -16,9 +16,50 @@ public sealed record PluginJobPayload(string PluginId, string JobName, Guid? Ins
 /// ledger (ADR 0024), kind <c>plugin:{plugin}:{job}</c>, run by jobs-worker through
 /// <see cref="PluginJobHandler"/>. The same rules as <c>dcms.jobs@1</c> about what may be enqueued.
 /// </summary>
-public sealed class PluginTrackedJobs(IPluginContext caller, PluginRegistry registry, IJobQueue jobs) : IPluginTrackedJobs
+public sealed partial class PluginTrackedJobs(IPluginContext caller, PluginRegistry registry, IJobQueue jobs, JobLedger ledger)
+    : IPluginTrackedJobs
 {
     public const string KindPrefix = "plugin:";
+
+    /// <summary>The lane of work a plugin runs itself: tracked, never dispatched.</summary>
+    public const string MirrorLane = "plugin";
+
+    [System.Text.RegularExpressions.GeneratedRegex("^[a-z0-9-]{1,64}$")]
+    private static partial System.Text.RegularExpressions.Regex NamePattern();
+
+    public async Task<JobTicket> TrackAsync(TrackedJobMirror input, CancellationToken ct)
+    {
+        if (!NamePattern().IsMatch(input.Name))
+        {
+            throw new ContractValidationException("A tracked job's name is 1-64 lowercase letters, digits and dashes.");
+        }
+        var job = await jobs.EnqueueAsync(new JobSpec(
+            $"{KindPrefix}{caller.PluginId}:{input.Name}",
+            caller.TenantId,
+            null,
+            input.TitleKey ?? "jobs.kinds.plugin.title",
+            input.TitleParams ?? (object)new { plugin = caller.PluginId, job = input.Name },
+            RequiredPermission: input.RequiredPermission is { } permission ? PlatformPermissions.ForPlugin(caller.PluginId, permission) : null,
+            Id: input.Id,
+            DedupeKey: $"{KindPrefix}{caller.PluginId}:{input.Name}:{input.Id}",
+            Cancelable: false,
+            Lane: MirrorLane,
+            LinkPath: input.LinkPath), ct);
+        return new JobTicket(job.Id);
+    }
+
+    public async Task ReportAsync(TrackedJobReport input, CancellationToken ct)
+    {
+        // Only the caller's own tracked work: in its tenant (the ledger checks that), and its kind.
+        var job = await ledger.FindAsync(input.JobId, caller.TenantId, ct);
+        if (job is null || job.Lane != MirrorLane || !job.Kind.StartsWith($"{KindPrefix}{caller.PluginId}:", StringComparison.Ordinal))
+        {
+            return;
+        }
+        await ledger.ApplyReportAsync(new Dcms.Shared.Contracts.Events.JobStateReported(
+            Guid.NewGuid(), DateTimeOffset.UtcNow, input.JobId, caller.TenantId, input.Status, input.Done, input.Total,
+            input.StageKey, input.ErrorKey, input.ErrorDetail, null), ct);
+    }
 
     public async Task<JobTicket> EnqueueAsync(TrackedJobEnqueue input, CancellationToken ct)
     {

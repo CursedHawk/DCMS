@@ -66,6 +66,30 @@ public sealed record TrackedJobEnqueue(
 public sealed record JobTicket(Guid JobId);
 
 /// <summary>
+/// Work the plugin runs itself, on a queue of its own, shown on the ledger beside everything
+/// else (Dynamic Apps' flow runs). Nothing runs it from the ledger; the plugin reports how it goes.
+/// </summary>
+/// <param name="Name">What kind of work it is (<c>flow-run</c>): letters, digits and dashes.</param>
+/// <param name="Id">The plugin's own id for it, so a repeat of the same work is the same job.</param>
+public sealed record TrackedJobMirror(
+    string Name,
+    Guid Id,
+    string? TitleKey = null,
+    IReadOnlyDictionary<string, string>? TitleParams = null,
+    string? RequiredPermission = null,
+    string? LinkPath = null);
+
+/// <param name="Status">Null for progress alone; otherwise Running, Succeeded, Failed or Canceled.</param>
+public sealed record TrackedJobReport(
+    Guid JobId,
+    string? Status = null,
+    long? Done = null,
+    long? Total = null,
+    string? StageKey = null,
+    string? ErrorKey = null,
+    string? ErrorDetail = null);
+
+/// <summary>
 /// Enqueues one of the calling plugin's declared <c>Jobs</c> as a tracked background job (ADR
 /// 0024): it appears in the workspace's jobs ring and page with its progress, can be canceled and
 /// retried, and jobs-worker runs it. The returned id is what a screen follows (<c>useJob</c>).
@@ -76,6 +100,14 @@ public interface IPluginTrackedJobs
 {
     [Operation(OpRisk.Safe)]
     Task<JobTicket> EnqueueAsync(TrackedJobEnqueue input, CancellationToken ct);
+
+    /// <summary>Shows work the plugin runs itself on the ledger; the same id twice is the same job.</summary>
+    [Operation(OpRisk.Safe)]
+    Task<JobTicket> TrackAsync(TrackedJobMirror input, CancellationToken ct);
+
+    /// <summary>Progress or an outcome for a job from <see cref="TrackAsync"/>. A job it did not track is ignored.</summary>
+    [Operation(OpRisk.Safe)]
+    Task ReportAsync(TrackedJobReport input, CancellationToken ct);
 }
 
 /// <summary>The tracked job a handler is running: its progress and its cancellation.</summary>

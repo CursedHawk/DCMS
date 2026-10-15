@@ -6,6 +6,7 @@ using Dcms.Plugins.DynamicApps.Api.Model;
 using Dcms.Plugins.DynamicApps.Data;
 using Dcms.Plugins.DynamicApps.Metadata;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Data.DynamicApps;
 using Dcms.Shared.Telemetry;
@@ -30,6 +31,24 @@ public sealed class FlowExecutor(
     TimeProvider clock)
 {
     private static readonly TimeSpan[] Backoff = [TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(10)];
+
+    /// <summary>The jobs ledger's name for a flow run (FlowRunQueue tracks manual and scheduled ones).</summary>
+    public const string TrackedName = "flow-run";
+
+    /// <summary>
+    /// Reports a tracked run's progress (ADR 0024). Only manual and scheduled runs are tracked, so
+    /// only they report: an event-triggered run costs nothing here.
+    /// </summary>
+    private Task ReportAsync(bool tracked, Guid runId, string? status, long? done, long? total, string? error, CancellationToken ct) =>
+        tracked
+            ? context.Contracts.Get<IPluginTrackedJobs>().ReportAsync(new TrackedJobReport(
+                runId, status, done, total, done is null ? null : "jobs.stages.flowStep",
+                status == "Failed" ? "jobs.error.flowFailed" : null, error), ct)
+            : Task.CompletedTask;
+
+    private static bool IsTracked(FlowRun run) =>
+        JsonDocument.Parse(run.TriggerJson).RootElement.TryGetProperty("eventName", out var name)
+        && name.GetString() is "manual" or "schedule";
 
     public async Task RunAsync(Guid runId, CancellationToken ct)
     {
@@ -56,7 +75,9 @@ public sealed class FlowExecutor(
             .With("attempt", run.Attempts)
             .With("correlation", run.CorrelationId);
 
-        var (status, error, retry, _) = await ExecuteAsync(run, ct);
+        var tracked = IsTracked(run);
+        await ReportAsync(tracked, run.Id, "Running", null, null, null, ct);
+        var (status, error, retry, _) = await ExecuteAsync(run, ct, tracked);
 
         var now = clock.GetUtcNow();
         if (status == FlowRunStatus.Failed && retry && run.Attempts < AutomationLimits.MaxAttempts)
@@ -69,6 +90,8 @@ public sealed class FlowExecutor(
         else
         {
             await Finish(run.Id, status, error, run.Writes, finished: now, now, ct);
+            await ReportAsync(tracked, run.Id,
+                status is FlowRunStatus.Succeeded or FlowRunStatus.Skipped ? "Succeeded" : "Failed", null, null, error, ct);
         }
         activity?.SetTag("dcms.dynamicapp.status", status.ToString());
         record.With("status", status.ToString()).With("writes", run.Writes);
@@ -88,7 +111,7 @@ public sealed class FlowExecutor(
     /// </summary>
     private const int MaxRereads = 10;
 
-    private async Task<Outcome> ExecuteAsync(FlowRun run, CancellationToken stopping)
+    private async Task<Outcome> ExecuteAsync(FlowRun run, CancellationToken stopping, bool tracked = false)
     {
         if (run.Attempts > AutomationLimits.MaxAttempts)
         {
@@ -167,6 +190,7 @@ public sealed class FlowExecutor(
                 {
                     return failed;
                 }
+                await ReportAsync(tracked, run.Id, null, i + 1, flow.Steps.Count, null, ct);
             }
             return new(FlowRunStatus.Succeeded);
         }

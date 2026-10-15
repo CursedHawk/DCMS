@@ -7,6 +7,7 @@ using Dcms.Plugins.DynamicApps.Api.Model;
 using Dcms.Plugins.DynamicApps.Data;
 using Dcms.Plugins.DynamicApps.Metadata;
 using Dcms.PluginSdk.Abstractions.Contracts;
+using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Shared.Data.DynamicApps;
 using Microsoft.EntityFrameworkCore;
 
@@ -92,7 +93,9 @@ public sealed class FlowRunQueue(AppsDbContext db, IPluginContext context, Confi
             throw new ContractValidationException($"Flow '{flowName}' has a {flow.Trigger.Event} trigger; only manual flows are started directly.");
         }
         var evt = Event(DeterministicId(idempotencyKey), "manual", doc!.Revision.Number, new JsonObject { ["input"] = input }, origin);
-        return await EnqueueAsync(flow, doc.Revision.Number, evt, ct);
+        var runId = await EnqueueAsync(flow, doc.Revision.Number, evt, ct);
+        await TrackAsync(runId, flow, ct);
+        return runId;
     }
 
     /// <summary>A schedule tick: one run per flow per due time, however many replicas see it.</summary>
@@ -105,7 +108,29 @@ public sealed class FlowRunQueue(AppsDbContext db, IPluginContext context, Confi
         }
         var evt = Event(DeterministicId($"{flowId}:{due.UtcTicks}"), "schedule", doc.Revision.Number,
             new JsonObject { ["due"] = due.UtcDateTime.ToString("O") }, EventOrigin.New());
-        return await EnqueueAsync(flow, doc.Revision.Number, evt, ct);
+        var runId = await EnqueueAsync(flow, doc.Revision.Number, evt, ct);
+        await TrackAsync(runId, flow, ct);
+        return runId;
+    }
+
+    /// <summary>
+    /// A run someone started, or a schedule did, on the workspace's jobs ledger (ADR 0024): the
+    /// runs a person waits on. Runs set off by events are not -- one import can set off tens of
+    /// thousands -- and stay on the automation page. Best-effort: the run is the record.
+    /// </summary>
+    private async Task TrackAsync(Guid runId, FlowDef flow, CancellationToken ct)
+    {
+        try
+        {
+            await context.Contracts.Get<IPluginTrackedJobs>().TrackAsync(new TrackedJobMirror(
+                FlowExecutor.TrackedName, runId, "jobs.kinds.flowRun.title",
+                new Dictionary<string, string> { ["flow"] = string.IsNullOrEmpty(flow.DisplayName) ? flow.ApiName : flow.DisplayName },
+                RequiredPermission: "flows-run"), ct);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            // Nothing to tell the starter: the run itself is unaffected.
+        }
     }
 
     private AppEvent Event(Guid id, string name, int revision, JsonObject payload, EventOrigin origin) => new()

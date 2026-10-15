@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.Net;
 using System.Text.Json;
 using Dcms.IntegrationTests.Cms;
@@ -122,6 +123,22 @@ public sealed class AutomationTests(ContentFlowFixture fixture)
             .Should().Be("new company Initech");
     }
 
+    private static async Task<JsonElement> JobAsync(AppHarness app, Guid id, Func<JsonElement, bool> done, CancellationToken ct)
+    {
+        JsonElement last = default;
+        for (var i = 0; i < 120; i++)
+        {
+            var res = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, $"/api/admin/jobs/{id}", app.Owner, app.Tenant), ct);
+            if (res.IsSuccessStatusCode)
+            {
+                last = (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("job");
+                if (done(last)) return last;
+            }
+            await Task.Delay(250, ct);
+        }
+        throw new TimeoutException($"Job {id} never got there: {last}");
+    }
+
     [DockerFact]
     public async Task A_failed_run_is_kept_inspectable_and_can_be_retried_by_hand()
     {
@@ -138,6 +155,10 @@ public sealed class AutomationTests(ContentFlowFixture fixture)
         var failed = (await WaitForRunsAsync(app, "fix", 1, ct, done: r => r.All(x => x.GetProperty("status").GetString() == "failed"))).Single();
         failed.GetProperty("error").GetString().Should().Contain("There is no deals record");
         failed.GetProperty("attempts").GetInt32().Should().Be(1, "a missing record is not retried automatically");
+        // A run started by hand is on the workspace's jobs ledger under its own id (ADR 0024).
+        var job = await JobAsync(app, Guid.Parse(runId!), j => j.GetProperty("status").GetString() == "Failed", ct);
+        job.GetProperty("kind").GetString().Should().Be("plugin:dynamic-apps:flow-run");
+        job.GetProperty("errorKey").GetString().Should().Be("jobs.error.flowFailed");
         (await app.JsonAsync(HttpMethod.Get, "/_automation/runs?status=Failed", ct)).GetProperty("total").GetInt32().Should().Be(1);
         (await app.SendAsync(HttpMethod.Get, "/_automation/runs?status=queued", null, ct)).StatusCode
             .Should().Be(HttpStatusCode.BadRequest, "an unknown status is refused, not ignored");

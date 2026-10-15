@@ -1325,7 +1325,8 @@
       "buildFailed": "Sestavení selhalo. Důvod je v jeho záznamu.",
       "refused": "Práce byla odmítnuta.",
       "conflict": "Práce je v rozporu s existujícími záznamy.",
-      "pluginDisabled": "Plugin už není zapnutý."
+      "pluginDisabled": "Plugin už není zapnutý.",
+      "flowFailed": "Automatizace selhala."
     },
     "kinds": {
       "driveImport": {
@@ -1355,6 +1356,9 @@
         "bulkdelete": {
           "title": "Mazání {{count}} záznamů z {{table}}"
         }
+      },
+      "flowRun": {
+        "title": "Běh {{flow}}"
       }
     },
     "stages": {
@@ -1364,7 +1368,8 @@
       "uploading": "Ukládání kopií",
       "building": "Sestavování",
       "validating": "Kontrola",
-      "writing": "Zápis"
+      "writing": "Zápis",
+      "flowStep": "Kroky"
     }
   },
   "marketplace": {

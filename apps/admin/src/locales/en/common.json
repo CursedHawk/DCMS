@@ -1295,7 +1295,8 @@
       "buildFailed": "The build failed. Its log says why.",
       "refused": "The work was refused.",
       "conflict": "The work conflicts with existing records.",
-      "pluginDisabled": "The plugin is no longer enabled."
+      "pluginDisabled": "The plugin is no longer enabled.",
+      "flowFailed": "The flow failed."
     },
     "kinds": {
       "driveImport": {
@@ -1324,6 +1325,9 @@
         "bulkdelete": {
           "title": "Deleting {{count}} records from {{table}}"
         }
+      },
+      "flowRun": {
+        "title": "Running {{flow}}"
       }
     },
     "stages": {
@@ -1333,7 +1337,8 @@
       "uploading": "Saving the copies",
       "building": "Building",
       "validating": "Checking",
-      "writing": "Writing"
+      "writing": "Writing",
+      "flowStep": "Steps"
     }
   },
   "marketplace": {
