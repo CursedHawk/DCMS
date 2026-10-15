@@ -3,6 +3,7 @@ using System.Text.Json;
 using Dcms.AdminApi.Tenancy;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
+using Dcms.Shared.Audit.Propagation;
 using Dcms.Shared.Data.Jobs;
 using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Tenancy;
@@ -50,7 +51,8 @@ public sealed record JobDto(
     DateTimeOffset? FinishedAt,
     DateTimeOffset UpdatedAt,
     long Seq,
-    JsonElement? Result)
+    JsonElement? Result,
+    JobOriginDto Origin)
 {
     public static JobDto From(Job j, bool forOperator, (string Slug, string? Name)? tenant = null) => new(
         j.Id, j.TenantId, tenant?.Slug, tenant?.Name, j.ParentId, j.Kind, j.Lane, j.Source, j.TitleKey,
@@ -62,7 +64,33 @@ public sealed record JobDto(
         j.CancelRequestedAt is not null && !j.IsFinished,
         j.Status is JobStatus.Failed or JobStatus.Canceled && (JobDispatch.IsDispatched(j.Lane) || j.Lane == JobLanes.Group),
         j.Attempts, j.MaxAttempts, j.ActorUserId, j.CreatedAt, j.StartedAt, j.FinishedAt, j.UpdatedAt, j.Seq,
-        j.ResultJson is null ? null : JsonDocument.Parse(j.ResultJson).RootElement.Clone());
+        j.ResultJson is null ? null : JsonDocument.Parse(j.ResultJson).RootElement.Clone(),
+        JobOriginDto.From(j, forOperator));
+}
+
+/// <summary>
+/// Who or what started a job, read back from the request context it was enqueued under (the
+/// same context its worker restores). A job queued by a worker on someone's behalf, such as a
+/// Drive file's conversion, names that someone.
+/// </summary>
+/// <param name="ActorKind">
+/// <c>User</c>, <c>EndUser</c>, <c>ServiceClient</c>, <c>Webhook</c>, <c>Plugin</c> or
+/// <c>System</c>; <c>System</c> when nothing was captured.
+/// </param>
+/// <param name="ActorName">A person's email or name; a client, plugin or service's id otherwise.</param>
+/// <param name="Service">The process that enqueued it.</param>
+/// <param name="TraceId">The originating request's trace. Operators only.</param>
+public sealed record JobOriginDto(string ActorKind, string? ActorName, string Service, string? TraceId)
+{
+    public static JobOriginDto From(Job j, bool forOperator)
+    {
+        var header = AuditPropagation.FromJson(j.ContextJson);
+        return new(
+            header(AuditPropagation.ActorKind) ?? nameof(Dcms.Shared.Kernel.Abstractions.ActorKind.System),
+            header(AuditPropagation.ActorDisplay),
+            j.Source,
+            forOperator ? header(AuditPropagation.TraceId) : null);
+    }
 }
 
 public sealed record JobPageDto(IReadOnlyList<JobDto> Items, string? NextCursor);

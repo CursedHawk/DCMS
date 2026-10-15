@@ -1268,6 +1268,11 @@
     "attempt": "Attempt {{attempt}} of {{max}}",
     "started": "Started",
     "finished": "Finished",
+    "origin": {
+      "by": "by {{name}}",
+      "plugin": "via the {{name}} plugin",
+      "automatic": "automatic"
+    },
     "filter": {
       "all": "All",
       "active": "In progress",

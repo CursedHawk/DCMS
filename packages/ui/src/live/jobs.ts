@@ -35,6 +35,19 @@ export interface JobDto {
   seq: number;
   /** What the handler returned, e.g. `{ assetId }` for a Drive file. Null until it succeeds. */
   result: unknown;
+  /** Who or what started it, from the request it was enqueued under. */
+  origin: JobOrigin;
+}
+
+export interface JobOrigin {
+  /** `User`, `EndUser`, `ServiceClient`, `Webhook`, `Plugin` or `System` (nothing captured). */
+  actorKind: string;
+  /** A person's email or name; a client, plugin or service id otherwise. */
+  actorName: string | null;
+  /** The process that enqueued it, e.g. `admin-api`. */
+  service: string;
+  /** The originating request's trace; the console's only. */
+  traceId: string | null;
 }
 
 export interface JobPage {

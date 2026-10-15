@@ -14,12 +14,14 @@ const RUNNING = {
   linkPath: null, cancelable: true, cancelRequested: false, retryable: false, attempts: 1, maxAttempts: 3,
   actorUserId: null, createdAt: '2026-10-15T10:00:00Z', startedAt: '2026-10-15T10:00:01Z', finishedAt: null,
   updatedAt: '2026-10-15T10:00:02Z', seq: 3,
+  origin: { actorKind: 'User', actorName: 'ana@example.test', service: 'admin-api', traceId: null },
 };
 
 const FAILED = {
   ...RUNNING, id: 'aaaaaaaa-0000-0000-0000-000000000002', lane: 'tenant', kind: 'test.failed',
   titleKey: 'jobs.kinds.missing.title', status: 'Failed', done: 1, total: 4, cancelable: false, retryable: true,
   errorKey: 'jobs.error.failed', finishedAt: '2026-10-15T10:05:00Z', seq: 9,
+  origin: { actorKind: 'System', actorName: 'jobs-worker', service: 'jobs-worker', traceId: null },
 };
 
 function seed(api: { on: (m: string, p: string, r: unknown) => unknown }) {
@@ -63,6 +65,9 @@ test('the popover lists running and finished jobs, and cancels and retries', asy
   await expect(rows).toHaveCount(2);
   // A kind this console has no text for falls back to its raw name rather than an empty row.
   await expect(rows.nth(1)).toContainText('test.failed');
+  // Where each came from: a person by name, work nobody started as automatic.
+  await expect(rows.nth(0)).toContainText('by ana@example.test');
+  await expect(rows.nth(1)).toContainText('automatic');
 
   await rows.nth(0).getByRole('button', { name: 'Cancel' }).click();
   await expect.poll(() => api.requestsTo('POST', `/api/admin/jobs/${RUNNING.id}/cancel`).length).toBe(1);

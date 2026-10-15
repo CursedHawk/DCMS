@@ -92,6 +92,16 @@ retrying one downloads again with the importer's Drive grant.
 - The overview reads each work queue's backlog from JetStream, including a stream nobody drains,
   which is the missing-worker case.
 
+**Where a job came from.** Every job carries an origin, read from the request context it was
+enqueued under (the same context its worker restores):
+- the kind of actor,
+- a person's email or name, or a client's, plugin's or service's id,
+- the process that enqueued it.
+
+A job queued by a worker on someone's behalf, such as a Drive file's conversion, names that
+person. A job with no captured context reads as automatic. The originating trace id goes to
+operators only.
+
 ### Push
 
 **Every ledger write publishes `jobs.changed`.** The message carries id, status and counts, and

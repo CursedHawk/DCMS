@@ -22,6 +22,20 @@ export function jobDetail(job: Job): string | undefined {
   return undefined;
 }
 
+/** "by ana@example.com via admin-api · trace 4bf92f3577b3". */
+export function jobOrigin(job: Job): string {
+  const { actorKind, actorName, service, traceId } = job.origin;
+  const who =
+    actorKind === 'System' || !actorName
+      ? 'automatic'
+      : actorKind === 'Plugin'
+        ? `plugin ${actorName}`
+        : actorKind === 'User' || actorKind === 'EndUser'
+          ? `by ${actorName}`
+          : `by ${actorName} (${actorKind})`;
+  return `${who} via ${service}${traceId ? ` · trace ${traceId.slice(0, 12)}` : ''}`;
+}
+
 export const STATUS_LABEL: Record<Job['status'], string> = {
   Queued: 'Queued',
   Running: 'Running',

@@ -12,6 +12,7 @@ const JOB = {
   errorKey: null, errorDetail: null, linkPath: null, cancelable: true, cancelRequested: false, retryable: false,
   attempts: 1, maxAttempts: 3, actorUserId: null, createdAt: '2026-10-15T10:00:00Z', startedAt: null,
   finishedAt: null, updatedAt: '2026-10-15T10:00:00Z', seq: 2,
+  origin: { actorKind: 'User', actorName: 'ana@example.test', service: 'admin-api', traceId: '4bf92f3577b34da6a3ce929d0e0e4736' },
 };
 
 test('the console shows every tenant’s jobs and follows pushed progress', async ({ page, api, hub }) => {
@@ -27,6 +28,7 @@ test('the console shows every tenant’s jobs and follows pushed progress', asyn
 
   await page.getByTestId('jobs-indicator').click();
   await expect(page.getByTestId('job-row')).toContainText('acme · Media drive import');
+  await expect(page.getByTestId('job-row')).toContainText('by ana@example.test via admin-api · trace 4bf92f3577b3');
 });
 
 test('the jobs page shows backlog per tenant and a queue with no worker', async ({ page, api }) => {

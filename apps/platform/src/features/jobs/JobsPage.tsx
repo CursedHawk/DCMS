@@ -11,7 +11,7 @@ import {
   type Job, type JobListFilter, type JobScope, type QueueDepth, type TenantJobSummary,
   useCancelJob, useJob, useJobOverview, useJobs, useRetryJob,
 } from './api';
-import { jobDetail, jobTitle, STATUS_LABEL } from './render';
+import { jobDetail, jobOrigin, jobTitle, STATUS_LABEL } from './render';
 
 const FILTERS: { id: JobListFilter; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -209,7 +209,7 @@ function JobLine({ job, mayManage, withTenant }: { job: Job; mayManage: boolean;
   return (
     <JobRow
       job={job}
-      text={{ title: jobTitle(job, withTenant), detail: jobDetail(job) }}
+      text={{ title: jobTitle(job, withTenant), detail: jobDetail(job), origin: jobOrigin(job) }}
       labels={{ cancel: 'Cancel', retry: 'Retry', status: (s) => STATUS_LABEL[s] }}
       onCancel={
         mayManage

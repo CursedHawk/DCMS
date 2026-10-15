@@ -2,7 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { JobsIndicator as Indicator } from '@dcms/ui';
 import { type Job, useCancelJob, useJobs, useRetryJob } from './api';
-import { jobDetail, jobTitle, STATUS_LABEL } from './render';
+import { jobDetail, jobOrigin, jobTitle, STATUS_LABEL } from './render';
 
 /**
  * Every tenant's jobs and the platform's own, in the console's top bar: the same ring and
@@ -35,7 +35,7 @@ export function JobsIndicator({ enabled, mayManage }: { enabled: boolean; mayMan
         loading: 'Loading…',
         status: (s) => STATUS_LABEL[s],
       }}
-      renderItem={(job) => ({ title: jobTitle(job), detail: jobDetail(job) })}
+      renderItem={(job) => ({ title: jobTitle(job), detail: jobDetail(job), origin: jobOrigin(job) })}
       onCancel={
         mayManage
           ? (job) =>

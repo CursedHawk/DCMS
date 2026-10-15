@@ -94,7 +94,7 @@ export function JobsIndicator<T extends IndicatorJob>({
   isLoading?: boolean;
   labels: JobsLabels;
   locale?: string;
-  renderItem: (job: T) => { title: string; detail?: string };
+  renderItem: (job: T) => { title: string; detail?: string; origin?: string };
   onCancel?: (job: T) => void;
   onRetry?: (job: T) => void;
   onOpenItem?: (job: T) => void;
@@ -206,7 +206,7 @@ export function JobRow({
   onOpen,
 }: {
   job: IndicatorJob;
-  text: { title: string; detail?: string };
+  text: { title: string; detail?: string; origin?: string };
   locale?: string;
   labels: Pick<JobsLabels, 'cancel' | 'retry' | 'status'>;
   onCancel?: () => void;
@@ -238,8 +238,9 @@ export function JobRow({
           </div>
         )
       ) : null}
-      <p className="mt-1 text-[11px] text-muted-foreground/70">
+      <p className="mt-1 truncate text-[11px] text-muted-foreground/70">
         {relativeTime(job.finishedAt ?? job.createdAt, locale)}
+        {text.origin ? ` · ${text.origin}` : null}
       </p>
     </>
   );

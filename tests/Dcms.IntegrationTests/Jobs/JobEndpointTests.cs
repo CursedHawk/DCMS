@@ -157,6 +157,34 @@ public class JobEndpointTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task A_job_says_who_started_it_and_only_the_operator_sees_the_trace()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var (tenantId, slug) = await CreateTenantAsync(client, ct);
+        var started = await EnqueueAsync(new JobSpec("test.origin", tenantId, null, "t"), ct);
+        var nobody = await EnqueueAsync(new JobSpec("test.origin", tenantId, null, "t"), ct);
+        // What a person's request captures (AuditPropagation), as JobQueue stores it.
+        await SqlAsync("""UPDATE jobs.jobs SET "ContextJson" = @c::jsonb WHERE "Id" = @id""", ct,
+            ("c", """{"Dcms-Actor-Kind":"User","Dcms-Actor-Display":"ana@dcms.test","Dcms-Trace-Id":"4bf92f3577b34da6"}"""),
+            ("id", started.Id));
+        await SqlAsync("""UPDATE jobs.jobs SET "ContextJson" = NULL WHERE "Id" = @id""", ct, ("id", nobody.Id));
+
+        var origin = (await GetAsync(client, slug, started.Id, ct)).GetProperty("job").GetProperty("origin");
+        origin.GetProperty("actorKind").GetString().Should().Be("User");
+        origin.GetProperty("actorName").GetString().Should().Be("ana@dcms.test");
+        origin.GetProperty("service").GetString().Should().NotBeNullOrEmpty();
+        origin.GetProperty("traceId").ValueKind.Should().Be(JsonValueKind.Null, "a trace id is the operators' business");
+
+        var automatic = (await GetAsync(client, slug, nobody.Id, ct)).GetProperty("job").GetProperty("origin");
+        automatic.GetProperty("actorKind").GetString().Should().Be("System");
+        automatic.GetProperty("actorName").ValueKind.Should().Be(JsonValueKind.Null);
+
+        var operatorView = await GetJsonAsync(client, $"/api/admin/platform/jobs/{started.Id}", ct);
+        operatorView.GetProperty("job").GetProperty("origin").GetProperty("traceId").GetString().Should().Be("4bf92f3577b34da6");
+    }
+
+    [DockerFact]
     public async Task The_console_sees_every_tenant_and_the_platform()
     {
         var ct = TestContext.Current.CancellationToken;

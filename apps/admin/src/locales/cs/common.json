@@ -1298,6 +1298,11 @@
     "attempt": "Pokus {{attempt}} z {{max}}",
     "started": "Zahájeno",
     "finished": "Dokončeno",
+    "origin": {
+      "by": "spustil(a) {{name}}",
+      "plugin": "přes plugin {{name}}",
+      "automatic": "automaticky"
+    },
     "filter": {
       "all": "Vše",
       "active": "Probíhající",
