@@ -5,3 +5,4 @@ export * from './Topbar';
 export * from './UserMenu';
 export * from './nav';
 export * from './NotificationBell';
+export * from './JobsIndicator';

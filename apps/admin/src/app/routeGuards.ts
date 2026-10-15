@@ -151,6 +151,8 @@ export const OPEN_ROUTES: readonly string[] = [
   '/settings/api',
   '/account',
   '/notifications',
+  // Lists only the jobs the caller may see; the server filters, so there is nothing to guard.
+  '/jobs',
   '/invite/accept',
 ];
 

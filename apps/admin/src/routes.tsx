@@ -42,6 +42,7 @@ const NotificationsPage = page(
   () => import('./features/notifications/NotificationsPage'),
   'NotificationsPage',
 );
+const JobsPage = page(() => import('./features/jobs/JobsPage'), 'JobsPage');
 const OpenApiPage = page(() => import('./features/openapi/OpenApiPage'), 'OpenApiPage');
 const ConnectionsPage = page(() => import('./features/connections/ConnectionsPage'), 'ConnectionsPage');
 const PluginsPage = page(() => import('./features/plugins/PluginsPage'), 'PluginsPage');
@@ -200,6 +201,7 @@ const assistantChatRoute = createRoute({
   },
 });
 const notificationsRoute = child('/notifications', NotificationsPage);
+const jobsRoute = child('/jobs', JobsPage);
 const inviteRoute = child('/invite/accept', InviteAcceptPage);
 
 /*
@@ -310,6 +312,7 @@ export const routeTree = rootRoute.addChildren([
     assistantRoute,
     assistantChatRoute,
     notificationsRoute,
+    jobsRoute,
     inviteRoute,
     settingsRoute.addChildren([
       settingsIndexRoute,

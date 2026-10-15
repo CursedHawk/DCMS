@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { runtimeConfig } from '../../runtime-config';
 import { getCurrentTenantSlug } from '../../tenants';
 import { type Notification, notificationsKey, parseParams } from './api';
+import { applyJobChanged, jobsKey, type JobChanged } from '../jobs/api';
 import { LIVE_QUERY_MAP } from './liveMap';
 import { linkTarget } from './linkPath';
 
@@ -92,6 +93,16 @@ export function useNotificationHub(enabled: boolean, myUserId: string | undefine
       });
 
       connection.on('ResourceChanged', (change: ResourceChange) => invalidate(change));
+
+      // Background jobs (ADR 0024): patched into the cache in place, so a progress tick costs no
+      // request. Only a job this page has never seen, or one that just started or finished,
+      // needs the lists refetched — debounced, because a group finishing is a burst of them.
+      let jobRefetch: ReturnType<typeof setTimeout> | undefined;
+      connection.on('JobChanged', (change: JobChanged) => {
+        if (!applyJobChanged(qc, change)) return;
+        clearTimeout(jobRefetch);
+        jobRefetch = setTimeout(() => void qc.invalidateQueries({ queryKey: [...jobsKey(), 'list'] }), 300);
+      });
 
       connection.onreconnected(() => {
         setConnected(true);

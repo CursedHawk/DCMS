@@ -203,6 +203,8 @@ export function adminApi(
     .on('POST', '/api/admin/notifications/read-all', { updated: 1 })
     .on('POST', '/api/admin/notifications/:id/read', {})
     .on('POST', '/api/admin/notifications/:id/dismiss', {})
+    // The jobs ring beside the bell asks for active and recently finished jobs on every page.
+    .on('GET', '/api/admin/jobs', { items: [], nextCursor: null })
 
     .on('GET', '/api/admin/media', ({ query }) => {
       const folderId = query.get('folderId');

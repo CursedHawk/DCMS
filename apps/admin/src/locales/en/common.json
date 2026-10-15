@@ -1245,6 +1245,48 @@
       }
     }
   },
+  "jobs": {
+    "title": "Background jobs",
+    "pageDescription": "Imports, conversions, deployments and other work running in this workspace.",
+    "active_one": "{{count}} background job in progress",
+    "active_other": "{{count}} background jobs in progress",
+    "running": "Running",
+    "queued": "Queued",
+    "recent": "Recently finished",
+    "empty": "Nothing is running.",
+    "emptyDescription": "Imports, media conversions and deployments show up here while they run.",
+    "viewAll": "All background jobs",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "canceled": "Job canceled.",
+    "cancelRequested": "Stopping the job…",
+    "retried": "Job queued again.",
+    "notCancelable": "This job can no longer be canceled.",
+    "notRetryable": "This job can't be retried from here.",
+    "children": "Items",
+    "attempt": "Attempt {{attempt}} of {{max}}",
+    "started": "Started",
+    "finished": "Finished",
+    "filter": {
+      "all": "All",
+      "active": "In progress",
+      "failed": "Failed"
+    },
+    "status": {
+      "Queued": "Queued",
+      "Running": "Running",
+      "Succeeded": "Done",
+      "Failed": "Failed",
+      "Canceled": "Canceled"
+    },
+    "error": {
+      "failed": "Something went wrong while running this job.",
+      "stale": "The worker stopped responding.",
+      "someFailed": "Some items failed.",
+      "unknownKind": "This kind of job isn't supported by the worker."
+    },
+    "kinds": {}
+  },
   "marketplace": {
     "description": "Everything this platform can do, and what each one will ask for.",
     "searchPlaceholder": "Search plugins",

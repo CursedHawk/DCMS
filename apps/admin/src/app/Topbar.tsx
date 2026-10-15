@@ -14,6 +14,7 @@ import {
   UserMenu,
   useTheme,
 } from '@dcms/ui';
+import { JobsIndicator } from '../features/jobs/JobsIndicator';
 import { NotificationBell } from '../features/notifications/NotificationBell';
 import { LANGUAGES, setLanguage } from '../lib/i18n';
 import { logout, switchAccount } from '../auth';
@@ -105,6 +106,9 @@ export function Topbar({
 
           {/* Only appears on a page that has declared a tour. */}
           <TourButton />
+
+          {/* The ring is the mean progress of every running job; the popover lists them. */}
+          <JobsIndicator enabled={!!user} />
 
           <NotificationBell enabled={!!user} />
 

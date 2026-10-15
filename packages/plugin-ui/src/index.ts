@@ -14,6 +14,7 @@
  */
 import { createContext, createElement, useContext, useEffect, useRef, type ComponentType, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
 import type { ApiClient } from '@dcms/core';
 
 export { SHARED_MODULES } from './shared';
@@ -189,4 +190,40 @@ export function usePluginAiContext(context: PluginAiContext | null): void {
 export function useOpenAssistant(): (() => void) | null {
   const assistant = usePluginHost().assistant;
   return assistant ? () => assistant.open() : null;
+}
+
+/** A background job (ADR 0024), as `GET /admin/jobs/{id}` returns it. */
+export interface PluginJob {
+  id: string;
+  parentId: string | null;
+  kind: string;
+  titleKey: string;
+  params: Record<string, unknown>;
+  status: 'Queued' | 'Running' | 'Succeeded' | 'Failed' | 'Canceled';
+  done: number;
+  /** Null while the amount of work is unknown. */
+  total: number | null;
+  stageKey: string | null;
+  errorKey: string | null;
+  errorDetail: string | null;
+  cancelable: boolean;
+  retryable: boolean;
+  createdAt: string;
+  finishedAt: string | null;
+  seq: number;
+}
+
+/**
+ * One job and its items, kept live: the console patches this cache entry as the job's progress
+ * arrives over its socket, so a screen that enqueued an import (`dcms.jobs@2` returns the id)
+ * can show the bar without polling. The key is the console's own job key; keep them in step.
+ */
+export function useJob(jobId: string | null | undefined) {
+  const host = usePluginHost();
+  return useQuery({
+    queryKey: ['jobs', host.tenant, 'detail', jobId ?? ''],
+    queryFn: () => host.api.get<{ job: PluginJob; children: PluginJob[] }>(`/admin/jobs/${jobId}`),
+    enabled: !!jobId,
+    staleTime: 30_000,
+  });
 }

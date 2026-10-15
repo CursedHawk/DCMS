@@ -287,7 +287,7 @@ test('preview runs the site: a button navigates to another page', async ({ page,
   // stays on the page.
   const address = page.getByRole('textbox', { name: 'Page address' });
   await expect(address).toHaveValue('/about');
-  await page.getByRole('button', { name: 'Back' }).click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
   await expect(preview.getByRole('heading', { name: 'Welcome home' })).toBeVisible();
   await expect(address).toHaveValue('/');
   await address.fill('/about');

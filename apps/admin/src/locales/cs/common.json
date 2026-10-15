@@ -1273,6 +1273,49 @@
       }
     }
   },
+  "jobs": {
+    "title": "Úlohy na pozadí",
+    "pageDescription": "Importy, převody, nasazení a další práce běžící v tomto pracovním prostoru.",
+    "active_one": "Probíhá {{count}} úloha na pozadí",
+    "active_few": "Probíhají {{count}} úlohy na pozadí",
+    "active_other": "Probíhá {{count}} úloh na pozadí",
+    "running": "Běží",
+    "queued": "Ve frontě",
+    "recent": "Nedávno dokončené",
+    "empty": "Nic neběží.",
+    "emptyDescription": "Importy, převody médií a nasazení se zde zobrazují, dokud běží.",
+    "viewAll": "Všechny úlohy na pozadí",
+    "cancel": "Zrušit",
+    "retry": "Zkusit znovu",
+    "canceled": "Úloha byla zrušena.",
+    "cancelRequested": "Úloha se zastavuje…",
+    "retried": "Úloha je znovu ve frontě.",
+    "notCancelable": "Tuto úlohu už nelze zrušit.",
+    "notRetryable": "Tuto úlohu odsud nelze zopakovat.",
+    "children": "Položky",
+    "attempt": "Pokus {{attempt}} z {{max}}",
+    "started": "Zahájeno",
+    "finished": "Dokončeno",
+    "filter": {
+      "all": "Vše",
+      "active": "Probíhající",
+      "failed": "Neúspěšné"
+    },
+    "status": {
+      "Queued": "Ve frontě",
+      "Running": "Běží",
+      "Succeeded": "Hotovo",
+      "Failed": "Selhalo",
+      "Canceled": "Zrušeno"
+    },
+    "error": {
+      "failed": "Při běhu úlohy se něco pokazilo.",
+      "stale": "Pracovní proces přestal odpovídat.",
+      "someFailed": "Některé položky selhaly.",
+      "unknownKind": "Tento druh úlohy pracovní proces nepodporuje."
+    },
+    "kinds": {}
+  },
   "marketplace": {
     "description": "Vše, co tato platforma umí, a co si každý plugin vyžádá.",
     "searchPlaceholder": "Hledat pluginy",
