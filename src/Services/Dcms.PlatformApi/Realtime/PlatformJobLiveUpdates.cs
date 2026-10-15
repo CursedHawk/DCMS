@@ -11,6 +11,9 @@ namespace Dcms.PlatformApi.Realtime;
 /// <c>JobChanged</c> (ADR 0024). Ordered and ephemeral like <see cref="PlatformLiveUpdates"/>,
 /// on its own stream, so each replica sees each change for the sockets it holds.
 ///
+/// <para>Only to <see cref="PlatformHub.JobsGroup"/>: operators who may read jobs. A change names
+/// its tenant, and which tenants are busy is not for every holder of some console permission.</para>
+///
 /// <para>Not coalesced: the ledger already writes a running job at most once a second, so this is
 /// bounded by how many jobs run at once, not by how fast they tick.</para>
 /// </summary>
@@ -43,7 +46,7 @@ public sealed class PlatformJobLiveUpdates(
                     }
                     try
                     {
-                        await hub.Clients.Group(PlatformHub.Group).SendAsync("JobChanged",
+                        await hub.Clients.Group(PlatformHub.JobsGroup).SendAsync("JobChanged",
                             new { id = e.JobId, e.TenantId, e.ParentId, e.Status, e.Done, e.Total, e.StageKey, e.Seq },
                             stoppingToken);
                     }

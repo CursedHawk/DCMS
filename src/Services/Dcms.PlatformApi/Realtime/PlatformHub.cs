@@ -32,6 +32,13 @@ public sealed class PlatformHub(
     /// <summary>Every console open on this platform. There is no finer grouping to make.</summary>
     public const string Group = "platform";
 
+    /// <summary>
+    /// Consoles whose operator may read jobs (<c>platform:jobs:read</c>). Job changes carry tenant
+    /// ids and show which tenants are busy, so they go to this narrower group rather than to
+    /// everyone who holds some platform permission.
+    /// </summary>
+    public const string JobsGroup = "platform:jobs";
+
     public override async Task OnConnectedAsync()
     {
         var roles = Context.User?.FindAll("role").Select(c => c.Value).Distinct().ToArray() ?? [];
@@ -39,8 +46,9 @@ public sealed class PlatformHub(
         // The same short-circuit /me uses: a SuperAdmin holds everything whether or not the
         // rows exist, so a half-seeded permission table cannot lock out the one person who can
         // repair it.
-        var allowed = roles.Contains("SuperAdmin", StringComparer.Ordinal)
-                      || (await permissions.GetPermissionsAsync(roles, Context.ConnectionAborted)).Count > 0;
+        var superAdmin = roles.Contains("SuperAdmin", StringComparer.Ordinal);
+        var held = superAdmin ? null : await permissions.GetPermissionsAsync(roles, Context.ConnectionAborted);
+        var allowed = superAdmin || held!.Count > 0;
 
         if (!allowed)
         {
@@ -52,6 +60,10 @@ public sealed class PlatformHub(
         }
 
         await Groups.AddToGroupAsync(Context.ConnectionId, Group);
+        if (superAdmin || held!.Contains(PlatformConsolePermissions.JobsRead))
+        {
+            await Groups.AddToGroupAsync(Context.ConnectionId, JobsGroup);
+        }
         Context.Items[CountedKey] = true;
         Interlocked.Increment(ref _connected);
         await base.OnConnectedAsync();
