@@ -65,10 +65,15 @@ public static class PluginSdkServiceCollectionExtensions
     /// Hosts plugins in a service: the registry built for <paramref name="plane"/> with that
     /// plane's platform contracts, every plugin's services, and the contract runtime.
     /// </summary>
+    /// <param name="runsBackgroundWork">See <see cref="PluginHost.RunsBackgroundWork"/>.</param>
     public static IHostApplicationBuilder AddDcmsPlugins(
-        this IHostApplicationBuilder builder, PluginPlane plane, Action<PluginRegistryBuilder> configure)
+        this IHostApplicationBuilder builder, PluginPlane plane, Action<PluginRegistryBuilder> configure,
+        bool runsBackgroundWork = true)
     {
-        var host = new PluginHost(plane, builder.Configuration, builder.Environment.EnvironmentName);
+        var host = new PluginHost(plane, builder.Configuration, builder.Environment.EnvironmentName)
+        {
+            RunsBackgroundWork = runsBackgroundWork,
+        };
         builder.Services.AddDcmsPlugins(host, plugins =>
         {
             configure(plugins);

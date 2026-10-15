@@ -326,6 +326,11 @@ prometheus.exporter.blackbox "probes" {
     module  = "http_2xx"
   }
   target {
+    name    = "jobs-worker"
+    address = "http://jobs-worker:8080/health"
+    module  = "http_2xx"
+  }
+  target {
     name    = "content-api"
     address = "http://content-api:8080/health"
     module  = "http_2xx"

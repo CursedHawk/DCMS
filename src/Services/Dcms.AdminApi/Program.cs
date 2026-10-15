@@ -56,7 +56,20 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Dcms.Shared.Data.Rls;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.AddDcmsServiceDefaults("admin-api");
+// One build, two roles (ADR 0024). `api` serves requests and holds the consoles' sockets;
+// `worker` -- the jobs-worker container -- runs the tenant job lane, the plugins' background work
+// and the ledger's housekeeping. `all`, the default, is both: local development and tests.
+var role = builder.Configuration["Dcms:Role"] ?? "all";
+if (role is not ("api" or "worker" or "all"))
+{
+    throw new InvalidOperationException($"Dcms:Role must be api, worker or all, not '{role}'.");
+}
+var runsBackgroundWork = role != "api";
+var holdsSockets = role != "worker";
+
+// The worker names itself, so its traces, logs and audit records say which process did the work.
+var serviceName = role == "worker" ? "jobs-worker" : "admin-api";
+builder.AddDcmsServiceDefaults(serviceName, secretsOf: "admin-api");
 builder.Services.AddDcmsMessaging(builder.Configuration);
 builder.Services.AddDcmsCaching(builder.Configuration);
 builder.Services.AddDcmsEmailQueue();
@@ -103,11 +116,19 @@ builder.Services.AddDcmsFormsData(builder.Configuration);
 builder.Services.AddDcmsAppsData(builder.Configuration);
 builder.Services.AddDcmsUserAuthData(builder.Configuration);
 builder.Services.AddDcmsNotificationsData(builder.Configuration);
-// The job ledger (ADR 0024): admin-api owns the schema, enqueues most jobs, folds in reports
-// from the workers that cannot write it, and sweeps it.
-builder.Services.AddDcmsJobs(builder.Configuration, "admin-api");
-builder.Services.AddJobLedgerHousekeeping();
-builder.Services.AddHostedService<JobLiveUpdates>();
+// The job ledger (ADR 0024): admin-api owns the schema and enqueues most jobs; the worker role
+// runs them, folds in reports from the workers that cannot write the ledger, and sweeps it.
+builder.Services.AddDcmsJobs(builder.Configuration, serviceName);
+if (runsBackgroundWork)
+{
+    builder.Services.AddJobLedgerHousekeeping();
+    builder.Services.AddJobConsumer(builder.Configuration, Dcms.Shared.Data.Jobs.JobLanes.Tenant, defaultConcurrency: 4);
+}
+if (holdsSockets)
+{
+    // Pushes to the browsers connected to this replica, so it belongs where the sockets are.
+    builder.Services.AddHostedService<JobLiveUpdates>();
+}
 builder.Services.AddDcmsAuditData(builder.Configuration);
 // ADR 0015: sets app.tenant_id / app.scope per unit of work when Rls:Enforce is on; absent otherwise.
 builder.Services.AddDcmsRlsEnforcement(builder.Configuration);
@@ -134,18 +155,24 @@ builder.Services.AddScoped<ConsoleCaller>();
 builder.Services.AddScoped<TenantProvisioning>();
 builder.Services.AddHostedService<TenancyMigrator>();
 
-// Plugins, hosted in full (docs/adr/0016): their admin-plane routes, event handlers and jobs
-// run here, the only place dcms.secrets@1 can decrypt. Also the catalog and config validation.
+// Plugins, hosted in full (docs/adr/0016): their admin-plane routes in the api role, their event
+// handlers, jobs and hosted services in the worker role -- both this build, the only place
+// dcms.secrets@1 can decrypt. Also the catalog and config validation.
 builder.AddDcmsPlugins(Dcms.PluginSdk.Abstractions.PluginPlane.Admin, plugins => plugins
     .AddAll()
     // The admin plane's media contract can import files; the site plane's cannot.
-    .AddPlatformContract<Dcms.PluginSdk.Abstractions.Platform.IPluginMedia, Dcms.AdminApi.Media.AdminPluginMedia>());
+    .AddPlatformContract<Dcms.PluginSdk.Abstractions.Platform.IPluginMedia, Dcms.AdminApi.Media.AdminPluginMedia>(),
+    runsBackgroundWork);
 // Plugin imports fetch URLs that came from outside: public addresses only (PublicEgress).
 builder.Services.AddHttpClient(Dcms.AdminApi.Media.AdminPluginMedia.HttpClientName, client =>
         client.Timeout = TimeSpan.FromMinutes(2))
     .ConfigurePrimaryHttpMessageHandler(sp => Dcms.Shared.Hosting.PublicEgress.Handler(
         allowPrivate: sp.GetRequiredService<IConfiguration>().GetValue("Media:ImportAllowLocal", false)));
-builder.Services.AddDcmsPluginWorkers();
+if (runsBackgroundWork)
+{
+    // Plugins' event handlers, jobs and interval scheduler: the worker role's work.
+    builder.Services.AddDcmsPluginWorkers();
+}
 // Google Drive import (Media/GoogleDriveImport.cs). Optional: GoogleDrive__* in
 // secret/dcms/admin-api; unset, the console does not offer Drive.
 builder.Services.Configure<Dcms.AdminApi.Media.GoogleDriveOptions>(

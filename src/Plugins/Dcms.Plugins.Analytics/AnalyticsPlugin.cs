@@ -59,7 +59,7 @@ public sealed class AnalyticsPlugin : IPlugin
                 .AllowAnyHeader()
                 .WithMethods("GET", "POST")));
         }
-        else
+        else if (host.RunsBackgroundWork)
         {
             services.AddHostedService<AnalyticsConsumer>();
         }

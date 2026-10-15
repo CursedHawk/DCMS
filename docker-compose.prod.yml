@@ -313,8 +313,15 @@ services:
       # above keeps the owner connection. Only here, not in docker-compose.yml: in dev,
       # admin-api migrates at startup and has to be the owner. Moved back by deleting these
       # two lines.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)};Maximum Pool Size=35"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)};Maximum Pool Size=25"
       Rls__Enforce: "true"
+
+  # admin-api's production settings, as admin-api has them (ADR 0024).
+  jobs-worker:
+    extends:
+      service: admin-api
+    environment:
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env (scripts/deploy.sh generates it)};Maximum Pool Size=10"
 
   content-api:
     environment:

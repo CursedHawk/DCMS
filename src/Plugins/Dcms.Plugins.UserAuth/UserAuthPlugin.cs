@@ -93,8 +93,11 @@ public sealed class UserAuthPlugin : IPlugin
             // minutes. RealmAdminClient comes from admin-api, the one service identity answers.
             services.AddScoped<SiteGatePublisher>();
             services.AddScoped<RealmRelay>();
-            services.AddHostedService<SiteGateReconciler>();
-            services.AddHostedService<RealmEventRelay>();
+            if (host.RunsBackgroundWork)
+            {
+                services.AddHostedService<SiteGateReconciler>();
+                services.AddHostedService<RealmEventRelay>();
+            }
         }
     }
 

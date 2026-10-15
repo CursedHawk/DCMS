@@ -31,7 +31,7 @@ fetch() { $COMPOSE exec -T prometheus wget -qO- --timeout=10 "$1" 2>/dev/null; }
 # for least privilege, which is how a service ends up exporting nothing while the global
 # counts stay green. It is the public ingress, so it is the worst one to lose sight of.
 # platform-api is the same case and was simply never added when the console split created it.
-SERVICES="identity admin-api content-api ai-gateway media-worker site-builder site-host email-worker edge platform-api"
+SERVICES="identity admin-api jobs-worker content-api ai-gateway media-worker site-builder site-host email-worker edge platform-api"
 
 echo "== containers"
 #

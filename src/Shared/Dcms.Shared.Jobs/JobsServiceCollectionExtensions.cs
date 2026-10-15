@@ -37,11 +37,16 @@ public static class JobsServiceCollectionExtensions
 
     /// <summary>
     /// Drains one lane. Concurrency is <c>Jobs:Lanes:{lane}:Concurrency</c>, else
-    /// <paramref name="defaultConcurrency"/>.
+    /// <paramref name="defaultConcurrency"/>; <c>Jobs:Lanes:{lane}:Enabled=false</c> leaves the lane
+    /// to other replicas (and keeps a test host from racing the claims it makes itself).
     /// </summary>
     public static IServiceCollection AddJobConsumer(
         this IServiceCollection services, IConfiguration configuration, string lane, int defaultConcurrency)
     {
+        if (!configuration.GetValue($"Jobs:Lanes:{lane}:Enabled", true))
+        {
+            return services;
+        }
         var concurrency = Math.Max(1, configuration.GetValue($"Jobs:Lanes:{lane}:Concurrency", defaultConcurrency));
         // Not AddHostedService: it de-duplicates by implementation type, and a process may drain
         // more than one lane with the same host class.

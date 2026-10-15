@@ -56,6 +56,10 @@ services:
     ports:
       - "5002:8080"
 
+  jobs-worker:
+    environment:
+      <<: *dev-env
+
   content-api:
     environment:
       <<: *dev-env

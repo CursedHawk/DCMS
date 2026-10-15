@@ -472,7 +472,7 @@ services:
       <<: *service-env
       Plugins__Directory: "/app/plugins"
       # The owner, in dev only: here it migrates at startup. Production overrides this.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev;Maximum Pool Size=35"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev;Maximum Pool Size=25"
       Auth__Authority: "http://dcms-identity:8080/"
       Auth__Audience: "dcms-admin-api"
       ServiceClient__TokenEndpoint: "http://dcms-identity:8080/connect/token"
@@ -484,6 +484,23 @@ services:
       # which is the right way for an unconfigured installation to fail.
       Alerting__WebhookSecret: "${ALERT_WEBHOOK_SECRET:-}"
       Alerting__Recipients: "${ALERT_RECIPIENTS:-}"
+      # Requests and the consoles' sockets only; the background work is jobs-worker's (below).
+      Dcms__Role: "api"
+
+  # admin-api's own image in its worker role (ADR 0024): the tenant job lane, every plugin's
+  # event handlers, jobs and hosted services, and the job ledger's housekeeping. Same code, same
+  # configuration and the same Vault path (it reads secret/dcms/admin-api), so nothing here can
+  # drift from what admin-api is configured with -- it extends that service and changes the role.
+  # Scaled on its own: more of these is more background throughput without more API replicas.
+  jobs-worker:
+    extends:
+      service: admin-api
+    mem_limit: "${JOBS_WORKER_MEM_LIMIT:-512m}"
+    environment:
+      Dcms__Role: "worker"
+      # Its own share of the connection budget (see content-api): admin-api's 35 became 25
+      # for requests and 10 for the work that left it.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev;Maximum Pool Size=10"
 
   content-api:
     build:
@@ -510,8 +527,8 @@ services:
       # reserved"), throughput fell from ~380 to ~160 req/s and 10 % of requests 500'd. A cap
       # makes requests wait for a connection instead, and keeps a 4-core Postgres from running
       # more backends than it has cores for. Budget, summing under the 97 non-superuser slots:
-      # admin-api 35, content-api 25, identity 8, site-host 8, media-worker 5, edge 4,
-      # ai-gateway 3, site-builder 2 = 90, leaving room for platform-api (its string is in
+      # admin-api 25, jobs-worker 10, content-api 25, identity 8, site-host 8, media-worker 5,
+      # edge 4, ai-gateway 3, site-builder 2 = 90, leaving room for platform-api (its string is in
       # Vault), Grafana, the exporter and the migrate jobs. Change a cap, re-check the sum.
       # admin-api gets the most because its requests hold a connection longest: at 20 it was
       # pool-bound at ~150 req/s while Postgres sat at 0.7 cores (a set_config round trip

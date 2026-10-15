@@ -17,13 +17,17 @@ public sealed class JobConsumerHostTests(AdminApiFixture fixture) : IAsyncDispos
     private WebApplicationFactory<AdminApiApp::Program>? _worker;
 
     private WebApplicationFactory<AdminApiApp::Program> Worker => _worker ??= fixture.Factory.WithWebHostBuilder(b =>
-        b.ConfigureServices((context, services) =>
+    {
+        // The jobs-worker role: this host drains the tenant lane the shared fixture leaves off.
+        b.UseSetting("Dcms:Role", "worker");
+        b.UseSetting("Jobs:Lanes:tenant:Enabled", "true");
+        b.ConfigureServices(services =>
         {
             services.AddJobHandler<EchoHandler, EchoPayload>("test.echo");
             services.AddJobHandler<WaitForCancelHandler, EchoPayload>("test.wait");
             services.AddJobHandler<RejectHandler, EchoPayload>("test.reject");
-            services.AddJobConsumer(context.Configuration, JobLanes.Tenant, 4);
-        }));
+        });
+    });
 
     [DockerFact]
     public async Task A_job_runs_in_its_tenant_reports_progress_and_stores_its_result()

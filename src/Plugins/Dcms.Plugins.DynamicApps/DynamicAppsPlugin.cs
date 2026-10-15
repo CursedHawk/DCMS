@@ -149,7 +149,7 @@ public sealed class DynamicAppsPlugin : IPlugin
         services.AddScoped<FlowRunQueue>();
         services.AddScoped<FlowExecutor>();
         services.AddScoped<FlowRunService>();
-        if (host.IsAdmin)
+        if (host.IsAdmin && host.RunsBackgroundWork)
         {
             services.AddHostedService<AutomationWorker>();
         }

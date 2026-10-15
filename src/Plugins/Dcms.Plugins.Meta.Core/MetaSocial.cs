@@ -72,7 +72,7 @@ public static class MetaSocial
         // would just log failures every minute. The token refresh rides the same switch: a
         // long-lived token cannot be renewed once expired, so without it every connected
         // account stops about sixty days after it was connected.
-        if (host.Configuration.GetValue("Social:SyncEnabled", true))
+        if (host.RunsBackgroundWork && host.Configuration.GetValue("Social:SyncEnabled", true))
         {
             services.AddHostedService<MetaSyncWorker>();
             services.AddHostedService<MetaTokenRefreshWorker>();

@@ -64,12 +64,18 @@ public static class DcmsHostingExtensions
     /// itself while draining a queue. Every service already calls this method, which is why
     /// audit is wired here: it is the one line nobody can forget to write.
     /// </param>
+    /// <param name="secretsOf">
+    /// Whose Vault path to read, when it is not this process's own name: jobs-worker is
+    /// admin-api's code in another role (ADR 0024) and needs exactly admin-api's secrets, so it
+    /// reads <c>secret/dcms/admin-api</c> rather than a copy that would have to be kept in step.
+    /// </param>
     public static WebApplicationBuilder AddDcmsServiceDefaults(
         this WebApplicationBuilder builder,
         string serviceName,
-        AuditProfile auditProfile = AuditProfile.Api)
+        AuditProfile auditProfile = AuditProfile.Api,
+        string? secretsOf = null)
     {
-        builder.Configuration.AddDcmsVault(serviceName);
+        builder.Configuration.AddDcmsVault(secretsOf ?? serviceName);
 
         // Minted here rather than inside AddDcmsAudit so the same instance id can also become
         // the OpenTelemetry resource attribute below. AddDcmsAudit registers this with

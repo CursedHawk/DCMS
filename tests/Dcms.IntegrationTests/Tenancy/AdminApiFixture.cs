@@ -123,6 +123,9 @@ public sealed class AdminApiFixture : IAsyncLifetime
         => new WebApplicationFactory<AdminApiApp::Program>().WithWebHostBuilder(builder =>
         {
             builder.UseSetting("Rls:Enforce", enforce ? "true" : "false");
+            // The ledger tests claim jobs themselves; a lane consumer here would race them.
+            // JobConsumerHostTests turns it back on for the host that proves the worker.
+            builder.UseSetting("Jobs:Lanes:tenant:Enabled", "false");
             if (FileErrorSink.PathFromEnvironment is { } logPath)
             {
                 builder.ConfigureTestServices(services =>

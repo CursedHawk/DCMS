@@ -282,6 +282,11 @@ services:
       Forgejo__SshHost: "${GIT_HOST:-git.highgeek.eu}"
       Forgejo__SshPort: "2222"
 
+  # admin-api's AppRole and settings: the worker role reads the same Vault path (ADR 0024).
+  jobs-worker:
+    extends:
+      service: admin-api
+
   content-api:
     environment:
       VAULT_ROLE_ID: "${VAULT_ROLE_ID_CONTENT_API:-}"
