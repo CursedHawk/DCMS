@@ -157,31 +157,43 @@ public class JobEndpointTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
-    public async Task A_job_says_who_started_it_and_only_the_operator_sees_the_trace()
+    public async Task A_job_names_a_member_who_started_it_and_keeps_the_rest_for_operators()
     {
         var ct = TestContext.Current.CancellationToken;
         var client = fixture.Factory.CreateClient();
         var (tenantId, slug) = await CreateTenantAsync(client, ct);
-        var started = await EnqueueAsync(new JobSpec("test.origin", tenantId, null, "t"), ct);
+        var member = await SeedMemberAsync(tenantId, "Member", ct);
+        var byMember = await EnqueueAsync(new JobSpec("test.origin", tenantId, null, "t"), ct);
+        var byOperator = await EnqueueAsync(new JobSpec("test.origin", tenantId, null, "t"), ct);
         var nobody = await EnqueueAsync(new JobSpec("test.origin", tenantId, null, "t"), ct);
         // What a person's request captures (AuditPropagation), as JobQueue stores it.
-        await SqlAsync("""UPDATE jobs.jobs SET "ContextJson" = @c::jsonb WHERE "Id" = @id""", ct,
-            ("c", """{"Dcms-Actor-Kind":"User","Dcms-Actor-Display":"ana@dcms.test","Dcms-Trace-Id":"4bf92f3577b34da6"}"""),
-            ("id", started.Id));
+        const string context = """{"Dcms-Actor-Kind":"User","Dcms-Actor-Display":"captured@dcms.test","Dcms-Trace-Id":"4bf92f3577b34da6"}""";
+        await SqlAsync("""UPDATE jobs.jobs SET "ContextJson" = @c::jsonb, "ActorUserId" = @u WHERE "Id" = @id""", ct,
+            ("c", context), ("u", member), ("id", byMember.Id));
+        await SqlAsync("""UPDATE jobs.jobs SET "ContextJson" = @c::jsonb, "ActorUserId" = @u WHERE "Id" = @id""", ct,
+            ("c", context), ("u", Guid.NewGuid()), ("id", byOperator.Id));
         await SqlAsync("""UPDATE jobs.jobs SET "ContextJson" = NULL WHERE "Id" = @id""", ct, ("id", nobody.Id));
 
-        var origin = (await GetAsync(client, slug, started.Id, ct)).GetProperty("job").GetProperty("origin");
+        // A member is named from the tenant's own directory, not from what the request carried.
+        var origin = (await GetAsync(client, slug, byMember.Id, ct)).GetProperty("job").GetProperty("origin");
         origin.GetProperty("actorKind").GetString().Should().Be("User");
-        origin.GetProperty("actorName").GetString().Should().Be("ana@dcms.test");
-        origin.GetProperty("service").GetString().Should().NotBeNullOrEmpty();
+        origin.GetProperty("actorName").GetString().Should().EndWith("@dcms.test").And.NotBe("captured@dcms.test");
+        origin.GetProperty("service").ValueKind.Should().Be(JsonValueKind.Null, "which process queued it is ours");
         origin.GetProperty("traceId").ValueKind.Should().Be(JsonValueKind.Null, "a trace id is the operators' business");
+
+        var outsider = (await GetAsync(client, slug, byOperator.Id, ct)).GetProperty("job").GetProperty("origin");
+        outsider.GetProperty("actorKind").GetString().Should().Be("User");
+        outsider.GetProperty("actorName").ValueKind.Should().Be(JsonValueKind.Null, "an operator's email is not the tenant's to see");
 
         var automatic = (await GetAsync(client, slug, nobody.Id, ct)).GetProperty("job").GetProperty("origin");
         automatic.GetProperty("actorKind").GetString().Should().Be("System");
         automatic.GetProperty("actorName").ValueKind.Should().Be(JsonValueKind.Null);
 
-        var operatorView = await GetJsonAsync(client, $"/api/admin/platform/jobs/{started.Id}", ct);
-        operatorView.GetProperty("job").GetProperty("origin").GetProperty("traceId").GetString().Should().Be("4bf92f3577b34da6");
+        var operatorView = (await GetJsonAsync(client, $"/api/admin/platform/jobs/{byOperator.Id}", ct))
+            .GetProperty("job").GetProperty("origin");
+        operatorView.GetProperty("actorName").GetString().Should().Be("captured@dcms.test");
+        operatorView.GetProperty("service").GetString().Should().NotBeNullOrEmpty();
+        operatorView.GetProperty("traceId").GetString().Should().Be("4bf92f3577b34da6");
     }
 
     [DockerFact]

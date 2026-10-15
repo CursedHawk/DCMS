@@ -1301,7 +1301,8 @@
     "origin": {
       "by": "spustil(a) {{name}}",
       "plugin": "přes plugin {{name}}",
-      "automatic": "automaticky"
+      "automatic": "automaticky",
+      "outside": "spustil(a) někdo mimo tento pracovní prostor"
     },
     "filter": {
       "all": "Vše",

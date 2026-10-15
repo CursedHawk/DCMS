@@ -54,7 +54,9 @@ public sealed record JobDto(
     JsonElement? Result,
     JobOriginDto Origin)
 {
-    public static JobDto From(Job j, bool forOperator, (string Slug, string? Name)? tenant = null) => new(
+    /// <param name="members">The viewing tenant's members' emails by user id; the only names a tenant is shown.</param>
+    public static JobDto From(
+        Job j, bool forOperator, (string Slug, string? Name)? tenant = null, IReadOnlyDictionary<Guid, string>? members = null) => new(
         j.Id, j.TenantId, tenant?.Slug, tenant?.Name, j.ParentId, j.Kind, j.Lane, j.Source, j.TitleKey,
         JsonDocument.Parse(j.ParamsJson).RootElement.Clone(),
         j.Status.ToString(), j.Done, j.Total, j.StageKey, j.ErrorKey,
@@ -65,31 +67,41 @@ public sealed record JobDto(
         j.Status is JobStatus.Failed or JobStatus.Canceled && (JobDispatch.IsDispatched(j.Lane) || j.Lane == JobLanes.Group),
         j.Attempts, j.MaxAttempts, j.ActorUserId, j.CreatedAt, j.StartedAt, j.FinishedAt, j.UpdatedAt, j.Seq,
         j.ResultJson is null ? null : JsonDocument.Parse(j.ResultJson).RootElement.Clone(),
-        JobOriginDto.From(j, forOperator));
+        JobOriginDto.From(j, forOperator, members));
 }
 
 /// <summary>
 /// Who or what started a job, read back from the request context it was enqueued under (the
 /// same context its worker restores). A job queued by a worker on someone's behalf, such as a
 /// Drive file's conversion, names that someone.
+///
+/// <para><b>What a tenant is told is narrower than what was captured.</b> A job is visible to
+/// everyone holding the feature's permission, not only to those who may read the audit log, so a
+/// tenant gets a person's email only when that person is one of its own members (from the
+/// membership directory, not the captured display), a plugin's id, and the actor's kind.
+/// Not a platform operator's email, a service client's id, or which of our processes queued it.</para>
 /// </summary>
 /// <param name="ActorKind">
 /// <c>User</c>, <c>EndUser</c>, <c>ServiceClient</c>, <c>Webhook</c>, <c>Plugin</c> or
 /// <c>System</c>; <c>System</c> when nothing was captured.
 /// </param>
 /// <param name="ActorName">A person's email or name; a client, plugin or service's id otherwise.</param>
-/// <param name="Service">The process that enqueued it.</param>
+/// <param name="Service">The process that enqueued it. Operators only.</param>
 /// <param name="TraceId">The originating request's trace. Operators only.</param>
-public sealed record JobOriginDto(string ActorKind, string? ActorName, string Service, string? TraceId)
+public sealed record JobOriginDto(string ActorKind, string? ActorName, string? Service, string? TraceId)
 {
-    public static JobOriginDto From(Job j, bool forOperator)
+    public static JobOriginDto From(Job j, bool forOperator, IReadOnlyDictionary<Guid, string>? members)
     {
         var header = AuditPropagation.FromJson(j.ContextJson);
-        return new(
-            header(AuditPropagation.ActorKind) ?? nameof(Dcms.Shared.Kernel.Abstractions.ActorKind.System),
-            header(AuditPropagation.ActorDisplay),
-            j.Source,
-            forOperator ? header(AuditPropagation.TraceId) : null);
+        var kind = header(AuditPropagation.ActorKind) ?? nameof(Dcms.Shared.Kernel.Abstractions.ActorKind.System);
+        if (forOperator)
+        {
+            return new(kind, header(AuditPropagation.ActorDisplay), j.Source, header(AuditPropagation.TraceId));
+        }
+        var name = kind == nameof(Dcms.Shared.Kernel.Abstractions.ActorKind.Plugin)
+            ? header(AuditPropagation.ActorDisplay)
+            : j.ActorUserId is { } user && members?.TryGetValue(user, out var email) == true ? email : null;
+        return new(kind, name, null, null);
     }
 }
 
@@ -131,16 +143,19 @@ public static class JobEndpoints
         const string tenantRoot = "/api/admin/jobs";
 
         app.MapGet(tenantRoot, async (
-            JobsDbContext db, ITenantContext ctx, CurrentUser me, IPermissionResolver resolver,
+            JobsDbContext db, TenancyDbContext tenancy, ITenantContext ctx, CurrentUser me, IPermissionResolver resolver,
             string? status, string? cursor, int? limit, CancellationToken ct) =>
         {
             var visible = await VisibleAsync(ctx, me, resolver, ct);
             var query = db.Jobs.AsNoTracking().Where(j => j.ParentId == null).Where(visible);
-            return Results.Ok(await PageAsync(query, status, cursor, limit, j => JobDto.From(j, forOperator: false), ct));
+            var page = await PageAsync(query, status, cursor, limit, j => j, ct);
+            var members = await MemberEmailsAsync(tenancy, ctx.TenantId!.Value, page.Items, ct);
+            return Results.Ok(new JobPageDto(
+                page.Items.Select(j => JobDto.From(j, forOperator: false, members: members)).ToList(), page.NextCursor));
         }).RequireAuthorization();
 
         app.MapGet(tenantRoot + "/{id:guid}", async (
-            Guid id, JobsDbContext db, ITenantContext ctx, CurrentUser me, IPermissionResolver resolver, CancellationToken ct) =>
+            Guid id, JobsDbContext db, TenancyDbContext tenancy, ITenantContext ctx, CurrentUser me, IPermissionResolver resolver, CancellationToken ct) =>
         {
             var visible = await VisibleAsync(ctx, me, resolver, ct);
             var job = await db.Jobs.AsNoTracking().Where(visible).FirstOrDefaultAsync(j => j.Id == id, ct);
@@ -150,7 +165,9 @@ public static class JobEndpoints
             }
             var children = await db.Jobs.AsNoTracking().Where(j => j.ParentId == id)
                 .OrderBy(j => j.CreatedAt).ToListAsync(ct);
-            return Results.Ok(new JobDetailDto(JobDto.From(job, false), children.Select(c => JobDto.From(c, false)).ToList()));
+            var members = await MemberEmailsAsync(tenancy, ctx.TenantId!.Value, [job, .. children], ct);
+            return Results.Ok(new JobDetailDto(JobDto.From(job, false, members: members),
+                children.Select(c => JobDto.From(c, false, members: members)).ToList()));
         }).RequireAuthorization();
 
         app.MapPost(tenantRoot + "/{id:guid}/cancel", async (
@@ -354,6 +371,20 @@ public static class JobEndpoints
         var rows = await tenancy.Tenants.AsNoTracking().Where(t => wanted.Contains(t.Id))
             .Select(t => new { t.Id, t.Identifier, t.Name }).ToListAsync(ct);
         return rows.ToDictionary(t => Guid.Parse(t.Id), t => (t.Identifier, t.Name));
+    }
+
+    /// <summary>The emails of those of the jobs' starters who are members of this tenant.</summary>
+    private static async Task<Dictionary<Guid, string>> MemberEmailsAsync(
+        TenancyDbContext tenancy, Guid tenantId, IEnumerable<Job> jobs, CancellationToken ct)
+    {
+        var ids = jobs.Select(j => j.ActorUserId).OfType<Guid>().Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+        return await tenancy.Memberships.AsNoTracking()
+            .Where(m => m.TenantId == tenantId && ids.Contains(m.UserId))
+            .ToDictionaryAsync(m => m.UserId, m => m.Email, ct);
     }
 
     private static (string Slug, string? Name)? Name(Dictionary<Guid, (string Slug, string? Name)> names, Guid? id) =>

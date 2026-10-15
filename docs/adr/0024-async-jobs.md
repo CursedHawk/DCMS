@@ -99,8 +99,13 @@ enqueued under (the same context its worker restores):
 - the process that enqueued it.
 
 A job queued by a worker on someone's behalf, such as a Drive file's conversion, names that
-person. A job with no captured context reads as automatic. The originating trace id goes to
-operators only.
+person. A job with no captured context reads as automatic.
+
+Operators see all of it, plus the originating trace id. A tenant sees less, because a job is
+visible to everyone holding the feature's permission, not just to those who may read the audit
+log:
+- an email only for one of its own members, taken from the membership directory,
+- never a platform operator's email, a service client's id, or which process queued the job.
 
 ### Push
 

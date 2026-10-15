@@ -33,7 +33,7 @@ export function jobOrigin(job: Job): string {
         : actorKind === 'User' || actorKind === 'EndUser'
           ? `by ${actorName}`
           : `by ${actorName} (${actorKind})`;
-  return `${who} via ${service}${traceId ? ` · trace ${traceId.slice(0, 12)}` : ''}`;
+  return `${who}${service ? ` via ${service}` : ''}${traceId ? ` · trace ${traceId.slice(0, 12)}` : ''}`;
 }
 
 export const STATUS_LABEL: Record<Job['status'], string> = {

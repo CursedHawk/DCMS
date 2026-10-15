@@ -14,14 +14,14 @@ const RUNNING = {
   linkPath: null, cancelable: true, cancelRequested: false, retryable: false, attempts: 1, maxAttempts: 3,
   actorUserId: null, createdAt: '2026-10-15T10:00:00Z', startedAt: '2026-10-15T10:00:01Z', finishedAt: null,
   updatedAt: '2026-10-15T10:00:02Z', seq: 3,
-  origin: { actorKind: 'User', actorName: 'ana@example.test', service: 'admin-api', traceId: null },
+  origin: { actorKind: 'User', actorName: 'ana@example.test', service: null, traceId: null },
 };
 
 const FAILED = {
   ...RUNNING, id: 'aaaaaaaa-0000-0000-0000-000000000002', lane: 'tenant', kind: 'test.failed',
   titleKey: 'jobs.kinds.missing.title', status: 'Failed', done: 1, total: 4, cancelable: false, retryable: true,
   errorKey: 'jobs.error.failed', finishedAt: '2026-10-15T10:05:00Z', seq: 9,
-  origin: { actorKind: 'System', actorName: 'jobs-worker', service: 'jobs-worker', traceId: null },
+  origin: { actorKind: 'System', actorName: null, service: null, traceId: null },
 };
 
 function seed(api: { on: (m: string, p: string, r: unknown) => unknown }) {

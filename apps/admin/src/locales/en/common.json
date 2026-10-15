@@ -1271,7 +1271,8 @@
     "origin": {
       "by": "by {{name}}",
       "plugin": "via the {{name}} plugin",
-      "automatic": "automatic"
+      "automatic": "automatic",
+      "outside": "by someone outside this workspace"
     },
     "filter": {
       "all": "All",

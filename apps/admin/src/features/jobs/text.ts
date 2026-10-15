@@ -18,10 +18,15 @@ export function jobText(t: TFunction, job: Job): { title: string; detail?: strin
   return { title, origin };
 }
 
-/** "by ana@example.com", "via the dynamic-apps plugin" or "automatic". */
+/**
+ * "by ana@example.com", "via the dynamic-apps plugin", "automatic", or — for a person the server
+ * will not name because they are not a member here (an operator, a site user) — "by someone outside this workspace".
+ */
 function jobOrigin(t: TFunction, job: Job): string {
   const { actorKind, actorName } = job.origin;
-  if (actorKind === 'System' || !actorName) return t('jobs.origin.automatic');
-  if (actorKind === 'Plugin') return t('jobs.origin.plugin', { name: actorName });
-  return t('jobs.origin.by', { name: actorName });
+  if (actorKind === 'Plugin' && actorName) return t('jobs.origin.plugin', { name: actorName });
+  if (actorKind === 'User' || actorKind === 'EndUser') {
+    return actorName ? t('jobs.origin.by', { name: actorName }) : t('jobs.origin.outside');
+  }
+  return t('jobs.origin.automatic');
 }

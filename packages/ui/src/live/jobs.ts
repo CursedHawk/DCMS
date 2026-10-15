@@ -42,10 +42,13 @@ export interface JobDto {
 export interface JobOrigin {
   /** `User`, `EndUser`, `ServiceClient`, `Webhook`, `Plugin` or `System` (nothing captured). */
   actorKind: string;
-  /** A person's email or name; a client, plugin or service id otherwise. */
+  /**
+   * A person's email or name; a client, plugin or service id otherwise. A tenant gets only its
+   * own members' emails and plugin ids.
+   */
   actorName: string | null;
-  /** The process that enqueued it, e.g. `admin-api`. */
-  service: string;
+  /** The process that enqueued it, e.g. `admin-api`; the console's only. */
+  service: string | null;
   /** The originating request's trace; the console's only. */
   traceId: string | null;
 }
