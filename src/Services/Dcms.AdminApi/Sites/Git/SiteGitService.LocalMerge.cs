@@ -38,7 +38,7 @@ public sealed partial class SiteGitService
         Directory.CreateDirectory(work);
         try
         {
-            var url = AuthenticatedCloneUrl(org, repo);
+            var url = CloneUrl(org, repo);
             // A normal (non-single-branch) clone fetches every branch tip, so origin/<head>
             // is present for the merge below.
             await RunGitAsync(work, null, ct, "clone", "--branch", @base, "--no-tags", url, ".");
@@ -141,11 +141,27 @@ public sealed partial class SiteGitService
         return segments.Count == 0 ? null : string.Join(Path.DirectorySeparatorChar, segments);
     }
 
-    private string AuthenticatedCloneUrl(string org, string repo)
+    private string CloneUrl(string org, string repo)
     {
-        // Forgejo accepts a bot token as the basic-auth username for git-over-HTTP.
         var uri = new Uri(_opts.BaseUrl);
-        return $"{uri.Scheme}://{Uri.EscapeDataString(_opts.Token)}@{uri.Authority}/{org}/{repo}.git";
+        return $"{uri.Scheme}://{uri.Authority}/{org}/{repo}.git";
+    }
+
+    /// <summary>
+    /// The bot token as an Authorization header on every request git makes — given through the
+    /// environment (GIT_CONFIG_*), so it is neither in the process's arguments nor in the clone's
+    /// saved remote. Not in the URL: since Ubuntu's libcurl 8.5.0-2ubuntu10.16, git takes a URL's
+    /// credentials for a redirect it then follows without them, and every clone failed with
+    /// "could not read Username" (2026-10-15). Forgejo reads a basic-auth username as the token
+    /// when the password is <c>x-oauth-basic</c>.
+    /// </summary>
+    private void Authorize(ProcessStartInfo psi)
+    {
+        if (string.IsNullOrEmpty(_opts.Token)) return;
+        var basic = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{_opts.Token}:x-oauth-basic"));
+        psi.Environment["GIT_CONFIG_COUNT"] = "1";
+        psi.Environment["GIT_CONFIG_KEY_0"] = "http.extraHeader";
+        psi.Environment["GIT_CONFIG_VALUE_0"] = $"Authorization: Basic {basic}";
     }
 
     private static Dictionary<string, string> CommitEnv(
@@ -173,6 +189,7 @@ public sealed partial class SiteGitService
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
         psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        Authorize(psi);
         if (env is not null)
             foreach (var (k, v) in env) psi.Environment[k] = v;
 
@@ -204,6 +221,7 @@ public sealed partial class SiteGitService
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
         psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        Authorize(psi);
         if (env is not null)
             foreach (var (k, v) in env) psi.Environment[k] = v;
 
