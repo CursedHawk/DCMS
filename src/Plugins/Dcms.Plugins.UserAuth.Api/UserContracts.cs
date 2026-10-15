@@ -125,3 +125,31 @@ public interface IUserDirectory
         Description = "Remove a site user from a group.")]
     Task RemoveFromGroupAsync(GroupMembership input, CancellationToken ct);
 }
+
+/// <param name="Ids">These people, when given (up to 50); else a search by email or name.</param>
+public sealed record PeopleSearch(string? Search = null, IReadOnlyList<Guid>? Ids = null);
+
+public sealed record Person(Guid Id, string Email, string? DisplayName);
+
+public sealed record PeopleList(IReadOnlyList<Person> Items);
+
+public sealed record GroupName(Guid Id, string Name);
+
+public sealed record GroupNameList(IReadOnlyList<GroupName> Groups);
+
+/// <summary>
+/// The tenant's site users and groups as a signed-in site user may see them: to share something
+/// with (#297). Only for a signed-in user, who is asked on behalf of; active accounts only, and
+/// only who they are — not their status, sign-ins or memberships.
+/// </summary>
+[DcmsContract("users.people", 1, Description = "The site's people and groups, for the signed-in site user to share with.")]
+public interface IUserPeople
+{
+    [Operation(OpRisk.Read, Expose = OpExposure.Site, ReturnsExternalText = true,
+        Description = "Up to 20 site users matching an email or name, or the ones asked for by id; empty when nobody is signed in.")]
+    Task<PeopleList> FindAsync(PeopleSearch input, CancellationToken ct);
+
+    [Operation(OpRisk.Read, Expose = OpExposure.Site, ReturnsExternalText = true,
+        Description = "The groups site users belong to, by name; empty when nobody is signed in.")]
+    Task<GroupNameList> ListGroupsAsync(CancellationToken ct);
+}

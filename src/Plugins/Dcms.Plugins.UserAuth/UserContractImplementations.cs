@@ -153,6 +153,41 @@ public sealed class UserDirectory(IPluginContext context, IServiceProvider servi
     });
 }
 
+/// <summary>
+/// The site's people and groups for the signed-in user (#297), from identity, which is asked with
+/// the user's own realm token: it answers for their realm only, and not at all once they may no
+/// longer sign in. Not on the admin plane, where the directory contract serves members.
+/// </summary>
+public sealed class UserPeople(IHttpContextAccessor http, IServiceProvider services) : IUserPeople
+{
+    public async Task<PeopleList> FindAsync(PeopleSearch input, CancellationToken ct)
+    {
+        if (input.Ids is { Count: > 50 } || input.Search?.Length > 100)
+        {
+            throw new ContractValidationException("Ask for at most 50 people, or search with up to 100 characters.");
+        }
+        if (await TokenAsync() is not { } token)
+        {
+            return new PeopleList([]);
+        }
+        return new PeopleList((await Directory.PeopleAsync(token, input.Search, input.Ids, ct)).Items.Select(ToPerson).ToList());
+    }
+
+    public async Task<GroupNameList> ListGroupsAsync(CancellationToken ct) =>
+        new(await TokenAsync() is { } token ? (await Directory.GroupsAsync(token, ct)).Select(g => new GroupName(g.Id, g.Name)).ToList() : []);
+
+    private RealmDirectoryClient Directory => services.GetService<RealmDirectoryClient>()
+        ?? throw new InvalidOperationException("The site's people are asked for on the site plane only.");
+
+    /// <summary>The request's realm token, once it has been accepted as this tenant's signed-in user.</summary>
+    private async Task<string?> TokenAsync() =>
+        http.HttpContext is { } request && await request.CurrentUserAsync() is not null
+            ? request.Request.Headers[UserAuthentication.TokenHeader].ToString()
+            : null;
+
+    private static Person ToPerson(RealmPerson p) => new(p.Id, p.Email, p.DisplayName);
+}
+
 /// <summary>The plugin's events (ADR 0022). Published after the fact and best effort: an invitation is sent whether or not a flow hears of it.</summary>
 public static class UserEvents
 {

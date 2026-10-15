@@ -271,7 +271,93 @@ public sealed class RealmTests(IdentityAppFixture fixture)
         result.IsValid.Should().BeTrue(result.Exception?.Message);
     }
 
+    /// <summary>
+    /// A realm's own signed-in users can look up its people and groups to share with (#297) — by
+    /// their own token, which opens only the realm that issued it, and shows only active accounts.
+    /// </summary>
+    [DockerFact]
+    public async Task A_signed_in_user_finds_their_realms_people_and_groups_and_nobody_elses()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var a = await RealmAsync(ct);
+        var b = await RealmAsync(ct);
+        var staff = await GroupAsync(a, "Staff", ct);
+        await GroupAsync(b, "Other realm's group", ct);
+        var tag = Guid.NewGuid().ToString("N")[..8];
+        var (_, inviteMe) = await InviteAsync(a, $"me-{tag}@corp.test", ct);
+        var (colleague, inviteColleague) = await InviteAsync(a, $"colleague-{tag}@corp.test", ct, staff);
+        var (gone, inviteGone) = await InviteAsync(a, $"gone-{tag}@corp.test", ct);
+        await InviteAsync(a, $"pending-{tag}@corp.test", ct);
+        var (_, inviteStranger) = await InviteAsync(b, $"stranger-{tag}@corp.test", ct);
+        await AcceptAsync(Browser(), inviteColleague, ct);
+        await AcceptAsync(Browser(), inviteGone, ct);
+        await AdminAsync(HttpMethod.Patch, $"/api/realms/{a.TenantId}/users/{gone}", new { status = "disabled" }, ct);
+
+        var browser = Browser();
+        await AcceptAsync(browser, inviteMe, ct);
+        var (location, verifier) = await AuthorizeAsync(browser, a, ct);
+        var mine = (await ExchangeAsync(a, location, verifier, ct)).GetProperty("access_token").GetString()!;
+
+        var people = await DirectoryAsync(mine, $"/api/realm-directory/people?search={tag}", ct);
+        people.GetProperty("items").EnumerateArray().Select(p => p.GetProperty("email").GetString()).Should()
+            .BeEquivalentTo([$"me-{tag}@corp.test", $"colleague-{tag}@corp.test"], "invited and disabled accounts are nobody to share with");
+        var byId = await DirectoryAsync(mine, $"/api/realm-directory/people?ids={colleague},{gone}", ct);
+        byId.GetProperty("items").EnumerateArray().Select(p => p.GetProperty("id").GetGuid()).Should().Equal(colleague);
+        (await DirectoryAsync(mine, "/api/realm-directory/groups", ct)).EnumerateArray().Select(g => g.GetProperty("name").GetString())
+            .Should().Equal("Staff");
+
+        // Someone from another realm sees their own, never this one's.
+        var stranger = Browser();
+        await AcceptAsync(stranger, inviteStranger, ct);
+        var (sLocation, sVerifier) = await AuthorizeAsync(stranger, b, ct);
+        var theirs = (await ExchangeAsync(b, sLocation, sVerifier, ct)).GetProperty("access_token").GetString()!;
+        (await DirectoryAsync(theirs, $"/api/realm-directory/people?search={tag}", ct)).GetProperty("items").EnumerateArray()
+            .Select(p => p.GetProperty("email").GetString()).Should().Equal($"stranger-{tag}@corp.test");
+
+        // Nobody, a service, and a token whose user may no longer sign in: no directory.
+        var client = fixture.Factory.CreateClient();
+        (await client.GetAsync("/api/realm-directory/groups", ct)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        var service = await ServiceTokenAsync("dcms-platform-api-service", "dcms-platform-api-dev-secret", "dcms.console", ct);
+        (await DirectoryStatusAsync(service, "/api/realm-directory/groups", ct)).Should().Be(HttpStatusCode.Unauthorized);
+        var meId = Guid.Parse(Claims(mine).GetProperty("sub").GetString()!);
+        await AdminAsync(HttpMethod.Patch, $"/api/realms/{a.TenantId}/users/{meId}", new { status = "disabled" }, ct);
+        (await DirectoryStatusAsync(mine, "/api/realm-directory/groups", ct)).Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>"View as" in a preview looks up the directory as the user it shows.</summary>
+    [DockerFact]
+    public async Task A_preview_token_opens_the_directory_of_its_realm()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var a = await RealmAsync(ct);
+        await GroupAsync(a, "Staff", ct);
+        var (userId, invite) = await InviteAsync(a, $"{Guid.NewGuid():N}@corp.test", ct);
+        await AcceptAsync(Browser(), invite, ct);
+        var minted = await AdminAsync(HttpMethod.Post, $"/api/realms/{a.TenantId}/users/{userId}/preview-token", new { requestedBy = Guid.NewGuid() }, ct);
+
+        (await DirectoryAsync(minted.GetProperty("accessToken").GetString()!, "/api/realm-directory/groups", ct)).EnumerateArray()
+            .Select(g => g.GetProperty("name").GetString()).Should().Equal("Staff");
+    }
+
     // ---- helpers ----
+
+    private async Task<JsonElement> DirectoryAsync(string token, string path, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await fixture.Factory.CreateClient().SendAsync(request, ct);
+        var text = await response.Content.ReadAsStringAsync(ct);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, text);
+        return JsonDocument.Parse(text).RootElement.Clone();
+    }
+
+    private async Task<HttpStatusCode> DirectoryStatusAsync(string token, string path, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await fixture.Factory.CreateClient().SendAsync(request, ct);
+        return response.StatusCode;
+    }
 
     private sealed record TestRealm(Guid TenantId, string Slug, string Host)
     {

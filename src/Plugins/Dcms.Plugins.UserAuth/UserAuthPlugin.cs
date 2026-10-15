@@ -5,6 +5,7 @@ using Dcms.Plugins.VisitorAuth.Api;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.Shared.Security.Realms;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Plugins.UserAuth;
@@ -44,6 +45,8 @@ public sealed class UserAuthPlugin : IPlugin
             ContractProvision.Of<IUserIdentity, UserIdentity>(),
             ContractProvision.Of<IUserAccess, UserAccess>(),
             ContractProvision.Of<IUserDirectory, UserDirectory>(),
+            // The same directory, narrowed, for a signed-in site user to share with (#297).
+            ContractProvision.Of<IUserPeople, UserPeople>(),
             // The same signed-in user, to plugins that only know visitors (own records, prefilled forms).
             ContractProvision.Of<IVisitorIdentity, UserVisitorIdentity>(),
             // Invite and group membership as steps of Dynamic Apps flows.
@@ -81,6 +84,8 @@ public sealed class UserAuthPlugin : IPlugin
         {
             // API access: every instance's /api/{slug}, before its endpoint runs.
             services.AddSingleton<IPluginRequestGate, UserApiAccess>();
+            // users.people@1: identity's realm directory, asked with the signed-in user's own token.
+            services.AddRealmDirectoryClient(host.Configuration);
         }
         if (host.IsAdmin)
         {

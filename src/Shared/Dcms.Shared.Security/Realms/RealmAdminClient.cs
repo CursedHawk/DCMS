@@ -141,3 +141,49 @@ public static class RealmAdminClientExtensions
 
     private sealed record RealmAdminTokens(IServiceTokenProvider Provider);
 }
+
+/// <summary>
+/// Identity's realm directory (#297), asked on behalf of a signed-in site user with their own
+/// realm access token — which opens only that user's realm. No service credential is involved.
+/// </summary>
+public sealed class RealmDirectoryClient(HttpClient http)
+{
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public async Task<RealmPeople> PeopleAsync(string userToken, string? search, IReadOnlyList<Guid>? ids, CancellationToken ct)
+    {
+        var query = ids is { Count: > 0 }
+            ? $"?ids={string.Join(',', ids)}"
+            : $"?search={Uri.EscapeDataString(search ?? "")}";
+        return await GetAsync<RealmPeople>(userToken, $"api/realm-directory/people{query}", ct) ?? new RealmPeople([]);
+    }
+
+    public async Task<IReadOnlyList<RealmGroupName>> GroupsAsync(string userToken, CancellationToken ct) =>
+        await GetAsync<List<RealmGroupName>>(userToken, "api/realm-directory/groups", ct) ?? [];
+
+    /// <summary>Null when identity no longer takes the token (its user was disabled since).</summary>
+    private async Task<T?> GetAsync<T>(string userToken, string path, CancellationToken ct) where T : class
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", userToken);
+        using var response = await http.SendAsync(request, ct);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            return null;
+        }
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<T>(Json, ct);
+    }
+}
+
+public static class RealmDirectoryClientExtensions
+{
+    /// <summary>Identity at the same origin as the service-token endpoint this host already uses.</summary>
+    public static IServiceCollection AddRealmDirectoryClient(this IServiceCollection services, IConfiguration configuration)
+    {
+        var tokenEndpoint = configuration.GetSection(ServiceClientOptions.SectionName).Get<ServiceClientOptions>()?.TokenEndpoint
+                            ?? new ServiceClientOptions().TokenEndpoint;
+        services.AddHttpClient<RealmDirectoryClient>(client => client.BaseAddress = new Uri(new Uri(tokenEndpoint), "/"));
+        return services;
+    }
+}

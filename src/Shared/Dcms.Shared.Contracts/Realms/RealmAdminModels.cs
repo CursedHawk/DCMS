@@ -46,3 +46,10 @@ public sealed record RealmPreviewTokenRequest(Guid RequestedBy);
 
 /// <summary>A short-lived realm access token for one user, for a site preview; there is no refresh token.</summary>
 public sealed record RealmPreviewToken(string AccessToken, DateTimeOffset ExpiresAt);
+
+/// <summary>Someone a signed-in site user can share with (#297): who they are, nothing about their account.</summary>
+public sealed record RealmPerson(Guid Id, string Email, string? DisplayName);
+
+public sealed record RealmPeople(IReadOnlyList<RealmPerson> Items);
+
+public sealed record RealmGroupName(Guid Id, string Name);

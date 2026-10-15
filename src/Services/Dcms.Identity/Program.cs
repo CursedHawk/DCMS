@@ -437,6 +437,7 @@ app.MapEdgeLoginSessionEndpoints();
 app.MapRealmAccountEndpoints();
 app.MapRealmSsoEndpoints();
 app.MapRealmAdminEndpoints();
+app.MapRealmDirectoryEndpoints();
 app.MapGet("/", () => Results.Ok(new { service = "identity" }));
 app.Run();
 
