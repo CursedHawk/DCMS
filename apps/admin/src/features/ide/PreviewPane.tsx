@@ -132,12 +132,14 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
    *
    * Re-attached on every `srcdoc` change because a rebuild replaces the document — the old
    * contentWindow is gone, and a stale reference would answer queries about a page that is no
-   * longer on screen.
+   * longer on screen. And on every reload: it remounts the frame with the same document, so
+   * `doc` is an equal string and would not re-run this — leaving the bridge pinned to the
+   * removed frame, deaf to the new one's API calls (a blank page, nobody signed in).
    */
   useEffect(() => {
     if (!doc) return;
     return attachPreview(frameRef.current?.contentWindow ?? null, proxyFetch, onEdgeNav, onNav);
-  }, [doc, proxyFetch, onEdgeNav, onNav]);
+  }, [doc, reloads, proxyFetch, onEdgeNav, onNav]);
 
   return (
     <div className="relative flex h-full flex-col bg-white">
