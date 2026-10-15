@@ -104,6 +104,8 @@ public sealed class DynamicAppsPlugin : IPlugin
             ContractRequirement.Of<IUserIdentity>(optional: true),
             // Flows trigger on user.invited and user.activated.
             ContractRequirement.Of<IUserDirectory>(optional: true),
+            // Whom a site user can share a saved view with (#297).
+            ContractRequirement.Of<IUserPeople>(optional: true),
             // Flows trigger on form.submitted and read what was sent.
             ContractRequirement.Of<IFormSubmissions>(optional: true),
             // Actions other plugins offer to flows.
@@ -154,7 +156,11 @@ public sealed class DynamicAppsPlugin : IPlugin
     }
 
     /// <summary>Site plane, <c>/api/{slug}/…</c>: the published tables, as each one's public access allows.</summary>
-    public void MapEndpoints(IPluginEndpointBuilder endpoints) => PublicEndpoints.Map(endpoints);
+    public void MapEndpoints(IPluginEndpointBuilder endpoints)
+    {
+        PublicEndpoints.Map(endpoints);
+        SiteViewEndpoints.Map(endpoints);
+    }
 
     /// <summary>The OpenAPI of the published model — never the draft — for the tenant's document and generated client.</summary>
     public async Task<OpenApiFragment> BuildOpenApiFragmentAsync(PluginInstanceContext instance, IServiceProvider services, CancellationToken ct)

@@ -115,6 +115,9 @@ public static class RlsConfigurator
         ("apps", "flow_runs"),
         ("apps", "flow_run_steps"),
         ("apps", "flow_schedules"),
+        // Site users' saved views of app tables (#297), and which one each opens with.
+        ("apps", "site_views"),
+        ("apps", "site_view_defaults"),
         // User Authentication (ADR 0022): the access policy over each tenant's realm.
         ("userauth", "roles"),
         ("userauth", "grants"),

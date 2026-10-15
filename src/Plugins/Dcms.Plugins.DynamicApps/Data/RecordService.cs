@@ -800,6 +800,10 @@ public sealed class RecordService(
         }
     }
 
+    /// <summary>A table the public plane may read, as its records' reads would find it: 404, 403 or 401 otherwise.</summary>
+    public Task<(RuntimeModel Model, RuntimeTable Table)> ReadableTableAsync(string tableName, CancellationToken ct) =>
+        TableAsync(tableName, RecordPlane.Public, PublicOp.Read, ct);
+
     private async Task<(RuntimeModel Model, RuntimeTable Table)> TableAsync(string tableName, RecordPlane plane, PublicOp op, CancellationToken ct)
     {
         var model = await models.GetAsync(ct);

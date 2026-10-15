@@ -35,8 +35,59 @@ public sealed class FakeRealmApi : HttpMessageHandler
         public HashSet<(Guid Group, Guid User)> Members { get; } = [];
     }
 
+    /// <summary>Someone in a realm's directory, as an accepted invitation would leave them.</summary>
+    public Guid AddUser(Guid tenantId, string email, string status = "active", params Guid[] groups)
+    {
+        var realm = _realms.GetOrAdd(tenantId, id => new Realm(id));
+        var user = new RealmUserInfo(Guid.NewGuid(), email, email.Split('@')[0], status, [], true, false, DateTimeOffset.UtcNow, null);
+        lock (realm)
+        {
+            realm.Users[user.Id] = user;
+            foreach (var group in groups)
+            {
+                realm.Members.Add((group, user.Id));
+            }
+        }
+        return user.Id;
+    }
+
+    public Guid AddGroup(Guid tenantId, string name)
+    {
+        var realm = _realms.GetOrAdd(tenantId, id => new Realm(id));
+        var group = new RealmGroupInfo(Guid.NewGuid(), name, null, 0);
+        lock (realm)
+        {
+            realm.Groups[group.Id] = group;
+        }
+        return group.Id;
+    }
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
+        // identity's realm directory (#297), asked with the site user's own token: its realm claim
+        // picks the realm. The token's signature is content-api's business (RealmTokens), not this.
+        if (request.RequestUri!.AbsolutePath.StartsWith("/api/realm-directory/", StringComparison.Ordinal))
+        {
+            Calls.Enqueue($"GET {request.RequestUri.PathAndQuery}");
+            var token = new Microsoft.IdentityModel.JsonWebTokens.JsonWebToken(request.Headers.Authorization!.Parameter!);
+            if (!_realms.TryGetValue(Guid.Parse(token.GetClaim("realm").Value), out var own))
+            {
+                return Status(HttpStatusCode.Unauthorized);
+            }
+            lock (own)
+            {
+                if (request.RequestUri.AbsolutePath.EndsWith("/groups", StringComparison.Ordinal))
+                {
+                    return Ok(own.Groups.Values.OrderBy(g => g.Name).Select(g => new RealmGroupName(g.Id, g.Name)).ToList());
+                }
+                var query = System.Web.HttpUtility.ParseQueryString(request.RequestUri.Query);
+                var ids = (query["ids"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(Guid.Parse).ToHashSet();
+                var search = query["search"] ?? "";
+                return Ok(new RealmPeople(own.Users.Values
+                    .Where(u => u.Status == "active" && (ids.Count > 0 ? ids.Contains(u.Id) : u.Email.Contains(search, StringComparison.OrdinalIgnoreCase)))
+                    .OrderBy(u => u.Email).Select(u => new RealmPerson(u.Id, u.Email, u.DisplayName)).ToList()));
+            }
+        }
         // /api/realms/{tenantId}{rest}
         var segments = request.RequestUri!.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
         var tenantId = Guid.Parse(segments[2]);

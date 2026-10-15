@@ -343,6 +343,8 @@ public sealed class TenantDeleter(
             ("apps.FlowRunSteps", () => apps.FlowRunSteps.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("apps.FlowRuns", () => apps.FlowRuns.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("apps.FlowSchedules", () => apps.FlowSchedules.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.SiteViewDefaults", () => apps.SiteViewDefaults.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("apps.SiteViews", () => apps.SiteViews.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("apps.Outbox", () => apps.Outbox.Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("apps.UniqueKeys", () => apps.UniqueKeys.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("apps.RelationLinks", () => apps.RelationLinks.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),

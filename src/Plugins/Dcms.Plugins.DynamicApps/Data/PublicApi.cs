@@ -110,6 +110,25 @@ public static class PublicApi
                 paths.Add(new OpenApiPathFragment($"/data/{name}/{{id}}", "get", $"{slug}_{name}_get", $"Get one {table.Def.DisplayName}",
                     Describe($"One {table.Def.DisplayName} by id.{own}"),
                     Ref(record), Parameters: [IdParameter(), ExpandParameter()], ClientPath: [name, "get"], Extensions: revision));
+                // Saved views (#297): the app's own for anyone; a signed-in user's own and shared ones on top.
+                paths.Add(new OpenApiPathFragment($"/views/{name}", "get", $"{slug}_{name}_views", $"Views of {label}",
+                    Describe("The app's views of this table, and for a signed-in user also their own and those shared with them, with the one the table opens with."),
+                    Ref($"{slug}_view_list"), ClientPath: [name, "views", "list"], Extensions: revision));
+                paths.Add(new OpenApiPathFragment($"/views/{name}", "post", $"{slug}_{name}_views_create", $"Save a view of {label}",
+                    Describe("Save a view (columns, sort, filter) for the signed-in user. Personal until shared."),
+                    Ref($"{slug}_view"), RequestBodySchema: Ref($"{slug}_view_save"), SuccessStatus: "201", ClientPath: [name, "views", "create"], Extensions: revision));
+                paths.Add(new OpenApiPathFragment($"/views/{name}/{{id}}", "put", $"{slug}_{name}_views_update", $"Change a view of {label}",
+                    Describe("Rename or redefine one of the signed-in user's own views."),
+                    Ref($"{slug}_view"), RequestBodySchema: Ref($"{slug}_view_save"), Parameters: [IdParameter()], ClientPath: [name, "views", "update"], Extensions: revision));
+                paths.Add(new OpenApiPathFragment($"/views/{name}/{{id}}", "delete", $"{slug}_{name}_views_delete", $"Delete a view of {label}",
+                    Describe("Delete one of the signed-in user's own views."),
+                    null, Parameters: [IdParameter()], SuccessStatus: "204", ClientPath: [name, "views", "delete"], Extensions: revision));
+                paths.Add(new OpenApiPathFragment($"/views/{name}/{{id}}/sharing", "put", $"{slug}_{name}_views_share", $"Share a view of {label}",
+                    Describe("Share one of the signed-in user's own views, read-only, with everyone signed in, with groups, or with people (ids from views/_groups and views/_people)."),
+                    Ref($"{slug}_view"), RequestBodySchema: Ref($"{slug}_view_sharing"), Parameters: [IdParameter()], ClientPath: [name, "views", "share"], Extensions: revision));
+                paths.Add(new OpenApiPathFragment($"/views/{name}/default", "put", $"{slug}_{name}_views_default", $"Open {label} with a view",
+                    Describe("The view the signed-in user opens this table with: a view id, `system:{id}` for one of the app's own, or null for none."),
+                    null, RequestBodySchema: Ref($"{slug}_view_default"), SuccessStatus: "204", ClientPath: [name, "views", "setDefault"], Extensions: revision));
                 foreach (var nav in table.Navigations.Values.Where(n => model.ById.TryGetValue(n.OtherTableId, out var o) && Readable(o)))
                 {
                     var other = model.ById[nav.OtherTableId];
@@ -138,6 +157,19 @@ public static class PublicApi
                     Describe($"Delete one of {label} the signed-in user may delete: their own, or one the row access rules give them."),
                     null, Parameters: [IdParameter()], SuccessStatus: "204", ClientPath: [name, "delete"], Extensions: revision));
             }
+        }
+        if (Tables(model).Any(Readable))
+        {
+            foreach (var (key, value) in ViewSchemas(slug))
+            {
+                schemas[key] = value;
+            }
+            paths.Add(new OpenApiPathFragment("/views/_people", "get", $"{slug}_views_people", "People to share a view with",
+                Describe("Up to 20 of the site's users matching `search` (email or name), or those named in `ids` (comma-separated). Signed-in users only."),
+                new JsonObject { ["type"] = "object" }, Parameters: [Query("search", "string"), Query("ids", "string")], ClientPath: ["views", "people"], Extensions: revision));
+            paths.Add(new OpenApiPathFragment("/views/_groups", "get", $"{slug}_views_groups", "Groups to share a view with",
+                Describe("The site's user groups by name. Signed-in users only."),
+                new JsonObject { ["type"] = "object" }, ClientPath: ["views", "groups"], Extensions: revision));
         }
         paths.Add(new OpenApiPathFragment("/_model", "get", $"{slug}_model", "The app's public model",
             Describe("The tables, fields and relationships this API exposes, from the published model."),
@@ -253,6 +285,54 @@ public static class PublicApi
         },
         ["required"] = new JsonArray("items", "total", "page", "pageSize", "totalCapped"),
     };
+
+    private static Dictionary<string, JsonNode> ViewSchemas(string slug)
+    {
+        JsonObject Obj(JsonObject properties, params string[] required) => new()
+        {
+            ["type"] = "object", ["properties"] = properties, ["required"] = new JsonArray(required.Select(r => (JsonNode)r).ToArray()),
+        };
+        JsonObject Ids() => new() { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string", ["format"] = "uuid" } };
+        var definition = Obj(new JsonObject
+        {
+            ["columns"] = new JsonObject { ["type"] = "array", ["items"] = new JsonObject { ["type"] = "string" } },
+            ["sort"] = new JsonObject
+            {
+                ["type"] = "array",
+                ["items"] = Obj(new JsonObject
+                {
+                    ["field"] = new JsonObject { ["type"] = "string" },
+                    ["direction"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("asc", "desc") },
+                }, "field"),
+            },
+            ["filter"] = new JsonObject { ["type"] = "object", ["description"] = "As a query's filter." },
+        });
+        return new()
+        {
+            [$"{slug}_view_definition"] = definition,
+            [$"{slug}_view"] = Obj(new JsonObject
+            {
+                ["id"] = new JsonObject { ["type"] = "string", ["description"] = "A view id, or system:{id} for one of the app's own." },
+                ["name"] = new JsonObject { ["type"] = "string" },
+                ["system"] = new JsonObject { ["type"] = "boolean" },
+                ["mine"] = new JsonObject { ["type"] = "boolean" },
+                ["owner"] = Nullable(new JsonObject { ["type"] = "string", ["description"] = "Who shared it, when it is not the caller's." }),
+                ["definition"] = Ref($"{slug}_view_definition"),
+                ["sharing"] = Nullable(Obj(new JsonObject { ["everyone"] = new JsonObject { ["type"] = "boolean" }, ["groups"] = Ids(), ["users"] = Ids() },
+                    "everyone", "groups", "users")),
+            }, "id", "name", "system", "mine", "definition"),
+            [$"{slug}_view_list"] = Obj(new JsonObject
+            {
+                ["signedIn"] = new JsonObject { ["type"] = "boolean" },
+                ["views"] = new JsonObject { ["type"] = "array", ["items"] = Ref($"{slug}_view") },
+                ["defaultView"] = Nullable(new JsonObject { ["type"] = "string" }),
+            }, "signedIn", "views"),
+            [$"{slug}_view_save"] = Obj(new JsonObject { ["name"] = new JsonObject { ["type"] = "string", ["maxLength"] = 100 }, ["definition"] = Ref($"{slug}_view_definition") },
+                "name", "definition"),
+            [$"{slug}_view_sharing"] = Obj(new JsonObject { ["everyone"] = new JsonObject { ["type"] = "boolean" }, ["groups"] = Ids(), ["users"] = Ids() }, "everyone"),
+            [$"{slug}_view_default"] = Obj(new JsonObject { ["viewKey"] = Nullable(new JsonObject { ["type"] = "string" }) }, "viewKey"),
+        };
+    }
 
     private static JsonObject QuerySchema() => new()
     {

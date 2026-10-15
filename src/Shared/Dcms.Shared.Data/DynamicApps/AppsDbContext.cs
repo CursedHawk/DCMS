@@ -299,6 +299,44 @@ public sealed class FlowSchedule : TenantEntity
     public DateTimeOffset NextRunAt { get; set; }
 }
 
+/// <summary>
+/// A saved view of an app's table by a signed-in site user (#297): its columns, sort and filter
+/// (<see cref="Dcms.Shared.Kernel.Views.ViewDefinition"/>, as JSON). Personal until shared,
+/// read-only, with everyone signed in to the tenant's sites, with groups, or with chosen people;
+/// only the owner changes it. Seeing a view never grants the table: each query is judged anew.
+/// </summary>
+public sealed class AppSiteView : TenantEntity
+{
+    public Guid InstanceId { get; set; }
+    public Guid TableId { get; set; }
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>The User Authentication account that made it.</summary>
+    public Guid OwnerUserId { get; set; }
+
+    /// <summary>Their name or email when they last saved it, for "shared by" — the directory is not asked per view.</summary>
+    public string? OwnerName { get; set; }
+
+    public string DefinitionJson { get; set; } = "{}";
+    public bool SharedWithEveryone { get; set; }
+    public List<Guid> SharedGroups { get; set; } = [];
+    public List<Guid> SharedUsers { get; set; } = [];
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// The view a site user opens a table with. <see cref="ViewKey"/> is an <see cref="AppSiteView"/>
+/// id, or one of the app's own views (<c>system:{id}</c>).
+/// </summary>
+public sealed class AppSiteViewDefault : TenantEntity
+{
+    public Guid InstanceId { get; set; }
+    public Guid TableId { get; set; }
+    public Guid UserId { get; set; }
+    public string ViewKey { get; set; } = string.Empty;
+}
+
 /// <summary>Owns the "apps" schema: the Dynamic Apps plugin's applications (ADR 0021).</summary>
 public class AppsDbContext(DbContextOptions<AppsDbContext> options, ITenantContext tenantContext) : DbContext(options)
 {
@@ -317,6 +355,8 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options, ITenantConte
     public DbSet<FlowRun> FlowRuns => Set<FlowRun>();
     public DbSet<FlowRunStep> FlowRunSteps => Set<FlowRunStep>();
     public DbSet<FlowSchedule> FlowSchedules => Set<FlowSchedule>();
+    public DbSet<AppSiteView> SiteViews => Set<AppSiteView>();
+    public DbSet<AppSiteViewDefault> SiteViewDefaults => Set<AppSiteViewDefault>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -449,6 +489,26 @@ public class AppsDbContext(DbContextOptions<AppsDbContext> options, ITenantConte
             e.HasIndex(k => new { k.TenantId, k.InstanceId, k.ConstraintId, k.Key }).IsUnique();
             e.HasIndex(k => new { k.TenantId, k.RecordId });
             e.HasQueryFilter(k => k.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<AppSiteView>(e =>
+        {
+            e.ToTable("site_views");
+            e.HasKey(v => v.Id);
+            e.Property(v => v.Name).HasMaxLength(100);
+            e.Property(v => v.OwnerName).HasMaxLength(200);
+            e.Property(v => v.DefinitionJson).HasColumnType("jsonb");
+            e.HasIndex(v => new { v.TenantId, v.InstanceId, v.TableId, v.OwnerUserId });
+            e.HasQueryFilter(v => v.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<AppSiteViewDefault>(e =>
+        {
+            e.ToTable("site_view_defaults");
+            e.HasKey(d => d.Id);
+            e.Property(d => d.ViewKey).HasMaxLength(100);
+            e.HasIndex(d => new { d.TenantId, d.InstanceId, d.TableId, d.UserId }).IsUnique();
+            e.HasQueryFilter(d => d.TenantId == CurrentTenantId);
         });
     }
 

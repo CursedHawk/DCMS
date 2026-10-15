@@ -126,7 +126,7 @@ internal static class PublicEndpoints
     /// is signed in), what row rules can match for them, and what they hold on this app as a
     /// member, then runs the call.
     /// </summary>
-    private static async Task<IResult> Run(RecordService records, IPluginContext context, CancellationToken ct, Func<Task<IResult>> handler)
+    internal static async Task<IResult> Run(RecordService records, IPluginContext context, CancellationToken ct, Func<Task<IResult>> handler)
     {
         var visitor = await context.Contracts.CurrentVisitorAsync(ct);
         records.Visitor = visitor?.Id;

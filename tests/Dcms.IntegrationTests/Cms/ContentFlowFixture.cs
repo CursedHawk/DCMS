@@ -127,6 +127,9 @@ public sealed class ContentFlowFixture : IAsyncLifetime
                 // Realm tokens (DcmsUser, ADR 0022) signed by a test key instead of identity's.
                 services.PostConfigure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
                     Dcms.Plugins.UserAuth.UserAuthentication.SchemeName, UserAuth.RealmTokens.Trust);
+                // users.people@1 asks identity's realm directory with the user's token: the same fake.
+                services.AddSingleton(new Dcms.Shared.Security.Realms.RealmDirectoryClient(
+                    new HttpClient(Realms) { BaseAddress = new Uri("http://identity.test/") }));
 
                 // Point content-api's admin-api client at the in-memory admin host, translating
                 // the bearer into the test scheme's headers. The scope travels for real, so
