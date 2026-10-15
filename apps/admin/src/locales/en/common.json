@@ -1994,6 +1994,7 @@
       "settings": "Usage snapshot",
       "connections": "API connections",
       "notifications": "Notifications",
+      "jobs": "Background job history",
       "index": "Media library records",
       "originals": "Original files",
       "renditions": "Optimized copies",

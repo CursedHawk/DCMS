@@ -6,6 +6,7 @@ using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.DynamicApps;
 using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Data.Forms;
+using Dcms.Shared.Data.Jobs;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Search;
@@ -60,6 +61,7 @@ public class RlsCoverageTests
         new AppsDbContext(Options<AppsDbContext>(), Tenant),
         new UserAuthDbContext(Options<UserAuthDbContext>(), Tenant),
         new AuditDbContext(Options<AuditDbContext>()),
+        new JobsDbContext(Options<JobsDbContext>(), Tenant),
     ];
 
     [Fact]

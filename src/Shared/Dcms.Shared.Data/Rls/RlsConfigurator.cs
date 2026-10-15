@@ -95,6 +95,10 @@ public static class RlsConfigurator
         // standing between one tenant's bell and another's.
         ("notifications", "notifications"),
         ("notifications", "recipients"),
+        // Background jobs (ADR 0024): titles, parameters and payloads lifted from tenant work. A
+        // null TenantId is a platform job, which tenant_isolation never admits and platform_scope
+        // does -- the nullable column is what makes one table serve both planes.
+        ("jobs", "jobs"),
         // Audit rows carry a TenantId and must be covered like any other tenant table.
         // Guid.Empty marks platform-scope records (logins, tenant provisioning): the policy
         // compares equality against the GUC, so those rows are invisible to tenant readers,

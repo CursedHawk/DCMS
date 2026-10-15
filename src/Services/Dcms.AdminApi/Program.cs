@@ -30,6 +30,7 @@ using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Forms;
+using Dcms.Shared.Data.Jobs;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Notifications;
 using Dcms.Shared.Data.Platform;
@@ -100,6 +101,7 @@ builder.Services.AddDcmsFormsData(builder.Configuration);
 builder.Services.AddDcmsAppsData(builder.Configuration);
 builder.Services.AddDcmsUserAuthData(builder.Configuration);
 builder.Services.AddDcmsNotificationsData(builder.Configuration);
+builder.Services.AddDcmsJobsData(builder.Configuration);
 builder.Services.AddDcmsAuditData(builder.Configuration);
 // ADR 0015: sets app.tenant_id / app.scope per unit of work when Rls:Enforce is on; absent otherwise.
 builder.Services.AddDcmsRlsEnforcement(builder.Configuration);

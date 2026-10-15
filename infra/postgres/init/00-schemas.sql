@@ -15,6 +15,8 @@ CREATE SCHEMA IF NOT EXISTS ai;
 CREATE SCHEMA IF NOT EXISTS audit;
 CREATE SCHEMA IF NOT EXISTS social;
 CREATE SCHEMA IF NOT EXISTS notifications;
+-- Background jobs (ADR 0024): one ledger for every tenant's work and the platform's.
+CREATE SCHEMA IF NOT EXISTS jobs;
 -- Dynamic Apps (ADR 0021): tenant-defined application configuration, records and flows.
 CREATE SCHEMA IF NOT EXISTS apps;
 -- User Authentication (ADR 0022): roles, grants and site access rules over each tenant's realm.

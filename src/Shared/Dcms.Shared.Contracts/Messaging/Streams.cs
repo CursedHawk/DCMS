@@ -28,6 +28,12 @@ public static class Streams
 
     /// <summary>Plugin background jobs (work queue): enqueued by plugins and the interval scheduler.</summary>
     public const string PluginJobs = "PLUGIN_JOBS";
+
+    /// <summary>Background job run requests (work queue), one subject per lane (ADR 0024).</summary>
+    public const string Jobs = "JOBS";
+
+    /// <summary>Ledger hints: changes for browsers, progress from bus-only workers, cancels.</summary>
+    public const string JobsEvents = "JOBS_EVENTS";
 }
 
 public static class Subjects
@@ -217,4 +223,21 @@ public static class Subjects
     public static string PluginEventAnyPublisher(string eventName) => $"plugins.events.*.{eventName}";
 
     public static string PluginJob(string pluginId, string jobName) => $"plugins.jobs.{pluginId}.{jobName}";
+
+    // JOBS (work queue) / JOBS_EVENTS (ADR 0024)
+    //
+    // A run subject is jobs.run.{lane}.{kind}; each lane's worker pool drains its own lane, which
+    // is what lets one work-queue stream serve two pools (overlapping filters are refused).
+    public static string JobRun(string lane, string kind) => $"jobs.run.{lane}.{kind}";
+
+    public static string JobRunLane(string lane) => $"jobs.run.{lane}.>";
+
+    /// <summary>A ledger row changed. Pushed to browsers; carries no title or payload.</summary>
+    public const string JobChanged = "jobs.changed";
+
+    /// <summary>Progress or an outcome from a worker that cannot write the jobs schema itself.</summary>
+    public const string JobState = "jobs.state";
+
+    /// <summary>Someone asked to cancel a running job. Every worker hears it; the holder acts.</summary>
+    public const string JobCancel = "jobs.cancel";
 }

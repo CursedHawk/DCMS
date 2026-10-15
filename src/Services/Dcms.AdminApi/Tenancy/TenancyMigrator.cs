@@ -12,6 +12,7 @@ using Dcms.Shared.Data.Edge;
 using Dcms.Shared.Data.Forms;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Observability;
+using Dcms.Shared.Data.Jobs;
 using Dcms.Shared.Data.Notifications;
 using Dcms.Shared.Data.Platform;
 using Dcms.Shared.Data.Rls;
@@ -79,6 +80,7 @@ public static class DcmsMigrationRunner
         await scoped.GetRequiredService<FormsDbContext>().Database.MigrateAsync(ct);
         await scoped.GetRequiredService<SocialDbContext>().Database.MigrateAsync(ct);
         await scoped.GetRequiredService<NotificationsDbContext>().Database.MigrateAsync(ct);
+        await scoped.GetRequiredService<JobsDbContext>().Database.MigrateAsync(ct);
         await scoped.GetRequiredService<AppsDbContext>().Database.MigrateAsync(ct);
         await scoped.GetRequiredService<UserAuthDbContext>().Database.MigrateAsync(ct);
 
@@ -166,6 +168,7 @@ public static class DcmsMigrationRunner
                 scoped.GetRequiredService<FormsDbContext>(),
                 scoped.GetRequiredService<SocialDbContext>(),
                 scoped.GetRequiredService<NotificationsDbContext>(),
+                scoped.GetRequiredService<JobsDbContext>(),
                 scoped.GetRequiredService<AppsDbContext>(),
                 scoped.GetRequiredService<UserAuthDbContext>(),
                 scoped.GetRequiredService<AuditDbContext>(),

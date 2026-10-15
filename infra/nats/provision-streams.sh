@@ -72,7 +72,7 @@ check_retention() {
 }
 
 ensure_stream() {
-  name="$1"; subjects="$2"; retention="$3"
+  name="$1"; subjects="$2"; retention="$3"; max_age="${4:-168h}"
   if nats --server "$NATS_URL" stream info "$name" >/dev/null 2>&1; then
     echo "stream $name exists"
     converge_subjects "$name" "$subjects"
@@ -83,7 +83,7 @@ ensure_stream() {
       --retention "$retention" \
       --storage file \
       --replicas 1 \
-      --max-age 168h \
+      --max-age "$max_age" \
       --discard old \
       --max-msgs=-1 --max-bytes=-1 --max-msg-size=-1 \
       --dupe-window 2m \
@@ -191,6 +191,15 @@ ensure_stream NOTIFY       "notify.>"                                limits
 # subscribing plugin (limits); jobs are a work queue drained by admin-api.
 ensure_stream PLUGIN_EVENTS "plugins.events.>"                        limits
 ensure_stream PLUGIN_JOBS  "plugins.jobs.>"                           work
+# Background jobs (docs/adr/0024). JOBS carries run requests, one subject per lane
+# (jobs.run.tenant.>, jobs.run.platform.>), so each worker pool's durable filters on its own
+# lane -- a work queue refuses overlapping filters. The ledger row is the record; a message
+# lost here is republished by the redispatch sweep.
+ensure_stream JOBS         "jobs.run.>"                               work
+# Hints about the ledger: jobs.changed (pushed to browsers), jobs.state (progress from workers
+# with no grant on the jobs schema), jobs.cancel (broadcast to whichever worker holds the job).
+# An hour is plenty: every consumer of these is live, and a progress tick an hour old is noise.
+ensure_stream JOBS_EVENTS  "jobs.changed,jobs.state,jobs.cancel"     limits 1h
 ensure_audit_stream
 
 # ---------------------------------------------------------------------------
