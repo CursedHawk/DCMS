@@ -48,6 +48,8 @@ public sealed class SitePublishFixture : IAsyncLifetime
             await js.CreateStreamAsync(new StreamConfig("CMS", ["content.>"]));
             await js.CreateStreamAsync(new StreamConfig("SITES", ["site.publish.>"]));
             await js.CreateStreamAsync(new StreamConfig("SITES_EVENTS", ["site.published", "site.build.failed"]));
+            // The jobs ledger's hints: site-builder reports each build's progress here (ADR 0024).
+            await js.CreateStreamAsync(new StreamConfig("JOBS_EVENTS", ["jobs.changed", "jobs.state"]));
         }
 
         var endpoint = $"{_minio.Hostname}:{_minio.GetMappedPublicPort(9000)}";

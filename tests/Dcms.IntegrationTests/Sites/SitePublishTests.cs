@@ -58,8 +58,9 @@ public class SitePublishTests(SitePublishFixture fixture)
             .EnsureSuccessStatusCode();
 
         // Publish → site-builder renders → site-host serves.
-        (await admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/sites/{siteId}/publish", slug, null), ct))
-            .EnsureSuccessStatusCode();
+        var publish = await admin.SendAsync(Admin(HttpMethod.Post, $"/api/admin/sites/{siteId}/publish", slug, null), ct);
+        publish.EnsureSuccessStatusCode();
+        var buildId = (await publish.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("buildId").GetGuid();
 
         await PollUntil(async () =>
         {
@@ -69,6 +70,16 @@ public class SitePublishTests(SitePublishFixture fixture)
             if (res.StatusCode != HttpStatusCode.OK) return false;
             var html = await res.Content.ReadAsStringAsync(ct);
             return html.Contains("Welcome Visitor");
+        }, TimeSpan.FromSeconds(30));
+
+        // The build was a job on the ledger under its own id, and site-builder's reports over the
+        // bus carried it through to Succeeded (ADR 0024).
+        await PollUntil(async () =>
+        {
+            var res = await admin.SendAsync(Admin(HttpMethod.Get, $"/api/admin/jobs/{buildId}", slug, null), ct);
+            if (!res.IsSuccessStatusCode) return false;
+            var job = (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("job");
+            return job.GetProperty("kind").GetString() == "site.build" && job.GetProperty("status").GetString() == "Succeeded";
         }, TimeSpan.FromSeconds(30));
 
         // Isolation: an unknown domain serves nothing.

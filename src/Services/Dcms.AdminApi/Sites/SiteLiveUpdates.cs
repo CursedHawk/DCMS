@@ -1,4 +1,6 @@
 using Dcms.Shared.Data.Sites;
+using Dcms.Shared.Jobs;
+using Dcms.Shared.Security;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Dcms.AdminApi.Sites;
@@ -71,8 +73,32 @@ public sealed record DraftUpdate(
 /// </summary>
 public sealed class SiteLiveUpdates(
     IHubContext<SiteHub> hub,
+    IServiceScopeFactory scopes,
     ILogger<SiteLiveUpdates> logger)
 {
+    /// <summary>
+    /// Puts a build on the jobs ledger (ADR 0024) under the build's own id, before its request is
+    /// published, so site-builder's first report always finds the row. Best-effort: the build is
+    /// the record and runs either way; without the row it is just missing from the jobs ring.
+    /// Not cancelable -- site-builder cannot see the ledger, so a cancel would only be a promise.
+    /// </summary>
+    public async Task BuildRecordedAsync(Guid tenantId, SiteBuild build, string? siteName, CancellationToken ct = default)
+    {
+        try
+        {
+            using var scope = scopes.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IJobQueue>().EnqueueAsync(new JobSpec(
+                "site.build", tenantId, null, "jobs.kinds.siteBuild.title",
+                new { site = siteName ?? "", branch = build.Branch ?? "" },
+                RequiredPermission: PlatformPermissions.SiteEdit, Id: build.Id, Cancelable: false,
+                Lane: "sites", LinkPath: $"/sites/{build.SiteId}"), ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not record build {BuildId} on the jobs ledger; it runs regardless.", build.Id);
+        }
+    }
+
     public Task BuildChangedAsync(Guid tenantId, BuildUpdate build, CancellationToken ct = default) =>
         SendAsync(tenantId, build.SiteId, "BuildChanged", build, ct);
 

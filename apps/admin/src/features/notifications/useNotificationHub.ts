@@ -99,6 +99,14 @@ export function useNotificationHub(enabled: boolean, myUserId: string | undefine
       // needs the lists refetched — debounced, because a group finishing is a burst of them.
       let jobRefetch: ReturnType<typeof setTimeout> | undefined;
       connection.on('JobChanged', (change: JobChanged) => {
+        // A site build's job id is its build id. Its start is the one moment the site's own hub
+        // does not announce, so a deployments view still showing it as queued refetches here.
+        if (change.status === 'Running') {
+          const queued = qc
+            .getQueriesData<Array<{ id: string; status?: string }>>({ queryKey: ['site-builds'] })
+            .some(([, rows]) => Array.isArray(rows) && rows.some((b) => b.id === change.id && b.status === 'Queued'));
+          if (queued) void qc.invalidateQueries({ queryKey: ['site-builds'] });
+        }
         if (!applyJobChanged(qc, change)) return;
         clearTimeout(jobRefetch);
         jobRefetch = setTimeout(() => void qc.invalidateQueries({ queryKey: jobsKey() }), 300);

@@ -1,3 +1,4 @@
+using Dcms.Shared.Jobs;
 using Dcms.Shared.Audit;
 using Dcms.SiteBuilder;
 using Dcms.Shared.Data.Media;
@@ -13,6 +14,9 @@ builder.Services.AddDcmsMessaging(builder.Configuration);
 // schema is deliberately not reachable from here, so records go over JetStream.
 builder.Services.AddDcmsAuditOverNats();
 builder.Services.AddDcmsObjectStorage(builder.Configuration);
+// Build progress onto the jobs ledger (ADR 0024), over the bus: this role reads the sites schema
+// alone, and admin-api folds the reports in.
+builder.Services.AddJobReporter();
 
 // Reads/writes the sites schema with no ambient tenant (scoped per job).
 //

@@ -1321,7 +1321,8 @@
       "tooLarge": "Soubory mohou mít nejvýše 1 GB.",
       "ingestRefused": "Knihovna soubor odmítla.",
       "mediaProcessing": "Soubor se nepodařilo převést.",
-      "enqueueFailed": "Práci se nepodařilo zařadit do fronty."
+      "enqueueFailed": "Práci se nepodařilo zařadit do fronty.",
+      "buildFailed": "Sestavení selhalo. Důvod je v jeho záznamu."
     },
     "kinds": {
       "driveImport": {
@@ -1334,13 +1335,17 @@
       },
       "mediaProcess": {
         "title": "Převod {{name}}"
+      },
+      "siteBuild": {
+        "title": "Nasazování {{site}}"
       }
     },
     "stages": {
       "downloading": "Stahování",
       "saving": "Přidávání do knihovny",
       "converting": "Převod",
-      "uploading": "Ukládání kopií"
+      "uploading": "Ukládání kopií",
+      "building": "Sestavování"
     }
   },
   "marketplace": {

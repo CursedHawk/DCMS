@@ -557,6 +557,7 @@ public static class SiteEndpoints
             await db.SaveChangesAsync(ct);
 
             var mode = site.RenderMode.ToString();
+            await live.BuildRecordedAsync(tenantId, build, site.Name, ct);
             await events.PublishAsync(Subjects.SitePublishSubjectFor(mode), new SitePublishRequested(
                 Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, site.Id, build.Id,
                 mode, await AnalyticsEnabledAsync(cms, tenantId, ct)), ct,
@@ -1128,6 +1129,7 @@ public static class SiteEndpoints
             await db.SaveChangesAsync(ct);
 
             var pushedMode = site.RenderMode.ToString();
+            await live.BuildRecordedAsync(site.TenantId, build, site.Name, ct);
             await events.PublishAsync(Subjects.SitePublishSubjectFor(pushedMode), new SitePublishRequested(
                 Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id,
                 pushedMode, await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct,
@@ -1257,6 +1259,7 @@ public static class SiteEndpoints
         db.Builds.Add(build);
         await db.SaveChangesAsync(ct);
         var releaseMode = site.RenderMode.ToString();
+        await live.BuildRecordedAsync(site.TenantId, build, site.Name, ct);
         await events.PublishAsync(Subjects.SitePublishSubjectFor(releaseMode), new SitePublishRequested(
             Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id,
             releaseMode, await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct,

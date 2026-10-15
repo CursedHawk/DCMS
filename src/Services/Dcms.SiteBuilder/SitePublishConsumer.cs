@@ -7,6 +7,7 @@ using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Sites;
+using Dcms.Shared.Jobs;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Storage;
 using Dcms.Shared.Telemetry;
@@ -221,21 +222,24 @@ public sealed class SitePublishConsumer(
         }
         build.Status = SiteBuildStatus.Building;
         await db.SaveChangesAsync(ct);
+        // The job's id is the build's (ADR 0024). This is also the "Building" moment the console
+        // never used to hear about: it reaches the jobs ring, and the deployments view with it.
+        await Reporter.StartedAsync(build.Id, job.TenantId, null, "jobs.stages.building", ct);
 
         var mode = Enum.TryParse<SiteRenderMode>(job.RenderMode, ignoreCase: true, out var parsed)
             ? parsed : SiteRenderMode.StaticPrerender;
         if (mode.IsViteApp())
         {
             build.LogObjectKey = LogKey(build.ArtifactPrefix);
-            await BuildReactAppAsync(build.DefinitionSnapshotJson, build.ArtifactPrefix, ct);
+            await BuildReactAppAsync(job, build.DefinitionSnapshotJson, build.ArtifactPrefix, ct);
         }
         else if (mode == SiteRenderMode.StaticFiles)
         {
-            await ExtractStaticBundleAsync(build.DefinitionSnapshotJson, build.ArtifactPrefix, ct);
+            await ExtractStaticBundleAsync(job, build.DefinitionSnapshotJson, build.ArtifactPrefix, ct);
         }
         else
         {
-            await PrerenderAsync(build.DefinitionSnapshotJson, build.ArtifactPrefix, job.AnalyticsEnabled, ct);
+            await PrerenderAsync(job, build.DefinitionSnapshotJson, build.ArtifactPrefix, job.AnalyticsEnabled, ct);
         }
 
         build.Status = SiteBuildStatus.Succeeded;
@@ -282,11 +286,18 @@ public sealed class SitePublishConsumer(
 
         await events.PublishAsync(Subjects.SitePublished, new SitePublished(
             Guid.NewGuid(), DateTimeOffset.UtcNow, build.TenantId, build.SiteId, build.Id, build.ArtifactPrefix), ct);
+        await Reporter.SucceededAsync(build.Id, build.TenantId, null, ct);
     }
+
+    private IJobReporter Reporter => services.GetRequiredService<IJobReporter>();
+
+    /// <summary>Files stored so far out of the build's total: the bar once the work is countable.</summary>
+    private ValueTask StoredAsync(SitePublishRequested job, long done, long total, CancellationToken ct) =>
+        Reporter.ProgressAsync(job.BuildId, job.TenantId, done, total, "jobs.stages.uploading", ct);
 
     // Mode A: assemble the builder's committed HTML/CSS source into static pages.
     private async Task PrerenderAsync(
-        string definitionJson, string artifactPrefix, bool? analyticsEnabled, CancellationToken ct)
+        SitePublishRequested job, string definitionJson, string artifactPrefix, bool? analyticsEnabled, CancellationToken ct)
     {
         var files = SiteFileMap.Parse(definitionJson);
         if (files.Count == 0)
@@ -303,11 +314,14 @@ public sealed class SitePublishConsumer(
         // towards asking rather than tracking.
         var site = assembler.Assemble(files, analyticsEnabled ?? true);
 
+        var total = site.Pages.Count + site.Files.Count + 1;
+        var stored = 0;
         foreach (var page in site.Pages)
         {
             var bytes = Encoding.UTF8.GetBytes(page.Html);
             await using var stream = new MemoryStream(bytes);
             await storage.PutAsync(Bucket, $"{artifactPrefix}/{page.FileName}", stream, bytes.Length, "text/html; charset=utf-8", ct);
+            await StoredAsync(job, ++stored, total, ct);
         }
 
         // Stylesheets and any assets committed alongside them ship verbatim; the
@@ -316,6 +330,7 @@ public sealed class SitePublishConsumer(
         {
             await using var stream = new MemoryStream(file.Content);
             await storage.PutAsync(Bucket, $"{artifactPrefix}/{file.FileName}", stream, file.Content.Length, file.ContentType, ct);
+            await StoredAsync(job, ++stored, total, ct);
         }
 
         // The pages reference /_dcms/hydrate.js (it populates data-bound/plugin
@@ -327,7 +342,7 @@ public sealed class SitePublishConsumer(
 
     // Mode C: extract the staged, pre-sanitized upload bundle into the build's
     // artifact prefix, one object per file. The snapshot carries the bundle key.
-    private async Task ExtractStaticBundleAsync(string snapshotJson, string artifactPrefix, CancellationToken ct)
+    private async Task ExtractStaticBundleAsync(SitePublishRequested job, string snapshotJson, string artifactPrefix, CancellationToken ct)
     {
         using var snapshot = JsonDocument.Parse(snapshotJson);
         if (!snapshot.RootElement.TryGetProperty("bundleKey", out var keyProp) ||
@@ -345,6 +360,7 @@ public sealed class SitePublishConsumer(
         }
 
         using var archive = new ZipArchive(new MemoryStream(zipBytes), ZipArchiveMode.Read);
+        var stored = 0;
         foreach (var entry in archive.Entries)
         {
             ct.ThrowIfCancellationRequested();
@@ -360,6 +376,7 @@ public sealed class SitePublishConsumer(
             buffer.Position = 0;
             await storage.PutAsync(Bucket, $"{artifactPrefix}/{path}", buffer, buffer.Length,
                 StaticSiteFiles.ContentTypeFor(path), ct);
+            await StoredAsync(job, ++stored, archive.Entries.Count, ct);
         }
     }
 
@@ -367,7 +384,7 @@ public sealed class SitePublishConsumer(
     // install + build. The full step log is stored to object storage (under a
     // deterministic key) whether the build succeeds or fails, so the IDE can show
     // the user exactly why a build failed.
-    private async Task BuildReactAppAsync(string definitionJson, string artifactPrefix, CancellationToken ct)
+    private async Task BuildReactAppAsync(SitePublishRequested job, string definitionJson, string artifactPrefix, CancellationToken ct)
     {
         // Per-build dir lives directly under the work root so the sandbox can bind-mount
         // it by host path (DCMS_BUILD_WORK_HOST_ROOT + leaf). Defaults to the temp dir
@@ -389,11 +406,14 @@ public sealed class SitePublishConsumer(
         var log = new StringBuilder();
         try
         {
+            // Install and build have no count of their own; the bar turns until the artifacts do.
             var artifacts = await reactBuilder.BuildAsync(definitionJson, workDir, log, ct);
+            var stored = 0;
             foreach (var artifact in artifacts)
             {
                 await using var stream = File.OpenRead(artifact.LocalPath);
                 await storage.PutAsync(Bucket, $"{artifactPrefix}/{artifact.RelativePath}", stream, stream.Length, artifact.ContentType, ct);
+                await StoredAsync(job, ++stored, artifacts.Count, ct);
             }
             log.AppendLine($"✓ Build succeeded — {artifacts.Count} file(s) in dist/.");
         }
@@ -441,6 +461,7 @@ public sealed class SitePublishConsumer(
             }
             await events.PublishAsync(Subjects.SiteBuildFailed, new SiteBuildFailed(
                 Guid.NewGuid(), DateTimeOffset.UtcNow, job.TenantId, job.SiteId, job.BuildId, error), ct);
+            await Reporter.FailedAsync(job.BuildId, job.TenantId, "jobs.error.buildFailed", error, ct);
         }
         catch (Exception ex)
         {
