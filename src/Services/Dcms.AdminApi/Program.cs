@@ -123,6 +123,10 @@ if (runsBackgroundWork)
 {
     builder.Services.AddJobLedgerHousekeeping();
     builder.Services.AddJobConsumer(builder.Configuration, Dcms.Shared.Data.Jobs.JobLanes.Tenant, defaultConcurrency: 4);
+    // The platform's own work (no tenant) runs here too: its handlers need admin-api's code and
+    // database, which email-worker deliberately does not have. Its own lane, so a backlog of
+    // tenant imports never stands in front of a platform purge.
+    builder.Services.AddJobConsumer(builder.Configuration, Dcms.Shared.Data.Jobs.JobLanes.Platform, defaultConcurrency: 2);
 }
 if (holdsSockets)
 {

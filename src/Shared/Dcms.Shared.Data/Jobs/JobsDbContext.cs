@@ -119,7 +119,7 @@ public static class JobLanes
     /// <summary>Tenant work: jobs-worker.</summary>
     public const string Tenant = "tenant";
 
-    /// <summary>Work with no tenant: platform-worker.</summary>
+    /// <summary>Work with no tenant. Also drained by jobs-worker, on a lane of its own.</summary>
     public const string Platform = "platform";
 
     /// <summary>
