@@ -151,10 +151,12 @@ export async function streamAssistantTurn(
   handlers: StreamHandlers,
   signal: AbortSignal,
 ): Promise<AssistantTurn> {
+  // One turn, one key: the 401 replay below is the same turn to ai-gateway (ADR 0024).
+  const idempotencyKey = crypto.randomUUID();
   const send = async () =>
     fetch(`${base}${MESSAGES_PATH}`, {
       method: 'POST',
-      headers: { ...(await adminHeaders()), 'Content-Type': 'application/json' },
+      headers: { ...(await adminHeaders()), 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify({ ...body, stream: true }),
       signal,
     });

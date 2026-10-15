@@ -72,7 +72,12 @@ export function createFetchDataClient(base = ''): DataClient {
   const send: NonNullable<DataClient['send']> = async (method, path, body) => {
     const res = await fetch(base + path, {
       method,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      // One key per write: a double click, or a retry after a dropped connection, is the same
+      // write to content-api rather than a second record (ADR 0024).
+      headers: {
+        'Idempotency-Key': crypto.randomUUID(),
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!res.ok) throw new DataError(res.status, path, await res.json().catch(() => undefined));

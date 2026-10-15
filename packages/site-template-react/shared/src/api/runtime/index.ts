@@ -151,6 +151,10 @@ export function createHttpCore(options: TenantClientOptions = {}): HttpCore {
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const full = url(path);
     const headers = new Headers(init?.headers);
+    // One key per write, so a double submit is one submission to content-api (ADR 0024).
+    if (init?.method && init.method !== 'GET' && !headers.has('Idempotency-Key')) {
+      headers.set('Idempotency-Key', crypto.randomUUID());
+    }
     const token = options.visitorToken?.();
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);

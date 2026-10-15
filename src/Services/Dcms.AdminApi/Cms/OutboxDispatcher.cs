@@ -122,17 +122,22 @@ public sealed class OutboxDispatcher(
         await tx.CommitAsync(ct);
     }
 
+    /// <summary>
+    /// Keyed by the outbox row (ADR 0024): a dispatcher that published and then died before
+    /// marking the row sent publishes it again on its next pass, and JetStream drops the repeat
+    /// inside its dupe window instead of announcing the publish twice.
+    /// </summary>
     private async ValueTask PublishAsync(ContentOutboxMessage message, CancellationToken ct)
     {
         switch (message.Subject)
         {
             case Subjects.ContentPublished:
                 await events.PublishAsync(message.Subject,
-                    JsonSerializer.Deserialize<ContentPublished>(message.PayloadJson)!, ct);
+                    JsonSerializer.Deserialize<ContentPublished>(message.PayloadJson)!, ct, messageId: $"outbox:{message.Id}");
                 break;
             case Subjects.ContentUnpublished:
                 await events.PublishAsync(message.Subject,
-                    JsonSerializer.Deserialize<ContentUnpublished>(message.PayloadJson)!, ct);
+                    JsonSerializer.Deserialize<ContentUnpublished>(message.PayloadJson)!, ct, messageId: $"outbox:{message.Id}");
                 break;
             default:
                 logger.LogWarning("Unknown outbox subject {Subject}; skipping.", message.Subject);

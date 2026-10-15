@@ -1,3 +1,4 @@
+using Dcms.Shared.Caching.Idempotency;
 using Dcms.ContentApi.Delivery;
 using Dcms.ContentApi.Plugins;
 using Dcms.PluginSdk.Runtime;
@@ -142,6 +143,8 @@ app.UseCors();
 app.UseDcmsAudit();
 app.UseMultiTenant();
 app.UseAuthentication();
+// One Idempotency-Key, one operation (ADR 0024): honoured when a caller sends one, never required.
+app.UseDcmsIdempotency("content-api", requireForUsers: false);
 app.UseAuthorization();
 // Plugins' say over every request (IPluginRequestGate) — e.g. instances a tenant restricted to its
 // site users (ADR 0022) — before any /api/{slug} route runs.

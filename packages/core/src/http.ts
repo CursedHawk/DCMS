@@ -40,6 +40,16 @@ function newRequestId(): string {
 }
 
 /**
+ * The header that makes a write happen once (ADR 0024): admin-api and platform-api refuse a
+ * person's write without one, and every service answers a repeat with the first response.
+ */
+export const IDEMPOTENCY_KEY = 'Idempotency-Key';
+
+export function newIdempotencyKey(): string {
+  return crypto.randomUUID();
+}
+
+/**
  * Per-request overrides.
  *
  * `tenant` sends a different `X-Dcms-Tenant` than the ambient selection, so a platform admin
@@ -121,6 +131,11 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
   }
 
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
+    // One key per call, minted before the first attempt, so the 401 replay below is the same
+    // operation to the server rather than a second one (ADR 0024). A caller's own key wins.
+    if (init?.method && init.method !== 'GET' && init.method !== 'HEAD') {
+      init = { ...init, headers: { [IDEMPOTENCY_KEY]: newIdempotencyKey(), ...init.headers } };
+    }
     let res = await send(path, init);
 
     // The token can go stale between the header read and the server's clock (or
@@ -162,6 +177,7 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', `${base}${path}`);
       for (const [key, value] of Object.entries(headers)) xhr.setRequestHeader(key, value);
+      xhr.setRequestHeader(IDEMPOTENCY_KEY, newIdempotencyKey());
 
       // `lengthComputable` is false for streamed bodies; leave the caller on its
       // last known value rather than reporting a bogus 0.

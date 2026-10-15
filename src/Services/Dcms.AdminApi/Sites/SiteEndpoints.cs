@@ -559,7 +559,9 @@ public static class SiteEndpoints
             var mode = site.RenderMode.ToString();
             await events.PublishAsync(Subjects.SitePublishSubjectFor(mode), new SitePublishRequested(
                 Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, site.Id, build.Id,
-                mode, await AnalyticsEnabledAsync(cms, tenantId, ct)), ct);
+                mode, await AnalyticsEnabledAsync(cms, tenantId, ct)), ct,
+                // One build, one request: a repeated publish of it is dropped by JetStream (ADR 0024).
+                messageId: $"build:{build.Id}");
             await live.BuildQueuedAsync(tenantId, build, user.UserId, ct);
 
             return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{build.Id}", new { buildId = build.Id });
@@ -1128,7 +1130,8 @@ public static class SiteEndpoints
             var pushedMode = site.RenderMode.ToString();
             await events.PublishAsync(Subjects.SitePublishSubjectFor(pushedMode), new SitePublishRequested(
                 Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id,
-                pushedMode, await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct);
+                pushedMode, await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct,
+                messageId: $"build:{build.Id}");
 
             await live.BuildQueuedAsync(site.TenantId, build, null, ct);
 
@@ -1256,7 +1259,8 @@ public static class SiteEndpoints
         var releaseMode = site.RenderMode.ToString();
         await events.PublishAsync(Subjects.SitePublishSubjectFor(releaseMode), new SitePublishRequested(
             Guid.NewGuid(), DateTimeOffset.UtcNow, site.TenantId, site.Id, build.Id,
-            releaseMode, await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct);
+            releaseMode, await AnalyticsEnabledAsync(cms, site.TenantId, ct)), ct,
+            messageId: $"build:{build.Id}");
         await live.BuildQueuedAsync(site.TenantId, build, actorUserId, ct);
         return build.Id;
     }

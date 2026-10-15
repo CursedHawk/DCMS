@@ -1,3 +1,4 @@
+using Dcms.Shared.Caching.Idempotency;
 using System.Security.Claims;
 using Dcms.AdminApi.Ai;
 using Dcms.AdminApi.ApiClientGen;
@@ -364,6 +365,9 @@ app.UseForwardedHeaders(forwardedHeaders);
 app.UseDcmsAudit();
 
 app.UseAuthentication();
+// One Idempotency-Key, one operation (ADR 0024). Required of people -- the console always sends
+// one -- and honoured for services. Tests that do not exercise it turn the requirement off.
+app.UseDcmsIdempotency("admin-api", app.Configuration.GetValue("Idempotency:RequireForUsers", true));
 app.UseMultiTenant();
 // Between resolution and authorization: the tenant is now known, so membership can be
 // checked, and the endpoints that survive still see a tenant context. Without this, an

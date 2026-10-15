@@ -1,3 +1,4 @@
+using Dcms.Shared.Caching.Idempotency;
 using Dcms.AiGateway;
 using Dcms.AiGateway.Providers;
 using Dcms.Shared.Caching;
@@ -48,6 +49,8 @@ app.UseDcmsProblemDetails();
 
 app.UseDcmsAudit();
 app.UseAuthentication();
+// One Idempotency-Key, one operation (ADR 0024): honoured when a caller sends one, never required.
+app.UseDcmsIdempotency("ai-gateway", requireForUsers: false);
 app.UseAuthorization();
 
 app.MapDcmsDefaultEndpoints();

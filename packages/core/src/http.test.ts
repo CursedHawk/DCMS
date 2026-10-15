@@ -170,3 +170,23 @@ describe('url', () => {
     expect(client().url('/admin/media/1/content')).toBe('/api/admin/media/1/content');
   });
 });
+
+describe('idempotency keys (ADR 0024)', () => {
+  it('sends one key per write, and none on a read', async () => {
+    fetchMock.mockResolvedValue(res(200, {}));
+    await client().get('/x');
+    await client().post('/x', { a: 1 });
+    expect(fetchMock.mock.calls[0][1].headers['Idempotency-Key']).toBeUndefined();
+    expect(fetchMock.mock.calls[1][1].headers['Idempotency-Key']).toBe('11111111-2222-3333-4444-555555555555');
+  });
+
+  it('replays a 401 with the same key, so the server sees one operation', async () => {
+    let n = 0;
+    vi.stubGlobal('crypto', { randomUUID: () => `key-${++n}` });
+    fetchMock.mockResolvedValueOnce(res(401, {})).mockResolvedValueOnce(res(200, {}));
+    await client({ renew: async () => true }).del('/x');
+    const keys = fetchMock.mock.calls.map((c) => c[1].headers['Idempotency-Key']);
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBe(keys[1]);
+  });
+});

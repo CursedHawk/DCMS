@@ -1,3 +1,4 @@
+using Dcms.Shared.Caching.Idempotency;
 using Dcms.PlatformApi.Authz;
 using Dcms.PlatformApi.Delegation;
 using Dcms.PlatformApi.Observability;
@@ -162,6 +163,9 @@ app.UseDcmsProblemDetails();
 
 app.UseDcmsAudit();
 app.UseAuthentication();
+// One Idempotency-Key, one operation (ADR 0024). Required of people -- the console always sends
+// one -- and honoured for services. Tests that do not exercise it turn the requirement off.
+app.UseDcmsIdempotency("platform-api", app.Configuration.GetValue("Idempotency:RequireForUsers", true));
 app.UseAuthorization();
 
 app.MapDcmsDefaultEndpoints();

@@ -225,7 +225,9 @@ public sealed class MediaIngestService(
             try
             {
                 await events.PublishAsync(subject, new MediaProcessRequested(
-                    Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, assetId, sniff.Category, key, sniff.ContentType), ct);
+                    Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, assetId, sniff.Category, key, sniff.ContentType), ct,
+                    // One upload, one processing request (ADR 0024).
+                    messageId: $"media:{assetId}");
             }
             catch
             {

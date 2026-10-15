@@ -70,6 +70,13 @@ public sealed class AdminApiProxy(HttpClient http, IServiceTokenProvider tokens,
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
             "Bearer", await tokens.GetTokenAsync(Scope, ct));
 
+        // The console's key travels on, so admin-api remembers the operation too: a repeat that
+        // somehow reached it past this service's own guard is still one operation.
+        if (context.Request.Headers.TryGetValue(Dcms.Shared.Caching.Idempotency.IdempotencyMiddleware.Header, out var key))
+        {
+            request.Headers.TryAddWithoutValidation(Dcms.Shared.Caching.Idempotency.IdempotencyMiddleware.Header, key.ToString());
+        }
+
         HttpResponseMessage response;
         try
         {
