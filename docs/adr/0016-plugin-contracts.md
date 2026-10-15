@@ -137,3 +137,11 @@ exposing operations to `Ai`; there is no separate tool API.
   plugin permissions (`OwnerPermissionBackfill.OwnerPermissions`), and the startup backfill
   adds any missing ones to existing tenants — including when a plugin later gains a permission.
   Other roles get `plugin:{id}:{action}` keys through the role editor.
+
+## Amendment (2026-10-15): tracked jobs and the worker role
+
+[ADR 0024](0024-async-jobs.md) adds `dcms.jobs@2` (`IPluginTrackedJobs`): a declared job enqueued
+as a tracked job with progress, cancellation and a result (`PluginJobRun.Current`), plus
+`TrackAsync`/`ReportAsync` for work a plugin runs on a queue of its own. `dcms.jobs@1` is
+unchanged. Plugins' event handlers, jobs and hosted services now run in admin-api's worker role
+(jobs-worker); a plugin registers hosted services only where `PluginHost.RunsBackgroundWork` is true.

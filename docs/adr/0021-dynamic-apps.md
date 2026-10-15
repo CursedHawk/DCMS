@@ -110,7 +110,7 @@ and preview:
 
 - **Flows are configuration.** A trigger, a condition and steps, each step one versioned action (`id@major`) with an input of `{{ expression }}` templates. Conditions and inputs use **our own small CEL-like expression language**: a hand-written parser, a whitelisted function set, no reflection, no I/O. It is bounded everywhere: source length, nodes, nesting, evaluation steps, string size, and the rendered size of a step's input. Reads never copy, so naming a large record repeatedly costs nothing. A third-party engine would need sandbox vetting; JSON-logic is hostile to people.
 - **Every mutation writes an event envelope to `apps.outbox` in its own transaction.**
-- **One background worker in admin-api** routes outbox events to the flows they trigger (under the revision the event happened in), starts due schedules, and claims and executes runs.
+- **One background worker** (in admin-api's worker role, jobs-worker, since [ADR 0024](0024-async-jobs.md)) routes outbox events to the flows they trigger (under the revision the event happened in), starts due schedules, and claims and executes runs.
 - **The database is the queue.** `apps.flow_runs` rows are claimed with `FOR UPDATE SKIP LOCKED` and a lease, so replicas share the work and a crashed worker's runs are picked up again.
   - The PLUGIN_JOBS JetStream queue was rejected for this: 4 in flight across all plugins, a 2-minute dedupe window, a 1-day delay cap, and run state in two places.
   - Each run executes inside `PluginHandlerRunner` (tenant scope, enabled-instance check, audit flush) and is pinned to its revision and flow hash, so a publish never changes what a queued run does.
@@ -182,6 +182,13 @@ and preview:
   target table's primary field; an ambiguous name is an error, never a guess.
 - **The assistant never carries the file.** It names the attachment as `csvFile`; the console
   replaces that with the file's text (`withAttachedCsv`). The server refuses a bare `csvFile`.
+
+- **Past the request ceilings, a tracked job** ([ADR 0024](0024-async-jobs.md), added 2026-10-15).
+  An import of more than 1,000 rows (up to 100,000, or 20 MB of CSV) and a bulk update or delete
+  of more than 500 ids (up to 100,000) are stored through `dcms.blobs` and run by jobs-worker
+  through `dcms.jobs@2`: the same `RecordService` call, still all or nothing in one transaction,
+  with progress and the result on the job. The assistant's contract operations keep the request
+  ceilings. Flow runs started by hand or by a schedule are tracked on the jobs ledger too.
 
 ### The assistant is a client of the same control plane
 
