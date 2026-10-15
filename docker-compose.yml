@@ -499,8 +499,11 @@ services:
     environment:
       Dcms__Role: "worker"
       # Its own share of the connection budget (see content-api): admin-api's 35 became 25
-      # for requests and 10 for the work that left it.
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev;Maximum Pool Size=10"
+      # for requests and 10 for the work that left it. Never the owner, even in dev: only the
+      # migrators may be (ComposeOwnerConnectionTests), and admin-api is the one that migrates.
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=dcms;Username=dcms_app;Password=dcms-app-dev;Maximum Pool Size=10"
+      Rls__Enforce: "true"
+      Tenancy__Migrate: "false"
 
   content-api:
     build:
