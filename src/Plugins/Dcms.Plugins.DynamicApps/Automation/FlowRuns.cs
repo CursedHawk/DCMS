@@ -125,7 +125,8 @@ public sealed class FlowRunQueue(AppsDbContext db, IPluginContext context, Confi
             await context.Contracts.Get<IPluginTrackedJobs>().TrackAsync(new TrackedJobMirror(
                 FlowExecutor.TrackedName, runId, "jobs.kinds.flowRun.title",
                 new Dictionary<string, string> { ["flow"] = string.IsNullOrEmpty(flow.DisplayName) ? flow.ApiName : flow.DisplayName },
-                RequiredPermission: "flows-run"), ct);
+                // The automation runs page's own gate: the job shows the same run, so the same people.
+                RequiredPermission: "data-read"), ct);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {

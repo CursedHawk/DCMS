@@ -39,11 +39,13 @@ public sealed class FlowExecutor(
     /// Reports a tracked run's progress (ADR 0024). Only manual and scheduled runs are tracked, so
     /// only they report: an event-triggered run costs nothing here.
     /// </summary>
-    private Task ReportAsync(bool tracked, Guid runId, string? status, long? done, long? total, string? error, CancellationToken ct) =>
+    private Task ReportAsync(bool tracked, Guid runId, string? status, long? done, long? total, CancellationToken ct) =>
         tracked
+            // The reason only as a key: a step's error can quote the records it read, and its full
+            // text belongs on the automation page, behind that page's permission.
             ? context.Contracts.Get<IPluginTrackedJobs>().ReportAsync(new TrackedJobReport(
                 runId, status, done, total, done is null ? null : "jobs.stages.flowStep",
-                status == "Failed" ? "jobs.error.flowFailed" : null, error), ct)
+                status == "Failed" ? "jobs.error.flowFailed" : null), ct)
             : Task.CompletedTask;
 
     private static bool IsTracked(FlowRun run) =>
@@ -76,7 +78,7 @@ public sealed class FlowExecutor(
             .With("correlation", run.CorrelationId);
 
         var tracked = IsTracked(run);
-        await ReportAsync(tracked, run.Id, "Running", null, null, null, ct);
+        await ReportAsync(tracked, run.Id, "Running", null, null, ct);
         var (status, error, retry, _) = await ExecuteAsync(run, ct, tracked);
 
         var now = clock.GetUtcNow();
@@ -91,7 +93,7 @@ public sealed class FlowExecutor(
         {
             await Finish(run.Id, status, error, run.Writes, finished: now, now, ct);
             await ReportAsync(tracked, run.Id,
-                status is FlowRunStatus.Succeeded or FlowRunStatus.Skipped ? "Succeeded" : "Failed", null, null, error, ct);
+                status is FlowRunStatus.Succeeded or FlowRunStatus.Skipped ? "Succeeded" : "Failed", null, null, ct);
         }
         activity?.SetTag("dcms.dynamicapp.status", status.ToString());
         record.With("status", status.ToString()).With("writes", run.Writes);
@@ -190,7 +192,7 @@ public sealed class FlowExecutor(
                 {
                     return failed;
                 }
-                await ReportAsync(tracked, run.Id, null, i + 1, flow.Steps.Count, null, ct);
+                await ReportAsync(tracked, run.Id, null, i + 1, flow.Steps.Count, ct);
             }
             return new(FlowRunStatus.Succeeded);
         }
