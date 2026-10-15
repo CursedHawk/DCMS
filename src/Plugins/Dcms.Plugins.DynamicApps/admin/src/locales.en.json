@@ -234,14 +234,17 @@
   "import": {
     "open": "Import CSV",
     "title": "Import {{table}} from CSV",
-    "hint": "The first row names the fields ({{fields}}); display names work too. Lookups take the record's id or its name. Up to 1,000 rows, all or nothing.",
+    "hint": "The first row names the fields ({{fields}}); display names work too. Lookups take the record's id or its name. Up to 100,000 rows, all or nothing; past 1,000 the work runs in the background.",
     "file": "CSV file",
     "check": "Check",
     "ready": "All {{count}} rows are ready to import.",
     "problems": "{{count}} problems in {{rows}} rows; nothing was imported.",
     "row": "Row {{row}}",
     "run": "Import {{count}} records",
-    "done": "Imported {{count}} records."
+    "done": "Imported {{count}} records.",
+    "checking": "Checking the rows in the background…",
+    "importing": "Importing in the background. You can close this; the import goes on, and Background jobs follows it.",
+    "failed": "The import did not finish. Background jobs says why."
   },
   "access": {
     "title": "What the public site may do",

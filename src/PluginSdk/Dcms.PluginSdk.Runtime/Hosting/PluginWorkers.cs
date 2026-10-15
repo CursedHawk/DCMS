@@ -9,6 +9,7 @@ using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Rls;
+using Dcms.Shared.Jobs;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
@@ -33,6 +34,8 @@ public static class PluginWorkerServiceCollectionExtensions
         services.AddHostedService<PluginEventConsumer>();
         services.AddHostedService<PluginJobConsumer>();
         services.AddHostedService<PluginJobScheduler>();
+        // dcms.jobs@2: every plugin's tracked jobs, one handler for the plugin: kinds.
+        services.AddJobHandlerPrefix<PluginJobHandler, PluginJobPayload>(PluginTrackedJobs.KindPrefix);
         services.AddSingleton<ContentEventBridge>();
         services.AddHostedService(sp => sp.GetRequiredService<ContentEventBridge>());
         return services;

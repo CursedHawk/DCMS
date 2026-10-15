@@ -18,11 +18,12 @@ public static class CsvRows
     public const int MaxColumns = 200;
 
     /// <exception cref="ContractValidationException">The text is not usable CSV, or names a column the table does not have.</exception>
-    public static IReadOnlyList<JsonObject> Parse(RuntimeTable table, string csv, IReadOnlyDictionary<string, string>? columns, int maxRows)
+    public static IReadOnlyList<JsonObject> Parse(
+        RuntimeTable table, string csv, IReadOnlyDictionary<string, string>? columns, int maxRows, int maxChars = MaxChars)
     {
-        if (csv.Length > MaxChars)
+        if (csv.Length > maxChars)
         {
-            throw new ContractValidationException($"The CSV is larger than {MaxChars:N0} characters; split it.");
+            throw new ContractValidationException($"The CSV is larger than {maxChars:N0} characters; split it.");
         }
         var lines = Split(csv.TrimStart('﻿'), maxRows + 1);
         if (lines.Count < 2)

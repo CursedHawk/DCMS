@@ -6,16 +6,24 @@ namespace Dcms.Shared.Jobs;
 /// One registered kind: how to turn the row's payload into a typed call on its handler. Built
 /// as a closure at registration, so running a job needs no reflection.
 /// </summary>
+/// <param name="IsPrefix">Handles every kind starting with <see cref="Kind"/> (plugin jobs: <c>plugin:</c>).</param>
 public sealed record JobHandlerRegistration(
     string Kind,
-    Func<IServiceProvider, string?, IJobContext, Task<object?>> Invoke);
+    Func<IServiceProvider, string?, IJobContext, Task<object?>> Invoke,
+    bool IsPrefix = false);
 
 public sealed class JobHandlerRegistry(IEnumerable<JobHandlerRegistration> registrations)
 {
     private readonly Dictionary<string, JobHandlerRegistration> _byKind =
-        registrations.ToDictionary(r => r.Kind, StringComparer.Ordinal);
+        registrations.Where(r => !r.IsPrefix).ToDictionary(r => r.Kind, StringComparer.Ordinal);
 
-    public JobHandlerRegistration? Find(string kind) => _byKind.GetValueOrDefault(kind);
+    private readonly List<JobHandlerRegistration> _prefixes =
+        [.. registrations.Where(r => r.IsPrefix).OrderByDescending(r => r.Kind.Length)];
+
+    /// <summary>The exact kind's handler, else the longest prefix that covers it.</summary>
+    public JobHandlerRegistration? Find(string kind) =>
+        _byKind.GetValueOrDefault(kind)
+        ?? _prefixes.FirstOrDefault(p => kind.StartsWith(p.Kind, StringComparison.Ordinal));
 
     internal static Task<object?> Invoke<THandler, TPayload>(IServiceProvider services, string? payloadJson, IJobContext context)
         where THandler : IJobHandler<TPayload>

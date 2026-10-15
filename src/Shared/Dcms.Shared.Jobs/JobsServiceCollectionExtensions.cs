@@ -36,6 +36,18 @@ public static class JobsServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Registers one handler for every kind beginning with <paramref name="prefix"/>: kinds that
+    /// are data rather than code, such as each plugin's declared jobs (<c>plugin:{id}:{job}</c>).
+    /// </summary>
+    public static IServiceCollection AddJobHandlerPrefix<THandler, TPayload>(this IServiceCollection services, string prefix)
+        where THandler : class, IJobHandler<TPayload>
+    {
+        services.TryAddScoped<THandler>();
+        services.AddSingleton(new JobHandlerRegistration(prefix, JobHandlerRegistry.Invoke<THandler, TPayload>, IsPrefix: true));
+        return services;
+    }
+
+    /// <summary>
     /// Drains one lane. Concurrency is <c>Jobs:Lanes:{lane}:Concurrency</c>, else
     /// <paramref name="defaultConcurrency"/>; <c>Jobs:Lanes:{lane}:Enabled=false</c> leaves the lane
     /// to other replicas (and keeps a test host from racing the claims it makes itself).

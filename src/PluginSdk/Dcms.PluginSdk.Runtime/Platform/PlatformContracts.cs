@@ -29,6 +29,8 @@ public static class PlatformContracts
         if (plane == PluginPlane.Admin)
         {
             builder.AddPlatformContract<IPluginSecrets, PluginSecrets>();
+            // Tracked jobs need the ledger, which only the admin plane composes (ADR 0024).
+            builder.AddPlatformContract<IPluginTrackedJobs, Hosting.PluginTrackedJobs>();
         }
         else
         {

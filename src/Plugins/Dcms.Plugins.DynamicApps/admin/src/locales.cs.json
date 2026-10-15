@@ -234,14 +234,17 @@
   "import": {
     "open": "Importovat CSV",
     "title": "Import {{table}} z CSV",
-    "hint": "První řádek pojmenovává pole ({{fields}}); fungují i zobrazované názvy. Vazby berou id záznamu nebo jeho název. Nejvýše 1 000 řádků, vše nebo nic.",
+    "hint": "První řádek pojmenovává pole ({{fields}}); fungují i zobrazovaná jména. Vazby přijímají id záznamu nebo jeho jméno. Až 100 000 řádků, vše nebo nic; nad 1 000 řádků práce běží na pozadí.",
     "file": "Soubor CSV",
     "check": "Zkontrolovat",
     "ready": "Všech {{count}} řádků je připraveno k importu.",
     "problems": "{{count}} problémů v {{rows}} řádcích; nic nebylo importováno.",
     "row": "Řádek {{row}}",
     "run": "Importovat {{count}} záznamů",
-    "done": "Importováno {{count}} záznamů."
+    "done": "Importováno {{count}} záznamů.",
+    "checking": "Řádky se kontrolují na pozadí…",
+    "importing": "Import běží na pozadí. Toto okno můžete zavřít; import pokračuje a sledují ho Úlohy na pozadí.",
+    "failed": "Import nedoběhl. Důvod najdete v Úlohách na pozadí."
   },
   "access": {
     "title": "Co smí veřejný web",

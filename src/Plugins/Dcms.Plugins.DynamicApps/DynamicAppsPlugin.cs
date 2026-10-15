@@ -74,7 +74,7 @@ public sealed class DynamicAppsPlugin : IPlugin
             new PermissionDefinition("data-write", "Create and edit application records"),
             new PermissionDefinition("data-delete", "Delete application records"),
             new PermissionDefinition("data-import", "Import application records in bulk",
-                "Create up to 1,000 records at once from rows or a CSV file."),
+                "Create up to 1,000 records at once from rows or a CSV file, or up to 100,000 as a background job."),
             new PermissionDefinition("flows-run", "Run automations",
                 "Start a flow by hand and retry failed runs."),
         ],
@@ -110,7 +110,11 @@ public sealed class DynamicAppsPlugin : IPlugin
             ContractRequirement.Of<IFormSubmissions>(optional: true),
             // Actions other plugins offer to flows.
             ContractRequirement.Of<IAutomationActionProvider>(optional: true),
+            // Imports and bulk changes too large for a request: stored, then run as tracked jobs.
+            ContractRequirement.Of<IPluginBlobs>(),
+            ContractRequirement.Of<IPluginTrackedJobs>(),
         ],
+        jobs: [JobDeclaration.Of<Data.RecordBulkJob>(Data.RecordBulkJob.Name)],
         // Other plugins' events, forwarded to the flows that trigger on them.
         subscribes:
         [

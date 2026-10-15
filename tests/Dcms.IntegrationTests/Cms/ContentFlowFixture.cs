@@ -1,4 +1,6 @@
 extern alias AdminApiApp;
+using Minio;
+using Minio.DataModel.Args;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -31,6 +33,11 @@ public sealed class ContentFlowFixture : IAsyncLifetime
     private readonly RedisContainer _redis = new RedisBuilder("redis:7").Build();
     private readonly NatsContainer _nats = new NatsBuilder("nats:2.11").WithCommand("--jetstream").Build();
 
+    // Plugins' blobs (dcms.blobs) live in the media bucket: Dynamic Apps stores a bulk job's
+    // request there before queuing it (ADR 0024).
+    private readonly Testcontainers.Minio.MinioContainer _minio = TestMinio.Build();
+    private const string MediaBucket = "dcms-media-test";
+
     public WebApplicationFactory<AdminApiApp::Program> Admin { get; private set; } = null!;
     public WebApplicationFactory<Program> Content { get; private set; } = null!;
 
@@ -51,7 +58,12 @@ public sealed class ContentFlowFixture : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        await Task.WhenAll(_postgres.StartAsync(), _redis.StartAsync(), _nats.StartAsync());
+        await Task.WhenAll(_postgres.StartAsync(), _redis.StartAsync(), _nats.StartAsync(), _minio.StartAsync());
+        await new MinioClient()
+            .WithEndpoint($"{_minio.Hostname}:{_minio.GetMappedPublicPort(9000)}")
+            .WithCredentials(_minio.GetAccessKey(), _minio.GetSecretKey())
+            .Build()
+            .MakeBucketAsync(new MakeBucketArgs().WithBucket(MediaBucket));
 
         await using (var nats = new NatsClient(_nats.GetConnectionString()))
         {
@@ -150,6 +162,11 @@ public sealed class ContentFlowFixture : IAsyncLifetime
         b.UseSetting("ConnectionStrings:Postgres", _postgres.GetConnectionString());
         b.UseSetting("ConnectionStrings:Redis", _redis.GetConnectionString());
         b.UseSetting("Nats:Url", _nats.GetConnectionString());
+        b.UseSetting("Storage:Endpoint", $"{_minio.Hostname}:{_minio.GetMappedPublicPort(9000)}");
+        b.UseSetting("Storage:AccessKey", _minio.GetAccessKey());
+        b.UseSetting("Storage:SecretKey", _minio.GetSecretKey());
+        b.UseSetting("Storage:UseSsl", "false");
+        b.UseSetting("Storage:MediaBucket", MediaBucket);
         // The Guestbook sample, loaded as an installed plugin (see the csproj's InstallSamplePlugin).
         b.UseSetting("Plugins:Directory", InstalledPluginsDirectory);
     }
@@ -196,7 +213,8 @@ public sealed class ContentFlowFixture : IAsyncLifetime
         if (MetaStub is not null) await MetaStub.DisposeAsync();
         if (Admin is not null) await Admin.DisposeAsync();
         if (Content is not null) await Content.DisposeAsync();
-        await Task.WhenAll(_postgres.DisposeAsync().AsTask(), _redis.DisposeAsync().AsTask(), _nats.DisposeAsync().AsTask());
+        await Task.WhenAll(_postgres.DisposeAsync().AsTask(), _redis.DisposeAsync().AsTask(), _nats.DisposeAsync().AsTask(),
+            _minio.DisposeAsync().AsTask());
     }
 }
 

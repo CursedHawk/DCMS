@@ -1322,7 +1322,10 @@
       "ingestRefused": "Knihovna soubor odmítla.",
       "mediaProcessing": "Soubor se nepodařilo převést.",
       "enqueueFailed": "Práci se nepodařilo zařadit do fronty.",
-      "buildFailed": "Sestavení selhalo. Důvod je v jeho záznamu."
+      "buildFailed": "Sestavení selhalo. Důvod je v jeho záznamu.",
+      "refused": "Práce byla odmítnuta.",
+      "conflict": "Práce je v rozporu s existujícími záznamy.",
+      "pluginDisabled": "Plugin už není zapnutý."
     },
     "kinds": {
       "driveImport": {
@@ -1338,6 +1341,20 @@
       },
       "siteBuild": {
         "title": "Nasazování {{site}}"
+      },
+      "plugin": {
+        "title": "{{plugin}}: {{job}}"
+      },
+      "records": {
+        "import": {
+          "title": "Import {{count}} záznamů do {{table}}"
+        },
+        "bulkupdate": {
+          "title": "Úprava {{count}} záznamů v {{table}}"
+        },
+        "bulkdelete": {
+          "title": "Mazání {{count}} záznamů z {{table}}"
+        }
       }
     },
     "stages": {
@@ -1345,7 +1362,9 @@
       "saving": "Přidávání do knihovny",
       "converting": "Převod",
       "uploading": "Ukládání kopií",
-      "building": "Sestavování"
+      "building": "Sestavování",
+      "validating": "Kontrola",
+      "writing": "Zápis"
     }
   },
   "marketplace": {

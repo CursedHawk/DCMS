@@ -6,7 +6,7 @@ import type { Job } from './api';
  * kind reads as its title ("media.drive-import" → "Media drive import").
  */
 const humanize = (kind: string) => {
-  const words = kind.replace(/[.\-_]+/g, ' ').trim();
+  const words = kind.replace(/[.\-_:]+/g, ' ').trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
 

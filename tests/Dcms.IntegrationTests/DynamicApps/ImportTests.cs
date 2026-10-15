@@ -131,6 +131,72 @@ public sealed class ImportTests(ContentFlowFixture fixture)
         (await unsent.Content.ReadAsStringAsync(ct)).Should().Contain("companies.csv", "the server says the console did not send the file");
     }
 
+    [DockerFact]
+    public async Task An_import_past_the_request_ceiling_runs_as_a_tracked_job_still_all_or_nothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.PublishAsync(Model, ct);
+
+        // 1,100 rows: past the 1,000 a request may carry, so refused before ADR 0024 and now queued
+        // and run by a job worker. Kept just past the ceiling: the volume is not what is under test.
+        var csv = "name\n" + string.Join("\n", Enumerable.Range(1, 1100).Select(i => $"Company {i}"));
+        var queued = await app.JsonAsync(HttpMethod.Post, "/_records/companies/import", ct, new { csv }, HttpStatusCode.Accepted);
+        var job = await FinishedAsync(app, queued.GetProperty("jobId").GetGuid(), ct);
+
+        job.GetProperty("status").GetString().Should().Be("Succeeded", job.ToString());
+        job.GetProperty("result").GetProperty("created").GetInt32().Should().Be(1100);
+        job.GetProperty("done").GetInt64().Should().Be(job.GetProperty("total").GetInt64());
+        (await app.JsonAsync(HttpMethod.Get, "/_records/companies?pageSize=1", ct)).GetProperty("total").GetInt32().Should().Be(1100);
+
+        // One bad row among 1,100 more: the job reports it, and writes none of them.
+        var bad = "name\n" + string.Join("\n", Enumerable.Range(1, 1100).Select(i => i == 700 ? "Company 1" : $"Other {i}"));
+        var rejected = await app.JsonAsync(HttpMethod.Post, "/_records/companies/import", ct, new { csv = bad }, HttpStatusCode.Accepted);
+        var failed = await FinishedAsync(app, rejected.GetProperty("jobId").GetGuid(), ct);
+        failed.GetProperty("result").GetProperty("created").GetInt32().Should().Be(0);
+        failed.GetProperty("result").GetProperty("errorCount").GetInt32().Should().Be(1);
+        (await app.JsonAsync(HttpMethod.Get, "/_records/companies?pageSize=1", ct)).GetProperty("total").GetInt32().Should().Be(1100);
+    }
+
+    [DockerFact]
+    public async Task A_bulk_delete_past_the_request_ceiling_runs_as_a_tracked_job()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        await app.PublishAsync(Model, ct);
+        // 520 rows fit one request; deleting all 520 does not (the bulk ceiling is 500).
+        var csv = "name\n" + string.Join("\n", Enumerable.Range(1, 520).Select(i => $"Company {i}"));
+        await app.JsonAsync(HttpMethod.Post, "/_records/companies/import", ct, new { csv });
+        var ids = new List<Guid>();
+        for (var page = 1; ids.Count < 520; page++)
+        {
+            var items = (await app.JsonAsync(HttpMethod.Get, $"/_records/companies?pageSize=200&page={page}", ct)).GetProperty("items");
+            ids.AddRange(items.EnumerateArray().Select(i => i.GetProperty("id").GetGuid()));
+        }
+
+        var queued = await app.JsonAsync(HttpMethod.Post, "/_records/companies/bulk-delete", ct, new { ids }, HttpStatusCode.Accepted);
+        var job = await FinishedAsync(app, queued.GetProperty("jobId").GetGuid(), ct);
+
+        job.GetProperty("status").GetString().Should().Be("Succeeded", job.ToString());
+        job.GetProperty("result").GetProperty("affected").GetInt32().Should().Be(520);
+        (await app.JsonAsync(HttpMethod.Get, "/_records/companies?pageSize=1", ct)).GetProperty("total").GetInt32().Should().Be(0);
+    }
+
+    private static async Task<JsonElement> FinishedAsync(AppHarness app, Guid jobId, CancellationToken ct)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(60);
+        JsonElement last = default;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var res = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, $"/api/admin/jobs/{jobId}", app.Owner, app.Tenant), ct);
+            res.EnsureSuccessStatusCode();
+            last = (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("job");
+            if (last.GetProperty("status").GetString() is "Succeeded" or "Failed" or "Canceled") return last;
+            await Task.Delay(250, ct);
+        }
+        throw new TimeoutException($"Job {jobId} never finished: {last}");
+    }
+
     private static async Task<JsonElement> ImportAsync(AppHarness app, string table, object body, bool dryRun, CancellationToken ct) =>
         await app.JsonAsync(HttpMethod.Post, $"/_records/{table}/import?dryRun={dryRun.ToString().ToLowerInvariant()}", ct, body);
 

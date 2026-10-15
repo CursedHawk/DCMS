@@ -87,7 +87,16 @@ public sealed class RecordService(
     private Guid InstanceId => context.Instance?.InstanceId
         ?? throw new InvalidOperationException("Dynamic Apps records are per instance; this context has none.");
 
-    private string? Actor => context.Actor.Id?.ToString() ?? context.Actor.Key;
+    private string? Actor => ActingAs ?? context.Actor.Id?.ToString() ?? context.Actor.Key;
+
+    /// <summary>
+    /// Who the records are attributed to when the caller is not the person: a bulk job run by
+    /// jobs-worker acts as the system, but its records were created by whoever queued it.
+    /// </summary>
+    public string? ActingAs { get; set; }
+
+    /// <summary>Told (done, total, stage) as a long operation goes; a background job's bar.</summary>
+    public delegate ValueTask Progress(long done, long total, string stageKey);
 
     // ------------------------------------------------------------------ reads
 
@@ -271,9 +280,11 @@ public sealed class RecordService(
         return true;
     }
 
-    public async Task<BulkResult> BulkUpdateAsync(string tableName, BulkUpdateRequest request, RecordPlane plane, CancellationToken ct)
+    public async Task<BulkResult> BulkUpdateAsync(
+        string tableName, BulkUpdateRequest request, RecordPlane plane, CancellationToken ct,
+        int maxIds = MaxBulk, Progress? progress = null)
     {
-        Bounded(request.Ids);
+        Bounded(request.Ids, maxIds);
         using var rls = RlsScope.Tenant(context.TenantId);
         var (model, table) = await TableAsync(tableName, RecordPlane.Admin, PublicOp.Read, ct);
         using var activity = Span("dcms.dynamicapp.mutation", model, table, "bulk-update");
@@ -281,10 +292,12 @@ public sealed class RecordService(
 
         var ids = request.Ids.Distinct().ToList();
         var records = await Records(table).Where(r => ids.Contains(r.Id)).ToListAsync(ct);
+        var done = 0;
         foreach (var record in records)
         {
             events.NextAction();
             await UpdateCoreAsync(model, table, record, request.Values, plane, ct);
+            if (progress is not null) await progress(++done, records.Count, "jobs.stages.writing");
         }
         Declare("record.bulk_updated", table, null).With("count", records.Count);
         await SaveAsync(ct);
@@ -292,9 +305,11 @@ public sealed class RecordService(
         return new BulkResult(records.Count);
     }
 
-    public async Task<BulkResult> BulkDeleteAsync(string tableName, BulkDeleteRequest request, RecordPlane plane, CancellationToken ct)
+    public async Task<BulkResult> BulkDeleteAsync(
+        string tableName, BulkDeleteRequest request, RecordPlane plane, CancellationToken ct,
+        int maxIds = MaxBulk, Progress? progress = null)
     {
-        Bounded(request.Ids);
+        Bounded(request.Ids, maxIds);
         using var rls = RlsScope.Tenant(context.TenantId);
         var (model, table) = await TableAsync(tableName, RecordPlane.Admin, PublicOp.Read, ct);
         using var activity = Span("dcms.dynamicapp.mutation", model, table, "bulk-delete");
@@ -303,10 +318,12 @@ public sealed class RecordService(
         var ids = request.Ids.Distinct().ToList();
         var records = await Records(table).Where(r => ids.Contains(r.Id)).ToListAsync(ct);
         var removed = new HashSet<Guid>();
+        var done = 0;
         foreach (var record in records.Where(r => !removed.Contains(r.Id)))
         {
             events.NextAction();
-            await DeleteCoreAsync(model, table, record, removed, 0, ct);
+            await DeleteCoreAsync(model, table, record, removed, 0, ct, records.Count);
+            if (progress is not null) await progress(++done, records.Count, "jobs.stages.writing");
         }
         Declare("record.bulk_deleted", table, null).With("count", records.Count).With("cascaded", removed.Count - records.Count);
         await SaveAsync(ct);
@@ -321,21 +338,28 @@ public sealed class RecordService(
     /// target by id or by the target's primary field value (a company's name). Each record is
     /// created as one would be by hand, so row triggers fire for each.
     /// </summary>
-    public async Task<ImportResult> ImportAsync(string tableName, ImportRequest request, bool dryRun, CancellationToken ct)
+    /// <param name="maxRows">The ceiling: <see cref="MaxImport"/> in a request, more in a background job.</param>
+    /// <param name="maxCsvChars">The CSV ceiling, likewise.</param>
+    public async Task<ImportResult> ImportAsync(
+        string tableName, ImportRequest request, bool dryRun, CancellationToken ct,
+        int maxRows = MaxImport, int maxCsvChars = CsvRows.MaxChars, Progress? progress = null)
     {
         using var rls = RlsScope.Tenant(context.TenantId);
         var (model, table) = await TableAsync(tableName, RecordPlane.Admin, PublicOp.Create, ct);
         var rows = request switch
         {
-            { Csv: { } csv, Rows: null } => CsvRows.Parse(table, csv, request.Columns, MaxImport),
+            { Csv: { } csv, Rows: null } => CsvRows.Parse(table, csv, request.Columns, maxRows, maxCsvChars),
             { Rows: { } given, Csv: null } => given,
             { CsvFile: { } file } => throw new ContractValidationException($"The file '{file}' was not sent: only the console can read an attached file."),
             _ => throw new ContractValidationException("Send rows or csv, not both."),
         };
-        if (rows.Count is 0 or > MaxImport)
+        if (rows.Count == 0 || rows.Count > maxRows)
         {
-            throw new ContractValidationException($"An import takes 1 to {MaxImport} rows.");
+            throw new ContractValidationException($"An import takes 1 to {maxRows} rows.");
         }
+        // Checking every row is the first half of the work, writing them the second: all or
+        // nothing either way, so the bar is one count over both.
+        long work = rows.Count * 2L;
         using var activity = Span("dcms.dynamicapp.mutation", model, table, "import");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
@@ -348,6 +372,7 @@ public sealed class RecordService(
         var writes = new RecordCodec.WriteResult?[rows.Count];
         for (var i = 0; i < rows.Count; i++)
         {
+            if (progress is not null && i % 100 == 0) await progress(i, work, "jobs.stages.validating");
             var values = rows[i].DeepClone().AsObject();
             rowErrors[i] = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var member in table.Members.Where(m => m.IsLookup))
@@ -428,8 +453,10 @@ public sealed class RecordService(
         }
 
         var now = clock.GetUtcNow();
+        var written = 0;
         foreach (var data in accepted)
         {
+            if (progress is not null && written++ % 100 == 0) await progress(rows.Count + written, work, "jobs.stages.writing");
             var record = new AppRecord
             {
                 Id = Guid.NewGuid(),
@@ -620,13 +647,17 @@ public sealed class RecordService(
     /// (restrict), clear the pointer (set null), or delete the pointing records too (cascade),
     /// up to <see cref="MaxCascade"/> records and <see cref="MaxCascadeDepth"/> hops.
     /// </summary>
-    private async Task DeleteCoreAsync(RuntimeModel model, RuntimeTable table, AppRecord record, HashSet<Guid> removed, int depth, CancellationToken ct)
+    /// <param name="requested">How many records the caller asked to delete: the cascade allowance
+    /// is on top of those, so a bulk delete of 600 is not mistaken for a cascade of 600.</param>
+    private async Task DeleteCoreAsync(
+        RuntimeModel model, RuntimeTable table, AppRecord record, HashSet<Guid> removed, int depth, CancellationToken ct,
+        int requested = 1)
     {
         if (!removed.Add(record.Id))
         {
             return;
         }
-        if (removed.Count > MaxCascade || depth > MaxCascadeDepth)
+        if (removed.Count > MaxCascade + requested - 1 || depth > MaxCascadeDepth)
         {
             throw new ContractConflictException(
                 $"Deleting this would remove more than {MaxCascade} records through cascading relationships; delete the related records first.");
@@ -674,7 +705,7 @@ public sealed class RecordService(
                 default:
                     foreach (var r in pointing)
                     {
-                        await DeleteCoreAsync(model, source, r, removed, depth + 1, ct);
+                        await DeleteCoreAsync(model, source, r, removed, depth + 1, ct, requested);
                     }
                     break;
             }
@@ -1018,11 +1049,11 @@ public sealed class RecordService(
     private static string Pointer(Guid relationshipId, Guid target) =>
         new JsonObject { [relationshipId.ToString()] = target.ToString() }.ToJsonString();
 
-    private static void Bounded(IReadOnlyList<Guid> ids)
+    private static void Bounded(IReadOnlyList<Guid> ids, int max = MaxBulk)
     {
-        if (ids.Count is 0 or > MaxBulk)
+        if (ids.Count == 0 || ids.Count > max)
         {
-            throw new ContractValidationException($"A bulk operation takes 1 to {MaxBulk} ids.");
+            throw new ContractValidationException($"A bulk operation takes 1 to {max} ids.");
         }
     }
 

@@ -1292,7 +1292,10 @@
       "ingestRefused": "The library refused the file.",
       "mediaProcessing": "The file could not be converted.",
       "enqueueFailed": "The work could not be queued.",
-      "buildFailed": "The build failed. Its log says why."
+      "buildFailed": "The build failed. Its log says why.",
+      "refused": "The work was refused.",
+      "conflict": "The work conflicts with existing records.",
+      "pluginDisabled": "The plugin is no longer enabled."
     },
     "kinds": {
       "driveImport": {
@@ -1307,6 +1310,20 @@
       },
       "siteBuild": {
         "title": "Deploying {{site}}"
+      },
+      "plugin": {
+        "title": "{{plugin}}: {{job}}"
+      },
+      "records": {
+        "import": {
+          "title": "Importing {{count}} records into {{table}}"
+        },
+        "bulkupdate": {
+          "title": "Updating {{count}} records in {{table}}"
+        },
+        "bulkdelete": {
+          "title": "Deleting {{count}} records from {{table}}"
+        }
       }
     },
     "stages": {
@@ -1314,7 +1331,9 @@
       "saving": "Adding to the library",
       "converting": "Converting",
       "uploading": "Saving the copies",
-      "building": "Building"
+      "building": "Building",
+      "validating": "Checking",
+      "writing": "Writing"
     }
   },
   "marketplace": {
