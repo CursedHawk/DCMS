@@ -81,6 +81,9 @@ public sealed class AdminApiFixture : IAsyncLifetime
             // on "stream not found" for the life of the fixture.
             await js.CreateStreamAsync(new StreamConfig("PLUGIN_EVENTS", ["plugins.events.>"]));
             await js.CreateStreamAsync(new StreamConfig("PLUGIN_JOBS", ["plugins.jobs.>"]) { Retention = StreamConfigRetention.Workqueue });
+            // The job ledger's run requests and hints (ADR 0024); admin-api hosts their housekeeping.
+            await js.CreateStreamAsync(new StreamConfig("JOBS", ["jobs.run.>"]) { Retention = StreamConfigRetention.Workqueue });
+            await js.CreateStreamAsync(new StreamConfig("JOBS_EVENTS", ["jobs.changed", "jobs.state"]));
         }
 
         MetaStub = await MetaStubServer.StartAsync();

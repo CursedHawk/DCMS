@@ -196,10 +196,10 @@ ensure_stream PLUGIN_JOBS  "plugins.jobs.>"                           work
 # lane -- a work queue refuses overlapping filters. The ledger row is the record; a message
 # lost here is republished by the redispatch sweep.
 ensure_stream JOBS         "jobs.run.>"                               work
-# Hints about the ledger: jobs.changed (pushed to browsers), jobs.state (progress from workers
-# with no grant on the jobs schema), jobs.cancel (broadcast to whichever worker holds the job).
-# An hour is plenty: every consumer of these is live, and a progress tick an hour old is noise.
-ensure_stream JOBS_EVENTS  "jobs.changed,jobs.state,jobs.cancel"     limits 1h
+# Hints about the ledger: jobs.changed (pushed to browsers) and jobs.state (progress from
+# workers with no grant on the jobs schema). An hour is plenty: every consumer of these is
+# live, and a progress tick an hour old is noise.
+ensure_stream JOBS_EVENTS  "jobs.changed,jobs.state"                 limits 1h
 ensure_audit_stream
 
 # ---------------------------------------------------------------------------

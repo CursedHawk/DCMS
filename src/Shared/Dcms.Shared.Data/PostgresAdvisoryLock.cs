@@ -67,6 +67,12 @@ public static class PostgresAdvisoryLock
     public const long TenantUsageLockKey = 0x44434D530000000C;
 
     /// <summary>
+    /// Job ledger housekeeping (ADR 0024): re-sending lost run requests, failing jobs whose
+    /// worker went silent, retiring old rows. One replica per pass; the others skip it.
+    /// </summary>
+    public const long JobMaintenanceLockKey = 0x44434D530000000D;
+
+    /// <summary>
     /// Blocks until the lock is held. Deliberately blocking rather than
     /// <c>pg_try_advisory_lock</c>: a second instance arriving mid-migration should wait and then
     /// find there is nothing left to do. Giving up and carrying on would let it serve traffic

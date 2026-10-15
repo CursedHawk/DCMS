@@ -32,7 +32,7 @@ public static class Streams
     /// <summary>Background job run requests (work queue), one subject per lane (ADR 0024).</summary>
     public const string Jobs = "JOBS";
 
-    /// <summary>Ledger hints: changes for browsers, progress from bus-only workers, cancels.</summary>
+    /// <summary>Ledger hints: changes for browsers, and progress from bus-only workers.</summary>
     public const string JobsEvents = "JOBS_EVENTS";
 }
 
@@ -237,7 +237,4 @@ public static class Subjects
 
     /// <summary>Progress or an outcome from a worker that cannot write the jobs schema itself.</summary>
     public const string JobState = "jobs.state";
-
-    /// <summary>Someone asked to cancel a running job. Every worker hears it; the holder acts.</summary>
-    public const string JobCancel = "jobs.cancel";
 }

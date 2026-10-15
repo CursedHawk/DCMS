@@ -320,6 +320,15 @@ public static class AuditActions
     /// </summary>
     public const string AnalyticsPruned = "analytics.retention.pruned";
 
+    /// <summary>A background-job retention sweep (ADR 0024); one record per pass, like the two around it.</summary>
+    public const string JobsPruned = "jobs.retention.pruned";
+
+    /// <summary>Somebody stopped a queued or running background job.</summary>
+    public const string JobCanceled = "job.canceled";
+
+    /// <summary>Somebody re-ran a failed background job with its original input.</summary>
+    public const string JobRetried = "job.retried";
+
     /// <summary>
     /// A notification-retention sweep. Set-based, so there is no before-image: one record per
     /// pass carrying the cutoff and the row counts, not one per deleted row.

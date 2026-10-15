@@ -42,6 +42,7 @@
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Instagram\Dcms.Plugins.Instagram.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Meta.Core\Dcms.Plugins.Meta.Core.csproj" />
     <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Media\Dcms.Shared.Media.csproj" />
+    <ProjectReference Include="..\..\src\Shared\Dcms.Shared.Jobs\Dcms.Shared.Jobs.csproj" />
   </ItemGroup>
 
   <!-- The Guestbook sample, installed the way an operator would (its build output in a folder of

@@ -30,7 +30,6 @@ using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Audit;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Forms;
-using Dcms.Shared.Data.Jobs;
 using Dcms.Shared.Data.Media;
 using Dcms.Shared.Data.Notifications;
 using Dcms.Shared.Data.Platform;
@@ -41,6 +40,7 @@ using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Data.Visitors;
 using Dcms.Shared.Hosting;
+using Dcms.Shared.Jobs;
 using Dcms.Shared.Media;
 using Dcms.Shared.Messaging;
 using Dcms.Shared.Messaging.Email;
@@ -101,7 +101,10 @@ builder.Services.AddDcmsFormsData(builder.Configuration);
 builder.Services.AddDcmsAppsData(builder.Configuration);
 builder.Services.AddDcmsUserAuthData(builder.Configuration);
 builder.Services.AddDcmsNotificationsData(builder.Configuration);
-builder.Services.AddDcmsJobsData(builder.Configuration);
+// The job ledger (ADR 0024): admin-api owns the schema, enqueues most jobs, folds in reports
+// from the workers that cannot write it, and sweeps it.
+builder.Services.AddDcmsJobs(builder.Configuration, "admin-api");
+builder.Services.AddJobLedgerHousekeeping();
 builder.Services.AddDcmsAuditData(builder.Configuration);
 // ADR 0015: sets app.tenant_id / app.scope per unit of work when Rls:Enforce is on; absent otherwise.
 builder.Services.AddDcmsRlsEnforcement(builder.Configuration);

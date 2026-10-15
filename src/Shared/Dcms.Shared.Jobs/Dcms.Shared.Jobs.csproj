@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NATS.Net" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dcms.Shared.Audit\Dcms.Shared.Audit.csproj" />
+    <ProjectReference Include="..\Dcms.Shared.Contracts\Dcms.Shared.Contracts.csproj" />
+    <ProjectReference Include="..\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
+    <ProjectReference Include="..\Dcms.Shared.Kernel\Dcms.Shared.Kernel.csproj" />
+    <ProjectReference Include="..\Dcms.Shared.Messaging\Dcms.Shared.Messaging.csproj" />
+    <ProjectReference Include="..\Dcms.Shared.Telemetry\Dcms.Shared.Telemetry.csproj" />
+  </ItemGroup>
+
+</Project>

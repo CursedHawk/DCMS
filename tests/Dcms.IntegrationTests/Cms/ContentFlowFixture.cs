@@ -63,6 +63,9 @@ public sealed class ContentFlowFixture : IAsyncLifetime
             // Plugin events (visitor.registered, form.submitted) and the admin-api job consumer.
             await js.CreateStreamAsync(new StreamConfig("PLUGIN_EVENTS", ["plugins.events.>"]));
             await js.CreateStreamAsync(new StreamConfig("PLUGIN_JOBS", ["plugins.jobs.>"]) { Retention = StreamConfigRetention.Workqueue });
+            // The job ledger's run requests and hints (ADR 0024); admin-api hosts their housekeeping.
+            await js.CreateStreamAsync(new StreamConfig("JOBS", ["jobs.run.>"]) { Retention = StreamConfigRetention.Workqueue });
+            await js.CreateStreamAsync(new StreamConfig("JOBS_EVENTS", ["jobs.changed", "jobs.state"]));
             // Mail is only queued here (no email-worker runs); without the stream every send fails.
             await js.CreateStreamAsync(new StreamConfig("EMAIL", ["email.>"]) { Retention = StreamConfigRetention.Workqueue });
         }
