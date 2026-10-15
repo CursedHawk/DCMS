@@ -18,6 +18,7 @@ public static class JobsServiceCollectionExtensions
         services.TryAddSingleton(new JobSource(source));
         services.TryAddScoped<JobLedger>();
         services.TryAddScoped<IJobQueue, JobQueue>();
+        services.TryAddScoped<JobControl>();
         services.TryAddSingleton<JobHandlerRegistry>();
         return services;
     }

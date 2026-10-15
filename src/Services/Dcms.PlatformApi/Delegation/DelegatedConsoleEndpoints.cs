@@ -72,6 +72,21 @@ public static class DelegatedConsoleEndpoints
             "/api/admin/platform/notifications/{0}/dismiss",
             PlatformConsolePermissions.NotificationsRead);
 
+        // ---- Background jobs (jobs schema; ADR 0024) ----
+
+        var jobs = app.MapGroup("/api/platform/jobs");
+
+        Delegate(jobs, HttpMethod.Get, "", "/api/admin/platform/jobs",
+            PlatformConsolePermissions.JobsRead, forwardQuery: true);
+        Delegate(jobs, HttpMethod.Get, "/overview", "/api/admin/platform/jobs/overview",
+            PlatformConsolePermissions.JobsRead);
+        Delegate(jobs, HttpMethod.Get, "/{id:guid}", "/api/admin/platform/jobs/{0}",
+            PlatformConsolePermissions.JobsRead);
+        Delegate(jobs, HttpMethod.Post, "/{id:guid}/cancel", "/api/admin/platform/jobs/{0}/cancel",
+            PlatformConsolePermissions.JobsManage);
+        Delegate(jobs, HttpMethod.Post, "/{id:guid}/retry", "/api/admin/platform/jobs/{0}/retry",
+            PlatformConsolePermissions.JobsManage);
+
         // ---- Tenant lifecycle (tenancy schema + an event site-host depends on) ----
 
         var tenants = app.MapGroup("/api/platform/tenants");
@@ -107,8 +122,8 @@ public static class DelegatedConsoleEndpoints
     /// that is not a Guid.
     /// </param>
     /// <param name="forwardQuery">
-    /// Carry the query string across. Only the notification list has one (cursor, limit,
-    /// unreadOnly); everywhere else forwarding it would pass parameters this console never
+    /// Carry the query string across. Only the two lists have one (notifications: cursor, limit,
+    /// unreadOnly; jobs: status, tenantId, platformOnly, cursor, limit); everywhere else forwarding it would pass parameters this console never
     /// documented straight into another service.
     /// </param>
     private static void Delegate(

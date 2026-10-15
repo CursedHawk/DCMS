@@ -329,6 +329,12 @@ public static class AuditActions
     /// <summary>Somebody re-ran a failed background job with its original input.</summary>
     public const string JobRetried = "job.retried";
 
+    /// <summary>A platform operator stopped a job, from the console (any tenant's, or the platform's own).</summary>
+    public const string PlatformJobCanceled = "platform.job.canceled";
+
+    /// <summary>A platform operator re-ran a failed job from the console.</summary>
+    public const string PlatformJobRetried = "platform.job.retried";
+
     /// <summary>
     /// A notification-retention sweep. Set-based, so there is no before-image: one record per
     /// pass carrying the cutoff and the row counts, not one per deleted row.

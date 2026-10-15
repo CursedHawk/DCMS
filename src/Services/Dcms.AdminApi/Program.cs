@@ -3,6 +3,7 @@ using Dcms.AdminApi.Ai;
 using Dcms.AdminApi.ApiClientGen;
 using Dcms.AdminApi.Analytics;
 using Dcms.AdminApi.Audit;
+using Dcms.AdminApi.Jobs;
 using Dcms.AdminApi.Observability;
 using Dcms.AdminApi.Cms;
 using Dcms.AdminApi.Media;
@@ -105,6 +106,7 @@ builder.Services.AddDcmsNotificationsData(builder.Configuration);
 // from the workers that cannot write it, and sweeps it.
 builder.Services.AddDcmsJobs(builder.Configuration, "admin-api");
 builder.Services.AddJobLedgerHousekeeping();
+builder.Services.AddHostedService<JobLiveUpdates>();
 builder.Services.AddDcmsAuditData(builder.Configuration);
 // ADR 0015: sets app.tenant_id / app.scope per unit of work when Rls:Enforce is on; absent otherwise.
 builder.Services.AddDcmsRlsEnforcement(builder.Configuration);
@@ -416,6 +418,7 @@ app.MapTableViewEndpoints();
 app.MapSiteDeletion();
 app.MapNotificationEndpoints();
 app.MapPlatformNotificationEndpoints();
+app.MapJobEndpoints();
 // Mounted under /api so it rides the existing edge route to admin-api -- no route change,
 // and no matcher ordering against content-api's /hub/* for the chat hub.
 app.MapHub<NotificationHub>("/api/hub/notifications")

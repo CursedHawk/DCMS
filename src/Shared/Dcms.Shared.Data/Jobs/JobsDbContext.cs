@@ -121,6 +121,12 @@ public static class JobLanes
 
     /// <summary>Work with no tenant: platform-worker.</summary>
     public const string Platform = "platform";
+
+    /// <summary>
+    /// A job made of jobs, run by nobody: its status and progress are rolled up from its
+    /// children by the ledger (a Drive import of twelve files is one group of twelve downloads).
+    /// </summary>
+    public const string Group = "group";
 }
 
 /// <summary>Owns the "jobs" schema (ADR 0024).</summary>

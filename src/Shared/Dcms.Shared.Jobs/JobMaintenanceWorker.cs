@@ -78,6 +78,10 @@ public sealed class JobMaintenanceWorker(
         var sp = scope.ServiceProvider;
         var db = sp.GetRequiredService<JobsDbContext>();
 
+        // Touching UpdatedAt and failing silent jobs are bookkeeping, not acts anyone needs in
+        // the audit log; without this each would be a data.bulk.updated record every 30 seconds.
+        using var quiet = sp.GetService<AuditScope>()?.SuppressBulkCapture();
+
         await RedispatchAsync(db, sp.GetRequiredService<IEventPublisher>(), ct);
         await FailSilentAsync(db, sp.GetRequiredService<JobLedger>(), ct);
 
@@ -120,7 +124,9 @@ public sealed class JobMaintenanceWorker(
     {
         var before = DateTimeOffset.UtcNow - _staleAfter;
         var silent = await db.Jobs.IgnoreQueryFilters().AsNoTracking()
-            .Where(j => j.Lane != JobLanes.Tenant && j.Lane != JobLanes.Platform
+            // Groups are excluded: they change only when a child does, and a child that went
+            // silent is failed here itself, which then settles its group.
+            .Where(j => j.Lane != JobLanes.Tenant && j.Lane != JobLanes.Platform && j.Lane != JobLanes.Group
                         && (j.Status == JobStatus.Queued || j.Status == JobStatus.Running)
                         && j.UpdatedAt < before)
             .Select(j => new { j.Id, j.TenantId, j.Status })

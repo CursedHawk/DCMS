@@ -1,3 +1,4 @@
+using Dcms.Shared.Audit;
 using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Jobs;
@@ -33,16 +34,39 @@ public enum CancelOutcome
 /// <see cref="RlsScope.Platform"/> for a platform job) with the EF filter removed. The database
 /// still confines each statement to that one tenant; the id is the predicate.</para>
 ///
+/// <para><b>Not audited statement by statement.</b> Every write here is a set-based update, which
+/// the bulk interceptor would otherwise record as <c>data.bulk.updated</c> — once per progress
+/// tick. The ledger is the mechanics of work that is audited where it is asked for (the import,
+/// the publish, a cancel), so each statement runs with bulk capture suppressed.</para>
+///
 /// <para>Every change is announced on <c>jobs.changed</c> after it lands. The announcement is a
 /// hint for browsers: best-effort, after the write, and never allowed to fail it.</para>
 /// </summary>
-public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<JobLedger> logger)
+public sealed class JobLedger(
+    JobsDbContext db, IEventPublisher events, ILogger<JobLedger> logger, AuditScope? audit = null)
 {
     /// <summary>How long a claim holds without renewal. A worker renews every few seconds.</summary>
     public static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);
 
     public static IDisposable ScopeFor(Guid? tenantId) =>
         tenantId is { } tenant ? RlsScope.Tenant(tenant) : RlsScope.Platform();
+
+    /// <summary>The job's tenant for the database, and no per-statement audit (see the class remarks).</summary>
+    private IDisposable Enter(Guid? tenantId)
+    {
+        var rls = ScopeFor(tenantId);
+        var quiet = audit?.SuppressBulkCapture();
+        return new Both(rls, quiet);
+    }
+
+    private sealed class Both(IDisposable first, IDisposable? second) : IDisposable
+    {
+        public void Dispose()
+        {
+            second?.Dispose();
+            first.Dispose();
+        }
+    }
 
     /// <summary>
     /// One job, by id <b>and</b> tenant. The tenant is part of the predicate, not only of the RLS
@@ -55,14 +79,14 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
 
     public async Task<Job?> FindAsync(Guid id, Guid? tenantId, CancellationToken ct)
     {
-        using var _ = ScopeFor(tenantId);
+        using var _ = Enter(tenantId);
         return await Row(id, tenantId).AsNoTracking().FirstOrDefaultAsync(ct);
     }
 
     /// <summary>Inserts the row; a dedupe-key collision returns the job already there.</summary>
     public async Task<JobRef> CreateAsync(Job job, CancellationToken ct)
     {
-        using var _ = ScopeFor(job.TenantId);
+        using var _ = Enter(job.TenantId);
         db.Jobs.Add(job);
         try
         {
@@ -90,7 +114,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     /// </summary>
     public async Task<Job?> ClaimAsync(Guid id, Guid? tenantId, CancellationToken ct)
     {
-        using var _ = ScopeFor(tenantId);
+        using var _ = Enter(tenantId);
         var now = DateTimeOffset.UtcNow;
         var claimed = await Row(id, tenantId)
             .Where(j => j.CancelRequestedAt == null
@@ -117,7 +141,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     /// </summary>
     public async Task<bool> RenewAsync(Guid id, Guid? tenantId, CancellationToken ct)
     {
-        using var _ = ScopeFor(tenantId);
+        using var _ = Enter(tenantId);
         var now = DateTimeOffset.UtcNow;
         var renewed = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Running && j.CancelRequestedAt == null)
@@ -128,7 +152,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     /// <summary>Progress on a running job. <paramref name="done"/> never moves the count backwards.</summary>
     public async Task ProgressAsync(Guid id, Guid? tenantId, long done, long? total, string? stageKey, CancellationToken ct)
     {
-        using var _ = ScopeFor(tenantId);
+        using var _ = Enter(tenantId);
         var now = DateTimeOffset.UtcNow;
         var updated = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Running)
@@ -154,7 +178,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
 
     public async Task<bool> CompleteAsync(Guid id, Guid? tenantId, string? resultJson, CancellationToken ct)
     {
-        using var _ = ScopeFor(tenantId);
+        using var _ = Enter(tenantId);
         var now = DateTimeOffset.UtcNow;
         var updated = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Running)
@@ -183,7 +207,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     public async Task<JobStatus?> FailAsync(
         Guid id, Guid? tenantId, string errorKey, string? detail, bool retryable, CancellationToken ct)
     {
-        using var _ = ScopeFor(tenantId);
+        using var _ = Enter(tenantId);
         var now = DateTimeOffset.UtcNow;
         detail = Truncate(detail);
 
@@ -226,7 +250,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     /// <summary>The host is stopping mid-run: hand the job straight back rather than waiting out the lease.</summary>
     public async Task ReleaseAsync(Guid id, Guid? tenantId, CancellationToken ct)
     {
-        using var _ = ScopeFor(tenantId);
+        using var _ = Enter(tenantId);
         var now = DateTimeOffset.UtcNow;
         // The attempt did not fail, so it is not spent either.
         await Row(id, tenantId)
@@ -242,7 +266,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
 
     public async Task<CancelOutcome> RequestCancelAsync(Guid id, Guid? tenantId, CancellationToken ct)
     {
-        using var _ = ScopeFor(tenantId);
+        using var _ = Enter(tenantId);
         var now = DateTimeOffset.UtcNow;
 
         // Queued: nothing has started, so it simply never will. The run message still in the
@@ -281,7 +305,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     /// <summary>The worker stopped because it was asked to.</summary>
     public async Task MarkCanceledAsync(Guid id, Guid? tenantId, CancellationToken ct)
     {
-        using var _ = ScopeFor(tenantId);
+        using var _ = Enter(tenantId);
         var now = DateTimeOffset.UtcNow;
         var updated = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Running || j.Status == JobStatus.Queued)
@@ -304,7 +328,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     /// </summary>
     public async Task<bool> ResetForRetryAsync(Guid id, Guid? tenantId, CancellationToken ct)
     {
-        using var _ = ScopeFor(tenantId);
+        using var _ = Enter(tenantId);
         var now = DateTimeOffset.UtcNow;
         var updated = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Failed || j.Status == JobStatus.Canceled)
@@ -338,7 +362,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
         // Reports speak for the queues that own their work (media, sites, flows). A job-worker
         // job has a worker that writes the ledger itself, and nothing on the bus gets to
         // overrule it -- whoever can publish jobs.state cannot finish or fail one.
-        using (ScopeFor(report.TenantId))
+        using (Enter(report.TenantId))
         {
             var lane = await Row(report.JobId, report.TenantId).Select(j => j.Lane).FirstOrDefaultAsync(ct);
             if (lane is null || JobDispatch.IsDispatched(lane))
@@ -381,7 +405,7 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
     /// <summary>A bus-only worker started on it. Its own queue holds the lease, so none is set here.</summary>
     private async Task StartIfQueuedAsync(Guid id, Guid? tenantId, CancellationToken ct)
     {
-        using var _ = ScopeFor(tenantId);
+        using var _ = Enter(tenantId);
         var now = DateTimeOffset.UtcNow;
         var started = await Row(id, tenantId)
             .Where(j => j.Status == JobStatus.Queued)
@@ -397,28 +421,108 @@ public sealed class JobLedger(JobsDbContext db, IEventPublisher events, ILogger<
         }
     }
 
-    /// <summary>Publishes <c>jobs.changed</c> for the row as it now stands. Never throws.</summary>
+    /// <summary>
+    /// Publishes <c>jobs.changed</c> for the row as it now stands and, for a child, brings its
+    /// parent up to date. Never throws: the row is the record, this is a hint about it (ADR 0013),
+    /// and a broken NATS must not fail the work it would have announced.
+    /// </summary>
     public async Task AnnounceAsync(Guid id, Guid? tenantId, CancellationToken ct)
     {
         try
         {
-            using var _ = ScopeFor(tenantId);
-            var row = await Row(id, tenantId).AsNoTracking()
-                .Select(j => new { j.TenantId, j.ParentId, j.Status, j.Done, j.Total, j.StageKey, j.Seq })
-                .FirstOrDefaultAsync(ct);
-            if (row is null)
+            var parentId = await PublishChangedAsync(id, tenantId, ct);
+            if (parentId is { } parent)
             {
-                return;
+                await RollUpAsync(parent, tenantId, ct);
             }
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            logger.LogDebug(ex, "Could not announce job {JobId}; browsers will catch up on their next fetch.", id);
+        }
+    }
+
+    /// <returns>The row's parent, if it has one.</returns>
+    private async Task<Guid?> PublishChangedAsync(Guid id, Guid? tenantId, CancellationToken ct)
+    {
+        using var _ = Enter(tenantId);
+        var row = await Row(id, tenantId).AsNoTracking()
+            .Select(j => new { j.TenantId, j.ParentId, j.Status, j.Done, j.Total, j.StageKey, j.Seq })
+            .FirstOrDefaultAsync(ct);
+        if (row is null)
+        {
+            return null;
+        }
+        try
+        {
             await events.PublishAsync(Subjects.JobChanged, new JobChanged(
                 Guid.NewGuid(), DateTimeOffset.UtcNow, id, row.TenantId, row.ParentId,
                 row.Status.ToString(), row.Done, row.Total, row.StageKey, row.Seq), ct);
         }
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
-            // The row is the record; this is a hint about it (ADR 0013). A broken NATS must not
-            // fail the work it would have announced.
-            logger.LogDebug(ex, "Could not announce job {JobId}; browsers will catch up on their next fetch.", id);
+            logger.LogDebug(ex, "Could not announce job {JobId}.", id);
+        }
+        return row.ParentId;
+    }
+
+    /// <summary>
+    /// A group job (<see cref="JobLanes.Group"/>) is its children: its progress is their mean, it
+    /// is running while any of them is unfinished, and it ends Failed if any failed. Recomputed
+    /// from the children on every child change rather than incremented, so two children
+    /// finishing at once converge on the right answer whichever update lands last.
+    /// </summary>
+    private async Task RollUpAsync(Guid parentId, Guid? tenantId, CancellationToken ct)
+    {
+        using var _ = Enter(tenantId);
+        var agg = await db.Jobs.IgnoreQueryFilters()
+            .Where(c => c.ParentId == parentId && c.TenantId == tenantId)
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Count = g.Count(),
+                Unfinished = g.Count(c => c.Status == JobStatus.Queued || c.Status == JobStatus.Running),
+                Started = g.Count(c => c.Status != JobStatus.Queued),
+                Failed = g.Count(c => c.Status == JobStatus.Failed),
+                Canceled = g.Count(c => c.Status == JobStatus.Canceled),
+                // Each child counts 0..100: whole once finished, its own fraction while running.
+                Progress = g.Sum(c => c.Status == JobStatus.Succeeded || c.Status == JobStatus.Failed || c.Status == JobStatus.Canceled
+                    ? 100L
+                    : (c.Total ?? 0) > 0 ? c.Done * 100 / (c.Total ?? 1) : 0L),
+            })
+            .FirstOrDefaultAsync(ct);
+        if (agg is null)
+        {
+            return;
+        }
+
+        var status = agg.Unfinished > 0
+            ? agg.Started > 0 ? JobStatus.Running : JobStatus.Queued
+            : agg.Failed > 0 ? JobStatus.Failed
+            : agg.Canceled == agg.Count ? JobStatus.Canceled
+            : JobStatus.Succeeded;
+        var finished = agg.Unfinished == 0;
+        var now = DateTimeOffset.UtcNow;
+
+        var updated = await Row(parentId, tenantId)
+            .Where(j => j.Lane == JobLanes.Group)
+            .ExecuteUpdateAsync(s =>
+            {
+                s.SetProperty(j => j.Status, status);
+                s.SetProperty(j => j.Total, agg.Count * 100L);
+                s.SetProperty(j => j.Done, agg.Progress);
+                if (status != JobStatus.Queued)
+                {
+                    s.SetProperty(j => j.StartedAt, j => j.StartedAt ?? now);
+                }
+                s.SetProperty(j => j.FinishedAt, finished ? now : null);
+                s.SetProperty(j => j.ErrorKey, finished && agg.Failed > 0 ? "jobs.error.someFailed" : null);
+                s.SetProperty(j => j.Seq, j => j.Seq + 1);
+                s.SetProperty(j => j.UpdatedAt, now);
+            }, ct);
+        if (updated > 0)
+        {
+            await PublishChangedAsync(parentId, tenantId, ct);
         }
     }
 

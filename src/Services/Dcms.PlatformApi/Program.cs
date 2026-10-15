@@ -33,6 +33,9 @@ builder.Services.AddDcmsMessaging(builder.Configuration);
 // with it rather than proceed unrecorded.
 builder.Services.AddDcmsAuditOverNats();
 builder.Services.AddDcmsResourceAuthentication(builder.Configuration);
+// The console hub's WebSocket carries its token in the query string (no headers on a browser
+// socket, and this host has no BFF to inject one). Only there.
+builder.Services.AcceptQueryStringTokenFor("/api/platform/hub");
 
 // The console's own table: which global role holds which platform permission. This is the
 // ONLY schema platform-api writes, and with `obs` it is the only one it can read — the
@@ -63,6 +66,7 @@ if (!string.IsNullOrWhiteSpace(signalRRedis))
 }
 builder.Services.AddSingleton<PlatformChangePublisher>();
 builder.Services.AddHostedService<PlatformLiveUpdates>();
+builder.Services.AddHostedService<PlatformJobLiveUpdates>();
 builder.Services.AddHostedService<PlatformSampleBroadcaster>();
 
 // Read-only access to the obs.* reporting views — the console's cross-tenant read model.

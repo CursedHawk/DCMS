@@ -46,6 +46,42 @@ public static class AuthServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Accepts the bearer token from the <c>access_token</c> query parameter, for requests under
+    /// <paramref name="pathPrefix"/> only.
+    ///
+    /// <para>A browser's WebSocket cannot set an <c>Authorization</c> header, so a SignalR client
+    /// holding its own token (the platform console; the admin SPA's hubs go through the edge's
+    /// BFF, which injects the header) sends it in the URL, the SignalR convention. JwtBearer does
+    /// not read it from there by itself: without this the console hub refused every handshake
+    /// under <c>[Authorize]</c>, and the console quietly ran on its fallback polls.</para>
+    ///
+    /// <para>Scoped to the hub's path because a token in a query string ends up in places a
+    /// header does not (access logs, proxies, history); no ordinary route should accept one.</para>
+    /// </summary>
+    public static IServiceCollection AcceptQueryStringTokenFor(this IServiceCollection services, string pathPrefix)
+    {
+        services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, jwt =>
+        {
+            var previous = jwt.Events?.OnMessageReceived;
+            jwt.Events ??= new JwtBearerEvents();
+            jwt.Events.OnMessageReceived = async context =>
+            {
+                if (previous is not null)
+                {
+                    await previous(context);
+                }
+                if (context.Token is null
+                    && context.Request.Path.StartsWithSegments(pathPrefix, StringComparison.Ordinal)
+                    && context.Request.Query["access_token"].ToString() is { Length: > 0 } token)
+                {
+                    context.Token = token;
+                }
+            };
+        });
+        return services;
+    }
+
+    /// <summary>
     /// Forces the JWT bearer options to be built now, so a contradictory configuration is a
     /// startup failure rather than a 500 on the first request that touches authentication.
     ///

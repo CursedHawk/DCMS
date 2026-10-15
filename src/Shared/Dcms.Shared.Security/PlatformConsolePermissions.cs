@@ -108,6 +108,12 @@ public static class PlatformConsolePermissions
     /// </summary>
     public const string RateLimitsManage = "platform:ratelimits:manage";
 
+    /// <summary>The jobs page and progress ring: every tenant's background work, and the platform's.</summary>
+    public const string JobsRead = "platform:jobs:read";
+
+    /// <summary>Cancel and retry any tenant's or the platform's background job.</summary>
+    public const string JobsManage = "platform:jobs:manage";
+
     /// <summary>The prefix every key here carries. Used to tell the two permission
     /// spaces apart when both could appear in one list.</summary>
     public const string Prefix = "platform:";
@@ -124,6 +130,7 @@ public static class PlatformConsolePermissions
         CertificatesManage,
         RateLimitsManage,
         NotificationsRead,
+        JobsRead, JobsManage,
     ];
 
     /// <summary>
