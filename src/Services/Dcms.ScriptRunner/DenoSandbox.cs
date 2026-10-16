@@ -11,10 +11,18 @@ public sealed class ScriptRunnerOptions
     public string DenoPath { get; set; } = "deno";
     public string HarnessPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "harness.js");
 
-    /// <summary>Scripts running at once; the rest wait their turn (each is a process with its own heap).</summary>
-    public int MaxConcurrency { get; set; } = 4;
+    /// <summary>Scripts running at once; the rest wait their turn. Two fit the container's 640 MB with room to spare.</summary>
+    public int MaxConcurrency { get; set; } = 2;
 
+    /// <summary>V8's own heap. It does not cover ArrayBuffers or Wasm memory — <see cref="DataLimitMegabytes"/> does.</summary>
     public int HeapMegabytes { get; set; } = 64;
+
+    /// <summary>
+    /// RLIMIT_DATA for each Deno process: every private writable mapping, ArrayBuffers included,
+    /// enforced by the kernel. Deno 2.5's own startup reserves ~600 MB of it, so this leaves a
+    /// script roughly 40–80 MB beyond the heap; below ~600 Deno does not start at all.
+    /// </summary>
+    public int DataLimitMegabytes { get; set; } = 640;
     public int MaxTimeoutMs { get; set; } = 5_000;
     public int MaxCodeChars { get; set; } = 64_000;
     public int MaxOutputChars { get; set; } = 64_000;
@@ -36,7 +44,10 @@ public sealed record RunResult(string Status, JsonNode? Result = null, string? E
 /// Runs one flow script in a fresh Deno process with no permissions at all (ADR 0025): no network,
 /// files, environment, subprocesses or FFI. The process gets a cleared environment and its own
 /// empty DENO_DIR, which is deleted afterwards, so no two runs share anything — not even a cache.
-/// A deadline, a heap cap and an output cap each end it; the host kills the whole process tree.
+/// A deadline, a heap cap, a kernel limit on all writable memory and an output cap each end it;
+/// the host kills the whole process tree. It also never dumps core (a crash would otherwise fill
+/// the tmpfs every run shares) and is the first thing the kernel kills if memory runs out, ahead
+/// of this host.
 /// </summary>
 public sealed class DenoSandbox(IOptions<ScriptRunnerOptions> options, ILogger<DenoSandbox> logger)
 {
@@ -56,20 +67,25 @@ public sealed class DenoSandbox(IOptions<ScriptRunnerOptions> options, ILogger<D
         Process? process = null;
         try
         {
-            var start = new ProcessStartInfo(_o.DenoPath)
+            var start = new ProcessStartInfo("choom")
             {
                 RedirectStandardInput = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
             };
-            foreach (var arg in (string[])["run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock",
+            // choom and prlimit each exec the next, so the process is Deno itself, with both applied.
+            foreach (var arg in (string[])["-n", "1000", "--",
+                         "prlimit", "--core=0", $"--data={_o.DataLimitMegabytes * 1024L * 1024}", "--",
+                         _o.DenoPath, "run", "--no-prompt", "--no-remote", "--no-npm", "--no-config", "--no-lock",
                          $"--v8-flags=--max-old-space-size={_o.HeapMegabytes}", _o.HarnessPath])
             {
                 start.ArgumentList.Add(arg);
             }
-            // Nothing of this process's environment reaches the script's.
+            // Nothing of this process's environment reaches the script's — except PATH, for choom to find prlimit.
+            var path = Environment.GetEnvironmentVariable("PATH");
             start.Environment.Clear();
+            start.Environment["PATH"] = path ?? "/usr/bin:/bin";
             start.Environment["DENO_DIR"] = cache.FullName;
             start.Environment["NO_COLOR"] = "1";
 
@@ -113,12 +129,14 @@ public sealed class DenoSandbox(IOptions<ScriptRunnerOptions> options, ILogger<D
             }
             if (process.ExitCode != 0)
             {
-                if (process.ExitCode == 133 || errors.Contains("heap limit", StringComparison.OrdinalIgnoreCase)
+                // 133: V8 aborted (SIGTRAP) at its heap limit; 137: the kernel's OOM killer.
+                if (process.ExitCode is 133 or 137 || errors.Contains("heap limit", StringComparison.OrdinalIgnoreCase)
                     || errors.Contains("out of memory", StringComparison.OrdinalIgnoreCase))
                 {
                     return RunResult.Limit($"The script used more than {_o.HeapMegabytes} MB of memory.");
                 }
-                logger.LogWarning("deno exited with {ExitCode}: {Stderr}", process.ExitCode, errors);
+                // The exit code only: stderr can quote the script and the run's data, and logs leave this box.
+                logger.LogWarning("deno exited with {ExitCode} ({StderrChars} characters on stderr)", process.ExitCode, errors.Length);
                 return RunResult.Failed($"The script could not run (exit {process.ExitCode}).");
             }
 

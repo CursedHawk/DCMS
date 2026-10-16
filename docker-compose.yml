@@ -610,7 +610,8 @@ services:
       context: .
       dockerfile: src/Services/Dcms.ScriptRunner/Dockerfile
     <<: *service-defaults
-    # Four concurrent scripts at a 64 MB heap each, plus the host. Raise with ScriptRunner__MaxConcurrency.
+    # Two concurrent scripts (ScriptRunner__MaxConcurrency) at ~150 MB each under their RLIMIT_DATA,
+    # plus the host. Raise both together.
     mem_limit: "${SCRIPT_RUNNER_MEM_LIMIT:-640m}"
     read_only: true
     tmpfs:

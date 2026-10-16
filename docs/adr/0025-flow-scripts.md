@@ -83,7 +83,9 @@ anyway.
 | --- | --- |
 | Deno permissions | net, read, write, env, run, ffi, sys |
 | `data:` loading | local-file module loads that bypass `--allow-read` |
-| V8 heap cap 64 MB | memory exhaustion: the process aborts (exit 133) |
+| V8 heap cap 64 MB | heap exhaustion: the process aborts (exit 133) |
+| `RLIMIT_DATA` 640 MB | memory outside the heap (ArrayBuffers, Wasm), which the heap cap does not count. Deno's own startup reserves ~600 MB of it, so a script gets roughly 40–80 MB more |
+| `RLIMIT_CORE` 0, `oom_score_adj` 1000 | a crash filling the shared tmpfs with core dumps; the kernel's OOM killer picking the host instead of a script |
 | Wall-clock deadline | loops: the host kills the process tree |
 | Output cap 64 KB | an oversized result: the host stops reading and kills |
 | Container: `read_only`, `cap_drop: ALL`, `no-new-privileges`, non-root, `pids_limit`, `mem_limit` | anything that escapes Deno |
@@ -96,7 +98,7 @@ An escape from Deno lands in a container that has nothing to steal and nowhere t
 
 - `code` is at most 64 KB, enforced by `ConfigValidator` and again by the runner.
 - The result is at most 64 KB.
-- A run gets 2 s of wall-clock time and a 64 MB heap.
+- A run gets 2 s of wall-clock time, a 64 MB heap and the `RLIMIT_DATA` above. Two run at once.
 - A runner timeout, memory abort or oversized output ends the run **terminated**
   (`FlowFatalException(limit: true)`).
 - A thrown error is a step failure without retry: the same input fails the same way.

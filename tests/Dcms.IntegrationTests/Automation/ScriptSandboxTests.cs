@@ -114,6 +114,9 @@ public sealed class ScriptSandboxTests(ScriptSandboxTests.Deno deno) : IClassFix
         (await Run("export default () => { const a = []; while (true) a.push('x'.repeat(1e6) + Math.random()) }"))
             .Error.Should().Contain("memory");
         (await Run("export default () => 'x'.repeat(200_000)")).Error.Should().Contain("larger than");
+        // Off the V8 heap: an ArrayBuffer is not covered by --max-old-space-size, only by RLIMIT_DATA.
+        (await Run("export default () => { const b = []; for (let i = 0; i < 12; i++) { const a = new Uint8Array(100 * 1024 * 1024); a.fill(1); b.push(a) } return b.length }"))
+            .Status.Should().NotBe("ok", "a script cannot take memory the heap cap does not count");
         (await Run("export default () => { while (true) Deno.stdout.writeSync(new Uint8Array(65536)) }")).Status.Should().Be("limit");
     }
 
