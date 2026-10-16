@@ -31,3 +31,4 @@ as their implementation phase lands.
 - [0022](0022-user-authentication.md) — User Authentication: tenant-scoped enterprise users, signed in by Identity, enforced at the edge
 - [0023](0023-google-analytics-plugin.md) — Google Analytics as a plugin: a Measurement ID per site, looked up at runtime, loaded after consent
 - [0024](0024-async-jobs.md) — One ledger for background work, live progress, and one operation per idempotency key
+- [0025](0025-flow-scripts.md) — Flow scripts run in a separate, credential-free Deno sandbox
