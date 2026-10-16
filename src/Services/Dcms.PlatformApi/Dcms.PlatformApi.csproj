@@ -5,6 +5,8 @@
          any replica. Same package and same reason as admin-api's; a different channel prefix,
          because they share one Redis. -->
     <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
+    <!-- GHSA-qhrr-8q5h-9q3h: see Directory.Packages.props. -->
+    <PackageReference Include="MessagePack" />
   </ItemGroup>
 
   <ItemGroup>

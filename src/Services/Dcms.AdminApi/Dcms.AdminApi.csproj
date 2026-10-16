@@ -5,6 +5,8 @@
     <!-- SignalR backplane for the notification hub, so a consumer on one replica reaches a
          browser connected to another. Version is pinned centrally in Directory.Packages.props. -->
     <PackageReference Include="Microsoft.AspNetCore.SignalR.StackExchangeRedis" />
+    <!-- GHSA-qhrr-8q5h-9q3h: see Directory.Packages.props. -->
+    <PackageReference Include="MessagePack" />
   </ItemGroup>
 
   <!-- The release catch-up (BUG-01) is an internal tail on a notification consumer; the
