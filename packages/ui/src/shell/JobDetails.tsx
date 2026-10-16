@@ -63,7 +63,7 @@ export function JobDetails({
     >
       {links.map((link) => (
         <Fact key={`${link.rel}:${link.path}`} label={labels.rel[link.rel] ?? link.rel}>
-          {renderLink(link, link.name ?? labels.open)}
+          {isAdminPath(link.path) ? renderLink(link, link.name ?? labels.open) : (link.name ?? link.path)}
         </Fact>
       ))}
       <Fact label={labels.trigger}>{trigger}</Fact>
@@ -108,6 +108,15 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
       <dd className="min-w-0 break-words">{children}</dd>
     </>
   );
+}
+
+/**
+ * The server's rule for a job link (`JobLinkRels.IsAdminPath`), again where it becomes a link:
+ * one leading slash, then only characters a URL carries as they are. A browser drops tabs and
+ * line breaks from an href, so `/\t/evil.example` would open another site as `//evil.example`.
+ */
+export function isAdminPath(path: string): boolean {
+  return path.length <= 512 && /^\/(?![/\\])[A-Za-z0-9\-._~!$&'()*+,;=:@%/?#]*$/.test(path);
 }
 
 /**

@@ -13,6 +13,13 @@ public class JobLinkTests
     [InlineData("javascript:alert(1)", false)]
     [InlineData("/\\evil.example", false)]
     [InlineData("", false)]
+    [InlineData("/\t/evil.example", false)]
+    [InlineData("/\n/evil.example", false)]
+    [InlineData("/\r/evil.example", false)]
+    [InlineData("/ /evil.example", false)]
+    [InlineData("\t//evil.example", false)]
+    [InlineData("/plugins/crm\n", false)]
+    [InlineData("/%2F/evil.example", true)]
     public void Only_an_admin_path_is_a_link(string path, bool ok) =>
         JobLinkRels.IsAdminPath(path).Should().Be(ok);
 }

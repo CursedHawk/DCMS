@@ -133,7 +133,7 @@ public sealed class Job
 /// <param name="Name">What is there, by name (an app, a flow, a site); data, not prose.</param>
 public sealed record JobLink(string Rel, string Path, string? Name = null);
 
-public static class JobLinkRels
+public static partial class JobLinkRels
 {
     /// <summary>The app or feature the job belongs to.</summary>
     public const string Source = "source";
@@ -149,9 +149,17 @@ public static class JobLinkRels
 
     public static readonly IReadOnlySet<string> All = new HashSet<string> { Source, Config, Run, Result };
 
-    /// <summary>An admin path: one leading slash, so never a link off the site or protocol-relative.</summary>
-    public static bool IsAdminPath(string path) =>
-        path.Length is > 0 and <= 512 && path[0] == '/' && !path.StartsWith("//", StringComparison.Ordinal) && !path.Contains('\\');
+    /// <summary>
+    /// An admin path: one leading slash, then only characters a URL carries as they are. The
+    /// consoles render it as a link, and a browser removes tabs and line breaks from a URL before
+    /// reading it, so <c>/&lt;tab&gt;/evil.example</c> would pass a "no //" check and still open
+    /// another site; a backslash reads as a slash. Whitespace, controls and backslashes are refused
+    /// outright rather than reasoned about.
+    /// </summary>
+    public static bool IsAdminPath(string path) => path.Length <= 512 && AdminPath().IsMatch(path);
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"\A/(?![/\\])[A-Za-z0-9\-._~!$&'()*+,;=:@%/?#]*\z")]
+    private static partial System.Text.RegularExpressions.Regex AdminPath();
 }
 
 public static class JobLanes
