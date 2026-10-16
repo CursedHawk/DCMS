@@ -147,6 +147,11 @@ public sealed class ImportTests(ContentFlowFixture fixture)
         job.GetProperty("status").GetString().Should().Be("Succeeded", job.ToString());
         job.GetProperty("result").GetProperty("created").GetInt32().Should().Be(1100);
         job.GetProperty("done").GetInt64().Should().Be(job.GetProperty("total").GetInt64());
+        // Where it came from (added by the runtime for every plugin job) and where its rows are.
+        var links = job.GetProperty("links").EnumerateArray()
+            .Select(l => (l.GetProperty("rel").GetString(), l.GetProperty("path").GetString(), l.GetProperty("name").GetString())).ToList();
+        links.Should().Contain(("source", "/plugins/crm", "CRM"));
+        links.Should().Contain(("result", "/plugins/crm/records?table=companies", "companies"));
         (await app.JsonAsync(HttpMethod.Get, "/_records/companies?pageSize=1", ct)).GetProperty("total").GetInt32().Should().Be(1100);
 
         // One bad row among 1,100 more: the job reports it, and writes none of them.

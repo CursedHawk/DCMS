@@ -361,3 +361,22 @@ test("the maker's default view opens the table, and a member filters and saves a
     definition: { columns: ['title', 'amount'], sort: [{ field: 'amount', direction: 'desc' }], filter: { and: [{ field: 'stage', op: 'in', value: ['won'] }] } },
   });
 });
+
+test("a job's run link opens the configuration on that run's steps", async ({ page, api }) => {
+  const RUN = 'dddddddd-0000-0000-0000-000000000001';
+  api.on('GET', `/api/admin/plugins/crm/_automation/runs/${RUN}`, {
+    run: {
+      id: RUN, flow: 'kpi_hourly', revision: 1, status: 'succeeded', trigger: 'schedule', attempts: 1, depth: 0, writes: 5,
+      correlationId: null, causationId: null, error: null, createdAt: '2026-10-16T08:01:42Z',
+      startedAt: '2026-10-16T08:01:42Z', finishedAt: '2026-10-16T08:01:43Z',
+    },
+    steps: [{ stepId: 'count', action: 'records.query@1', status: 'succeeded', attempt: 1, input: {}, output: {}, error: null,
+      startedAt: '2026-10-16T08:01:42Z', finishedAt: '2026-10-16T08:01:43Z' }],
+    triggerEvent: null,
+    chain: [],
+  });
+  await page.goto(`/plugins/crm/configuration?tab=automation&run=${RUN}`);
+
+  await expect(page.getByRole('dialog')).toContainText('kpi_hourly');
+  await expect(page.getByRole('dialog')).toContainText('count');
+});

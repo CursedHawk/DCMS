@@ -40,6 +40,7 @@ public sealed class JobQueue(
             RequiredPermission = spec.RequiredPermission,
             LinkPath = spec.LinkPath,
             Routine = spec.Routine,
+            LinksJson = spec.Links is { Count: > 0 } links ? JsonSerializer.Serialize(links, JsonSerializerOptions.Web) : null,
             Total = spec.Total,
             PayloadJson = spec.Payload is null ? null : JsonSerializer.Serialize(spec.Payload, JsonSerializerOptions.Web),
             // Who asked, carried to the worker so what it records names them, not the worker.

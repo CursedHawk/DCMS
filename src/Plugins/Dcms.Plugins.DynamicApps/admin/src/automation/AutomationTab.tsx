@@ -31,6 +31,7 @@ import {
 import { Item, Muted, Section } from '../model/ModelTab';
 import { FlowDialog } from './FlowDialog';
 import { SelectField } from '../model/dialogs';
+import { deepLink } from '../deepLink';
 
 const STATUS_VARIANT: Record<FlowRunSummary['status'], 'default' | 'secondary' | 'outline' | 'destructive'> = {
   pending: 'outline',
@@ -57,9 +58,11 @@ export function AutomationTab({ slug, config, editable, onSelect }: {
   const actions = useActions(slug);
   const [editing, setEditing] = useState<{ flow?: FlowDef } | null>(null);
   const [deleting, setDeleting] = useState<FlowDef | null>(null);
-  const [flowFilter, setFlowFilter] = useState('');
+  // A job's links open here on its flow (?flow=) or straight on its run (?run=).
+  const [linkedFlow] = useState(() => deepLink('flow'));
+  const [flowFilter, setFlowFilter] = useState(() => linkedFlow ?? '');
   const [statusFilter, setStatusFilter] = useState('');
-  const [openRun, setOpenRun] = useState<string | null>(null);
+  const [openRun, setOpenRun] = useState<string | null>(() => deepLink('run'));
   const runs = useRuns(slug, flowFilter || null, statusFilter || null);
   const flows = config?.flows ?? [];
   const tableName = (id?: string) => config?.tables.find((x) => x.id === id)?.apiName;
@@ -88,7 +91,9 @@ export function AutomationTab({ slug, config, editable, onSelect }: {
     <div className="space-y-6 pt-2">
       <Section title={t('automation.flows')} onAdd={editable && config ? () => setEditing({}) : undefined}>
         {flows.length === 0 ? <Muted>{t('automation.noFlows')}</Muted> : flows.map((flow) => (
-          <div key={flow.id} className="flex items-center gap-1" onFocus={() => onSelect(flow.id)}>
+          <div key={flow.id} onFocus={() => onSelect(flow.id)}
+            className={`flex items-center gap-1 ${flow.apiName === linkedFlow ? 'rounded-md ring-2 ring-primary/40' : ''}`}
+            data-linked={flow.apiName === linkedFlow ? 'true' : undefined}>
             <div className="min-w-0 flex-1">
               <Item
                 title={`${flow.displayName}${flow.enabled ? '' : ` · ${t('automation.disabled')}`}`}

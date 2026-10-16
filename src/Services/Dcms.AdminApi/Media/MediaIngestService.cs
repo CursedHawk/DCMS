@@ -236,7 +236,8 @@ public sealed class MediaIngestService(
                 $"media.process.{sniff.Category.ToString().ToLowerInvariant()}", tenantId, null,
                 "jobs.kinds.mediaProcess.title", new { name = asset.FileName },
                 RequiredPermission: PlatformPermissions.MediaRead, ParentId: parentJobId,
-                Cancelable: false, Lane: "media", LinkPath: "/media",
+                Cancelable: false, Lane: "media",
+                Links: [new JobLink(JobLinkRels.Result, "/media", asset.FileName)],
                 DedupeKey: $"media:{assetId}"), ct);
             try
             {

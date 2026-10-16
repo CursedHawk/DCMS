@@ -22,6 +22,11 @@ namespace Dcms.AdminApi.Jobs;
 /// handler's own <see cref="JobFailedException"/> detail is meant for them and is shown.
 /// </param>
 /// <param name="Retryable">Whether <c>POST …/retry</c> would do anything.</param>
+/// <param name="Routine">Work nobody is waiting on (a schedule's tick); see <see cref="Job.Routine"/>.</param>
+/// <param name="Links">
+/// Where it comes from and where to read more (<see cref="JobLinkRels"/>), admin SPA paths. A
+/// job's <see cref="Job.LinkPath"/> is its <c>result</c> link.
+/// </param>
 public sealed record JobDto(
     Guid Id,
     Guid? TenantId,
@@ -52,7 +57,9 @@ public sealed record JobDto(
     DateTimeOffset UpdatedAt,
     long Seq,
     JsonElement? Result,
-    JobOriginDto Origin)
+    JobOriginDto Origin,
+    bool Routine,
+    IReadOnlyList<JobLink> Links)
 {
     /// <param name="members">The viewing tenant's members' emails by user id; the only names a tenant is shown.</param>
     public static JobDto From(
@@ -67,7 +74,19 @@ public sealed record JobDto(
         j.Status is JobStatus.Failed or JobStatus.Canceled && (JobDispatch.IsDispatched(j.Lane) || j.Lane == JobLanes.Group),
         j.Attempts, j.MaxAttempts, j.ActorUserId, j.CreatedAt, j.StartedAt, j.FinishedAt, j.UpdatedAt, j.Seq,
         j.ResultJson is null ? null : JsonDocument.Parse(j.ResultJson).RootElement.Clone(),
-        JobOriginDto.From(j, forOperator, members));
+        JobOriginDto.From(j, forOperator, members),
+        j.Routine,
+        LinksOf(j));
+
+    private static List<JobLink> LinksOf(Job j)
+    {
+        var links = j.LinksJson is null ? [] : JsonSerializer.Deserialize<List<JobLink>>(j.LinksJson, JsonSerializerOptions.Web) ?? [];
+        if (j.LinkPath is { } result && links.All(l => l.Rel != JobLinkRels.Result))
+        {
+            links.Add(new JobLink(JobLinkRels.Result, result));
+        }
+        return links;
+    }
 }
 
 /// <summary>

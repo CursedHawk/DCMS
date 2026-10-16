@@ -6,3 +6,4 @@ export * from './UserMenu';
 export * from './nav';
 export * from './NotificationBell';
 export * from './JobsIndicator';
+export * from './JobDetails';

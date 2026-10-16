@@ -20,6 +20,7 @@ namespace Dcms.Shared.Jobs;
 /// </param>
 /// <param name="Total">The amount of work, when known up front.</param>
 /// <param name="Routine">Work nobody is waiting on; see <see cref="Job.Routine"/>.</param>
+/// <param name="Links">Where it comes from and where to read more; see <see cref="Job.LinksJson"/>.</param>
 public sealed record JobSpec(
     string Kind,
     Guid? TenantId,
@@ -35,7 +36,8 @@ public sealed record JobSpec(
     long? Total = null,
     string? LinkPath = null,
     int MaxAttempts = 3,
-    bool Routine = false);
+    bool Routine = false,
+    IReadOnlyList<JobLink>? Links = null);
 
 /// <param name="Existing">True when a job with the same dedupe key was already there and nothing was enqueued.</param>
 public sealed record JobRef(Guid Id, bool Existing = false);

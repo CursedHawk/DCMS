@@ -26,6 +26,9 @@ import { AutomationTab } from './automation/AutomationTab';
 import { AccessTab } from './AccessTab';
 import { RevisionsTab } from './RevisionsTab';
 import { PublishDialog } from './PublishDialog';
+import { deepLink } from './deepLink';
+
+const TABS = ['model', 'automation', 'access', 'revisions'];
 
 /**
  * The application's control plane (instance screen "configuration"): its tables, automations,
@@ -56,7 +59,7 @@ export function ConfigurationScreen({ instance }: PluginScreenProps) {
       setAiPending(false);
     }
   };
-  const [tab, setTab] = useState('model');
+  const [tab, setTab] = useState(() => (TABS.includes(deepLink('tab') ?? '') ? deepLink('tab')! : 'model'));
   const [selection, setSelection] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [discarding, setDiscarding] = useState(false);

@@ -37,6 +37,20 @@ export interface JobDto {
   result: unknown;
   /** Who or what started it, from the request it was enqueued under. */
   origin: JobOrigin;
+  /** Work nobody is waiting on (a schedule's tick): kept out of the popover once it succeeds. */
+  routine: boolean;
+  /** Where it comes from and where to read more, as admin console paths. */
+  links: JobLink[];
+}
+
+export type JobLinkRel = 'source' | 'config' | 'run' | 'result';
+
+export interface JobLink {
+  rel: JobLinkRel;
+  /** An admin console path, e.g. `/plugins/crm/configuration?tab=automation&run=…`. */
+  path: string;
+  /** What is there, by name (an app, a flow, a table); null when the path says it all. */
+  name: string | null;
 }
 
 export interface JobOrigin {

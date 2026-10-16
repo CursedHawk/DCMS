@@ -3,15 +3,31 @@ import { ChevronDown, ChevronRight, Loader, TriangleAlert, X } from 'lucide-reac
 import { useState } from 'react';
 import { toast } from 'sonner';
 import {
-  Button, CenteredSpinner, DataTable, EmptyState, JobRow, StatCard, Tabs, TabsList, TabsTrigger, cn,
-  type Column,
+  Button, CenteredSpinner, DataTable, EmptyState, JobDetails, JobRow, StatCard, Tabs, TabsList, TabsTrigger, cn,
+  type Column, type JobDetailsLabels,
 } from '@dcms/ui';
 import { can, Perm, useMe } from '../../lib/permissions';
 import {
   type Job, type JobListFilter, type JobScope, type QueueDepth, type TenantJobSummary,
   useCancelJob, useJob, useJobOverview, useJobs, useRetryJob,
 } from './api';
-import { jobDetail, jobOrigin, jobTitle, STATUS_LABEL } from './render';
+import { jobDetail, jobOrigin, jobTitle, jobTrigger, STATUS_LABEL } from './render';
+
+const DETAIL_LABELS: JobDetailsLabels = {
+  rel: { source: 'Source', config: 'Configuration', run: 'Run details', result: 'Result' },
+  open: 'Open',
+  trigger: 'Trigger',
+  queued: 'Queued',
+  started: 'Started',
+  finished: 'Finished',
+  duration: 'Duration',
+  attempts: 'Attempts',
+  attemptsValue: (attempt, max) => `${attempt} of ${max}`,
+  progress: 'Progress',
+  error: 'Error',
+  outcome: 'Outcome',
+  id: 'Job ID',
+};
 
 const FILTERS: { id: JobListFilter; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -167,36 +183,50 @@ const TENANT_COLUMNS: Column<TenantJobSummary>[] = [
 
 function JobEntry({ job, initiallyOpen, mayManage }: { job: Job; initiallyOpen: boolean; mayManage: boolean }) {
   const isGroup = job.lane === 'group';
-  const [open, setOpen] = useState(initiallyOpen && isGroup);
-  const detail = useJob(open ? job.id : undefined);
+  const [open, setOpen] = useState(initiallyOpen);
+  const detail = useJob(open && isGroup ? job.id : undefined);
 
   return (
     <div className={cn('border-b border-border last:border-b-0', initiallyOpen && 'bg-primary/[0.03]')}>
       <div className="flex items-start">
-        {isGroup ? (
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-            aria-label="Items"
-            className="mt-2.5 pl-2 text-muted-foreground hover:text-foreground"
-          >
-            {open ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
-          </button>
-        ) : (
-          <span className="w-6" aria-hidden />
-        )}
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-label="Details"
+          className="mt-2.5 pl-2 text-muted-foreground hover:text-foreground"
+        >
+          {open ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
+        </button>
         <div className="min-w-0 flex-1">
           <JobLine job={job} mayManage={mayManage} withTenant />
         </div>
       </div>
       {open ? (
-        <div className="ml-6 border-l border-border bg-muted/20">
-          {detail.isLoading ? (
-            <CenteredSpinner />
-          ) : (
-            detail.data?.children.map((c) => <JobLine key={c.id} job={c} mayManage={mayManage} withTenant={false} />)
-          )}
+        <div className="ml-6">
+          <JobDetails
+            job={job}
+            labels={DETAIL_LABELS}
+            trigger={jobTrigger(job)}
+            stage={job.status === 'Running' ? jobDetail(job) : undefined}
+            error={job.status === 'Failed' ? jobDetail(job) : undefined}
+            // Paths in the tenant's own console: named, with the path for whoever goes there.
+            renderLink={(link, label) => (
+              <span>
+                {label} <span className="font-mono text-muted-foreground">{link.path}</span>
+              </span>
+            )}
+          />
+          {isGroup ? (
+            <div className="border-l border-border bg-muted/20">
+              <p className="px-3 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Items</p>
+              {detail.isLoading ? (
+                <CenteredSpinner />
+              ) : (
+                detail.data?.children.map((c) => <JobLine key={c.id} job={c} mayManage={mayManage} withTenant={false} />)
+              )}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

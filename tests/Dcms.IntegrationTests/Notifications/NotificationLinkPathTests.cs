@@ -109,7 +109,8 @@ public class NotificationLinkPathTests
     }
 
     /// <summary>
-    /// Every literal assigned to a <c>LinkPath:</c> argument across the services, with the file
+    /// Every literal assigned to a <c>LinkPath:</c> argument across the services, and every path
+    /// a job link (<c>JobLink</c>, <c>TrackedJobLink</c>; ADR 0024) is built with, with the file
     /// that produced it. Interpolation holes become a <c>$param</c> segment so they match a
     /// parameterised route, which is exactly what <c>/sites/{evt.SiteId}</c> is.
     /// </summary>
@@ -126,9 +127,9 @@ public class NotificationLinkPathTests
             }
 
             var text = File.ReadAllText(file);
-            if (!text.Contains("LinkPath")) continue;
+            if (!text.Contains("LinkPath") && !text.Contains("JobLink(")) continue;
 
-            foreach (Match match in Regex.Matches(text, @"LinkPath:\s*\$?""(?<value>[^""]*)"""))
+            foreach (Match match in Regex.Matches(text, @"(?:LinkPath:|JobLink\([^,()]+,)\s*\$?""(?<value>[^""]*)"""))
             {
                 var raw = match.Groups["value"].Value;
                 if (raw.Length == 0) continue;

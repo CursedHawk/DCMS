@@ -13,6 +13,7 @@ const JOB = {
   attempts: 1, maxAttempts: 3, actorUserId: null, createdAt: '2026-10-15T10:00:00Z', startedAt: null,
   finishedAt: null, updatedAt: '2026-10-15T10:00:00Z', seq: 2,
   origin: { actorKind: 'User', actorName: 'ana@example.test', service: 'admin-api', traceId: '4bf92f3577b34da6a3ce929d0e0e4736' },
+  routine: false, links: [{ rel: 'source', path: '/media', name: null }],
 };
 
 test('the console shows every tenant’s jobs and follows pushed progress', async ({ page, api, hub }) => {
@@ -44,6 +45,18 @@ test('the jobs page shows backlog per tenant and a queue with no worker', async 
   await expect(page.getByRole('heading', { name: 'Background jobs' })).toBeVisible();
   await expect(page.getByText('nobody').first()).toBeVisible();
   await expect(page.getByText('Acme').first()).toBeVisible();
+});
+
+test('a job’s details name where it came from, with the tenant console path', async ({ page, api }) => {
+  api.on('GET', '/api/platform/jobs/overview', { tenants: [], queues: [] });
+  api.on('GET', '/api/platform/jobs', { items: [JOB], nextCursor: null });
+  await page.goto(`/jobs?job=${JOB.id}`);
+
+  const details = page.getByTestId('job-details');
+  await expect(details).toContainText('Started by ana@example.test');
+  await expect(details).toContainText('Source');
+  await expect(details).toContainText('/media');
+  await expect(details.getByRole('link')).toHaveCount(0);
 });
 
 test('an operator without platform:jobs:read gets no ring', async ({ page, api }) => {

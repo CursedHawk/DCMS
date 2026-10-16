@@ -1302,7 +1302,34 @@
       "by": "spustil(a) {{name}}",
       "plugin": "přes plugin {{name}}",
       "automatic": "automaticky",
-      "outside": "spustil(a) někdo mimo tento pracovní prostor"
+      "outside": "spustil(a) někdo mimo tento pracovní prostor",
+      "schedule": "podle plánu"
+    },
+    "trigger": {
+      "schedule": "Podle plánu",
+      "by": "Spustil(a) {{name}}",
+      "plugin": "Spustil plugin {{name}}",
+      "outside": "Spustil(a) někdo mimo tento pracovní prostor",
+      "automatic": "Automaticky"
+    },
+    "detail": {
+      "toggle": "Podrobnosti",
+      "source": "Zdroj",
+      "config": "Konfigurace",
+      "run": "Podrobnosti běhu",
+      "result": "Výsledek",
+      "open": "Otevřít",
+      "trigger": "Spouštěč",
+      "queued": "Zařazeno",
+      "started": "Zahájeno",
+      "finished": "Dokončeno",
+      "duration": "Trvání",
+      "attempts": "Pokusy",
+      "attemptsValue": "{{attempt}} z {{max}}",
+      "progress": "Průběh",
+      "error": "Chyba",
+      "outcome": "Výsledek běhu",
+      "id": "ID úlohy"
     },
     "filter": {
       "all": "Vše",

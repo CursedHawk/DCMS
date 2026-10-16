@@ -55,8 +55,8 @@ export function JobsIndicator({ enabled }: { enabled: boolean }) {
           onError: () => toast.error(t('jobs.notRetryable')),
         })
       }
-      // Where the work's result lives when it has one (the site, the media library), else the job.
-      onOpenItem={(job) => void navigate(linkTarget(job.linkPath ?? `/jobs?job=${job.id}`))}
+      // The job's details: where it came from, its configuration and run, and what it produced.
+      onOpenItem={(job) => void navigate(linkTarget(`/jobs?job=${job.id}`))}
       onViewAll={() => void navigate({ to: '/jobs' as string })}
     />
   );

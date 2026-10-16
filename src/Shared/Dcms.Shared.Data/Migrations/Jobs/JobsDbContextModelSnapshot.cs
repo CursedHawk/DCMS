@@ -117,6 +117,9 @@ namespace Dcms.Shared.Data.Migrations.Jobs
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
+                    b.Property<string>("LinksJson")
+                        .HasColumnType("jsonb");
+
                     b.Property<int>("MaxAttempts")
                         .HasColumnType("integer");
 

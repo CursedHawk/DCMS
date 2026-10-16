@@ -49,7 +49,8 @@ public sealed class RecordBulkJob(RecordService records) : IPluginJobHandler
             JsonSerializer.SerializeToElement(payload, JsonSerializerOptions.Web),
             TitleKey: $"jobs.kinds.records.{op.Replace("-", "")}.title",
             TitleParams: new Dictionary<string, string> { ["table"] = table, ["count"] = count.ToString() },
-            RequiredPermission: permission), ct);
+            RequiredPermission: permission,
+            Links: [new TrackedJobLink("result", $"/plugins/{context.Instance?.Slug}/records?table={Uri.EscapeDataString(table)}", table)]), ct);
     }
 
     public async Task RunAsync(JsonElement? payload, IPluginContext context, CancellationToken ct)

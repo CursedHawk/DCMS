@@ -53,6 +53,7 @@ public static class PluginContextExtensions
 /// <param name="RequiredPermission">One of the plugin's own permissions (<c>data-import</c>): who besides the starter sees, cancels and retries it.</param>
 /// <param name="DedupeKey">Same key, same tenant: the enqueue returns the job already there.</param>
 /// <param name="Cancelable">Whether the handler stops when <see cref="IPluginJobRun.Cancellation"/> fires.</param>
+/// <param name="Links">Where to read more about it; the instance it belongs to is added for you.</param>
 public sealed record TrackedJobEnqueue(
     string Name,
     JsonElement? Payload = null,
@@ -61,7 +62,20 @@ public sealed record TrackedJobEnqueue(
     string? TitleKey = null,
     IReadOnlyDictionary<string, string>? TitleParams = null,
     string? RequiredPermission = null,
-    bool Cancelable = true);
+    bool Cancelable = true,
+    IReadOnlyList<TrackedJobLink>? Links = null);
+
+/// <summary>
+/// A place in the admin console a tracked job points to, shown on the job's details.
+/// </summary>
+/// <param name="Rel">
+/// <c>config</c> (what defines the work, e.g. a flow), <c>run</c> (the work's own detailed record),
+/// <c>result</c> (what it produced) or <c>source</c> (where it belongs; defaults to the plugin
+/// instance's page).
+/// </param>
+/// <param name="Path">An admin path starting with a single <c>/</c>, e.g. <c>/plugins/crm/configuration?tab=automation</c>.</param>
+/// <param name="Name">What is there, by name: a flow's or table's name. Not a sentence.</param>
+public sealed record TrackedJobLink(string Rel, string Path, string? Name = null);
 
 public sealed record JobTicket(Guid JobId);
 
@@ -75,6 +89,7 @@ public sealed record JobTicket(Guid JobId);
 /// Work nobody is waiting on, such as a schedule's tick: listed like any job, but a success is
 /// left out of the "recently finished" people glance at.
 /// </param>
+/// <param name="Links">Where to read more about it; the instance it belongs to is added for you.</param>
 public sealed record TrackedJobMirror(
     string Name,
     Guid Id,
@@ -82,7 +97,8 @@ public sealed record TrackedJobMirror(
     IReadOnlyDictionary<string, string>? TitleParams = null,
     string? RequiredPermission = null,
     string? LinkPath = null,
-    bool Routine = false);
+    bool Routine = false,
+    IReadOnlyList<TrackedJobLink>? Links = null);
 
 /// <param name="Status">Null for progress alone; otherwise Running, Succeeded, Failed or Canceled.</param>
 public sealed record TrackedJobReport(

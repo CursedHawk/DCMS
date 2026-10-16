@@ -45,6 +45,7 @@ import {
   usePluginT,
   type PluginScreenProps,
 } from '@dcms/plugin-ui';
+import { deepLink } from './deepLink';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ImportDialog } from './ImportDialog';
 import {
@@ -96,9 +97,11 @@ export function RecordsScreen({ instance }: PluginScreenProps) {
   const published = useRecordsModel(slug);
   const config = published.data?.config ?? null;
   const [tableId, setTableId] = useState<string>('');
+  // A job's link opens on the table it worked on (?table=, by api name).
+  const [linkedTable] = useState(() => deepLink('table'));
 
   const tables = config?.tables.filter((x) => x.enabled) ?? [];
-  const table = tables.find((x) => x.id === tableId) ?? tables[0] ?? null;
+  const table = tables.find((x) => x.id === tableId) ?? tables.find((x) => x.apiName === linkedTable) ?? tables[0] ?? null;
 
   if (published.isLoading) return <CenteredSpinner />;
   if (!config || !table) {

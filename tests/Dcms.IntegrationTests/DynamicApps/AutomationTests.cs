@@ -257,7 +257,16 @@ public sealed class AutomationTests(ContentFlowFixture fixture)
 
         // On the jobs ledger as routine work: on the jobs page, not in the popover's "recently finished".
         var runId = Guid.Parse(run.GetProperty("id").GetString()!);
-        await JobAsync(app, runId, j => j.GetProperty("status").GetString() == "Succeeded", ct);
+        var job = await JobAsync(app, runId, j => j.GetProperty("status").GetString() == "Succeeded", ct);
+        job.GetProperty("routine").GetBoolean().Should().BeTrue();
+        // Where it came from, the flow that defines it, and this run's own steps.
+        job.GetProperty("links").EnumerateArray()
+            .Select(l => (l.GetProperty("rel").GetString(), l.GetProperty("path").GetString()))
+            .Should().BeEquivalentTo([
+                ("source", "/plugins/crm"),
+                ("config", "/plugins/crm/configuration?tab=automation&flow=tick"),
+                ("run", $"/plugins/crm/configuration?tab=automation&run={runId}"),
+            ]);
         (await JobIdsAsync(app, "finished", ct)).Should().Contain(runId);
         (await JobIdsAsync(app, "recent", ct)).Should().NotContain(runId, "an hourly tick that went fine is not news");
     }

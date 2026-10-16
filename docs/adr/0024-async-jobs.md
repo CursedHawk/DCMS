@@ -107,6 +107,22 @@ log:
 - an email only for one of its own members, taken from the membership directory,
 - never a platform operator's email, a service client's id, or which process queued the job.
 
+**Where to read more.** A job also carries links (`Job.LinksJson`), set when it is created, each an
+admin console path with a rel and, where it helps, the name of what is there:
+
+| Rel | Points to | Example |
+|---|---|---|
+| `source` | The app or feature it belongs to | The Dynamic Apps instance, the site |
+| `config` | What defines the work | The flow, opened on the app's Automation tab |
+| `run` | The work's own detailed record | The flow run's steps |
+| `result` | What it produced | The table imported into; `Job.LinkPath` reads as this |
+
+Both jobs pages open any job into a details panel with these links, the trigger (a schedule, a
+named person, or automatic), its timing, attempts, error and a summary of its result. The popover
+opens a job there. The admin console follows the links. The platform console only names them,
+because they are paths in the tenant's console. A link must be an admin path, starting with a
+single `/`, since the console renders it as a link.
+
 ### Push
 
 **Every ledger write publishes `jobs.changed`.** The message carries id, status and counts, and
@@ -168,6 +184,10 @@ of it. This was decided with the user.
   run's progress, cancellation and result through `PluginJobRun.Current`.
 - **`TrackAsync`:** shows work the plugin runs itself on its own queue.
 - **`ReportAsync`:** moves that tracked work on. It is confined to the caller's own tracked work.
+
+Both `EnqueueAsync` and `TrackAsync` take `Links` (`TrackedJobLink`), checked by the runtime. The
+runtime adds the instance's page as the `source` link unless the plugin named one, so every plugin
+job says which app it belongs to.
 
 `@1` and the interval scheduler stay on `PLUGIN_JOBS`, untracked. A once-a-minute job per tenant
 does not belong on a ledger people read.

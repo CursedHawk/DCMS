@@ -124,12 +124,20 @@ public sealed class FlowRunQueue(AppsDbContext db, IPluginContext context, Confi
     {
         try
         {
+            var name = string.IsNullOrEmpty(flow.DisplayName) ? flow.ApiName : flow.DisplayName;
+            var slug = context.Instance?.Slug;
             await context.Contracts.Get<IPluginTrackedJobs>().TrackAsync(new TrackedJobMirror(
                 FlowExecutor.TrackedName, runId, "jobs.kinds.flowRun.title",
-                new Dictionary<string, string> { ["flow"] = string.IsNullOrEmpty(flow.DisplayName) ? flow.ApiName : flow.DisplayName },
+                new Dictionary<string, string> { ["flow"] = name },
                 // The automation runs page's own gate: the job shows the same run, so the same people.
                 RequiredPermission: "data-read",
-                Routine: routine), ct);
+                Routine: routine,
+                // The flow's definition and this run's steps, both on the app's Automation tab.
+                Links:
+                [
+                    new TrackedJobLink("config", $"/plugins/{slug}/configuration?tab=automation&flow={Uri.EscapeDataString(flow.ApiName)}", name),
+                    new TrackedJobLink("run", $"/plugins/{slug}/configuration?tab=automation&run={runId}"),
+                ]), ct);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {

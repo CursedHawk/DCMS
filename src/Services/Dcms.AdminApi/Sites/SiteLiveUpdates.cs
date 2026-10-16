@@ -1,3 +1,4 @@
+using Dcms.Shared.Data.Jobs;
 using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Jobs;
 using Dcms.Shared.Security;
@@ -91,7 +92,8 @@ public sealed class SiteLiveUpdates(
                 "site.build", tenantId, null, "jobs.kinds.siteBuild.title",
                 new { site = siteName ?? "", branch = build.Branch ?? "" },
                 RequiredPermission: PlatformPermissions.SiteEdit, Id: build.Id, Cancelable: false,
-                Lane: "sites", LinkPath: $"/sites/{build.SiteId}"), ct);
+                // The site's page is where it comes from and where its deployments and their logs are.
+                Lane: "sites", Links: [new JobLink(JobLinkRels.Source, $"/sites/{build.SiteId}", siteName)]), ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

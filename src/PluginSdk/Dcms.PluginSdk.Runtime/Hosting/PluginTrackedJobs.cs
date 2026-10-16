@@ -2,6 +2,7 @@ using System.Text.Json;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
+using Dcms.Shared.Data.Jobs;
 using Dcms.Shared.Jobs;
 using Dcms.Shared.Security;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,8 +45,9 @@ public sealed partial class PluginTrackedJobs(IPluginContext caller, PluginRegis
             DedupeKey: $"{KindPrefix}{caller.PluginId}:{input.Name}:{input.Id}",
             Cancelable: false,
             Lane: MirrorLane,
-            LinkPath: input.LinkPath,
-            Routine: input.Routine), ct);
+            LinkPath: input.LinkPath is { } path ? AdminPath(path) : null,
+            Routine: input.Routine,
+            Links: Links(input.Links)), ct);
         return new JobTicket(job.Id);
     }
 
@@ -93,9 +95,43 @@ public sealed partial class PluginTrackedJobs(IPluginContext caller, PluginRegis
                 ? PlatformPermissions.ForPlugin(caller.PluginId, permission)
                 : null,
             DedupeKey: input.DedupeKey is { } key ? $"{kind}:{key}" : null,
-            Cancelable: input.Cancelable), ct);
+            Cancelable: input.Cancelable,
+            Links: Links(input.Links)), ct);
         return new JobTicket(job.Id);
     }
+
+    /// <summary>
+    /// The plugin's links, checked, with the instance's page as the source unless it named one:
+    /// every plugin job can say which app it belongs to without the plugin having to.
+    /// </summary>
+    private List<JobLink> Links(IReadOnlyList<TrackedJobLink>? given)
+    {
+        if (given is { Count: > 8 })
+        {
+            throw new ContractValidationException("A tracked job has at most 8 links.");
+        }
+        var links = (given ?? []).Select(l =>
+        {
+            if (!JobLinkRels.All.Contains(l.Rel))
+            {
+                throw new ContractValidationException($"A job link's rel is one of {string.Join(", ", JobLinkRels.All)}.");
+            }
+            if (l.Name is { Length: > 200 })
+            {
+                throw new ContractValidationException("A job link's name is at most 200 characters.");
+            }
+            return new JobLink(l.Rel, AdminPath(l.Path), l.Name);
+        }).ToList();
+        if (caller.Instance is { } instance && links.All(l => l.Rel != JobLinkRels.Source))
+        {
+            links.Insert(0, new JobLink(JobLinkRels.Source, $"/plugins/{instance.Slug}", instance.Name));
+        }
+        return links;
+    }
+
+    private static string AdminPath(string path) => JobLinkRels.IsAdminPath(path)
+        ? path
+        : throw new ContractValidationException("A job link must be an admin path starting with a single '/'.");
 }
 
 /// <summary>

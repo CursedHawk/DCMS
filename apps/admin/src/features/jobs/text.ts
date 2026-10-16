@@ -24,9 +24,21 @@ export function jobText(t: TFunction, job: Job): { title: string; detail?: strin
  */
 function jobOrigin(t: TFunction, job: Job): string {
   const { actorKind, actorName } = job.origin;
+  if (job.routine) return t('jobs.origin.schedule');
   if (actorKind === 'Plugin' && actorName) return t('jobs.origin.plugin', { name: actorName });
   if (actorKind === 'User' || actorKind === 'EndUser') {
     return actorName ? t('jobs.origin.by', { name: actorName }) : t('jobs.origin.outside');
   }
   return t('jobs.origin.automatic');
+}
+
+/** The details panel's "Trigger": "On a schedule", "Started by ana@example.com", "Automatic". */
+export function jobTrigger(t: TFunction, job: Job): string {
+  const { actorKind, actorName } = job.origin;
+  if (job.routine) return t('jobs.trigger.schedule');
+  if (actorKind === 'Plugin' && actorName) return t('jobs.trigger.plugin', { name: actorName });
+  if (actorKind === 'User' || actorKind === 'EndUser') {
+    return actorName ? t('jobs.trigger.by', { name: actorName }) : t('jobs.trigger.outside');
+  }
+  return t('jobs.trigger.automatic');
 }

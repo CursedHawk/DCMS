@@ -1,4 +1,5 @@
-import { useSearch } from '@tanstack/react-router';
+import { Link, useSearch } from '@tanstack/react-router';
+import type { TFunction } from 'i18next';
 import { ChevronDown, ChevronRight, Loader } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -6,7 +7,9 @@ import { toast } from 'sonner';
 import {
   CenteredSpinner,
   EmptyState,
+  JobDetails,
   JobRow,
+  type JobDetailsLabels,
   Page,
   PageHeader,
   Tabs,
@@ -15,14 +18,15 @@ import {
   cn,
 } from '@dcms/ui';
 import { type Job, type JobListFilter, useCancelJob, useJob, useJobs, useRetryJob } from './api';
-import { jobText } from './text';
+import { linkTarget } from '../notifications/linkPath';
+import { jobText, jobTrigger } from './text';
 
 const FILTERS: JobListFilter[] = ['all', 'active', 'failed'];
 
 /**
- * Every background job in the workspace, newest first, with a group's items under it. The
- * popover is the glance; this is where you go to see what a failed import did with each file.
- * `?job=` (from a popover row) opens that job's items.
+ * Every background job in the workspace, newest first. The popover is the glance; this is where
+ * you go to see where a job came from, what defines it, its run details, and what a failed import
+ * did with each file. `?job=` (from a popover row) opens that job.
  */
 export function JobsPage() {
   const { t } = useTranslation();
@@ -62,42 +66,83 @@ export function JobsPage() {
 }
 
 function JobEntry({ job, initiallyOpen }: { job: Job; initiallyOpen: boolean }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isGroup = job.lane === 'group';
-  const [open, setOpen] = useState(initiallyOpen && isGroup);
-  const detail = useJob(open ? job.id : undefined);
+  const [open, setOpen] = useState(initiallyOpen);
+  // A group's items come with its detail; any other job already has everything on its row.
+  const detail = useJob(open && isGroup ? job.id : undefined);
+  const text = jobText(t, job);
 
   return (
     <div className={cn('border-b last:border-b-0', initiallyOpen && 'bg-primary/[0.03]')}>
       <div className="flex items-start">
-        {isGroup ? (
-          <button
-            type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-            aria-label={t('jobs.children')}
-            className="mt-2.5 pl-2 text-muted-foreground hover:text-foreground"
-          >
-            {open ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
-          </button>
-        ) : (
-          <span className="w-6" aria-hidden />
-        )}
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-label={t('jobs.detail.toggle')}
+          className="mt-2.5 pl-2 text-muted-foreground hover:text-foreground"
+        >
+          {open ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
+        </button>
         <div className="min-w-0 flex-1">
           <JobLine job={job} />
         </div>
       </div>
       {open ? (
-        <div className="ml-6 border-l bg-muted/20">
-          {detail.isLoading ? (
-            <CenteredSpinner />
-          ) : (
-            detail.data?.children.map((child) => <JobLine key={child.id} job={child} />)
-          )}
+        <div className="ml-6">
+          <JobDetails
+            job={job}
+            labels={detailLabels(t)}
+            locale={i18n.language}
+            trigger={jobTrigger(t, job)}
+            stage={job.status === 'Running' ? text.detail : undefined}
+            error={job.status === 'Failed' ? (job.errorDetail ?? text.detail) : undefined}
+            renderLink={(link, label) => (
+              <Link {...linkTarget(link.path)} className="text-primary hover:underline">
+                {label}
+              </Link>
+            )}
+          />
+          {isGroup ? (
+            <div className="border-l bg-muted/20">
+              <p className="px-3 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t('jobs.children')}
+              </p>
+              {detail.isLoading ? (
+                <CenteredSpinner />
+              ) : (
+                detail.data?.children.map((child) => <JobLine key={child.id} job={child} />)
+              )}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
   );
+}
+
+function detailLabels(t: TFunction): JobDetailsLabels {
+  return {
+    rel: {
+      source: t('jobs.detail.source'),
+      config: t('jobs.detail.config'),
+      run: t('jobs.detail.run'),
+      result: t('jobs.detail.result'),
+    },
+    open: t('jobs.detail.open'),
+    trigger: t('jobs.detail.trigger'),
+    queued: t('jobs.detail.queued'),
+    started: t('jobs.detail.started'),
+    finished: t('jobs.detail.finished'),
+    duration: t('jobs.detail.duration'),
+    attempts: t('jobs.detail.attempts'),
+    attemptsValue: (attempt, max) => t('jobs.detail.attemptsValue', { attempt, max }),
+    progress: t('jobs.detail.progress'),
+    error: t('jobs.detail.error'),
+    outcome: t('jobs.detail.outcome'),
+    id: t('jobs.detail.id'),
+  };
 }
 
 function JobLine({ job }: { job: Job }) {

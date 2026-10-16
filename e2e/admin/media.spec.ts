@@ -120,7 +120,7 @@ test('a file picked in Google Drive is queued for the server to import, not uplo
     cancelable: false, cancelRequested: false, retryable: false, attempts: 0, maxAttempts: 3, actorUserId: null,
     createdAt: '2026-10-15T10:00:00Z', startedAt: null, finishedAt: '2026-10-15T10:00:05Z',
     updatedAt: '2026-10-15T10:00:05Z', seq: 4, result: null,
-    origin: { actorKind: 'User', actorName: 'ana@example.test', service: null, traceId: null }, ...over,
+    origin: { actorKind: 'User', actorName: 'ana@example.test', service: null, traceId: null }, routine: false, links: [], ...over,
   });
   api.on('GET', `/api/admin/jobs/${GROUP}`, {
     job: job({}),

@@ -63,8 +63,14 @@ public sealed class Job
     /// </summary>
     public string? RequiredPermission { get; set; }
 
-    /// <summary>SPA route to the thing the job produces or changes, when there is one.</summary>
+    /// <summary>SPA route to the thing the job produces or changes, when there is one. Shown as the <see cref="JobLinkRels.Result"/> link.</summary>
     public string? LinkPath { get; set; }
+
+    /// <summary>
+    /// Where the job comes from and where to read more, as <see cref="JobLink"/>s: the app or
+    /// feature it belongs to, the configuration that defines it, its own run details.
+    /// </summary>
+    public string? LinksJson { get; set; }
 
     /// <summary>
     /// Work nobody is waiting on: a schedule's tick. Kept on the ledger like any job, but once it
@@ -121,6 +127,33 @@ public sealed class Job
     public bool IsFinished => Status is JobStatus.Succeeded or JobStatus.Failed or JobStatus.Canceled;
 }
 
+/// <summary>One place a job points to in the admin SPA.</summary>
+/// <param name="Rel">One of <see cref="JobLinkRels"/>.</param>
+/// <param name="Path">An admin SPA path, starting with a single <c>/</c>.</param>
+/// <param name="Name">What is there, by name (an app, a flow, a site); data, not prose.</param>
+public sealed record JobLink(string Rel, string Path, string? Name = null);
+
+public static class JobLinkRels
+{
+    /// <summary>The app or feature the job belongs to.</summary>
+    public const string Source = "source";
+
+    /// <summary>The configuration that defines the work (a flow's definition).</summary>
+    public const string Config = "config";
+
+    /// <summary>The work's own detailed record (a flow run's steps).</summary>
+    public const string Run = "run";
+
+    /// <summary>What the job produced or changed.</summary>
+    public const string Result = "result";
+
+    public static readonly IReadOnlySet<string> All = new HashSet<string> { Source, Config, Run, Result };
+
+    /// <summary>An admin path: one leading slash, so never a link off the site or protocol-relative.</summary>
+    public static bool IsAdminPath(string path) =>
+        path.Length is > 0 and <= 512 && path[0] == '/' && !path.StartsWith("//", StringComparison.Ordinal) && !path.Contains('\\');
+}
+
 public static class JobLanes
 {
     /// <summary>Tenant work: jobs-worker.</summary>
@@ -171,6 +204,7 @@ public class JobsDbContext(DbContextOptions<JobsDbContext> options, ITenantConte
             e.Property(j => j.PayloadJson).HasColumnType("jsonb");
             e.Property(j => j.ResultJson).HasColumnType("jsonb");
             e.Property(j => j.ContextJson).HasColumnType("jsonb");
+            e.Property(j => j.LinksJson).HasColumnType("jsonb");
             e.Property(j => j.DedupeKey).HasMaxLength(256);
             e.Ignore(j => j.IsFinished);
 

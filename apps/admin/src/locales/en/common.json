@@ -1272,7 +1272,34 @@
       "by": "by {{name}}",
       "plugin": "via the {{name}} plugin",
       "automatic": "automatic",
-      "outside": "by someone outside this workspace"
+      "outside": "by someone outside this workspace",
+      "schedule": "on a schedule"
+    },
+    "trigger": {
+      "schedule": "On a schedule",
+      "by": "Started by {{name}}",
+      "plugin": "Started by the {{name}} plugin",
+      "outside": "Started by someone outside this workspace",
+      "automatic": "Automatic"
+    },
+    "detail": {
+      "toggle": "Details",
+      "source": "Source",
+      "config": "Configuration",
+      "run": "Run details",
+      "result": "Result",
+      "open": "Open",
+      "trigger": "Trigger",
+      "queued": "Queued",
+      "started": "Started",
+      "finished": "Finished",
+      "duration": "Duration",
+      "attempts": "Attempts",
+      "attemptsValue": "{{attempt}} of {{max}}",
+      "progress": "Progress",
+      "error": "Error",
+      "outcome": "Outcome",
+      "id": "Job ID"
     },
     "filter": {
       "all": "All",
