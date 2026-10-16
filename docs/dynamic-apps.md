@@ -134,6 +134,22 @@ The server supplies all of this:
 
 A save refuses exactly what the editor underlines, because the validator runs the same check.
 
+**Write with AI.** The flow editor opens with a box for describing, in your own words, what the
+flow should do. For example: *"When a deal is won, email its owner and notify the team."*
+
+- **What the AI works from.** The workspace's own AI provider writes the whole flow: trigger,
+  condition and steps. It writes against this app's tables, fields and action catalog, and the
+  language reference the assistant uses.
+- **The server checks it first.** It resolves the names and validates the flow like a saved
+  change. An answer it refuses goes back to the AI once, with the reason.
+- **Nothing is saved.** The result fills in the form, with a short note on what the flow does
+  and any issues still to fix. You review it and press *Save*.
+- **Ask again to change it.** The box then asks for a change: the AI gets the flow as the form
+  holds it and changes only what you asked. *Undo* puts back what was there before.
+- **What it costs.** Each request uses the workspace's AI quota (`POST /_automation/compose`,
+  needs *model-write*). A saved flow keeps its api name, because other flows and the site invoke
+  it by that name.
+
 **Steps** are edited one card per step:
 
 - its id and action;

@@ -439,6 +439,20 @@ export function useCheckExpression(slug: string) {
     api.post<{ problems: ExpressionProblem[] }>(instancePath(slug, '/_automation/check'), { source }).then((r) => r.problems);
 }
 
+/** A flow the workspace's AI wrote from a request, for the editor to fill in — never saved by this. */
+export interface FlowComposition {
+  flow: FlowDef;
+  note: string | null;
+  issues: ConfigIssue[];
+}
+
+/** "Write with AI": the request, and the flow as the editor holds it now (what a follow-up changes). */
+export function useComposeFlow(slug: string) {
+  const api = usePluginApi();
+  return (request: string, flow: unknown) =>
+    api.post<FlowComposition>(instancePath(slug, '/_automation/compose'), { request, flow });
+}
+
 /** The TypeScript a script step's ctx is typed with, for the flow as it is being edited. */
 export function useFlowTypings(slug: string) {
   const api = usePluginApi();

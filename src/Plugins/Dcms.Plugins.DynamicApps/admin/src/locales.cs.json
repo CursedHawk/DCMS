@@ -228,7 +228,17 @@
     "invalidJson": "Toto není objekt JSON.",
     "askAiRun": "Běh {{run}} toku {{flow}} selhal. Přečti si ho, srozumitelně vysvětli proč a navrhni opravu toku.",
     "changedElsewhere": "Tento tok se od otevření změnil jinde — kolegou nebo asistentem. Uložení zde by tu změnu přepsalo.",
-    "reload": "Načíst novou verzi"
+    "reload": "Načíst novou verzi",
+    "aiTitle": "Napsat s AI",
+    "aiNewLabel": "Popište, co má tento tok dělat",
+    "aiChangeLabel": "Požádejte o změnu",
+    "aiPlaceholder": "např. Když je obchod vyhraný, pošli e-mail jeho vlastníkovi a upozorni tým",
+    "aiWrite": "Napsat tok",
+    "aiChange": "Změnit tok",
+    "aiWriting": "Píšu…",
+    "aiUndo": "Vrátit",
+    "aiHint": "AI vyplní formulář níže podle tabulek a akcí této aplikace. Nic se neuloží, dokud to nezkontrolujete a neuložíte. Ctrl+Enter odešle.",
+    "aiIssues": "Před publikováním je ještě potřeba opravit:"
   },
   "events": {
     "row_created": "Záznam se vytvoří",

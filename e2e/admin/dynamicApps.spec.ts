@@ -563,3 +563,78 @@ test.describe('the assistant on automations', () => {
     await expect(dialog.getByRole('status')).toHaveCount(0);
   });
 });
+
+test.describe('writing a flow with AI', () => {
+  const settled = expect.configure({ timeout: 20_000 });
+  const WRITTEN = {
+    id: 'eeeeeeee-0000-0000-0000-000000000003', apiName: 'deal_won', displayName: 'Deal won', enabled: true,
+    trigger: { event: 'row.updated', tableId: TABLE_ID, changedFields: [STAGE_ID] },
+    condition: "row.stage == 'won'",
+    steps: [{ id: 'tell', action: 'dcms.notifications.raise@1', input: { title: 'Won', body: '{{ row.title }}' } }],
+  };
+
+  test('a request fills the new flow form, can be undone, and nothing is saved until Save', async ({ page, api }) => {
+    api
+      .on('GET', '/api/admin/plugins/crm/_automation/language', { functions: [], variables: ['row'], maxSourceChars: 2000 })
+      .on('POST', '/api/admin/plugins/crm/_automation/check', { problems: [] })
+      .on('POST', '/api/admin/plugins/crm/_automation/compose', { flow: WRITTEN, note: 'Notifies the team when a deal is won.', issues: [] })
+      .on('POST', '/api/admin/plugins/crm/_model/draft/changes', { draft: DRAFT, changes: [], issues: [] });
+    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.getByRole('button', { name: 'Add' }).first().click();
+    const dialog = page.getByRole('dialog');
+    await settled(dialog).toContainText('New flow');
+
+    const ai = dialog.getByRole('region', { name: 'Write with AI' });
+    await ai.getByLabel('Describe what this flow should do').fill('When a deal is won, tell the team');
+    await ai.getByRole('button', { name: 'Write the flow' }).click();
+
+    await expect(ai.getByRole('status')).toHaveText('Notifies the team when a deal is won.');
+    await settled(dialog.locator('.monaco-editor').first()).toContainText("row.stage == 'won'");
+    await expect(dialog.getByLabel('Name', { exact: true })).toHaveValue('Deal won');
+    await expect(dialog.getByLabel('API name')).toHaveValue('deal_won');
+    await settled(dialog.getByRole('region', { name: 'Step 1' }).getByLabel('Step id')).toHaveValue('tell');
+    const asked = api.requestsTo('POST', '/api/admin/plugins/crm/_automation/compose')[0]!.body as { request: string; flow: unknown };
+    expect(asked).toEqual({ request: 'When a deal is won, tell the team', flow: null });
+    expect(api.requestsTo('POST', '/api/admin/plugins/crm/_model/draft/changes')).toHaveLength(0);
+
+    // Undo puts back what was there; the panel now offers a change rather than a new flow.
+    await ai.getByRole('button', { name: 'Undo' }).click();
+    await expect(dialog.getByLabel('Name', { exact: true })).toHaveValue('');
+    await ai.getByLabel('Describe what this flow should do').fill('When a deal is won, tell the team');
+    await ai.getByRole('button', { name: 'Write the flow' }).click();
+    await expect(dialog.getByLabel('Name', { exact: true })).toHaveValue('Deal won');
+
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => api.requestsTo('POST', '/api/admin/plugins/crm/_model/draft/changes').length).toBe(1);
+    const body = api.requestsTo('POST', '/api/admin/plugins/crm/_model/draft/changes')[0]!.body as { operations: { op: string; value: object }[] };
+    expect(body.operations[0]).toMatchObject({
+      op: 'create',
+      value: { apiName: 'deal_won', displayName: 'Deal won', condition: "row.stage == 'won'",
+        trigger: { event: 'row.updated', tableId: TABLE_ID, changedFields: [STAGE_ID] }, steps: WRITTEN.steps },
+    });
+  });
+
+  test('a follow-up request sends the flow as the form holds it, to be changed', async ({ page, api }) => {
+    const FLOW = { ...WRITTEN, id: 'eeeeeeee-0000-0000-0000-000000000004', apiName: 'big_deal', displayName: 'Big deal' };
+    api
+      .on('GET', '/api/admin/plugins/crm/_model/draft', { revision: DRAFT, config: { ...CONFIG, flows: [FLOW] } })
+      .on('GET', '/api/admin/plugins/crm/_automation/language', { functions: [], variables: ['row'], maxSourceChars: 2000 })
+      .on('POST', '/api/admin/plugins/crm/_automation/check', { problems: [] })
+      .on('POST', '/api/admin/plugins/crm/_automation/compose', {
+        flow: { ...FLOW, displayName: 'Big deal, emailed' }, note: null,
+        issues: [{ severity: 'error', code: 'unknown-action', path: 'flows.big_deal.mail', message: "'x@1' is not an action" }],
+      });
+    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.getByRole('button', { name: 'Edit' }).first().click();
+    const ai = page.getByRole('dialog').getByRole('region', { name: 'Write with AI' });
+    await settled(ai.getByLabel('Ask for a change')).toBeVisible();
+    await ai.getByLabel('Ask for a change').fill('Also email the owner');
+    await ai.getByLabel('Ask for a change').press('Control+Enter');
+
+    await expect(ai).toContainText("flows.big_deal.mail: 'x@1' is not an action");
+    await expect(page.getByRole('dialog').getByLabel('Name', { exact: true })).toHaveValue('Big deal, emailed');
+    await expect(page.getByRole('dialog').getByLabel('API name')).toHaveValue('big_deal');
+    const asked = api.requestsTo('POST', '/api/admin/plugins/crm/_automation/compose')[0]!.body as { flow: { id: string; apiName: string } };
+    expect(asked.flow).toMatchObject({ id: FLOW.id, apiName: 'big_deal' });
+  });
+});

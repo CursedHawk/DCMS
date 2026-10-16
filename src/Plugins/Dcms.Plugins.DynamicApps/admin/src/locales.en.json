@@ -228,7 +228,17 @@
     "invalidJson": "This is not a JSON object.",
     "askAiRun": "Run {{run}} of the flow {{flow}} failed. Read it, explain in plain words why, and propose a fix to the flow.",
     "changedElsewhere": "This flow was changed elsewhere since you opened it — by a colleague or the assistant. Saving here would replace that change.",
-    "reload": "Load the new version"
+    "reload": "Load the new version",
+    "aiTitle": "Write with AI",
+    "aiNewLabel": "Describe what this flow should do",
+    "aiChangeLabel": "Ask for a change",
+    "aiPlaceholder": "e.g. When a deal is won, email its owner and notify the team",
+    "aiWrite": "Write the flow",
+    "aiChange": "Change the flow",
+    "aiWriting": "Writing…",
+    "aiUndo": "Undo",
+    "aiHint": "The AI fills in the form below from this app's tables and actions. Nothing is saved until you review it and save. Ctrl+Enter sends.",
+    "aiIssues": "Still to fix before it can be published:"
   },
   "events": {
     "row_created": "A record is created",

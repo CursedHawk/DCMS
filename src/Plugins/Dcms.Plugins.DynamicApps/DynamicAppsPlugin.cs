@@ -91,6 +91,8 @@ public sealed class DynamicAppsPlugin : IPlugin
         consumes:
         [
             ContractRequirement.Of<IPluginEmail>(),
+            // "Write with AI" in the flow editor, with the workspace's own provider and quota.
+            ContractRequirement.Of<IPluginAi>(),
             ContractRequirement.Of<IPluginNotifications>(),
             ContractRequirement.Of<IPluginContent>(),
             // Throttles the public API's writes.
@@ -153,6 +155,7 @@ public sealed class DynamicAppsPlugin : IPlugin
         services.AddScoped<FlowRunQueue>();
         services.AddScoped<FlowExecutor>();
         services.AddScoped<FlowRunService>();
+        services.AddScoped<FlowComposer>();
         if (host.IsAdmin && host.RunsBackgroundWork)
         {
             services.AddHostedService<AutomationWorker>();

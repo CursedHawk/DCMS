@@ -45,6 +45,12 @@ internal static class AutomationEndpoints
             .RequirePluginPermission("model-read")
             .SkipAudit("A read: the unsaved flow travels in the body; only declarations are generated from it.");
 
+        // "Write with AI" in the flow editor: a flow drafted for the editor to fill in; nothing is saved.
+        endpoints.MapPost("/_automation/compose", (FlowComposeRequest body, FlowComposer composer, CancellationToken ct) =>
+                RecordEndpoints.Run(async () => Results.Ok(await composer.ComposeAsync(body, ct))))
+            .RequirePluginPermission("model-write")
+            .AuditAs("flow.composed");
+
         // Runs carry the records that triggered them, so they are read with the data.
         endpoints.MapGet("/_automation/runs", (string? flow, string? status, int? page, int? pageSize, FlowRunService runs, CancellationToken ct) =>
                 RecordEndpoints.Run(async () => Results.Ok(await runs.ListAsync(flow, status, page ?? 1, pageSize ?? 50, ct))))

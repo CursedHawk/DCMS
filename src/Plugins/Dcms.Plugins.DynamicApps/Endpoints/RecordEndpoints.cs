@@ -170,5 +170,10 @@ internal static class RecordEndpoints
         {
             return Results.BadRequest(new { error = e.Message });
         }
+        catch (ContractLimitException e)
+        {
+            // A quota spent (the workspace's AI, a contract's rate): say so rather than fail with a 500.
+            return Results.Json(new { error = e.Message }, statusCode: StatusCodes.Status429TooManyRequests);
+        }
     }
 }
