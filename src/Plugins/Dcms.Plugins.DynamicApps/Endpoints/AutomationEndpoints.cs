@@ -30,7 +30,8 @@ internal static class AutomationEndpoints
         // An expression's problems while it is typed: parsed, never evaluated, so it reads no data.
         endpoints.MapPost("/_automation/check", (CheckExpressionRequest body) =>
                 Results.Ok(new { problems = Expressions.Check(body.Source ?? "", Metadata.ConfigValidator.FlowVariables) }))
-            .RequirePluginPermission("model-read");
+            .RequirePluginPermission("model-read")
+            .SkipAudit("A read: the expression travels in the body; it is parsed, never evaluated.");
 
         // What a script step's ctx holds, as TypeScript, for the flow being edited — posted, since
         // it may not be saved yet — against the draft's tables. Metadata only: no record is read.
@@ -41,7 +42,8 @@ internal static class AutomationEndpoints
                 var actions = await ActionCatalog.WithProvidersAsync(context, ct);
                 return Results.Ok(new { typings = FlowTypings.Generate(doc?.Config ?? new AppConfig(), body.Flow, body.AtStepId, actions) });
             })
-            .RequirePluginPermission("model-read");
+            .RequirePluginPermission("model-read")
+            .SkipAudit("A read: the unsaved flow travels in the body; only declarations are generated from it.");
 
         // Runs carry the records that triggered them, so they are read with the data.
         endpoints.MapGet("/_automation/runs", (string? flow, string? status, int? page, int? pageSize, FlowRunService runs, CancellationToken ct) =>
