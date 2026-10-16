@@ -21,6 +21,7 @@ import { useDataSets } from '../features/plugins/dataApi';
 import type { PluginUiInfo } from './api';
 import { usePluginModule } from './modules';
 import { useOptionalAi } from '../features/assistant/context';
+import { CodeEditor } from './CodeEditor';
 
 /** A data set embedded in a plugin screen: the plugin page's own view, by slug and set id. */
 function EmbeddedDataSet({ slug, set }: { slug: string; set: string }) {
@@ -61,7 +62,7 @@ export function useConsolePluginHost(): PluginHost {
             },
           }
         : undefined,
-      components: { DataSet: EmbeddedDataSet },
+      components: { DataSet: EmbeddedDataSet, CodeEditor },
     }),
     [me.data, navigate, setPage, setOpen, qc],
   );

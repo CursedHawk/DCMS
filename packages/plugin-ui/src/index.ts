@@ -105,7 +105,47 @@ export interface PluginHost {
   components: {
     /** A data set of an instance, rendered as the plugin page renders it (search, filters, editing). */
     DataSet: ComponentType<{ slug: string; set: string }>;
+    /** The console's code editor (Monaco), with its language workers and themes already set up. */
+    CodeEditor: ComponentType<CodeEditorProps>;
   };
+}
+
+/** A problem to underline in a {@link CodeEditorProps.value}, by 0-based UTF-16 offsets. */
+export interface CodeEditorMarker {
+  message: string;
+  start: number;
+  end: number;
+  severity?: 'error' | 'warning';
+}
+
+export interface CodeEditorProps {
+  /**
+   * Names the document, e.g. `file:///dcms/dynamic-apps/flows/{id}/condition.dexpr`. Stable for
+   * as long as the same text is edited: a new uri is a new document (and a fresh undo stack).
+   */
+  uri: string;
+  /** A Monaco language id: `typescript`, `javascript`, `json`, or one a plugin registers through `onMonaco`. */
+  language: string;
+  value: string;
+  onChange?: (value: string) => void;
+  readOnly?: boolean;
+  /** In pixels. Default 240. */
+  height?: number;
+  /** No line numbers, folding or gutter: a field holding an expression rather than a file. */
+  compact?: boolean;
+  /** For the label that names the field. */
+  ariaLabel?: string;
+  markers?: readonly CodeEditorMarker[];
+  /** Declaration files (`.d.ts` text) TypeScript and JavaScript see while this editor is mounted. */
+  extraLibs?: readonly { path: string; content: string }[];
+  /** A JSON Schema the `json` language validates and completes this document against. */
+  jsonSchema?: Record<string, unknown>;
+  /**
+   * Runs once before the editor is created, with the `monaco-editor` namespace (type it with
+   * `import type * as Monaco from 'monaco-editor'`): for registering a plugin's own language.
+   * Whatever it returns is disposed on unmount.
+   */
+  onMonaco?: (monaco: unknown) => { dispose(): void } | void;
 }
 
 const HostContext = createContext<PluginHost | null>(null);
