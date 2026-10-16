@@ -28,7 +28,7 @@ function seed(api: { on: (m: string, p: string, r: unknown) => unknown }) {
   api.on('GET', '/api/admin/jobs', ({ query }: { query: URLSearchParams }) => {
     const status = query.get('status');
     if (status === 'active') return { items: [RUNNING], nextCursor: null };
-    if (status === 'finished') return { items: [FAILED], nextCursor: null };
+    if (status === 'recent') return { items: [FAILED], nextCursor: null };
     return { items: [RUNNING, FAILED], nextCursor: null };
   });
 }

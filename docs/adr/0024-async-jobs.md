@@ -184,9 +184,12 @@ does not belong on a ledger people read.
 - **Dynamic Apps imports, bulk updates and deletes past the request ceilings**, up to 100,000 rows
   or 20 MB of CSV. They are still all or nothing: one transaction, with the bar following the
   rows.
-- **Dynamic Apps flow runs started by hand.** Scheduled and event-triggered runs are not. A
-  five-minute schedule is 288 runs a day, and one import can set off tens of thousands. Scheduled
-  runs were tracked at first; on dev they filled the popover within an hour.
+- **Dynamic Apps flow runs, started by hand or by a schedule.** A scheduled run is *routine*
+  (`Job.Routine`): it is on the jobs page and in the console like any job, but once it succeeds
+  it stays out of the popover's "recently finished" (the `recent` list filter). A five-minute
+  schedule is 288 runs a day; when scheduled runs were plain jobs they filled the popover within
+  an hour on dev, and when they were left off the ledger, people missed their hourly KPI flow.
+  Event-triggered runs are not tracked: one import can set off tens of thousands.
 
 **Left synchronous, on purpose:**
 

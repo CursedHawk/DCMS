@@ -4,7 +4,8 @@ import { platformApi } from '../../lib/api';
 
 export type { JobDetail, JobDto as Job, JobPage } from '@dcms/ui';
 
-export type JobListFilter = 'active' | 'finished' | 'failed' | 'all';
+/** `recent` is `finished` less routine successes (a schedule's ticks): the popover's list. */
+export type JobListFilter = 'active' | 'finished' | 'recent' | 'failed' | 'all';
 
 /** Which jobs: one tenant's, the platform's own (no tenant), or every one. */
 export type JobScope = { tenantId: string } | { platformOnly: true } | Record<string, never>;

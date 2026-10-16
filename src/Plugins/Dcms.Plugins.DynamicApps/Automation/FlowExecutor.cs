@@ -32,12 +32,12 @@ public sealed class FlowExecutor(
 {
     private static readonly TimeSpan[] Backoff = [TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(10)];
 
-    /// <summary>The jobs ledger's name for a flow run (FlowRunQueue tracks the manual ones).</summary>
+    /// <summary>The jobs ledger's name for a flow run (FlowRuns tracks the manual and scheduled ones).</summary>
     public const string TrackedName = "flow-run";
 
     /// <summary>
-    /// Reports a tracked run's progress (ADR 0024). Only manual runs are tracked, so only they
-    /// report: a scheduled or event-triggered run costs nothing here.
+    /// Reports a tracked run's progress (ADR 0024). Only manual and scheduled runs are tracked, so
+    /// only they report: an event-triggered run costs nothing here.
     /// </summary>
     private Task ReportAsync(bool tracked, Guid runId, string? status, long? done, long? total, CancellationToken ct) =>
         tracked
@@ -50,7 +50,7 @@ public sealed class FlowExecutor(
 
     private static bool IsTracked(FlowRun run) =>
         JsonDocument.Parse(run.TriggerJson).RootElement.TryGetProperty("eventName", out var name)
-        && name.GetString() == "manual";
+        && name.GetString() is "manual" or "schedule";
 
     public async Task RunAsync(Guid runId, CancellationToken ct)
     {

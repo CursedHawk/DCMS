@@ -19,6 +19,7 @@ namespace Dcms.Shared.Jobs;
 /// run request is sent, because that queue's own producer already sent one.
 /// </param>
 /// <param name="Total">The amount of work, when known up front.</param>
+/// <param name="Routine">Work nobody is waiting on; see <see cref="Job.Routine"/>.</param>
 public sealed record JobSpec(
     string Kind,
     Guid? TenantId,
@@ -33,7 +34,8 @@ public sealed record JobSpec(
     string Lane = JobLanes.Tenant,
     long? Total = null,
     string? LinkPath = null,
-    int MaxAttempts = 3);
+    int MaxAttempts = 3,
+    bool Routine = false);
 
 /// <param name="Existing">True when a job with the same dedupe key was already there and nothing was enqueued.</param>
 public sealed record JobRef(Guid Id, bool Existing = false);

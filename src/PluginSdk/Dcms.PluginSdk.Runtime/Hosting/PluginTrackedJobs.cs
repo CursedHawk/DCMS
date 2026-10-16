@@ -44,7 +44,8 @@ public sealed partial class PluginTrackedJobs(IPluginContext caller, PluginRegis
             DedupeKey: $"{KindPrefix}{caller.PluginId}:{input.Name}:{input.Id}",
             Cancelable: false,
             Lane: MirrorLane,
-            LinkPath: input.LinkPath), ct);
+            LinkPath: input.LinkPath,
+            Routine: input.Routine), ct);
         return new JobTicket(job.Id);
     }
 

@@ -17,7 +17,7 @@ const JOB = {
 
 test('the console shows every tenant’s jobs and follows pushed progress', async ({ page, api, hub }) => {
   api.on('GET', '/api/platform/jobs', ({ query }: { query: URLSearchParams }) =>
-    query.get('status') === 'finished' ? { items: [], nextCursor: null } : { items: [JOB], nextCursor: null });
+    query.get('status') === 'recent' ? { items: [], nextCursor: null } : { items: [JOB], nextCursor: null });
   await page.goto('/');
 
   const ring = page.getByTestId('jobs-indicator').getByRole('progressbar');

@@ -332,6 +332,8 @@ public static class JobEndpoints
         {
             "active" => query.Where(j => j.Status == JobStatus.Queued || j.Status == JobStatus.Running),
             "finished" => query.Where(j => j.Status == JobStatus.Succeeded || j.Status == JobStatus.Failed || j.Status == JobStatus.Canceled),
+            // The popover's "recently finished": a routine job that went fine is not news.
+            "recent" => query.Where(j => (j.Status == JobStatus.Succeeded && !j.Routine) || j.Status == JobStatus.Failed || j.Status == JobStatus.Canceled),
             "failed" => query.Where(j => j.Status == JobStatus.Failed),
             _ => query,
         };

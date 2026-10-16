@@ -71,13 +71,18 @@ public sealed record JobTicket(Guid JobId);
 /// </summary>
 /// <param name="Name">What kind of work it is (<c>flow-run</c>): letters, digits and dashes.</param>
 /// <param name="Id">The plugin's own id for it, so a repeat of the same work is the same job.</param>
+/// <param name="Routine">
+/// Work nobody is waiting on, such as a schedule's tick: listed like any job, but a success is
+/// left out of the "recently finished" people glance at.
+/// </param>
 public sealed record TrackedJobMirror(
     string Name,
     Guid Id,
     string? TitleKey = null,
     IReadOnlyDictionary<string, string>? TitleParams = null,
     string? RequiredPermission = null,
-    string? LinkPath = null);
+    string? LinkPath = null,
+    bool Routine = false);
 
 /// <param name="Status">Null for progress alone; otherwise Running, Succeeded, Failed or Canceled.</param>
 public sealed record TrackedJobReport(

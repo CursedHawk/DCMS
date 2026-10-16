@@ -188,7 +188,7 @@ and preview:
   of more than 500 ids (up to 100,000) are stored through `dcms.blobs` and run by jobs-worker
   through `dcms.jobs@2`: the same `RecordService` call, still all or nothing in one transaction,
   with progress and the result on the job. The assistant's contract operations keep the request
-  ceilings. Flow runs started by hand are tracked on the jobs ledger too.
+  ceilings. Flow runs started by hand or by a schedule are tracked on the jobs ledger too; scheduled ones as routine work.
 
 ### The assistant is a client of the same control plane
 

@@ -108,16 +108,19 @@ public sealed class FlowRunQueue(AppsDbContext db, IPluginContext context, Confi
         }
         var evt = Event(DeterministicId($"{flowId}:{due.UtcTicks}"), "schedule", doc.Revision.Number,
             new JsonObject { ["due"] = due.UtcDateTime.ToString("O") }, EventOrigin.New());
-        return await EnqueueAsync(flow, doc.Revision.Number, evt, ct);
+        var runId = await EnqueueAsync(flow, doc.Revision.Number, evt, ct);
+        await TrackAsync(runId, flow, ct, routine: true);
+        return runId;
     }
 
     /// <summary>
-    /// A run someone started, on the workspace's jobs ledger (ADR 0024): the runs a person waits
-    /// on. Scheduled and event-triggered runs are not -- a five-minute schedule is 288 a day, one
-    /// import can set off tens of thousands -- and stay on the automation page. Best-effort: the
-    /// run is the record.
+    /// A run on the workspace's jobs ledger (ADR 0024): started by hand, or a schedule's tick.
+    /// A tick is routine -- an hourly KPI flow is 24 a day, a five-minute one 288 -- so its
+    /// successes stay out of the popover and show on the jobs page. Event-triggered runs are not
+    /// tracked at all: one import can set off tens of thousands; they stay on the automation page.
+    /// Best-effort: the run is the record.
     /// </summary>
-    private async Task TrackAsync(Guid runId, FlowDef flow, CancellationToken ct)
+    private async Task TrackAsync(Guid runId, FlowDef flow, CancellationToken ct, bool routine = false)
     {
         try
         {
@@ -125,7 +128,8 @@ public sealed class FlowRunQueue(AppsDbContext db, IPluginContext context, Confi
                 FlowExecutor.TrackedName, runId, "jobs.kinds.flowRun.title",
                 new Dictionary<string, string> { ["flow"] = string.IsNullOrEmpty(flow.DisplayName) ? flow.ApiName : flow.DisplayName },
                 // The automation runs page's own gate: the job shows the same run, so the same people.
-                RequiredPermission: "data-read"), ct);
+                RequiredPermission: "data-read",
+                Routine: routine), ct);
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {

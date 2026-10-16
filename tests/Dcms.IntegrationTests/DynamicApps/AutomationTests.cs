@@ -254,6 +254,20 @@ public sealed class AutomationTests(ContentFlowFixture fixture)
         run.GetProperty("trigger").GetString().Should().Be("schedule");
         await Task.Delay(TimeSpan.FromSeconds(3), ct);
         (await RunsAsync(app, "tick", ct)).Should().ContainSingle("the schedule moved on to its next due time");
+
+        // On the jobs ledger as routine work: on the jobs page, not in the popover's "recently finished".
+        var runId = Guid.Parse(run.GetProperty("id").GetString()!);
+        await JobAsync(app, runId, j => j.GetProperty("status").GetString() == "Succeeded", ct);
+        (await JobIdsAsync(app, "finished", ct)).Should().Contain(runId);
+        (await JobIdsAsync(app, "recent", ct)).Should().NotContain(runId, "an hourly tick that went fine is not news");
+    }
+
+    private static async Task<List<Guid>> JobIdsAsync(AppHarness app, string status, CancellationToken ct)
+    {
+        var res = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, $"/api/admin/jobs?status={status}&limit=100", app.Owner, app.Tenant), ct);
+        res.EnsureSuccessStatusCode();
+        return (await res.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("items").EnumerateArray()
+            .Select(j => j.GetProperty("id").GetGuid()).ToList();
     }
 
     [DockerFact]

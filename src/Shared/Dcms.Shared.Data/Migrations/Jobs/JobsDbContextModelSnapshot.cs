@@ -137,6 +137,9 @@ namespace Dcms.Shared.Data.Migrations.Jobs
                     b.Property<string>("ResultJson")
                         .HasColumnType("jsonb");
 
+                    b.Property<bool>("Routine")
+                        .HasColumnType("boolean");
+
                     b.Property<long>("Seq")
                         .HasColumnType("bigint");
 

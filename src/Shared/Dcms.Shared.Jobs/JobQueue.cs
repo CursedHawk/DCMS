@@ -39,6 +39,7 @@ public sealed class JobQueue(
             ParamsJson = spec.Params is null ? "{}" : JsonSerializer.Serialize(spec.Params, JsonSerializerOptions.Web),
             RequiredPermission = spec.RequiredPermission,
             LinkPath = spec.LinkPath,
+            Routine = spec.Routine,
             Total = spec.Total,
             PayloadJson = spec.Payload is null ? null : JsonSerializer.Serialize(spec.Payload, JsonSerializerOptions.Web),
             // Who asked, carried to the worker so what it records names them, not the worker.

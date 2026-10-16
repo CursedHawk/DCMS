@@ -18,7 +18,7 @@ export function JobsIndicator({ enabled }: { enabled: boolean }) {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const active = useJobs('active', 100, enabled);
-  const recent = useJobs('finished', RECENT, enabled);
+  const recent = useJobs('recent', RECENT, enabled);
   const cancel = useCancelJob();
   const retry = useRetryJob();
 

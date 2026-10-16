@@ -12,7 +12,7 @@ import { jobDetail, jobOrigin, jobTitle, STATUS_LABEL } from './render';
 export function JobsIndicator({ enabled, mayManage }: { enabled: boolean; mayManage: boolean }) {
   const navigate = useNavigate();
   const active = useJobs('active', 100, {}, enabled);
-  const recent = useJobs('finished', 8, {}, enabled);
+  const recent = useJobs('recent', 8, {}, enabled);
   const cancel = useCancelJob();
   const retry = useRetryJob();
 

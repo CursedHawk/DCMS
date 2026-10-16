@@ -66,6 +66,13 @@ public sealed class Job
     /// <summary>SPA route to the thing the job produces or changes, when there is one.</summary>
     public string? LinkPath { get; set; }
 
+    /// <summary>
+    /// Work nobody is waiting on: a schedule's tick. Kept on the ledger like any job, but once it
+    /// succeeds it stays out of the popover's "recently finished", where an hourly schedule
+    /// would otherwise bury what people did start.
+    /// </summary>
+    public bool Routine { get; set; }
+
     public JobStatus Status { get; set; } = JobStatus.Queued;
 
     public long Done { get; set; }

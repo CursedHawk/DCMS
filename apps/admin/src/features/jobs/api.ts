@@ -7,7 +7,8 @@ export type Job = JobDto;
 export type JobChanged = JobChangedPush;
 export type { JobDetail, JobPage };
 
-export type JobListFilter = 'active' | 'finished' | 'failed' | 'all';
+/** `recent` is `finished` less routine successes (a schedule's ticks): the popover's list. */
+export type JobListFilter = 'active' | 'finished' | 'recent' | 'failed' | 'all';
 
 
 /** Tenant-scoped like the bell: a tenant switch must not show the previous tenant's jobs. */
