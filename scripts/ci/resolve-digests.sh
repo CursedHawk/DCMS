@@ -43,6 +43,7 @@ jobs-worker:admin-api
 content-api:content-api
 media-worker:media-worker
 email-worker:email-worker
+script-runner:script-runner
 site-builder:site-builder
 site-build-sandbox:site-build-sandbox
 site-host:site-host

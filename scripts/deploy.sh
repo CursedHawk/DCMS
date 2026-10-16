@@ -54,7 +54,7 @@ REPO_ROOT=$(pwd)
 # Built from this repo, in dependency-ish order. Serial builds follow this order.
 APP_SERVICES=(
   identity admin-api jobs-worker content-api ai-gateway platform-api
-  media-worker email-worker site-builder site-host edge admin-spa platform-spa landing-spa
+  media-worker email-worker script-runner site-builder site-host edge admin-spa platform-spa landing-spa
 )
 
 # Configuration arrives as a bind-mounted file. These must be force-recreated
@@ -74,7 +74,7 @@ CONFIG_MOUNTED_SERVICES=(alloy prometheus loki tempo pyroscope grafana nats vaul
 # the line to be stuck on -- but it is a gap, not a decision.
 HEALTH_GATED_SERVICES=(
   identity admin-api jobs-worker content-api ai-gateway platform-api
-  media-worker email-worker site-builder site-host edge
+  media-worker email-worker script-runner site-builder site-host edge
   admin-spa platform-spa landing-spa forgejo
 )
 

@@ -156,6 +156,13 @@ public sealed class DynamicAppsPlugin : IPlugin
         if (host.IsAdmin && host.RunsBackgroundWork)
         {
             services.AddHostedService<AutomationWorker>();
+            // script.run@1 (ADR 0025). Reachable only from the flow executors' network.
+            services.AddHttpClient(ScriptRunAction.HttpClientName, client =>
+            {
+                client.BaseAddress = new Uri(host.Configuration["Services:ScriptRunner"] ?? "http://localhost:5095");
+                // Above the script's own 2 s: a run may wait its turn behind the runner's concurrency limit.
+                client.Timeout = TimeSpan.FromSeconds(15);
+            });
         }
     }
 

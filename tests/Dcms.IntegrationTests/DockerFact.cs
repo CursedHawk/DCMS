@@ -29,6 +29,9 @@ public sealed class DockerFactAttribute : FactAttribute
         }
     }
 
+    /// <summary>Whether a Docker daemon answers, for a fixture that must not start containers without one.</summary>
+    public static bool Available => DockerAvailable.Value;
+
     private static bool Probe()
     {
         try
@@ -67,6 +70,21 @@ public sealed class DockerFactAttribute : FactAttribute
         catch
         {
             return false;
+        }
+    }
+}
+
+/// <summary>The <see cref="DockerFactAttribute"/> of a theory: skips every case when Docker is unavailable.</summary>
+public sealed class DockerTheoryAttribute : TheoryAttribute
+{
+    public DockerTheoryAttribute(
+        [CallerFilePath] string? sourceFilePath = null,
+        [CallerLineNumber] int sourceLineNumber = -1)
+        : base(sourceFilePath, sourceLineNumber)
+    {
+        if (!DockerFactAttribute.Available)
+        {
+            Skip = "Docker daemon not available on this machine.";
         }
     }
 }

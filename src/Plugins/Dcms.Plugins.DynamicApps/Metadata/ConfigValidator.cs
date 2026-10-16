@@ -24,6 +24,8 @@ public static partial class ConfigValidator
     public const int MaxTextLength = 100_000;
     public const int MaxStepInputChars = 16_000;
 
+    private static readonly IReadOnlySet<string> NoKeys = new HashSet<string>();
+
     /// <summary>Names every record has, which a field or relationship may not take.</summary>
     public static readonly IReadOnlySet<string> ReservedNames = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -362,13 +364,22 @@ public static partial class ConfigValidator
                     error("unknown-action", stepPath, $"'{step.Action}' is not an action; actions are named with their major version, e.g. records.create@1.");
                 }
                 Expression(step.Condition, $"{stepPath}.condition", error);
-                if (step.Input.ToJsonString().Length > MaxStepInputChars)
+                // A literal input (a script's source) has a limit of its own and holds no templates.
+                var literal = Automation.ActionCatalog.Find(step.Action)?.LiteralInputs ?? NoKeys;
+                if (step.Input.Where(p => !literal.Contains(p.Key)).Sum(p => p.Key.Length + (p.Value?.ToJsonString().Length ?? 4) + 4) > MaxStepInputChars)
                 {
                     error("invalid-step", stepPath, $"A step's input is at most {MaxStepInputChars:N0} characters.");
                 }
+                foreach (var key in literal.Where(k => step.Input[k] is not null))
+                {
+                    if (step.Input[key]!.ToJsonString().Length > Automation.AutomationLimits.MaxLiteralInputChars)
+                    {
+                        error("invalid-step", $"{stepPath}.input.{key}", $"'{key}' is at most {Automation.AutomationLimits.MaxLiteralInputChars:N0} characters.");
+                    }
+                }
                 try
                 {
-                    foreach (var hole in Automation.Expressions.TemplateExpressions(step.Input))
+                    foreach (var hole in Automation.Expressions.TemplateExpressions(step.Input, literal))
                     {
                         Expression(hole, $"{stepPath}.input", error);
                     }

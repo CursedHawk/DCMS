@@ -301,6 +301,10 @@ build-image:
       - SERVICE: email-worker
         LANE: c
         DOCKERFILE: src/Services/Dcms.EmailWorker/Dockerfile
+      # Dynamic Apps flow scripts (ADR 0025).
+      - SERVICE: script-runner
+        LANE: b
+        DOCKERFILE: src/Services/Dcms.ScriptRunner/Dockerfile
       - SERVICE: site-builder
         LANE: c
         DOCKERFILE: src/Services/Dcms.SiteBuilder/Dockerfile
@@ -366,7 +370,7 @@ promote-images:
   script:
     - |
       set -e
-      for SERVICE in identity admin-api content-api media-worker email-worker \
+      for SERVICE in identity admin-api content-api media-worker email-worker script-runner \
                      site-builder site-build-sandbox site-host ai-gateway platform-api \
                      edge admin-spa platform-spa landing-spa log-janitor; do
         IMAGE="$CI_REGISTRY_IMAGE/$SERVICE"

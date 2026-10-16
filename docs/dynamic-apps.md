@@ -114,6 +114,26 @@ Example: `row.amount >= 10000 && row.stage != 'lost'`.
 Evaluation is bounded in steps and string size, and it has no way out of the run's data. Inside
 an email's `html`, every template value is HTML-encoded and the whole body is sanitized.
 
+**In the flow editor** a condition is a code field that knows the language and the app:
+
+- **Completion:**
+  - names and functions;
+  - after `row.` and `previous.`, the trigger table's fields, lookups and system columns (`id`,
+    `version`, `created_at`, …), taken from the draft being edited;
+  - after `steps.`, the steps before it;
+  - after `run.` and `event.`, their members.
+- **Hovers and argument hints** explain each function.
+- **Problems are underlined** while you type: syntax errors, unknown names, and a call with the
+  wrong number of arguments.
+
+The server supplies all of this:
+
+- `GET /_automation/language` lists the functions and names.
+- `POST /_automation/check` parses an expression **without evaluating it** and locates its
+  problems.
+
+A save refuses exactly what the editor underlines, because the validator runs the same check.
+
 ### Actions
 
 The Automation tab lists every action available to flows. The built-in actions are:
@@ -123,6 +143,7 @@ The Automation tab lists every action available to flows. The built-in actions a
 - `dcms.email.send@1` and `dcms.notifications.raise@1`
 - `content.get|list@1`
 - `visitor.lookup@1`
+- `script.run@1` (see below)
 
 Other plugins can add actions through `automation.actions@1`; see
 [plugins.md](plugins.md#offering-actions-to-dynamic-apps-flows). With Visitor accounts
@@ -147,6 +168,34 @@ example, members who write records, or visitors where public access allows. Choo
 with that in mind. A provider can only offer actions named after itself.
 
 An action is named with its major version. Its meaning never changes within that version.
+
+### Script steps
+
+`script.run@1` runs a TypeScript or JavaScript function for logic the expression language cannot
+express, such as loops, maps over lists or a few lines of computation:
+
+```json
+{ "id": "score", "action": "script.run@1",
+  "input": { "language": "ts", "args": { "limit": "{{ input.limit }}" },
+             "code": "export default function main(ctx) { return { hot: ctx.row.amount > ctx.args.limit } }" } }
+```
+
+- **Input:** `main(ctx)` receives `event`, `row`, `previous`, `changedFields`, `input`, `steps`,
+  `run`, and `args`, which is the step's `args` with its templates rendered.
+- **Output:** the JSON value `main` returns is the step's output (`steps.score.hot`).
+- **`code` is not a template.** A `{{` in it stays as written; pass values in through `args`.
+- **A script is pure.** It cannot fetch, read or write files, see the environment or start
+  processes. Anything with a side effect stays a catalog action, so idempotency, write limits and
+  permissions apply as usual.
+- **Limits:** 64,000 characters of code, 2 seconds, a 64 MB heap and 64,000 characters of
+  output. Passing one ends the run *terminated*. A thrown error fails the step and is not
+  retried.
+- **The run history records** the code's hash and length, not the source, which lives in the
+  revision.
+
+Scripts run in `script-runner`, a separate service: one zero-permission Deno process per run, in
+a container with no credentials and no network beyond the flow executors. See
+[ADR 0025](adr/0025-flow-scripts.md).
 
 ### Runs, limits and retries
 

@@ -365,6 +365,12 @@ prometheus.exporter.blackbox "probes" {
     address = "http://email-worker:8080/health"
     module  = "http_2xx"
   }
+  // Reached over the `scripts` network, which alloy joins for exactly this and the OTLP push.
+  target {
+    name    = "script-runner"
+    address = "http://script-runner:8080/health"
+    module  = "http_2xx"
+  }
 
   // The public names, over the real internet path: out through the host's NAT, back in
   // through the edge, TLS and all. Everything above proves a service answers on the compose

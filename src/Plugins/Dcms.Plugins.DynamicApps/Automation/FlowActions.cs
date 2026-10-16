@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -34,6 +35,9 @@ public sealed class FlowActionContext(IServiceProvider services, IPluginContext 
     public FlowRun Run { get; } = run;
     public string StepId { get; } = stepId;
 
+    /// <summary>What the step's expressions see: event, row, previous, changedFields, input, steps, run.</summary>
+    public IReadOnlyDictionary<string, JsonNode?> Scope { get; init; } = new Dictionary<string, JsonNode?>();
+
     /// <summary>Stable across retries of this step: what a side effect deduplicates on.</summary>
     public string IdempotencyKey => $"{Run.Id}:{StepId}";
 
@@ -66,6 +70,12 @@ public interface IFlowAction
     /// <summary>Inputs that are HTML: template holes in them are HTML-encoded before the action sees them.</summary>
     IReadOnlySet<string> HtmlInputs => NoInputs;
 
+    /// <summary>Inputs that are not templates (a script's source): neither rendered nor scanned for <c>{{ }}</c>.</summary>
+    IReadOnlySet<string> LiteralInputs => NoInputs;
+
+    /// <summary>The input as a run step records it; an action whose input holds something not worth repeating per run replaces it.</summary>
+    JsonObject Recorded(JsonObject input) => input;
+
     static readonly IReadOnlySet<string> NoInputs = new HashSet<string>();
 
     Task<JsonNode?> RunAsync(FlowActionContext context, JsonObject input, CancellationToken ct);
@@ -81,6 +91,7 @@ public static partial class ActionCatalog
         new EmailSendAction(), new NotificationRaiseAction(),
         new ContentGetAction(), new ContentListAction(),
         new VisitorLookupAction(),
+        new ScriptRunAction(),
     ];
 
     private static readonly Dictionary<string, IFlowAction> ByKey = All.ToDictionary(a => Key(a), StringComparer.Ordinal);
@@ -243,7 +254,13 @@ public static class AutomationLimits
 
     public const int MaxSteps = 50;
     public const int MaxWrites = 100;
+
+    /// <summary>A literal input — a script's source (ADR 0025) — is at most this long.</summary>
+    public const int MaxLiteralInputChars = 64_000;
     public static readonly TimeSpan MaxDuration = TimeSpan.FromSeconds(60);
+
+    /// <summary>A script step's wall-clock time in the sandbox (ADR 0025).</summary>
+    public static readonly TimeSpan ScriptTimeout = TimeSpan.FromSeconds(2);
 
     /// <summary>How many runs one original action may set off in total, however they chain.</summary>
     public const int MaxRunsPerCorrelation = 20;
@@ -268,6 +285,8 @@ internal abstract partial class FlowAction<TInput> : IFlowAction
     // Declared here, on the class that implements IFlowAction, so an override is what the
     // interface sees; a member declared only in a derived class would not replace the default.
     public virtual IReadOnlySet<string> HtmlInputs { get; } = new HashSet<string>();
+    public virtual IReadOnlySet<string> LiteralInputs { get; } = new HashSet<string>();
+    public virtual JsonObject Recorded(JsonObject input) => input;
 
     public async Task<JsonNode?> RunAsync(FlowActionContext context, JsonObject input, CancellationToken ct)
     {
@@ -523,5 +542,71 @@ internal sealed class VisitorLookupAction : FlowAction<VisitorInput>
         var profiles = context.Plugin.Contracts.TryGet<IVisitorProfiles>()
                        ?? throw new FlowFatalException("visitor.lookup needs the Visitor accounts plugin on this site.");
         return Json(await profiles.GetAsync(new VisitorRef(input.VisitorId), ct));
+    }
+}
+
+// ---------------------------------------------------------------------- scripts (ADR 0025)
+
+internal sealed record ScriptInput(string Code, string Language = "ts", JsonObject? Args = null);
+
+/// <summary>
+/// A pure TypeScript or JavaScript function over the run, executed by script-runner in a Deno
+/// process with no permissions at all. It reads only what it is given and changes nothing, so it
+/// is <see cref="OpRisk.Read"/> and safe to run again.
+/// </summary>
+internal sealed class ScriptRunAction : FlowAction<ScriptInput>
+{
+    public const string HttpClientName = "dcms-script-runner";
+
+    public override string Id => "script.run";
+    public override string Description =>
+        "Run a TypeScript or JavaScript function: `export default function main(ctx)` gets event, row, previous, changedFields, "
+        + "input, steps, run and args (this step's rendered `args`) and returns the step's output, any JSON value. Pure — no "
+        + "network, files or environment — and bounded: 2 s, 64 MB, 64 KB of output. `code` is not a template: pass values in through `args`.";
+    public override OpRisk Risk => OpRisk.Read;
+    protected override string Schema => """{"type":"object","required":["code"],"properties":{"code":{"type":"string","description":"A module whose default export is main(ctx)."},"language":{"enum":["ts","js"]},"args":{"type":"object","description":"Values for ctx.args; strings may hold {{ }} templates."}}}""";
+
+    public override IReadOnlySet<string> LiteralInputs { get; } = new HashSet<string> { "code" };
+
+    /// <summary>The source lives in the revision; each run records which one it ran, not another copy.</summary>
+    public override JsonObject Recorded(JsonObject input)
+    {
+        var copy = input.DeepClone().AsObject();
+        if (copy["code"] is JsonValue v && v.TryGetValue<string>(out var code))
+        {
+            copy["code"] = new JsonObject
+            {
+                ["sha256"] = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(code))),
+                ["chars"] = code.Length,
+            };
+        }
+        return copy;
+    }
+
+    protected override async Task<JsonNode?> RunAsync(FlowActionContext context, ScriptInput input, CancellationToken ct)
+    {
+        var ctx = new JsonObject(context.Scope.Select(p => KeyValuePair.Create(p.Key, p.Value?.DeepClone())))
+        {
+            ["args"] = input.Args?.DeepClone() ?? new JsonObject(),
+        };
+        var http = context.Services.GetRequiredService<IHttpClientFactory>().CreateClient(HttpClientName);
+        // A failed request or a 5xx is passing trouble and propagates: the run is retried.
+        using var response = await http.PostAsJsonAsync("/run", new
+        {
+            code = input.Code,
+            language = input.Language,
+            ctx,
+            timeoutMs = (int)AutomationLimits.ScriptTimeout.TotalMilliseconds,
+        }, ct);
+        response.EnsureSuccessStatusCode();
+        var reply = await response.Content.ReadFromJsonAsync<JsonObject>(ct)
+                    ?? throw new FlowFatalException("script.run: the script runner sent no result.");
+        return reply["status"]?.GetValue<string>() switch
+        {
+            "ok" => reply["result"]?.DeepClone(),
+            // Time, memory or output: the run ends terminated, like any other limit.
+            "limit" => throw new FlowFatalException($"script.run: {reply["error"]}", limit: true),
+            _ => throw new FlowFatalException($"script.run: {reply["error"]}"),
+        };
     }
 }

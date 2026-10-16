@@ -127,6 +127,40 @@ public sealed class FlowModelTests
         Errors(Build($$"""[ { "op": "update", "type": "flow", "target": "manual_one", "value": {{patch}} } ]""", Config)).Should().Contain(code);
     }
 
+    [Theory]
+    // A script's code is not a template: a {{ in it is source, not a hole to validate.
+    [InlineData("export default () => ({ text: '{{ not a hole' })", 0, null)]
+    // Past the 16,000 an input's templates may take, within the 64,000 a script may.
+    [InlineData(null, 20_000, null)]
+    [InlineData(null, 70_000, "invalid-step")]
+    public void A_scripts_code_is_literal_with_a_limit_of_its_own(string? code, int padding, string? error)
+    {
+        code ??= "export default () => 1; //" + new string('x', padding);
+        var step = new JsonObject
+        {
+            ["id"] = "calc", ["action"] = "script.run@1",
+            ["input"] = new JsonObject { ["code"] = code, ["args"] = new JsonObject { ["n"] = "{{ input.n }}" } },
+        };
+        var patch = new JsonArray(new JsonObject { ["op"] = "update", ["type"] = "flow", ["target"] = "manual_one", ["value"] = new JsonObject { ["steps"] = new JsonArray(step) } });
+
+        var errors = Errors(Build(patch.ToJsonString(), Config));
+        if (error is null)
+        {
+            errors.Should().BeEmpty();
+        }
+        else
+        {
+            errors.Should().Contain(error);
+        }
+    }
+
+    [Fact]
+    public void A_scripts_args_are_still_templates()
+    {
+        Errors(Build("""[ { "op": "update", "type": "flow", "target": "manual_one", "value": { "steps": [ { "id": "calc", "action": "script.run@1", "input": { "code": "export default () => 1", "args": { "n": "{{ row. }}" } } } ] } } ]""", Config))
+            .Should().Contain("invalid-expression");
+    }
+
     [Fact]
     public void A_patched_trigger_drops_what_the_patch_clears()
     {

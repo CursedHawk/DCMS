@@ -25,7 +25,7 @@ This box **runs tests and builds only** — it is not a deploy target. The full
 
 | Path | What |
 | --- | --- |
-| `src/Services/` | admin-api, content-api, identity, edge (YARP ingress), site-builder, site-host, ai-gateway, media-worker, email-worker, platform-api |
+| `src/Services/` | admin-api, content-api, identity, edge (YARP ingress), site-builder, site-host, ai-gateway, media-worker, email-worker, script-runner (flow-script Deno sandbox, ADR 0025), platform-api |
 | `src/Shared/` | Kernel, Data (EF + RLS), Contracts, Messaging (NATS), Security, Vault, Telemetry |
 | `src/Plugins/` | content plugins (Blog, Forms, Search, …) behind `Dcms.PluginSdk` |
 | `apps/admin`, `apps/platform` | React 19 + Vite SPAs |

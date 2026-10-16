@@ -480,12 +480,17 @@ services:
       ServiceClient__ClientSecret: "dcms-admin-api-dev-secret"
       Realms__ClientSecret: "dcms-realm-admin-dev-secret"
       Services__AiGateway: "http://ai-gateway:8080"
+      # Flow scripts (ADR 0025). Reached over `scripts`, which jobs-worker inherits from here.
+      Services__ScriptRunner: "http://script-runner:8080"
       # The other end of the alert webhook. Unset → the endpoint refuses every request,
       # which is the right way for an unconfigured installation to fail.
       Alerting__WebhookSecret: "${ALERT_WEBHOOK_SECRET:-}"
       Alerting__Recipients: "${ALERT_RECIPIENTS:-}"
       # Requests and the consoles' sockets only; the background work is jobs-worker's (below).
       Dcms__Role: "api"
+    networks:
+      default: {}
+      scripts: {}
 
   # admin-api's own image in its worker role (ADR 0024): the tenant job lane, every plugin's
   # event handlers, jobs and hosted services, and the job ledger's housekeeping. Same code, same
@@ -594,6 +599,30 @@ services:
     environment:
       <<: *otel-env
       Nats__Url: "nats://nats:4222"
+
+  # Dynamic Apps flow scripts (ADR 0025): tenant TypeScript, one zero-permission Deno process
+  # per run. Telemetry and NOTHING else -- no *service-env, no Vault address, no broker or
+  # database -- and only the `scripts` network, which has no egress: a script that got out of
+  # Deno would find no credential to take and no route to send anything. Everything below
+  # the environment is that same argument applied to the container.
+  script-runner:
+    build:
+      context: .
+      dockerfile: src/Services/Dcms.ScriptRunner/Dockerfile
+    <<: *service-defaults
+    # Four concurrent scripts at a 64 MB heap each, plus the host. Raise with ScriptRunner__MaxConcurrency.
+    mem_limit: "${SCRIPT_RUNNER_MEM_LIMIT:-640m}"
+    read_only: true
+    tmpfs:
+      # Each run's DENO_DIR, deleted when it ends.
+      - /tmp:size=256m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    environment:
+      <<: *otel-env
+    networks:
+      - scripts
 
   site-builder:
     build:
@@ -1039,6 +1068,10 @@ services:
     image: grafana/alloy:v1.19.1
     restart: unless-stopped
     logging: *default-logging
+    # `scripts` too: script-runner's OTLP export and its health probe (below) cross it.
+    networks:
+      default: {}
+      scripts: {}
     # 512m, not the 384m the other agents get. Alloy is not one process's worth of work: it
     # is the OTLP receiver, the tail sampler holding up to 20 000 traces in memory, the
     # container-log shipper and five embedded exporters — and cAdvisor alone is the largest
@@ -1230,6 +1263,10 @@ services:
     image: grafana/pyroscope:2.3.1
     restart: unless-stopped
     logging: *default-logging
+    # `scripts` too, for script-runner's profiles.
+    networks:
+      default: {}
+      scripts: {}
     mem_limit: 384m
     volumes:
       - ./infra/observability/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro
@@ -1385,6 +1422,12 @@ networks:
     ipam:
       config:
         - subnet: 10.201.0.0/24
+
+  # ADR 0025: script-runner's only network. Its members are the flow executors (admin-api and
+  # jobs-worker, which extends it) and the two telemetry receivers. `internal`, so nothing on
+  # it has a route out -- and membership is the runner's whole access control.
+  scripts:
+    internal: true
 
 volumes:
   postgres-data:

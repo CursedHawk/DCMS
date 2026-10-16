@@ -244,10 +244,10 @@ public sealed class FlowExecutor(
                 return null;
             }
             var action = await ActionCatalog.FindAsync(context, step.Action, ct) ?? throw new FlowFatalException($"There is no action '{step.Action}'.");
-            var input = Expressions.Render(step.Input, scope, now, action.HtmlInputs) as JsonObject ?? [];
-            row.InputJson = Bounded(input);
+            var input = Expressions.Render(step.Input, scope, now, action.HtmlInputs, action.LiteralInputs) as JsonObject ?? [];
+            row.InputJson = Bounded(action.Recorded(input));
 
-            var output = await action.RunAsync(new FlowActionContext(services, context, run, step.Id), input, ct);
+            var output = await action.RunAsync(new FlowActionContext(services, context, run, step.Id) { Scope = scope }, input, ct);
             row.Status = FlowRunStatus.Succeeded;
             row.OutputJson = Bounded(output);
             outputs[step.Id] = output?.DeepClone();

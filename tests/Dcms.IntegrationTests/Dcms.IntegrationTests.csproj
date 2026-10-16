@@ -38,6 +38,7 @@
     <ProjectReference Include="..\..\src\Services\Dcms.PlatformApi\Dcms.PlatformApi.csproj" Aliases="PlatformApiApp" />
     <ProjectReference Include="..\..\src\Services\Dcms.SiteBuilder\Dcms.SiteBuilder.csproj" Aliases="SiteBuilderApp" />
     <ProjectReference Include="..\..\src\Services\Dcms.SiteHost\Dcms.SiteHost.csproj" Aliases="SiteHostApp" />
+    <ProjectReference Include="..\..\src\Services\Dcms.ScriptRunner\Dcms.ScriptRunner.csproj" Aliases="ScriptRunnerApp" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Facebook\Dcms.Plugins.Facebook.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Instagram\Dcms.Plugins.Instagram.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.Meta.Core\Dcms.Plugins.Meta.Core.csproj" />

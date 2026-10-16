@@ -766,13 +766,19 @@ public static class Expressions
     /// HTML-encoded, so a record's text — possibly a site visitor's — cannot become markup in
     /// mail the tenant sends. The template's own markup is kept.
     /// </param>
+    /// <param name="literalKeys">
+    /// Top-level input keys that are not templates at all (a script's source): copied as written,
+    /// so a <c>{{</c> in a string literal or a regex is never taken for a hole.
+    /// </param>
     public static JsonNode? Render(JsonNode? template, IReadOnlyDictionary<string, JsonNode?> scope, DateTimeOffset now,
-        IReadOnlySet<string>? htmlKeys = null)
+        IReadOnlySet<string>? htmlKeys = null, IReadOnlySet<string>? literalKeys = null)
     {
         var budget = new[] { MaxRenderedChars };
-        if (template is JsonObject root && htmlKeys is { Count: > 0 })
+        if (template is JsonObject root && (htmlKeys is { Count: > 0 } || literalKeys is { Count: > 0 }))
         {
-            return new JsonObject(root.Select(p => KeyValuePair.Create(p.Key, Render(p.Value, scope, now, budget, html: htmlKeys.Contains(p.Key)))));
+            return new JsonObject(root.Select(p => KeyValuePair.Create(p.Key, literalKeys?.Contains(p.Key) == true
+                ? p.Value?.DeepClone()
+                : Render(p.Value, scope, now, budget, html: htmlKeys?.Contains(p.Key) == true))));
         }
         return Render(template, scope, now, budget, html: false);
     }
@@ -798,6 +804,10 @@ public static class Expressions
             ? value
             : throw new ExpressionException($"A step's input would be larger than {MaxRenderedChars:N0} characters.");
     }
+
+    /// <summary>Every expression inside a step's input, for validation; <paramref name="literalKeys"/> are not templates.</summary>
+    public static IEnumerable<string> TemplateExpressions(JsonObject input, IReadOnlySet<string> literalKeys) =>
+        input.Where(p => !literalKeys.Contains(p.Key)).SelectMany(p => TemplateExpressions(p.Value));
 
     /// <summary>Every expression inside a template, for validation.</summary>
     public static IEnumerable<string> TemplateExpressions(JsonNode? template) => template switch

@@ -149,6 +149,10 @@ services:
     environment:
       <<: *dev-env
 
+  script-runner:
+    environment:
+      <<: *dev-env
+
   migrate:
     environment:
       <<: *dev-env

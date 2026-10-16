@@ -133,7 +133,7 @@ echo "== pyroscope (CPU profile per service)"
 # that pushed nothing should show up here as a WARN, not silently drop out of the list.
 mkdir -p "$OUT/profiles"
 PROFILE_TYPE='process_cpu:cpu:nanoseconds:cpu:nanoseconds'
-for svc in identity admin-api content-api ai-gateway media-worker site-builder site-host email-worker edge platform-api; do
+for svc in identity admin-api content-api ai-gateway media-worker site-builder site-host email-worker script-runner edge platform-api; do
     q="$(urlencode "$PROFILE_TYPE{service_name=\"$svc\"}")"
     # max-nodes: the default trims a busy service's graph so hard that a quarter of its CPU lands
     # in a single "other" node, which is the one thing top.txt cannot explain.
