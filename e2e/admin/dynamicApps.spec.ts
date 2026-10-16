@@ -223,6 +223,11 @@ test('a publish the server refuses says why', async ({ page, api }) => {
   await expect(review.getByText(/1 existing record\(s\) have no value/)).toBeVisible();
   await expect(review.getByText('activities.type')).toBeVisible();
   await expect(review.getByRole('button', { name: 'Publish' })).toBeDisabled();
+
+  // The assistant is offered the issues to fix, as a question the member sends or not.
+  await review.getByRole('button', { name: 'Ask AI' }).click();
+  const dock = page.getByRole('dialog', { name: 'Assistant' });
+  await expect(dock.getByRole('textbox')).toHaveValue(/^Publishing the draft is blocked by these issues\..*\n- activities\.type: 1 existing record\(s\) have no value/s);
 });
 
 test("a record's choice is changed right in the list, and the list is filtered by picked choices", async ({ page, api }) => {
@@ -508,5 +513,53 @@ test.describe('the flow editor', () => {
     await page.getByRole('dialog').getByRole('textbox', { name: 'Condition' }).focus({ timeout: 20_000 });
     await page.keyboard.type('secrets');
     await settled(page.getByTestId('expression-problem')).toHaveText("Unknown name 'secrets'");
+  });
+});
+
+test.describe('the assistant on automations', () => {
+  const RUN = 'dddddddd-0000-0000-0000-000000000002';
+  const FLOW = {
+    id: 'eeeeeeee-0000-0000-0000-000000000002', apiName: 'big_deal', displayName: 'Big deal', enabled: true,
+    trigger: { event: 'row.updated', tableId: TABLE_ID, changedFields: [] },
+    steps: [{ id: 'notify', action: 'dcms.notifications.raise@1', input: { title: 'Big' } }],
+  };
+
+  test('Ask AI on a failed run opens the assistant with the question ready, not sent', async ({ page, api }) => {
+    api.on('GET', `/api/admin/plugins/crm/_automation/runs/${RUN}`, {
+      run: {
+        id: RUN, flow: 'big_deal', revision: 1, status: 'failed', trigger: 'row.updated', attempts: 1, depth: 0, writes: 0,
+        correlationId: null, causationId: null, error: "Step 'calc' (script.run@1): nope", createdAt: '2026-10-16T08:01:42Z',
+        startedAt: '2026-10-16T08:01:42Z', finishedAt: '2026-10-16T08:01:43Z',
+      },
+      steps: [], triggerEvent: null, chain: [],
+    });
+    await page.goto(`/plugins/crm/configuration?tab=automation&run=${RUN}`);
+
+    await page.getByRole('dialog').getByRole('button', { name: 'Ask AI' }).click();
+    const dock = page.getByRole('dialog', { name: 'Assistant' });
+    await expect(dock.getByRole('textbox')).toHaveValue(`Run ${RUN} of the flow big_deal failed. Read it, explain in plain words why, and propose a fix to the flow.`);
+    expect(api.requestsTo('POST', '/api/admin/ai/messages')).toHaveLength(0);
+  });
+
+  test('a flow changed elsewhere while open says so, and loads the new version on request', async ({ page, api }) => {
+    let version = FLOW;
+    api
+      .on('GET', '/api/admin/plugins/crm/_model/draft', () => ({ revision: DRAFT, config: { ...CONFIG, flows: [version] } }))
+      .on('GET', '/api/admin/plugins/crm/_automation/language', { functions: [], variables: [], maxSourceChars: 2000 });
+    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.getByRole('button', { name: 'Edit' }).first().click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByLabel('Name', { exact: true })).toHaveValue('Big deal');
+    await expect(dialog.getByRole('status')).toHaveCount(0);
+
+    // The assistant renames it in the draft. Its tool call invalidates the app's queries; going
+    // offline and back is the same refetch without scripting a whole assistant turn.
+    version = { ...FLOW, displayName: 'Huge deal' };
+    await page.context().setOffline(true);
+    await page.context().setOffline(false);
+    await expect(dialog.getByRole('status')).toContainText('changed elsewhere');
+    await dialog.getByRole('button', { name: 'Load the new version' }).click();
+    await expect(dialog.getByLabel('Name', { exact: true })).toHaveValue('Huge deal');
+    await expect(dialog.getByRole('status')).toHaveCount(0);
   });
 });

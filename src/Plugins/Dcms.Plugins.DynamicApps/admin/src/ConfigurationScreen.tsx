@@ -69,14 +69,17 @@ export function ConfigurationScreen({ instance }: PluginScreenProps) {
   const draft = state.data?.draft ?? null;
   const published = state.data?.published ?? null;
 
+  // A flow open in the editor: the assistant reads the language (and that flow's script typings) before touching it.
+  const selectedFlow = working.data?.config.flows.find((f) => f.id === selection)?.apiName ?? null;
   const context = useMemo(
     () => ({
       area: 'data-platform',
       summary: `the ${instance!.name} app's configuration (Dynamic Apps instance "${slug}"), ${tab} tab; `
-        + (draft ? `draft revision ${draft.number} is open` : published ? `revision ${published.number} is live, no draft open` : 'nothing published yet'),
+        + (draft ? `draft revision ${draft.number} is open` : published ? `revision ${published.number} is live, no draft open` : 'nothing published yet')
+        + (selectedFlow ? `; the flow "${selectedFlow}" is selected — read it, and the flow language for it, before changing its conditions, templates or scripts` : ''),
       selection: [instance!.id, ...(selection ? [selection] : []), ...(draft ? [draft.id] : [])],
     }),
-    [instance, slug, tab, draft, published, selection],
+    [instance, slug, tab, draft, published, selection, selectedFlow],
   );
   usePluginAiContext(context);
 

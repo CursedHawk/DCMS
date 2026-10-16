@@ -298,6 +298,21 @@ under the same permissions. It works through two contracts: `dynamic-apps.config
   unless the assistant's mode allows them.
 - **Every change it makes is stamped** with its conversation and run id. A revision shows
   that it came from the assistant, and the audit log shows which tool call made each change.
+- **It writes flows from the language the server parses.** `GetFlowLanguage` gives it:
+  - the expression functions and names;
+  - how templates render;
+  - the `script.run@1` contract;
+  - with a flow and a step, the same TypeScript declarations of `ctx` that the editor uses.
+
+  Its conditions and scripts then pass the same validation as yours.
+- **Ask AI where something went wrong:**
+  - on a failed or terminated run in the run history;
+  - on the issues that block a publish.
+
+  Either one opens the assistant with the question written out in the message box, and you
+  choose whether to send it.
+- **A flow it changes while you have that flow open** puts a notice in the editor. Saving
+  would replace its change, so the notice offers to load the new version.
 
 A good request names the outcome, for example: *"Add a B2B CRM: companies, contacts and deals
 with a stage choice; email the deal owner when a deal over 10 000 is won."*

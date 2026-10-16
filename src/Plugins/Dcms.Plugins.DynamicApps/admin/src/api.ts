@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast, toastApiError } from '@dcms/ui';
-import { instancePath, usePluginApi, usePluginT } from '@dcms/plugin-ui';
+import { instancePath, useOpenAssistant, usePluginApi, usePluginScreen, usePluginT } from '@dcms/plugin-ui';
 
 // ---------------------------------------------------------------------------------------------
 // The configuration document (Dcms.Plugins.DynamicApps.Api.Model), as the server sends it.
@@ -409,6 +409,17 @@ export interface ExpressionProblem {
   message: string;
   start: number;
   end: number;
+}
+
+/**
+ * Opens the assistant with a question ready to send — when it can act on this app: inside the
+ * console, with the app's AI tools on. Otherwise null, and the screen's own Ask AI offers to
+ * turn the tools on.
+ */
+export function useAskAssistant(): ((prompt: string) => void) | null {
+  const open = useOpenAssistant();
+  const { instance } = usePluginScreen();
+  return open && instance?.aiToolsEnabled !== false ? (prompt: string) => open(prompt) : null;
 }
 
 /** The expression language as the server parses it: what the flow editor completes and explains. */

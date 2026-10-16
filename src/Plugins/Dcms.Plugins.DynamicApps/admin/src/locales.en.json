@@ -45,7 +45,8 @@
     "destructiveOne": "May affect existing data",
     "noChanges": "No changes.",
     "done": "Revision {{number}} is live.",
-    "refused": "Not published: fix the problems listed and try again."
+    "refused": "Not published: fix the problems listed and try again.",
+    "askAiFix": "Publishing the draft is blocked by these issues. Explain each one and propose fixes to the draft:"
   },
   "kinds": {
     "settings": "settings",
@@ -224,7 +225,10 @@
     "scriptArgsHint": "args reach the code as ctx.args; their values may hold template expressions. language: ts or js.",
     "rawJson": "Edit all steps as JSON",
     "cards": "Edit step by step",
-    "invalidJson": "This is not a JSON object."
+    "invalidJson": "This is not a JSON object.",
+    "askAiRun": "Run {{run}} of the flow {{flow}} failed. Read it, explain in plain words why, and propose a fix to the flow.",
+    "changedElsewhere": "This flow was changed elsewhere since you opened it — by a colleague or the assistant. Saving here would replace that change.",
+    "reload": "Load the new version"
   },
   "events": {
     "row_created": "A record is created",

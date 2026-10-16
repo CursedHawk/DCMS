@@ -33,7 +33,7 @@ import { useAssistantSession } from './useAssistantSession';
  */
 export function AiDock() {
   const { t } = useTranslation();
-  const { open, setOpen, page } = useAi();
+  const { open, setOpen, page, prefill, takePrefill } = useAi();
   const navigate = useNavigate();
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -205,6 +205,8 @@ export function AiDock() {
                 onDetach={session.detach}
                 toolCount={session.toolCount}
                 unsaved={session.unsaved}
+                prefill={prefill}
+                onPrefillTaken={takePrefill}
               />
             )}
           </SheetFooter>

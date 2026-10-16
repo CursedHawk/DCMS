@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * What the reader is currently looking at.
@@ -27,6 +27,11 @@ interface AiContextValue {
   setPage: (context: AiPageContext | null) => void;
   open: boolean;
   setOpen: (open: boolean) => void;
+  /** A question a screen offers ("explain this failed run"), waiting in the message box until taken. */
+  prefill: string | null;
+  /** Opens the assistant with a question ready to send; the member reads it and sends it, or not. */
+  ask: (prompt: string) => void;
+  takePrefill: () => void;
 }
 
 const AiContext = createContext<AiContextValue | null>(null);
@@ -34,6 +39,7 @@ const AiContext = createContext<AiContextValue | null>(null);
 export function AiProvider({ children }: { children: React.ReactNode }) {
   const [page, setPage] = useState<AiPageContext | null>(null);
   const [open, setOpen] = useState(false);
+  const [prefill, setPrefill] = useState<string | null>(null);
 
   // ⌘J / Ctrl+J. Deliberately not ⌘K, which is navigation — the two are used in the same
   // breath and stealing the shortcut people already know is how a new feature earns
@@ -49,7 +55,14 @@ export function AiProvider({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  const value = useMemo(() => ({ page, setPage, open, setOpen }), [page, open]);
+  // Stable: the plugin host is rebuilt when these change, and every plugin screen's context
+  // effect with it — a new identity per render would loop through setPage.
+  const ask = useCallback((prompt: string) => {
+    setPrefill(prompt);
+    setOpen(true);
+  }, []);
+  const takePrefill = useCallback(() => setPrefill(null), []);
+  const value = useMemo(() => ({ page, setPage, open, setOpen, prefill, ask, takePrefill }), [page, open, prefill, ask, takePrefill]);
   return <AiContext.Provider value={value}>{children}</AiContext.Provider>;
 }
 

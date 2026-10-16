@@ -18,6 +18,17 @@ public sealed record TableRequest(string Table, string? Revision = null);
 /// <param name="Flow">The flow's api name.</param>
 public sealed record FlowRequest(string Flow, string? Revision = null);
 
+/// <param name="Flow">A flow's api name: adds TypeScript declarations of the ctx its script steps receive.</param>
+/// <param name="Step">The script step being written: its ctx holds only the steps before it.</param>
+public sealed record FlowLanguageRequest(string? Flow = null, string? Step = null);
+
+/// <summary>How flows are written: the expression language, templates and script steps.</summary>
+/// <param name="Typings">With a flow: TypeScript declarations of FlowContext, the ctx its script receives.</param>
+public sealed record FlowLanguage(
+    IReadOnlyList<FlowFunction> Functions, IReadOnlyList<string> Variables, string Expressions, string Templates, string Scripts, string? Typings);
+
+public sealed record FlowFunction(string Name, string Signature, string Description, string Returns);
+
 public sealed record RevisionRequest(int Number);
 
 public sealed record DiffRequest(int From, int To);
@@ -104,8 +115,14 @@ public interface IDynamicAppsConfig
     Task<FlowDef> GetFlowAsync(FlowRequest input, CancellationToken ct);
 
     [Operation(OpRisk.Read, Permission = DynamicAppsPermissions.ModelRead, Expose = OpExposure.Admin | OpExposure.Ai,
-        Description = "The actions a flow step can call (id@major), with what each does and its input schema.")]
+        Description = "The actions a flow step can call (id@major), with what each does and its input and output schemas.")]
     Task<IReadOnlyList<FlowActionInfo>> ListActionsAsync(CancellationToken ct);
+
+    [Operation(OpRisk.Read, Permission = DynamicAppsPermissions.ModelRead, Expose = OpExposure.Admin | OpExposure.Ai,
+        Description = "Read this before writing a flow condition, a {{ }} template or a script step: the expression language's functions "
+            + "and names, how templates render, and the script.run@1 contract. With flow (and step), also TypeScript declarations of the "
+            + "ctx that flow's script receives — write scripts against them.")]
+    Task<FlowLanguage> GetFlowLanguageAsync(FlowLanguageRequest input, CancellationToken ct);
 
     [Operation(OpRisk.Read, Permission = DynamicAppsPermissions.ModelRead, Expose = OpExposure.Admin | OpExposure.Ai,
         Description = "The revision history, newest first: number, status (draft, published, superseded, rolledBack, discarded), source, who, when.")]

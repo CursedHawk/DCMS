@@ -1,5 +1,5 @@
 import { Paperclip, Send, Square, X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, cn } from '@dcms/ui';
 import type { Attachment } from './attachments';
@@ -27,6 +27,8 @@ export function Composer({
   toolCount,
   unsaved,
   placeholder,
+  prefill,
+  onPrefillTaken,
 }: {
   onSend: (text: string) => void;
   onStop: () => void;
@@ -41,9 +43,19 @@ export function Composer({
   /** True when the last append to the stored conversation failed. */
   unsaved?: boolean;
   placeholder?: string;
+  /** A question a screen offered: it replaces the message box's text, and is not sent. */
+  prefill?: string | null;
+  onPrefillTaken?: () => void;
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState('');
+  const box = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (!prefill) return;
+    setDraft(prefill);
+    onPrefillTaken?.();
+    box.current?.focus();
+  }, [prefill, onPrefillTaken]);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const submit = () => {
@@ -87,6 +99,7 @@ export function Composer({
         className="rounded-md border bg-background focus-within:ring-2 focus-within:ring-ring"
       >
         <textarea
+          ref={box}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {

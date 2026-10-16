@@ -94,7 +94,8 @@ export interface PluginHost {
   /** The console's assistant: what the screen shows, and a way to open it. Absent outside the console shell. */
   assistant?: {
     setContext(context: PluginAiContext | null): void;
-    open(): void;
+    /** Opens the assistant; with a prompt, puts it in the message box for the member to send (never sends it). */
+    open(prompt?: string): void;
     /**
      * Turns on the instance's "AI tools" switch, so the assistant can use its contracts, and
      * refreshes the assistant's tools. Needs `plugins:manage`, as the switch does in settings.
@@ -226,10 +227,10 @@ export function usePluginAiContext(context: PluginAiContext | null): void {
   }, [identity, assistant]);
 }
 
-/** Opens the console's assistant beside the screen; null outside the console shell. */
-export function useOpenAssistant(): (() => void) | null {
+/** Opens the console's assistant beside the screen, optionally with a question ready to send; null outside the console shell. */
+export function useOpenAssistant(): ((prompt?: string) => void) | null {
   const assistant = usePluginHost().assistant;
-  return assistant ? () => assistant.open() : null;
+  return assistant ? (prompt?: string) => assistant.open(prompt) : null;
 }
 
 /** A background job (ADR 0024), as `GET /admin/jobs/{id}` returns it. */

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Play, RefreshCw, RotateCcw } from 'lucide-react';
+import { Play, RefreshCw, RotateCcw, Sparkles } from 'lucide-react';
 import {
   Badge,
   Button,
@@ -26,8 +26,7 @@ import {
   useRuns,
   type AppConfig,
   type FlowDef,
-  type FlowRunSummary,
-} from '../api';
+  type FlowRunSummary, useAskAssistant } from '../api';
 import { Item, Muted, Section } from '../model/ModelTab';
 import { FlowDialog } from './FlowDialog';
 import { SelectField } from '../model/dialogs';
@@ -56,7 +55,8 @@ export function AutomationTab({ slug, config, editable, onSelect }: {
   const mayRun = useCan('flows-run');
   const mayReadRuns = useCan('data-read');
   const actions = useActions(slug);
-  const [editing, setEditing] = useState<{ flow?: FlowDef } | null>(null);
+  // `opened` keys the dialog: reloading the flow reopens it, with every field reset.
+  const [editing, setEditing] = useState<{ flow?: FlowDef; opened: number } | null>(null);
   const [deleting, setDeleting] = useState<FlowDef | null>(null);
   // A job's links open here on its flow (?flow=) or straight on its run (?run=).
   const [linkedFlow] = useState(() => deepLink('flow'));
@@ -89,7 +89,7 @@ export function AutomationTab({ slug, config, editable, onSelect }: {
 
   return (
     <div className="space-y-6 pt-2">
-      <Section title={t('automation.flows')} onAdd={editable && config ? () => setEditing({}) : undefined}>
+      <Section title={t('automation.flows')} onAdd={editable && config ? () => setEditing({ opened: Date.now() }) : undefined}>
         {flows.length === 0 ? <Muted>{t('automation.noFlows')}</Muted> : flows.map((flow) => (
           <div key={flow.id} onFocus={() => onSelect(flow.id)}
             className={`flex items-center gap-1 ${flow.apiName === linkedFlow ? 'rounded-md ring-2 ring-primary/40' : ''}`}
@@ -98,7 +98,7 @@ export function AutomationTab({ slug, config, editable, onSelect }: {
               <Item
                 title={`${flow.displayName}${flow.enabled ? '' : ` · ${t('automation.disabled')}`}`}
                 detail={`${flow.trigger.event}${tableName(flow.trigger.tableId) ? ` · ${tableName(flow.trigger.tableId)}` : ''}${flow.trigger.everyMinutes ? ` · ${t('automation.every', { minutes: flow.trigger.everyMinutes })}` : ''} · ${t('automation.steps', { count: flow.steps.length })}`}
-                onEdit={editable ? () => { onSelect(flow.id); setEditing({ flow }); } : undefined}
+                onEdit={editable ? () => { onSelect(flow.id); setEditing({ flow, opened: Date.now() }); } : undefined}
                 onDelete={editable ? () => setDeleting(flow) : undefined}
               />
             </div>
@@ -148,7 +148,8 @@ export function AutomationTab({ slug, config, editable, onSelect }: {
       </details>
 
       {editing && config ? (
-        <FlowDialog slug={slug} config={config} flow={editing.flow} actions={actions.data ?? []} pending={apply.isPending}
+        <FlowDialog key={editing.opened} slug={slug} config={config}
+          onReload={(latest) => setEditing({ flow: latest, opened: Date.now() })} flow={editing.flow} actions={actions.data ?? []} pending={apply.isPending}
           onCancel={() => setEditing(null)}
           onSave={(operations) => apply.mutate({ operations }, { onSuccess: () => setEditing(null) })} />
       ) : null}
@@ -179,6 +180,7 @@ function RunSheet({ slug, id, onClose, onOpen, mayRetry }: {
   const qc = useQueryClient();
   const run = useRun(slug, id);
   const detail = run.data;
+  const ask = useAskAssistant();
   const retry = async () => {
     try {
       await api.post(instancePath(slug, `/_automation/runs/${id}/retry`));
@@ -209,8 +211,17 @@ function RunSheet({ slug, id, onClose, onOpen, mayRetry }: {
                 <dd>{new Date(detail.run.createdAt).toLocaleString(i18n.language)} {duration(detail.run.startedAt, detail.run.finishedAt)}</dd>
                 {detail.run.error ? <><dt className="text-muted-foreground">{t('automation.error')}</dt><dd className="text-destructive">{detail.run.error}</dd></> : null}
               </dl>
-              {mayRetry && (detail.run.status === 'failed' || detail.run.status === 'terminated') ? (
-                <Button size="sm" variant="outline" onClick={() => void retry()}><RotateCcw className="size-4" /> {t('automation.retry')}</Button>
+              {detail.run.status === 'failed' || detail.run.status === 'terminated' ? (
+                <div className="flex flex-wrap gap-2">
+                  {mayRetry ? (
+                    <Button size="sm" variant="outline" onClick={() => void retry()}><RotateCcw className="size-4" /> {t('automation.retry')}</Button>
+                  ) : null}
+                  {ask ? (
+                    <Button size="sm" variant="outline" onClick={() => ask(t('automation.askAiRun', { run: detail.run.id, flow: detail.run.flow }))}>
+                      <Sparkles className="size-4" aria-hidden /> {t('actions.askAi')}
+                    </Button>
+                  ) : null}
+                </div>
               ) : null}
 
               <h4 className="text-sm font-semibold">{t('automation.stepsTitle')}</h4>

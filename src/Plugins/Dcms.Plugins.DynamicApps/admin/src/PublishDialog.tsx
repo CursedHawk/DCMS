@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Sparkles } from 'lucide-react';
 import {
   Button,
   CenteredSpinner,
@@ -13,7 +13,7 @@ import {
   toast,
 } from '@dcms/ui';
 import { instancePath, usePluginApi, usePluginT } from '@dcms/plugin-ui';
-import { refusedOf, useModelAction, usePreview, type ConfigChange, type ConfigIssue, type PublishResult, type RevisionInfo } from './api';
+import { refusedOf, useAskAssistant, useModelAction, usePreview, type ConfigChange, type ConfigIssue, type PublishResult, type RevisionInfo } from './api';
 
 /**
  * Review, then publish: what the draft changes against the live app, which of those changes
@@ -36,6 +36,7 @@ export function PublishDialog({ slug, open, onOpenChange, draft }: {
   const [refused, setRefused] = useState<ConfigIssue[] | null>(null);
   const errors = refused ?? preview.data?.issues.filter((i) => i.severity === 'error') ?? [];
   const warnings = preview.data?.issues.filter((i) => i.severity === 'warning') ?? [];
+  const ask = useAskAssistant();
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) setRefused(null); onOpenChange(o); }}>
@@ -55,6 +56,12 @@ export function PublishDialog({ slug, open, onOpenChange, draft }: {
                 </p>
               ) : null}
               <Issues issues={errors} />
+              {errors.length > 0 && ask ? (
+                <Button variant="outline" size="sm"
+                  onClick={() => ask(`${t('publish.askAiFix')}\n${errors.map((i) => `- ${i.path}: ${i.message}`).join('\n')}`)}>
+                  <Sparkles className="size-4" aria-hidden /> {t('actions.askAi')}
+                </Button>
+              ) : null}
               <Issues issues={warnings} />
               <ChangeList changes={preview.data.changes} empty={t('publish.noChanges')} />
             </>

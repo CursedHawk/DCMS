@@ -87,6 +87,45 @@ public sealed class AiContractTests(ContentFlowFixture fixture)
 
     // ---- helpers ----
 
+    private const string Scored = """
+        [ { "op": "create", "type": "table", "value": { "apiName": "companies", "displayName": "Company", "primaryFieldId": "name",
+              "fields": [ { "apiName": "name", "displayName": "Name", "required": true } ] } },
+          { "op": "create", "type": "flow", "value": { "apiName": "score", "displayName": "Score",
+              "trigger": { "event": "row.created", "tableId": "companies" },
+              "steps": [ { "id": "same", "action": "records.query@1", "input": { "table": "companies" } },
+                         { "id": "calc", "action": "script.run@1", "input": { "code": "export default () => 1", "args": { "n": "{{ row.name }}" } } } ] } } ]
+        """;
+
+    [DockerFact]
+    public async Task An_agent_reads_the_flow_language_and_a_scripts_typed_ctx_before_writing_one()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var app = await AppHarness.CreateAsync(fixture, ct);
+        (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Put, $"/api/admin/plugins/instances/{app.InstanceId}", app.Owner, app.Tenant,
+            body: new { aiToolsEnabled = true }), ct)).EnsureSuccessStatusCode();
+        (await CatalogAsync(app, app.Owner, ct)).Should().Contain("dynamic-apps.config/GetFlowLanguage");
+
+        var summary = await Json(await Call(app, "config", "GetSummary", new { }, ct), ct);
+        await Json(await Call(app, "config", "ApplyChangeSet", new
+        {
+            expectedHash = summary.GetProperty("hash").GetString(),
+            operations = AppHarness.Operations(Scored),
+        }, ct), ct);
+
+        var language = await Json(await Call(app, "config", "GetFlowLanguage", new { }, ct), ct);
+        language.GetProperty("functions").EnumerateArray().Select(f => f.GetProperty("name").GetString()).Should().Contain(["coalesce", "addDays"]);
+        language.GetProperty("variables").EnumerateArray().Select(v => v.GetString()).Should().Contain("steps");
+        language.GetProperty("scripts").GetString().Should().Contain("main(ctx");
+        language.GetProperty("typings").ValueKind.Should().Be(JsonValueKind.Null);
+
+        var typings = (await Json(await Call(app, "config", "GetFlowLanguage", new { flow = "score", step = "calc" }, ct), ct))
+            .GetProperty("typings").GetString();
+        typings.Should().Contain("interface CompaniesRow").And.Contain("row: CompaniesRow;")
+            .And.Contain("same: { items: Array<CompaniesRow>;").And.Contain("args: { n: FlowJson; }").And.NotContain("calc:");
+
+        (await Call(app, "config", "GetFlowLanguage", new { flow = "score", step = "nope" }, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private static Task<HttpResponseMessage> Call(AppHarness app, string contract, string op, object? input, CancellationToken ct,
         Guid? conversation = null, Guid? run = null, string? toolCall = null, Guid? @as = null)
     {

@@ -1,4 +1,4 @@
-import { Component, useMemo, type ComponentType, type ErrorInfo, type ReactNode } from 'react';
+import { Component, lazy, Suspense, useMemo, type ComponentType, type ErrorInfo, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -8,6 +8,7 @@ import { Button, CenteredSpinner, EmptyState } from '@dcms/ui';
 import {
   PluginHostProvider,
   PluginScreenProvider,
+  type CodeEditorProps,
   type PluginHost,
   type PluginScreenProps,
   type PluginWidgetProps,
@@ -21,7 +22,17 @@ import { useDataSets } from '../features/plugins/dataApi';
 import type { PluginUiInfo } from './api';
 import { usePluginModule } from './modules';
 import { useOptionalAi } from '../features/assistant/context';
-import { CodeEditor } from './CodeEditor';
+
+// Monaco is megabytes: loaded when a screen first shows an editor, never with every plugin page.
+const MonacoCodeEditor = lazy(() => import('./CodeEditor').then((m) => ({ default: m.CodeEditor })));
+
+function CodeEditor(props: CodeEditorProps) {
+  return (
+    <Suspense fallback={<div style={{ height: props.height ?? 240 }} className="w-full rounded-md border" />}>
+      <MonacoCodeEditor {...props} />
+    </Suspense>
+  );
+}
 
 /** A data set embedded in a plugin screen: the plugin page's own view, by slug and set id. */
 function EmbeddedDataSet({ slug, set }: { slug: string; set: string }) {
@@ -38,6 +49,7 @@ export function useConsolePluginHost(): PluginHost {
   const ai = useOptionalAi();
   const setPage = ai?.setPage;
   const setOpen = ai?.setOpen;
+  const ask = ai?.ask;
   const qc = useQueryClient();
   return useMemo<PluginHost>(
     () => ({
@@ -50,7 +62,7 @@ export function useConsolePluginHost(): PluginHost {
       assistant: setPage && setOpen
         ? {
             setContext: setPage,
-            open: () => setOpen(true),
+            open: (prompt) => (prompt && ask ? ask(prompt) : setOpen(true)),
             enableTools: async (instanceId) => {
               await api.put(`/admin/plugins/instances/${instanceId}`, { aiToolsEnabled: true });
               // The assistant's catalog and the screens' view of the switch, both now stale.
@@ -64,7 +76,7 @@ export function useConsolePluginHost(): PluginHost {
         : undefined,
       components: { DataSet: EmbeddedDataSet, CodeEditor },
     }),
-    [me.data, navigate, setPage, setOpen, qc],
+    [me.data, navigate, setPage, setOpen, ask, qc],
   );
 }
 

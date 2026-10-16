@@ -37,14 +37,18 @@ function parseSteps(text: string): FlowStep[] | null {
  * a script step, TypeScript typed from this app. All of the steps can still be edited as one
  * JSON document. The server validates everything when the draft is saved and when it is published.
  */
-export function FlowDialog({ slug, config, flow, actions, pending, onCancel, onSave }: {
+export function FlowDialog({ slug, config, flow, actions, pending, onCancel, onSave, onReload }: {
   slug: string;
+  /** The working configuration, live: it refreshes when someone else — the assistant — changes the draft. */
   config: AppConfig;
+  /** The flow as it was when the dialog opened. */
   flow?: FlowDef;
   actions: FlowActionInfo[];
   pending: boolean;
   onCancel: () => void;
   onSave: (operations: ChangeOperation[]) => void;
+  /** Reopens the dialog on the draft's current version of the flow. */
+  onReload: (flow: FlowDef) => void;
 }) {
   const { t } = usePluginT();
   const initialEvent: EventChoice = flow?.trigger.event.startsWith('flow.event.') ? 'flow.event' : ((flow?.trigger.event as EventChoice) ?? 'row.created');
@@ -62,6 +66,9 @@ export function FlowDialog({ slug, config, flow, actions, pending, onCancel, onS
   const [raw, setRaw] = useState<string | null>(null);
   const table = config.tables.find((x) => x.id === tableId);
   const isRow = event.startsWith('row.');
+  // The draft's copy moved on while this was open: saving would overwrite that, so say so.
+  const latest = flow ? config.flows.find((f) => f.id === flow.id) : undefined;
+  const changedElsewhere = latest !== undefined && JSON.stringify(latest) !== JSON.stringify(flow);
   const language = useExpressionLanguage(slug);
   // One document per flow (a new flow has no id yet), so two flows never share an undo stack.
   const documentBase = `file:///dcms/dynamic-apps/${slug}/flows/${flow?.id ?? 'new'}`;
@@ -152,6 +159,12 @@ export function FlowDialog({ slug, config, flow, actions, pending, onCancel, onS
 
   return (
     <FormDialog title={t(flow ? 'automation.editFlow' : 'automation.newFlow')} pending={pending} canSave={canSave} onCancel={onCancel} onSave={save} wide>
+      {changedElsewhere ? (
+        <div role="status" className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          <p className="min-w-0 flex-1">{t('automation.changedElsewhere')}</p>
+          <Button type="button" size="sm" variant="outline" onClick={() => onReload(latest!)}>{t('automation.reload')}</Button>
+        </div>
+      ) : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <TextField id="flow-label" label={t('form.displayName')} value={label}
           onChange={(v) => { setLabel(v); if (!flow) setApi(apiNameOf(v)); }} />

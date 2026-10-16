@@ -45,7 +45,8 @@
     "destructiveOne": "Může ovlivnit existující data",
     "noChanges": "Žádné změny.",
     "done": "Revize {{number}} je v provozu.",
-    "refused": "Nepublikováno: opravte uvedené problémy a zkuste to znovu."
+    "refused": "Nepublikováno: opravte uvedené problémy a zkuste to znovu.",
+    "askAiFix": "Publikování konceptu brání tyto problémy. Vysvětli každý z nich a navrhni opravy konceptu:"
   },
   "kinds": {
     "settings": "nastavení",
@@ -224,7 +225,10 @@
     "scriptArgsHint": "args kód dostane jako ctx.args; jejich hodnoty mohou obsahovat šablonové výrazy. language: ts nebo js.",
     "rawJson": "Upravit všechny kroky jako JSON",
     "cards": "Upravovat po krocích",
-    "invalidJson": "Toto není objekt JSON."
+    "invalidJson": "Toto není objekt JSON.",
+    "askAiRun": "Běh {{run}} toku {{flow}} selhal. Přečti si ho, srozumitelně vysvětli proč a navrhni opravu toku.",
+    "changedElsewhere": "Tento tok se od otevření změnil jinde — kolegou nebo asistentem. Uložení zde by tu změnu přepsalo.",
+    "reload": "Načíst novou verzi"
   },
   "events": {
     "row_created": "Záznam se vytvoří",
