@@ -9,7 +9,7 @@ export const DialogTrigger = DialogPrimitive.Trigger;
 export const DialogContent = forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { wide?: boolean }
->(({ className, children, wide, onEscapeKeyDown, ...props }, ref) => (
+>(({ className, children, wide, onEscapeKeyDown, onInteractOutside, ...props }, ref) => (
   <DialogPrimitive.Portal>
     <DialogPrimitive.Overlay className="dcms-overlay fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
     <DialogPrimitive.Content
@@ -20,6 +20,12 @@ export const DialogContent = forwardRef<
         // with whatever was typed in it.
         if (e.target instanceof Element && e.target.closest('.monaco-editor')) e.preventDefault();
         onEscapeKeyDown?.(e);
+      }}
+      onInteractOutside={(e) => {
+        // A code editor's suggestions and hovers render on <body>, outside the dialog: choosing
+        // one is not a click away from it.
+        if (e.target instanceof Element && e.target.closest('.monaco-editor')) e.preventDefault();
+        onInteractOutside?.(e);
       }}
       className={cn(
         'dcms-pop fixed left-1/2 top-1/2 z-50 flex w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-lg border bg-card p-6 shadow-xl',

@@ -1,8 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { Button } from '@dcms/ui';
 import { usePluginT } from '@dcms/plugin-ui';
-import { apiNameOf, API_NAME, useExpressionLanguage, type AppConfig, type ChangeOperation, type FlowActionInfo, type FlowDef, type FlowStep } from '../api';
+import {
+  apiNameOf, API_NAME, useExpressionLanguage, useFlowTypings,
+  type AppConfig, type ChangeOperation, type FlowActionInfo, type FlowDef, type FlowStep,
+} from '../api';
 import { ExpressionEditor } from './editor/ExpressionEditor';
 import { contextFor } from './editor/expressionLanguage';
+import { StepCard } from './StepCard';
+import { freeStepId, toDraft, toStep, type StepDraft } from './steps';
 import { CheckField, FormDialog, SelectField, TextField } from '../model/dialogs';
 
 const EVENTS = ['row.created', 'row.updated', 'row.deleted', 'relation.created', 'relation.deleted', 'revision.published', 'visitor.registered', 'form.submitted', 'user.invited', 'user.activated', 'schedule', 'manual', 'flow.event'] as const;
@@ -15,10 +22,20 @@ const EXAMPLE: FlowStep[] = [
   { id: 'notify', action: 'dcms.notifications.raise@1', input: { title: 'New record', body: '{{ row.id }}' } },
 ];
 
+function parseSteps(text: string): FlowStep[] | null {
+  try {
+    const value: unknown = JSON.parse(text);
+    return Array.isArray(value) ? (value as FlowStep[]) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * A flow: its trigger as a form, its condition as an expression, and its steps as JSON — the
- * one shape that holds an action's input with its {{ }} templates without a form per action.
- * The server validates everything when the draft is saved and when it is published.
+ * A flow: its trigger as a form, its condition as an expression, and its steps as cards — each
+ * with its action, a condition, its input as JSON checked against the action's schema, and for
+ * a script step, TypeScript typed from this app. All of the steps can still be edited as one
+ * JSON document. The server validates everything when the draft is saved and when it is published.
  */
 export function FlowDialog({ slug, config, flow, actions, pending, onCancel, onSave }: {
   slug: string;
@@ -40,41 +57,76 @@ export function FlowDialog({ slug, config, flow, actions, pending, onCancel, onS
   const [every, setEvery] = useState(flow?.trigger.everyMinutes?.toString() ?? '60');
   const [condition, setCondition] = useState(flow?.condition ?? '');
   const [enabled, setEnabled] = useState(flow?.enabled ?? true);
-  const [steps, setSteps] = useState(JSON.stringify(flow?.steps ?? EXAMPLE, null, 2));
+  const [drafts, setDrafts] = useState<StepDraft[]>(() => (flow?.steps ?? EXAMPLE).map(toDraft));
+  // All of the steps as one JSON document, while that is how they are being edited.
+  const [raw, setRaw] = useState<string | null>(null);
   const table = config.tables.find((x) => x.id === tableId);
   const isRow = event.startsWith('row.');
   const language = useExpressionLanguage(slug);
-  // The flow's condition runs before any step, so it sees none of their outputs.
-  const conditionContext = useMemo(
-    () => (language.data ? contextFor(config, { event, tableId }, [], language.data) : null),
-    [config, event, tableId, language.data],
-  );
   // One document per flow (a new flow has no id yet), so two flows never share an undo stack.
   const documentBase = `file:///dcms/dynamic-apps/${slug}/flows/${flow?.id ?? 'new'}`;
 
-  let parsedSteps: FlowStep[] | null = null;
-  try {
-    const value = JSON.parse(steps);
-    parsedSteps = Array.isArray(value) ? value : null;
-  } catch {
-    parsedSteps = null;
-  }
+  // The flow's condition runs before any step, so it sees none of their outputs; each step's
+  // condition sees the steps before it.
+  const stepIds = drafts.map((d) => d.id).join('\u0000');
+  const contexts = useMemo(() => {
+    if (!language.data) return null;
+    const ids = stepIds === '' ? [] : stepIds.split('\u0000');
+    return ids.map((_, i) => contextFor(config, { event, tableId }, ids.slice(0, i), language.data!))
+      .concat([contextFor(config, { event, tableId }, [], language.data)]);
+  }, [config, event, tableId, language.data, stepIds]);
+  const conditionContext = contexts?.at(-1) ?? null;
+
+  const parsedSteps: FlowStep[] | null = raw !== null
+    ? parseSteps(raw)
+    : drafts.every((d) => toStep(d) !== null) ? drafts.map((d) => toStep(d)!) : null;
+
+  const triggerEvent = event === 'flow.event' ? `flow.event.${customEvent}` : event;
+  const value = {
+    apiName: api,
+    displayName: label.trim(),
+    enabled,
+    condition: condition.trim() || null,
+    trigger: {
+      event: triggerEvent,
+      tableId: isRow ? tableId : null,
+      changedFields: event === 'row.updated' ? changed : [],
+      everyMinutes: event === 'schedule' ? Number(every) : null,
+    },
+    steps: parsedSteps,
+  };
+
+  // The script being worked on gets declarations of its ctx: generated by the server from the
+  // flow as it stands now (unsaved), typed against the draft's tables.
+  const [focusedScript, setFocusedScript] = useState<string | null>(null);
+  const [typings, setTypings] = useState<string | null>(null);
+  const fetchTypings = useFlowTypings(slug);
+  const fetchRef = useRef(fetchTypings);
+  fetchRef.current = fetchTypings;
+  const focused = drafts.find((d) => d.uid === focusedScript && d.code !== null);
+  const typingsKey = focused && parsedSteps ? JSON.stringify([focused.id, value.trigger, parsedSteps.map((s) => [s.id, s.action, s.condition ?? null, s.input.table ?? null, s.input.args ?? null])]) : null;
+  useEffect(() => {
+    if (!typingsKey || !focused) return undefined;
+    let live = true;
+    const timer = setTimeout(() => {
+      const flowDef = {
+        ...value,
+        id: flow?.id ?? '00000000-0000-0000-0000-000000000000',
+        apiName: api || 'flow',
+        trigger: { ...value.trigger, tableId: value.trigger.tableId || null },
+      };
+      fetchRef.current(flowDef, focused.id)
+        .then((d) => live && setTypings(d), () => {});
+    }, 400);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+    // Keyed on what changes a script's ctx, not on every keystroke in its code.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typingsKey]);
 
   const save = () => {
-    const triggerEvent = event === 'flow.event' ? `flow.event.${customEvent}` : event;
-    const value = {
-      apiName: api,
-      displayName: label.trim(),
-      enabled,
-      condition: condition.trim() || null,
-      trigger: {
-        event: triggerEvent,
-        tableId: isRow ? tableId : null,
-        changedFields: event === 'row.updated' ? changed : [],
-        everyMinutes: event === 'schedule' ? Number(every) : null,
-      },
-      steps: parsedSteps,
-    };
     onSave(flow
       ? [{ op: 'update', type: 'flow', target: flow.id, value }]
       : [{ op: 'create', type: 'flow', value: { ...value, condition: value.condition ?? undefined } }]);
@@ -82,6 +134,21 @@ export function FlowDialog({ slug, config, flow, actions, pending, onCancel, onS
 
   const canSave = label.trim() !== '' && API_NAME.test(api) && parsedSteps !== null
     && (!isRow || tableId !== '') && (event !== 'flow.event' || /^[a-z][a-z0-9_.-]*$/.test(customEvent));
+
+  const update = (uid: string, next: StepDraft) => setDrafts((all) => all.map((d) => (d.uid === uid ? next : d)));
+  const move = (index: number, by: -1 | 1) => setDrafts((all) => {
+    const next = [...all];
+    [next[index], next[index + by]] = [next[index + by]!, next[index]!];
+    return next;
+  });
+  const addStep = () => setDrafts((all) => [...all, toDraft({ id: freeStepId(all), action: actions[0]?.key ?? '', input: {} })]);
+  const toRaw = () => setRaw(JSON.stringify(parsedSteps, null, 2));
+  const toCards = () => {
+    const steps = raw === null ? null : parseSteps(raw);
+    if (!steps) return;
+    setDrafts(steps.map(toDraft));
+    setRaw(null);
+  };
 
   return (
     <FormDialog title={t(flow ? 'automation.editFlow' : 'automation.newFlow')} pending={pending} canSave={canSave} onCancel={onCancel} onSave={save} wide>
@@ -117,9 +184,38 @@ export function FlowDialog({ slug, config, flow, actions, pending, onCancel, onS
       ) : null}
       <ExpressionEditor uri={`${documentBase}/condition.dexpr`} slug={slug} label={t('automation.condition')}
         value={condition} onChange={setCondition} context={conditionContext} hint={t('automation.conditionHint')} />
-      <TextField id="flow-steps" label={t('automation.stepsJson')} value={steps} onChange={setSteps} multiline mono
-        invalid={parsedSteps === null}
-        hint={`${t('automation.stepsHint', { actions: actions.map((a) => a.key).join(', ') })} ${STEP_EXAMPLE}`} />
+
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="mr-auto text-sm font-semibold">{t('automation.stepsTitle')}</h3>
+        {raw === null ? (
+          <Button type="button" variant="outline" size="sm" disabled={parsedSteps === null} onClick={toRaw}>{t('automation.rawJson')}</Button>
+        ) : (
+          <Button type="button" variant="outline" size="sm" disabled={parsedSteps === null} onClick={toCards}>{t('automation.cards')}</Button>
+        )}
+      </div>
+      {raw !== null ? (
+        <TextField id="flow-steps" label={t('automation.stepsJson')} value={raw} onChange={setRaw} multiline mono
+          invalid={parsedSteps === null}
+          hint={`${t('automation.stepsHint', { actions: actions.map((a) => a.key).join(', ') })} ${STEP_EXAMPLE}`} />
+      ) : (
+        <div className="space-y-3">
+          {drafts.map((draft, index) => (
+            <StepCard key={draft.uid} draft={draft} index={index} count={drafts.length} slug={slug} documentBase={documentBase}
+              actions={actions} context={contexts?.[index] ?? null} typings={draft.uid === focusedScript ? typings : null}
+              onChange={(next) => update(draft.uid, next)} onMove={(by) => move(index, by)}
+              onRemove={() => setDrafts((all) => all.filter((d) => d.uid !== draft.uid))}
+              onFocusScript={() => {
+                if (focusedScript !== draft.uid) {
+                  setTypings(null);
+                  setFocusedScript(draft.uid);
+                }
+              }} />
+          ))}
+          <Button type="button" variant="outline" size="sm" onClick={addStep}>
+            <Plus className="size-4" /> {t('automation.addStep')}
+          </Button>
+        </div>
+      )}
       <CheckField id="flow-enabled" label={t('form.enabled')} checked={enabled} onChange={setEnabled} />
     </FormDialog>
   );

@@ -134,6 +134,16 @@ The server supplies all of this:
 
 A save refuses exactly what the editor underlines, because the validator runs the same check.
 
+**Steps** are edited one card per step:
+
+- its id and action;
+- a condition, with the same completion as the flow's, where `steps.` offers only the steps
+  before it;
+- its input as JSON, checked and completed against the action's input schema.
+
+A script step adds a TypeScript editor. *Edit all steps as JSON* switches to the whole list as
+one document and back.
+
 ### Actions
 
 The Automation tab lists every action available to flows. The built-in actions are:
@@ -192,6 +202,11 @@ express, such as loops, maps over lists or a few lines of computation:
   retried.
 - **The run history records** the code's hash and length, not the source, which lives in the
   revision.
+- **The editor types `ctx`** from this app: `ctx.row` as the trigger table's record, and
+  `ctx.steps.<id>` from each earlier step's output schema (for example `records.query` gives
+  `{ items: DealsRow[]; total; totalCapped }`). The declarations come from
+  `POST /_automation/typings`. They are only a guide: the server strips types and never checks
+  them.
 
 Scripts run in `script-runner`, a separate service: one zero-permission Deno process per run, in
 a container with no credentials and no network beyond the flow executors. See

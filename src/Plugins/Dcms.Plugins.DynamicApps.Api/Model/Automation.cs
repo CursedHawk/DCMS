@@ -5,7 +5,14 @@ namespace Dcms.Plugins.DynamicApps.Api.Model;
 /// <summary>One action a flow step can call.</summary>
 /// <param name="Key">What a step names: <c>{Id}@{Major}</c>.</param>
 /// <param name="Risk"><c>read</c>, <c>safe</c> or <c>dangerous</c>.</param>
-public sealed record FlowActionInfo(string Key, string Id, int Major, string Description, string Risk, JsonObject InputSchema);
+public sealed record FlowActionInfo(string Key, string Id, int Major, string Description, string Risk, JsonObject InputSchema)
+{
+    /// <summary>
+    /// JSON Schema of the output, when the action declares one. <c>"x-dcms-record": true</c> stands
+    /// for a record of the table the step's <c>table</c> input names.
+    /// </summary>
+    public JsonObject? OutputSchema { get; init; }
+}
 
 /// <param name="Status"><c>pending</c>, <c>running</c>, <c>succeeded</c>, <c>skipped</c>, <c>failed</c> or <c>terminated</c>.</param>
 /// <param name="Trigger">The event name that started it.</param>

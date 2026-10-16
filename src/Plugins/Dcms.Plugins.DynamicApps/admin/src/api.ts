@@ -212,6 +212,8 @@ export interface FlowActionInfo {
   description: string;
   risk: 'read' | 'safe' | 'dangerous';
   inputSchema: Record<string, unknown>;
+  /** JSON Schema of the output, when the action declares one; the script editor types steps.<id> with it. */
+  outputSchema?: Record<string, unknown> | null;
 }
 
 export interface FlowRunSummary {
@@ -424,6 +426,13 @@ export function useCheckExpression(slug: string) {
   const api = usePluginApi();
   return (source: string) =>
     api.post<{ problems: ExpressionProblem[] }>(instancePath(slug, '/_automation/check'), { source }).then((r) => r.problems);
+}
+
+/** The TypeScript a script step's ctx is typed with, for the flow as it is being edited. */
+export function useFlowTypings(slug: string) {
+  const api = usePluginApi();
+  return (flow: unknown, atStepId: string) =>
+    api.post<{ typings: string }>(instancePath(slug, '/_automation/typings'), { flow, atStepId }).then((r) => r.typings);
 }
 
 export function useActions(slug: string) {

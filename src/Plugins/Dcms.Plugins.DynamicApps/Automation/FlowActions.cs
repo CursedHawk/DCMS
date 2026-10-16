@@ -65,6 +65,12 @@ public interface IFlowAction
     /// <summary>JSON Schema of the input, for the designer and the assistant.</summary>
     JsonObject InputSchema { get; }
 
+    /// <summary>
+    /// JSON Schema of the output, when known: what the flow editor types <c>steps.{id}</c> with.
+    /// <c>"x-dcms-record": true</c> stands for a record of the table the step's <c>table</c> input names.
+    /// </summary>
+    JsonObject? OutputSchema => null;
+
     OpRisk Risk { get; }
 
     /// <summary>Inputs that are HTML: template holes in them are HTML-encoded before the action sees them.</summary>
@@ -220,6 +226,7 @@ internal sealed class ProvidedAction(IAutomationActionProvider provider, Automat
     public string Description => offered.Description;
     public OpRisk Risk => offered.Risk;
     public JsonObject InputSchema => JsonNode.Parse(offered.InputSchema.GetRawText()) as JsonObject ?? [];
+    public JsonObject? OutputSchema => offered.OutputSchema is { } schema ? JsonNode.Parse(schema.GetRawText()) as JsonObject : null;
 
     public async Task<JsonNode?> RunAsync(FlowActionContext context, JsonObject input, CancellationToken ct)
     {
@@ -286,6 +293,10 @@ internal abstract partial class FlowAction<TInput> : IFlowAction
     // interface sees; a member declared only in a derived class would not replace the default.
     public virtual IReadOnlySet<string> HtmlInputs { get; } = new HashSet<string>();
     public virtual IReadOnlySet<string> LiteralInputs { get; } = new HashSet<string>();
+    public JsonObject? OutputSchema => OutputShape is null ? null : JsonNode.Parse(OutputShape)!.AsObject();
+
+    /// <summary>The output's JSON Schema, when it is known; see <see cref="IFlowAction.OutputSchema"/>.</summary>
+    protected virtual string? OutputShape => null;
     public virtual JsonObject Recorded(JsonObject input) => input;
 
     public async Task<JsonNode?> RunAsync(FlowActionContext context, JsonObject input, CancellationToken ct)
@@ -323,6 +334,7 @@ internal sealed class RecordsCreateAction : FlowAction<RecordWrite>
     public override string Description => "Create a record in one of this app's tables. Output: the record.";
     public override OpRisk Risk => OpRisk.Safe;
     protected override string Schema => """{"type":"object","required":["table","values"],"properties":{"table":{"type":"string"},"values":{"type":"object"}}}""";
+    protected override string OutputShape => """{"x-dcms-record":true}""";
 
     protected override async Task<JsonNode?> RunAsync(FlowActionContext context, RecordWrite input, CancellationToken ct)
     {
@@ -337,6 +349,7 @@ internal sealed class RecordsUpdateAction : FlowAction<RecordWrite>
     public override string Description => "Change fields of a record. Output: the record.";
     public override OpRisk Risk => OpRisk.Safe;
     protected override string Schema => """{"type":"object","required":["table","id","values"],"properties":{"table":{"type":"string"},"id":{"type":"string","format":"uuid"},"values":{"type":"object"}}}""";
+    protected override string OutputShape => """{"x-dcms-record":true}""";
 
     protected override async Task<JsonNode?> RunAsync(FlowActionContext context, RecordWrite input, CancellationToken ct)
     {
@@ -353,6 +366,7 @@ internal sealed class RecordsDeleteAction : FlowAction<RecordRef>
     public override string Description => "Delete a record. Output: { deleted }.";
     public override OpRisk Risk => OpRisk.Dangerous;
     protected override string Schema => """{"type":"object","required":["table","id"],"properties":{"table":{"type":"string"},"id":{"type":"string","format":"uuid"}}}""";
+    protected override string OutputShape => """{"type":"object","required":["deleted"],"properties":{"deleted":{"type":"boolean"}}}""";
 
     protected override async Task<JsonNode?> RunAsync(FlowActionContext context, RecordRef input, CancellationToken ct)
     {
@@ -368,6 +382,7 @@ internal sealed class RecordsLookupAction : FlowAction<RecordFind>
     public override string Description => "Find one record, by id or as the first match of a filter. Output: the record, or null.";
     public override OpRisk Risk => OpRisk.Read;
     protected override string Schema => """{"type":"object","required":["table"],"properties":{"table":{"type":"string"},"id":{"type":"string","format":"uuid"},"filter":{"type":"object"},"sort":{"type":"array"}}}""";
+    protected override string OutputShape => """{"anyOf":[{"x-dcms-record":true},{"type":"null"}]}""";
 
     protected override async Task<JsonNode?> RunAsync(FlowActionContext context, RecordFind input, CancellationToken ct)
     {
@@ -387,6 +402,7 @@ internal sealed class RecordsQueryAction : FlowAction<RecordFind>
     public override string Description => "Records matching a filter, up to 50. Output: { items, total, totalCapped } (total stops at 5,000; totalCapped says more match).";
     public override OpRisk Risk => OpRisk.Read;
     protected override string Schema => """{"type":"object","required":["table"],"properties":{"table":{"type":"string"},"filter":{"type":"object"},"sort":{"type":"array"},"pageSize":{"type":"integer","minimum":1,"maximum":50}}}""";
+    protected override string OutputShape => """{"type":"object","required":["items","total","totalCapped"],"properties":{"items":{"type":"array","items":{"x-dcms-record":true}},"total":{"type":"integer"},"totalCapped":{"type":"boolean"}}}""";
 
     protected override async Task<JsonNode?> RunAsync(FlowActionContext context, RecordFind input, CancellationToken ct)
     {
@@ -407,6 +423,7 @@ internal sealed class FlowInvokeAction : FlowAction<InvokeInput>
     public override string Description => "Start another flow of this app (one with a manual trigger), passing it input. Output: { runId }.";
     public override OpRisk Risk => OpRisk.Safe;
     protected override string Schema => """{"type":"object","required":["flow"],"properties":{"flow":{"type":"string"},"input":{"type":"object"}}}""";
+    protected override string OutputShape => """{"type":"object","required":["runId"],"properties":{"runId":{"type":"string","format":"uuid"}}}""";
 
     protected override async Task<JsonNode?> RunAsync(FlowActionContext context, InvokeInput input, CancellationToken ct)
     {
@@ -423,6 +440,7 @@ internal sealed class EventPublishAction : FlowAction<PublishInput>
     public override string Description => "Announce flow.event.{name} with a payload; flows triggered by that event run. Output: { eventName }.";
     public override OpRisk Risk => OpRisk.Safe;
     protected override string Schema => """{"type":"object","required":["name"],"properties":{"name":{"type":"string","pattern":"^[a-z][a-z0-9_.-]{0,62}$"},"payload":{"type":"object"}}}""";
+    protected override string OutputShape => """{"type":"object","required":["eventName"],"properties":{"eventName":{"type":"string"}}}""";
 
     protected override async Task<JsonNode?> RunAsync(FlowActionContext context, PublishInput input, CancellationToken ct)
     {
@@ -453,6 +471,7 @@ internal sealed class EmailSendAction : FlowAction<EmailInput>
     public override string Description => "Send an email through the platform's queue (at most 20 recipients). Text is escaped; in html, the template's own markup is kept and every {{ }} value is escaped. Output: { recipients }.";
     public override OpRisk Risk => OpRisk.Safe;
     protected override string Schema => """{"type":"object","required":["to","subject"],"properties":{"to":{"oneOf":[{"type":"string"},{"type":"array","items":{"type":"string"},"maxItems":20}]},"subject":{"type":"string"},"text":{"type":"string"},"html":{"type":"string"},"replyTo":{"type":"string"}}}""";
+    protected override string OutputShape => """{"type":"object","required":["recipients"],"properties":{"recipients":{"type":"integer"}}}""";
 
     protected override async Task<JsonNode?> RunAsync(FlowActionContext context, EmailInput input, CancellationToken ct)
     {
@@ -485,6 +504,7 @@ internal sealed class NotificationRaiseAction : FlowAction<NotifyInput>
     public override string Description => "Raise an in-app notification for members who may read this app's records. Output: {}.";
     public override OpRisk Risk => OpRisk.Safe;
     protected override string Schema => """{"type":"object","required":["title","body"],"properties":{"title":{"type":"string"},"body":{"type":"string"},"severity":{"enum":["info","warning","error"]},"linkPath":{"type":"string"}}}""";
+    protected override string OutputShape => """{"type":"object","properties":{}}""";
 
     protected override async Task<JsonNode?> RunAsync(FlowActionContext context, NotifyInput input, CancellationToken ct)
     {

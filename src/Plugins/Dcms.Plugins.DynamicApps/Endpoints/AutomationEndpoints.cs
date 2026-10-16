@@ -1,6 +1,7 @@
 using Dcms.Plugins.DynamicApps.Api.Model;
 using Dcms.Plugins.DynamicApps.Automation;
 using Dcms.PluginSdk.Abstractions;
+using Dcms.PluginSdk.Abstractions.Contracts;
 using Microsoft.AspNetCore.Http;
 
 namespace Dcms.Plugins.DynamicApps.Endpoints;
@@ -31,6 +32,17 @@ internal static class AutomationEndpoints
                 Results.Ok(new { problems = Expressions.Check(body.Source ?? "", Metadata.ConfigValidator.FlowVariables) }))
             .RequirePluginPermission("model-read");
 
+        // What a script step's ctx holds, as TypeScript, for the flow being edited — posted, since
+        // it may not be saved yet — against the draft's tables. Metadata only: no record is read.
+        endpoints.MapPost("/_automation/typings", async (TypingsRequest body, Metadata.ConfigurationService configuration,
+                IPluginContext context, CancellationToken ct) =>
+            {
+                var doc = await configuration.GetDraftAsync(ct) ?? await configuration.GetPublishedAsync(ct);
+                var actions = await ActionCatalog.WithProvidersAsync(context, ct);
+                return Results.Ok(new { typings = FlowTypings.Generate(doc?.Config ?? new AppConfig(), body.Flow, body.AtStepId, actions) });
+            })
+            .RequirePluginPermission("model-read");
+
         // Runs carry the records that triggered them, so they are read with the data.
         endpoints.MapGet("/_automation/runs", (string? flow, string? status, int? page, int? pageSize, FlowRunService runs, CancellationToken ct) =>
                 RecordEndpoints.Run(async () => Results.Ok(await runs.ListAsync(flow, status, page ?? 1, pageSize ?? 50, ct))))
@@ -57,3 +69,5 @@ internal static class AutomationEndpoints
 }
 
 internal sealed record CheckExpressionRequest(string? Source);
+
+internal sealed record TypingsRequest(FlowDef Flow, string? AtStepId);

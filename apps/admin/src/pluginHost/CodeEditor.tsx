@@ -26,6 +26,25 @@ function setDocumentSchema(uri: string, schema: unknown | null): void {
   });
 }
 
+let overflow: HTMLElement | null = null;
+
+/**
+ * Where every embedded editor's popups (suggestions, hovers, argument hints) render: one node on
+ * <body>. They are position: fixed in viewport coordinates, and a dialog centres itself with a
+ * transform — which makes it the containing block of everything fixed inside it, so a popup in
+ * a scrolled dialog landed far from its cursor. The node carries `monaco-editor` for the theme's
+ * variables, and opts back into pointer events, which a modal dialog turns off outside itself.
+ */
+function overflowNode(): HTMLElement {
+  if (!overflow) {
+    overflow = document.createElement('div');
+    overflow.className = 'monaco-editor';
+    Object.assign(overflow.style, { position: 'fixed', top: '0', left: '0', zIndex: '100', pointerEvents: 'auto' });
+    document.body.appendChild(overflow);
+  }
+  return overflow;
+}
+
 /**
  * The code editor plugins embed (`PluginHost.components.CodeEditor`): one controlled document,
  * not tied to the site workspace the way `MonacoEditor` is. The console owns Monaco — its
@@ -71,6 +90,7 @@ export function CodeEditor({
       scrollBeyondLastLine: false,
       wordWrap: 'on',
       fixedOverflowWidgets: true,
+      overflowWidgetsDomNode: overflowNode(),
       ...(compact
         ? { lineNumbers: 'off', glyphMargin: false, folding: false, lineDecorationsWidth: 4, lineNumbersMinChars: 0, renderLineHighlight: 'none' }
         : {}),

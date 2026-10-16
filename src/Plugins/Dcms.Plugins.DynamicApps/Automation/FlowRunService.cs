@@ -20,7 +20,7 @@ public sealed class FlowRunService(
     /// <summary>Every action this tenant's flows can use, other plugins' included.</summary>
     public async Task<IReadOnlyList<FlowActionInfo>> ActionsAsync(CancellationToken ct) => (await ActionCatalog.WithProvidersAsync(context, ct))
         .Select(a => new FlowActionInfo(ActionCatalog.Key(a), a.Id, a.Major, a.Description,
-            JsonNamingPolicy.CamelCase.ConvertName(a.Risk.ToString()), a.InputSchema))
+            JsonNamingPolicy.CamelCase.ConvertName(a.Risk.ToString()), a.InputSchema) { OutputSchema = a.OutputSchema })
         .ToList();
 
     public async Task<FlowRunPage> ListAsync(string? flow, string? status, int page, int pageSize, CancellationToken ct)

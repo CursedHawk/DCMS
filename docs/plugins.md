@@ -223,7 +223,10 @@ provides: [ContractProvision.Of<IAutomationActionProvider, MyActions>()],
 ```
 
 - **`ListAsync`** returns descriptors: a name, a major version, a description, a risk, an
-  input JSON Schema, and optionally a **permission**.
+  input JSON Schema, and optionally a **permission**. A descriptor may also set
+  `OutputSchema`, a JSON Schema of what the action returns. The flow editor uses it to type
+  `steps.<id>` for script steps. Without it, a later step can still read the output; the editor
+  just calls it `unknown`.
 - **`ExecuteAsync`** runs one action for a flow step. It receives the rendered input, the
   step's idempotency key (the same on every retry), and the app instance and run ids.
 

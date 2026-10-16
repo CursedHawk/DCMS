@@ -382,6 +382,8 @@ test("a job's run link opens the configuration on that run's steps", async ({ pa
 });
 
 test.describe('the flow editor', () => {
+  // Monaco and its language workers load on first use; a cold dev server compiles them then.
+  const settled = expect.configure({ timeout: 20_000 });
   const FLOW = {
     id: 'eeeeeeee-0000-0000-0000-000000000001', apiName: 'big_deal', displayName: 'Big deal', enabled: true,
     trigger: { event: 'row.updated', tableId: TABLE_ID, changedFields: [] },
@@ -406,12 +408,12 @@ test.describe('the flow editor', () => {
     await page.goto('/plugins/crm/configuration?tab=automation');
     await page.getByRole('button', { name: 'Edit' }).first().click();
     const dialog = page.getByRole('dialog');
-    await expect(dialog).toContainText('Edit flow');
+    await settled(dialog).toContainText('Edit flow');
 
-    await dialog.getByRole('textbox', { name: 'Condition' }).focus();
+    await dialog.getByRole('textbox', { name: 'Condition' }).focus({ timeout: 20_000 });
     await page.keyboard.type('row.');
     const suggestions = page.locator('.suggest-widget');
-    await expect(suggestions).toContainText('amount');
+    await settled(suggestions).toContainText('amount');
     await expect(suggestions).toContainText('stage');
     await expect(suggestions).toContainText('created_at');
 
@@ -431,12 +433,80 @@ test.describe('the flow editor', () => {
     expect(body.operations[0]).toMatchObject({ op: 'update', target: FLOW.id, value: { condition: 'row.amount > 1000', steps: FLOW.steps } });
   });
 
+  test("a script step's code completes ctx from the app's own model, and saves exactly as written", async ({ page, api }) => {
+    const CODE = 'export default function main(ctx: FlowContext) {\n  const note = "{{ not a template }}";\n  return \n}\n';
+    const SCRIPTED = { ...FLOW, steps: [{ id: 'calc', action: 'script.run@1', input: { code: CODE, language: 'ts', args: {} } }] };
+    const TYPINGS = 'interface DealsRow { id: string; title: string | null; amount: number | null; stage: string | null; }\n'
+      + 'interface FlowContext { row: DealsRow; steps: {}; args: { [key: string]: unknown } }\n';
+    api
+      .on('GET', '/api/admin/plugins/crm/_model/draft', { revision: DRAFT, config: { ...CONFIG, flows: [SCRIPTED] } })
+      .on('GET', '/api/admin/plugins/crm/_automation/actions', [
+        { key: 'script.run@1', id: 'script.run', major: 1, description: 'Run a TypeScript function.', risk: 'read',
+          inputSchema: { type: 'object', required: ['code'], properties: { code: { type: 'string' }, language: { enum: ['ts', 'js'] }, args: { type: 'object' } } } },
+      ])
+      .on('POST', '/api/admin/plugins/crm/_automation/check', { problems: [] })
+      .on('POST', '/api/admin/plugins/crm/_automation/typings', { typings: TYPINGS })
+      .on('POST', '/api/admin/plugins/crm/_model/draft/changes', { draft: DRAFT, changes: [], issues: [] });
+    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.getByRole('button', { name: 'Edit' }).first().click();
+    const dialog = page.getByRole('dialog');
+
+    const code = dialog.getByRole('textbox', { name: 'Code' });
+    await code.focus({ timeout: 20_000 });
+    await expect.poll(() => api.requestsTo('POST', '/api/admin/plugins/crm/_automation/typings').length).toBeGreaterThan(0);
+    const asked = api.requestsTo('POST', '/api/admin/plugins/crm/_automation/typings')[0]!.body as { atStepId: string; flow: { trigger: { event: string } } };
+    expect(asked).toMatchObject({ atStepId: 'calc', flow: { trigger: { event: 'row.updated' } } });
+
+    // Line 3, after "return ".
+    await page.keyboard.press('Control+Home');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('End');
+    await page.waitForTimeout(500);
+    await page.keyboard.type('ctx.row.');
+    const suggestions = page.locator('.suggest-widget');
+    // TypeScript's worker starts on first use, which takes a while in a fresh browser.
+    await settled(suggestions).toContainText('amount');
+    await expect(suggestions).toContainText('stage');
+    // Chosen with the mouse: the popup renders outside the dialog, and that is not a click away from it.
+    await suggestions.getByText('amount', { exact: true }).click();
+    await expect(dialog).toBeVisible();
+
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(() => api.requestsTo('POST', '/api/admin/plugins/crm/_model/draft/changes').length).toBe(1);
+    const body = api.requestsTo('POST', '/api/admin/plugins/crm/_model/draft/changes')[0]!.body as {
+      operations: { value: { steps: { id: string; action: string; input: { code: string; language: string; args: object } }[] } }[];
+    };
+    expect(body.operations[0]!.value.steps).toEqual([
+      { id: 'calc', action: 'script.run@1', input: { language: 'ts', args: {}, code: CODE.replace('return \n', 'return ctx.row.amount\n') } },
+    ]);
+  });
+
+  test('steps are added, reordered and edited as one JSON document when wanted', async ({ page, api }) => {
+    api
+      .on('POST', '/api/admin/plugins/crm/_automation/check', { problems: [] })
+      .on('POST', '/api/admin/plugins/crm/_model/draft/changes', { draft: DRAFT, changes: [], issues: [] });
+    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.getByRole('button', { name: 'Edit' }).first().click();
+    const dialog = page.getByRole('dialog');
+
+    await dialog.getByRole('button', { name: 'Add step' }).click();
+    await settled(dialog.getByRole('region', { name: 'Step 2' })).toBeVisible();
+    await dialog.getByRole('region', { name: 'Step 2' }).getByLabel('Step id').fill('second');
+    await dialog.getByRole('region', { name: 'Step 2' }).getByRole('button', { name: 'Move up' }).click();
+    await dialog.getByRole('button', { name: 'Edit all steps as JSON' }).click();
+    const json = JSON.parse(await dialog.getByLabel('Steps (JSON)').inputValue()) as { id: string }[];
+    expect(json.map((s) => s.id)).toEqual(['second', 'notify']);
+    await dialog.getByRole('button', { name: 'Edit step by step' }).click();
+    await expect(dialog.getByRole('region', { name: 'Step 1' }).getByLabel('Step id')).toHaveValue('second');
+  });
+
   test("the server's parser underlines what a save would refuse", async ({ page, api }) => {
     api.on('POST', '/api/admin/plugins/crm/_automation/check', { problems: [{ message: "Unknown name 'secrets'", start: 0, end: 7 }] });
     await page.goto('/plugins/crm/configuration?tab=automation');
     await page.getByRole('button', { name: 'Edit' }).first().click();
-    await page.getByRole('dialog').getByRole('textbox', { name: 'Condition' }).focus();
+    await page.getByRole('dialog').getByRole('textbox', { name: 'Condition' }).focus({ timeout: 20_000 });
     await page.keyboard.type('secrets');
-    await expect(page.getByTestId('expression-problem')).toHaveText("Unknown name 'secrets'");
+    await settled(page.getByTestId('expression-problem')).toHaveText("Unknown name 'secrets'");
   });
 });

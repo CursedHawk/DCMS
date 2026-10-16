@@ -17,7 +17,14 @@ namespace Dcms.Plugins.DynamicApps.Api;
 /// publish an app do what your plugin would refuse them.
 /// </param>
 public sealed record AutomationActionDescriptor(
-    string Name, int Major, string Description, OpRisk Risk, JsonElement InputSchema, string? Permission = null);
+    string Name, int Major, string Description, OpRisk Risk, JsonElement InputSchema, string? Permission = null)
+{
+    /// <summary>
+    /// Optional JSON Schema of the output, which the flow editor types <c>steps.{id}</c> with.
+    /// Without one a later step still reads the output; the editor just calls it <c>unknown</c>.
+    /// </summary>
+    public JsonElement? OutputSchema { get; init; }
+}
 
 public sealed record AutomationActionList(IReadOnlyList<AutomationActionDescriptor> Actions);
 
