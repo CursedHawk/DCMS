@@ -10,7 +10,7 @@ type JsonSchemaEntry = { uri: string; fileMatch?: string[]; schema?: unknown };
  * Puts `schema` in force for one document without dropping anyone else's: Monaco keeps a single
  * list of JSON schemas for the whole page. Null takes the document's entry out again.
  */
-export function withDocumentSchema(current: readonly JsonSchemaEntry[], uri: string, schema: unknown | null): JsonSchemaEntry[] {
+function withDocumentSchema(current: readonly JsonSchemaEntry[], uri: string, schema: unknown | null): JsonSchemaEntry[] {
   const schemaUri = `${uri}#schema`;
   const others = current.filter((s) => s.uri !== schemaUri);
   return schema == null ? others : [...others, { uri: schemaUri, fileMatch: [uri], schema }];

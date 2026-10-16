@@ -393,17 +393,11 @@ public static partial class ConfigValidator
         {
             return;
         }
-        try
+        // The flow editor underlines exactly these (POST /_automation/check), so what it shows and
+        // what a save refuses cannot differ.
+        foreach (var problem in Automation.Expressions.Check(source, FlowVariables).DistinctBy(p => p.Message))
         {
-            var unknown = Automation.Expressions.Variables(Automation.Expressions.Parse(source)).Where(v => !FlowVariables.Contains(v)).Distinct().ToList();
-            if (unknown.Count > 0)
-            {
-                error("invalid-expression", path, $"Unknown name(s) {string.Join(", ", unknown)}; an expression may read {string.Join(", ", FlowVariables)}.");
-            }
-        }
-        catch (Automation.ExpressionException e)
-        {
-            error("invalid-expression", path, e.Message);
+            error("invalid-expression", path, problem.Message);
         }
     }
 

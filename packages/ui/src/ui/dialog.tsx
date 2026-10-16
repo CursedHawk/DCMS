@@ -9,11 +9,18 @@ export const DialogTrigger = DialogPrimitive.Trigger;
 export const DialogContent = forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { wide?: boolean }
->(({ className, children, wide, ...props }, ref) => (
+>(({ className, children, wide, onEscapeKeyDown, ...props }, ref) => (
   <DialogPrimitive.Portal>
     <DialogPrimitive.Overlay className="dcms-overlay fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" />
     <DialogPrimitive.Content
       ref={ref}
+      onEscapeKeyDown={(e) => {
+        // Escape in a code editor closes its suggestions or find widget. Radix hears it first (a
+        // capturing listener on the document), and would otherwise close the dialog instead —
+        // with whatever was typed in it.
+        if (e.target instanceof Element && e.target.closest('.monaco-editor')) e.preventDefault();
+        onEscapeKeyDown?.(e);
+      }}
       className={cn(
         'dcms-pop fixed left-1/2 top-1/2 z-50 flex w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-lg border bg-card p-6 shadow-xl',
         // Never taller than the viewport. Dialogs that wrap their body in

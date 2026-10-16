@@ -380,3 +380,63 @@ test("a job's run link opens the configuration on that run's steps", async ({ pa
   await expect(page.getByRole('dialog')).toContainText('kpi_hourly');
   await expect(page.getByRole('dialog')).toContainText('count');
 });
+
+test.describe('the flow editor', () => {
+  const FLOW = {
+    id: 'eeeeeeee-0000-0000-0000-000000000001', apiName: 'big_deal', displayName: 'Big deal', enabled: true,
+    trigger: { event: 'row.updated', tableId: TABLE_ID, changedFields: [] },
+    steps: [{ id: 'notify', action: 'dcms.notifications.raise@1', input: { title: 'Big {{ row.title }}' } }],
+  };
+  const LANGUAGE = {
+    functions: [{ name: 'len', signature: 'len(value)', description: 'The number of items.', minArgs: 1, maxArgs: 1, returns: 'number' }],
+    variables: ['event', 'row', 'previous', 'changedFields', 'input', 'steps', 'run'],
+    maxSourceChars: 2000,
+  };
+
+  test.beforeEach(async ({ api }) => {
+    api
+      .on('GET', '/api/admin/plugins/crm/_model/draft', { revision: DRAFT, config: { ...CONFIG, flows: [FLOW] } })
+      .on('GET', '/api/admin/plugins/crm/_automation/language', LANGUAGE);
+  });
+
+  test("the condition completes the trigger table's fields, keeps Escape to itself, and saves exactly what was typed", async ({ page, api }) => {
+    api
+      .on('POST', '/api/admin/plugins/crm/_automation/check', { problems: [] })
+      .on('POST', '/api/admin/plugins/crm/_model/draft/changes', { draft: DRAFT, changes: [], issues: [] });
+    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.getByRole('button', { name: 'Edit' }).first().click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('Edit flow');
+
+    await dialog.getByRole('textbox', { name: 'Condition' }).focus();
+    await page.keyboard.type('row.');
+    const suggestions = page.locator('.suggest-widget');
+    await expect(suggestions).toContainText('amount');
+    await expect(suggestions).toContainText('stage');
+    await expect(suggestions).toContainText('created_at');
+
+    // Escape closes the suggestions, not the dialog with the edit in it.
+    await page.keyboard.press('Escape');
+    await expect(suggestions).toBeHidden();
+    await expect(dialog).toBeVisible();
+
+    await page.keyboard.type('amount > 1000');
+    await expect.poll(() => api.requestsTo('POST', '/api/admin/plugins/crm/_automation/check').length).toBeGreaterThan(0);
+    await dialog.getByRole('button', { name: 'Save' }).click();
+
+    await expect.poll(() => api.requestsTo('POST', '/api/admin/plugins/crm/_model/draft/changes').length).toBe(1);
+    const body = api.requestsTo('POST', '/api/admin/plugins/crm/_model/draft/changes')[0]!.body as {
+      operations: { op: string; target: string; value: { condition: string | null; steps: unknown } }[];
+    };
+    expect(body.operations[0]).toMatchObject({ op: 'update', target: FLOW.id, value: { condition: 'row.amount > 1000', steps: FLOW.steps } });
+  });
+
+  test("the server's parser underlines what a save would refuse", async ({ page, api }) => {
+    api.on('POST', '/api/admin/plugins/crm/_automation/check', { problems: [{ message: "Unknown name 'secrets'", start: 0, end: 7 }] });
+    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.getByRole('button', { name: 'Edit' }).first().click();
+    await page.getByRole('dialog').getByRole('textbox', { name: 'Condition' }).focus();
+    await page.keyboard.type('secrets');
+    await expect(page.getByTestId('expression-problem')).toHaveText("Unknown name 'secrets'");
+  });
+});

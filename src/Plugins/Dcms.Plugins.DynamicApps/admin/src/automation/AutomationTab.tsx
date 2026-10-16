@@ -148,7 +148,7 @@ export function AutomationTab({ slug, config, editable, onSelect }: {
       </details>
 
       {editing && config ? (
-        <FlowDialog config={config} flow={editing.flow} actions={actions.data ?? []} pending={apply.isPending}
+        <FlowDialog slug={slug} config={config} flow={editing.flow} actions={actions.data ?? []} pending={apply.isPending}
           onCancel={() => setEditing(null)}
           onSave={(operations) => apply.mutate({ operations }, { onSuccess: () => setEditing(null) })} />
       ) : null}

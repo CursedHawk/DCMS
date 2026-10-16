@@ -77,6 +77,40 @@ public sealed class ExpressionTests
     }
 
     [Fact]
+    public void Every_documented_function_is_one_the_evaluator_has()
+    {
+        // The editor and the assistant offer FunctionDocs; each entry must be callable for real.
+        foreach (var (name, doc) in Expressions.FunctionDocs)
+        {
+            var call = $"{name}({string.Join(", ", Enumerable.Repeat("null", doc.MinArgs))})";
+            var act = () => Eval(call);
+            act.Should().NotThrow(call);
+        }
+        Expressions.Functions.Should().BeEquivalentTo(Expressions.FunctionDocs.Keys);
+    }
+
+    [Theory]
+    [InlineData("row.amount > 5", "", 0, 0)]
+    [InlineData("row.amount >", "ends too soon", 12, 12)]
+    [InlineData("row.a == 1 && secrets.key", "Unknown name 'secrets'", 14, 21)]
+    [InlineData("1 + len()", "len() takes 1 argument(s)", 4, 7)]
+    [InlineData("round(1, 2, 3)", "takes 1 to 2", 0, 5)]
+    [InlineData("system(1)", "Unknown function 'system'", 0, 1)]
+    public void Check_locates_problems_without_evaluating(string source, string message, int start, int end)
+    {
+        var problems = Expressions.Check(source, Dcms.Plugins.DynamicApps.Metadata.ConfigValidator.FlowVariables);
+        if (message == "")
+        {
+            problems.Should().BeEmpty();
+            return;
+        }
+        problems.Should().ContainSingle();
+        problems[0].Message.Should().Contain(message);
+        problems[0].Message.Should().NotContain("(at ");
+        (problems[0].Start, problems[0].End).Should().Be((start, end));
+    }
+
+    [Fact]
     public void Size_depth_and_work_are_bounded()
     {
         var tooLong = () => Expressions.Parse(new string('1', Expressions.MaxSourceChars + 1));

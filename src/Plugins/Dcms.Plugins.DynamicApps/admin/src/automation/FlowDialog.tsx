@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { usePluginT } from '@dcms/plugin-ui';
-import { apiNameOf, API_NAME, type AppConfig, type ChangeOperation, type FlowActionInfo, type FlowDef, type FlowStep } from '../api';
+import { apiNameOf, API_NAME, useExpressionLanguage, type AppConfig, type ChangeOperation, type FlowActionInfo, type FlowDef, type FlowStep } from '../api';
+import { ExpressionEditor } from './editor/ExpressionEditor';
+import { contextFor } from './editor/expressionLanguage';
 import { CheckField, FormDialog, SelectField, TextField } from '../model/dialogs';
 
 const EVENTS = ['row.created', 'row.updated', 'row.deleted', 'relation.created', 'relation.deleted', 'revision.published', 'visitor.registered', 'form.submitted', 'user.invited', 'user.activated', 'schedule', 'manual', 'flow.event'] as const;
@@ -18,7 +20,8 @@ const EXAMPLE: FlowStep[] = [
  * one shape that holds an action's input with its {{ }} templates without a form per action.
  * The server validates everything when the draft is saved and when it is published.
  */
-export function FlowDialog({ config, flow, actions, pending, onCancel, onSave }: {
+export function FlowDialog({ slug, config, flow, actions, pending, onCancel, onSave }: {
+  slug: string;
   config: AppConfig;
   flow?: FlowDef;
   actions: FlowActionInfo[];
@@ -40,6 +43,14 @@ export function FlowDialog({ config, flow, actions, pending, onCancel, onSave }:
   const [steps, setSteps] = useState(JSON.stringify(flow?.steps ?? EXAMPLE, null, 2));
   const table = config.tables.find((x) => x.id === tableId);
   const isRow = event.startsWith('row.');
+  const language = useExpressionLanguage(slug);
+  // The flow's condition runs before any step, so it sees none of their outputs.
+  const conditionContext = useMemo(
+    () => (language.data ? contextFor(config, { event, tableId }, [], language.data) : null),
+    [config, event, tableId, language.data],
+  );
+  // One document per flow (a new flow has no id yet), so two flows never share an undo stack.
+  const documentBase = `file:///dcms/dynamic-apps/${slug}/flows/${flow?.id ?? 'new'}`;
 
   let parsedSteps: FlowStep[] | null = null;
   try {
@@ -104,8 +115,8 @@ export function FlowDialog({ config, flow, actions, pending, onCancel, onSave }:
           </div>
         </fieldset>
       ) : null}
-      <TextField id="flow-condition" label={t('automation.condition')} value={condition} onChange={setCondition} mono
-        hint={t('automation.conditionHint')} />
+      <ExpressionEditor uri={`${documentBase}/condition.dexpr`} slug={slug} label={t('automation.condition')}
+        value={condition} onChange={setCondition} context={conditionContext} hint={t('automation.conditionHint')} />
       <TextField id="flow-steps" label={t('automation.stepsJson')} value={steps} onChange={setSteps} multiline mono
         invalid={parsedSteps === null}
         hint={`${t('automation.stepsHint', { actions: actions.map((a) => a.key).join(', ') })} ${STEP_EXAMPLE}`} />

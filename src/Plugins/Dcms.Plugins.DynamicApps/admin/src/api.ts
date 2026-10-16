@@ -386,6 +386,46 @@ export function usePublicModel(slug: string, enabled: boolean) {
   });
 }
 
+/** One built-in expression function (Expressions.FunctionDocs). */
+export interface ExpressionFunction {
+  name: string;
+  signature: string;
+  description: string;
+  minArgs: number;
+  maxArgs: number;
+  returns: string;
+}
+
+export interface ExpressionLanguage {
+  functions: ExpressionFunction[];
+  variables: string[];
+  maxSourceChars: number;
+}
+
+/** A problem in an expression, by 0-based offsets [start, end). */
+export interface ExpressionProblem {
+  message: string;
+  start: number;
+  end: number;
+}
+
+/** The expression language as the server parses it: what the flow editor completes and explains. */
+export function useExpressionLanguage(slug: string) {
+  const api = usePluginApi();
+  return useQuery({
+    queryKey: [rootKey(slug), 'expression-language'],
+    queryFn: () => api.get<ExpressionLanguage>(instancePath(slug, '/_automation/language')),
+    staleTime: Infinity,
+  });
+}
+
+/** The server's verdict on one expression — parsed, never evaluated. */
+export function useCheckExpression(slug: string) {
+  const api = usePluginApi();
+  return (source: string) =>
+    api.post<{ problems: ExpressionProblem[] }>(instancePath(slug, '/_automation/check'), { source }).then((r) => r.problems);
+}
+
 export function useActions(slug: string) {
   const api = usePluginApi();
   return useQuery({

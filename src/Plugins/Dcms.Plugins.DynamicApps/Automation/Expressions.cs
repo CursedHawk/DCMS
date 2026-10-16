@@ -6,7 +6,20 @@ namespace Dcms.Plugins.DynamicApps.Automation;
 
 /// <summary>An expression or template the language refuses, with where.</summary>
 public sealed class ExpressionException(string message, int position = -1)
-    : Exception(position >= 0 ? $"{message} (at {position})" : message);
+    : Exception(position >= 0 ? $"{message} (at {position})" : message)
+{
+    /// <summary>The 0-based offset in the source, or -1 when the problem is the whole expression (its size, say).</summary>
+    public int Position { get; } = position;
+
+    /// <summary>The message without its position, for an editor that underlines the place instead.</summary>
+    public string Reason { get; } = message;
+}
+
+/// <summary>One built-in function, as an editor and the assistant explain it.</summary>
+public sealed record FunctionDoc(string Signature, string Description, int MinArgs, int MaxArgs, string Returns);
+
+/// <summary>Something wrong with an expression, by 0-based offsets [Start, End) into its source.</summary>
+public sealed record ExpressionProblem(string Message, int Start, int End);
 
 /// <summary>
 /// The language tenant-authored flows are written in (ADR 0021): a small CEL-like expression
@@ -24,12 +37,79 @@ public static class Expressions
     public const int MaxSteps = 10_000;
     public const int MaxStringChars = 65_536;
 
-    /// <summary>The function names, so a validator can report an unknown one before anything runs.</summary>
-    public static readonly IReadOnlySet<string> Functions = new HashSet<string>(StringComparer.Ordinal)
+    /// <summary>
+    /// Every function: what the evaluator checks a call's arity against, and what the flow editor
+    /// and the assistant offer. A function the evaluator has and this lacks cannot be called.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, FunctionDoc> FunctionDocs = new Dictionary<string, FunctionDoc>(StringComparer.Ordinal)
     {
-        "len", "lower", "upper", "trim", "contains", "startsWith", "endsWith", "coalesce", "string", "number",
-        "round", "now", "today", "addDays", "addHours", "join",
+        ["len"] = new("len(value)", "The number of items in a list, keys in an object, or characters in a string; 0 for null.", 1, 1, "number"),
+        ["lower"] = new("lower(text)", "The text in lower case; null when it is not text.", 1, 1, "string | null"),
+        ["upper"] = new("upper(text)", "The text in upper case; null when it is not text.", 1, 1, "string | null"),
+        ["trim"] = new("trim(text)", "The text without leading and trailing whitespace; null when it is not text.", 1, 1, "string | null"),
+        ["contains"] = new("contains(text, part)", "Whether the text contains the part, ignoring case.", 2, 2, "boolean"),
+        ["startsWith"] = new("startsWith(text, prefix)", "Whether the text starts with the prefix, ignoring case.", 2, 2, "boolean"),
+        ["endsWith"] = new("endsWith(text, suffix)", "Whether the text ends with the suffix, ignoring case.", 2, 2, "boolean"),
+        ["coalesce"] = new("coalesce(a, b, …)", "The first argument that is not null (up to 16).", 1, 16, "any"),
+        ["string"] = new("string(value)", "The value as text: numbers plainly, lists and objects as JSON; null stays null.", 1, 1, "string | null"),
+        ["number"] = new("number(value)", "The value as a number, parsing text such as \"42.5\"; null when it is not one.", 1, 1, "number | null"),
+        ["round"] = new("round(number, digits?)", "The number rounded half away from zero, to 0–10 decimal places (default 0).", 1, 2, "number | null"),
+        ["now"] = new("now()", "The current time in UTC, as yyyy-MM-ddTHH:mm:ss.fffZ.", 0, 0, "string"),
+        ["today"] = new("today()", "Today's date in UTC, as yyyy-MM-dd.", 0, 0, "string"),
+        ["addDays"] = new("addDays(dateOrTime, days)", "The date (yyyy-MM-dd) or time moved by a number of days; null when it is neither.", 2, 2, "string | null"),
+        ["addHours"] = new("addHours(time, hours)", "The time moved by a number of hours; null when it is not a time. Not for plain dates.", 2, 2, "string | null"),
+        ["join"] = new("join(list, separator?)", "The list's items as text, separated by the separator (default \", \").", 1, 2, "string | null"),
     };
+
+    /// <summary>The function names, so a validator can report an unknown one before anything runs.</summary>
+    public static readonly IReadOnlySet<string> Functions = FunctionDocs.Keys.ToHashSet(StringComparer.Ordinal);
+
+    private static string ArityMessage(string name, FunctionDoc doc) =>
+        $"{name}() takes {(doc.MinArgs == doc.MaxArgs ? $"{doc.MinArgs}" : $"{doc.MinArgs} to {doc.MaxArgs}")} argument(s)";
+
+    /// <summary>
+    /// What is wrong with an expression, located, without evaluating it: a parse error, a name
+    /// outside <paramref name="variables"/>, or a call with the wrong number of arguments. Pure and
+    /// bounded by the parser's limits, so an editor may ask on every pause in typing.
+    /// </summary>
+    public static IReadOnlyList<ExpressionProblem> Check(string source, IReadOnlySet<string> variables)
+    {
+        Node root;
+        try
+        {
+            root = Parse(source);
+        }
+        catch (ExpressionException e)
+        {
+            var at = Math.Clamp(e.Position, 0, source.Length);
+            return [e.Position < 0 ? new(e.Reason, 0, source.Length) : new(e.Reason, at, Math.Min(at + 1, source.Length))];
+        }
+        var problems = new List<ExpressionProblem>();
+        foreach (var node in Descendants(root))
+        {
+            if (node is Var v && !variables.Contains(v.Name))
+            {
+                problems.Add(new($"Unknown name '{v.Name}'; an expression may read {string.Join(", ", variables)}.", v.Position, v.Position + v.Name.Length));
+            }
+            else if (node is Call c && FunctionDocs[c.Name] is var doc && (c.Args.Count < doc.MinArgs || c.Args.Count > doc.MaxArgs))
+            {
+                problems.Add(new(ArityMessage(c.Name, doc), c.Position, c.Position + c.Name.Length));
+            }
+        }
+        return problems;
+    }
+
+    private static IEnumerable<Node> Descendants(Node node) => new[] { node }.Concat(node switch
+    {
+        Member m => Descendants(m.Target),
+        Index i => Descendants(i.Target).Concat(Descendants(i.Key)),
+        Call c => c.Args.SelectMany(Descendants),
+        Unary u => Descendants(u.Operand),
+        Binary b => Descendants(b.Left).Concat(Descendants(b.Right)),
+        Conditional c => Descendants(c.Test).Concat(Descendants(c.Then)).Concat(Descendants(c.Else)),
+        ListLit l => l.Items.SelectMany(Descendants),
+        _ => [],
+    });
 
     /// <exception cref="ExpressionException">It does not parse, or is too large.</exception>
     public static Node Parse(string source)
@@ -493,17 +573,17 @@ public static class Expressions
         private JsonNode? CallOf(Call call, IReadOnlyList<JsonNode?> args)
         {
             JsonNode? Arg(int i) => i < args.Count ? args[i] : null;
-            void Arity(int min, int max)
+            if (!FunctionDocs.TryGetValue(call.Name, out var doc))
             {
-                if (args.Count < min || args.Count > max)
-                {
-                    throw new ExpressionException($"{call.Name}() takes {(min == max ? $"{min}" : $"{min} to {max}")} argument(s)", call.Position);
-                }
+                throw new ExpressionException($"Unknown function '{call.Name}'", call.Position);
+            }
+            if (args.Count < doc.MinArgs || args.Count > doc.MaxArgs)
+            {
+                throw new ExpressionException(ArityMessage(call.Name, doc), call.Position);
             }
             switch (call.Name)
             {
                 case "len":
-                    Arity(1, 1);
                     return Arg(0) switch
                     {
                         JsonArray a => (decimal)a.Count,
@@ -512,18 +592,16 @@ public static class Expressions
                         JsonValue v when v.TryGetValue<string>(out var text) => (decimal)text.Length,
                         var v => (decimal)Display(v).Length,
                     };
-                case "lower": Arity(1, 1); return Text(Arg(0))?.ToLowerInvariant();
-                case "upper": Arity(1, 1); return Text(Arg(0))?.ToUpperInvariant();
-                case "trim": Arity(1, 1); return Text(Arg(0))?.Trim();
-                case "contains": Arity(2, 2); return Text(Arg(0)) is { } s && Text(Arg(1)) is { } p && s.Contains(p, StringComparison.OrdinalIgnoreCase);
-                case "startsWith": Arity(2, 2); return Text(Arg(0)) is { } s1 && Text(Arg(1)) is { } p1 && s1.StartsWith(p1, StringComparison.OrdinalIgnoreCase);
-                case "endsWith": Arity(2, 2); return Text(Arg(0)) is { } s2 && Text(Arg(1)) is { } p2 && s2.EndsWith(p2, StringComparison.OrdinalIgnoreCase);
+                case "lower": return Text(Arg(0))?.ToLowerInvariant();
+                case "upper": return Text(Arg(0))?.ToUpperInvariant();
+                case "trim": return Text(Arg(0))?.Trim();
+                case "contains": return Text(Arg(0)) is { } s && Text(Arg(1)) is { } p && s.Contains(p, StringComparison.OrdinalIgnoreCase);
+                case "startsWith": return Text(Arg(0)) is { } s1 && Text(Arg(1)) is { } p1 && s1.StartsWith(p1, StringComparison.OrdinalIgnoreCase);
+                case "endsWith": return Text(Arg(0)) is { } s2 && Text(Arg(1)) is { } p2 && s2.EndsWith(p2, StringComparison.OrdinalIgnoreCase);
                 case "coalesce":
-                    Arity(1, 16);
                     return args.FirstOrDefault(a => a is not null);
-                case "string": Arity(1, 1); return Arg(0) is null ? null : Bounded(Display(Arg(0)));
+                case "string": return Arg(0) is null ? null : Bounded(Display(Arg(0)));
                 case "number":
-                    Arity(1, 1);
                     return Arg(0) switch
                     {
                         JsonValue v when TryNumber(v, out var d) => d,
@@ -531,15 +609,13 @@ public static class Expressions
                         _ => null,
                     };
                 case "round":
-                    Arity(1, 2);
                     var digits = Arg(1) is null ? 0 : (int)Math.Clamp(Number(Arg(1), call) ?? 0, 0, 10);
                     return Number(Arg(0), call) is { } r ? Math.Round(r, digits, MidpointRounding.AwayFromZero) : null;
-                case "now": Arity(0, 0); return now.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
-                case "today": Arity(0, 0); return now.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                case "now": return now.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
+                case "today": return now.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
                 case "addDays":
                 case "addHours":
                 {
-                    Arity(2, 2);
                     var amount = (double)(Number(Arg(1), call) ?? 0);
                     var text = Text(Arg(0));
                     if (text is { Length: 10 } && DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
@@ -556,7 +632,6 @@ public static class Expressions
                     return moved.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
                 }
                 case "join":
-                    Arity(1, 2);
                     if (Arg(0) is not JsonArray items)
                     {
                         return null;

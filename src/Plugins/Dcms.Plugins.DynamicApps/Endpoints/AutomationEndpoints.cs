@@ -17,6 +17,20 @@ internal static class AutomationEndpoints
         endpoints.MapGet("/_automation/actions", async (FlowRunService runs, CancellationToken ct) => Results.Ok(await runs.ActionsAsync(ct)))
             .RequirePluginPermission("model-read");
 
+        // The expression language as the flow editor offers it. Static: what the server parses.
+        endpoints.MapGet("/_automation/language", () => Results.Ok(new
+            {
+                functions = Expressions.FunctionDocs.Select(f => new { name = f.Key, f.Value.Signature, f.Value.Description, f.Value.MinArgs, f.Value.MaxArgs, f.Value.Returns }),
+                variables = Metadata.ConfigValidator.FlowVariables,
+                maxSourceChars = Expressions.MaxSourceChars,
+            }))
+            .RequirePluginPermission("model-read");
+
+        // An expression's problems while it is typed: parsed, never evaluated, so it reads no data.
+        endpoints.MapPost("/_automation/check", (CheckExpressionRequest body) =>
+                Results.Ok(new { problems = Expressions.Check(body.Source ?? "", Metadata.ConfigValidator.FlowVariables) }))
+            .RequirePluginPermission("model-read");
+
         // Runs carry the records that triggered them, so they are read with the data.
         endpoints.MapGet("/_automation/runs", (string? flow, string? status, int? page, int? pageSize, FlowRunService runs, CancellationToken ct) =>
                 RecordEndpoints.Run(async () => Results.Ok(await runs.ListAsync(flow, status, page ?? 1, pageSize ?? 50, ct))))
@@ -41,3 +55,5 @@ internal static class AutomationEndpoints
             .AuditAs("flow.started");
     }
 }
+
+internal sealed record CheckExpressionRequest(string? Source);
