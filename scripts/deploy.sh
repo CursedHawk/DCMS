@@ -379,6 +379,27 @@ if [ "$DO_PULL" = 1 ]; then
   else
     compose pull --ignore-buildable "${TARGET_SERVICES[@]}"
   fi
+
+  # Every app service has a `build:` section, so --ignore-buildable skips all of them, and the
+  # overlay's digests used to be fetched only by `up -d` -- which, when a pull fails, falls back
+  # to BUILDING on a host with no source tree: a registry outage surfaced as "lstat
+  # .../src/Services/Dcms.ScriptRunner: no such file or directory" (2026-10-19). Dropping the
+  # flag is no better: compose treats a buildable service's failed pull as a warning. So fetch
+  # them here, retried, and stop on the registry's own error. A digest already on the host is
+  # exactly the image named and is not re-fetched; site-build-sandbox is fetched below.
+  if [ -n "$IMAGES_FILE" ]; then
+    while read -r svc ref; do
+      [ "$svc" = site-build-sandbox ] && continue
+      [ "$ROLL_ALL" = 1 ] || [[ " ${TARGET_SERVICES[*]} " == *" $svc "* ]] || continue
+      docker image inspect "$ref" >/dev/null 2>&1 && continue
+      for attempt in 1 2 3; do
+        docker pull -q "$ref" </dev/null && break
+        [ "$attempt" = 3 ] && die "could not pull $svc ($ref) after 3 attempts -- is the registry up?"
+        warn "pulling $svc failed (attempt $attempt of 3), retrying in 15s"
+        sleep 15
+      done
+    done < <(awk '/^  [a-z0-9-]+:$/ {svc=$1; sub(":", "", svc)} $1 == "image:" && svc {print svc, $2; svc=""}' "$IMAGES_FILE")
+  fi
 fi
 
 if [ "$DO_BUILD" = 1 ]; then
