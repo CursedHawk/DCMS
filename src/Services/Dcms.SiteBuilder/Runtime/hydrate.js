@@ -1415,9 +1415,9 @@
   // session is a cookie this page never reads, and /.edge/site/me says who it belongs to (404
   // on a site without User Authentication: nobody). Sections are cosmetic — the site's access
   // rules are what keep a page private — so they are hidden until the answer is in, then shown
-  // or not; a sign-in link is sent back to the page it was clicked on.
+  // or not; a sign-in link is sent back to the page it was clicked on. A sign-out link needs
+  // nothing from here: the edge always signs out to "/", so it is a plain link.
   var USER_SIGNIN_ATTR = 'data-dcms-user-signin';
-  var USER_SIGNOUT_ATTR = 'data-dcms-user-signout';
   var USER_GATE_ATTR = 'data-dcms-user-gate';
   var USER_NAME_ATTR = 'data-dcms-user-name';
   var userPromise = null;

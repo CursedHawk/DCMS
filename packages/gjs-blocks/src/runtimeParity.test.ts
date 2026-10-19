@@ -363,9 +363,12 @@ describe('shared regions', () => {
   });
 
   it('sign enterprise users in at the edge through the attributes the blocks write', () => {
-    for (const attr of [USER_SIGNIN_ATTR, USER_SIGNOUT_ATTR, USER_GATE_ATTR, USER_NAME_ATTR]) {
+    for (const attr of [USER_SIGNIN_ATTR, USER_GATE_ATTR, USER_NAME_ATTR]) {
       expect(runtime, `hydrate.js does not read ${attr}`).toContain(`'${attr}'`);
     }
+    // Sign-out is the one the runtime does not read: the edge always signs out to "/", so
+    // there is no return address to add, and the block's plain link to the edge is all of it.
+    expect(runtime).not.toContain(`'${USER_SIGNOUT_ATTR}'`);
     // The links work without the runtime too: they are plain links to the edge's own endpoints.
     expect(runtime).toContain(`'${SIGNIN_PATH}?returnUrl='`);
     expect(runtime).toContain(`'${SIGNOUT_PATH}'`);
