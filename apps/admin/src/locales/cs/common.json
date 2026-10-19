@@ -552,7 +552,8 @@
       "title": "Tento editor potřebuje širší obrazovku",
       "description": "Kódový editor i vizuální builder staví vedle sebe strom souborů, editační okno a živý náhled. Na telefonu to nelze rozumně uspořádat, takže jsou to nástroje pro počítač.",
       "continueAnyway": "Přesto zobrazit"
-    }
+    },
+    "backToSites": "Zpět na weby"
   },
   "editor": {
     "publishQueued": "Publikace zařazena"

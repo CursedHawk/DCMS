@@ -532,7 +532,8 @@
       "title": "This editor needs a wider screen",
       "description": "The code editor and the visual builder put a file tree, a buffer and a live preview side by side. There is no arrangement of those that works on a phone, so they are desktop tools.",
       "continueAnyway": "Show it anyway"
-    }
+    },
+    "backToSites": "Back to Sites"
   },
   "editor": {
     "publishQueued": "Publish queued"

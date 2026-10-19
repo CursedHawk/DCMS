@@ -30,9 +30,15 @@ export interface DesktopRequiredLabels {
 export function DesktopRequired({
   children,
   labels,
+  header,
 }: {
   children: React.ReactNode;
   labels: DesktopRequiredLabels;
+  /**
+   * Drawn above the panel. An editor that opens without the app's own chrome has to give the
+   * reader a way back from the refusal, or the refusal is a dead end.
+   */
+  header?: React.ReactNode;
 }) {
   const isDesktop = useIsDesktop();
   const [override, setOverride] = useState(false);
@@ -42,17 +48,20 @@ export function DesktopRequired({
   }
 
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-6 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
-        <Monitor className="h-6 w-6" aria-hidden />
+    <>
+      {header}
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-6 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-foreground">
+          <Monitor className="h-6 w-6" aria-hidden />
+        </div>
+        <div className="max-w-sm space-y-1">
+          <h2 className="text-base font-semibold tracking-tight">{labels.title}</h2>
+          <p className="text-sm text-muted-foreground">{labels.description}</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setOverride(true)}>
+          {labels.continueAnyway}
+        </Button>
       </div>
-      <div className="max-w-sm space-y-1">
-        <h2 className="text-base font-semibold tracking-tight">{labels.title}</h2>
-        <p className="text-sm text-muted-foreground">{labels.description}</p>
-      </div>
-      <Button variant="outline" size="sm" onClick={() => setOverride(true)}>
-        {labels.continueAnyway}
-      </Button>
-    </div>
+    </>
   );
 }

@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import {
   APP_JSON,
   checkVisualSite,
@@ -16,7 +15,6 @@ import type { Editor } from 'grapesjs';
 import {
   AlertCircle,
   AlertTriangle,
-  ArrowLeft,
   Blocks,
   Code2,
   Columns2,
@@ -40,6 +38,7 @@ import {
 } from 'lucide-react';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { EditorHeader } from '../sites/EditorHeader';
 import { toast } from 'sonner';
 import { Button, CenteredSpinner, Dialog, DialogContent, DialogTitle, TourTarget, cn, usePageTour, useTour } from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
@@ -89,8 +88,6 @@ import { AgentPanel } from '../ide/agent/AgentPanel';
 import { VISUAL_TOOLS, validateVisualSite } from './agent/visualTools';
 import { previewClient, useContentCatalog } from './data';
 
-// Widen for TanStack Link typing (sibling routes are registered via a helper).
-const sitesPath: string = '/sites';
 
 const DEVICE_ICONS: Record<DeviceId, typeof Monitor> = { desktop: Monitor, tablet: Tablet, mobile: Smartphone };
 const VIEWS: { id: VisualView; icon: typeof Code2; labelKey: string }[] = [
@@ -382,15 +379,8 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
           : '';
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
-        <Link to={sitesPath}>
-          <Button size="icon" variant="ghost" aria-label={t('sites.title')}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <span className="font-medium">{site.data?.name}</span>
-        <span className="text-xs text-muted-foreground">{t('sites.modeReactBuilder')}</span>
+    <div className="flex h-dvh flex-col">
+      <EditorHeader name={site.data?.name} mode={t('sites.modeReactBuilder')}>
         {targetLabel && (
           <button
             type="button"
@@ -454,7 +444,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
             <Rocket className="h-4 w-4" /> {t('ide.git.publishToRelease')}
           </Button>
         </TourTarget>
-      </div>
+      </EditorHeader>
 
       {target?.kind === 'component' && <StudioBar />}
       <MediaBridge editor={editor} />

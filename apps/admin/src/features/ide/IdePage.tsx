@@ -1,9 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTypeProblems } from './diagnostics/useTypeProblems';
-import { Link } from '@tanstack/react-router';
 import {
   AlertTriangle,
-  ArrowLeft,
   Eye,
   EyeOff,
   RefreshCw,
@@ -18,6 +16,7 @@ import { BottomPanel } from './panel/BottomPanel';
 import { usePanelState } from './panel/panelState';
 import { appendOutput } from './panel/output';
 import { useTranslation } from 'react-i18next';
+import { EditorHeader } from '../sites/EditorHeader';
 import { toast } from 'sonner';
 import { Button, CenteredSpinner } from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
@@ -52,8 +51,6 @@ import { usePreview } from './preview/usePreview';
 import { StarterPicker } from './StarterPicker';
 import { useGeneratedApi } from './generated/useGeneratedApi';
 import { ensurePaletteTypes } from './types/palette';
-
-const sitesPath: string = '/sites';
 
 interface SiteData {
   name: string;
@@ -456,7 +453,7 @@ export function IdePage({ siteId }: { siteId: string }) {
   if (site.isLoading || !session.ready) return <CenteredSpinner label={t('common.loading')} />;
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
+    <div className="flex h-dvh flex-col">
       <StarterPicker
         open={pickStarter}
         pending={scaffold.isPending}
@@ -474,16 +471,7 @@ export function IdePage({ siteId }: { siteId: string }) {
       />
       <ShortcutSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
 
-      {/* Toolbar */}
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
-        <Link to={sitesPath}>
-          <Button size="icon" variant="ghost">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <span className="font-medium">{site.data?.name}</span>
-        <span className="text-xs text-muted-foreground">{t('sites.modeReactApp')}</span>
-
+      <EditorHeader name={site.data?.name} mode={t('sites.modeReactApp')}>
         <div className="flex-1" />
         <span className="text-xs text-muted-foreground">
           {session.saving || dirty ? t('common.saving') : session.status}
@@ -521,7 +509,7 @@ export function IdePage({ siteId }: { siteId: string }) {
         >
           <Rocket className="h-4 w-4" /> {t('ide.git.publishToRelease')}
         </Button>
-      </div>
+      </EditorHeader>
 
       {/* Publishing from a non-release branch: complete the merge into release. */}
       <MergeDialog

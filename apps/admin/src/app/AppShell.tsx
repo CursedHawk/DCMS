@@ -1,4 +1,4 @@
-import { Outlet } from '@tanstack/react-router';
+import { Outlet, useRouterState } from '@tanstack/react-router';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 import { Suspense, useState } from 'react';
@@ -33,6 +33,10 @@ export function AppShell() {
   const [collapsed, toggleCollapse] = useSidebarCollapse();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // A site editor opens in focus mode: no app sidebar, no app topbar. Its own header
+  // (EditorHeader) has the way back and the job and notification indicators; the sidebar
+  // beside the editor's rail and panels made three stacked left columns.
+  const focus = useRouterState({ select: (s) => /^\/sites\/[^/]+\/?$/.test(s.location.pathname) });
 
   // One connection for the whole app, opened here rather than in the bell so that unmounting
   // the popover does not drop the socket. `sub` is the platform user id, which the toast
@@ -68,36 +72,44 @@ export function AppShell() {
               progress: (current, total) => t('tour.progress', { current, total }),
             }}
           >
-            <AppFrame
-              navLabel={t('nav.sections')}
-              menuLabel={t('nav.openMenu')}
-              drawerOpen={drawerOpen}
-              onDrawerOpenChange={setDrawerOpen}
-              sidebar={({ inDrawer }) => (
-                <Sidebar
-                  collapsed={collapsed}
-                  onToggle={toggleCollapse}
-                  inDrawer={inDrawer}
-                  onNavigate={inDrawer ? () => setDrawerOpen(false) : undefined}
-                />
-              )}
-              topbar={({ menuButton }) => (
-                <Topbar onOpenSearch={() => setPaletteOpen(true)} menuButton={menuButton} />
-              )}
-            >
-              {/*
-               * No page transition.
-               *
-               * There used to be an AnimatePresence fade-and-slide keyed on the pathname, which put
-               * ~180ms of movement between every click and the page arriving — on every navigation,
-               * carrying no information about what had changed. Motion in this app now answers an
-               * action or reports a server-side change; moving the whole page because you clicked a
-               * link does neither.
-               */}
-              <Suspense fallback={<CenteredSpinner />}>
-                <Outlet />
-              </Suspense>
-            </AppFrame>
+            {focus ? (
+              <main className="h-dvh overflow-y-auto">
+                <Suspense fallback={<CenteredSpinner />}>
+                  <Outlet />
+                </Suspense>
+              </main>
+            ) : (
+              <AppFrame
+                navLabel={t('nav.sections')}
+                menuLabel={t('nav.openMenu')}
+                drawerOpen={drawerOpen}
+                onDrawerOpenChange={setDrawerOpen}
+                sidebar={({ inDrawer }) => (
+                  <Sidebar
+                    collapsed={collapsed}
+                    onToggle={toggleCollapse}
+                    inDrawer={inDrawer}
+                    onNavigate={inDrawer ? () => setDrawerOpen(false) : undefined}
+                  />
+                )}
+                topbar={({ menuButton }) => (
+                  <Topbar onOpenSearch={() => setPaletteOpen(true)} menuButton={menuButton} />
+                )}
+              >
+                {/*
+                 * No page transition.
+                 *
+                 * There used to be an AnimatePresence fade-and-slide keyed on the pathname, which put
+                 * ~180ms of movement between every click and the page arriving — on every navigation,
+                 * carrying no information about what had changed. Motion in this app now answers an
+                 * action or reports a server-side change; moving the whole page because you clicked a
+                 * link does neither.
+                 */}
+                <Suspense fallback={<CenteredSpinner />}>
+                  <Outlet />
+                </Suspense>
+              </AppFrame>
+            )}
 
             <TourOverlay />
             <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />

@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import type { Editor } from 'grapesjs';
-import { AlertTriangle, ArrowLeft, Code2, Columns2, LayoutTemplate, MousePointer2, Puzzle, Redo2, RefreshCw, Rocket, Sparkles, Undo2, X } from 'lucide-react';
+import { AlertTriangle, Code2, Columns2, LayoutTemplate, MousePointer2, Puzzle, Redo2, RefreshCw, Rocket, Sparkles, Undo2, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { EditorHeader } from '../sites/EditorHeader';
 import { toast } from 'sonner';
 import { Button, CenteredSpinner, cn } from '@dcms/ui';
 import { ApiError, api } from '../../lib/api';
@@ -33,8 +33,6 @@ import { PreviewBridge } from './plugins/PreviewBridge';
 import { starterFiles } from './starter';
 import { useBuilder, type ViewMode } from './store';
 
-// Widen for TanStack Link typing (sibling routes are registered via a helper).
-const sitesPath: string = '/sites';
 
 const VIEWS: { id: ViewMode; icon: typeof Code2; labelKey: string }[] = [
   { id: 'design', icon: MousePointer2, labelKey: 'builder.viewDesign' },
@@ -229,16 +227,9 @@ export function BuilderPage({ siteId }: { siteId: string }) {
   const showCode = view !== 'design';
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] flex-col">
+    <div className="flex h-dvh flex-col">
       {/* Toolbar */}
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
-        <Link to={sitesPath}>
-          <Button size="icon" variant="ghost">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <span className="font-medium">{site.data?.name}</span>
-        <span className="text-xs text-muted-foreground">{t('sites.modeStaticPrerender')}</span>
+      <EditorHeader name={site.data?.name} mode={t('sites.modeStaticPrerender')}>
 
         {/* The canvas holds something that is not a page — a shared region or a
             component template. Without this the author is editing a header that
@@ -327,7 +318,7 @@ export function BuilderPage({ siteId }: { siteId: string }) {
         >
           <Rocket className="h-4 w-4" /> {t('ide.git.publishToRelease')}
         </Button>
-      </div>
+      </EditorHeader>
 
       {/* Double-clicking an image in the canvas opens the DCMS media library. */}
       <AssetsBridge editor={editor} />

@@ -3,11 +3,20 @@ import { Suspense, lazy } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CenteredSpinner, DesktopRequired } from '@dcms/ui';
 import { api } from '../../lib/api';
+import { EditorHeader } from './EditorHeader';
 import { StaticSitePage } from './StaticSitePage';
+
+const MODE_LABEL: Record<string, string> = {
+  ReactApp: 'sites.modeReactApp',
+  ReactBuilder: 'sites.modeReactBuilder',
+  StaticPrerender: 'sites.modeStaticPrerender',
+};
 
 // The visual builder and the code IDE are both heavy (GrapesJS and Monaco
 // respectively); keep them lazy and load only the one this render mode needs.
-const BuilderPage = lazy(() => import('../builder/BuilderPage').then((m) => ({ default: m.BuilderPage })));
+const BuilderPage = lazy(() =>
+  import('../builder/BuilderPage').then((m) => ({ default: m.BuilderPage })),
+);
 const IdePage = lazy(() => import('../ide/IdePage').then((m) => ({ default: m.IdePage })));
 const VisualBuilderPage = lazy(() =>
   import('../visual/VisualBuilderPage').then((m) => ({ default: m.VisualBuilderPage })),
@@ -23,7 +32,7 @@ export function SiteWorkspace({ siteId }: { siteId: string }) {
   const { t } = useTranslation();
   const site = useQuery({
     queryKey: ['site', siteId],
-    queryFn: () => api.get<{ renderMode: string }>(`/admin/sites/${siteId}`),
+    queryFn: () => api.get<{ renderMode: string; name: string }>(`/admin/sites/${siteId}`),
   });
 
   if (site.isLoading) return <CenteredSpinner label={t('common.loading')} />;
@@ -33,6 +42,12 @@ export function SiteWorkspace({ siteId }: { siteId: string }) {
 
   return (
     <DesktopRequired
+      header={
+        <EditorHeader
+          name={site.data?.name}
+          mode={t(MODE_LABEL[site.data?.renderMode ?? ''] ?? 'sites.title')}
+        />
+      }
       labels={{
         title: t('sites.desktopOnly.title'),
         description: t('sites.desktopOnly.description'),

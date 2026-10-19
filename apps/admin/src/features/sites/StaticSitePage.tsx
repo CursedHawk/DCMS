@@ -1,14 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
-import {
-  ArrowLeft,
-  CheckCircle2,
-  FileArchive,
-  FolderUp,
-  RotateCcw,
-  Rocket,
-  Upload,
-} from 'lucide-react';
+import { CheckCircle2, FileArchive, FolderUp, RotateCcw, Rocket, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -19,10 +10,12 @@ import {
   CardContent,
   CenteredSpinner,
   cn,
+  Page,
   Progress,
   toastApiError,
 } from '@dcms/ui';
 import { ResourceHistory } from '../audit/ResourceHistory';
+import { EditorHeader } from './EditorHeader';
 import { api } from '../../lib/api';
 import { formatSize } from '../media/api';
 interface StaticBundle {
@@ -46,8 +39,6 @@ interface SiteBuild {
   completedAt?: string;
   isActive: boolean;
 }
-
-const sitesPath: string = '/sites';
 
 export function StaticSitePage({ siteId }: { siteId: string }) {
   const { t } = useTranslation();
@@ -76,11 +67,12 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
         fd.append('files', file, path && path.length > 0 ? path : file.name);
       }
       setUploadProgress(0);
-      return api.uploadWithProgress<{ fileCount: number; size: number; name: string; hasIndex: boolean }>(
-        `/admin/sites/${siteId}/upload`,
-        fd,
-        setUploadProgress,
-      );
+      return api.uploadWithProgress<{
+        fileCount: number;
+        size: number;
+        name: string;
+        hasIndex: boolean;
+      }>(`/admin/sites/${siteId}/upload`, fd, setUploadProgress);
     },
     onSuccess: async (r) => {
       if (!r.hasIndex) toast.warning(t('sites.noIndexWarning'));
@@ -116,17 +108,9 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
   const bundle = site.data?.staticBundle;
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <div className="mb-6 flex items-center gap-3">
-        <Link to={sitesPath}>
-          <Button size="icon" variant="ghost">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-lg font-semibold">{site.data?.name}</h1>
-          <p className="text-xs text-muted-foreground">{t('sites.modeStaticFiles')}</p>
-        </div>
+    <div className="flex min-h-dvh flex-col">
+      <EditorHeader name={site.data?.name} mode={t('sites.modeStaticFiles')}>
+        <div className="flex-1" />
         <Button
           onClick={() => publish.mutate()}
           disabled={!bundle || publish.isPending}
@@ -134,132 +118,145 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
         >
           <Rocket className="h-4 w-4" /> {t('actions.publish')}
         </Button>
-      </div>
-
-      {/* Upload zone */}
-      <Card>
-        <CardContent className="p-5">
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragging(false);
-              if (e.dataTransfer.files.length) upload.mutate(e.dataTransfer.files);
-            }}
-            className={cn(
-              'flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-8 text-center transition-colors',
-              dragging ? 'border-primary bg-primary/5' : 'border-input',
-            )}
-          >
-            <Upload className="h-7 w-7 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">{t('sites.dropHint')}</p>
-            <div className="flex flex-wrap justify-center gap-2">
-              <Button variant="outline" size="sm" disabled={upload.isPending} onClick={() => zipInput.current?.click()}>
-                <FileArchive className="h-4 w-4" /> {t('sites.chooseZip')}
-              </Button>
-              <Button variant="outline" size="sm" disabled={upload.isPending} onClick={() => folderInput.current?.click()}>
-                <FolderUp className="h-4 w-4" /> {t('sites.chooseFolder')}
-              </Button>
-            </div>
-            {upload.isPending ? (
-              <div className="w-full max-w-sm space-y-1">
-                <Progress value={uploadProgress} label={t('sites.chooseZip')} />
-                <p className="text-xs text-muted-foreground">
-                  {/* Once the bytes are gone the server is still unpacking, so the
+      </EditorHeader>
+      <Page>
+        {/* Upload zone */}
+        <Card>
+          <CardContent className="p-5">
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                if (e.dataTransfer.files.length) upload.mutate(e.dataTransfer.files);
+              }}
+              className={cn(
+                'flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-8 text-center transition-colors',
+                dragging ? 'border-primary bg-primary/5' : 'border-input',
+              )}
+            >
+              <Upload className="h-7 w-7 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">{t('sites.dropHint')}</p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={upload.isPending}
+                  onClick={() => zipInput.current?.click()}
+                >
+                  <FileArchive className="h-4 w-4" /> {t('sites.chooseZip')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={upload.isPending}
+                  onClick={() => folderInput.current?.click()}
+                >
+                  <FolderUp className="h-4 w-4" /> {t('sites.chooseFolder')}
+                </Button>
+              </div>
+              {upload.isPending ? (
+                <div className="w-full max-w-sm space-y-1">
+                  <Progress value={uploadProgress} label={t('sites.chooseZip')} />
+                  <p className="text-xs text-muted-foreground">
+                    {/* Once the bytes are gone the server is still unpacking, so the
                       last step reads as "processing" rather than a stalled 100%. */}
-                  {uploadProgress < 1
-                    ? `${Math.round(uploadProgress * 100)}%`
-                    : `${t('media.processing')}…`}
-                </p>
+                    {uploadProgress < 1
+                      ? `${Math.round(uploadProgress * 100)}%`
+                      : `${t('media.processing')}…`}
+                  </p>
+                </div>
+              ) : null}
+              <input
+                ref={zipInput}
+                type="file"
+                accept=".zip,application/zip"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files?.length) upload.mutate(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+              <input
+                ref={folderInput}
+                type="file"
+                multiple
+                // webkitdirectory is non-standard; supplied via spread to satisfy TS.
+                {...{ webkitdirectory: '', directory: '' }}
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files?.length) upload.mutate(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+
+            {bundle ? (
+              <div className="mt-4 flex items-center gap-3 rounded-md border bg-muted/30 p-3 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{bundle.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('sites.bundleSummary', {
+                      count: bundle.fileCount ?? 0,
+                      size: formatSize(bundle.size ?? 0),
+                    })}
+                  </p>
+                </div>
+                <Badge tone="secondary">{t('sites.staged')}</Badge>
               </div>
             ) : null}
-            <input
-              ref={zipInput}
-              type="file"
-              accept=".zip,application/zip"
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files?.length) upload.mutate(e.target.files);
-                e.target.value = '';
-              }}
-            />
-            <input
-              ref={folderInput}
-              type="file"
-              multiple
-              // webkitdirectory is non-standard; supplied via spread to satisfy TS.
-              {...{ webkitdirectory: '', directory: '' }}
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files?.length) upload.mutate(e.target.files);
-                e.target.value = '';
-              }}
-            />
-          </div>
+          </CardContent>
+        </Card>
 
-          {bundle ? (
-            <div className="mt-4 flex items-center gap-3 rounded-md border bg-muted/30 p-3 text-sm">
-              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{bundle.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {t('sites.bundleSummary', {
-                    count: bundle.fileCount ?? 0,
-                    size: formatSize(bundle.size ?? 0),
-                  })}
-                </p>
-              </div>
-              <Badge tone="secondary">{t('sites.staged')}</Badge>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      {/* Build history / rollback */}
-      <h2 className="mb-2 mt-8 text-sm font-semibold">{t('sites.deployments')}</h2>
-      {builds.isLoading ? (
-        <CenteredSpinner />
-      ) : builds.data && builds.data.length > 0 ? (
-        <div className="space-y-2">
-          {builds.data.map((b) => (
-            <Card key={b.id}>
-              <CardContent className="flex items-center gap-3 p-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <BuildStatusBadge status={b.status} t={t} />
-                    {b.isActive ? <Badge tone="success">{t('sites.live')}</Badge> : null}
+        {/* Build history / rollback */}
+        <h2 className="mb-2 mt-8 text-sm font-semibold">{t('sites.deployments')}</h2>
+        {builds.isLoading ? (
+          <CenteredSpinner />
+        ) : builds.data && builds.data.length > 0 ? (
+          <div className="space-y-2">
+            {builds.data.map((b) => (
+              <Card key={b.id}>
+                <CardContent className="flex items-center gap-3 p-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <BuildStatusBadge status={b.status} t={t} />
+                      {b.isActive ? <Badge tone="success">{t('sites.live')}</Badge> : null}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {new Date(b.createdAt).toLocaleString()}
+                    </p>
+                    {b.error ? <p className="mt-1 text-xs text-destructive">{b.error}</p> : null}
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {new Date(b.createdAt).toLocaleString()}
-                  </p>
-                  {b.error ? <p className="mt-1 text-xs text-destructive">{b.error}</p> : null}
-                </div>
-                {!b.isActive && b.status === 'Succeeded' ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={activate.isPending}
-                    onClick={() => activate.mutate(b.id)}
-                  >
-                    <RotateCcw className="h-4 w-4" /> {t('sites.rollback')}
-                  </Button>
-                ) : null}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <p className="py-6 text-center text-sm text-muted-foreground">{t('sites.noDeployments')}</p>
-      )}
+                  {!b.isActive && b.status === 'Succeeded' ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={activate.isPending}
+                      onClick={() => activate.mutate(b.id)}
+                    >
+                      <RotateCcw className="h-4 w-4" /> {t('sites.rollback')}
+                    </Button>
+                  ) : null}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <p className="py-6 text-center text-sm text-muted-foreground">
+            {t('sites.noDeployments')}
+          </p>
+        )}
 
-      {/* Who changed this site, and when. The audit page can answer the same question, but
+        {/* Who changed this site, and when. The audit page can answer the same question, but
           only for someone who already knows to go there and what to filter by. */}
-      <h2 className="mb-2 mt-8 text-sm font-semibold">{t('audit.history.title')}</h2>
-      <ResourceHistory resourceType="site" resourceId={siteId} />
+        <h2 className="mb-2 mt-8 text-sm font-semibold">{t('audit.history.title')}</h2>
+        <ResourceHistory resourceType="site" resourceId={siteId} />
+      </Page>
     </div>
   );
 }
