@@ -375,19 +375,27 @@ export const VISUAL_TOOLS: Tool[] = [
   {
     name: 'list_component_types',
     description:
-      'Every component type you may place: its props (with kinds, options and defaults; `responsive` ones may differ on tablet/mobile), its slots and what each accepts, the actions it can run, and where it may go. The site’s own components (tenant.*) are included. Use the exact type names and prop names from here.',
+      'Every component type you may place: its props (with kinds, options and defaults; `responsive` ones may differ on tablet/mobile), its slots and what each accepts, the actions it can run, and where it may go. The site’s own components (tenant.*) are included. Use the exact type names and prop names from here. Pass `types` to get those components in full — every setting’s label and what it means — before you configure one you have not used yet (a data table, a record form).',
     input_schema: {
       type: 'object',
-      properties: { category: { type: 'string', description: 'Only this category, e.g. Layout, Content, Data, Forms' } },
+      properties: {
+        category: { type: 'string', description: 'Only this category, e.g. Layout, Content, Data, Forms' },
+        types: { type: 'array', items: { type: 'string' }, description: 'Only these types, in full detail, e.g. ["dcms.data-table", "dcms.record-form"].' },
+      },
       additionalProperties: false,
     },
     describe: () => 'list component types',
     maxResultChars: 20_000,
     run: async (input) => {
       const category = str(input, 'category').toLowerCase();
+      const types = Array.isArray(input.types) ? new Set((input.types as unknown[]).filter((t): t is string => typeof t === 'string')) : null;
+      // Named types come with every setting explained; the whole catalogue stays compact enough
+      // to arrive in one piece.
+      const full = types !== null && types.size > 0;
       const out = [...registryFromFiles().values()]
-        .filter((d) => d.draggable !== false)
+        .filter((d) => d.draggable !== false || (full && types!.has(d.type)))
         .filter((d) => !category || d.category.toLowerCase() === category)
+        .filter((d) => !full || types!.has(d.type))
         .map((d) => ({
           type: d.type,
           version: d.template ? d.version : undefined,
@@ -397,6 +405,7 @@ export const VISUAL_TOOLS: Tool[] = [
           props: d.props.map((p) => ({
             name: p.name,
             kind: p.kind,
+            ...(full ? { label: p.label, ...(p.description ? { description: p.description } : {}) } : {}),
             ...('options' in p ? { options: p.options.map((o) => o.value) } : {}),
             ...('default' in p && p.default !== undefined ? { default: p.default } : {}),
             ...(p.responsive ? { responsive: true } : {}),
@@ -406,6 +415,80 @@ export const VISUAL_TOOLS: Tool[] = [
           actions: d.actions,
           allowedParents: d.allowedParents,
         }));
+      return { content: JSON.stringify(out) };
+    },
+  },
+  {
+    name: 'describe_apps',
+    description:
+      'The Dynamic Apps applications of this workspace (a CRM, a booking system…) as this site may use them: each app’s tables, their fields (API name, type, required, choices, which table a lookup points at), relationships, and what the public may do with each table (read all/own/none, create, update own). Records are NOT plugin content: show a table with a Collection or detail page over source { app, table, expand?, sort? }, a dcms.data-table, or a dcms.record-form — never { instance, contentType }. A table missing here does not exist, is not published, or is closed to the site.',
+    input_schema: { type: 'object', properties: { app: { type: 'string', description: 'Only this app (its slug).' } }, additionalProperties: false },
+    describe: (input) => (str(input, 'app') ? `describe app ${str(input, 'app')}` : 'describe apps'),
+    maxResultChars: 20_000,
+    run: async (input, ctx) => {
+      type Ui = { pluginId: string; instances: { slug: string; name: string; enabled: boolean; aiToolsEnabled?: boolean }[] };
+      type Table = {
+        apiName: string;
+        displayName: string;
+        pluralName?: string | null;
+        primaryField?: string | null;
+        access?: Record<string, unknown>;
+        fields: { apiName: string; displayName: string; type: string; required?: boolean; readOnly?: boolean; target?: string | null; options?: string[] | null }[];
+        relationships?: { apiName: string; kind: string; target: string }[];
+      };
+      const only = str(input, 'app');
+      const ui = await api.get<Ui[]>('/admin/plugin-ui');
+      const apps = (ui.find((p) => p.pluginId === 'dynamic-apps')?.instances ?? []).filter((i) => !only || i.slug === only);
+      if (apps.length === 0) {
+        return err(
+          only
+            ? `There is no Dynamic Apps app “${only}”.`
+            : 'This workspace has no Dynamic Apps applications. One is added in Marketplace → Dynamic Apps; its tables are designed on its Configuration screen.',
+        );
+      }
+      const out = await Promise.all(
+        apps.map(async (app) => {
+          const base = { app: app.slug, name: app.name, enabled: app.enabled, aiTools: app.aiToolsEnabled === true };
+          if (!app.enabled) return { ...base, note: 'Switched off: the site cannot read it.' };
+          let tables: Table[] = [];
+          let published = true;
+          try {
+            tables = ((await api.get<{ tables?: Table[] }>(`/admin/sites/${ctx.siteId}/preview/api/${app.slug}/_model`))?.tables ?? []);
+          } catch {
+            published = false;
+          }
+          // Whether a draft waits to be published: tables there are not on the site yet. Needs the
+          // app's model-read permission; without it the answer is simply not given.
+          let draftPending: boolean | undefined;
+          try {
+            draftPending = !!(await api.get<{ draft?: unknown }>(`/admin/plugins/${app.slug}/_model`))?.draft;
+          } catch {
+            draftPending = undefined;
+          }
+          return {
+            ...base,
+            published,
+            ...(draftPending !== undefined ? { draftPending } : {}),
+            tables: tables.map((t) => ({
+              table: t.apiName,
+              name: t.displayName,
+              plural: t.pluralName ?? undefined,
+              primaryField: t.primaryField ?? undefined,
+              access: t.access,
+              fields: t.fields.map((f) => ({
+                name: f.apiName,
+                label: f.displayName,
+                type: f.type,
+                ...(f.required ? { required: true } : {}),
+                ...(f.readOnly ? { readOnly: true } : {}),
+                ...(f.target ? { lookupOf: f.target } : {}),
+                ...(f.options?.length ? { options: f.options } : {}),
+              })),
+              relationships: t.relationships?.length ? t.relationships : undefined,
+            })),
+          };
+        }),
+      );
       return { content: JSON.stringify(out) };
     },
   },
@@ -665,7 +748,7 @@ export const VISUAL_TOOLS: Tool[] = [
   {
     name: 'bind_props',
     description:
-      'Make props of a node show a field of the item in scope instead of a fixed value — inside a Collection’s "item" slot, or anywhere on a detail page. `bind` maps prop → field path (`title`, `values.colour`, `#slug`, `#number`); null unbinds. Use describe_content_types for the real field names; check_visual_site reports fields that do not exist.',
+      'Make props of a node show a field of the item in scope instead of a fixed value — inside a Collection’s "item" slot, or anywhere on a detail page. `bind` maps prop → field path (`title`, `values.colour`, `#slug`, `#number`; a Dynamic Apps record’s `name`, `amount`, or `account.name` through a lookup its source expands); null unbinds. Field names: describe_content_types for plugin content, describe_apps for app tables, list_connections for APIs; check_visual_site reports fields that do not exist.',
     input_schema: {
       type: 'object',
       properties: { doc: DOC, node: { type: 'string' }, bind: { type: 'object' } },
@@ -799,14 +882,14 @@ export const VISUAL_TOOLS: Tool[] = [
   {
     name: 'create_page',
     description:
-      'Add a page and the route that shows it, optionally with a main-menu entry. For a detail page (one item, e.g. /events/:slug) pass `detail_of` — { instance, contentType } for plugin content, or a connection source { connection, operation, items? } — and a path with :slug. The new page is empty: fill it with insert_node on doc page:<id>.',
+      'Add a page and the route that shows it, optionally with a main-menu entry. For a detail page (one item, e.g. /events/:slug) pass `detail_of` — { instance, contentType } for plugin content, { app, table, expand? } for a Dynamic Apps table (path with :id, e.g. /deals/:id), or a connection source { connection, operation, items? } — and a path with :slug or :id. The new page is empty: fill it with insert_node on doc page:<id>.',
     input_schema: {
       type: 'object',
       properties: {
         title: { type: 'string' },
         path: { type: 'string', description: '/about, /events/:slug' },
         in_menu: { type: 'boolean' },
-        detail_of: { type: 'object', description: '{ instance, contentType } or { connection, operation, items? }' },
+        detail_of: { type: 'object', description: '{ instance, contentType }, { app, table, expand? } or { connection, operation, items? }' },
       },
       required: ['title', 'path'],
       additionalProperties: false,
@@ -839,7 +922,10 @@ export const VISUAL_TOOLS: Tool[] = [
       });
       if (!nextApp.success) return err(issue(nextApp.error));
       // A detail page's tab and share title is the item's own, until someone says otherwise.
-      const page = pageSchema.safeParse({ schemaVersion: 1, id, title, ...(data ? { data, seo: { title: '{title}' } } : {}), root: { id: newNodeId(), type: 'dcms.page', slots: { default: [] } } });
+      // A record has no `title` unless its table has one; its name field stands in.
+      const known = data ? useVisual.getState().contentSchema?.get(sourceKey(data.source)) : undefined;
+      const named = data && (!known || known.has('title') ? 'title' : known.has('name') ? 'name' : null);
+      const page = pageSchema.safeParse({ schemaVersion: 1, id, title, ...(data ? { data, ...(named ? { seo: { title: `{${named}}` } } : {}) } : {}), root: { id: newNodeId(), type: 'dcms.page', slots: { default: [] } } });
       if (!page.success) return err(issue(page.error));
       const created = ctx.tx.create(pagePath(id), serializeDoc(page.data));
       if (created.isError) return created;

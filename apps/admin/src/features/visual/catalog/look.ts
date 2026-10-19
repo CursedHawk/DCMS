@@ -3,6 +3,7 @@ import { CODE_PREFIX, type ComponentDefinition } from '@dcms/site-runtime';
 import {
   AppWindow,
   ChevronsRight,
+  SquarePen,
   ChevronsUpDown,
   CircleHelp,
   GalleryHorizontal,
@@ -66,6 +67,7 @@ export const COMPONENT_LOOKS: Readonly<Record<string, ComponentLook>> = {
   'dcms.spacer': { icon: MoveVertical, archetype: 'spacer' },
   'dcms.collection': { icon: LayoutList, archetype: 'cardGrid' },
   'dcms.data-table': { icon: Table2, archetype: 'table' },
+  'dcms.record-form': { icon: SquarePen, archetype: 'form' },
   'dcms.richtext': { icon: FileText, archetype: 'article' },
   'dcms.form': { icon: ClipboardList, archetype: 'form' },
   'dcms.field': { icon: TextCursorInput, archetype: 'form' },

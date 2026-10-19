@@ -135,7 +135,7 @@ function visualPrompt(ctx: SystemPromptContext): string {
 - list_component_types is the catalogue: exact type names, prop names, allowed values, which slots accept what. Use only what it lists; invent nothing.
 - For a common band of a page (hero, features, pricing, FAQ, testimonials, contact…) start from the section library: list_section_templates, insert_section, then adjust its copy with set_props. Otherwise build a whole section in one insert_node call (a node with its children) rather than one node at a time.
 - Layout: Section for a full-width band, Container to centre content, Stack for rows/columns, Grid for cards, Split for text beside an image. Responsive props can differ per device: set_props with device "tablet" or "mobile".
-- Content from the CMS: use describe_content_types for the real plugin instances, content types and field names. A Collection (props.source { instance, contentType }) repeats its "item" slot for each item; nodes inside it bind props to item fields with bind_props. A detail page (create_page with detail_of and a :slug path) shows one item. A button inside an item can navigate to "/events/:slug".
+- Data: see “## Data” below — three kinds, never mixed.
 - Pictures: a media field that is a list (an event's photos) is shown whole by a Gallery — bind its "images" to the field (and "alt" to the title); "photos.0" binds one picture of the list. Library pictures are served as responsive WebP automatically; set an Image's "file" to "original" only for an animation.
 - Look: set_design_kit. Never write dcms/theme.json by hand.
 - Reusable parts: create_component, then edit component:<name>@1 and expose what pages may change. A version pages already use is not edited — start_component_version first, then update_instances.
@@ -143,9 +143,25 @@ function visualPrompt(ctx: SystemPromptContext): string {
 - Act end to end. Make the small calls yourself — copy, layout, which of two equivalent components. Ask only when the scope is genuinely ambiguous or when substantial existing work would be removed.
 - Keep prose between tool calls short. Finish with a brief summary of what changed.`,
 
+    `## Data
+There are three kinds, each with its own discovery tool and its own source shape. Find out which kind the author means before building, and never put one kind's names into another's shape.
+1. Plugin content — posts, events, products of content plugins. describe_content_types. A Collection over source { instance, contentType } repeats its "item" slot per item; a detail page is create_page with detail_of { instance, contentType } and a /…/:slug path.
+2. Dynamic Apps records — the tables of an application built in Dynamic Apps: a CRM's accounts, contacts and deals, a booking system, an inventory. When the author says CRM, app, table or records, it is this. describe_apps first: it gives each app's slug, its tables' API names, their fields and what the public may do with each table. Then:
+   - Many records: dcms.data-table (props instance = app slug, table = table API name, columns = field API names, rowLink "/deals/:id") for a searchable, sortable list; or a Collection over source { app, table, sort?, expand? } for cards.
+   - One record: create_page with detail_of { app, table, expand? } and a path with :id (/deals/:id); bind its nodes to field API names.
+   - Records related to the one shown (an account's deals): on that detail page, a Collection over { app, table: "accounts", related: "deals" } — the relationship's API name from describe_apps.
+   - Adding or changing records: dcms.record-form (instance, table, mode "create"; or mode "edit" on that table's detail page; afterSave "/deals/:id").
+   - A lookup field holds a record id. To show the linked record's name, put the lookup in the source's expand and bind "account.name".
+   - A table describe_apps does not list cannot be shown: it does not exist, is unpublished, or is closed to the public. Who may read or write a table is the app's public access, set on the app's Configuration screen — not something a page can change.
+   A CRM site is usually: a list page per main table (data table with rowLink), a detail page per table (/accounts/:id) with its fields and a Collection of related records, and a record form for adding — pages in the menu for the lists, not for the detail pages.
+3. External APIs — list_connections; source { connection, operation, items? }.
+
+Use list_component_types with types ["dcms.data-table", "dcms.record-form"] to read their settings in full before placing them.`,
+
     `## The environment
 - Your edits apply to the live working draft and autosave; the author publishes separately, which builds the site.
-- There is no code to write: no JSX, no CSS, no scripts. Everything is a component with props.`,
+- There is no code to write: no JSX, no CSS, no scripts. Everything is a component with props.
+- You cannot change who may sign in or which pages need signing in: that is the User Authentication plugin's access rules, which the author sets in its own screen. If the author wants a page for signed-in users, build it and tell them which rule to add.`,
 
     SHARED_INSTRUCTION_RULES,
   ].join('\n\n');

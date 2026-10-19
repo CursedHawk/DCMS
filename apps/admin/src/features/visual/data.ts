@@ -1,7 +1,8 @@
 import { META_FIELDS, contentFields, type ContentField } from '@dcms/gjs-blocks';
 import { sourceSchema, sourceKey, type ContentItem, type ContentSchema, type DataClient, type Source } from '@dcms/site-runtime';
 import type { Component } from 'grapesjs';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
+import { useParams } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { api } from '../../lib/api';
 import { CONNECTIONS_KEY, type ApiConnection } from '../connections/api';
@@ -34,6 +35,61 @@ function guessKind(path: string): ContentField['kind'] {
   return 'text';
 }
 
+/** A table of a Dynamic Apps instance's public model, as the site's `GET /api/{app}/_model` sends it. */
+export interface AppModelTable {
+  apiName: string;
+  displayName: string;
+  pluralName?: string | null;
+  primaryField?: string | null;
+  access?: { read: string; create: boolean; updateOwn: boolean; deleteOwn: boolean; rowRules: boolean };
+  fields: { apiName: string; displayName: string; type: string; required?: boolean; readOnly?: boolean; target?: string | null; options?: string[] | null }[];
+  relationships?: { apiName: string; kind: string; target: string }[];
+}
+
+export const DYNAMIC_APPS = 'dynamic-apps';
+
+/** What a Dynamic Apps field holds, in the field picker's terms. */
+function appFieldKind(type: string): ContentField['kind'] {
+  switch (type) {
+    case 'integer':
+    case 'decimal':
+      return 'number';
+    case 'boolean':
+      return 'boolean';
+    case 'date':
+    case 'dateTime':
+      return 'date';
+    case 'url':
+      return 'url';
+    case 'media':
+      return 'media';
+    case 'multiChoice':
+      return 'tags';
+    case 'longText':
+      return 'richText';
+    default:
+      return 'text';
+  }
+}
+
+/**
+ * Each Dynamic Apps instance's public model, read the way the site reads it — through the site's
+ * preview proxy, so it is exactly what the site may read, and needs no plugin permission beyond
+ * opening the site. A failure is an app with no tables, not an error: an app that has published
+ * nothing has nothing for a site to show.
+ */
+export function useAppModels(siteId: string | undefined, slugs: readonly string[]) {
+  return useQueries({
+    queries: slugs.map((slug) => ({
+      queryKey: ['app-public-model', siteId, slug],
+      enabled: !!siteId,
+      retry: false,
+      staleTime: 60_000,
+      queryFn: async () => ((await previewClient(siteId!).get(`/api/${slug}/_model`)) as { tables?: AppModelTable[] })?.tables ?? [],
+    })),
+  });
+}
+
 /** Every plugin instance's content types and their fields — what the field picker offers. */
 export interface ContentCatalog {
   sources: { source: Source; label: string; fields: ContentField[] }[];
@@ -46,6 +102,11 @@ export function useContentCatalog(): ContentCatalog {
   const catalog = usePluginCatalog();
   const instances = usePluginInstances();
   const connections = useQuery({ queryKey: CONNECTIONS_KEY, queryFn: () => api.get<ApiConnection[]>('/admin/connections'), retry: false });
+  const { siteId } = useParams({ strict: false }) as { siteId?: string };
+  const apps = (instances.data ?? []).filter((i) => i.enabled && i.pluginId === DYNAMIC_APPS).map((i) => i.slug);
+  const models = useAppModels(siteId, apps);
+  const modelData = models.map((m) => m.data);
+  const modelsLoading = models.some((m) => m.isLoading);
   return useMemo(() => {
     const manifests = new Map((catalog.data ?? []).map((m) => [m.id, m]));
     const sources: ContentCatalog['sources'] = [];
@@ -80,14 +141,61 @@ export function useContentCatalog(): ContentCatalog {
         });
       }
     }
+    // Dynamic Apps tables the site may read: records, by the app's public API. A lookup is an id
+    // unless the source expands it, so its target's fields are offered as `account.name`, and the
+    // validator is told (`lookup:account`) to want the expand.
+    const lookups = new Map<string, string[]>();
+    const readable = (t: AppModelTable) => !(t.access && t.access.read === 'none' && !t.access.rowRules);
+    apps.forEach((app, index) => {
+      const tables = modelData[index] ?? [];
+      // A table's fields, and its lookups' target fields as `account.name`.
+      const fieldsOf = (table: AppModelTable): { fields: ContentField[]; markers: string[] } => {
+        const fields: ContentField[] = [
+          ...table.fields.map((f) => ({ path: f.apiName, label: f.displayName, kind: appFieldKind(f.type), custom: false })),
+          { path: 'created_at', label: 'Created', kind: 'date' as const, custom: false },
+          { path: 'updated_at', label: 'Updated', kind: 'date' as const, custom: false },
+        ];
+        const markers: string[] = [];
+        for (const lookup of table.fields.filter((f) => f.type === 'lookup' && f.target)) {
+          const target = tables.find((t) => t.apiName === lookup.target);
+          markers.push(`lookup:${lookup.apiName}`);
+          for (const f of target?.fields ?? []) {
+            if (f.type === 'lookup') continue;
+            fields.push({ path: `${lookup.apiName}.${f.apiName}`, label: `${lookup.displayName} › ${f.displayName}`, kind: appFieldKind(f.type), custom: false });
+          }
+        }
+        return { fields, markers };
+      };
+      for (const table of tables) {
+        if (!readable(table)) continue;
+        // Picked from the list, a table comes with its lookups expanded, so `account.name` reads.
+        const expand = table.fields.filter((f) => f.type === 'lookup').map((f) => f.apiName).slice(0, 10);
+        const source = sourceSchema.safeParse({ app, table: table.apiName, ...(expand.length ? { expand } : {}) });
+        if (!source.success) continue;
+        const { fields, markers } = fieldsOf(table);
+        lookups.set(sourceKey(source.data), markers);
+        sources.push({ source: source.data, label: `${app} › ${table.pluralName ?? table.displayName}`, fields });
+        // Its relationships: the records related to one of its records (an account's deals).
+        for (const relationship of table.relationships ?? []) {
+          const target = tables.find((t) => t.apiName === relationship.target);
+          const related = sourceSchema.safeParse({ app, table: table.apiName, related: relationship.apiName });
+          if (!target || !readable(target) || !related.success) continue;
+          const shape = fieldsOf(target);
+          lookups.set(sourceKey(related.data), shape.markers);
+          sources.push({ source: related.data, label: `${app} › ${table.displayName} › ${relationship.apiName}`, fields: shape.fields });
+        }
+      }
+    });
     const schema = new Map(
       sources.map((s) => {
         const key = sourceKey(s.source);
-        return [key, new Set([...s.fields.map((f) => f.path), ...(connectionKeys.has(key) ? ['*'] : [])])];
+        return [key, new Set([...s.fields.map((f) => f.path), ...(connectionKeys.has(key) ? ['*'] : []), ...(lookups.get(key) ?? [])])];
       }),
     );
-    return { sources, schema, isLoading: catalog.isLoading || instances.isLoading || connections.isLoading };
-  }, [catalog.data, catalog.isLoading, instances.data, instances.isLoading, connections.data, connections.isLoading]);
+    return { sources, schema, isLoading: catalog.isLoading || instances.isLoading || connections.isLoading || modelsLoading };
+    // `modelData` is a new array each render; its JSON is what changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalog.data, catalog.isLoading, instances.data, instances.isLoading, connections.data, connections.isLoading, JSON.stringify(modelData), modelsLoading]);
 }
 
 /** The meta fields the runtime understands (`#slug`, `#index`…), out of the list the admin keeps. */

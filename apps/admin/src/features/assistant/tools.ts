@@ -124,7 +124,7 @@ export const ASSISTANT_TOOLS: AssistantTool[] = [
      */
     name: 'describe_content_types',
     description:
-      'List the collections in this workspace and, for each, the content types it can hold and the exact fields each type is made of (name, type, whether required). Call this before creating or updating content so the field names are right.',
+      'List the collections in this workspace and, for each, the content types it can hold and the exact fields each type is made of (name, type, whether required). Call this before creating or updating content so the field names are right. A Dynamic Apps application lists no content types here: its tables hold records, described by the app itself (describe_apps in the site builder).',
     permission: Perm.ContentRead,
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
     run: async () => {
