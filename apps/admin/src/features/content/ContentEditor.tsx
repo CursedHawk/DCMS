@@ -239,8 +239,8 @@ export function ContentEditor({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent wide>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            {isNew ? t('content.newItem') : slug}
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            <span className="min-w-0">{isNew ? t('content.newItem') : slug}</span>
             {detail.data ? (
               <Badge tone={detail.data.status === 'Published' ? 'success' : 'secondary'}>
                 {detail.data.status}

@@ -182,7 +182,7 @@ export function MediaDetailDialog({
                   </Select>
                 </div>
 
-                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 pt-1 text-xs">
+                <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 pt-1 text-xs [&_dd]:[overflow-wrap:anywhere]">
                   <dt className="text-muted-foreground">{t('media.detail.type')}</dt>
                   <dd className="font-medium">
                     <Badge tone="secondary">{t(`media.category.${a.category}`)}</Badge>{' '}
@@ -221,7 +221,8 @@ export function MediaDetailDialog({
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 {t('media.detail.versions')}
               </h3>
-              <div className="overflow-hidden rounded-lg border">
+              {/* Scrolls rather than clips: on a phone the download column was cut off. */}
+              <div className="overflow-x-auto rounded-lg border">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50 text-xs text-muted-foreground">
                     <tr>

@@ -32,7 +32,7 @@ export function EditorHeader({
   const ai = useAi();
 
   return (
-    <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
+    <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
       <Link
         to={'/sites' as string}
         aria-label={t('sites.backToSites')}
@@ -63,6 +63,6 @@ export function EditorHeader({
         <JobsIndicator enabled />
         <NotificationBell enabled />
       </div>
-    </div>
+    </header>
   );
 }

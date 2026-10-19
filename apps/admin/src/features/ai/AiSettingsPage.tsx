@@ -196,7 +196,7 @@ export function AiSettingsPage() {
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>{t('ai.model')}</Label>
                 <Input
@@ -235,7 +235,7 @@ export function AiSettingsPage() {
               </p>
             </div>
 
-            <div className="flex justify-between pt-2">
+            <div className="flex flex-wrap justify-between gap-2 pt-2">
               {settings.data?.hasApiKey ? (
                 <Button variant="outline" onClick={() => clearKey.mutate()}>
                   {t('ai.clearKey')}
@@ -275,7 +275,7 @@ export function AiSettingsPage() {
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>{t('ai.model')}</Label>
                 <Input
@@ -316,7 +316,7 @@ export function AiSettingsPage() {
               <p className="text-xs text-muted-foreground">{t('ai.localNeedsNoKey')}</p>
             )}
 
-            <div className="flex justify-between pt-2">
+            <div className="flex flex-wrap justify-between gap-2 pt-2">
               {userCred.data?.hasApiKey || userCred.data?.provider !== 'Inherit' ? (
                 <Button variant="outline" onClick={() => disconnectUser.mutate()}>
                   {t('ai.disconnect')}

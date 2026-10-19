@@ -235,7 +235,7 @@ function Nameplate({
   });
 
   return (
-    <header>
+    <div>
       <PageHeader
         crumbs={crumbs}
         title={instance.name}
@@ -271,7 +271,7 @@ function Nameplate({
         }
       />
       <Wiring instance={instance} manifest={manifest} reference={reference} />
-    </header>
+    </div>
   );
 }
 
@@ -446,7 +446,7 @@ function Overview({
               {manifest.contentTypes.map((type) => (
                 <li key={type.name} className="flex items-center gap-3 px-4 py-2.5 text-sm">
                   <FileText className="h-4 w-4 text-muted-foreground" aria-hidden />
-                  <span className="flex-1 font-mono text-xs">{type.name}</span>
+                  <span className="min-w-0 flex-1 font-mono text-xs [overflow-wrap:anywhere]">{type.name}</span>
                   <span className="text-xs text-muted-foreground">
                     {t('pluginPage.overview.fields', { count: type.fields.length })}
                   </span>
@@ -741,7 +741,7 @@ function Integration({ instance, reference }: { instance: PluginInstance; refere
             {routes.map((r) => (
               <li key={`${r.method} ${r.path}`} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2 text-sm">
                 <span className="w-14 shrink-0 font-mono text-xs font-semibold text-primary">{r.method}</span>
-                <code className="font-mono text-xs">{r.path}</code>
+                <code className="min-w-0 font-mono text-xs [overflow-wrap:anywhere]">{r.path}</code>
                 {r.summary ? <span className="text-muted-foreground">{r.summary}</span> : null}
               </li>
             ))}

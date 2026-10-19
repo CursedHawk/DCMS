@@ -86,8 +86,8 @@ export function ConnectionsPage() {
               <CardContent className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <Plug className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium">{c.name}</span>
-                  <code className="text-xs text-muted-foreground">{c.slug}</code>
+                  <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{c.name}</span>
+                  <code className="min-w-0 text-xs text-muted-foreground [overflow-wrap:anywhere]">{c.slug}</code>
                   {c.lastError ? (
                     <Badge tone="warning">
                       <AlertTriangle className="h-3 w-3" /> {t('connections.failing')}
@@ -95,7 +95,7 @@ export function ConnectionsPage() {
                   ) : c.refreshedAt ? (
                     <Badge tone="success">{t('connections.synced', { when: new Date(c.refreshedAt).toLocaleString() })}</Badge>
                   ) : null}
-                  <div className="ml-auto flex gap-1">
+                  <div className="ml-auto flex flex-wrap gap-1">
                     <Button size="sm" variant="outline" disabled={refresh.isPending} onClick={() => refresh.mutate(c.slug)}>
                       <RefreshCw className="h-4 w-4" /> {t('connections.refresh')}
                     </Button>

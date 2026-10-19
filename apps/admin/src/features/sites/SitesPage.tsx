@@ -136,7 +136,7 @@ export function SitesPage() {
                   <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-accent text-accent-foreground">
                     <PanelsTopLeft className="h-5 w-5" />
                   </div>
-                  <p className="font-medium">{s.name}</p>
+                  <p className="font-medium [overflow-wrap:anywhere]">{s.name}</p>
                   <div className="mt-2 flex items-center gap-2">
                     <Badge tone="secondary">{s.renderMode}</Badge>
                     <Badge tone={s.activeBuildId ? 'success' : 'warning'}>

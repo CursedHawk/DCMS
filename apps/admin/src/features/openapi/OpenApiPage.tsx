@@ -69,7 +69,7 @@ export function OpenApiPage() {
         title={t('openapi.title')}
         actions={
           hasPaths ? (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={copyForAi}>
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 {t('openapi.copyForAi')}

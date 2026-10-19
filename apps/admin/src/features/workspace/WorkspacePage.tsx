@@ -166,9 +166,10 @@ export function WorkspacePage() {
                 <span className="text-destructive">{t('workspace.noOwner')}</span>
               ) : (
                 ws.owners.map((o) => (
-                  <Badge key={o.userId} tone="default">
+                  // Not a Badge: an email is one long word, and a pill cannot wrap it.
+                  <span key={o.userId} className="min-w-0 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary [overflow-wrap:anywhere]">
                     {o.email}
-                  </Badge>
+                  </span>
                 ))
               )}
             </div>
@@ -190,7 +191,7 @@ export function WorkspacePage() {
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     <Select value={transferTo} onValueChange={setTransferTo}>
-                      <SelectTrigger className="w-72">
+                      <SelectTrigger className="w-full sm:w-72">
                         <SelectValue placeholder={t('workspace.transferPick')} />
                       </SelectTrigger>
                       <SelectContent>
