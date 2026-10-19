@@ -10,6 +10,11 @@ vi.mock('react-i18next', () => ({
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
+// The reference's tab lives in `?section=`; there is no router here, so it lives in state.
+vi.mock('../../lib/useTabParam', async () => {
+  const { useState } = await import('react');
+  return { useTabParam: (_name: string, _values: unknown, fallback: string) => useState(fallback) };
+});
 
 const reference: PluginReference = {
   id: 'blog',

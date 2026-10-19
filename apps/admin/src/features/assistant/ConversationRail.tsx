@@ -1,7 +1,7 @@
 import { MessageSquarePlus, Trash2, Users } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { can, relativeTime } from '@dcms/core';
-import { Button, Spinner, cn, usePermissions } from '@dcms/ui';
+import { Button, Spinner, Tabs, TabsList, TabsTrigger, cn, usePermissions } from '@dcms/ui';
 import { Perm } from '../../lib/permissions';
 import {
   type AiSurface,
@@ -62,25 +62,16 @@ export function ConversationRail({
         </Button>
       </div>
 
-      <div className="flex gap-0.5 border-b px-2 py-1.5" role="tablist">
-        {scopes.map((option) => (
-          <button
-            key={option}
-            type="button"
-            role="tab"
-            aria-selected={scope === option}
-            onClick={() => onScopeChange(option)}
-            className={cn(
-              'rounded-sm px-2 py-1 text-xs transition-colors',
-              scope === option
-                ? 'bg-accent font-medium text-accent-foreground'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {t(`assistant.scope.${option}`)}
-          </button>
-        ))}
-      </div>
+      {/* The shared tabs, with their arrow-key handling; these were a hand-built tablist. */}
+      <Tabs value={scope} onValueChange={(v) => onScopeChange(v as ConversationScope)} className="border-b px-2 py-1.5">
+        <TabsList className="h-8 w-full justify-start">
+          {scopes.map((option) => (
+            <TabsTrigger key={option} value={option} className="px-2 text-xs">
+              {t(`assistant.scope.${option}`)}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
         {conversations.isPending ? (
