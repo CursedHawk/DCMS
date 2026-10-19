@@ -38,6 +38,7 @@
     "i18next": "^25",
     "js-beautify": "^2.0.3",
     "lucide-react": "^0.469",
+    "markdown-to-jsx": "7.7.17",
     "monaco-editor": "^0.52",
     "react": "^19",
     "react-dom": "^19",

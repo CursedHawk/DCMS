@@ -11,6 +11,7 @@ import {
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@dcms/ui';
+import { AgentMarkdown } from '../../../components/AgentMarkdown';
 import { useVfs } from '../../site-source/vfs';
 import type { AgentEntry } from './useAgentSession';
 
@@ -47,7 +48,7 @@ function Entry({ entry }: { entry: AgentEntry }) {
 
     case 'assistant':
       return entry.text ? (
-        <p className="whitespace-pre-wrap px-0.5 text-foreground">{entry.text}</p>
+        <AgentMarkdown text={entry.text} className="px-0.5 text-foreground" />
       ) : null;
 
     case 'thinking':

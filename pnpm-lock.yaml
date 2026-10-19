@@ -141,6 +141,9 @@ importers:
       lucide-react:
         specifier: ^0.469
         version: 0.469.0(react@19.2.7)
+      markdown-to-jsx:
+        specifier: 7.7.17
+        version: 7.7.17(react@19.2.7)
       monaco-editor:
         specifier: ^0.52
         version: 0.52.2

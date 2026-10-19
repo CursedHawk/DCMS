@@ -1,6 +1,7 @@
 import { Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, cn } from '@dcms/ui';
+import { AgentMarkdown } from '../../components/AgentMarkdown';
 import type { Step, StepStatus, ToolStep } from './steps';
 import { WorkCard } from './WorkCard';
 
@@ -108,7 +109,7 @@ function StepBody({
 
   if (step.kind === 'assistant') {
     // Full measure, no bubble: this is the answer, and it is the thing being read.
-    return <p className="max-w-[68ch] whitespace-pre-wrap leading-relaxed">{step.text}</p>;
+    return <AgentMarkdown text={step.text} className="max-w-[68ch] leading-relaxed" />;
   }
 
   if (step.kind === 'error') {
