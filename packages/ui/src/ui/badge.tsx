@@ -5,8 +5,8 @@ type Tone = 'default' | 'secondary' | 'success' | 'warning' | 'destructive' | 'o
 const tones: Record<Tone, string> = {
   default: 'bg-primary/10 text-primary border-transparent',
   secondary: 'bg-secondary text-secondary-foreground border-transparent',
-  success: 'bg-[hsl(var(--success)/0.12)] text-[hsl(var(--success))] border-transparent',
-  warning: 'bg-[hsl(var(--warning)/0.15)] text-[hsl(var(--warning))] border-transparent',
+  success: 'bg-success/12 text-success-foreground border-transparent',
+  warning: 'bg-warning/15 text-warning-foreground border-transparent',
   destructive: 'bg-destructive/10 text-destructive border-transparent',
   outline: 'text-foreground border-border',
 };

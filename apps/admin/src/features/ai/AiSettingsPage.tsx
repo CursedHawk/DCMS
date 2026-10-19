@@ -59,7 +59,10 @@ const PROVIDERS = [
 export function AiSettingsPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const settings = useQuery({ queryKey: ['ai-settings'], queryFn: () => api.get<AiSettings>('/admin/ai/settings') });
+  const settings = useQuery({
+    queryKey: ['ai-settings'],
+    queryFn: () => api.get<AiSettings>('/admin/ai/settings'),
+  });
 
   const [provider, setProvider] = useState('Inherit');
   const [model, setModel] = useState('');
@@ -91,7 +94,13 @@ export function AiSettingsPage() {
   });
 
   const clearKey = useMutation({
-    mutationFn: () => api.put('/admin/ai/settings', { provider, model: model || null, baseUrl: baseUrl || null, clearApiKey: true }),
+    mutationFn: () =>
+      api.put('/admin/ai/settings', {
+        provider,
+        model: model || null,
+        baseUrl: baseUrl || null,
+        clearApiKey: true,
+      }),
     onSuccess: async () => {
       toast.success(t('common.saved'));
       await qc.invalidateQueries({ queryKey: ['ai-settings'] });
@@ -160,159 +169,173 @@ export function AiSettingsPage() {
   }
 
   return (
-    <Page className="max-w-2xl">
+    <Page>
       <PageHeader title={t('ai.title')} />
-      <Card>
-        <CardContent className="space-y-4 p-6">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Bot className="h-4 w-4" /> {t('app.tagline')}
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>{t('ai.provider')}</Label>
-            <Select value={provider} onValueChange={setProvider}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PROVIDERS.map((p) => (
-                  <SelectItem key={p.value} value={p.value}>
-                    {p.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>{t('ai.model')}</Label>
-              <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="claude-opus-4-8" />
+      {/* A form reads better narrow; the page keeps the width every other section has. */}
+      <div className="max-w-2xl space-y-6">
+        <Card>
+          <CardContent className="space-y-4 p-6">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Bot className="h-4 w-4" /> {t('app.tagline')}
             </div>
+
             <div className="space-y-1.5">
-              <Label>{t('ai.baseUrl')}</Label>
-              <Input
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://openrouter.ai/api/v1"
-              />
+              <Label>{t('ai.provider')}</Label>
+              <Select value={provider} onValueChange={setProvider}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROVIDERS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
 
-          <p className="text-xs text-muted-foreground">{t('ai.compatibleHint')}</p>
-
-          <div className="space-y-1.5">
-            <Label className="flex items-center gap-2">
-              <KeyRound className="h-4 w-4" /> {t('ai.apiKey')}
-              {settings.data?.hasApiKey ? <Badge tone="success">{t('ai.apiKeySet')}</Badge> : null}
-            </Label>
-            <Input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="••••••••••••"
-            />
-            <p className="text-xs text-muted-foreground">
-              Stored encrypted (Vault Transit); never returned by the API.
-            </p>
-          </div>
-
-          <div className="flex justify-between pt-2">
-            {settings.data?.hasApiKey ? (
-              <Button variant="outline" onClick={() => clearKey.mutate()}>
-                {t('ai.clearKey')}
-              </Button>
-            ) : (
-              <span />
-            )}
-            <Button disabled={save.isPending} onClick={() => save.mutate()}>
-              {t('actions.save')}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="space-y-4 p-6">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <Sparkles className="h-4 w-4 text-primary" />
-            {t('ai.userKeyTitle')}
-          </div>
-          <p className="text-xs text-muted-foreground">{t('ai.userKeyBody')}</p>
-
-          <div className="space-y-1.5">
-            <Label>{t('ai.provider')}</Label>
-            <Select value={userProvider} onValueChange={setUserProvider}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Inherit">{t('ai.useWorkspaceProvider')}</SelectItem>
-                {PROVIDERS.filter((p) => p.value !== 'Inherit').map((p) => (
-                  <SelectItem key={p.value} value={p.value}>
-                    {p.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>{t('ai.model')}</Label>
-              <Input
-                value={userModel}
-                onChange={(e) => setUserModel(e.target.value)}
-                placeholder={t('ai.inheritPlaceholder')}
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>{t('ai.model')}</Label>
+                <Input
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="claude-opus-4-8"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t('ai.baseUrl')}</Label>
+                <Input
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://openrouter.ai/api/v1"
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label>{t('ai.baseUrl')}</Label>
-              <Input
-                value={userBaseUrl}
-                onChange={(e) => setUserBaseUrl(e.target.value)}
-                placeholder={t('ai.inheritPlaceholder')}
-              />
-            </div>
-          </div>
 
-          {userNeedsKey ? (
+            <p className="text-xs text-muted-foreground">{t('ai.compatibleHint')}</p>
+
             <div className="space-y-1.5">
               <Label className="flex items-center gap-2">
                 <KeyRound className="h-4 w-4" /> {t('ai.apiKey')}
-                {userCred.data?.hasApiKey ? <Badge tone="success">{t('ai.connected')}</Badge> : null}
+                {settings.data?.hasApiKey ? (
+                  <Badge tone="success">{t('ai.apiKeySet')}</Badge>
+                ) : null}
               </Label>
               <Input
                 type="password"
-                value={userKey}
-                onChange={(e) => setUserKey(e.target.value)}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
                 placeholder="••••••••••••"
               />
-              <p className="text-xs text-muted-foreground">{t('ai.keyStorage')}</p>
+              <p className="text-xs text-muted-foreground">
+                Stored encrypted (Vault Transit); never returned by the API.
+              </p>
             </div>
-          ) : (
-            // Said rather than left blank: a missing key field looks like a bug unless the page
-            // explains that this provider does not have one.
-            <p className="text-xs text-muted-foreground">{t('ai.localNeedsNoKey')}</p>
-          )}
 
-          <div className="flex justify-between pt-2">
-            {userCred.data?.hasApiKey || userCred.data?.provider !== 'Inherit' ? (
-              <Button variant="outline" onClick={() => disconnectUser.mutate()}>
-                {t('ai.disconnect')}
+            <div className="flex justify-between pt-2">
+              {settings.data?.hasApiKey ? (
+                <Button variant="outline" onClick={() => clearKey.mutate()}>
+                  {t('ai.clearKey')}
+                </Button>
+              ) : (
+                <span />
+              )}
+              <Button disabled={save.isPending} onClick={() => save.mutate()}>
+                {t('actions.save')}
               </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="space-y-4 p-6">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Sparkles className="h-4 w-4 text-primary" />
+              {t('ai.userKeyTitle')}
+            </div>
+            <p className="text-xs text-muted-foreground">{t('ai.userKeyBody')}</p>
+
+            <div className="space-y-1.5">
+              <Label>{t('ai.provider')}</Label>
+              <Select value={userProvider} onValueChange={setUserProvider}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Inherit">{t('ai.useWorkspaceProvider')}</SelectItem>
+                  {PROVIDERS.filter((p) => p.value !== 'Inherit').map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>{t('ai.model')}</Label>
+                <Input
+                  value={userModel}
+                  onChange={(e) => setUserModel(e.target.value)}
+                  placeholder={t('ai.inheritPlaceholder')}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t('ai.baseUrl')}</Label>
+                <Input
+                  value={userBaseUrl}
+                  onChange={(e) => setUserBaseUrl(e.target.value)}
+                  placeholder={t('ai.inheritPlaceholder')}
+                />
+              </div>
+            </div>
+
+            {userNeedsKey ? (
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-2">
+                  <KeyRound className="h-4 w-4" /> {t('ai.apiKey')}
+                  {userCred.data?.hasApiKey ? (
+                    <Badge tone="success">{t('ai.connected')}</Badge>
+                  ) : null}
+                </Label>
+                <Input
+                  type="password"
+                  value={userKey}
+                  onChange={(e) => setUserKey(e.target.value)}
+                  placeholder="••••••••••••"
+                />
+                <p className="text-xs text-muted-foreground">{t('ai.keyStorage')}</p>
+              </div>
             ) : (
-              <span />
+              // Said rather than left blank: a missing key field looks like a bug unless the page
+              // explains that this provider does not have one.
+              <p className="text-xs text-muted-foreground">{t('ai.localNeedsNoKey')}</p>
             )}
-            <Button
-              disabled={connectUser.isPending || (userNeedsKey && !userKey.trim() && !userCred.data?.hasApiKey)}
-              onClick={() => connectUser.mutate()}
-            >
-              {t('actions.save')}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+
+            <div className="flex justify-between pt-2">
+              {userCred.data?.hasApiKey || userCred.data?.provider !== 'Inherit' ? (
+                <Button variant="outline" onClick={() => disconnectUser.mutate()}>
+                  {t('ai.disconnect')}
+                </Button>
+              ) : (
+                <span />
+              )}
+              <Button
+                disabled={
+                  connectUser.isPending ||
+                  (userNeedsKey && !userKey.trim() && !userCred.data?.hasApiKey)
+                }
+                onClick={() => connectUser.mutate()}
+              >
+                {t('actions.save')}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </Page>
   );
 }

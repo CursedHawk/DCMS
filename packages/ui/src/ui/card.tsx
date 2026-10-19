@@ -9,8 +9,14 @@ export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   );
 }
 
+/*
+ * Padding lives on the content, not the header: `CardContent` is `p-5` on its own, and a header
+ * above it leaves its bottom edge to the content's top. It used to be the other way round
+ * (`p-5 pt-0` content), which was only right under a header — and most cards have none, so
+ * fifteen call sites overrode it back to `p-5`.
+ */
 export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex flex-col gap-1.5 p-5', className)} {...props} />;
+  return <div className={cn('flex flex-col gap-1.5 p-5 pb-0', className)} {...props} />;
 }
 
 export function CardTitle({
@@ -29,5 +35,5 @@ export function CardTitle({
 }
 
 export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('p-5 pt-0', className)} {...props} />;
+  return <div className={cn('p-5', className)} {...props} />;
 }

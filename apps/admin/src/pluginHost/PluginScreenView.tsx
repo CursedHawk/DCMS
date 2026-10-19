@@ -144,7 +144,7 @@ export function PluginInstanceScreenPage({ slug, screenId }: { slug: string; scr
   }
   const screen = plugin.screens.find((s) => s.id === screenId);
   return (
-    <Page className="max-w-7xl">
+    <Page>
       <PageHeader title={screen ? screenTitle(screen, i18n.language) : screenId} description={instance.name} />
       <PluginScreenView plugin={plugin} screenId={screenId} instance={instance} />
     </Page>

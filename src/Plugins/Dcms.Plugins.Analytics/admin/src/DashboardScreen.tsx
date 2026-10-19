@@ -250,7 +250,7 @@ export function DashboardScreen() {
   };
 
   return (
-    <Page className="max-w-7xl">
+    <Page>
       <PageHeader
         title={t('analytics.title')}
         actions={

@@ -1,8 +1,16 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CenteredSpinner, cn, useCan } from '@dcms/ui';
-import { SETTINGS_SECTIONS, type SettingsSection } from '../../app/routeGuards';
+import {
+  CenteredSpinner,
+  SubNav,
+  SubNavGroup,
+  SubNavItemBody,
+  subNavItemClass,
+  usePermissions,
+} from '@dcms/ui';
+import { can } from '../../lib/permissions';
+import { SETTINGS_SECTIONS } from '../../app/routeGuards';
 
 /**
  * The Settings area: one destination in the sidebar, with its own sub-navigation.
@@ -26,24 +34,40 @@ import { SETTINGS_SECTIONS, type SettingsSection } from '../../app/routeGuards';
 export function SettingsLayout() {
   const { t } = useTranslation();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const me = usePermissions();
+  const sections = SETTINGS_SECTIONS.filter((section) => !section.perm || can(me, section.perm));
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col lg:flex-row">
-      <nav
-        aria-label={t('nav.settings')}
-        className="shrink-0 px-6 pt-6 lg:sticky lg:top-6 lg:w-60 lg:self-start lg:pr-0"
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 pt-4 sm:px-6 sm:pt-6 lg:flex-row lg:gap-0 lg:pr-0">
+      <SubNav
+        label={t('nav.settings')}
+        heading={t('nav.settings')}
+        className="lg:sticky lg:top-6 lg:self-start"
       >
-        <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {t('nav.settings')}
-        </p>
-        <ul className="space-y-0.5">
-          {SETTINGS_SECTIONS.map((section) => (
-            <SectionLink key={section.to} section={section} pathname={pathname} />
-          ))}
-        </ul>
-      </nav>
+        <SubNavGroup>
+          {sections.map((section) => {
+            const active = pathname === section.to;
+            return (
+              <li key={section.to}>
+                <Link
+                  to={section.to as string}
+                  aria-current={active ? 'page' : undefined}
+                  className={subNavItemClass(active)}
+                >
+                  <SubNavItemBody
+                    label={t(section.labelKey)}
+                    description={t(section.descriptionKey)}
+                    active={active}
+                  />
+                </Link>
+              </li>
+            );
+          })}
+        </SubNavGroup>
+      </SubNav>
 
-      <div className="min-w-0 flex-1">
+      {/* Each section brings its own Page, whose padding sits beside this column's. */}
+      <div className="-mx-4 min-w-0 flex-1 sm:-mx-6 lg:mx-0 lg:-mt-6">
         {/*
           Its own boundary. Every section is lazily loaded, and without one here the suspension
           reaches the shell's boundary — which unmounts this layout, so moving between sections
@@ -54,44 +78,5 @@ export function SettingsLayout() {
         </Suspense>
       </div>
     </div>
-  );
-}
-
-function SectionLink({ section, pathname }: { section: SettingsSection; pathname: string }) {
-  const { t } = useTranslation();
-  // A hook, so it cannot be called inside the map above — hence a component per row.
-  const allowed = useCan(section.perm);
-  if (section.perm && !allowed) return null;
-
-  const active = pathname === section.to;
-
-  return (
-    <li>
-      <Link
-        to={section.to as string}
-        aria-current={active ? 'page' : undefined}
-        className={cn(
-          'block rounded-md px-3 py-2 text-sm transition-colors',
-          active
-            ? 'bg-accent font-medium text-accent-foreground'
-            : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-        )}
-      >
-        <span className="block">{t(section.labelKey)}</span>
-        {/*
-          The description follows the row it is in. `text-muted-foreground` over the tinted
-          active background measures 4.17:1 — under the 4.5:1 minimum, and axe caught it on the
-          one row somebody is currently reading.
-        */}
-        <span
-          className={cn(
-            'mt-0.5 block text-xs font-normal',
-            active ? 'text-accent-foreground/80' : 'text-muted-foreground',
-          )}
-        >
-          {t(section.descriptionKey)}
-        </span>
-      </Link>
-    </li>
   );
 }

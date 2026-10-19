@@ -54,6 +54,8 @@
   --destructive-foreground: 0 0% 100%;
   --success: 132 55% 40%;
   --warning: 38 78% 57%;
+  --success-foreground: 132 55% 25%;
+  --warning-foreground: 32 80% 30%;
 
   --border: 190 12% 86%;
   --input: 190 12% 86%;
@@ -95,6 +97,8 @@
   --destructive-foreground: 0 0% 100%;
   --success: 132 45% 52%;
   --warning: 38 76% 62%;
+  --success-foreground: 132 45% 64%;
+  --warning-foreground: 43 80% 68%;
 
   --border: 197 18% 22%;
   --input: 197 18% 22%;

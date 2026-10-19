@@ -104,7 +104,7 @@ export function PluginInstancePage({ slug, screen }: { slug: string; screen?: st
   const dataSets = sets.data ?? [];
   const openScreen = screen ? instanceScreens.find((s) => s.id === screen) : undefined;
   return (
-    <Page className="max-w-7xl">
+    <Page>
       <Breadcrumbs
         items={[
           { label: t('plugins.title'), to: '/plugins' },

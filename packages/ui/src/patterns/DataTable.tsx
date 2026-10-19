@@ -104,14 +104,18 @@ export function DataTable<T>({
   className?: string;
 }) {
   const labels = { ...DEFAULTS, ...partialLabels };
-  const [internalSort, setInternalSort] = useState<{ columnId: string; direction: Direction } | null>(
-    defaultSort ? { columnId: defaultSort.columnId, direction: defaultSort.direction ?? 'asc' } : null,
+  const [internalSort, setInternalSort] = useState<{
+    columnId: string;
+    direction: Direction;
+  } | null>(
+    defaultSort
+      ? { columnId: defaultSort.columnId, direction: defaultSort.direction ?? 'asc' }
+      : null,
   );
   const controlled = onSortChange !== undefined;
   const sort = controlled ? (controlledSort ?? null) : internalSort;
-  const setSort = (
-    next: (current: typeof sort) => typeof sort,
-  ) => (controlled ? onSortChange(next(sort)) : setInternalSort(next));
+  const setSort = (next: (current: typeof sort) => typeof sort) =>
+    controlled ? onSortChange(next(sort)) : setInternalSort(next);
 
   const sorted = useMemo(() => {
     if (!rows) return undefined;
@@ -146,7 +150,8 @@ export function DataTable<T>({
 
   const list = sorted ?? [];
   const allKeys = list.map(rowKey);
-  const allSelected = selection && allKeys.length > 0 && allKeys.every((k) => selection.selected.has(k));
+  const allSelected =
+    selection && allKeys.length > 0 && allKeys.every((k) => selection.selected.has(k));
   const someSelected = selection && allKeys.some((k) => selection.selected.has(k));
 
   const toggleAll = () => {
@@ -184,13 +189,19 @@ export function DataTable<T>({
               ) : null}
               {columns.map((column) => {
                 const active = sort?.columnId === column.id;
-                const Icon = !active ? ChevronsUpDown : sort.direction === 'asc' ? ArrowUp : ArrowDown;
+                const Icon = !active
+                  ? ChevronsUpDown
+                  : sort.direction === 'asc'
+                    ? ArrowUp
+                    : ArrowDown;
                 return (
                   <th
                     key={column.id}
                     scope="col"
                     style={column.width ? { width: column.width } : undefined}
-                    aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
+                    aria-sort={
+                      active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined
+                    }
                     className={cn(
                       'h-10 px-3 align-middle text-xs font-medium text-muted-foreground',
                       column.align === 'right' ? 'text-right' : 'text-left',
@@ -297,7 +308,12 @@ export function DataTable<T>({
                   {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- the heading button is the keyboard path */}
                   <div
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
-                    className={cn('min-w-0 flex-1', onRowClick && 'cursor-pointer')}
+                    // `overflow-wrap:anywhere`: a slug or an email is one word, and `break-word` would let it
+                    // set the card's minimum width rather than wrap inside it.
+                    className={cn(
+                      'min-w-0 flex-1 [overflow-wrap:anywhere]',
+                      onRowClick && 'cursor-pointer',
+                    )}
                   >
                     {onRowClick ? (
                       <button

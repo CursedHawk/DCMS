@@ -2,6 +2,7 @@ export * from './button';
 export * from './input';
 export * from './label';
 export * from './card';
+export * from './callout';
 export * from './badge';
 export * from './skeleton';
 export * from './spinner';

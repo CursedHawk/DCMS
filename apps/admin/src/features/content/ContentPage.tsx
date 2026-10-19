@@ -143,7 +143,7 @@ export function ContentPage() {
 
   if (instances.isLoading || catalog.isLoading) {
     return (
-      <Page className="max-w-7xl">
+      <Page>
         <PageHeader title={t('content.title')} description={t('content.subtitle')} />
         <CenteredSpinner />
       </Page>
@@ -151,7 +151,7 @@ export function ContentPage() {
   }
 
   return (
-    <Page className="max-w-7xl">
+    <Page>
       <PageHeader title={t('content.title')} description={t('content.subtitle')} />
 
       <Tabs value={tab} onValueChange={setTab}>

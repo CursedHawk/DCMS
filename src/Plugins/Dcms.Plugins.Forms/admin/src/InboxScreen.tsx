@@ -238,7 +238,7 @@ export function InboxScreen() {
   }
 
   return (
-    <Page className="max-w-7xl">
+    <Page>
       <PageHeader
         title={t('forms.title')}
         description={t('forms.subtitle')}

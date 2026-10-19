@@ -14,6 +14,7 @@ export * from './errors';
 export * from './hooks';
 export * from './Page';
 export * from './ConfirmDeleteDialog';
+export * from './ConfirmDialog';
 export * from './CopyButton';
 export * from './HostLink';
 export * from './Toaster';

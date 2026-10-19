@@ -66,8 +66,8 @@ export function PluginReferencePage({ pluginId }: { pluginId: string }) {
 
   return (
     <Page>
-      <Breadcrumbs items={[{ label: t('nav.marketplace'), to: '/marketplace' }, { label: r.name }]} />
       <PageHeader
+        crumbs={<Breadcrumbs items={[{ label: t('nav.marketplace'), to: '/marketplace' }, { label: r.name }]} />}
         title={t('pluginReference.title', { name: r.name })}
         description={r.description}
         actions={

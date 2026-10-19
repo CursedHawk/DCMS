@@ -54,6 +54,8 @@
   --color-destructive-foreground: hsl(var(--destructive-foreground));
   --color-success: hsl(var(--success));
   --color-warning: hsl(var(--warning));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-warning-foreground: hsl(var(--warning-foreground));
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));
@@ -64,6 +66,13 @@
 
   --font-sans: var(--font-ui);
   --font-mono: var(--font-code);
+
+  /*
+   * The one size below `text-xs`, for dense editor chrome — rails, transcript metadata, file
+   * trees. It replaces 115 hand-picked `text-[9px]`…`text-[11px]` values that drifted apart.
+   */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
 
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);

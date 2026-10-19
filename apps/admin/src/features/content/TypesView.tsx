@@ -1,6 +1,6 @@
 import { FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Badge, CenteredSpinner, type Column, DataTable, EmptyState, Page } from '@dcms/ui';
+import { Badge, CenteredSpinner, type Column, DataTable, EmptyState } from '@dcms/ui';
 import { type ContentFieldDef, usePluginCatalog, usePluginInstances } from '../plugins/api';
 
 interface TypeRow {
@@ -99,7 +99,7 @@ export function TypesView() {
   ];
 
   return (
-    <Page className="max-w-7xl px-0 py-0">
+    <div>
       <DataTable
         rows={rows}
         columns={columns}
@@ -115,6 +115,6 @@ export function TypesView() {
           />
         }
       />
-    </Page>
+    </div>
   );
 }

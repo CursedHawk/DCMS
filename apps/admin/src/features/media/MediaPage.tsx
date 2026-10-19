@@ -241,7 +241,7 @@ export function MediaPage() {
   const hasSelection = activeSelection.length > 0;
 
   return (
-    <Page className="max-w-7xl">
+    <Page>
       <PageHeader
         title={t('media.title')}
         description={t('media.subtitle')}

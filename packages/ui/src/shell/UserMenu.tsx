@@ -53,8 +53,8 @@ export function UserMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-56">
         <DropdownMenuLabel className="px-2 py-1.5">
-          <p className="text-sm font-medium">{name ?? email ?? '—'}</p>
-          {name && email ? <p className="text-xs text-muted-foreground">{email}</p> : null}
+          <p className="max-w-64 truncate text-sm font-medium">{name ?? email ?? '—'}</p>
+          {name && email ? <p className="max-w-64 truncate text-xs text-muted-foreground">{email}</p> : null}
           {secondary ? <p className="mt-0.5 text-xs text-muted-foreground">{secondary}</p> : null}
         </DropdownMenuLabel>
         {entries.length > 0 ? <DropdownMenuSeparator /> : null}
