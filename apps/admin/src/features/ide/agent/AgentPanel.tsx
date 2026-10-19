@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { CloudOff, History, MessageSquarePlus, RotateCcw, Send, Sparkles, Square } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, cn } from '@dcms/ui';
+import { Button, cn, Callout } from '@dcms/ui';
 import { AI_MODES, type AiMode } from '../../agent/modes';
 import { AGENT_SCOPES, type AgentScope } from '../../agent/scope';
 import { ConversationRail } from '../../assistant/ConversationRail';
@@ -225,7 +225,7 @@ export function AgentPanel({
 
       {/* Needs-key banner */}
       {session.needsKey && (
-        <div className="mx-3 mb-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">
+        <Callout tone="warning" compact className="mx-3 mb-2">
           <p className="mb-1 font-medium">{t('ide.agent.needsKeyTitle')}</p>
           {/* Names the provider the server actually resolved. Telling somebody whose workspace
               runs on OpenAI to connect an Anthropic account sends them to make an account they
@@ -241,7 +241,7 @@ export function AgentPanel({
           >
             {t('ide.agent.needsKeyLink', 'Open AI settings →')}
           </Link>
-        </div>
+        </Callout>
       )}
 
       {/* Composer */}

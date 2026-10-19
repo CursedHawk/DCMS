@@ -14,6 +14,7 @@ import {
   Progress,
   toastApiError,
   LoadFailed,
+  SectionHeader,
 } from '@dcms/ui';
 import { ResourceHistory } from '../audit/ResourceHistory';
 import { EditorHeader } from './EditorHeader';
@@ -123,7 +124,7 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
       <Page>
         {/* Upload zone */}
         <Card>
-          <CardContent className="p-5">
+          <CardContent>
             <div
               onDragOver={(e) => {
                 e.preventDefault();
@@ -215,7 +216,7 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
         </Card>
 
         {/* Build history / rollback */}
-        <h2 className="mb-2 mt-8 text-sm font-semibold">{t('sites.deployments')}</h2>
+        <SectionHeader className="mt-8" title={t('sites.deployments')} />
         {builds.isLoading ? (
           <CenteredSpinner />
         ) : builds.isError ? (
@@ -257,7 +258,7 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
 
         {/* Who changed this site, and when. The audit page can answer the same question, but
           only for someone who already knows to go there and what to filter by. */}
-        <h2 className="mb-2 mt-8 text-sm font-semibold">{t('audit.history.title')}</h2>
+        <SectionHeader className="mt-8" title={t('audit.history.title')} />
         <ResourceHistory resourceType="site" resourceId={siteId} />
       </Page>
     </div>

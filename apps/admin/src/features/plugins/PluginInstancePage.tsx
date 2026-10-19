@@ -27,6 +27,7 @@ import {
   TabsTrigger,
   Textarea,
   toastApiError,
+  SectionHeader,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { Perm, can, useMyPermissions } from '../../lib/permissions';
@@ -429,7 +430,7 @@ function Overview({
 
         {dataSets.length > 0 ? (
           <section>
-            <h2 className="mb-2 text-sm font-semibold">{t('pluginPage.overview.data')}</h2>
+            <SectionHeader title={t('pluginPage.overview.data')} />
             <ul className="divide-y rounded-lg border">
               {dataSets.map((s) => (
                 <DataSetSummary key={s.id} slug={instance.slug} set={s} onBrowse={() => onBrowse(s.id)} />
@@ -440,7 +441,7 @@ function Overview({
 
         {manifest.contentTypes.length > 0 ? (
           <section>
-            <h2 className="mb-2 text-sm font-semibold">{t('pluginPage.overview.content')}</h2>
+            <SectionHeader title={t('pluginPage.overview.content')} />
             <ul className="divide-y rounded-lg border">
               {manifest.contentTypes.map((type) => (
                 <li key={type.name} className="flex items-center gap-3 px-4 py-2.5 text-sm">
@@ -465,7 +466,7 @@ function Overview({
         {/* Events it handles are in the wiring above; this is what runs on a timer or on demand. */}
         {reference && reference.jobs.length > 0 ? (
           <section>
-            <h2 className="mb-2 text-sm font-semibold">{t('pluginPage.overview.background')}</h2>
+            <SectionHeader title={t('pluginPage.overview.background')} />
             <ul className="space-y-1 text-sm">
               {reference.jobs.map((j) => (
                 <li key={j.name}>
@@ -721,8 +722,8 @@ function Integration({ instance, reference }: { instance: PluginInstance; refere
   return (
     <div className="space-y-8">
       <section>
-        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold">{t('pluginPage.integration.site')}</h2>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-base font-semibold">{t('pluginPage.integration.site')}</h2>
           <Link to={'/settings/api' as string} className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
             {t('pluginPage.integration.fullDocs')}
             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
@@ -749,8 +750,10 @@ function Integration({ instance, reference }: { instance: PluginInstance; refere
       </section>
 
       <section>
-        <h2 className="mb-1 text-sm font-semibold">{t('pluginPage.integration.developers')}</h2>
-        <p className="mb-3 max-w-prose text-sm text-muted-foreground">{t('pluginPage.integration.developersHint')}</p>
+        <SectionHeader
+          title={t('pluginPage.integration.developers')}
+          description={t('pluginPage.integration.developersHint')}
+        />
         {reference ? <PluginReferenceTabs reference={reference} /> : <CenteredSpinner />}
       </section>
     </div>

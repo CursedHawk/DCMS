@@ -1,6 +1,6 @@
 import { defaultLayout, type CookieConsentSettings, type ThemeTokens } from '@dcms/gjs-schema';
 import { useTranslation } from 'react-i18next';
-import { Input, Textarea } from '@dcms/ui';
+import { Input, Textarea, Callout } from '@dcms/ui';
 import { useBuilder } from '../store';
 import { DesignKitPicker } from './DesignKitPicker';
 
@@ -191,9 +191,9 @@ export function SettingsPanel() {
             </Field>
           </>
         ) : (
-          <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">
+          <Callout tone="warning" compact>
             {t('builder.consent.offWarning')}
-          </p>
+          </Callout>
         )}
       </section>
 

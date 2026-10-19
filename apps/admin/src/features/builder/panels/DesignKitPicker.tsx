@@ -10,7 +10,7 @@ import {
 import { Check, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '@dcms/ui';
+import { cn, Callout } from '@dcms/ui';
 import { useBuilder } from '../store';
 
 /**
@@ -124,7 +124,7 @@ export function DesignKitPicker() {
 
       {stale &&
         (confirmingRefresh ? (
-          <div className="space-y-1.5 rounded-md border border-warning/40 bg-warning/5 p-2">
+          <Callout tone="warning" compact>
             <p className="text-xs">{t('builder.refreshBlockStylesConfirm')}</p>
             {kitForRefresh && (
               <p className="text-xs">
@@ -150,7 +150,7 @@ export function DesignKitPicker() {
                 {t('actions.cancel')}
               </button>
             </div>
-          </div>
+          </Callout>
         ) : (
           <button
             type="button"

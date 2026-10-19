@@ -217,7 +217,7 @@ export function DomainsPage() {
         <div className="space-y-4">
           {domains.data.map((d) => (
             <Card key={d.id}>
-              <CardContent className="space-y-4 p-5">
+              <CardContent className="space-y-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <Globe className="h-4 w-4 text-muted-foreground" />
                   <HostLink host={d.hostname} className="font-medium" />

@@ -175,7 +175,7 @@ export function AiSettingsPage() {
       {/* A form reads better narrow; the page keeps the width every other section has. */}
       <div className="max-w-2xl space-y-6">
         <Card>
-          <CardContent className="space-y-4 p-6">
+          <CardContent className="space-y-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Bot className="h-4 w-4" /> {t('app.tagline')}
             </div>
@@ -251,7 +251,7 @@ export function AiSettingsPage() {
         </Card>
 
         <Card>
-          <CardContent className="space-y-4 p-6">
+          <CardContent className="space-y-4">
             <div className="flex items-center gap-2 text-sm font-medium">
               <Sparkles className="h-4 w-4 text-primary" />
               {t('ai.userKeyTitle')}

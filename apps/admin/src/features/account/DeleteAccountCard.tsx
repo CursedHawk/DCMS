@@ -68,7 +68,7 @@ export function DeleteAccountCard({ email }: { email: string }) {
   return (
     <>
       <Card className="border-destructive/40">
-        <CardContent className="space-y-3 p-5">
+        <CardContent className="space-y-3">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-destructive">
             <ShieldAlert className="h-4 w-4" /> {t('account.deleteTitle')}
           </h2>

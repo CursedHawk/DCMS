@@ -44,7 +44,7 @@ export function SessionsCard() {
 
   return (
     <Card>
-      <CardContent className="space-y-3 p-5">
+      <CardContent className="space-y-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <MonitorSmartphone className="h-4 w-4" /> {t('account.sessions')}
         </h2>

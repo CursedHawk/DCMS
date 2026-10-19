@@ -134,7 +134,7 @@ export function WorkspacePage() {
 
       <div className="space-y-6">
         <Card>
-          <CardContent className="space-y-4 p-5">
+          <CardContent className="space-y-4">
             <div className="space-y-1.5">
               <Label>{t('tenant.displayName')}</Label>
               <div className="flex gap-2">
@@ -180,9 +180,9 @@ export function WorkspacePage() {
         {ws.isOwner ? (
           <>
             <Card>
-              <CardContent className="space-y-3 p-5">
+              <CardContent className="space-y-3">
                 <div>
-                  <h2 className="font-medium">{t('workspace.transferTitle')}</h2>
+                  <h2 className="text-sm font-semibold">{t('workspace.transferTitle')}</h2>
                   <p className="text-sm text-muted-foreground">{t('workspace.transferHint')}</p>
                 </div>
                 {transferCandidates.length === 0 ? (
@@ -219,9 +219,9 @@ export function WorkspacePage() {
             </Card>
 
             <Card className="border-destructive/40">
-              <CardContent className="space-y-3 p-5">
+              <CardContent className="space-y-3">
                 <div>
-                  <h2 className="font-medium text-destructive">{t('workspace.dangerZone')}</h2>
+                  <h2 className="text-sm font-semibold text-destructive">{t('workspace.dangerZone')}</h2>
                   <p className="text-sm text-muted-foreground">{t('workspace.deleteHint')}</p>
                 </div>
                 <Button variant="destructive" onClick={() => setDeleteOpen(true)}>

@@ -27,6 +27,7 @@ import {
   toastApiError,
   LoadFailed,
   useConfirm,
+  SectionHeader,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { type Invitation, type Member, useInvitations, useMembers, useRoles } from '../rbac/api';
@@ -338,7 +339,7 @@ export function MembersPage() {
         actions that apply to them (resend / revoke) apply to nothing else.
       */}
       <section className="mt-8 space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">{t('members.pending')}</h2>
+        <SectionHeader title={t('members.pending')} />
         <DataTable
           rows={pending}
           columns={invitationColumns}

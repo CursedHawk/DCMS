@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Info } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Button, Card, CardContent, CenteredSpinner, Input, toast, toastApiError } from '@dcms/ui';
+import { Button, Card, CardContent, CenteredSpinner, Input, toast, toastApiError, Callout } from '@dcms/ui';
 import { usePluginApi, usePluginT, type PluginScreenProps } from '@dcms/plugin-ui';
 
 interface Site {
@@ -70,7 +70,7 @@ export function SitesScreen({ instance }: PluginScreenProps) {
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">{t('ga.intro')}</p>
       {instance!.enabled ? null : (
-        <p className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">{t('ga.disabled')}</p>
+        <Callout tone="warning">{t('ga.disabled')}</Callout>
       )}
 
       <Card>

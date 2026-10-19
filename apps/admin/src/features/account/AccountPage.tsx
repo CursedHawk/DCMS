@@ -82,7 +82,7 @@ export function AccountPage() {
       <div className="grid w-full max-w-2xl gap-6">
         {/* Profile */}
         <Card>
-          <CardContent className="space-y-3 p-5">
+          <CardContent className="space-y-3">
             <h2 className="text-sm font-semibold">{t('account.profile')}</h2>
             <div className="grid gap-1">
               <Label>{t('account.email')}</Label>
@@ -103,7 +103,7 @@ export function AccountPage() {
 
         {/* Git password */}
         <Card>
-          <CardContent className="space-y-3 p-5">
+          <CardContent className="space-y-3">
             <h2 className="flex items-center gap-2 text-sm font-semibold">
               <Lock className="h-4 w-4" /> {t('account.gitPassword')}
             </h2>
@@ -149,7 +149,7 @@ export function AccountPage() {
 
         {/* SSH keys */}
         <Card>
-          <CardContent className="space-y-3 p-5">
+          <CardContent className="space-y-3">
             <h2 className="flex items-center gap-2 text-sm font-semibold">
               <KeyRound className="h-4 w-4" /> {t('account.sshKeys')}
             </h2>
@@ -214,7 +214,7 @@ export function AccountPage() {
 
         {/* Git help */}
         <Card>
-          <CardContent className="space-y-2 p-5">
+          <CardContent className="space-y-2">
             <h2 className="flex items-center gap-2 text-sm font-semibold">
               <GitBranch className="h-4 w-4" /> {t('account.gitAccess')}
             </h2>

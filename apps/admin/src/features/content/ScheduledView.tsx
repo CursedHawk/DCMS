@@ -3,7 +3,7 @@ import { CalendarClock, CalendarX } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Badge, Button, type Column, DataTable, EmptyState, PermissionTooltip, useCan, LoadFailed } from '@dcms/ui';
+import { Badge, Button, type Column, DataTable, EmptyState, PermissionTooltip, useCan, LoadFailed, SectionHeader } from '@dcms/ui';
 import { dateTime } from '@dcms/core';
 import { linkTarget } from '../notifications/linkPath';
 import { Perm } from '../../lib/permissions';
@@ -111,10 +111,7 @@ export function ScheduledView() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">{t('content.scheduledView.title')}</h2>
-        <p className="text-sm text-muted-foreground">{t('content.scheduledView.subtitle')}</p>
-      </div>
+      <SectionHeader title={t('content.scheduledView.title')} description={t('content.scheduledView.subtitle')} />
 
       <DataTable
         rows={items}

@@ -83,7 +83,7 @@ export function ConnectionsPage() {
         <div className="space-y-4">
           {connections.data.map((c) => (
             <Card key={c.slug}>
-              <CardContent className="space-y-3 p-5">
+              <CardContent className="space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <Plug className="h-4 w-4 text-muted-foreground" />
                   <span className="font-medium">{c.name}</span>

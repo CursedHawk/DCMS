@@ -11,6 +11,7 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
+  Callout,
 } from '@dcms/ui';
 import { useAi } from './context';
 import { ApprovalCard } from './ApprovalCard';
@@ -158,7 +159,7 @@ export function AiDock() {
             ) : null}
 
             {session.needsKey ? (
-              <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+              <Callout tone="warning">
                 <p className="flex items-center gap-1.5 font-medium">
                   <KeyRound className="h-4 w-4" aria-hidden />
                   {t('assistant.noKeyTitle')}
@@ -181,7 +182,7 @@ export function AiDock() {
                 >
                   {t('assistant.connectAccount')}
                 </Button>
-              </div>
+              </Callout>
             ) : null}
 
             <div ref={endRef} />

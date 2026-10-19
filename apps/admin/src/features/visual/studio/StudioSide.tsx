@@ -3,7 +3,7 @@ import { Eye, Monitor, Smartphone, Tablet, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Label, Switch, cn } from '@dcms/ui';
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Label, Switch, cn, Callout } from '@dcms/ui';
 import { componentUsage, deleteComponentVersion, listComponents, readComponent, updateAllInstances, versionToEdit } from '../documents';
 import { LivePreview } from '../palette/LivePreview';
 import { useVisual } from '../store';
@@ -149,7 +149,7 @@ export function VersionsPanel({ studio }: { studio: StudioDoc }) {
         </Button>
       ) : null}
       {older > 0 && (
-        <div className="space-y-1 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">
+        <Callout tone="warning" compact>
           <p>{t('visual.mine.outdated', { count: older, version: latest })}</p>
           <Button
             size="sm"
@@ -161,7 +161,7 @@ export function VersionsPanel({ studio }: { studio: StudioDoc }) {
           >
             {t('visual.mine.updateAll')}
           </Button>
-        </div>
+        </Callout>
       )}
       <ol className="space-y-2" aria-label={t('visual.studio.tabs.versions')}>
         {[...info.versions].reverse().map((v) => {

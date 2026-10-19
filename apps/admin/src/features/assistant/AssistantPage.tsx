@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { toast } from 'sonner';
-import { Button, Sheet, SheetContent, SheetTitle, Spinner, cn } from '@dcms/ui';
+import { Button, Sheet, SheetContent, SheetTitle, Spinner, cn, Callout } from '@dcms/ui';
 import { useAi } from './context';
 import { ApprovalCard } from './ApprovalCard';
 import { Composer } from './Composer';
@@ -263,7 +263,7 @@ function NoKey({ provider }: { provider: string | null }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   return (
-    <div className="mt-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+    <Callout tone="warning" className="mt-3">
       <p className="flex items-center gap-1.5 font-medium">
         <KeyRound className="h-4 w-4" aria-hidden />
         {t('assistant.noKeyTitle')}
@@ -279,6 +279,6 @@ function NoKey({ provider }: { provider: string | null }) {
       >
         {t('assistant.connectAccount')}
       </Button>
-    </div>
+    </Callout>
   );
 }

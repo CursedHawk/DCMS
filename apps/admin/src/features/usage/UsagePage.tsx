@@ -53,7 +53,7 @@ export function UsagePage() {
 
       {data && (
         <Card className="mb-6">
-          <CardContent className="grid grid-cols-1 gap-6 pt-6 sm:grid-cols-2">
+          <CardContent className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div>
               <p className="text-sm text-muted-foreground">{t('usage.total')}</p>
               <p className="mt-1 text-3xl font-semibold tabular-nums">{bytes(data.totalBytes)}</p>
