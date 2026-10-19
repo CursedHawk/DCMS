@@ -8,6 +8,7 @@ import {
   CardContent,
   CenteredSpinner,
   EmptyState,
+  LoadFailed,
   Meter,
   Page,
   PageHeader,
@@ -42,12 +43,13 @@ export function UsagePage() {
     </Button>
   );
 
-  if (usage.isLoading) return <CenteredSpinner />;
   const data = usage.data;
 
   return (
     <Page>
       <PageHeader title={t('usage.title')} description={t('usage.description')} actions={measureButton} />
+      {usage.isLoading ? <CenteredSpinner /> : null}
+      {usage.isError ? <LoadFailed onRetry={() => void usage.refetch()} /> : null}
 
       {data && (
         <Card className="mb-6">
@@ -75,9 +77,9 @@ export function UsagePage() {
 
       {data?.measuredAt ? (
         <UsageBreakdown categories={data.categories} totalBytes={data.totalBytes} />
-      ) : (
+      ) : data ? (
         <EmptyState icon={HardDrive} title={t('usage.never')} description={t('usage.neverHint')} action={measureButton} />
-      )}
+      ) : null}
     </Page>
   );
 }

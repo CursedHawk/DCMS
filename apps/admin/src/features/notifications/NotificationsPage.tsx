@@ -2,7 +2,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { Bell, CheckCheck, CircleAlert, CircleCheck, Info, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Badge, Button, CenteredSpinner, cn, EmptyState, Page, PageHeader } from '@dcms/ui';
+import { Badge, Button, CenteredSpinner, cn, EmptyState, LoadFailed, Page, PageHeader } from '@dcms/ui';
 import {
   type Notification,
   type NotificationSeverity,
@@ -35,11 +35,9 @@ const severityTone: Record<NotificationSeverity, 'secondary' | 'success' | 'warn
  */
 export function NotificationsPage() {
   const { t } = useTranslation();
-  const { data, isLoading } = useNotifications(true);
+  const { data, isLoading, isError, refetch } = useNotifications(true);
   const markAllRead = useMarkAllRead();
   const [selected, setSelected] = useState<Notification | null>(null);
-
-  if (isLoading) return <CenteredSpinner />;
 
   const items = data?.items ?? [];
   const unread = data?.unreadCount ?? 0;
@@ -59,7 +57,11 @@ export function NotificationsPage() {
         }
       />
 
-      {items.length === 0 ? (
+      {isLoading ? (
+        <CenteredSpinner />
+      ) : isError ? (
+        <LoadFailed onRetry={() => void refetch()} />
+      ) : items.length === 0 ? (
         <EmptyState
           icon={Bell}
           title={t('notifications.empty')}

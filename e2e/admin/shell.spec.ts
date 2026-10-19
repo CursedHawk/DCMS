@@ -170,3 +170,23 @@ test.describe('the command palette', () => {
     await expect(page).toHaveURL(/\/settings\/domains$/);
   });
 });
+
+test('a list that failed to load says so and offers a retry, instead of looking empty', async ({ page, api }) => {
+  let fail = true;
+  api.on('GET', '/api/admin/sites', async ({ route }: { route: import('@playwright/test').Route }) => {
+    if (fail) {
+      await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
+      return undefined;
+    }
+    return [{ id: 's1', name: 'Acme shop', renderMode: 'StaticPrerender' }];
+  });
+  await page.goto('/sites');
+
+  // The header is there either way: the page knows what it is before it knows what is in it.
+  await expect(page.getByRole('heading', { name: 'Sites', level: 1 })).toBeVisible();
+  await expect(page.getByText('This list could not be loaded.')).toBeVisible();
+
+  fail = false;
+  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(page.getByText('Acme shop')).toBeVisible();
+});

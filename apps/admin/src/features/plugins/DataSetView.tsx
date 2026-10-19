@@ -37,6 +37,7 @@ import {
   type Column,
   type ViewField,
   type ViewFieldKind,
+  LoadFailed,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { AuthedImage } from '../../components/AuthedImage';
@@ -204,7 +205,7 @@ export function DataSetView({ slug, set }: { slug: string; set: DataSet }) {
         columns={columns}
         rowKey={(r) => r.key}
         isLoading={data.isLoading}
-        error={data.isError ? <EmptyState title={t('pluginPage.data.loadFailed')} /> : undefined}
+        error={data.isError ? <LoadFailed title={t('pluginPage.data.loadFailed')} onRetry={() => void data.refetch()} /> : undefined}
         empty={
           <EmptyState
             title={activeFilters || deferredSearch || where ? t('common.noResults') : t('pluginPage.data.empty', { title: set.title })}

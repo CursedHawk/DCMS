@@ -1,5 +1,5 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { AlertTriangle, FileText, LayoutGrid, Plus, Search } from 'lucide-react';
+import { FileText, LayoutGrid, Plus, Search } from 'lucide-react';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -31,6 +31,7 @@ import {
   useDebounced,
   useTableViews,
   type ViewDefinition,
+  LoadFailed,
 } from '@dcms/ui';
 import { dateTime } from '@dcms/core';
 import {
@@ -535,15 +536,7 @@ function CollectionView({
             // Distinct from the empty state on purpose: a list that failed to load and a list
             // with nothing in it look identical unless one of them says so, and "there is
             // nothing here" is the more damaging of the two to get wrong.
-            <EmptyState
-              icon={AlertTriangle}
-              title={t('common.loadFailed')}
-              action={
-                <Button variant="outline" size="sm" onClick={() => void page.refetch()}>
-                  {t('common.retry')}
-                </Button>
-              }
-            />
+            <LoadFailed onRetry={() => void page.refetch()} />
           ) : undefined
         }
         onRowClick={(row) => setEditorItem(row.id)}

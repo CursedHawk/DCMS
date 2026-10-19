@@ -13,6 +13,7 @@ import {
   Page,
   Progress,
   toastApiError,
+  LoadFailed,
 } from '@dcms/ui';
 import { ResourceHistory } from '../audit/ResourceHistory';
 import { EditorHeader } from './EditorHeader';
@@ -217,7 +218,9 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
         <h2 className="mb-2 mt-8 text-sm font-semibold">{t('sites.deployments')}</h2>
         {builds.isLoading ? (
           <CenteredSpinner />
-        ) : builds.data && builds.data.length > 0 ? (
+        ) : builds.isError ? (
+        <LoadFailed onRetry={() => void builds.refetch()} />
+      ) : builds.data && builds.data.length > 0 ? (
           <div className="space-y-2">
             {builds.data.map((b) => (
               <Card key={b.id}>

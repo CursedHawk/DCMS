@@ -18,6 +18,7 @@ import {
   SheetTitle,
   Skeleton,
   cn,
+  LoadFailed,
 } from '@dcms/ui';
 import { iconByName } from '../../app/navApi';
 import { useMarketplace, type MarketplaceItem } from './api';
@@ -106,6 +107,8 @@ export function MarketplacePage() {
             <Skeleton key={i} className="h-32 rounded-lg" />
           ))}
         </div>
+      ) : marketplace.isError ? (
+        <LoadFailed onRetry={() => void marketplace.refetch()} />
       ) : visible.length === 0 ? (
         <EmptyState
           icon={Store}

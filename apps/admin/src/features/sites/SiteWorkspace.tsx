@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Suspense, lazy } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CenteredSpinner, DesktopRequired } from '@dcms/ui';
+import { CenteredSpinner, DesktopRequired, LoadFailed } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { EditorHeader } from './EditorHeader';
 import { StaticSitePage } from './StaticSitePage';
@@ -36,6 +36,15 @@ export function SiteWorkspace({ siteId }: { siteId: string }) {
   });
 
   if (site.isLoading) return <CenteredSpinner label={t('common.loading')} />;
+  // Focus mode draws no app chrome, so a failure keeps the editor's header and its way back.
+  if (site.isError) {
+    return (
+      <>
+        <EditorHeader name={undefined} mode={t('sites.title')} />
+        <LoadFailed onRetry={() => void site.refetch()} />
+      </>
+    );
+  }
   // Mode C is a file drop and a publish button, which works anywhere. The other two are
   // editors and are gated below the desktop breakpoint — see DesktopRequired.
   if (site.data?.renderMode === 'StaticFiles') return <StaticSitePage siteId={siteId} />;

@@ -27,6 +27,7 @@ import {
   Textarea,
   toastApiError,
   useConfirm,
+  LoadFailed,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { SlugField } from '../../components/SlugField';
@@ -76,6 +77,8 @@ export function ConnectionsPage() {
       />
       {connections.isLoading ? (
         <CenteredSpinner />
+      ) : connections.isError ? (
+        <LoadFailed onRetry={() => void connections.refetch()} />
       ) : connections.data?.length ? (
         <div className="space-y-4">
           {connections.data.map((c) => (

@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
   toastApiError,
+  LoadFailed,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 interface AiSettings {
@@ -159,11 +160,11 @@ export function AiSettingsPage() {
     },
   });
 
-  if (settings.isLoading) {
+  if (settings.isLoading || settings.isError) {
     return (
       <Page>
         <PageHeader title={t('ai.title')} />
-        <CenteredSpinner />
+        {settings.isError ? <LoadFailed onRetry={() => void settings.refetch()} /> : <CenteredSpinner />}
       </Page>
     );
   }

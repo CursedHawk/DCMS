@@ -16,6 +16,7 @@ import {
   TabsList,
   TabsTrigger,
   cn,
+  LoadFailed,
 } from '@dcms/ui';
 import { type Job, type JobListFilter, useCancelJob, useJob, useJobs, useRetryJob } from './api';
 import { linkTarget } from '../notifications/linkPath';
@@ -34,7 +35,7 @@ export function JobsPage() {
   const { job: focused } = useSearch({ strict: false }) as { job?: string };
   const [filter, setFilter] = useTabParam('filter', FILTERS, 'all');
   // ponytail: the newest 100; a "load more" over the cursor when somebody needs older history.
-  const { data, isLoading } = useJobs(filter, 100);
+  const { data, isLoading, isError, refetch } = useJobs(filter, 100);
   const items = data?.items ?? [];
 
   return (
@@ -53,6 +54,8 @@ export function JobsPage() {
 
       {isLoading ? (
         <CenteredSpinner />
+      ) : isError ? (
+        <LoadFailed onRetry={() => void refetch()} />
       ) : items.length === 0 ? (
         <EmptyState icon={Loader} title={t('jobs.empty')} description={t('jobs.emptyDescription')} />
       ) : (

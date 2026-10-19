@@ -31,6 +31,7 @@ import {
   useCan,
   usePageTour,
   useConfirm,
+  LoadFailed,
 } from '@dcms/ui';
 import { FolderRail } from './FolderRail';
 import { MediaDetailDialog } from './MediaDetailDialog';
@@ -356,7 +357,9 @@ export function MediaPage() {
 
           {media.isLoading ? (
             <CenteredSpinner />
-          ) : items.length > 0 || folderTiles.length > 0 ? (
+          ) : media.isError ? (
+        <LoadFailed onRetry={() => void media.refetch()} />
+      ) : items.length > 0 || folderTiles.length > 0 ? (
             <TourTarget id="media.grid">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
                 {folderTiles.map((f) => (

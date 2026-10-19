@@ -11,6 +11,7 @@ import {
   CenteredSpinner,
   ConfirmDeleteDialog,
   EmptyState,
+  LoadFailed,
   Input,
   Label,
   Page,
@@ -109,11 +110,17 @@ export function WorkspacePage() {
     onError: (e) => toastApiError(e, t),
   });
 
-  if (workspace.isLoading) return <CenteredSpinner />;
-  if (workspace.isError || !workspace.data) {
+  if (!workspace.data) {
     return (
       <Page>
-        <EmptyState icon={Building2} title={t('tenant.selectFirst')} />
+        <PageHeader title={t('workspace.title')} />
+        {workspace.isLoading ? (
+          <CenteredSpinner />
+        ) : workspace.isError ? (
+          <LoadFailed onRetry={() => void workspace.refetch()} />
+        ) : (
+          <EmptyState icon={Building2} title={t('tenant.selectFirst')} />
+        )}
       </Page>
     );
   }

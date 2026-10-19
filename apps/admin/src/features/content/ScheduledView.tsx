@@ -1,9 +1,9 @@
 import { useNavigate } from '@tanstack/react-router';
-import { AlertTriangle, CalendarClock, CalendarX } from 'lucide-react';
+import { CalendarClock, CalendarX } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Badge, Button, type Column, DataTable, EmptyState, PermissionTooltip, useCan } from '@dcms/ui';
+import { Badge, Button, type Column, DataTable, EmptyState, PermissionTooltip, useCan, LoadFailed } from '@dcms/ui';
 import { dateTime } from '@dcms/core';
 import { linkTarget } from '../notifications/linkPath';
 import { Perm } from '../../lib/permissions';
@@ -143,15 +143,7 @@ export function ScheduledView() {
         }
         error={
           queue.isError ? (
-            <EmptyState
-              icon={AlertTriangle}
-              title={t('common.loadFailed')}
-              action={
-                <Button variant="outline" size="sm" onClick={() => void queue.refetch()}>
-                  {t('common.retry')}
-                </Button>
-              }
-            />
+            <LoadFailed onRetry={() => void queue.refetch()} />
           ) : undefined
         }
         empty={

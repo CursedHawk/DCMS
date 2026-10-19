@@ -10,6 +10,7 @@ import {
   CenteredSpinner,
   Input,
   Label,
+  LoadFailed,
   Page,
   PageHeader,
 } from '@dcms/ui';
@@ -65,13 +66,20 @@ export function AccountPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  if (me.isLoading) return <CenteredSpinner />;
+  if (!me.data) {
+    return (
+      <Page>
+        <PageHeader title={t('account.title')} description={t('account.subtitle')} />
+        {me.isError ? <LoadFailed onRetry={() => void me.refetch()} /> : <CenteredSpinner />}
+      </Page>
+    );
+  }
 
   return (
     <Page>
       <PageHeader title={t('account.title')} description={t('account.subtitle')} />
 
-      <div className="mx-auto grid w-full max-w-2xl gap-6">
+      <div className="grid w-full max-w-2xl gap-6">
         {/* Profile */}
         <Card>
           <CardContent className="space-y-3 p-5">

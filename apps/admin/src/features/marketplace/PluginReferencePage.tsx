@@ -24,6 +24,7 @@ import {
   TabsList,
   TabsTrigger,
   toastApiError,
+  LoadFailed,
 } from '@dcms/ui';
 import { Breadcrumbs } from '../../app/Breadcrumbs';
 import { useTabParam } from '../../lib/useTabParam';
@@ -60,7 +61,11 @@ export function PluginReferencePage({ pluginId }: { pluginId: string }) {
   if (!r) {
     return (
       <Page>
-        <EmptyState title={t('pluginReference.notFound')} />
+        {reference.isError ? (
+          <LoadFailed onRetry={() => void reference.refetch()} />
+        ) : (
+          <EmptyState title={t('pluginReference.notFound')} />
+        )}
       </Page>
     );
   }

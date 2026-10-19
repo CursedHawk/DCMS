@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
   toastApiError,
+  LoadFailed,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 interface SiteSummary {
@@ -124,6 +125,8 @@ export function SitesPage() {
 
       {sites.isLoading ? (
         <CenteredSpinner />
+      ) : sites.isError ? (
+        <LoadFailed onRetry={() => void sites.refetch()} />
       ) : sites.data && sites.data.length > 0 ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sites.data.map((s) => (

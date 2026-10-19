@@ -44,6 +44,7 @@ import {
   Textarea,
   toastApiError,
   useConfirm,
+  LoadFailed,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { gitApi } from '../site-source/git';
@@ -210,6 +211,8 @@ export function DomainsPage() {
 
       {domains.isLoading ? (
         <CenteredSpinner />
+      ) : domains.isError ? (
+        <LoadFailed onRetry={() => void domains.refetch()} />
       ) : domains.data && domains.data.length > 0 ? (
         <div className="space-y-4">
           {domains.data.map((d) => (

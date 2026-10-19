@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Check, Code2, Copy, Download, FileJson, Rocket } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, CenteredSpinner, EmptyState, Page, PageHeader, useTheme } from '@dcms/ui';
+import { Button, CenteredSpinner, EmptyState, Page, PageHeader, useTheme, LoadFailed } from '@dcms/ui';
 import { api } from '../../lib/api';
 const AI_PREAMBLE =
   'This is the OpenAPI document for a tenant content API. Each tag is a configured ' +
@@ -90,6 +90,8 @@ export function OpenApiPage() {
 
       {spec.isLoading ? (
         <CenteredSpinner />
+      ) : spec.isError ? (
+        <LoadFailed onRetry={() => void spec.refetch()} />
       ) : hasPaths ? (
         /*
           No `overflow-hidden` wrapper here. An element with a clipping overflow
