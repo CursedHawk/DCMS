@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures/test';
-import { spillingContent, unreachableControls } from '../fixtures/layout';
+import { mainOverflow, spillingContent, unreachableControls, useLongStrings } from '../fixtures/layout';
 
 /**
  * The phone, on a Pixel 5.
@@ -51,10 +51,9 @@ test('the page never scrolls sideways', async ({ page }) => {
   await page.goto('/media');
   await expect(page.getByText('logo.png')).toBeVisible();
 
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-  expect(overflow).toBeLessThanOrEqual(1);
+  // Measured on `main`, not the document: the shell clips the document, so a page that is too
+  // wide scrolls sideways inside `main` and the document never notices.
+  expect(await mainOverflow(page)).toBeLessThanOrEqual(1);
 });
 
 test('the IDE refuses the screen instead of rendering badly on it', async ({ page }) => {
@@ -90,11 +89,39 @@ test.describe('at 360px', () => {
     test(`nothing on ${path} sits past the edge of the screen`, async ({ page }) => {
       await page.goto(path);
       await expect(page.getByRole('button', { name: 'Account settings' })).toBeVisible();
+      // The page itself, not the shell around its lazy chunk: measured before this, a sweep
+      // could pass on a spinner.
+      await expect(page.locator('main h1').first()).toBeVisible();
       await page.waitForLoadState('networkidle');
 
       expect(await unreachableControls(page)).toEqual([]);
-    expect(await spillingContent(page)).toEqual([]);
       expect(await spillingContent(page)).toEqual([]);
+      expect(await mainOverflow(page)).toBeLessThanOrEqual(1);
+    });
+  }
+});
+
+/*
+ * The same sweep with the names people actually type. A site called "Acme" fits any layout; one
+ * called after a quarterly report does not, and that is the one that pushed a header's buttons off
+ * the screen.
+ */
+test.describe('at 360px with long names', () => {
+  test.use({ viewport: { width: 360, height: 740 } });
+
+  for (const path of PAGES) {
+    test(`long names on ${path} stay inside their boxes`, async ({ page, api }) => {
+      useLongStrings(api);
+      await page.goto(path);
+      await expect(page.getByRole('button', { name: 'Account settings' })).toBeVisible();
+      // The page itself, not the shell around its lazy chunk: measured before this, a sweep
+      // could pass on a spinner.
+      await expect(page.locator('main h1').first()).toBeVisible();
+      await page.waitForLoadState('networkidle');
+
+      expect(await unreachableControls(page)).toEqual([]);
+      expect(await spillingContent(page)).toEqual([]);
+      expect(await mainOverflow(page)).toBeLessThanOrEqual(1);
     });
   }
 });

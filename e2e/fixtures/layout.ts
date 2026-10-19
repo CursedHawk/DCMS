@@ -1,4 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
+import type { MockApi } from './api';
+import * as data from './data';
 
 /**
  * The controls a phone cannot reach: off the screen, or cut off by a box that clips them.
@@ -53,4 +55,46 @@ export async function spillingContent(page: Page): Promise<string[]> {
     }
     return out;
   });
+}
+
+/**
+ * How far `main` scrolls sideways. `AppFrame` clips the document, so the document itself never
+ * overflows — a page that is too wide scrolls inside `main` instead, and only this sees it.
+ */
+export async function mainOverflow(page: Page): Promise<number> {
+  return page.locator('main').first().evaluate((m) => m.scrollWidth - m.clientWidth);
+}
+
+/*
+ * Names as long as people actually type them. The shared fixtures say "Acme Studio" and
+ * "Press room", which fit anywhere, so a sweep over them could not tell a layout that wraps from
+ * one that does not. One unbroken token each, without hyphens (a browser breaks a line at a hyphen), because that is the case `truncate`-less flex rows
+ * and grids get wrong: a sentence wraps on its own, a slug or an email address does not.
+ */
+const LONG = 'QuarterlyInvestorRelationsAndPressAnnouncementsArchive2026Edition';
+const LONG_EMAIL = 'maximilian.alexander.featherstonehaugh.wolfeschlegelsteinhausen@example.test';
+
+/** Re-answers the list endpoints the sweep visits with long names. Later `api.on` wins. */
+export function useLongStrings(api: MockApi): void {
+  api
+    .on('GET', '/api/admin/me/tenants', [{ ...data.TENANT, name: `${LONG} Studio` }, data.OTHER_TENANT])
+    .on('GET', '/api/admin/sites', [
+      { id: '11111111-1111-1111-1111-111111111111', name: LONG, renderMode: 'StaticPrerender' },
+    ])
+    .on('GET', '/api/admin/plugins/instances', [
+      { ...data.PLUGIN_INSTANCES[0], name: LONG, description: `${LONG} ${LONG}` },
+    ])
+    .on('GET', '/api/admin/content/page', {
+      items: data.CONTENT_ROWS.map((r) => ({ ...r, title: `${r.title} ${LONG}`, slug: LONG.toLowerCase() })),
+      nextCursor: null,
+      total: data.CONTENT_ROWS.length,
+    })
+    .on('GET', '/api/admin/members', [
+      { membershipId: '88888888-0000-0000-0000-000000000009', userId: 'u9', email: LONG_EMAIL, roleIds: [] },
+    ])
+    .on('GET', '/api/admin/tenant', {
+      ...data.WORKSPACE,
+      owners: [{ userId: '11111111-1111-1111-1111-111111111111', email: LONG_EMAIL }],
+    })
+    .on('GET', '/api/admin/media', data.MEDIA_ASSETS.map((a) => ({ ...a, fileName: `${LONG}.png` })));
 }
