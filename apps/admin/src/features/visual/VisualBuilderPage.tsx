@@ -86,6 +86,7 @@ import { useVisual, type VisualView } from './store';
 import { useSiteRuntime } from './useSiteRuntime';
 import { AgentPanel } from '../ide/agent/AgentPanel';
 import { VISUAL_TOOLS, validateVisualSite } from './agent/visualTools';
+import { useSiteAgentAppTools } from './agent/appModelTools';
 import { previewClient, useContentCatalog } from './data';
 
 
@@ -294,6 +295,9 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
 
   // With the tenant's content types known, the validator also checks sources and bound fields.
   const catalog = useContentCatalog();
+  // The agent's own tools, and the Dynamic Apps model tools the server lets it have.
+  const appTools = useSiteAgentAppTools();
+  const agentTools = useMemo(() => [...VISUAL_TOOLS, ...appTools], [appTools]);
   const contentSchema = catalog.isLoading ? undefined : catalog.schema;
   const problems = useMemo(() => checkVisualSite(files, registry, contentSchema), [files, registry, contentSchema]);
   // The agent's checks read it from the store: it must see the problems this list shows.
@@ -534,7 +538,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
             {sidebar === 'deploy' && <DeploymentsView siteId={siteId} />}
             {sidebar === 'problems' && <ProblemsPanel problems={problems} editor={editor} />}
             {sidebar === 'agent' && (
-              <AgentPanel siteId={siteId} siteName={site.data?.name} kind="visual" tools={VISUAL_TOOLS} validate={validateVisualSite} />
+              <AgentPanel siteId={siteId} siteName={site.data?.name} kind="visual" tools={agentTools} validate={validateVisualSite} />
             )}
           </div>
         </div>
