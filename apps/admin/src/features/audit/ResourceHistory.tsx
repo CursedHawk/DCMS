@@ -57,15 +57,16 @@ export function ResourceHistory({
 
   return (
     <>
-      <ul className="divide-y rounded-md border">
+      <ul className="divide-y rounded-lg border bg-card">
         {records.map((r) => (
           <li key={r.id}>
             <button
               type="button"
-              className="flex w-full items-baseline gap-3 px-4 py-2.5 text-left text-sm hover:bg-muted/50"
+              // On a phone the date takes its own line instead of a 160px column beside the action.
+              className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2.5 text-left text-sm hover:bg-muted/50 sm:flex-nowrap"
               onClick={() => setOpenId(r.id)}
             >
-              <span className="w-40 shrink-0 tabular-nums text-xs text-muted-foreground">
+              <span className="w-full tabular-nums text-xs text-muted-foreground sm:w-40 sm:shrink-0">
                 {new Date(r.occurredAt).toLocaleString()}
               </span>
               <span className="min-w-0 flex-1">
@@ -78,7 +79,7 @@ export function ResourceHistory({
                   </span>
                 ) : null}
               </span>
-              <span className="shrink-0 text-xs text-muted-foreground">
+              <span className="min-w-0 max-w-full truncate text-xs text-muted-foreground sm:max-w-64">
                 {r.actor.display ?? r.actor.ref ?? t('audit.actorUnknown')}
               </span>
             </button>

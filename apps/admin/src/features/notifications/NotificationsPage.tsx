@@ -69,7 +69,7 @@ export function NotificationsPage() {
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <div className="divide-y rounded-md border">
+          <div className="divide-y rounded-lg border bg-card">
             {items.map((n) => (
               <ListRow
                 key={n.id}
@@ -133,7 +133,7 @@ function Detail({ notification }: { notification: Notification | null }) {
 
   if (!notification) {
     return (
-      <div className="hidden rounded-md border p-8 text-center text-sm text-muted-foreground lg:block">
+      <div className="hidden rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground lg:block">
         {t('notifications.selectPrompt')}
       </div>
     );
@@ -142,7 +142,7 @@ function Detail({ notification }: { notification: Notification | null }) {
   const params = parseParams(notification.paramsJson);
 
   return (
-    <div className="rounded-md border p-5 [overflow-wrap:anywhere]">
+    <div className="rounded-lg border bg-card p-5 [overflow-wrap:anywhere]">
       <div className="mb-3 flex items-center gap-2">
         <Badge tone={severityTone[notification.severity]}>{notification.severity}</Badge>
         <span className="text-xs text-muted-foreground">
