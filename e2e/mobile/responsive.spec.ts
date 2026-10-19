@@ -80,6 +80,10 @@ const PAGES = [
   '/', '/content', '/media', '/sites', '/plugins', '/plugins/press-room', '/marketplace',
   '/marketplace/forms', '/notifications', '/settings/members', '/settings/roles',
   '/settings/domains', '/settings/usage', '/app/forms/inbox',
+  '/account', '/assistant', '/jobs', '/settings/general', '/settings/ai', '/settings/audit',
+  '/settings/api', '/settings/connections', '/plugins/press-room?tab=data',
+  '/plugins/press-room?tab=settings', '/plugins/press-room?tab=integration',
+  '/plugins/press-room?tab=activity',
 ];
 
 test.describe('at 360px', () => {
@@ -212,4 +216,84 @@ test('a long provisioned domain wraps, and opens the site in a new tab', async (
   expect(await spillingContent(page)).toEqual([]);
   const sideways = await page.locator('main').first().evaluate((m) => m.scrollWidth - m.clientWidth);
   expect(sideways).toBeLessThanOrEqual(0);
+});
+
+test.describe('at 360px, the rest', () => {
+  test.use({ viewport: { width: 360, height: 740 } });
+
+  test.describe('as a platform administrator', () => {
+    test.use({ superAdmin: true });
+    test('nothing on /tenants sits past the edge of the screen', async ({ page }) => {
+      await page.goto('/tenants');
+      await expect(page.locator('main h1').first()).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      expect(await unreachableControls(page)).toEqual([]);
+      expect(await spillingContent(page)).toEqual([]);
+      expect(await mainOverflow(page)).toBeLessThanOrEqual(1);
+    });
+  });
+
+  test('a static-files site fits, under the editor header', async ({ page, api }) => {
+    api
+      .on('GET', '/api/admin/sites/:id', {
+        id: '22222222-2222-2222-2222-222222222222', name: 'QuarterlyInvestorRelationsLandingPageArchive2026',
+        renderMode: 'StaticFiles', staticBundle: null,
+      })
+      .on('GET', '/api/admin/sites/:id/builds', []);
+    await page.goto('/sites/22222222-2222-2222-2222-222222222222');
+    // Focus mode: no app sidebar, but always a way back.
+    await expect(page.getByRole('link', { name: 'Back to Sites' })).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    expect(await unreachableControls(page)).toEqual([]);
+    expect(await spillingContent(page)).toEqual([]);
+  });
+
+  /*
+   * A dialog that fits its page can still not fit the phone: a two-column field grid, a footer
+   * that does not wrap. Opened where people open them, then measured inside the dialog.
+   */
+  test('the dialogs fit the phone they open on', async ({ page }) => {
+    const opens = [
+      { path: '/settings/members', button: 'Invite member' },
+      { path: '/settings/roles', button: 'Create role' },
+      { path: '/settings/domains', button: 'Add domain' },
+      { path: '/sites', button: 'New site' },
+      { path: '/content', button: 'New item' },
+      { path: '/plugins?add=dcms.blog', button: null },
+    ];
+    for (const { path, button } of opens) {
+      await page.goto(path);
+      if (button) await page.getByRole('button', { name: button, exact: true }).first().click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+      expect(await unreachableControls(page, dialog), path).toEqual([]);
+      expect(await spillingContent(page), path).toEqual([]);
+    }
+  });
+
+  /*
+   * Czech labels run 10–30% longer than English, and every fixed width in the console was
+   * chosen looking at English. Same sweep, the other language, the long names on.
+   */
+  test.describe('in Czech', () => {
+    for (const path of PAGES) {
+      test(`${path} fits in Czech`, async ({ page, api }) => {
+        useLongStrings(api);
+        await page.addInitScript(() => {
+          try {
+            localStorage.setItem('dcms.lang', 'cs');
+          } catch {
+            /* the sweep then runs in English, and says so by failing on the Czech label below */
+          }
+        });
+        await page.goto(path);
+        await expect(page.getByRole('button', { name: 'Váš účet' })).toBeVisible();
+        await expect(page.locator('main h1').first()).toBeVisible();
+        await page.waitForLoadState('networkidle');
+        expect(await unreachableControls(page)).toEqual([]);
+        expect(await spillingContent(page)).toEqual([]);
+        expect(await mainOverflow(page)).toBeLessThanOrEqual(1);
+      });
+    }
+  });
 });

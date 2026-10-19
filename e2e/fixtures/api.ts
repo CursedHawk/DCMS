@@ -315,6 +315,11 @@ export function adminApi(
     .on('GET', '/api/admin/roles', [])
     .on('GET', '/api/admin/permissions/catalog', [])
     .on('GET', '/api/admin/sites', [])
+    // The account page talks to identity, not admin-api, and carries no tenant.
+    .on('GET', '/account/api/me', { email: 'ada@example.test', displayName: 'Ada Lovelace', forgejoUsername: null, hasGitPassword: false })
+    .on('GET', '/account/api/ssh-keys', [])
+    .on('GET', '/api/admin/me/account', { workspaces: [], canDelete: true })
+    .on('GET', '/api/admin/ai/conversations', [])
     .on('GET', '/api/admin/sites/:id', {
       id: '11111111-1111-1111-1111-111111111111',
       name: 'Acme site',
