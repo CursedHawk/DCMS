@@ -21,6 +21,8 @@ import {
 } from '@dcms/ui';
 import { iconByName } from '../../app/navApi';
 import { useMarketplace, type MarketplaceItem } from './api';
+import { InstallPluginDialog } from '../plugins/InstallPluginDialog';
+import { usePluginCatalog, usePluginInstances } from '../plugins/api';
 
 /**
  * The shopfront.
@@ -169,6 +171,15 @@ function PluginDetail({ item }: { item: MarketplaceItem }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const Icon = iconByName(item.icon);
+  const catalog = usePluginCatalog();
+  const instances = usePluginInstances();
+  const manifest = catalog.data?.find((m) => m.id === item.id);
+  // A plugin that allows one instance and has it: "Manage" goes to that instance.
+  const existing =
+    item.installed && !item.allowMultiple
+      ? instances.data?.find((i) => i.pluginId === item.id)
+      : undefined;
+  const [adding, setAdding] = useState(false);
 
   return (
     <>
@@ -275,11 +286,6 @@ function PluginDetail({ item }: { item: MarketplaceItem }) {
       </SheetBody>
 
       <SheetFooter>
-        {/*
-          Adding an instance is the plugins page's job — it owns the slug, the name and the
-          JSON-Schema config form, and duplicating that here would be a second write path onto
-          the same rows. The shopfront's job ends at "this is the one I want".
-        */}
         <Button
           variant="outline"
           data-testid="marketplace-reference"
@@ -288,15 +294,36 @@ function PluginDetail({ item }: { item: MarketplaceItem }) {
           <Code2 className="h-4 w-4" aria-hidden />
           {t('marketplace.reference')}
         </Button>
-        <Button
-          onClick={() =>
-            void navigate({ to: '/plugins' as string, search: { add: item.id } as never })
-          }
-        >
-          <Plus className="h-4 w-4" aria-hidden />
-          {item.installed && !item.allowMultiple ? t('marketplace.manage') : t('marketplace.add')}
-        </Button>
+        {existing ? (
+          <Button
+            onClick={() =>
+              void navigate({ to: '/plugins/$slug' as string, params: { slug: existing.slug } as never })
+            }
+          >
+            {t('marketplace.manage')}
+          </Button>
+        ) : (
+          /*
+           * Added here, where it was chosen. This used to forward to the Plugins page with
+           * `?add=`, which nothing read — you landed on the list of installed plugins and had to
+           * find the one you had just picked a second time, in a second catalog.
+           */
+          <Button disabled={!manifest} onClick={() => setAdding(true)}>
+            <Plus className="h-4 w-4" aria-hidden />
+            {t('marketplace.add')}
+          </Button>
+        )}
       </SheetFooter>
+
+      {adding && manifest ? (
+        <InstallPluginDialog
+          manifest={manifest}
+          onClose={() => setAdding(false)}
+          onDone={(created) =>
+            void navigate({ to: '/plugins/$slug' as string, params: { slug: created.slug } as never })
+          }
+        />
+      ) : null}
     </>
   );
 }

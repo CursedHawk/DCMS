@@ -242,7 +242,6 @@
     },
     "title": "Pluginy",
     "subtitle": "Instalujte pluginy a spravujte jejich instance.",
-    "catalog": "Katalog",
     "installed": "Nainstalované",
     "install": "Nainstalovat plugin",
     "installedBadge": "Nainstalováno",
@@ -260,7 +259,8 @@
     "typeCount_other": "{{count}} typů obsahu",
     "description": "Popis",
     "descriptionPlaceholder": "K čemu tato instance slouží (např. „Firemní blog s novinkami“)",
-    "descriptionHint": "Odlišuje tuto instanci ve vygenerované API dokumentaci použité pro tvorbu webů. Povinné, pokud má plugin více instancí."
+    "descriptionHint": "Odlišuje tuto instanci ve vygenerované API dokumentaci použité pro tvorbu webů. Povinné, pokud má plugin více instancí.",
+    "browseMarketplace": "Procházet marketplace"
   },
   "content": {
     "title": "Obsah",

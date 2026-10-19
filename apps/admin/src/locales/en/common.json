@@ -241,7 +241,6 @@
     },
     "title": "Plugins",
     "subtitle": "Install plugins and manage their instances.",
-    "catalog": "Catalog",
     "installed": "Installed",
     "install": "Install plugin",
     "installedBadge": "Installed",
@@ -258,7 +257,8 @@
     "typeCount_other": "{{count}} content types",
     "description": "Description",
     "descriptionPlaceholder": "What this instance is for (e.g. \"Company news blog\")",
-    "descriptionHint": "Distinguishes this instance in the generated API docs used to build websites. Required when a plugin has multiple instances."
+    "descriptionHint": "Distinguishes this instance in the generated API docs used to build websites. Required when a plugin has multiple instances.",
+    "browseMarketplace": "Browse marketplace"
   },
   "content": {
     "title": "Content",

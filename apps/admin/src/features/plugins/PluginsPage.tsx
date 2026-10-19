@@ -1,57 +1,35 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, FileText, Plug, Search, Settings2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { Link } from '@tanstack/react-router';
+import { Plug, Search, Settings2, Store } from 'lucide-react';
+import { useState } from 'react';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
 import {
   Badge,
-  Button,
   Card,
   CardContent,
   CenteredSpinner,
   cn,
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   EmptyState,
   Input,
-  Label,
+  LoadFailed,
   Page,
   PageHeader,
   Switch,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-  Textarea,
   toastApiError,
 } from '@dcms/ui';
-import { SchemaForm } from '../../components/SchemaForm';
-import { configWidgets } from './configWidgets';
-import { usePluginUi } from '../../pluginHost/api';
-import { usePluginWidgets } from '../../pluginHost/host';
 import { api } from '../../lib/api';
-import { SlugField } from '../../components/SlugField';
-import { isSlugTaken, useAutoSlug } from '../../lib/slug';
-import {
-  type PluginManifest,
-  parseConfigSchema,
-  usePluginCatalog,
-  usePluginInstances,
-} from './api';
+import { usePluginCatalog, usePluginInstances } from './api';
+import { InstallPluginDialog } from './InstallPluginDialog';
 
 export function PluginsPage() {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const catalog = usePluginCatalog();
   const instances = usePluginInstances();
-
-  const [installing, setInstalling] = useState<PluginManifest | null>(null);
+  // `?add=<pluginId>`: an old Marketplace link, or a bookmark of one. Opens the add dialog.
+  const search = useSearch({ strict: false }) as { add?: string };
+  const adding = search.add ? catalog.data?.find((m) => m.id === search.add) : undefined;
   const [query, setQuery] = useState('');
 
   const toggle = useMutation({
@@ -63,7 +41,6 @@ export function PluginsPage() {
   });
 
   const manifestById = new Map((catalog.data ?? []).map((m) => [m.id, m]));
-  const installedIds = new Set((instances.data ?? []).map((i) => i.pluginId));
   const allInstances = instances.data ?? [];
   const enabledCount = allInstances.filter((i) => i.enabled).length;
 
@@ -72,279 +49,115 @@ export function PluginsPage() {
   const filteredInstances = allInstances.filter(
     (i) => matches(i.name) || matches(i.slug) || matches(i.pluginId),
   );
-  const filteredCatalog = (catalog.data ?? []).filter(
-    (m) => matches(m.name) || matches(m.description),
+
+  const browse = (
+    <Link
+      to={'/marketplace' as string}
+      className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Store className="h-4 w-4" aria-hidden />
+      {t('plugins.browseMarketplace')}
+    </Link>
   );
 
   return (
     <Page>
-      <PageHeader
-        title={t('plugins.title')}
-        description={t('plugins.subtitle')}
-        actions={
-          <div className="relative w-64 max-w-full">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t('plugins.searchPlaceholder')}
-              className="pl-8"
-            />
+      <PageHeader title={t('plugins.title')} description={t('plugins.subtitle')} actions={browse} />
+      {instances.isLoading ? (
+        <CenteredSpinner />
+      ) : instances.isError ? (
+        <LoadFailed onRetry={() => void instances.refetch()} />
+      ) : allInstances.length === 0 ? (
+        <EmptyState
+          icon={Plug}
+          title={t('plugins.noneInstalled')}
+          description={t('plugins.noneInstalledHint')}
+          action={browse}
+        />
+      ) : (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              {t('plugins.enabledSummary', { enabled: enabledCount, total: allInstances.length })}
+            </p>
+            <div className="relative w-full sm:w-64">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t('plugins.searchPlaceholder')}
+                aria-label={t('plugins.searchPlaceholder')}
+                className="pl-8"
+              />
+            </div>
           </div>
-        }
-      />
-      <Tabs defaultValue="installed">
-        <TabsList>
-          <TabsTrigger value="installed">
-            {t('plugins.installed')} ({allInstances.length})
-          </TabsTrigger>
-          <TabsTrigger value="catalog">{t('plugins.catalog')}</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="installed">
-          {instances.isLoading ? (
-            <CenteredSpinner />
-          ) : allInstances.length === 0 ? (
-            <EmptyState
-              icon={Plug}
-              title={t('plugins.noneInstalled')}
-              description={t('plugins.noneInstalledHint')}
-            />
-          ) : (
-            <div className="space-y-3">
-              <p className="text-xs text-muted-foreground">
-                {t('plugins.enabledSummary', { enabled: enabledCount, total: allInstances.length })}
-              </p>
-              <div className="space-y-2">
-                {filteredInstances.map((inst) => {
-                  const manifest = manifestById.get(inst.pluginId);
-                  const typeCount = manifest?.contentTypes.length ?? 0;
-                  return (
-                    <Card key={inst.id} className={cn(!inst.enabled && 'opacity-60')}>
-                      <CardContent className="flex items-center gap-3 p-4">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground">
-                          <Plug className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <Link
-                              to={'/plugins/$slug' as string}
-                              params={{ slug: inst.slug } as never}
-                              className="truncate font-medium hover:underline"
-                              data-testid="plugin-instance-link"
-                            >
-                              {inst.name}
-                            </Link>
-                            <Badge tone={inst.enabled ? 'success' : 'secondary'}>
-                              {inst.enabled ? t('plugins.enabled') : t('plugins.disabled')}
-                            </Badge>
-                          </div>
-                          <p className="truncate text-xs text-muted-foreground">
-                            /{inst.slug} · {inst.pluginId}
-                            {typeCount > 0 ? ` · ${t('plugins.typeCount', { count: typeCount })}` : ''}
-                          </p>
-                          {inst.description ? (
-                            <p className="truncate text-xs text-muted-foreground">{inst.description}</p>
-                          ) : null}
-                        </div>
+          <div className="space-y-2">
+          {filteredInstances.map((inst) => {
+              const manifest = manifestById.get(inst.pluginId);
+              const typeCount = manifest?.contentTypes.length ?? 0;
+              return (
+                <Card key={inst.id} className={cn(!inst.enabled && 'opacity-60')}>
+                  <CardContent className="flex items-center gap-3 p-4">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground">
+                      <Plug className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
                         <Link
                           to={'/plugins/$slug' as string}
                           params={{ slug: inst.slug } as never}
-                          search={{ tab: 'settings' } as never}
-                          title={t('plugins.configuration')}
-                          aria-label={t('plugins.configuration')}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          className="truncate font-medium hover:underline"
+                          data-testid="plugin-instance-link"
                         >
-                          <Settings2 className="h-4 w-4" />
+                          {inst.name}
                         </Link>
-                        <Switch
-                          checked={inst.enabled}
-                          onCheckedChange={(v) => toggle.mutate({ id: inst.id, enabled: v })}
-                        />
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-                {filteredInstances.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">{t('common.noResults')}</p>
-                ) : null}
-              </div>
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="catalog">
-          {catalog.isLoading ? (
-            <CenteredSpinner />
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredCatalog.map((m) => {
-                const isInstalled = installedIds.has(m.id);
-                // A single-instance plugin can only be installed once.
-                const installDisabled = isInstalled && !m.allowMultipleInstances;
-                return (
-                  <Card key={m.id}>
-                    <CardContent className="flex h-full flex-col gap-3 p-5">
-                      <div className="flex items-center gap-2">
-                        <Plug className="h-4 w-4 text-primary" />
-                        <span className="font-medium">{m.name}</span>
-                        {isInstalled ? (
-                          <Badge tone="success" className="gap-1">
-                            <Check className="h-3 w-3" />
-                            {t('plugins.installedBadge')}
-                          </Badge>
-                        ) : null}
-                        <Badge tone="outline" className="ml-auto">
-                          v{m.version}
+                        <Badge tone={inst.enabled ? 'success' : 'secondary'}>
+                          {inst.enabled ? t('plugins.enabled') : t('plugins.disabled')}
                         </Badge>
                       </div>
-                      <p className="flex-1 text-sm text-muted-foreground">{m.description}</p>
-                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                        <Badge tone="secondary">
-                          {m.allowMultipleInstances
-                            ? t('plugins.multiInstance')
-                            : t('plugins.singleInstance')}
-                        </Badge>
-                        {m.contentTypes.length > 0 ? (
-                          <span className="inline-flex items-center gap-1">
-                            <FileText className="h-3.5 w-3.5" />
-                            {t('plugins.typeCount', { count: m.contentTypes.length })}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="flex items-center justify-end">
-                        <Button
-                          size="sm"
-                          variant={installDisabled ? 'outline' : 'default'}
-                          disabled={installDisabled}
-                          onClick={() => setInstalling(m)}
-                        >
-                          {installDisabled ? t('plugins.installedBadge') : t('plugins.install')}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-              {filteredCatalog.length === 0 ? (
-                <p className="col-span-full py-8 text-center text-sm text-muted-foreground">
-                  {t('common.noResults')}
-                </p>
-              ) : null}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
+                      <p className="truncate text-xs text-muted-foreground">
+                        /{inst.slug} · {inst.pluginId}
+                        {typeCount > 0 ? ` · ${t('plugins.typeCount', { count: typeCount })}` : ''}
+                      </p>
+                      {inst.description ? (
+                        <p className="truncate text-xs text-muted-foreground">{inst.description}</p>
+                      ) : null}
+                    </div>
+                    <Link
+                      to={'/plugins/$slug' as string}
+                      params={{ slug: inst.slug } as never}
+                      search={{ tab: 'settings' } as never}
+                      title={t('plugins.configuration')}
+                      aria-label={t('plugins.configuration')}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Settings2 className="h-4 w-4" />
+                    </Link>
+                    <Switch
+                      checked={inst.enabled}
+                      onCheckedChange={(v) => toggle.mutate({ id: inst.id, enabled: v })}
+                    />
+                  </CardContent>
+                </Card>
+              );
+            })}
+            {filteredInstances.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">{t('common.noResults')}</p>
+            ) : null}
+          </div>
+        </div>
+      )}
 
-      {installing ? (
-        <InstallDialog
-          manifest={installing}
-          onClose={() => setInstalling(null)}
-          onDone={async () => {
-            setInstalling(null);
+      {adding ? (
+        <InstallPluginDialog
+          manifest={adding}
+          onClose={() => void navigate({ to: '/plugins' as string, replace: true })}
+          onDone={async (created) => {
             await qc.invalidateQueries({ queryKey: ['plugin-instances'] });
+            void navigate({ to: '/plugins/$slug' as string, params: { slug: created.slug } as never });
           }}
         />
       ) : null}
-
     </Page>
-  );
-}
-
-function InstallDialog({
-  manifest,
-  onClose,
-  onDone,
-}: {
-  manifest: PluginManifest;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const { t } = useTranslation();
-  const [name, setName] = useState(manifest.name);
-  const [slug, setSlug] = useAutoSlug(name);
-  const [takenSlug, setTakenSlug] = useState<string | null>(null);
-  const [description, setDescription] = useState('');
-  const [config, setConfig] = useState<unknown>({});
-  const schema = parseConfigSchema(manifest.configJsonSchema);
-  const ui = usePluginUi();
-  const pluginWidgets = usePluginWidgets(ui.data?.find((p) => p.pluginId === manifest.id), null);
-  const widgets = useMemo(() => ({ ...configWidgets, ...pluginWidgets }), [pluginWidgets]);
-  // For multi-instance plugins the description distinguishes each instance's
-  // purpose in the generated OpenAPI document, so it is required there.
-  const descriptionRequired = manifest.allowMultipleInstances;
-
-  const create = useMutation({
-    mutationFn: () =>
-      api.post('/admin/plugins/instances', {
-        pluginId: manifest.id,
-        slug: slug.trim(),
-        name: name.trim(),
-        description: description.trim() || undefined,
-        config: JSON.stringify(config ?? {}),
-      }),
-    onSuccess: () => {
-      toast.success(t('common.saved'));
-      onDone();
-    },
-    onError: (e) => (isSlugTaken(e) ? setTakenSlug(slug.trim()) : toastApiError(e, t)),
-  });
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent wide>
-        <DialogHeader>
-          <DialogTitle>
-            {t('plugins.install')}: {manifest.name}
-          </DialogTitle>
-          <DialogDescription>{manifest.description}</DialogDescription>
-        </DialogHeader>
-        <DialogBody className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>{t('common.name')}</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-            <SlugField id="instance-slug" value={slug} onChange={setSlug} taken={takenSlug} placeholder="blog" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>
-              {t('plugins.description')}
-              {descriptionRequired ? <span className="ml-1 text-destructive">*</span> : null}
-            </Label>
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={t('plugins.descriptionPlaceholder')}
-            />
-            <p className="text-xs text-muted-foreground">{t('plugins.descriptionHint')}</p>
-          </div>
-          {Object.keys(schema).length > 0 ? (
-            <div>
-              <Label className="mb-2 block">{t('plugins.configuration')}</Label>
-              <SchemaForm
-                schema={schema}
-                formData={config}
-                onChange={setConfig}
-                widgets={widgets}
-              />
-            </div>
-          ) : null}
-        </DialogBody>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            {t('actions.cancel')}
-          </Button>
-          <Button
-            disabled={
-              !slug.trim() || (descriptionRequired && !description.trim()) || create.isPending
-            }
-            onClick={() => create.mutate()}
-          >
-            {t('plugins.install')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

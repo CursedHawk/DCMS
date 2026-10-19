@@ -73,3 +73,24 @@ test('opens a plugin\'s API reference: packages, C#, contracts and hooks', async
   await page.getByRole('tab', { name: /Events & hooks/ }).click();
   await expect(page.getByText('forms.submitting')).toBeVisible();
 });
+
+test('adds a plugin where it was chosen, and lands on the new instance', async ({ page, api }) => {
+  await page.goto('/marketplace');
+  await card(page, 'Blog').click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add to workspace' }).click();
+
+  // The add dialog, over the sheet — not a trip to a second catalog on another page.
+  const add = page.getByRole('dialog', { name: /Blog/ }).filter({ has: page.getByRole('button', { name: 'Install' }) });
+  await add.getByRole('textbox').nth(2).fill('Company news');
+  await add.getByRole('button', { name: 'Install' }).click();
+
+  await expect.poll(() => api.requestsTo('POST', '/api/admin/plugins/instances').length).toBe(1);
+  await expect(page).toHaveURL(/\/plugins\/blog$/);
+});
+
+test('an old /plugins?add= link still opens the add dialog', async ({ page }) => {
+  await page.goto('/plugins?add=dcms.blog');
+  await expect(page.getByRole('dialog').getByRole('button', { name: 'Install' })).toBeVisible();
+  // And Plugins is a list of what is installed, not a second shopfront.
+  await expect(page.getByRole('tab', { name: 'Catalog' })).toHaveCount(0);
+});
