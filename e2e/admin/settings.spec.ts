@@ -83,3 +83,24 @@ test('a moved URL redirects rather than refusing, even for somebody who may not 
   await page.goto('/members');
   await expect(page).toHaveURL(/\/settings\/members$/);
 });
+
+test('the audit log is a table on a desktop and a card per record on a phone', async ({ page, api }) => {
+  api.on('GET', '/api/admin/audit', {
+    items: [
+      {
+        id: 'a1', occurredAt: '2026-10-19T08:00:00Z', seq: 1, action: 'site.publish', category: 'site', outcome: 'success',
+        actor: { kind: 'user', ref: 'u1', display: 'ada@example.test', attribution: 'direct' },
+        resource: { type: 'site', id: 's1', label: 'Acme shop' }, service: 'admin-api', correlationId: null, http: null,
+        ipAddress: '203.0.113.7', ipTrusted: true, isSandbox: false, platformScope: false, metadata: null, changes: null,
+      },
+    ],
+    hasMore: false,
+    nextCursor: null,
+  });
+  await page.goto('/settings/audit');
+  await expect(page.getByRole('table').getByText('Acme shop')).toBeVisible();
+
+  await page.setViewportSize({ width: 360, height: 740 });
+  await expect(page.getByRole('table')).toBeHidden();
+  await expect(page.locator('li').getByText('Acme shop')).toBeVisible();
+});

@@ -3,12 +3,12 @@ import { Download, ShieldCheck, ShieldX } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import type { TFunction } from 'i18next';
 import {
   Badge,
   Button,
-  Card,
-  CardContent,
-  CenteredSpinner,
+  type Column,
+  DataTable,
   EmptyState,
   Input,
   Select,
@@ -111,18 +111,19 @@ export function AuditLogViewer({ tenant }: { tenant?: string }) {
   });
 
   const records = query.data?.pages.flatMap((p) => p.items) ?? [];
+  const columns = useMemo(() => auditColumns(t), [t]);
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input
-          className="w-64"
+          className="w-full sm:w-64"
           placeholder={t('audit.filterAction')}
           value={action}
           onChange={(e) => setAction(e.target.value)}
         />
         <Select value={category} onValueChange={setCategory}>
-          <SelectTrigger className="w-44">
+          <SelectTrigger className="w-full sm:w-44">
             <SelectValue placeholder={t('audit.filterCategory')} />
           </SelectTrigger>
           <SelectContent>
@@ -135,7 +136,7 @@ export function AuditLogViewer({ tenant }: { tenant?: string }) {
           </SelectContent>
         </Select>
         <Select value={outcome} onValueChange={setOutcome}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-full sm:w-40">
             <SelectValue placeholder={t('audit.filterOutcome')} />
           </SelectTrigger>
           <SelectContent>
@@ -146,7 +147,7 @@ export function AuditLogViewer({ tenant }: { tenant?: string }) {
           </SelectContent>
         </Select>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
           {canExport ? (
             <Button variant="outline" onClick={() => exportLog.mutate()} disabled={exportLog.isPending}>
               <Download className="mr-2 h-4 w-4" />
@@ -164,48 +165,31 @@ export function AuditLogViewer({ tenant }: { tenant?: string }) {
         </div>
       </div>
 
-      {query.isLoading ? (
-        <CenteredSpinner />
-      ) : query.isError ? (
-        // Distinguish "you may not read this" from "the server broke". Guessing at permissions
-        // for what is actually a 500 sends the reader to check their roles while the real fault
-        // sits in the logs — which is exactly what happened the first time this failed.
-        <EmptyState
-          title={t('audit.loadFailed')}
-          description={
-            query.error instanceof ApiError && query.error.status === 403
-              ? t('audit.loadFailedForbidden')
-              : t('audit.loadFailedHint')
-          }
-        />
-      ) : records.length === 0 ? (
-        <EmptyState title={t('audit.empty')} description={t('audit.emptyHint')} />
-      ) : (
-        <Card>
-          <CardContent className="p-0">
-            {/* Wide by nature; scroll the table rather than the page. */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="border-b text-left text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-2 font-medium">{t('audit.col.when')}</th>
-                    <th className="px-4 py-2 font-medium">{t('audit.col.action')}</th>
-                    <th className="px-4 py-2 font-medium">{t('audit.col.actor')}</th>
-                    <th className="px-4 py-2 font-medium">{t('audit.col.resource')}</th>
-                    <th className="px-4 py-2 font-medium">{t('audit.col.outcome')}</th>
-                    <th className="px-4 py-2 font-medium">{t('audit.col.origin')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {records.map((r) => (
-                    <AuditRow key={r.id} record={r} onOpen={() => setOpenId(r.id)} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <DataTable
+        rows={records}
+        columns={columns}
+        rowKey={(r) => r.id}
+        onRowClick={(r) => setOpenId(r.id)}
+        isLoading={query.isLoading}
+        caption={t('audit.title', { defaultValue: 'Audit log' })}
+        labels={{ loading: t('common.loading'), sortBy: (column) => t('common.sortBy', { column }) }}
+        error={
+          query.isError ? (
+            // Distinguish "you may not read this" from "the server broke". Guessing at permissions
+            // for what is actually a 500 sends the reader to check their roles while the real fault
+            // sits in the logs — which is exactly what happened the first time this failed.
+            <EmptyState
+              title={t('audit.loadFailed')}
+              description={
+                query.error instanceof ApiError && query.error.status === 403
+                  ? t('audit.loadFailedForbidden')
+                  : t('audit.loadFailedHint')
+              }
+            />
+          ) : undefined
+        }
+        empty={<EmptyState title={t('audit.empty')} description={t('audit.emptyHint')} />}
+      />
 
       {query.hasNextPage ? (
         <div className="mt-4 flex justify-center">
@@ -224,35 +208,58 @@ export function AuditLogViewer({ tenant }: { tenant?: string }) {
   );
 }
 
-function AuditRow({ record, onOpen }: { record: AuditRecord; onOpen: () => void }) {
-  const { t } = useTranslation();
-
-  return (
-    <tr className="cursor-pointer border-b align-top last:border-0 hover:bg-muted/50" onClick={onOpen}>
-      <td className="whitespace-nowrap px-4 py-2 tabular-nums text-muted-foreground">
-        {new Date(record.occurredAt).toLocaleString()}
-      </td>
-      <td className="px-4 py-2">
-        {/* Falls back to the raw key so an action added since the last translation pass
-            still reads as something rather than as a blank cell. */}
-        <span className="font-medium">{t(`audit.action.${record.action}`, { defaultValue: record.action })}</span>
-        {record.isSandbox ? (
-          <Badge tone="outline" className="ml-2">
-            {t('audit.sandbox')}
-          </Badge>
-        ) : null}
-      </td>
-      <td className="px-4 py-2">
-        <div>{record.actor.display ?? record.actor.ref ?? t('audit.actorUnknown')}</div>
-        <div className="text-xs text-muted-foreground">
-          {record.actor.kind}
-          {/* An actor carried across a message bus is a peer's assertion, not something
-              this request authenticated — worth saying so rather than implying certainty. */}
-          {record.actor.attribution !== 'direct' ? ` · ${t(`audit.attribution.${record.actor.attribution}`, { defaultValue: record.actor.attribution })}` : ''}
-        </div>
-      </td>
-      <td className="px-4 py-2">
-        {record.resource ? (
+/**
+ * The log's columns. A DataTable, so on a phone each record is a card headed by what happened,
+ * instead of a six-column table whose outcome and origin were a sideways swipe away.
+ */
+function auditColumns(t: TFunction): Column<AuditRecord>[] {
+  return [
+    {
+      id: 'when',
+      header: t('audit.col.when'),
+      cell: (record) => (
+        <span className="whitespace-nowrap tabular-nums text-muted-foreground">
+          {new Date(record.occurredAt).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      id: 'action',
+      header: t('audit.col.action'),
+      primary: true,
+      cell: (record) => (
+        <>
+          {/* Falls back to the raw key so an action added since the last translation pass
+              still reads as something rather than as a blank cell. */}
+          <span className="font-medium">{t(`audit.action.${record.action}`, { defaultValue: record.action })}</span>
+          {record.isSandbox ? (
+            <Badge tone="outline" className="ml-2">
+              {t('audit.sandbox')}
+            </Badge>
+          ) : null}
+        </>
+      ),
+    },
+    {
+      id: 'actor',
+      header: t('audit.col.actor'),
+      cell: (record) => (
+        <>
+          <div>{record.actor.display ?? record.actor.ref ?? t('audit.actorUnknown')}</div>
+          <div className="text-xs text-muted-foreground">
+            {record.actor.kind}
+            {/* An actor carried across a message bus is a peer's assertion, not something
+                this request authenticated — worth saying so rather than implying certainty. */}
+            {record.actor.attribution !== 'direct' ? ` · ${t(`audit.attribution.${record.actor.attribution}`, { defaultValue: record.actor.attribution })}` : ''}
+          </div>
+        </>
+      ),
+    },
+    {
+      id: 'resource',
+      header: t('audit.col.resource'),
+      cell: (record) =>
+        record.resource ? (
           <>
             <div>{record.resource.label ?? record.resource.id}</div>
             <div className="text-xs text-muted-foreground">{record.resource.type}</div>
@@ -262,26 +269,35 @@ function AuditRow({ record, onOpen }: { record: AuditRecord; onOpen: () => void 
           <span className="text-xs text-muted-foreground">{t('audit.platformScope')}</span>
         ) : (
           <span className="text-muted-foreground">—</span>
-        )}
-      </td>
-      <td className="px-4 py-2">
+        ),
+    },
+    {
+      id: 'outcome',
+      header: t('audit.col.outcome'),
+      cell: (record) => (
         <Badge tone={record.outcome === 'success' ? 'success' : record.outcome === 'denied' ? 'warning' : 'destructive'}>
           {t(`audit.outcome.${record.outcome}`, { defaultValue: record.outcome })}
         </Badge>
-      </td>
-      <td className="px-4 py-2 text-xs text-muted-foreground">
-        <div>{record.service}</div>
-        {record.ipAddress ? (
-          // Every service that records an address currently trusts any forwarding proxy,
-          // so the address is what the caller claimed unless it provably passed the edge.
-          <div title={record.ipTrusted ? undefined : t('audit.ipReportedHint')}>
-            {record.ipAddress}
-            {record.ipTrusted ? '' : ` (${t('audit.ipReported')})`}
-          </div>
-        ) : null}
-      </td>
-    </tr>
-  );
+      ),
+    },
+    {
+      id: 'origin',
+      header: t('audit.col.origin'),
+      cell: (record) => (
+        <div className="text-xs text-muted-foreground">
+          <div>{record.service}</div>
+          {record.ipAddress ? (
+            // Every service that records an address currently trusts any forwarding proxy,
+            // so the address is what the caller claimed unless it provably passed the edge.
+            <div title={record.ipTrusted ? undefined : t('audit.ipReportedHint')}>
+              {record.ipAddress}
+              {record.ipTrusted ? '' : ` (${t('audit.ipReported')})`}
+            </div>
+          ) : null}
+        </div>
+      ),
+    },
+  ];
 }
 
 /**
