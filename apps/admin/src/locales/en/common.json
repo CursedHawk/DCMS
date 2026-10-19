@@ -379,7 +379,8 @@
       }
     },
     "archived": "Archived",
-    "publishedAt": "Published on"
+    "publishedAt": "Published on",
+    "itemsTab": "Items"
   },
   "media": {
     "title": "Media library",

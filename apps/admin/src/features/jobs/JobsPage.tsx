@@ -20,8 +20,9 @@ import {
 import { type Job, type JobListFilter, useCancelJob, useJob, useJobs, useRetryJob } from './api';
 import { linkTarget } from '../notifications/linkPath';
 import { jobText, jobTrigger } from './text';
+import { useTabParam } from '../../lib/useTabParam';
 
-const FILTERS: JobListFilter[] = ['all', 'active', 'failed'];
+const FILTERS = ['all', 'active', 'failed'] as const satisfies readonly JobListFilter[];
 
 /**
  * Every background job in the workspace, newest first. The popover is the glance; this is where
@@ -31,7 +32,7 @@ const FILTERS: JobListFilter[] = ['all', 'active', 'failed'];
 export function JobsPage() {
   const { t } = useTranslation();
   const { job: focused } = useSearch({ strict: false }) as { job?: string };
-  const [filter, setFilter] = useState<JobListFilter>('all');
+  const [filter, setFilter] = useTabParam('filter', FILTERS, 'all');
   // ponytail: the newest 100; a "load more" over the cursor when somebody needs older history.
   const { data, isLoading } = useJobs(filter, 100);
   const items = data?.items ?? [];
@@ -40,7 +41,7 @@ export function JobsPage() {
     <Page>
       <PageHeader title={t('jobs.title')} description={t('jobs.pageDescription')} />
 
-      <Tabs value={filter} onValueChange={(v) => setFilter(v as JobListFilter)} className="mb-4">
+      <Tabs value={filter} onValueChange={setFilter} className="mb-4">
         <TabsList>
           {FILTERS.map((f) => (
             <TabsTrigger key={f} value={f}>

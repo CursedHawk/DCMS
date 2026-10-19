@@ -26,6 +26,7 @@ import {
   toastApiError,
 } from '@dcms/ui';
 import { Breadcrumbs } from '../../app/Breadcrumbs';
+import { useTabParam } from '../../lib/useTabParam';
 import {
   runContractOperation,
   useAdminContractCatalog,
@@ -87,14 +88,18 @@ export function PluginReferencePage({ pluginId }: { pluginId: string }) {
  * The reference itself, without the page around it: the marketplace page shows it under its
  * own header, and a plugin instance's page shows it as its Integration tab.
  */
+const REFERENCE_SECTIONS = ['overview', 'contracts', 'events', 'data', 'config'] as const;
+
 export function PluginReferenceTabs({ reference: r }: { reference: PluginReference }) {
   const { t } = useTranslation();
   const catalog = useAdminContractCatalog();
   const events = r.provides.flatMap((c) => c.events.map((e) => ({ ...e, contract: c.id })));
   const hooks = r.provides.flatMap((c) => c.hooks.map((h) => ({ ...h, contract: c.id })));
+  // `section`, not `tab`: embedded in a plugin instance's page, `?tab=` is already that page's.
+  const [section, setSection] = useTabParam('section', REFERENCE_SECTIONS, 'overview');
 
   return (
-    <Tabs defaultValue="overview">
+    <Tabs value={section} onValueChange={setSection}>
       <TabsList>
         <TabsTrigger value="overview">{t('pluginReference.tabs.overview')}</TabsTrigger>
         <TabsTrigger value="contracts">

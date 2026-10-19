@@ -389,7 +389,8 @@
       }
     },
     "archived": "Archivováno",
-    "publishedAt": "Publikováno dne"
+    "publishedAt": "Publikováno dne",
+    "itemsTab": "Položky"
   },
   "media": {
     "title": "Knihovna médií",

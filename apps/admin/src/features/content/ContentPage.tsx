@@ -6,7 +6,11 @@ import {
   Badge,
   Button,
   CenteredSpinner,
-  cn,
+  SectionHeader,
+  SubNav,
+  SubNavGroup,
+  SubNavItemBody,
+  subNavItemClass,
   type Column,
   DataTable,
   EmptyState,
@@ -36,6 +40,7 @@ import {
   usePluginInstances,
 } from '../plugins/api';
 import { api } from '../../lib/api';
+import { useTabParam } from '../../lib/useTabParam';
 import { BulkActions } from './BulkActions';
 import {
   BUILT_IN_COLUMNS,
@@ -82,13 +87,15 @@ function statusTone(status: string): 'success' | 'warning' | 'secondary' {
   return 'secondary';
 }
 
+const CONTENT_TABS = ['items', 'scheduled', 'types', 'tags'] as const;
+
 export function ContentPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const instances = usePluginInstances();
   const catalog = usePluginCatalog();
   const [selected, setSelected] = useState<{ instanceId: string; type: string } | null>(null);
-  const [tab, setTab] = useState('items');
+  const [tab, setTab] = useTabParam('tab', CONTENT_TABS, 'items');
 
   // Deep link from a notification: ?instance=<pluginInstanceId>&type=<contentType>&item=<id>.
   // `strict: false` because no route here declares a search schema — these params are optional
@@ -129,14 +136,14 @@ export function ContentPage() {
       // Without this a row clicked in the publishing queue selects a collection nobody can see
       // and the click looks like it did nothing. Only then: the collection stays in the URL
       // while it is open, and a refetch must not pull the reader off the tab they chose.
-      if (deepLink.item) setTab('items');
+      if (deepLink.item && tab !== 'items') setTab('items');
       return;
     }
 
     if (selected) return;
     const first = authorable.find((g) => g.types.length > 0);
     if (first) setSelected({ instanceId: first.instance.id, type: first.types[0].name });
-  }, [authorable, selected, deepLink.instance, deepLink.type, deepLink.item]);
+  }, [authorable, selected, deepLink.instance, deepLink.type, deepLink.item, tab, setTab]);
 
   const activeGroup = authorable.find((g) => g.instance.id === selected?.instanceId);
   const activeType = activeGroup?.types.find((ct) => ct.name === selected?.type);
@@ -156,7 +163,7 @@ export function ContentPage() {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="mb-6">
-          <TabsTrigger value="items">{t('content.title')}</TabsTrigger>
+          <TabsTrigger value="items">{t('content.itemsTab')}</TabsTrigger>
           <TabsTrigger value="scheduled">{t('content.scheduledView.tab')}</TabsTrigger>
           <TabsTrigger value="types">{t('content.types.title')}</TabsTrigger>
           <TabsTrigger value="tags">{t('content.tags.title')}</TabsTrigger>
@@ -190,11 +197,7 @@ export function ContentPage() {
         />
       ) : (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
-          <aside className="space-y-4">
-            <p className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t('content.collections')}
-            </p>
-            <nav className="space-y-4">
+          <SubNav label={t('content.collections')} heading={t('content.collections')} className="lg:w-auto">
               {authorable.map((group) => (
                 <InstanceNav
                   key={group.instance.id}
@@ -211,8 +214,7 @@ export function ContentPage() {
                   }
                 />
               ))}
-            </nav>
-          </aside>
+          </SubNav>
 
           <section className="min-w-0">
             {activeGroup && activeType ? (
@@ -259,40 +261,28 @@ function InstanceNav({
   const countOf = (type: string) => counts.data?.[type] ?? 0;
 
   return (
-    <div>
-      <p className="truncate px-2 pb-1 text-xs font-medium text-muted-foreground">{instance.name}</p>
-      <div className="space-y-0.5">
-        {types.map((ct) => {
-          const active = selectedType === ct.name;
-          return (
+    <SubNavGroup label={instance.name}>
+      {types.map((ct) => {
+        const active = selectedType === ct.name;
+        return (
+          <li key={ct.name}>
             <button
-              key={ct.name}
               type="button"
+              aria-current={active ? 'page' : undefined}
               onClick={() => onSelect(ct.name)}
-              className={cn(
-                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors',
-                active
-                  ? 'bg-accent font-medium text-accent-foreground'
-                  : 'text-foreground hover:bg-muted/60',
-              )}
+              className={subNavItemClass(active)}
             >
-              <FileText className={cn('h-4 w-4 shrink-0', active ? '' : 'text-muted-foreground')} />
-              <span className="flex-1 truncate">{humanize(ct.name)}</span>
-              {counts.isSuccess ? (
-                <span
-                  className={cn(
-                    'shrink-0 text-xs tabular-nums',
-                    active ? 'text-accent-foreground/70' : 'text-muted-foreground',
-                  )}
-                >
-                  {countOf(ct.name)}
-                </span>
-              ) : null}
+              <SubNavItemBody
+                label={humanize(ct.name)}
+                icon={FileText}
+                count={counts.isSuccess ? countOf(ct.name) : undefined}
+                active={active}
+              />
             </button>
-          );
-        })}
-      </div>
-    </div>
+          </li>
+        );
+      })}
+    </SubNavGroup>
   );
 }
 
@@ -461,17 +451,15 @@ function CollectionView({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold tracking-tight">{humanize(contentType.name)}</h2>
-          <p className="truncate text-xs text-muted-foreground">
-            {instance.name} · {t('content.itemCount', { count: total })}
-          </p>
-        </div>
-        <Button size="sm" onClick={() => setEditorItem(null)}>
-          <Plus className="h-4 w-4" /> {t('content.newItem')}
-        </Button>
-      </div>
+      <SectionHeader
+        title={humanize(contentType.name)}
+        description={`${instance.name} · ${t('content.itemCount', { count: total })}`}
+        actions={
+          <Button size="sm" onClick={() => setEditorItem(null)}>
+            <Plus className="h-4 w-4" /> {t('content.newItem')}
+          </Button>
+        }
+      />
 
       <FilterBar
         search={query}

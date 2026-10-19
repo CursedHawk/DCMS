@@ -294,3 +294,16 @@ test('a condition can compare with the current user, which the view keeps as a t
       return !!f && JSON.stringify(JSON.parse(f)) === JSON.stringify({ and: [{ field: '_slug', op: 'contains', value: { $user: 'email' } }] });
     })).toBe(true);
 });
+
+test('the tab you are on is in the address, so a reload keeps it', async ({ page }) => {
+  await page.goto('/content');
+  await page.getByRole('tab', { name: 'Scheduled' }).click();
+  await expect(page).toHaveURL(/[?&]tab=scheduled/);
+
+  await page.reload();
+  await expect(page.getByRole('tab', { name: 'Scheduled', selected: true })).toBeVisible();
+
+  // The default tab keeps the plain address.
+  await page.getByRole('tab', { name: 'Items' }).click();
+  await expect(page).not.toHaveURL(/tab=/);
+});
