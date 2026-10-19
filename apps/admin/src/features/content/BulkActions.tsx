@@ -1,7 +1,7 @@
 import { CalendarX, CheckCircle2, EyeOff, Trash2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button, PermissionTooltip, useCan } from '@dcms/ui';
+import { Button, PermissionTooltip, useCan, useConfirm } from '@dcms/ui';
 import { Perm } from '../../lib/permissions';
 import { type BulkVerb, useBulkContentAction } from './api';
 
@@ -32,12 +32,13 @@ export function BulkActions({
   onClear: () => void;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const bulk = useBulkContentAction();
   const canPublish = useCan(Perm.ContentPublish);
   const canWrite = useCan(Perm.ContentWrite);
 
-  const run = (verb: BulkVerb) => {
-    if (verb === 'delete' && !window.confirm(t('content.bulk.deleteConfirm', { count: ids.length }))) {
+  const run = async (verb: BulkVerb) => {
+    if (verb === 'delete' && !(await confirm({ title: t('content.bulk.deleteConfirm', { count: ids.length }), destructive: true }))) {
       return;
     }
 

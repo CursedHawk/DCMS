@@ -14,6 +14,7 @@ import {
   cn,
   toastApiError,
   useCan,
+  useConfirm,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { Perm } from '../../lib/permissions';
@@ -27,6 +28,7 @@ import { gitApi } from './git';
  */
 export function PublishBranchesPanel({ siteId }: { siteId: string }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const canPublish = useCan(Perm.SitePublish);
   const canDomains = useCan(Perm.DomainsManage);
@@ -148,8 +150,9 @@ export function PublishBranchesPanel({ siteId }: { siteId: string }) {
                   title={t('ide.deploy.removeBranch', { branch: row.branch })}
                   disabled={remove.isPending}
                   onClick={() => {
-                    if (window.confirm(t('ide.deploy.removeBranchConfirm', { branch: row.branch })))
-                      remove.mutate(row.branch);
+                    void confirm({ title: t('ide.deploy.removeBranchConfirm', { branch: row.branch }), destructive: true }).then(
+                      (ok) => ok && remove.mutate(row.branch),
+                    );
                   }}
                 >
                   <Trash2 className="h-3.5 w-3.5" />

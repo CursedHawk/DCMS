@@ -74,7 +74,8 @@
     "download": "Stáhnout",
     "undo": "Zpět",
     "redo": "Znovu",
-    "dismiss": "Zavřít"
+    "dismiss": "Zavřít",
+    "confirm": "Potvrdit"
   },
   "common": {
     "loading": "Načítání…",
@@ -996,7 +997,8 @@
       "closeOthers": "Zavřít ostatní záložky"
     },
     "generatedAutoRefreshed": "Pluginy se změnily, API klient byl aktualizován ({{count}} souborů)",
-    "generatedRefreshFailed": "Vygenerovaného API klienta se nepodařilo obnovit"
+    "generatedRefreshFailed": "Vygenerovaného API klienta se nepodařilo obnovit",
+    "deleteFileConfirm": "Smazat {{path}}?"
   },
   "openapi": {
     "title": "API dokumentace",

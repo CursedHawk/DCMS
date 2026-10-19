@@ -14,7 +14,7 @@ import {
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { cn } from '@dcms/ui';
+import { cn, useConfirm } from '@dcms/ui';
 import { isPreviewableImage } from './binary';
 import { downloadFile, downloadProjectZip, readUpload, type UploadResult } from './fileio';
 import { isToolchainFile } from './paths';
@@ -82,6 +82,7 @@ function countFiles(node: TreeNode): number {
 
 export function FileTree() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const files = useVfs((s) => s.files);
   const activePath = useVfs((s) => s.activePath);
   const open = useVfs((s) => s.open);
@@ -231,9 +232,9 @@ export function FileTree() {
               <button
                 type="button"
                 title={t('ide.deleteFolder')}
-                onClick={() => {
+                onClick={async () => {
                   const count = countFiles(node);
-                  if (!window.confirm(t('ide.deleteFolderConfirm', { path: node.path, count }))) return;
+                  if (!(await confirm({ title: t('ide.deleteFolderConfirm', { path: node.path, count }), destructive: true }))) return;
                   deleteFolder(node.path);
                 }}
                 className="text-muted-foreground hover:text-destructive"
@@ -293,7 +294,9 @@ export function FileTree() {
                 type="button"
                 title="Delete"
                 onClick={() => {
-                  if (window.confirm(`Delete ${node.path}?`)) deleteFile(node.path);
+                  void confirm({ title: t('ide.deleteFileConfirm', { path: node.path }), destructive: true }).then(
+                    (ok) => ok && deleteFile(node.path),
+                  );
                 }}
                 className="text-muted-foreground hover:text-destructive"
               >

@@ -26,6 +26,7 @@ import {
   PageHeader,
   toastApiError,
   LoadFailed,
+  useConfirm,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { type Invitation, type Member, useInvitations, useMembers, useRoles } from '../rbac/api';
@@ -41,6 +42,7 @@ function formatDate(iso: string, locale: string): string {
 
 export function MembersPage() {
   const { t, i18n } = useTranslation();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const members = useMembers();
   const roles = useRoles();
@@ -208,8 +210,8 @@ export function MembersPage() {
           variant="ghost"
           aria-label={t('members.remove', { email: m.email })}
           disabled={removeMember.isPending}
-          onClick={() => {
-            if (window.confirm(t('members.removeConfirm', { email: m.email }))) {
+          onClick={async () => {
+            if (await confirm({ title: t('members.removeConfirm', { email: m.email }), destructive: true })) {
               removeMember.mutate(m.membershipId);
             }
           }}
@@ -290,8 +292,8 @@ export function MembersPage() {
             title={t('members.revoke')}
             aria-label={t('members.revoke')}
             disabled={revoke.isPending}
-            onClick={() => {
-              if (window.confirm(t('members.revokeConfirm', { email: inv.email }))) {
+            onClick={async () => {
+              if (await confirm({ title: t('members.revokeConfirm', { email: inv.email }), destructive: true })) {
                 revoke.mutate(inv.id);
               }
             }}

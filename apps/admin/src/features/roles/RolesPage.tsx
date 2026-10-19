@@ -20,6 +20,7 @@ import {
   PageHeader,
   toastApiError,
   LoadFailed,
+  useConfirm,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { type Role, usePermissionCatalog, useRoles } from '../rbac/api';
@@ -27,6 +28,7 @@ import { PermissionMatrix } from './PermissionMatrix';
 
 export function RolesPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const roles = useRoles();
   const catalog = usePermissionCatalog();
@@ -147,7 +149,7 @@ export function RolesPage() {
                   r.memberCount > 0
                     ? t('roles.deleteConfirmInUse', { name: r.name, count: r.memberCount })
                     : t('roles.deleteConfirm', { name: r.name });
-                if (window.confirm(message)) remove.mutate(r.id);
+                void confirm({ title: message, destructive: true }).then((ok) => ok && remove.mutate(r.id));
               }}
             >
               <Trash2 className="h-4 w-4" aria-hidden />

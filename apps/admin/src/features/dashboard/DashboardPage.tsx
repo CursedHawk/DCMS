@@ -2,17 +2,17 @@ import { Link } from '@tanstack/react-router';
 import { motion } from 'framer-motion';
 import { FileText, Globe, Image, PanelsTopLeft, Plug, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Card, Page, PageHeader, usePermissions } from '@dcms/ui';
+import { Card, Page, PageHeader, SectionHeader, usePermissions } from '@dcms/ui';
 import { ROUTE_GUARDS } from '../../app/routeGuards';
 import { can } from '../../lib/permissions';
 import { useAuth } from '../../useAuth';
 
-const QUICK: { to: string; icon: LucideIcon; key: string; tone: string }[] = [
-  { to: '/content', icon: FileText, key: 'nav.content', tone: 'from-sky-500/15 text-sky-500' },
-  { to: '/media', icon: Image, key: 'nav.media', tone: 'from-violet-500/15 text-violet-500' },
-  { to: '/sites', icon: PanelsTopLeft, key: 'nav.sites', tone: 'from-emerald-500/15 text-success-foreground' },
-  { to: '/plugins', icon: Plug, key: 'nav.plugins', tone: 'from-amber-500/15 text-warning-foreground' },
-  { to: '/settings/domains', icon: Globe, key: 'nav.domains', tone: 'from-rose-500/15 text-rose-500' },
+const QUICK: { to: string; icon: LucideIcon; key: string }[] = [
+  { to: '/content', icon: FileText, key: 'nav.content' },
+  { to: '/media', icon: Image, key: 'nav.media' },
+  { to: '/sites', icon: PanelsTopLeft, key: 'nav.sites' },
+  { to: '/plugins', icon: Plug, key: 'nav.plugins' },
+  { to: '/settings/domains', icon: Globe, key: 'nav.domains' },
 ];
 
 export function DashboardPage() {
@@ -40,9 +40,7 @@ export function DashboardPage() {
         description={t('app.tagline')}
       />
 
-      {quick.length > 0 ? (
-        <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{t('dashboard.quickActions')}</h2>
-      ) : null}
+      {quick.length > 0 ? <SectionHeader title={t('dashboard.quickActions')} /> : null}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {quick.map((q, i) => (
           <motion.div
@@ -53,12 +51,11 @@ export function DashboardPage() {
           >
             <Link to={q.to}>
               <Card className="group h-full p-5 transition-all hover:-translate-y-0.5 hover:shadow-md">
-                <div
-                  className={`mb-3 flex h-11 w-11 items-center justify-center rounded-lg bg-gradient-to-br to-transparent ${q.tone}`}
-                >
+                {/* One tile style: these are five ways into the same app, not five kinds of thing. */}
+                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-lg bg-accent text-accent-foreground">
                   <q.icon className="h-5 w-5" />
                 </div>
-                <p className="font-medium">{t(q.key)}</p>
+                <p className="font-medium [overflow-wrap:anywhere]">{t(q.key)}</p>
               </Card>
             </Link>
           </motion.div>

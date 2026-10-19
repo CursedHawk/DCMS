@@ -43,6 +43,7 @@ import {
   TabsTrigger,
   Textarea,
   toastApiError,
+  useConfirm,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { gitApi } from '../site-source/git';
@@ -95,6 +96,7 @@ interface SiteSummary {
 
 export function DomainsPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const domains = useQuery({
     queryKey: ['domains'],
@@ -259,8 +261,8 @@ export function DomainsPage() {
                       title={t('domains.remove')}
                       aria-label={t('domains.remove')}
                       disabled={remove.isPending}
-                      onClick={() => {
-                        if (window.confirm(t('domains.removeConfirm', { hostname: d.hostname }))) {
+                      onClick={async () => {
+                        if (await confirm({ title: t('domains.removeConfirm', { hostname: d.hostname }), destructive: true })) {
                           remove.mutate(d.id);
                         }
                       }}
@@ -332,10 +334,8 @@ export function DomainsPage() {
                     busy={reissue.isPending || removeCertificate.isPending}
                     onReissue={() => reissue.mutate(d.id)}
                     onUpload={() => setUploadFor(d)}
-                    onRemove={() => {
-                      if (
-                        window.confirm(t('domains.certRemoveConfirm', { hostname: d.hostname }))
-                      ) {
+                    onRemove={async () => {
+                      if (await confirm({ title: t('domains.certRemoveConfirm', { hostname: d.hostname }), destructive: true })) {
                         removeCertificate.mutate(d.id);
                       }
                     }}

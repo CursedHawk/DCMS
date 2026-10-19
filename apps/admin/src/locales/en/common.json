@@ -74,7 +74,8 @@
     "download": "Download",
     "undo": "Undo",
     "redo": "Redo",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "confirm": "Confirm"
   },
   "common": {
     "loading": "Loading…",
@@ -968,7 +969,8 @@
       "closeOthers": "Close other tabs"
     },
     "generatedAutoRefreshed": "Your plugins changed, so the API client was updated ({{count}} files)",
-    "generatedRefreshFailed": "The generated API client could not be refreshed"
+    "generatedRefreshFailed": "The generated API client could not be refreshed",
+    "deleteFileConfirm": "Delete {{path}}?"
   },
   "openapi": {
     "title": "API documentation",

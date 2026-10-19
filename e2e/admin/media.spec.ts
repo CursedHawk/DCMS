@@ -227,8 +227,9 @@ test('the detail dialog deletes an original that has a web copy', async ({ page,
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('button', { name: 'Delete original' })).toBeVisible();
 
-  page.once('dialog', (d) => void d.accept());
   await dialog.getByRole('button', { name: 'Delete original' }).click();
+  // The console's own confirmation, not the browser's.
+  await page.getByRole('button', { name: 'Confirm' }).click();
 
   await expect(page.getByText('Deleted 1 original, freed 20.0 KB')).toBeVisible();
   expect(api.requestsTo('POST', '/api/admin/media/delete-originals').at(-1)?.body).toEqual({ ids: [data.ASSET_LOGO] });
@@ -245,8 +246,8 @@ test('the selection bar deletes only the originals that can go', async ({ page, 
   await expect(page.getByText(`${data.MEDIA_ASSETS.length} selected`)).toBeVisible();
 
   // Two selected, one of them still without a web copy: the action counts and sends one.
-  page.once('dialog', (d) => void d.accept());
   await page.getByRole('button', { name: 'Delete original', exact: true }).click();
+  await page.getByRole('button', { name: 'Confirm' }).click();
 
   await expect
     .poll(() => api.requestsTo('POST', '/api/admin/media/delete-originals').length)

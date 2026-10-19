@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
   toastApiError,
+  useConfirm,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { setCurrentTenantSlug } from '../../tenants';
@@ -52,6 +53,7 @@ interface Workspace {
 
 export function WorkspacePage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [name, setName] = useState('');
   const [transferTo, setTransferTo] = useState('');
@@ -195,9 +197,9 @@ export function WorkspacePage() {
                     <Button
                       variant="outline"
                       disabled={!transferTo || transfer.isPending}
-                      onClick={() => {
+                      onClick={async () => {
                         const target = transferCandidates.find((m) => m.membershipId === transferTo);
-                        if (target && window.confirm(t('workspace.transferConfirm', { email: target.email }))) {
+                        if (target && (await confirm({ title: t('workspace.transferConfirm', { email: target.email }) }))) {
                           transfer.mutate();
                         }
                       }}

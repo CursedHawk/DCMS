@@ -3,7 +3,7 @@ import { ArrowUpCircle, Code2, FileCode, Pencil, Plus, Puzzle, Trash2, Wand2 } f
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { Button, Input, Label } from '@dcms/ui';
+import { Button, Input, Label, useConfirm } from '@dcms/ui';
 import { HelpLink } from './help/HelpLink';
 import { codeContractOf, codeSourcePath } from '@dcms/site-runtime';
 import { useSelected } from '../builder/panels/useEditorEvent';
@@ -29,6 +29,7 @@ import { sameTarget, useVisual } from './store';
  */
 export function ComponentsPanel({ editor }: { editor: Editor | null }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const files = useVfs((s) => s.files);
   const target = useVisual((s) => s.target);
   const setTarget = useVisual((s) => s.setTarget);
@@ -129,8 +130,8 @@ export function ComponentsPanel({ editor }: { editor: Editor | null }) {
                     variant="ghost"
                     title={t('actions.delete')}
                     disabled={total > 0}
-                    onClick={() => {
-                      if (!window.confirm(t('visual.mine.confirmDelete', { label: latest.label }))) return;
+                    onClick={async () => {
+                      if (!(await confirm({ title: t('visual.mine.confirmDelete', { label: latest.label }), destructive: true }))) return;
                       const result = deleteComponent(name);
                       if (!result.ok) toast.error(result.error);
                       else if (editing) setTarget({ kind: 'shell' });

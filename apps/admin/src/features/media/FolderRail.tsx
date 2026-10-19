@@ -10,6 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   Input,
+  useConfirm,
 } from '@dcms/ui';
 import { ROOT_FOLDER, type MediaFolder, useCreateFolder, useDeleteFolder, useRenameFolder } from './api';
 import { folderDropProps } from './dnd';
@@ -35,6 +36,7 @@ export function FolderRail({
   onMove?: (folderId: string | null, ids: string[]) => void;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   /*
    * Which target a drag is currently over.
    *
@@ -85,8 +87,8 @@ export function FolderRail({
     );
   };
 
-  const del = (f: MediaFolder) => {
-    if (!window.confirm(t('media.folders.deleteConfirm', { name: f.name }))) return;
+  const del = async (f: MediaFolder) => {
+    if (!(await confirm({ title: t('media.folders.deleteConfirm', { name: f.name }), destructive: true }))) return;
     remove.mutate(f.id, {
       onSuccess: () => {
         if (value === f.id) onSelect(undefined);

@@ -36,6 +36,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  useConfirm,
 } from '@dcms/ui';
 import { ApiError } from '../../lib/api';
 import { can, Perm, repoRead, repoWrite, useMyPermissions } from '../../lib/permissions';
@@ -78,6 +79,7 @@ export function SourceControlView({
   onRestored: (files: Record<string, string>, version: number, hashes: Record<string, string>) => void;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const relative = useRelativeTime();
   const queryClient = useQueryClient();
   const openDiff = useVfs((s) => s.openDiff);
@@ -200,7 +202,7 @@ export function SourceControlView({
     openDiff({ path: c.path, status: c.status, original: c.headContent, modified: c.draftContent });
 
   const askRestore = (c: GitCommit) => {
-    if (window.confirm(t('ide.git.restoreConfirm', { sha: c.shortSha }))) restore.mutate(c.sha);
+    void confirm({ title: t('ide.git.restoreConfirm', { sha: c.shortSha }) }).then((ok) => ok && restore.mutate(c.sha));
   };
 
   /**
@@ -211,17 +213,17 @@ export function SourceControlView({
    * write goes through the ordinary editing path, so autosave carries it to the server exactly
    * like a keystroke would.</p>
    *
-   * <p>`window.confirm` to match the restore button two sections down. Discarding is not
+   * <p>A confirmation, to match the restore button two sections down. Discarding is not
    * undoable: the draft content lives nowhere but this browser and the draft row it autosaves
    * to, neither of which is history.</p>
    */
-  const askDiscard = (c: GitChange) => {
+  const askDiscard = async (c: GitChange) => {
     const plan = discardPlan(c);
     if (plan.kind === 'unavailable') {
       toast.error(t('ide.git.discardUnavailable', { path: c.path }));
       return;
     }
-    if (!window.confirm(t('ide.git.discardConfirm', { path: c.path }))) return;
+    if (!(await confirm({ title: t('ide.git.discardConfirm', { path: c.path }), destructive: true }))) return;
 
     const vfs = useVfs.getState();
     if (plan.kind === 'delete') vfs.deleteFile(plan.path);

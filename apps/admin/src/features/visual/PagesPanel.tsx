@@ -15,6 +15,7 @@ import {
   Switch,
   Textarea,
   cn,
+  useConfirm,
 } from '@dcms/ui';
 import { HelpLink } from './help/HelpLink';
 import { useContentCatalog } from './data';
@@ -201,6 +202,7 @@ function AddPage({ onDone }: { onDone: (id?: string) => void }) {
 
 function PageSettings({ routeId, path, pageId }: { routeId: string; path: string; pageId: string }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const app = useVisual((s) => s.app);
   const page = readPage(pageId);
   const [address, setAddress] = useState(path);
@@ -252,7 +254,9 @@ function PageSettings({ routeId, path, pageId }: { routeId: string; path: string
           variant="ghost"
           className="text-destructive"
           onClick={() => {
-            if (window.confirm(t('visual.pages.confirmDelete', { title: page.title }))) report(deletePage(pageId), t);
+            void confirm({ title: t('visual.pages.confirmDelete', { title: page.title }), destructive: true }).then(
+              (ok) => ok && report(deletePage(pageId), t),
+            );
           }}
         >
           <Trash2 className="h-4 w-4" /> {t('actions.delete')}

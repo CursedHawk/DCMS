@@ -30,6 +30,7 @@ import {
   toastApiError,
   useCan,
   usePageTour,
+  useConfirm,
 } from '@dcms/ui';
 import { FolderRail } from './FolderRail';
 import { MediaDetailDialog } from './MediaDetailDialog';
@@ -61,6 +62,7 @@ const statusTone: Record<MediaStatus, 'success' | 'warning' | 'destructive' | 's
 
 export function MediaPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [folder, setFolder] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -184,9 +186,9 @@ export function MediaPage() {
     );
   };
 
-  const bulkDelete = () => {
+  const bulkDelete = async () => {
     if (activeSelection.length === 0) return;
-    if (!window.confirm(t('media.deleteManyConfirm', { count: activeSelection.length }))) return;
+    if (!(await confirm({ title: t('media.deleteManyConfirm', { count: activeSelection.length }), destructive: true }))) return;
     del.mutate(activeSelection, {
       onSuccess: clearSelection,
       onError: () => toast.error(t('errors.generic')),
@@ -200,10 +202,10 @@ export function MediaPage() {
     return items.filter((a) => picked.has(a.id) && a.canDeleteOriginal);
   }, [items, activeSelection]);
 
-  const bulkDeleteOriginals = () => {
+  const bulkDeleteOriginals = async () => {
     if (originalsToDelete.length === 0) return;
     const size = formatSize(originalsToDelete.reduce((sum, a) => sum + a.sizeBytes, 0));
-    if (!window.confirm(t('media.deleteOriginalsConfirm', { count: originalsToDelete.length, size }))) return;
+    if (!(await confirm({ title: t('media.deleteOriginalsConfirm', { count: originalsToDelete.length, size }), destructive: true }))) return;
     delOriginals.mutate(
       originalsToDelete.map((a) => a.id),
       {

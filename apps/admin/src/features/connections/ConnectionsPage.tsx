@@ -26,6 +26,7 @@ import {
   SelectValue,
   Textarea,
   toastApiError,
+  useConfirm,
 } from '@dcms/ui';
 import { api } from '../../lib/api';
 import { SlugField } from '../../components/SlugField';
@@ -39,6 +40,7 @@ import { CONNECTIONS_KEY, type ApiConnection } from './api';
  */
 export function ConnectionsPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const connections = useQuery({ queryKey: CONNECTIONS_KEY, queryFn: () => api.get<ApiConnection[]>('/admin/connections') });
   const [editing, setEditing] = useState<ApiConnection | 'new' | null>(null);
@@ -101,7 +103,11 @@ export function ConnectionsPage() {
                       size="icon"
                       variant="ghost"
                       title={t('actions.delete')}
-                      onClick={() => window.confirm(t('connections.confirmDelete', { name: c.name })) && remove.mutate(c.slug)}
+                      onClick={() =>
+                        void confirm({ title: t('connections.confirmDelete', { name: c.name }), destructive: true }).then(
+                          (ok) => ok && remove.mutate(c.slug),
+                        )
+                      }
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

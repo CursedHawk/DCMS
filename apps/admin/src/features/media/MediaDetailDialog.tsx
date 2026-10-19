@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
   useCan,
+  useConfirm,
 } from '@dcms/ui';
 import { fetchObjectUrl, mediaContentPath } from '../../lib/api';
 import { Perm } from '../../lib/permissions';
@@ -52,6 +53,7 @@ export function MediaDetailDialog({
   onDeleted?: () => void;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const detail = useMediaDetail(assetId ?? undefined);
   const rename = useRenameAsset();
   const move = useMoveAssets();
@@ -81,8 +83,8 @@ export function MediaDetailDialog({
     );
   };
 
-  const remove = () => {
-    if (!a || !window.confirm(t('media.deleteConfirm', { name: a.fileName }))) return;
+  const remove = async () => {
+    if (!a || !(await confirm({ title: t('media.deleteConfirm', { name: a.fileName }), destructive: true }))) return;
     del.mutate([a.id], {
       onSuccess: () => {
         onDeleted?.();
@@ -92,9 +94,9 @@ export function MediaDetailDialog({
     });
   };
 
-  const removeOriginal = () => {
-    if (!a || !window.confirm(t('media.deleteOriginalConfirm', { name: a.fileName, size: formatSize(a.sizeBytes) })))
-      return;
+  const removeOriginal = async () => {
+    const title = a && t('media.deleteOriginalConfirm', { name: a.fileName, size: formatSize(a.sizeBytes) });
+    if (!a || !title || !(await confirm({ title, destructive: true }))) return;
     delOriginal.mutate([a.id], {
       onSuccess: (r) => toast.success(t('media.originalsDeleted', { count: r.deleted, size: formatSize(r.freedBytes) })),
       onError: () => toast.error(t('errors.generic')),
