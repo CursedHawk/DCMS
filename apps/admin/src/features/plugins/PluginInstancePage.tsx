@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import {
   Badge,
   Button,
+  Callout,
   Card,
   CardContent,
   CardHeader,
@@ -17,6 +18,7 @@ import {
   Input,
   Label,
   Page,
+  PageHeader,
   Skeleton,
   Switch,
   Tabs,
@@ -105,18 +107,23 @@ export function PluginInstancePage({ slug, screen }: { slug: string; screen?: st
   const openScreen = screen ? instanceScreens.find((s) => s.id === screen) : undefined;
   return (
     <Page>
-      <Breadcrumbs
-        items={[
-          { label: t('plugins.title'), to: '/plugins' },
-          ...(openScreen
-            ? [{ label: instance.name, to: `/plugins/${slug}` }, { label: screenTitle(openScreen, i18n.language) }]
-            : [{ label: instance.name }]),
-        ]}
+      <Nameplate
+        instance={instance}
+        manifest={manifest}
+        reference={reference.data}
+        crumbs={
+          <Breadcrumbs
+            items={[
+              { label: t('plugins.title'), to: '/plugins' },
+              ...(openScreen
+                ? [{ label: instance.name, to: `/plugins/${slug}` }, { label: screenTitle(openScreen, i18n.language) }]
+                : [{ label: instance.name }]),
+            ]}
+          />
+        }
       />
-      <Nameplate instance={instance} manifest={manifest} reference={reference.data} />
 
       <Tabs value={screen ? SCREEN_TAB + screen : tab} onValueChange={onTab} className="mt-6">
-        {/* Scrolls on a phone rather than pushing the page sideways. */}
         <TabsList className="justify-start">
           <TabsTrigger value="overview">{t('pluginPage.tabs.overview')}</TabsTrigger>
           {instanceScreens.map((s) => (
@@ -158,9 +165,9 @@ export function PluginInstancePage({ slug, screen }: { slug: string; screen?: st
         <TabsContent value="data">
           {!instance.enabled ? (
             // Switched off, the plugin serves nothing to sites, but its data is still the tenant's.
-            <p role="status" className="mb-4 rounded-md border border-[hsl(var(--warning)/0.4)] bg-[hsl(var(--warning)/0.08)] px-3 py-2 text-sm">
+            <Callout tone="warning" className="mb-4">
               {t('pluginPage.data.disabledNotice')}
-            </p>
+            </Callout>
           ) : null}
           {sets.isLoading ? (
             <CenteredSpinner />
@@ -202,16 +209,17 @@ function Nameplate({
   instance,
   manifest,
   reference,
+  crumbs,
 }: {
   instance: PluginInstance;
   manifest: PluginManifest;
   reference?: PluginReference;
+  crumbs: React.ReactNode;
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const market = useMarketplace();
   const item = market.data?.items.find((m) => m.id === manifest.id);
-  const Icon = iconByName(item?.icon);
 
   const toggle = useMutation({
     mutationFn: (enabled: boolean) =>
@@ -227,38 +235,40 @@ function Nameplate({
 
   return (
     <header>
-      <div className="flex flex-wrap items-start gap-4">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Icon className="h-6 w-6" aria-hidden />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-2xl font-bold tracking-tight">{instance.name}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-            <Link
-              to={'/marketplace/$pluginId' as string}
-              params={{ pluginId: manifest.id } as never}
-              className="hover:text-foreground hover:underline"
-            >
-              {manifest.name}
-            </Link>
-            <span>{t('pluginPage.version', { version: manifest.version })}</span>
-            {item ? <Badge tone="secondary">{t(`pluginPage.source.${item.source}`, { defaultValue: item.source })}</Badge> : null}
-            <code className="font-mono text-xs">/{instance.slug}</code>
-          </div>
-          {instance.description ? <p className="mt-2 max-w-prose text-sm">{instance.description}</p> : null}
-        </div>
-        <label className="flex items-center gap-2 text-sm">
-          <Switch
-            checked={instance.enabled}
-            disabled={toggle.isPending}
-            onCheckedChange={(v) => toggle.mutate(v)}
-            aria-label={t('pluginPage.enabledLabel')}
-          />
-          <span className={cn('font-medium', instance.enabled ? 'text-[hsl(var(--success))]' : 'text-muted-foreground')}>
-            {instance.enabled ? t('plugins.enabled') : t('plugins.disabled')}
-          </span>
-        </label>
-      </div>
+      <PageHeader
+        crumbs={crumbs}
+        title={instance.name}
+        description={
+          <>
+            <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <Link
+                to={'/marketplace/$pluginId' as string}
+                params={{ pluginId: manifest.id } as never}
+                className="hover:text-foreground hover:underline"
+              >
+                {manifest.name}
+              </Link>
+              <span>{t('pluginPage.version', { version: manifest.version })}</span>
+              {item ? <Badge tone="secondary">{t(`pluginPage.source.${item.source}`, { defaultValue: item.source })}</Badge> : null}
+              <code className="font-mono text-xs">/{instance.slug}</code>
+            </span>
+            {instance.description ? <span className="mt-2 block max-w-prose text-foreground">{instance.description}</span> : null}
+          </>
+        }
+        actions={
+          <label className="flex items-center gap-2 text-sm">
+            <Switch
+              checked={instance.enabled}
+              disabled={toggle.isPending}
+              onCheckedChange={(v) => toggle.mutate(v)}
+              aria-label={t('pluginPage.enabledLabel')}
+            />
+            <span className={cn('font-medium', instance.enabled ? 'text-success-foreground' : 'text-muted-foreground')}>
+              {instance.enabled ? t('plugins.enabled') : t('plugins.disabled')}
+            </span>
+          </label>
+        }
+      />
       <Wiring instance={instance} manifest={manifest} reference={reference} />
     </header>
   );
