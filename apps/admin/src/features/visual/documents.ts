@@ -24,6 +24,7 @@ import {
   type Page,
   type TenantComponentDoc,
 } from '@dcms/site-runtime';
+import { CodeIsland } from './canvas/CodeIsland';
 import { useVfs } from '../site-source/vfs';
 import { newNodeId } from './canvas/tree';
 import { serializeDoc } from './starter';
@@ -492,7 +493,8 @@ export function pruneComponent(doc: TenantComponentDoc): TenantComponentDoc {
 
 /**
  * The registry the builder and the agent use: built-ins, the site's own components, and the
- * developer components' contracts — as placeholders, since no developer code runs in the admin.
+ * developer components' contracts — drawn as sandboxed islands (canvas/CodeIsland), since no
+ * developer code runs in the admin.
  */
 export function registryOf(files: Readonly<Record<string, string>>): Registry {
   const byPath = new Map<string, unknown>();
@@ -504,7 +506,7 @@ export function registryOf(files: Readonly<Record<string, string>>): Registry {
       // Reported by the problems list.
     }
   }
-  return siteRegistry([...BUILTIN_COMPONENTS, ...codeDefinitions(readCodeContracts(byPath).contracts)], readComponentDocs(byPath).docs).registry;
+  return siteRegistry([...BUILTIN_COMPONENTS, ...codeDefinitions(readCodeContracts(byPath).contracts, undefined, CodeIsland)], readComponentDocs(byPath).docs).registry;
 }
 
 /** A developer component: its contract and a starter source the developer takes from there. */

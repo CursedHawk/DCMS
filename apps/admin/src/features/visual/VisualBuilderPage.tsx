@@ -87,6 +87,7 @@ import { useSiteRuntime } from './useSiteRuntime';
 import { AgentPanel } from '../ide/agent/AgentPanel';
 import { VISUAL_TOOLS, validateVisualSite } from './agent/visualTools';
 import { useSiteAgentAppTools } from './agent/appModelTools';
+import { useIslandBuild } from './canvas/islands';
 import { previewClient, useContentCatalog } from './data';
 
 
@@ -243,6 +244,8 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
   // Developer code runs only in the sandboxed preview, so a site with any previews there.
   const [apiOpen, setApiOpen] = useState(false);
   const hasCode = useMemo(() => [...registry.keys()].some((type) => type.startsWith(CODE_PREFIX)), [registry]);
+  // Developer components draw on the canvas as sandboxed islands; keep their page built.
+  useIslandBuild(hasCode, siteId);
   const componentDocs = useMemo(
     () => [...registry.values()].flatMap((d) => (d.template ? [d.template, ...Object.values(d.olderVersions ?? {}).flatMap((o) => (o.template ? [o.template] : []))] : [])),
     [registry],

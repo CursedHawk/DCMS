@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import { z } from 'zod';
 import { propDefinitionSchema } from './props';
 import type { ComponentDefinition, ComponentRenderProps } from './registry';
@@ -10,8 +10,10 @@ import type { ComponentDefinition, ComponentRenderProps } from './registry';
  * Two files: the contract `dcms/code/<name>.json` — what the builder knows (label, props) — and
  * the source `src/components/<name>.tsx`, whose default export receives the props as plain React
  * props. The contract is data and is read everywhere; the source is code and runs only where
- * tenant code may run: the published site and the sandboxed (opaque-origin) preview. The canvas
- * is same-origin with the admin, so there it is a placeholder, always.
+ * tenant code may run: the published site and opaque-origin sandboxed frames. The canvas is
+ * same-origin with the admin, so the source never runs in it: the builder draws each developer
+ * component as an island — its own sandboxed frame — through `island`, and a placeholder until
+ * the island is ready.
  */
 
 export const CODE_PREFIX = 'code.';
@@ -41,6 +43,13 @@ export const codeContractSchema = z.strictObject({
 
 export type CodeContract = z.infer<typeof codeContractSchema>;
 
+/**
+ * How the builder draws a developer component without running it here: a frame of its own that
+ * renders `contract` with `props`, showing `fallback` until it can. Supplied by the admin; the
+ * runtime only hands it what to draw.
+ */
+export type CodeIsland = ComponentType<{ contract: CodeContract; props: Record<string, unknown>; fallback: ReactNode }>;
+
 /** Bundler key → the module's default export (`import.meta.glob(…, { import: 'default' })`). */
 export type CodeModules = Readonly<Record<string, unknown>>;
 
@@ -65,9 +74,10 @@ export function readCodeContracts(byPath: ReadonlyMap<string, unknown>): { contr
 /**
  * The registry entries for developer components. With `modules` (the published site, the
  * sandboxed preview) an entry renders the developer's component; without (the canvas, the
- * in-admin preview) it renders a placeholder and no developer code is ever loaded.
+ * in-admin preview) no developer code is loaded here: it renders through `island` if given, a
+ * placeholder otherwise.
  */
-export function codeDefinitions(contracts: readonly CodeContract[], modules?: CodeModules): ComponentDefinition[] {
+export function codeDefinitions(contracts: readonly CodeContract[], modules?: CodeModules, island?: CodeIsland): ComponentDefinition[] {
   const byName = new Map<string, ComponentType<Record<string, unknown>>>();
   for (const [key, value] of Object.entries(modules ?? {})) {
     const name = codeSourceOf(key);
@@ -75,6 +85,8 @@ export function codeDefinitions(contracts: readonly CodeContract[], modules?: Co
   }
   return contracts.map((contract) => {
     const Impl = byName.get(contract.name);
+    const Placeholder = placeholder(contract, modules !== undefined);
+    const Island = modules === undefined ? island : undefined;
     return {
       type: codeType(contract.name),
       version: 1,
@@ -82,7 +94,11 @@ export function codeDefinitions(contracts: readonly CodeContract[], modules?: Co
       description: contract.description,
       category: contract.category || 'Developer',
       props: contract.props,
-      component: Impl ? ({ props }: ComponentRenderProps) => <Impl {...props} /> : placeholder(contract, modules !== undefined),
+      component: Impl
+        ? ({ props }: ComponentRenderProps) => <Impl {...props} />
+        : Island
+          ? ({ props }: ComponentRenderProps) => <Island contract={contract} props={props} fallback={<Placeholder />} />
+          : Placeholder,
     };
   });
 }

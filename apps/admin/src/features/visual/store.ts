@@ -32,6 +32,13 @@ interface VisualState {
   dragNote: { ok: boolean; text: string } | null;
   /** The tenant's content types and fields, once known — what bindings are checked against. */
   contentSchema: ContentSchema | undefined;
+  /**
+   * The developer components' island document (canvas/islands.ts): the site's components built
+   * into a page each canvas island frame loads. Null until the first build; `error` when the
+   * last build failed, and the islands show their placeholder.
+   */
+  island: { srcdoc: string | null; building: boolean; error: string | null };
+  setIsland: (island: { srcdoc: string | null; building: boolean; error: string | null }) => void;
   /** How the canvas and preview read content: the admin's preview proxy for this site. */
   dataClient: DataClient;
   /** What each collection on the canvas fetched, by its node id — the items its template binds to. */
@@ -76,6 +83,8 @@ export const useVisual = create<VisualState>((set, get) => ({
   blockedTypes: new Set(),
   dragNote: null,
   contentSchema: undefined,
+  island: { srcdoc: null, building: false, error: null },
+  setIsland: (island) => set({ island }),
   dataClient: fetchDataClient,
   previewItems: {},
   pageItem: null,

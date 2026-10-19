@@ -7,7 +7,7 @@ import { HOME, doc, open, saved } from '../fixtures/visualSite';
 /**
  * Developer components (P7, ADR 0020): TSX behind a contract. The builder places and configures
  * them like any component, but their code never runs in the admin's own origin — the canvas
- * shows a placeholder — and they are edited as source.
+ * draws each in a sandboxed island frame — and they are edited as source.
  */
 
 const SOURCE = `export default function Countdown({ until }: { until?: string }) {
@@ -32,22 +32,34 @@ const SITE_FILES = {
   'src/components/countdown.tsx': SOURCE,
 };
 
-test('a developer component is a placeholder on the canvas, configured by its contract, edited as source', async ({ page, api }) => {
-  const frame = await open(page, api, SITE_FILES);
+test('a developer component draws live on the canvas, in a sandboxed island of its own', async ({ page, api }) => {
+  // The island is bundled in the browser from the site's real runtime, fetching react from
+  // esm.sh like the full preview: it needs the network, which is why it is slow.
+  test.slow();
+  const frame = await open(page, api, { ...realSite(), ...SITE_FILES });
 
-  // Drawn, but not run: the canvas shares the admin's origin, so no tenant code executes there.
-  const placeholder = frame.locator('[data-dcms-node="cd"] .dcms-code-placeholder');
-  await expect(placeholder).toContainText('Countdown');
-  await expect(frame.locator('time')).toHaveCount(0);
+  /*
+   * Drawn and run — but not here. The canvas shares the admin's origin, so the component runs in
+   * a nested frame with `sandbox="allow-scripts"` and nothing else: an opaque origin that reaches
+   * neither the canvas nor the admin.
+   */
+  const node = frame.locator('[data-dcms-node="cd"]');
+  const island = node.locator('iframe');
+  await expect(frame.frameLocator('[data-dcms-node="cd"] iframe').locator('time')).toHaveText('until Friday', { timeout: 90000 });
+  await expect(island).toHaveAttribute('sandbox', 'allow-scripts');
+  // Not one line of it ran in the admin's window, nor in the canvas's.
   expect(await page.evaluate(() => (window as unknown as { __devCodeRan?: boolean }).__devCodeRan)).toBeUndefined();
+  expect(await frame.locator('body').evaluate(() => (window as unknown as { __devCodeRan?: boolean }).__devCodeRan)).toBeUndefined();
+  await expect(frame.locator('time')).toHaveCount(0);
 
-  // Its contract's props are edited like any other component's.
-  await placeholder.click();
+  // Its contract's props are edited like any other component's, and the island redraws.
+  await node.click();
   const until = page.getByLabel('Until', { exact: true });
   await expect(until).toHaveValue('Friday');
   await until.fill('Monday');
   await until.press('Enter');
   await expect.poll(() => saved(api, HOME) ?? '', { timeout: 15000 }).toContain('"until": "Monday"');
+  await expect(frame.frameLocator('[data-dcms-node="cd"] iframe').locator('time')).toHaveText('until Monday');
 
   // And its source is one click away, in the code view.
   await page.getByRole('button', { name: 'Edit source' }).click();
