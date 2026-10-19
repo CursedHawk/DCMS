@@ -59,7 +59,7 @@ export function DeploymentsView({ siteId }: { siteId: string }) {
   return (
     <div className="flex h-full flex-col overflow-auto">
       <div className="flex shrink-0 items-center gap-2 border-b p-2">
-        <span className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="flex-1 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
           {t('ide.deploy.title')}
         </span>
         <Button size="sm" variant="outline" onClick={() => rebuild.mutate()} disabled={rebuild.isPending}>
@@ -69,7 +69,7 @@ export function DeploymentsView({ siteId }: { siteId: string }) {
       </div>
 
       {live === false && (
-        <p className="flex shrink-0 items-start gap-1.5 border-b bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-700 dark:text-amber-400">
+        <p className="flex shrink-0 items-start gap-1.5 border-b bg-warning/10 px-2 py-1.5 text-2xs text-warning-foreground">
           <WifiOff className="mt-px h-3 w-3 shrink-0" />
           <span>{t('ide.deploy.notLive')}</span>
         </p>
@@ -131,17 +131,17 @@ function BuildRow({
           <p className="flex items-center gap-1.5 text-xs">
             <StatusLabel status={build.status} />
             {build.branch && build.branch !== RELEASE_BRANCH && (
-              <span className="min-w-0 truncate rounded bg-muted px-1 py-px text-[9px] font-medium text-muted-foreground">
+              <span className="min-w-0 truncate rounded bg-muted px-1 py-px text-2xs font-medium text-muted-foreground">
                 {build.branch}
               </span>
             )}
             {build.active && (
-              <span className="rounded bg-green-500/15 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-green-600 dark:text-green-400">
+              <span className="rounded bg-success/15 px-1 py-px text-2xs font-semibold uppercase tracking-wide text-success-foreground">
                 {t('ide.git.live')}
               </span>
             )}
           </p>
-          <p className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <p className="mt-0.5 flex items-center gap-1.5 text-2xs text-muted-foreground">
             {build.shortSha && <code>{build.shortSha}</code>}
             <span title={new Date(build.createdAt).toLocaleString()}>{relative(build.createdAt)}</span>
           </p>
@@ -151,20 +151,20 @@ function BuildRow({
       {open && (
         <div className="border-t bg-muted/30 px-2 py-2">
           {failed && build.error && (
-            <p className="mb-1.5 whitespace-pre-wrap break-words text-[11px] font-medium text-destructive">
+            <p className="mb-1.5 whitespace-pre-wrap break-words text-2xs font-medium text-destructive">
               {build.error}
             </p>
           )}
           {build.hasLog ? (
             log.isLoading ? (
-              <p className="text-[11px] text-muted-foreground">{t('common.loading')}</p>
+              <p className="text-2xs text-muted-foreground">{t('common.loading')}</p>
             ) : (
-              <pre className="max-h-72 overflow-auto rounded border bg-background p-2 text-[10.5px] leading-relaxed text-foreground/90">
+              <pre className="max-h-72 overflow-auto rounded border bg-background p-2 text-2xs leading-relaxed text-foreground/90">
                 {log.data || t('ide.deploy.noLog')}
               </pre>
             )
           ) : (
-            !build.error && <p className="text-[11px] text-muted-foreground">{t('ide.deploy.noLog')}</p>
+            !build.error && <p className="text-2xs text-muted-foreground">{t('ide.deploy.noLog')}</p>
           )}
         </div>
       )}
@@ -173,9 +173,9 @@ function BuildRow({
 }
 
 function StatusIcon({ status }: { status: GitBuildStatus }) {
-  if (status === 'Succeeded') return <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />;
+  if (status === 'Succeeded') return <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success-foreground" />;
   if (status === 'Failed') return <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />;
-  if (status === 'Building') return <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-amber-500" />;
+  if (status === 'Building') return <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-warning-foreground" />;
   return <CircleDot className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />;
 }
 

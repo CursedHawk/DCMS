@@ -49,7 +49,7 @@ export function WorkCard({
         />
         <span
           className={cn(
-            'min-w-0 flex-1 truncate text-[13px]',
+            'min-w-0 flex-1 truncate text-sm',
             step.status === 'error' && 'text-destructive',
             step.status === 'declined' && 'text-muted-foreground line-through',
           )}
@@ -57,12 +57,12 @@ export function WorkCard({
           {step.label}
         </span>
         {step.status === 'awaiting' ? (
-          <span className="shrink-0 text-[11px] font-medium text-[hsl(var(--warning))]">
+          <span className="shrink-0 text-2xs font-medium text-warning-foreground">
             {t('assistant.needsYou')}
           </span>
         ) : null}
         {duration !== undefined && duration > 400 ? (
-          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+          <span className="shrink-0 font-mono text-2xs text-muted-foreground">
             {(duration / 1000).toFixed(1)}s
           </span>
         ) : null}
@@ -88,18 +88,18 @@ export function WorkDetail({ step }: { step: ToolStep }) {
   const args = Object.entries(step.input);
 
   return (
-    <div className="mt-1.5 space-y-3 rounded-md border bg-muted/30 p-3 text-[13px]">
+    <div className="mt-1.5 space-y-3 rounded-md border bg-muted/30 p-3 text-sm">
       <div className="flex items-center gap-2">
-        <code className="font-mono text-[11px] text-muted-foreground">{step.name}</code>
+        <code className="font-mono text-2xs text-muted-foreground">{step.name}</code>
         {step.risk === 'dangerous' ? (
-          <span className="rounded-sm bg-destructive/10 px-1.5 py-px font-mono text-[10px] text-destructive">
+          <span className="rounded-sm bg-destructive/10 px-1.5 py-px font-mono text-2xs text-destructive">
             {t('assistant.riskDangerous')}
           </span>
         ) : null}
         <button
           type="button"
           onClick={() => setRaw((was) => !was)}
-          className="ml-auto font-mono text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+          className="ml-auto font-mono text-2xs text-muted-foreground underline-offset-2 hover:underline"
         >
           {raw ? t('assistant.showFields') : t('assistant.showRaw')}
         </button>
@@ -111,7 +111,7 @@ export function WorkDetail({ step }: { step: ToolStep }) {
           <dl className="space-y-1.5">
             {changes.map((change) => (
               <div key={change.field} className="grid grid-cols-[8rem_1fr] gap-2">
-                <dt className="truncate font-mono text-[11px] text-muted-foreground">
+                <dt className="truncate font-mono text-2xs text-muted-foreground">
                   {change.field}
                 </dt>
                 <dd className="min-w-0 space-y-0.5">
@@ -130,7 +130,7 @@ export function WorkDetail({ step }: { step: ToolStep }) {
         <dl className="space-y-1">
           {args.map(([key, value]) => (
             <div key={key} className="grid grid-cols-[8rem_1fr] gap-2">
-              <dt className="truncate font-mono text-[11px] text-muted-foreground">{key}</dt>
+              <dt className="truncate font-mono text-2xs text-muted-foreground">{key}</dt>
               <dd className="min-w-0 break-words">{render(value)}</dd>
             </div>
           ))}
@@ -164,14 +164,14 @@ function Payload({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-1">
       <p className="text-xs text-muted-foreground">{label}</p>
-      <pre className="overflow-x-auto rounded bg-background p-2 font-mono text-[11px] leading-relaxed">
+      <pre className="overflow-x-auto rounded bg-background p-2 font-mono text-2xs leading-relaxed">
         {all || !long ? value : `${value.slice(0, 1200)}…`}
       </pre>
       {long ? (
         <button
           type="button"
           onClick={() => setAll((was) => !was)}
-          className="font-mono text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+          className="font-mono text-2xs text-muted-foreground underline-offset-2 hover:underline"
         >
           {all ? t('assistant.showLess') : t('assistant.showAll')}
         </button>

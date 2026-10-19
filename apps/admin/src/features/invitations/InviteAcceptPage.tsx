@@ -49,7 +49,7 @@ export function InviteAcceptPage() {
             <CenteredSpinner />
           ) : accept.isSuccess ? (
             <>
-              <CheckCircle2 className="h-10 w-10 text-[hsl(var(--success))]" />
+              <CheckCircle2 className="h-10 w-10 text-success-foreground" />
               <p className="font-medium">
                 {accept.data.tenantName
                   ? t('members.inviteAcceptedTo', { tenant: accept.data.tenantName })

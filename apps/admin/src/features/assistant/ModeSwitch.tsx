@@ -52,7 +52,7 @@ export function ModeSwitch({
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2">
           <Icon
-            className={cn('h-3.5 w-3.5', mode === 'auto' && 'text-[hsl(var(--warning))]')}
+            className={cn('h-3.5 w-3.5', mode === 'auto' && 'text-warning-foreground')}
             aria-hidden
           />
           <span className="text-xs font-medium">{t(`assistant.mode.${mode}`)}</span>

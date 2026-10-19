@@ -79,7 +79,7 @@ export function SearchView() {
             <Regex className="h-3.5 w-3.5" aria-hidden />
           </Toggle>
 
-          <p className="ml-auto truncate text-[11px] text-muted-foreground" aria-live="polite">
+          <p className="ml-auto truncate text-2xs text-muted-foreground" aria-live="polite">
             {settled.length === 0
               ? null
               : result.error
@@ -112,7 +112,7 @@ export function SearchView() {
                   <ChevronRight className="h-3 w-3 shrink-0" aria-hidden />
                 )}
                 <span className="min-w-0 flex-1 truncate font-medium">{group.path}</span>
-                <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                <span className="shrink-0 text-2xs tabular-nums text-muted-foreground">
                   {group.matches.length}
                 </span>
               </button>
@@ -123,14 +123,14 @@ export function SearchView() {
                     key={`${match.line}:${match.column}`}
                     type="button"
                     onClick={() => revealAt(match.path, match.line, match.column)}
-                    className="flex w-full items-baseline gap-1.5 py-0.5 pl-6 pr-2 text-left font-mono text-[11px] hover:bg-accent/50"
+                    className="flex w-full items-baseline gap-1.5 py-0.5 pl-6 pr-2 text-left font-mono text-2xs hover:bg-accent/50"
                   >
                     <span className="shrink-0 tabular-nums text-muted-foreground">{match.line}</span>
                     {/* Trimmed at the front only: leading indentation is never the interesting
                         part of a hit, and trimming both ends would move the highlight. */}
                     <span className="min-w-0 truncate">
                       {match.lineText.slice(0, match.start).trimStart()}
-                      <mark className="rounded-sm bg-[hsl(var(--warning)/0.35)] text-foreground">
+                      <mark className="rounded-sm bg-warning/35 text-foreground">
                         {match.lineText.slice(match.start, match.end)}
                       </mark>
                       {match.lineText.slice(match.end)}

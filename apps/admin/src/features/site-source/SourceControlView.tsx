@@ -261,7 +261,7 @@ export function SourceControlView({
             <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-52">
-            <DropdownMenuLabel className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <DropdownMenuLabel className="px-2 py-1.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t('ide.git.branch')}
             </DropdownMenuLabel>
             {branchList.map((b) => (
@@ -363,7 +363,7 @@ export function SourceControlView({
 
       {/* Changes */}
       <div className="shrink-0 border-b">
-        <div className="px-2 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="px-2 pt-2 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
           {t('ide.git.changes')} {changeList.length > 0 && `(${changeList.length})`}
         </div>
         {changes.isLoading && <div className="p-2 text-xs text-muted-foreground">{t('common.loading')}</div>}
@@ -419,7 +419,7 @@ export function SourceControlView({
                 <GitCommitHorizontal className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs">{(c.message ?? '').split('\n')[0]}</p>
-                  <p className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <p className="flex items-center gap-1.5 text-2xs text-muted-foreground">
                     <code>{c.shortSha}</code>
                     {c.author ? <span className="truncate">· {c.author}</span> : null}
                     {c.date ? (
@@ -471,7 +471,7 @@ export function SourceControlView({
                   <button
                     type="button"
                     onClick={() => void navigate({ to: '/account' as string })}
-                    className="mt-1 w-full rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-left text-xs text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
+                    className="mt-1 w-full rounded border border-warning/40 bg-warning/10 px-2 py-1.5 text-left text-xs text-warning-foreground hover:bg-warning/20"
                   >
                     {t('ide.git.noGitPassword')}
                   </button>
@@ -514,7 +514,7 @@ export function SourceControlView({
             <ul className="max-h-48 space-y-1 overflow-auto rounded border bg-muted/40 p-2">
               {(conflict ?? []).map((f) => (
                 <li key={f.path} className="flex items-center gap-1.5 text-xs">
-                  <FilePen className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                  <FilePen className="h-3.5 w-3.5 shrink-0 text-warning-foreground" />
                   <span className="min-w-0 flex-1 truncate" title={f.path}>{f.path}</span>
                   <button
                     type="button"
@@ -563,9 +563,9 @@ function BranchTag({ label, tone }: { label: string; tone: 'release' | 'current'
   return (
     <span
       className={cn(
-        'shrink-0 rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide',
+        'shrink-0 rounded px-1 py-px text-2xs font-semibold uppercase tracking-wide',
         tone === 'release'
-          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+          ? 'bg-warning/15 text-warning-foreground'
           : 'bg-primary/15 text-primary',
       )}
     >
@@ -579,7 +579,7 @@ function SectionHeader({ label, open, onToggle }: { label: string; open: boolean
     <button
       type="button"
       onClick={onToggle}
-      className="flex w-full items-center gap-1 px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
+      className="flex w-full items-center gap-1 px-2 py-1.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
     >
       {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
       {label}
@@ -594,8 +594,8 @@ function DiffCount({ stat }: { stat: DiffStat | undefined }) {
   // the tilde says the numbers are file sizes, not an edit count.
   const prefix = stat.approximate ? '~' : '';
   return (
-    <span className="shrink-0 font-mono text-[10px] tabular-nums">
-      {stat.added > 0 && <span className="text-green-600">{`${prefix}+${stat.added}`}</span>}
+    <span className="shrink-0 font-mono text-2xs tabular-nums">
+      {stat.added > 0 && <span className="text-success-foreground">{`${prefix}+${stat.added}`}</span>}
       {stat.added > 0 && stat.removed > 0 && ' '}
       {stat.removed > 0 && <span className="text-destructive">{`${prefix}−${stat.removed}`}</span>}
     </span>
@@ -603,9 +603,9 @@ function DiffCount({ stat }: { stat: DiffStat | undefined }) {
 }
 
 function ChangeIcon({ status }: { status: GitChange['status'] }) {
-  if (status === 'added') return <FilePlus2 className="h-3.5 w-3.5 shrink-0 text-green-600" />;
+  if (status === 'added') return <FilePlus2 className="h-3.5 w-3.5 shrink-0 text-success-foreground" />;
   if (status === 'deleted') return <FileMinus2 className="h-3.5 w-3.5 shrink-0 text-destructive" />;
-  return <FilePen className="h-3.5 w-3.5 shrink-0 text-amber-600" />;
+  return <FilePen className="h-3.5 w-3.5 shrink-0 text-warning-foreground" />;
 }
 
 function CopyRow({ label, value }: { label: string; value: string }) {
@@ -621,12 +621,12 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   };
   return (
     <div className="flex items-center gap-1.5">
-      <span className="w-10 shrink-0 text-[10px] font-medium text-muted-foreground">{label}</span>
-      <code className="min-w-0 flex-1 truncate rounded border bg-background px-1.5 py-1 text-[11px]">{value}</code>
+      <span className="w-10 shrink-0 text-2xs font-medium text-muted-foreground">{label}</span>
+      <code className="min-w-0 flex-1 truncate rounded border bg-background px-1.5 py-1 text-2xs">{value}</code>
       <button
         type="button"
         onClick={copy}
-        className={cn('shrink-0 rounded p-1', copied ? 'text-green-600' : 'text-muted-foreground hover:text-foreground')}
+        className={cn('shrink-0 rounded p-1', copied ? 'text-success-foreground' : 'text-muted-foreground hover:text-foreground')}
       >
         {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
       </button>

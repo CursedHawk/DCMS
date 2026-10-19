@@ -64,7 +64,7 @@ export function ProblemsView({
   return (
     <div className="flex h-full flex-col">
       {buildUnchecked && (
-        <div className="flex shrink-0 items-center gap-1.5 border-b bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-1.5 border-b bg-muted/40 px-2 py-1 text-2xs text-muted-foreground">
           <EyeOff className="h-3 w-3 shrink-0" aria-hidden />
           <span className="flex-1">{t('ide.problems.typesOnly')}</span>
           <button
@@ -86,21 +86,21 @@ export function ProblemsView({
               <Icon
                 className={cn(
                   'mt-0.5 h-3.5 w-3.5 shrink-0',
-                  problem.severity === 'error' ? 'text-destructive' : 'text-[hsl(var(--warning))]',
+                  problem.severity === 'error' ? 'text-destructive' : 'text-warning-foreground',
                 )}
                 aria-hidden
               />
               <span className="min-w-0 flex-1">
                 <span className="block break-words text-xs">{problem.text}</span>
                 {problem.file && (
-                  <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                  <span className="block truncate font-mono text-2xs text-muted-foreground">
                     {problem.file}
                     {problem.line != null && `:${problem.line}`}
                   </span>
                 )}
                 {/* The offending line, verbatim. Often the whole answer, and it saves the trip. */}
                 {problem.lineText && (
-                  <code className="mt-0.5 block truncate rounded bg-muted px-1 py-0.5 font-mono text-[10px]">
+                  <code className="mt-0.5 block truncate rounded bg-muted px-1 py-0.5 font-mono text-2xs">
                     {problem.lineText.trim()}
                   </code>
                 )}
@@ -146,7 +146,7 @@ function Empty({
     <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center">
       <Icon className="h-6 w-6 text-muted-foreground" aria-hidden />
       <p className="text-xs font-medium">{title}</p>
-      {description && <p className="text-[11px] text-muted-foreground">{description}</p>}
+      {description && <p className="text-2xs text-muted-foreground">{description}</p>}
       {children}
     </div>
   );

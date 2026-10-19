@@ -427,7 +427,7 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
           <button
             type="button"
             onClick={() => setSidebar('problems')}
-            className={cn('flex items-center gap-1 rounded px-2 py-1 text-xs', errors ? 'text-destructive' : 'text-amber-600')}
+            className={cn('flex items-center gap-1 rounded px-2 py-1 text-xs', errors ? 'text-destructive' : 'text-warning-foreground')}
           >
             {errors ? <AlertCircle className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
             {t('visual.problems.count', { count: problems.length })}
@@ -659,7 +659,7 @@ function Rail({ active, label, onClick, badge, children }: { active: boolean; la
     >
       {children}
       {badge ? (
-        <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 text-primary-foreground">
+        <span className="absolute -right-0.5 -top-0.5 min-w-4 rounded-full bg-primary px-1 text-2xs leading-4 text-primary-foreground">
           {badge > 99 ? '99+' : badge}
         </span>
       ) : null}
@@ -672,7 +672,7 @@ function Banner({ tone, icon, message, children }: { tone: 'destructive' | 'warn
     <div
       className={cn(
         'flex shrink-0 items-center gap-2 border-b px-3 py-2 text-sm',
-        tone === 'destructive' ? 'bg-destructive/10 text-destructive' : 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+        tone === 'destructive' ? 'bg-destructive/10 text-destructive' : 'bg-warning/10 text-warning-foreground',
       )}
     >
       {icon}

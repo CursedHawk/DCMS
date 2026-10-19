@@ -201,7 +201,7 @@ export function ConsoleScreen() {
                 {messages.map((m) => (
                   <div key={m.id} className={cn('flex flex-col', m.sender === 'Agent' && 'items-end')}>
                     {m.sender === 'Bot' ? (
-                      <span className="mb-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                      <span className="mb-0.5 inline-flex items-center gap-1 text-2xs font-medium text-muted-foreground">
                         <Bot className="h-3 w-3" /> {t('chat.assistant')}
                       </span>
                     ) : null}

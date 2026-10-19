@@ -243,7 +243,7 @@ export function BlocksPanel({ editor }: { editor: Editor | null }) {
               <span className="min-w-0 flex-1 truncate">{category}</span>
               {/* The count is what makes a collapsed section worth collapsing:
                   it says whether opening it is worth the scroll. */}
-              <span className="shrink-0 text-[10px] tabular-nums opacity-70">{blocks.length}</span>
+              <span className="shrink-0 text-2xs tabular-nums opacity-70">{blocks.length}</span>
             </button>
 
             {!open ? null : density === 'gallery' ? (
@@ -273,7 +273,7 @@ export function BlocksPanel({ editor }: { editor: Editor | null }) {
                         // by the block library, not user input.
                         dangerouslySetInnerHTML={{ __html: thumbnailOf(block) }}
                       />
-                      <span className="line-clamp-2 px-1.5 py-1 text-[11px] leading-tight">
+                      <span className="line-clamp-2 px-1.5 py-1 text-2xs leading-tight">
                         {block.getLabel()}
                       </span>
                     </button>

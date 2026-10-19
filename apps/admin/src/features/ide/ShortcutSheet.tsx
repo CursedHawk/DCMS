@@ -77,7 +77,7 @@ export function ShortcutSheet({
                   <div key={row.keys} className="flex items-baseline justify-between gap-4">
                     <dt className="min-w-0 truncate text-sm">{row.label}</dt>
                     <dd className="shrink-0">
-                      <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+                      <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-2xs text-muted-foreground">
                         {row.keys}
                       </kbd>
                     </dd>

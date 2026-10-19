@@ -168,7 +168,7 @@ export function VisualPalette({ editor }: { editor: Editor | null }) {
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {sectionGroups.map(({ category, items }) => (
           <section key={category} className="mb-3">
-            <h3 className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{category}</h3>
+            <h3 className="px-1 pb-1.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">{category}</h3>
             <div className="space-y-2">
               {items.map(({ template, node }) => (
                 <button
@@ -181,7 +181,7 @@ export function VisualPalette({ editor }: { editor: Editor | null }) {
                   <span className="relative block aspect-[16/9] w-full overflow-hidden bg-muted/40">
                     <LivePreview node={node} registry={registry} app={app} mode="edit" />
                   </span>
-                  <span className="px-1.5 py-1 text-[11px] leading-tight">
+                  <span className="px-1.5 py-1 text-2xs leading-tight">
                     <span className="font-medium">{template.label}</span>
                     <span className="block text-muted-foreground">{template.description}</span>
                   </span>
@@ -196,7 +196,7 @@ export function VisualPalette({ editor }: { editor: Editor | null }) {
         {tab === 'sections' && sectionGroups.length === 0 && <p className="p-3 text-sm text-muted-foreground">{t('visual.palette.noMatch', { query: query.trim() })}</p>}
         {groups.map(({ category, defs }) => (
           <section key={category} className="mb-3">
-            <h3 className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{category}</h3>
+            <h3 className="px-1 pb-1.5 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">{category}</h3>
             <div className="grid grid-cols-2 gap-2">
               {defs.map((def) => {
                 const b = block(def.type);
@@ -227,14 +227,14 @@ export function VisualPalette({ editor }: { editor: Editor | null }) {
                         dangerouslySetInnerHTML={{ __html: thumbnailOf(def) }}
                       />
                     )}
-                    <span className="line-clamp-2 px-1.5 py-1 text-[11px] leading-tight">{def.label}</span>
+                    <span className="line-clamp-2 px-1.5 py-1 text-2xs leading-tight">{def.label}</span>
                   </button>
                 );
               })}
             </div>
           </section>
         ))}
-        <p className="px-1 pt-1 text-[11px] text-muted-foreground">
+        <p className="px-1 pt-1 text-2xs text-muted-foreground">
           {t(tab === 'sections' ? 'visual.palette.sectionsHint' : 'visual.palette.hint')} <HelpLink article="sections" className="align-middle" />
         </p>
       </div>

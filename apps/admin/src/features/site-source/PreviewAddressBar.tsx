@@ -76,7 +76,7 @@ export function PreviewAddressBar({
           }}
           aria-label={t('previewBar.address')}
           spellCheck={false}
-          className="h-6 w-full min-w-0 rounded-full border bg-muted/40 px-3 font-mono text-[11px] text-foreground outline-none focus:border-primary focus:bg-background"
+          className="h-6 w-full min-w-0 rounded-full border bg-muted/40 px-3 font-mono text-2xs text-foreground outline-none focus:border-primary focus:bg-background"
         />
       </form>
       {children ? <div className="min-w-0 shrink-0">{children}</div> : null}

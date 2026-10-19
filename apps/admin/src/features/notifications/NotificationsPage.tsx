@@ -118,7 +118,7 @@ function ListRow({
           {t(notification.bodyKey, params)}
         </span>
       </span>
-      <span className="shrink-0 text-[11px] text-muted-foreground">
+      <span className="shrink-0 text-2xs text-muted-foreground">
         {relativeTime(notification.createdAt, i18n.language)}
       </span>
     </button>

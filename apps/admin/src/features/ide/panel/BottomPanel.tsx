@@ -136,7 +136,7 @@ function TabButton({
         // The active tab is marked by a rule on its own edge rather than a filled pill: the
         // panel sits directly under the editor, and a block of colour down here pulls the eye
         // away from the code that everything in the panel is about.
-        'relative px-2.5 text-[11px] font-medium tracking-wide transition-colors',
+        'relative px-2.5 text-2xs font-medium tracking-wide transition-colors',
         active
           ? 'text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-px after:bg-primary'
           : 'text-muted-foreground hover:text-foreground',
@@ -147,10 +147,10 @@ function TabButton({
         {badge > 0 ? (
           <span
             className={cn(
-              'rounded-full px-1.5 py-px text-[10px] font-semibold tabular-nums',
+              'rounded-full px-1.5 py-px text-2xs font-semibold tabular-nums',
               badgeTone === 'error'
                 ? 'bg-destructive/15 text-destructive'
-                : 'bg-[hsl(var(--warning)/0.18)] text-[hsl(var(--warning))]',
+                : 'bg-warning/18 text-warning-foreground',
             )}
           >
             {badge}

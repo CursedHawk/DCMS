@@ -87,7 +87,7 @@ export function PublishBranchesPanel({ siteId }: { siteId: string }) {
     <section className="shrink-0 border-b" aria-labelledby={`publish-branches-${siteId}`}>
       <h3
         id={`publish-branches-${siteId}`}
-        className="px-2 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+        className="px-2 pt-2 text-2xs font-semibold uppercase tracking-wide text-muted-foreground"
       >
         {t('ide.deploy.branchesTitle')}
       </h3>
@@ -99,7 +99,7 @@ export function PublishBranchesPanel({ siteId }: { siteId: string }) {
               <p className="flex min-w-0 items-center gap-1.5 text-xs">
                 <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{row.branch}</span>
                 {row.release && (
-                  <span className="shrink-0 rounded bg-primary/10 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-primary">
+                  <span className="shrink-0 rounded bg-primary/10 px-1 py-px text-2xs font-semibold uppercase tracking-wide text-primary">
                     {t('ide.git.production')}
                   </span>
                 )}
@@ -107,19 +107,19 @@ export function PublishBranchesPanel({ siteId }: { siteId: string }) {
               {row.domains.length > 0 ? (
                 <ul className="mt-0.5 space-y-0.5">
                   {row.domains.map((d) => (
-                    <li key={d.id} className="flex min-w-0 items-center gap-1 text-[11px]">
+                    <li key={d.id} className="flex min-w-0 items-center gap-1 text-2xs">
                       <Globe className="h-3 w-3 shrink-0 text-muted-foreground" />
                       <HostLink host={d.hostname} className="min-w-0 [overflow-wrap:anywhere]" />
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="mt-0.5 text-[11px] text-muted-foreground">{t('ide.deploy.noDomain')}</p>
+                <p className="mt-0.5 text-2xs text-muted-foreground">{t('ide.deploy.noDomain')}</p>
               )}
               {!row.release && row.domains.length === 0 && canDomains && (
                 <button
                   type="button"
-                  className="text-[11px] text-primary underline-offset-2 hover:underline disabled:opacity-50"
+                  className="text-2xs text-primary underline-offset-2 hover:underline disabled:opacity-50"
                   disabled={subdomain.isPending}
                   onClick={() => subdomain.mutate(row.branch)}
                 >
@@ -180,7 +180,7 @@ export function PublishBranchesPanel({ siteId }: { siteId: string }) {
           </Button>
         </div>
       )}
-      {canPublish && <p className="px-2 pb-2 text-[10px] text-muted-foreground">{t('ide.deploy.branchesHint')}</p>}
+      {canPublish && <p className="px-2 pb-2 text-2xs text-muted-foreground">{t('ide.deploy.branchesHint')}</p>}
     </section>
   );
 }

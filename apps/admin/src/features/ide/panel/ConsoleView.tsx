@@ -59,7 +59,7 @@ export function ConsoleView({ previewEnabled }: { previewEnabled: boolean }) {
             clearPreviewMessages();
             setMessages([]);
           }}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <Trash2 className="h-3 w-3" aria-hidden />
           {t('ide.panel.clear')}
@@ -69,7 +69,7 @@ export function ConsoleView({ previewEnabled }: { previewEnabled: boolean }) {
         {messages.map((message, index) => (
           <li
             key={`${message.at}-${index}`}
-            className="flex gap-2 py-px font-mono text-[11px] leading-relaxed"
+            className="flex gap-2 py-px font-mono text-2xs leading-relaxed"
           >
             <span className="shrink-0 tabular-nums text-muted-foreground/70">
               {clockTime(message.at)}
@@ -80,7 +80,7 @@ export function ConsoleView({ previewEnabled }: { previewEnabled: boolean }) {
             <span
               className={cn(
                 'min-w-0 flex-1 whitespace-pre-wrap break-words',
-                message.kind === 'warn' ? 'text-[hsl(var(--warning))]' : 'text-destructive',
+                message.kind === 'warn' ? 'text-warning-foreground' : 'text-destructive',
               )}
             >
               {message.text}

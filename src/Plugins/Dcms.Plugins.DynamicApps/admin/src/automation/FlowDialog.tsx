@@ -221,7 +221,7 @@ export function FlowDialog({ slug, config, flow, actions, pending, onCancel, onS
   return (
     <FormDialog title={t(flow ? 'automation.editFlow' : 'automation.newFlow')} pending={pending} canSave={canSave} onCancel={onCancel} onSave={save} wide>
       {changedElsewhere ? (
-        <div role="status" className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <div role="status" className="flex flex-wrap items-center gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
           <p className="min-w-0 flex-1">{t('automation.changedElsewhere')}</p>
           <Button type="button" size="sm" variant="outline" onClick={() => onReload(latest!)}>{t('automation.reload')}</Button>
         </div>

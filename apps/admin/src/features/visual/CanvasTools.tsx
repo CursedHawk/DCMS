@@ -99,7 +99,7 @@ export function CanvasMenu({ editor, registry }: { editor: Editor | null; regist
   const item = (label: string, onSelect: () => void, keys?: string, disabled = false) => (
     <DropdownMenuItem onSelect={onSelect} disabled={disabled} className="justify-between gap-6">
       <span>{label}</span>
-      {keys && <kbd className="font-mono text-[10px] text-muted-foreground">{keys}</kbd>}
+      {keys && <kbd className="font-mono text-2xs text-muted-foreground">{keys}</kbd>}
     </DropdownMenuItem>
   );
   const name = selected ? (registry.get(selected.get('type') as string)?.label ?? selected.getName()) : '';

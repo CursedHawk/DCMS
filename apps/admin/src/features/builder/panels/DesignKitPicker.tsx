@@ -124,7 +124,7 @@ export function DesignKitPicker() {
 
       {stale &&
         (confirmingRefresh ? (
-          <div className="space-y-1.5 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
+          <div className="space-y-1.5 rounded-md border border-warning/40 bg-warning/5 p-2">
             <p className="text-xs">{t('builder.refreshBlockStylesConfirm')}</p>
             {kitForRefresh && (
               <p className="text-xs">

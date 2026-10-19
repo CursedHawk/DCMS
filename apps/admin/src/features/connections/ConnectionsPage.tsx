@@ -115,7 +115,7 @@ export function ConnectionsPage() {
                     </li>
                   ))}
                 </ul>
-                {c.lastError && <pre className="whitespace-pre-wrap rounded bg-amber-50 p-2 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">{c.lastError}</pre>}
+                {c.lastError && <pre className="whitespace-pre-wrap rounded bg-warning/10 p-2 text-xs text-warning-foreground">{c.lastError}</pre>}
               </CardContent>
             </Card>
           ))}

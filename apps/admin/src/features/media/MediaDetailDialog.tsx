@@ -274,7 +274,7 @@ export function MediaDetailDialog({
                           <td
                             className={cn(
                               'px-3 py-2 text-right tabular-nums',
-                              pct < 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground',
+                              pct < 100 ? 'text-success-foreground' : 'text-muted-foreground',
                             )}
                           >
                             {pct < 100 ? `−${100 - pct}%` : `${pct}%`}

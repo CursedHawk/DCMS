@@ -191,7 +191,7 @@ export function SettingsPanel() {
             </Field>
           </>
         ) : (
-          <p className="rounded-md border border-[hsl(var(--warning))]/40 bg-[hsl(var(--warning))]/10 p-2 text-xs">
+          <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">
             {t('builder.consent.offWarning')}
           </p>
         )}

@@ -26,7 +26,7 @@ export function Breadcrumbs({ path }: { path: string | null }) {
   return (
     <nav
       aria-label={t('ide.breadcrumbs')}
-      className="flex h-6 shrink-0 items-center gap-0.5 overflow-x-auto border-b bg-card px-3 font-mono text-[11px] text-muted-foreground"
+      className="flex h-6 shrink-0 items-center gap-0.5 overflow-x-auto border-b bg-card px-3 font-mono text-2xs text-muted-foreground"
     >
       {segments.map((segment, index) => (
         <span key={segments.slice(0, index + 1).join('/')} className="flex shrink-0 items-center gap-0.5">

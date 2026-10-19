@@ -47,8 +47,8 @@ export function SignInScreen() {
   return (
     <div className="space-y-4">
       {realm.data && !realm.data.clientReady ? (
-        <div className="flex items-start gap-2 rounded-md border border-[hsl(var(--warning)/0.4)] bg-[hsl(var(--warning)/0.08)] p-3 text-sm">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[hsl(var(--warning))]" aria-hidden />
+        <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/8 p-3 text-sm">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning-foreground" aria-hidden />
           {t('signIn.notReady')}
         </div>
       ) : null}

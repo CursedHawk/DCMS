@@ -69,7 +69,7 @@ export function ConflictResolver({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 text-sm">
-        <TriangleAlert className="h-4 w-4 shrink-0 text-[hsl(var(--warning))]" aria-hidden />
+        <TriangleAlert className="h-4 w-4 shrink-0 text-warning-foreground" aria-hidden />
         <span className="text-muted-foreground">
           {t('ide.git.conflictIntro', { count: files.length })}
         </span>
@@ -90,11 +90,11 @@ export function ConflictResolver({
             <li key={file.path} className="rounded border">
               <div className="flex items-center gap-1.5 border-b px-2 py-1.5">
                 {settled ? (
-                  <Check className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--success))]" aria-hidden />
+                  <Check className="h-3.5 w-3.5 shrink-0 text-success-foreground" aria-hidden />
                 ) : (
                   <span
                     aria-hidden
-                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-[hsl(var(--warning))]"
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-warning"
                   />
                 )}
                 <span className="min-w-0 flex-1 truncate font-mono text-xs" title={file.path}>
@@ -134,7 +134,7 @@ export function ConflictResolver({
               {expanded === file.path && resolution?.kind === 'manual' ? (
                 <div className="border-t">
                   {markersLeft ? (
-                    <p className="border-b bg-[hsl(var(--warning)/0.1)] px-2 py-1 text-xs">
+                    <p className="border-b bg-warning/10 px-2 py-1 text-xs">
                       {t('ide.git.markersRemain')}
                     </p>
                   ) : null}

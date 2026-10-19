@@ -165,7 +165,7 @@ export function MediaMultiPicker({
                   >
                     <MediaThumb id={a.id} category={a.category} status={a.status} />
                     {selected ? (
-                      <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                      <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-2xs font-bold text-primary-foreground">
                         {order + 1}
                       </span>
                     ) : null}

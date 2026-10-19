@@ -156,7 +156,7 @@ export function FolderRail({
       />
 
       <div className="!my-2 flex items-center justify-between px-2.5 pt-1">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
           {t('media.folders.title')}
         </span>
         <button

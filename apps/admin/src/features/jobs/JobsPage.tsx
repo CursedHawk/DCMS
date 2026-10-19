@@ -107,7 +107,7 @@ function JobEntry({ job, initiallyOpen }: { job: Job; initiallyOpen: boolean }) 
           />
           {isGroup ? (
             <div className="border-l bg-muted/20">
-              <p className="px-3 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <p className="px-3 pt-2 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
                 {t('jobs.children')}
               </p>
               {detail.isLoading ? (

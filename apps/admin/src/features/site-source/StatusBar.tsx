@@ -26,7 +26,7 @@ export function StatusBar({
   const count = changes.data?.length ?? 0;
 
   return (
-    <div className="flex h-6 shrink-0 items-center gap-3 border-t bg-card px-3 text-[11px] text-muted-foreground">
+    <div className="flex h-6 shrink-0 items-center gap-3 border-t bg-card px-3 text-2xs text-muted-foreground">
       <button
         type="button"
         onClick={onOpenScm}
@@ -35,7 +35,7 @@ export function StatusBar({
       >
         <GitBranch className="h-3 w-3" />
         {branch}
-        {branch === RELEASE_BRANCH && <span className="text-[hsl(var(--warning))]">({t('ide.git.live')})</span>}
+        {branch === RELEASE_BRANCH && <span className="text-warning-foreground">({t('ide.git.live')})</span>}
       </button>
       <button type="button" onClick={onOpenScm} className="flex items-center gap-1 hover:text-foreground">
         <Pencil className="h-3 w-3" />

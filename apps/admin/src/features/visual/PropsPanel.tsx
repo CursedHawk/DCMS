@@ -446,13 +446,13 @@ function PropField({
             type="button"
             onClick={deviceNote.onReset}
             title={t('visual.resetOverride')}
-            className="flex items-center gap-1 rounded px-1 text-[11px] text-primary hover:bg-primary/10"
+            className="flex items-center gap-1 rounded px-1 text-2xs text-primary hover:bg-primary/10"
           >
             <RotateCcw className="h-3 w-3" /> {t('visual.overridden')}
           </button>
         )}
-        {deviceNote?.kind === 'inherits' && <span className="text-[11px] text-muted-foreground">{t('visual.inheritsDesktop')}</span>}
-        {deviceNote?.kind === 'desktopOnly' && <span className="text-[11px] text-muted-foreground">{t('visual.allDevices')}</span>}
+        {deviceNote?.kind === 'inherits' && <span className="text-2xs text-muted-foreground">{t('visual.inheritsDesktop')}</span>}
+        {deviceNote?.kind === 'desktopOnly' && <span className="text-2xs text-muted-foreground">{t('visual.allDevices')}</span>}
       </div>
       {binding && (
         <Select value={binding.path ?? '__fixed'} onValueChange={(v) => binding.onBind(v === '__fixed' ? undefined : v)}>

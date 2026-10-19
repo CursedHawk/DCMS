@@ -141,7 +141,7 @@ export function ComponentsPanel({ editor }: { editor: Editor | null }) {
                 </div>
                 {outdated > 0 && (
                   <div className="flex items-center gap-2 px-3 pb-2 text-xs">
-                    <span className="min-w-0 flex-1 text-amber-700 dark:text-amber-400">
+                    <span className="min-w-0 flex-1 text-warning-foreground">
                       {t('visual.mine.outdated', { count: outdated, version: latest.version })}
                     </span>
                     <Button

@@ -122,8 +122,8 @@ export function ApprovalCard({
         <p className="flex-1 text-xs font-medium">{t('ide.agent.approveTitle')}</p>
         {/* The number somebody actually weighs, before reading a single line. */}
         {(totals.added > 0 || totals.removed > 0) && (
-          <span className="font-mono text-[10px] tabular-nums">
-            <span className="text-emerald-600 dark:text-emerald-400">+{totals.added}</span>{' '}
+          <span className="font-mono text-2xs tabular-nums">
+            <span className="text-success-foreground">+{totals.added}</span>{' '}
             <span className="text-destructive">−{totals.removed}</span>
           </span>
         )}
@@ -156,7 +156,7 @@ export function ApprovalCard({
 /** The shortcut, on the button that performs it — so nobody has to learn a list. */
 function Key({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="ml-1 rounded border border-current/30 px-1 font-mono text-[9px] opacity-60">
+    <kbd className="ml-1 rounded border border-current/30 px-1 font-mono text-2xs opacity-60">
       {children}
     </kbd>
   );
@@ -180,7 +180,7 @@ function PreviewRow({ preview }: { preview: ChangePreview }) {
 
   return (
     <div className="border-b border-primary/10 last:border-b-0">
-      <p className="px-2.5 pt-1.5 font-mono text-[10px] text-muted-foreground">
+      <p className="px-2.5 pt-1.5 font-mono text-2xs text-muted-foreground">
         {preview.kind === 'create' && `${t('ide.agent.newFile')} `}
         {preview.kind === 'delete' && `${t('ide.agent.deleteFile')} `}
         {previewTitle(preview)}
@@ -190,10 +190,10 @@ function PreviewRow({ preview }: { preview: ChangePreview }) {
           <div
             key={i}
             className={cn(
-              'flex gap-1.5 whitespace-pre-wrap break-all font-mono text-[10.5px] leading-snug',
+              'flex gap-1.5 whitespace-pre-wrap break-all font-mono text-2xs leading-snug',
               line.sign === '-'
                 ? 'bg-destructive/10 text-destructive'
-                : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+                : 'bg-success/10 text-success-foreground',
             )}
           >
             <span aria-hidden className="select-none opacity-50">
@@ -203,7 +203,7 @@ function PreviewRow({ preview }: { preview: ChangePreview }) {
           </div>
         ))}
         {hidden > 0 && (
-          <p className="pt-0.5 font-mono text-[10px] text-muted-foreground">
+          <p className="pt-0.5 font-mono text-2xs text-muted-foreground">
             {t('ide.agent.moreLines', { count: hidden })}
           </p>
         )}

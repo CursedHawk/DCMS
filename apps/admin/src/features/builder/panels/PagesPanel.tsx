@@ -146,7 +146,7 @@ export function PagesPanel() {
               if (e.key === 'Escape') setAdding(false);
             }}
           />
-          <p className="text-[11px] leading-snug text-muted-foreground">
+          <p className="text-2xs leading-snug text-muted-foreground">
             {t('builder.pagePathHint')}
           </p>
         </div>

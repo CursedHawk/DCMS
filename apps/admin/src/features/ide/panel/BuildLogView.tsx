@@ -67,7 +67,7 @@ function Row({ build }: { build: BuildSnapshot }) {
     <li className="flex items-baseline gap-2 rounded px-2 py-1 text-xs">
       {build.ok ? (
         <CircleCheck
-          className="h-3.5 w-3.5 shrink-0 translate-y-0.5 text-[hsl(var(--success))]"
+          className="h-3.5 w-3.5 shrink-0 translate-y-0.5 text-success-foreground"
           aria-hidden
         />
       ) : (
@@ -81,7 +81,7 @@ function Row({ build }: { build: BuildSnapshot }) {
         {errors > 0 && warnings > 0 ? ', ' : null}
         {warnings > 0 ? t('ide.problems.warnings', { count: warnings }) : null}
       </span>
-      <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/70">
+      <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground/70">
         {clockTime(build.at)}
       </span>
     </li>

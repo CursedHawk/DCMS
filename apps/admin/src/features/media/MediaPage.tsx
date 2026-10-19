@@ -383,7 +383,7 @@ export function MediaPage() {
                       <span className="block truncate text-sm font-medium" title={f.name}>
                         {f.name}
                       </span>
-                      <span className="block text-[11px] text-muted-foreground">
+                      <span className="block text-2xs text-muted-foreground">
                         {t('media.folders.itemCount', { count: f.assetCount })}
                       </span>
                     </span>
@@ -417,7 +417,7 @@ export function MediaPage() {
                             : 'can-hover:opacity-0 group-hover:opacity-100',
                         )}
                       >
-                        {isSelected ? <span className="text-[11px] font-bold">✓</span> : null}
+                        {isSelected ? <span className="text-2xs font-bold">✓</span> : null}
                       </button>
 
                       <button
@@ -436,17 +436,17 @@ export function MediaPage() {
                           <CatIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
                           <span className="truncate">{a.fileName}</span>
                         </p>
-                        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                        <div className="flex items-center justify-between text-2xs text-muted-foreground">
                           <span>{formatDate(a.createdAt)}</span>
                           <span className="tabular-nums">{formatSize(a.sizeBytes)}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <Badge tone={statusTone[a.status]} className="text-[10px]">
+                          <Badge tone={statusTone[a.status]} className="text-2xs">
                             {t(`media.${a.status.toLowerCase()}`, a.status)}
                           </Badge>
                           {saved > 0 ? (
                             <span
-                              className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400"
+                              className="text-2xs font-medium text-success-foreground"
                               title={t('media.optimizedHint')}
                             >
                               −{saved}%

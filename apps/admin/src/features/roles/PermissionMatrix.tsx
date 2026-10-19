@@ -136,8 +136,8 @@ function FeatureLine({ feature }: { feature: PermissionDef['feature'] }) {
 
   if (!feature.inUse) {
     return (
-      <span className="mt-0.5 block text-[11px] text-muted-foreground">
-        <Badge tone="outline" className="text-[10px]">
+      <span className="mt-0.5 block text-2xs text-muted-foreground">
+        <Badge tone="outline" className="text-2xs">
           {t('roles.notInUse')}
         </Badge>
       </span>
@@ -156,7 +156,7 @@ function FeatureLine({ feature }: { feature: PermissionDef['feature'] }) {
   if (!detail && !feature.route) return null;
 
   return (
-    <span className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+    <span className="mt-0.5 flex flex-wrap items-center gap-1 text-2xs text-muted-foreground">
       {detail ? <span className="truncate">{detail}</span> : null}
       {feature.route ? (
         <Link

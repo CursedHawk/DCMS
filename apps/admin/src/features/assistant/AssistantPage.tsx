@@ -263,7 +263,7 @@ function NoKey({ provider }: { provider: string | null }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   return (
-    <div className="mt-3 rounded-md border border-[hsl(var(--warning)/0.4)] bg-[hsl(var(--warning)/0.1)] p-3 text-sm">
+    <div className="mt-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
       <p className="flex items-center gap-1.5 font-medium">
         <KeyRound className="h-4 w-4" aria-hidden />
         {t('assistant.noKeyTitle')}

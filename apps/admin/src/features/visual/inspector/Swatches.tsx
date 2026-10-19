@@ -43,7 +43,7 @@ export function Swatches({
             role="radio"
             aria-checked={selected}
             onClick={() => onChange(o.value)}
-            className="flex flex-col items-center gap-1 text-[11px] text-muted-foreground"
+            className="flex flex-col items-center gap-1 text-2xs text-muted-foreground"
           >
             <span
               className={cn(

@@ -118,7 +118,7 @@ function ColourField({ id, label, value, onChange, warning }: { id: string; labe
         <code className="text-xs text-muted-foreground">{value}</code>
       </div>
       {warning && (
-        <p className="flex items-start gap-1 text-xs text-amber-600 dark:text-amber-400">
+        <p className="flex items-start gap-1 text-xs text-warning-foreground">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {warning}
         </p>
       )}

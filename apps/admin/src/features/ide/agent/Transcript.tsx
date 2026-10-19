@@ -62,7 +62,7 @@ function Entry({ entry }: { entry: AgentEntry }) {
 
     case 'retry':
       return (
-        <p className="flex items-start gap-1.5 px-1 text-[11px] text-[hsl(var(--warning))]">
+        <p className="flex items-start gap-1.5 px-1 text-2xs text-warning-foreground">
           <RotateCw className="mt-px h-3 w-3 shrink-0" aria-hidden />
           <span>
             <RetryText attempt={entry.attempt} of={entry.of} because={entry.because} />
@@ -103,7 +103,7 @@ function Thinking({ text }: { text: string }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+        className="flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground"
       >
         <ChevronRight
           className={cn('h-3 w-3 transition-transform', open && 'rotate-90')}
@@ -112,7 +112,7 @@ function Thinking({ text }: { text: string }) {
         {t('ide.agent.thinking')}
       </button>
       {open ? (
-        <p className="mt-1 whitespace-pre-wrap border-l pl-2 text-[11px] leading-relaxed text-muted-foreground">
+        <p className="mt-1 whitespace-pre-wrap border-l pl-2 text-2xs leading-relaxed text-muted-foreground">
           {text}
         </p>
       ) : null}
@@ -131,7 +131,7 @@ function ToolCard({ entry }: { entry: Extract<AgentEntry, { kind: 'tool' }> }) {
   return (
     <div
       className={cn(
-        'rounded-md border text-[11px]',
+        'rounded-md border text-2xs',
         entry.status === 'error' ? 'border-destructive/40 bg-destructive/5' : 'border-border',
       )}
     >
@@ -158,7 +158,7 @@ function ToolCard({ entry }: { entry: Extract<AgentEntry, { kind: 'tool' }> }) {
       {open ? (
         <div className="space-y-2 border-t px-2 py-1.5">
           <Labelled label={t('ide.agent.arguments')}>
-            <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-muted-foreground">
+            <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-2xs leading-relaxed text-muted-foreground">
               {JSON.stringify(entry.input, null, 2)}
             </pre>
           </Labelled>
@@ -166,7 +166,7 @@ function ToolCard({ entry }: { entry: Extract<AgentEntry, { kind: 'tool' }> }) {
             <Labelled label={t('ide.agent.result')}>
               <pre
                 className={cn(
-                  'max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed',
+                  'max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-2xs leading-relaxed',
                   entry.status === 'error' ? 'text-destructive' : 'text-muted-foreground',
                 )}
               >
@@ -186,7 +186,7 @@ function ToolCard({ entry }: { entry: Extract<AgentEntry, { kind: 'tool' }> }) {
               <button
                 type="button"
                 onClick={() => open_(path)}
-                className="rounded bg-primary/10 px-1.5 py-px font-mono text-[10px] text-primary hover:bg-primary/20"
+                className="rounded bg-primary/10 px-1.5 py-px font-mono text-2xs text-primary hover:bg-primary/20"
               >
                 {path}
               </button>
@@ -201,7 +201,7 @@ function ToolCard({ entry }: { entry: Extract<AgentEntry, { kind: 'tool' }> }) {
 function Labelled({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="mb-0.5 text-[10px] font-medium text-muted-foreground">{label}</p>
+      <p className="mb-0.5 text-2xs font-medium text-muted-foreground">{label}</p>
       {children}
     </div>
   );
@@ -215,7 +215,7 @@ function ToolStatus({ status }: { status: 'running' | 'ok' | 'error' | 'declined
   if (status === 'declined') {
     return <CircleSlash className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />;
   }
-  return <Check className="h-3 w-3 shrink-0 text-[hsl(var(--success))]" aria-hidden />;
+  return <Check className="h-3 w-3 shrink-0 text-success-foreground" aria-hidden />;
 }
 
 /**
@@ -237,7 +237,7 @@ function CheckLine({ status }: { status: 'running' | 'passed' | 'failed' | 'skip
     passed: {
       icon: <CircleCheck className="h-3 w-3" aria-hidden />,
       text: t('ide.agent.check.passed'),
-      tone: 'text-[hsl(var(--success))]',
+      tone: 'text-success-foreground',
     },
     failed: {
       icon: <CircleAlert className="h-3 w-3" aria-hidden />,
@@ -247,12 +247,12 @@ function CheckLine({ status }: { status: 'running' | 'passed' | 'failed' | 'skip
     skipped: {
       icon: <CircleSlash className="h-3 w-3" aria-hidden />,
       text: t('ide.agent.check.skipped'),
-      tone: 'text-[hsl(var(--warning))]',
+      tone: 'text-warning-foreground',
     },
   }[status];
 
   return (
-    <p className={cn('flex items-center gap-1.5 px-1 text-[11px]', map.tone)}>
+    <p className={cn('flex items-center gap-1.5 px-1 text-2xs', map.tone)}>
       {map.icon}
       {map.text}
     </p>

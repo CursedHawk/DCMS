@@ -62,7 +62,7 @@ export function DriveImportProgress({
           <li key={f.id} className="space-y-1.5 p-2.5">
             <div className="flex items-center gap-2 text-xs">
               {f.status === 'Succeeded' ? (
-                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--success))]" />
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success-foreground" />
               ) : f.status === 'Failed' ? (
                 <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
               ) : null}

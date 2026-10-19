@@ -7,8 +7,8 @@ import { type MediaCategory, type MediaUsage, formatSize } from './api';
 export const categoryMeta: Record<MediaCategory, { color: string; icon: typeof ImageIcon }> = {
   Image: { color: 'bg-sky-500', icon: ImageIcon },
   Video: { color: 'bg-violet-500', icon: Film },
-  Audio: { color: 'bg-emerald-500', icon: Music },
-  File: { color: 'bg-amber-500', icon: FileIcon },
+  Audio: { color: 'bg-success', icon: Music },
+  File: { color: 'bg-warning', icon: FileIcon },
 };
 
 const order: MediaCategory[] = ['Image', 'Video', 'Audio', 'File'];

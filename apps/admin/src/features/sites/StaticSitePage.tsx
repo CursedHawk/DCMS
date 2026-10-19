@@ -197,7 +197,7 @@ export function StaticSitePage({ siteId }: { siteId: string }) {
 
             {bundle ? (
               <div className="mt-4 flex items-center gap-3 rounded-md border bg-muted/30 p-3 text-sm">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                <CheckCircle2 className="h-4 w-4 text-success-foreground" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{bundle.name}</p>
                   <p className="text-xs text-muted-foreground">

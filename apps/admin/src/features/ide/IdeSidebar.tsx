@@ -147,11 +147,11 @@ function RailButton({
       {badge != null && badge > 0 && (
         <span
           className={cn(
-            'absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold',
+            'absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-2xs font-semibold',
             badgeTone === 'error' && 'bg-destructive text-destructive-foreground',
             // Amber is bright in both themes, so the count on it is the page's own dark ink
             // rather than a foreground token that flips with the theme and disappears.
-            badgeTone === 'warning' && 'bg-[hsl(var(--warning))] text-neutral-950',
+            badgeTone === 'warning' && 'bg-warning text-neutral-950',
             badgeTone === 'default' && 'bg-primary text-primary-foreground',
           )}
         >

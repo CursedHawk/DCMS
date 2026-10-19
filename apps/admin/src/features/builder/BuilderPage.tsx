@@ -361,8 +361,8 @@ export function BuilderPage({ siteId }: { siteId: string }) {
         at once whether it collides with what you are doing.
       */}
       {draftMovedPaths && !conflict ? (
-        <div className="flex shrink-0 items-center gap-2 border-b bg-[hsl(var(--warning)/0.12)] px-3 py-2 text-sm">
-          <AlertTriangle className="h-4 w-4 shrink-0 text-[hsl(var(--warning))]" aria-hidden />
+        <div className="flex shrink-0 items-center gap-2 border-b bg-warning/12 px-3 py-2 text-sm">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-warning-foreground" aria-hidden />
           <span className="min-w-0 flex-1">
             {t('ide.draftMovedWarning', { files: draftMovedPaths.slice(0, 3).join(', ') })}
             {draftMovedPaths.length > 3
@@ -507,7 +507,7 @@ function Banner({
         'flex shrink-0 items-center gap-2 border-b px-3 py-2 text-sm',
         tone === 'destructive'
           ? 'bg-destructive/10 text-destructive'
-          : 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+          : 'bg-warning/10 text-warning-foreground',
       )}
     >
       {icon}

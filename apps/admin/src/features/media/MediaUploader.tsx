@@ -259,7 +259,7 @@ export function MediaUploader({
             <li key={it.id} className="space-y-1.5 p-2.5">
               <div className="flex items-center gap-2 text-xs">
                 {it.status === 'done' ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--success))]" />
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success-foreground" />
                 ) : it.status === 'error' ? (
                   <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
                 ) : null}

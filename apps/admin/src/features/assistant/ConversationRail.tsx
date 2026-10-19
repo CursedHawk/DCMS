@@ -131,9 +131,9 @@ function Row({
               aria-label={t('assistant.sharedWithWorkspace')}
             />
           ) : null}
-          <span className="min-w-0 flex-1 truncate text-[13px]">{conversation.title}</span>
+          <span className="min-w-0 flex-1 truncate text-sm">{conversation.title}</span>
         </span>
-        <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
+        <span className="mt-0.5 block truncate font-mono text-2xs text-muted-foreground">
           {relativeTime(conversation.updatedAt)} · {conversation.messageCount}
           {/* The branch an IDE conversation was last run against. Absent on the console
               surface, where there is nothing for it to mean. */}

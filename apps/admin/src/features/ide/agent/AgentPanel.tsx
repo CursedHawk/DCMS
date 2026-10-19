@@ -36,7 +36,7 @@ function RunMeter({ run }: { run: AgentRunMetrics }) {
   const { t } = useTranslation();
 
   return (
-    <dl className="flex shrink-0 items-baseline gap-3 border-t px-3 py-1 font-mono text-[10px] text-muted-foreground">
+    <dl className="flex shrink-0 items-baseline gap-3 border-t px-3 py-1 font-mono text-2xs text-muted-foreground">
       <Stat label={t('ide.agent.meter.turns')} value={String(run.turns)} />
       <Stat label={t('ide.agent.meter.tools')} value={String(run.toolCalls)} />
       <Stat
@@ -217,7 +217,7 @@ export function AgentPanel({
           writing to the workspace, so "this run is not being recorded" is something the operator
           should know while it is still running — not discover afterwards from a gap. */}
       {session.unsaved && (
-        <div className="mx-3 mb-2 flex items-start gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-[11px] text-amber-700 dark:text-amber-400">
+        <div className="mx-3 mb-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 p-2 text-2xs text-warning-foreground">
           <CloudOff className="mt-px h-3 w-3 shrink-0" aria-hidden />
           <span>{t('ide.agent.unsaved')}</span>
         </div>
@@ -225,7 +225,7 @@ export function AgentPanel({
 
       {/* Needs-key banner */}
       {session.needsKey && (
-        <div className="mx-3 mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+        <div className="mx-3 mb-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">
           <p className="mb-1 font-medium">{t('ide.agent.needsKeyTitle')}</p>
           {/* Names the provider the server actually resolved. Telling somebody whose workspace
               runs on OpenAI to connect an Anthropic account sends them to make an account they
@@ -294,7 +294,7 @@ export function AgentPanel({
             onChange={(ev) => session.setMode(ev.target.value as AiMode)}
             title={t('ide.agent.modeHint')}
             aria-label={t('ide.agent.mode')}
-            className="rounded border-0 bg-transparent px-1 py-0.5 text-[11px] font-medium text-muted-foreground outline-none hover:bg-accent focus:ring-1 focus:ring-primary"
+            className="rounded border-0 bg-transparent px-1 py-0.5 text-2xs font-medium text-muted-foreground outline-none hover:bg-accent focus:ring-1 focus:ring-primary"
           >
             {AI_MODES.map((m) => (
               <option key={m} value={m}>
@@ -311,7 +311,7 @@ export function AgentPanel({
             onChange={(ev) => session.setScope(ev.target.value as AgentScope)}
             title={t('ide.agent.scopeHint')}
             aria-label={t('ide.agent.scope')}
-            className="rounded border-0 bg-transparent px-1 py-0.5 text-[11px] font-medium text-muted-foreground outline-none hover:bg-accent focus:ring-1 focus:ring-primary"
+            className="rounded border-0 bg-transparent px-1 py-0.5 text-2xs font-medium text-muted-foreground outline-none hover:bg-accent focus:ring-1 focus:ring-primary"
           >
             {AGENT_SCOPES.map((s) => (
               <option key={s} value={s}>

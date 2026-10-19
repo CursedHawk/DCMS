@@ -28,7 +28,7 @@ export function ApprovalCard({
         'space-y-2 rounded-md border p-3 text-sm',
         pending.dangerous
           ? 'border-destructive/40 bg-destructive/5'
-          : 'border-[hsl(var(--warning)/0.4)] bg-[hsl(var(--warning)/0.08)]',
+          : 'border-warning/40 bg-warning/8',
       )}
     >
       <p className="flex items-center gap-1.5 font-medium">

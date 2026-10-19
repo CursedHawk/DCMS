@@ -66,7 +66,7 @@ export function ScheduledView() {
           {/* The item may already be live: a queued publish on a published item is the next
               revision, not its first appearance, and those are different pieces of news. */}
           {row.status === 'Published' ? (
-            <Badge tone="success" className="ml-2 text-[10px]">
+            <Badge tone="success" className="ml-2 text-2xs">
               {t('content.scheduledView.revision')}
             </Badge>
           ) : null}

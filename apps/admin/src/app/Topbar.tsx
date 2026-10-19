@@ -73,7 +73,7 @@ export function Topbar({
           >
             <Search className="h-4 w-4" aria-hidden />
             {t('actions.search')}
-            <kbd className="ml-6 rounded border bg-background px-1.5 text-[10px]">{modifierLabel()} K</kbd>
+            <kbd className="ml-6 rounded border bg-background px-1.5 text-2xs">{modifierLabel()} K</kbd>
           </button>
 
           {/* Below md the labelled search box does not fit; the shortcut is also unavailable

@@ -36,10 +36,10 @@ export function ChangeReview({
     <section className="shrink-0 border-t bg-card/60">
       <header className="flex items-center gap-2 px-3 py-1.5">
         <FileDiff className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        <h2 className="flex-1 text-[11px] font-semibold text-foreground">
+        <h2 className="flex-1 text-2xs font-semibold text-foreground">
           {t('ide.agent.changed', { count: changes.length })}
         </h2>
-        <Button size="sm" variant="ghost" className="h-6 px-1.5 text-[11px]" onClick={onRevertAll}>
+        <Button size="sm" variant="ghost" className="h-6 px-1.5 text-2xs" onClick={onRevertAll}>
           <RotateCcw className="h-3 w-3" aria-hidden />
           {t('ide.agent.revertAll')}
         </Button>
@@ -60,7 +60,7 @@ export function ChangeReview({
                 })
               }
               title={t('ide.agent.showDiff')}
-              className="min-w-0 flex-1 truncate text-left font-mono text-[11px] text-foreground hover:underline"
+              className="min-w-0 flex-1 truncate text-left font-mono text-2xs text-foreground hover:underline"
             >
               {change.path}
             </button>
@@ -93,10 +93,10 @@ function Kind({ kind }: { kind: FileChange['kind'] }) {
     <span
       aria-hidden
       className={cn(
-        'w-3 shrink-0 text-center font-mono text-[10px] font-semibold',
-        kind === 'created' && 'text-[hsl(var(--success))]',
+        'w-3 shrink-0 text-center font-mono text-2xs font-semibold',
+        kind === 'created' && 'text-success-foreground',
         kind === 'deleted' && 'text-destructive',
-        kind === 'modified' && 'text-[hsl(var(--warning))]',
+        kind === 'modified' && 'text-warning-foreground',
       )}
     >
       {letter}

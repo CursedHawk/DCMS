@@ -120,7 +120,7 @@ export function IdeCommandPalette({
                   <Highlighted text={hit.item.label} positions={hit.positions} />
                 </span>
                 {hit.item.shortcut ? (
-                  <kbd className="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  <kbd className="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-2xs text-muted-foreground">
                     {hit.item.shortcut}
                   </kbd>
                 ) : null}
@@ -128,7 +128,7 @@ export function IdeCommandPalette({
             ))}
           </Command.List>
 
-          <div className="border-t px-4 py-2 text-[11px] text-muted-foreground">
+          <div className="border-t px-4 py-2 text-2xs text-muted-foreground">
             {t('ide.palette.hint')}
           </div>
         </Command>

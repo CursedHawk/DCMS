@@ -10,8 +10,8 @@ import { useAuth } from '../../useAuth';
 const QUICK: { to: string; icon: LucideIcon; key: string; tone: string }[] = [
   { to: '/content', icon: FileText, key: 'nav.content', tone: 'from-sky-500/15 text-sky-500' },
   { to: '/media', icon: Image, key: 'nav.media', tone: 'from-violet-500/15 text-violet-500' },
-  { to: '/sites', icon: PanelsTopLeft, key: 'nav.sites', tone: 'from-emerald-500/15 text-emerald-500' },
-  { to: '/plugins', icon: Plug, key: 'nav.plugins', tone: 'from-amber-500/15 text-amber-500' },
+  { to: '/sites', icon: PanelsTopLeft, key: 'nav.sites', tone: 'from-emerald-500/15 text-success-foreground' },
+  { to: '/plugins', icon: Plug, key: 'nav.plugins', tone: 'from-amber-500/15 text-warning-foreground' },
   { to: '/settings/domains', icon: Globe, key: 'nav.domains', tone: 'from-rose-500/15 text-rose-500' },
 ];
 

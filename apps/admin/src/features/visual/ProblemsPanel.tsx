@@ -29,7 +29,7 @@ export function ProblemsPanel({ problems, editor }: { problems: readonly SitePro
   if (problems.length === 0) {
     return (
       <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-        <CheckCircle2 className="h-4 w-4 text-emerald-600" /> {t('visual.problems.none')} <HelpLink article="publishing" />
+        <CheckCircle2 className="h-4 w-4 text-success-foreground" /> {t('visual.problems.none')} <HelpLink article="publishing" />
       </div>
     );
   }
@@ -41,7 +41,7 @@ export function ProblemsPanel({ problems, editor }: { problems: readonly SitePro
             {p.severity === 'error' ? (
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
             ) : (
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" />
             )}
             <span className="min-w-0">
               <span className="block">{p.message}</span>

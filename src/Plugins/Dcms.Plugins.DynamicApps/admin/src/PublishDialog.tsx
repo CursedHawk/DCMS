@@ -51,7 +51,7 @@ export function PublishDialog({ slug, open, onOpenChange, draft }: {
           ) : (
             <>
               {preview.data.hasDestructiveChanges ? (
-                <p className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+                <p className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden /> {t('publish.destructive')}
                 </p>
               ) : null}
@@ -101,7 +101,7 @@ export function Issues({ issues }: { issues: ConfigIssue[] }) {
   return (
     <ul className="space-y-1 text-sm">
       {issues.map((issue, i) => (
-        <li key={i} className={issue.severity === 'error' ? 'text-destructive' : 'text-amber-700 dark:text-amber-400'}>
+        <li key={i} className={issue.severity === 'error' ? 'text-destructive' : 'text-warning-foreground'}>
           <span className="font-mono text-xs">{issue.path}</span> — {issue.message}
         </li>
       ))}
@@ -119,12 +119,12 @@ export function ChangeList({ changes, empty }: { changes: ConfigChange[]; empty:
     <ul className="divide-y rounded-md border text-sm">
       {changes.map((c, i) => (
         <li key={i} className="flex items-center gap-2 px-3 py-1.5">
-          <span className={`w-4 font-mono ${c.op === 'delete' ? 'text-destructive' : c.op === 'create' ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+          <span className={`w-4 font-mono ${c.op === 'delete' ? 'text-destructive' : c.op === 'create' ? 'text-success-foreground' : 'text-muted-foreground'}`}>
             {OP_MARK[c.op]}
           </span>
           <span className="text-muted-foreground">{t(`kinds.${c.resourceType}`, { defaultValue: c.resourceType })}</span>
           <span className="font-mono">{c.path}</span>
-          {c.destructive ? <AlertTriangle className="ml-auto size-3.5 text-amber-600" aria-label={t('publish.destructiveOne')} /> : null}
+          {c.destructive ? <AlertTriangle className="ml-auto size-3.5 text-warning-foreground" aria-label={t('publish.destructiveOne')} /> : null}
         </li>
       ))}
     </ul>

@@ -73,8 +73,8 @@ export function Composer({
             <li
               key={file.name}
               className={cn(
-                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[11px]',
-                file.assetId && 'border-[hsl(var(--success)/0.4)] text-[hsl(var(--success))]',
+                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-2xs',
+                file.assetId && 'border-success/40 text-success-foreground',
               )}
             >
               {file.name}

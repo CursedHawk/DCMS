@@ -44,7 +44,7 @@ export function PanelUnchecked({
         {title}
       </p>
       {description ? (
-        <p className="max-w-md text-[11px] text-muted-foreground">{description}</p>
+        <p className="max-w-md text-2xs text-muted-foreground">{description}</p>
       ) : null}
       {action && onAction ? (
         <Button size="sm" variant="outline" onClick={onAction}>

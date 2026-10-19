@@ -181,7 +181,7 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
             <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-destructive">
               <AlertTriangle className="h-3.5 w-3.5" /> {t('ide.buildError')}
             </div>
-            <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-destructive">
+            <pre className="whitespace-pre-wrap break-words text-2xs leading-relaxed text-destructive">
               {error}
             </pre>
           </div>

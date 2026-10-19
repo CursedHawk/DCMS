@@ -149,7 +149,7 @@ export function VersionsPanel({ studio }: { studio: StudioDoc }) {
         </Button>
       ) : null}
       {older > 0 && (
-        <div className="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+        <div className="space-y-1 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">
           <p>{t('visual.mine.outdated', { count: older, version: latest })}</p>
           <Button
             size="sm"

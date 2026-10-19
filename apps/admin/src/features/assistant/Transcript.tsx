@@ -99,7 +99,7 @@ function StepBody({
       <div className="border-l-2 border-primary/70 pl-2.5">
         <p className="whitespace-pre-wrap font-medium">{step.text}</p>
         {step.files?.length ? (
-          <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+          <p className="mt-0.5 font-mono text-2xs text-muted-foreground">
             {step.files.join(', ')}
           </p>
         ) : null}
@@ -138,8 +138,8 @@ function Node({ status, kind }: { status: StepStatus | 'said' | 'asked'; kind: S
         kind === 'user' && 'bg-foreground',
         kind === 'assistant' && 'border border-border bg-background',
         status === 'running' && 'animate-pulse bg-primary',
-        status === 'awaiting' && 'bg-[hsl(var(--warning))]',
-        status === 'ok' && 'bg-[hsl(var(--success))]',
+        status === 'awaiting' && 'bg-warning',
+        status === 'ok' && 'bg-success',
         status === 'error' && 'bg-destructive',
         status === 'declined' && 'bg-muted-foreground/40',
       )}

@@ -102,7 +102,7 @@ export function InstanceVersion({ selected, latest }: { selected: Component; lat
     toast.success(dropped.length ? t('visual.mine.updatedDropped', { count: 1, dropped: dropped.join(', ') }) : t('visual.mine.updated', { count: 1 }));
   };
   return (
-    <div className="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+    <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-xs">
       <div className="min-w-0 flex-1 space-y-1">
         <div>{t('visual.mine.instanceOutdated', { version: extra.version, latest: latest.version })}</div>
         {(changes.removed.length > 0 || changes.added.length > 0 || changes.hiddenSlots.length > 0) && (

@@ -152,7 +152,7 @@ export function CodeView({ specs }: { specs: readonly DcmsComponentSpec[] }) {
           >
             <Icon className="h-3.5 w-3.5" />
             {label}
-            {generated && <span className="text-[10px] opacity-60">{t('builder.readOnly')}</span>}
+            {generated && <span className="text-2xs opacity-60">{t('builder.readOnly')}</span>}
           </button>
         ))}
 
@@ -188,7 +188,7 @@ export function CodeView({ specs }: { specs: readonly DcmsComponentSpec[] }) {
       </div>
 
       {!activeDiff && activePath && isGeneratedBuilderFile(activePath) && (
-        <p className="shrink-0 border-b bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+        <p className="shrink-0 border-b bg-warning/10 px-3 py-1.5 text-xs text-warning-foreground">
           {t('builder.generatedFileHint')}
         </p>
       )}

@@ -27,7 +27,7 @@ export function OutputView() {
         <button
           type="button"
           onClick={clearOutput}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <Trash2 className="h-3 w-3" aria-hidden />
           {t('ide.panel.clear')}
@@ -44,7 +44,7 @@ export function OutputView() {
 
 function Line({ line }: { line: OutputLine }) {
   return (
-    <li className="flex gap-2 py-px font-mono text-[11px] leading-relaxed">
+    <li className="flex gap-2 py-px font-mono text-2xs leading-relaxed">
       <span className="shrink-0 tabular-nums text-muted-foreground/70">{clockTime(line.at)}</span>
       {/* The channel, not a severity chip: which part of the workspace spoke is the thing that
           makes a mixed log readable, and severity is already carried by the colour. */}
@@ -53,7 +53,7 @@ function Line({ line }: { line: OutputLine }) {
         className={cn(
           'min-w-0 flex-1 whitespace-pre-wrap break-words',
           line.level === 'error' && 'text-destructive',
-          line.level === 'warn' && 'text-[hsl(var(--warning))]',
+          line.level === 'warn' && 'text-warning-foreground',
           line.level === 'info' && 'text-foreground',
         )}
       >

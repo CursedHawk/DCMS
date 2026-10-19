@@ -281,7 +281,7 @@ export function Value({ column, value }: { column: Pick<DataColumn, 'kind'>; val
   switch (column.kind) {
     case 'boolean':
       return value ? (
-        <Check className="h-4 w-4 text-[hsl(var(--success))]" aria-label="yes" />
+        <Check className="h-4 w-4 text-success-foreground" aria-label="yes" />
       ) : (
         <Minus className="h-4 w-4 text-muted-foreground" aria-label="no" />
       );

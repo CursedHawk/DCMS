@@ -227,7 +227,7 @@ function SpaNotice({ rules, canEdit, onFix }: { rules: Rule[]; canEdit: boolean;
   const conflict = assetsConflict(rules);
   return (
     <div className="space-y-2">
-      <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+      <div className="space-y-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
         <p className="flex items-start gap-2">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden /> {t('sites.spa.notice')}
         </p>
@@ -244,7 +244,7 @@ function SpaNotice({ rules, canEdit, onFix }: { rules: Rule[]; canEdit: boolean;
         ))}
       </div>
       {conflict ? (
-        <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <div className="space-y-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
           <p className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
             {t('sites.spa.assets', { paths: conflict.affected.map((r) => r.prefix).join(', ') })}

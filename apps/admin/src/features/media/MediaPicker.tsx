@@ -106,10 +106,10 @@ export function MediaPicker({
                     <MediaThumb id={a.id} category={a.category} status={a.status} />
                   </div>
                   <div className="space-y-0.5 p-1.5">
-                    <p className="truncate text-[11px] font-medium" title={a.fileName}>
+                    <p className="truncate text-2xs font-medium" title={a.fileName}>
                       {a.fileName}
                     </p>
-                    <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <div className="flex justify-between text-2xs text-muted-foreground">
                       <span>{formatDate(a.createdAt)}</span>
                       <span className="tabular-nums">{formatSize(a.sizeBytes)}</span>
                     </div>
