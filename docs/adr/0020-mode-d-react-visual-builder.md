@@ -76,6 +76,15 @@ executes in the canvas; it renders in an opaque-origin sandboxed frame, as the M
 preview does. Rich text is passed through DOMPurify before it reaches the DOM. Action
 targets are validated (`open-external` accepts only `http(s):`, `mailto:` and `tel:`).
 
+### Amendment (2026-10-19): developer components on the canvas
+
+"Developer TSX never executes in the canvas" stands. What changed is how the canvas draws one:
+instead of a placeholder, each is an island — a nested frame with `sandbox="allow-scripts"` and
+nothing else, loading a page the admin bundles from the site's components with the Mode B
+in-browser bundler. The island is an opaque origin: it cannot reach the canvas, the admin or
+their storage, and the canvas believes only its own frames' ready/size/error messages. Islands
+get props as JSON and no fetch proxy. See *Developer components* in `docs/mode-d-builder.md`.
+
 ## Consequences
 
 - One component set, one renderer: what the author sees on the canvas is the code that

@@ -45,7 +45,8 @@ it is copied into every site.
 
 The canvas frame is **same-origin with the admin**, so only DCMS's own runtime code ever
 runs in it. Tenant components are data the runtime interprets; rich text goes through
-DOMPurify. Developer-written TSX never runs there — see *Developer components*.
+DOMPurify. Developer-written TSX never runs there: it is drawn in sandboxed island frames —
+see *Developer components*.
 
 ## Editing surfaces
 
@@ -135,6 +136,29 @@ sites to show its data. **Synced, never proxied:**
   field may be bound, since an API's items are whatever it returns. The agent reads them with
   `list_connections`.
 
+## Dynamic Apps records
+
+A Dynamic Apps application's tables (a CRM's accounts, contacts, deals) are records, not plugin
+content: content delivery owns `/api/{slug}/{contentType}`, an app serves
+`/api/{app}/data/{table}` under its public access rules (ADR 0021).
+
+- **Source** `{ app, table, sort?, expand?, related? }`. A Collection lists records, a detail page
+  (`/deals/:id`) shows one, bindings read field API names. A lookup is an id unless `expand`
+  names it, then `account.name` reads. `related` (a relationship of `table`) lists the records
+  related to the one in scope — an account's deals on the account's page — from
+  `/data/{table}/{id}/{relationship}`. A record's `#slug` and `#id` are both its id.
+- **`dcms.data-table`** — search, sort, filters, columns and saved views (site-table-views);
+  `rowLink` (`/deals/:id`) makes each row's first cell a link to its record.
+- **`dcms.record-form`** — adds a record, or (mode `edit`, on that table's detail page) PATCHes the
+  page's record with the version it read, so a concurrent change is refused. Fields come from the
+  app's public model; `afterSave` navigates (`:id` filled). It never saves on the canvas.
+- **Catalog.** The builder reads each app's public model through the site's preview proxy
+  (`/api/admin/sites/{id}/preview/api/{app}/_model`) — exactly what the site may read, without a
+  plugin permission. Picked in the panel, a table's lookups come expanded.
+- **Checks.** `checkVisualSite` names a table the site cannot read (absent, unpublished, closed to
+  the public), a binding through an unexpanded lookup, a data table's unknown column or a rowLink
+  that is not a site path, and related records outside a record of their table.
+
 ## Page state, custom CSS, language
 
 - **Page state** — `page.state` declares named values with defaults (`{ "tab": "dates",
@@ -154,7 +178,13 @@ The Agent tab runs the shared agent with kind `visual`. Its tools edit documents
 `remove_node`, `duplicate_node`, `set_props` (with a device), `bind_props`, `set_action`,
 `create_page`, `update_page`, `delete_page` (asks first), `create_component`,
 `start_component_version`, `expose_setting`, `expose_slot`, `update_instances`,
-`set_design_kit`, `set_css`, `set_when`, `inspect_selected` (what the author means by “this”), `list_connections`, `check_visual_site`. Every write re-validates the whole document and its
+`set_design_kit`, `set_css`, `set_when`, `inspect_selected` (what the author means by “this”), `list_connections`, `describe_apps` (each Dynamic Apps app's tables, fields, relationships and public access, as the site reads them), `check_visual_site`. `list_component_types` with `types` returns those components with every setting explained. The prompt's Data section separates plugin content, Dynamic Apps records and external APIs — three tools, three source shapes.
+
+From the server's AI catalog the agent also gets an app's `dynamic-apps.config` reads, draft
+preview and validation, and `apply_change_set` — only for apps whose AI tools are on and members
+with the model permissions. A change set writes the app's draft and asks the author first even in
+the default mode (the author's decision, 2026-10-19); publishing, discarding, rollback and flows
+are not the site agent's: the author publishes on the app's Configuration screen. Every write re-validates the whole document and its
 placement, and goes through the run transaction (reviewable, revertable). The run's gate is
 `checkVisualSite` with the same content schema the Problems list uses.
 
@@ -167,11 +197,20 @@ A developer writes a React component in TSX; authors place and configure it like
 - **Source** `src/components/<name>.tsx` — its default export receives the props as React props.
   *My components › New developer component (TSX)* writes both; *Edit source* on a selected
   instance opens it in the code view, typed against React and the vendored runtime.
-- **Type** `code.<name>`. `codeDefinitions(contracts, modules?)` renders the developer's component
-  when the modules are given — the published site's entry globs `src/components/*.tsx` — and a
-  placeholder otherwise.
-- **Where it runs.** Never on the canvas or in the in-admin preview: both share the admin's
-  origin. A site with any developer component previews in the Mode B sandbox instead — the whole
+- **Type** `code.<name>`. `codeDefinitions(contracts, modules?, island?)` renders the developer's
+  component when the modules are given — the published site's entry globs `src/components/*.tsx`
+  — through the admin's `island` renderer on the canvas, and a placeholder otherwise.
+- **On the canvas: islands.** The source never runs in the canvas (same origin as the admin).
+  `canvas/islands.ts` bundles the site's components with the Mode B bundler into one island page
+  from a virtual entry (`src/__dcms_island.tsx`, never saved or deployed), rebuilt as files
+  change; each developer component is a frame of it with `sandbox="allow-scripts"` only — an
+  opaque origin. `CodeIsland` sends it `{name, props}` as JSON and believes three answers, only
+  from that frame: ready, a height (clamped to 4000px), an error. The frame takes no pointer
+  events, so selection and drag stay on the node. The placeholder shows while it builds and on
+  failure. Islands have no fetch proxy: a component's own requests work in the full preview and
+  on the site.
+- **Where else it runs.** Not in the in-admin preview, which shares the admin's origin: a site
+  with any developer component previews in the Mode B sandbox instead — the whole
   draft bundled in the browser (esbuild-wasm, `import.meta.glob` expanded by
   `ide/preview/importGlob.ts`, packages pinned from the palette then the site's package.json),
   run in an opaque-origin `srcdoc` frame whose API calls the admin replays only inside the
@@ -200,6 +239,10 @@ documents built with the real `visual` template and Vite, served the site-host w
 the same result: every gig listed, the card a row on desktop and a column at 375px, card
 links and direct deep links to the detail page, a 404 for an unknown slug, no console
 errors.
+
+A CRM slice over a Dynamic Apps app — a deals data table linking to `/deals/:id`, the deal's
+detail page with an account lookup, the account's page listing its deals, and a record form — is
+built by scripted agent calls in `e2e/admin/visualAgent.spec.ts`, after `describe_apps`.
 
 Not yet verified by a person: the signed-in walk-through on vps1 (create → publish →
 serve), and a prompt-driven run against a real model.

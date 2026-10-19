@@ -205,3 +205,114 @@ test('the agent builds the events slice: kit, card component, collection, shell 
   await expect(preview.getByText('Indoors.')).toBeVisible();
   await expect(preview.getByText('© Acme Events')).toBeVisible();
 });
+
+/*
+ * The CRM slice: the calls a model makes for "build a site for our CRM" over a Dynamic Apps app —
+ * describe_apps first, then a deals list linking to each deal, the deal's page (its account by
+ * name, an edit form), and the account's page listing its deals. Records are not plugin content:
+ * every source is { app, table }, and the check that closes the run finds nothing wrong.
+ */
+const ACCOUNT = 'bbbbbbbb-0000-0000-0000-000000000001';
+const DEAL = 'aaaaaaaa-0000-0000-0000-000000000001';
+const CRM_MODEL = {
+  revision: 3,
+  hash: 'h3',
+  tables: [
+    {
+      apiName: 'accounts', displayName: 'Account', pluralName: 'Accounts', primaryField: 'name',
+      access: { read: 'all', create: false, updateOwn: false, deleteOwn: false, rowRules: false },
+      fields: [{ apiName: 'name', displayName: 'Name', type: 'text', required: true, readOnly: false }],
+      relationships: [{ apiName: 'deals', kind: 'oneToMany', target: 'deals' }],
+    },
+    {
+      apiName: 'deals', displayName: 'Deal', pluralName: 'Deals', primaryField: 'name',
+      access: { read: 'all', create: true, updateOwn: false, deleteOwn: false, rowRules: false },
+      fields: [
+        { apiName: 'name', displayName: 'Name', type: 'text', required: true, readOnly: false },
+        { apiName: 'stage', displayName: 'Stage', type: 'choice', required: false, readOnly: false, options: ['lead', 'won'] },
+        { apiName: 'account', displayName: 'Account', type: 'lookup', required: false, readOnly: false, target: 'accounts' },
+      ],
+      relationships: [],
+    },
+  ],
+};
+const DEAL_ROW = { id: DEAL, version: 1, created_at: '2026-10-01T08:00:00Z', updated_at: '2026-10-01T08:00:00Z', name: 'Big one', stage: 'won', account: { id: ACCOUNT, name: 'Acme' } };
+const PAGE_OF = (items: unknown[]) => ({ items, total: items.length, page: 1, pageSize: 25, totalCapped: false });
+
+test('the agent builds a CRM slice over a Dynamic Apps app, with records as records', async ({ page, api }) => {
+  test.slow();
+  const preview = '/api/admin/sites/:id/preview/api/crm';
+  api
+    .on('GET', '/api/admin/plugins/instances', [
+      ...PLUGIN_INSTANCES,
+      { id: 'cccccccc-0000-0000-0000-0000000000d1', pluginId: 'dynamic-apps', slug: 'crm', name: 'CRM', description: '', enabled: true, config: '{}' },
+    ])
+    .on('GET', '/api/admin/plugin-ui', [{ pluginId: 'dynamic-apps', name: 'Dynamic Apps', icon: null, source: 'builtin', module: null, screens: [], instances: [{ id: 'd1', slug: 'crm', name: 'CRM', enabled: true, aiToolsEnabled: false }] }])
+    .on('GET', '/api/admin/plugins/crm/_model', { draft: null, published: { number: 3 }, hash: 'h3' })
+    .on('GET', `${preview}/_model`, CRM_MODEL)
+    .on('GET', `${preview}/data/deals`, PAGE_OF([DEAL_ROW]))
+    .on('GET', `${preview}/data/accounts`, PAGE_OF([{ id: ACCOUNT, version: 1, name: 'Acme' }]))
+    .on('POST', `${preview}/data/deals/query`, PAGE_OF([DEAL_ROW]))
+    .on('GET', `${preview}/views/deals`, { views: [], defaultView: null })
+    .on('GET', `${preview}/data/deals/:deal`, DEAL_ROW)
+    .on('GET', `${preview}/data/accounts/:account`, { id: ACCOUNT, version: 1, name: 'Acme' })
+    .on('GET', `${preview}/data/accounts/:account/deals`, PAGE_OF([DEAL_ROW]));
+  await scriptAgent(page, [
+    tool('a', 'describe_apps', {}),
+    tool('t', 'insert_node', {
+      doc: 'page:home',
+      node: { type: 'dcms.data-table', props: { instance: 'crm', table: 'deals', columns: 'name, stage, account', rowLink: '/deals/:id' } },
+    }),
+    tool('dp', 'create_page', { title: 'Deal', path: '/deals/:id', detail_of: { app: 'crm', table: 'deals', expand: ['account'] } }),
+    tool('dn', 'insert_node', {
+      doc: 'page:deal',
+      node: {
+        type: 'dcms.section',
+        slots: {
+          default: [
+            { type: 'dcms.heading', props: { level: '1' }, bind: { text: 'name' } },
+            { type: 'dcms.text', bind: { text: 'account.name' } },
+            { type: 'dcms.record-form', props: { instance: 'crm', table: 'deals', mode: 'edit', fields: 'name, stage' } },
+          ],
+        },
+      },
+    }),
+    tool('ap', 'create_page', { title: 'Account', path: '/accounts/:id', detail_of: { app: 'crm', table: 'accounts' } }),
+    tool('an', 'insert_node', {
+      doc: 'page:account',
+      node: {
+        type: 'dcms.section',
+        slots: {
+          default: [
+            { type: 'dcms.heading', props: { level: '1' }, bind: { text: 'name' } },
+            { type: 'dcms.collection', props: { source: { app: 'crm', table: 'accounts', related: 'deals' } }, slots: { item: [{ type: 'dcms.text', bind: { text: 'name' } }] } },
+          ],
+        },
+      },
+    }),
+    tool('v', 'check_visual_site', {}),
+    { text: 'Built the CRM: deals, a page per deal and per account.' },
+  ]);
+
+  await open(page, api, HOME_PAGE);
+  await page.getByRole('tab', { name: 'Agent' }).click();
+  await page.getByPlaceholder(/Describe a change/i).fill('Build a site for our CRM');
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('Built the CRM: deals, a page per deal and per account.')).toBeVisible({ timeout: 30000 });
+
+  // Records as records: every source names an app and a table, and nothing the run wrote is wrong.
+  await page.getByRole('tab', { name: 'Problems' }).click();
+  await expect(page.getByText('No problems found.')).toBeVisible();
+  await expect.poll(() => saved(api, 'dcms/pages/deal.json'), { timeout: 15000 }).toBeTruthy();
+  const deal = JSON.parse(saved(api, 'dcms/pages/deal.json')!);
+  expect(deal.data).toEqual({ source: { app: 'crm', table: 'deals', expand: ['account'] }, param: 'id' });
+  expect(deal.seo).toEqual({ title: '{name}' });
+
+  // As a visitor: the deals list links to the deal, whose page names its account.
+  await page.getByRole('group', { name: 'View' }).getByTitle('Preview').click();
+  const site = page.frameLocator('iframe[title="Preview"]');
+  await site.getByRole('link', { name: 'Big one' }).click();
+  await expect(site.getByRole('heading', { level: 1 })).toHaveText('Big one');
+  await expect(site.getByText('Acme')).toBeVisible();
+  await expect(site.locator('form.dcms-form input[name="name"]')).toHaveValue('Big one');
+});
