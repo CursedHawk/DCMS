@@ -49,7 +49,10 @@ public sealed class PluginJobSchedulerTests(AdminApiFixture fixture)
         var scheduled = new[] { (pluginId, JobDeclaration.Of<NoopJob>("refresh", TimeSpan.FromHours(1))) };
         var cache = new MemoryCache();
         var bus = new Bus();
-        var now = DateTimeOffset.UtcNow;
+        // Ten minutes into an hourly slot, not "now": slots are unix-seconds / interval, so a run in
+        // the last minute of an hour put `now.AddMinutes(1)` in the next slot and enqueued twice.
+        var hour = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 3600 * 3600);
+        var now = hour.AddMinutes(10);
 
         using (var scope = fixture.Factory.Services.CreateScope())
         {
