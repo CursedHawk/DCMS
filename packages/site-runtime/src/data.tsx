@@ -37,12 +37,36 @@ export const connectionSourceSchema = z.strictObject({
   slug: z.string().regex(DOT_PATH).optional(),
 });
 
-export const sourceSchema = z.union([pluginSourceSchema, connectionSourceSchema]);
+const API_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+
+/**
+ * A Dynamic Apps table: the app's instance slug and the table's API name, read through the app's
+ * public API (`/api/{app}/data/{table}`) — what the site may read of it, as the app's access rules
+ * say. Not a plugin content type: an app serves records, not published items, and content
+ * delivery owns `/api/{slug}/{contentType}`. `sort` is a field (`-` first for descending);
+ * `expand` lists lookups to fetch whole, so a binding can read `account.name` rather than an id.
+ * `related` names a relationship of `table`: the records related to the one in scope — an
+ * account's deals, on the account's detail page — at `/api/{app}/data/{table}/{id}/{related}`.
+ */
+export const appSourceSchema = z.strictObject({
+  app: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/, 'must be a Dynamic Apps instance slug'),
+  table: z.string().regex(API_NAME, "must be a table's API name"),
+  sort: z.string().regex(/^-?[A-Za-z][A-Za-z0-9_]{0,63}$/, 'must be a field API name, - first for descending').optional(),
+  expand: z.array(z.string().regex(API_NAME, 'must be a lookup field API name')).max(10).optional(),
+  related: z.string().regex(API_NAME, 'must be a relationship API name').optional(),
+});
+
+export const sourceSchema = z.union([pluginSourceSchema, connectionSourceSchema, appSourceSchema]);
 export type Source = z.infer<typeof sourceSchema>;
 export type ConnectionSource = z.infer<typeof connectionSourceSchema>;
+export type AppSource = z.infer<typeof appSourceSchema>;
 
 export function isConnectionSource(source: Source): source is ConnectionSource {
   return 'connection' in source;
+}
+
+export function isAppSource(source: Source): source is AppSource {
+  return 'app' in source;
 }
 
 /** One published item, as the delivery API returns it. */
@@ -62,8 +86,8 @@ export interface ItemList {
 export interface DataClient {
   get(path: string): Promise<unknown>;
   post(path: string, body: unknown): Promise<unknown>;
-  /** Changes beyond a POST — a data table's saved views. Absent where nothing may be changed (the builder). */
-  send?(method: 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<unknown>;
+  /** Changes beyond a POST — a data table's saved views, a record form's edit. Absent where nothing may be changed (the builder). */
+  send?(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<unknown>;
 }
 
 /** Same-origin `fetch`: on a published site `/api/*` is served by site-host's proxy. */
@@ -125,6 +149,15 @@ export function useItem(): ItemScope | null {
 
 export function listPath(source: Source, options: { limit?: number; tag?: string; page?: number } = {}): string {
   if (isConnectionSource(source)) return `/api/connections/${source.connection}${source.operation}`;
+  if (isAppSource(source)) {
+    const query = new URLSearchParams();
+    if (options.page) query.set('page', String(options.page));
+    if (options.limit) query.set('pageSize', String(options.limit));
+    if (source.sort) query.set('sort', source.sort);
+    if (source.expand?.length) query.set('expand', source.expand.join(','));
+    const qs = query.toString();
+    return `/api/${source.app}/data/${encodeURIComponent(source.table)}${qs ? `?${qs}` : ''}`;
+  }
   const query = new URLSearchParams();
   if (options.page) query.set('page', String(options.page));
   if (options.limit) query.set('pageSize', String(options.limit));
@@ -133,9 +166,22 @@ export function listPath(source: Source, options: { limit?: number; tag?: string
   return `/api/${source.instance}/${encodeURIComponent(source.contentType)}${qs ? `?${qs}` : ''}`;
 }
 
+/** An app source's related records for the record `id` — the list a `related` source reads. */
+export function relatedPath(source: AppSource, id: string, options: { limit?: number; page?: number } = {}): string {
+  const query = new URLSearchParams();
+  if (options.page) query.set('page', String(options.page));
+  if (options.limit) query.set('pageSize', String(options.limit));
+  const qs = query.toString();
+  return `/api/${source.app}/data/${encodeURIComponent(source.table)}/${encodeURIComponent(id)}/${encodeURIComponent(source.related ?? '')}${qs ? `?${qs}` : ''}`;
+}
+
 export function itemPath(source: Source, slug: string): string {
   // A connection serves lists only: a detail page finds its item in the list.
   if (isConnectionSource(source)) return listPath(source);
+  if (isAppSource(source)) {
+    const expand = source.expand?.length ? `?expand=${encodeURIComponent(source.expand.join(','))}` : '';
+    return `/api/${source.app}/data/${encodeURIComponent(source.table)}/${encodeURIComponent(slug)}${expand}`;
+  }
   return `/api/${source.instance}/${encodeURIComponent(source.contentType)}/${encodeURIComponent(slug)}`;
 }
 
@@ -214,8 +260,31 @@ function connectionItems(source: ConnectionSource, json: unknown): ContentItem[]
   });
 }
 
+/**
+ * A Dynamic Apps record as an item: it has an id and no slug (a detail page's `:id`/`:slug` are both
+ * the id), and its fields — `name`, `stage`, an expanded `account` — are the item's data as they come.
+ */
+function recordItem(value: unknown): ContentItem | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.id !== 'string') return null;
+  return {
+    id: record.id,
+    slug: record.id,
+    publishedAt: typeof record.updated_at === 'string' ? record.updated_at : undefined,
+    data: record,
+  };
+}
+
 /** How a list response reads for this source, at most `limit` items. */
 export function listParser(source: Source, limit?: number): (json: unknown) => ItemList {
+  if (isAppSource(source)) {
+    return (json) => {
+      const body = (json ?? {}) as { items?: unknown; total?: unknown };
+      const items = (Array.isArray(body.items) ? body.items : []).map(recordItem).filter((i): i is ContentItem => !!i);
+      return { items, totalCount: typeof body.total === 'number' ? body.total : items.length };
+    };
+  }
   if (!isConnectionSource(source)) return parseItemList;
   return (json) => {
     const all = connectionItems(source, json);
@@ -225,6 +294,13 @@ export function listParser(source: Source, limit?: number): (json: unknown) => I
 
 /** How an item response reads for this source; for a connection, the list's item with this slug. */
 export function itemParser(source: Source, slug: string): (json: unknown) => ContentItem {
+  if (isAppSource(source)) {
+    return (json) => {
+      const item = recordItem(json);
+      if (!item) throw new Error('not a record');
+      return item;
+    };
+  }
   if (!isConnectionSource(source)) return parseItem;
   return (json) => {
     const found = connectionItems(source, json).find((item) => item.slug === slug);

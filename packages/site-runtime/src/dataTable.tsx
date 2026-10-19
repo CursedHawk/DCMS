@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { DataClientContext, DataError } from './data';
 import type { ComponentDefinition, ComponentRenderProps } from './registry';
 import { useRenderMode } from './renderMode';
+import { SiteLink } from './site';
 import {
   cleanFilter,
   countConditions,
@@ -36,15 +37,18 @@ import {
 
 type Props = Record<string, unknown>;
 
-interface ModelField {
+/** A field of an app's public model (`GET /api/{app}/_model`). */
+export interface ModelField {
   apiName: string;
   displayName: string;
   type: string;
   target?: string | null;
   options?: string[] | null;
+  required?: boolean;
+  readOnly?: boolean;
 }
 
-interface ModelTable {
+export interface ModelTable {
   apiName: string;
   displayName: string;
   pluralName?: string | null;
@@ -151,6 +155,8 @@ export function DataTable({ props }: ComponentRenderProps<Props>) {
   const showSearch = props.search !== false;
   const showFilters = props.filters !== false;
   const showViews = props.views !== false;
+  // `/deals/:id`: each row's first cell links to the page of its record.
+  const rowLink = text(props.rowLink).trim().startsWith('/') ? text(props.rowLink).trim() : '';
   const configured = NAME.test(instance) && NAME.test(tableName);
   const base = `/api/${instance}`;
 
@@ -427,11 +433,20 @@ export function DataTable({ props }: ComponentRenderProps<Props>) {
             {result.state === 'ready' &&
               result.page.items.map((row) => (
                 <tr key={String(row.id)}>
-                  {shown.map((f) => (
-                    <td key={f.key}>
-                      <Cell field={f} value={row[f.key]} target={f.kind === 'reference' ? lookupTarget(f.key) : undefined} />
-                    </td>
-                  ))}
+                  {shown.map((f, index) => {
+                    const cell = <Cell field={f} value={row[f.key]} target={f.kind === 'reference' ? lookupTarget(f.key) : undefined} />;
+                    // The first column opens the record's page: a link in a cell, not a clickable
+                    // row, so it is reachable by keyboard and reads as a link to a screen reader.
+                    return (
+                      <td key={f.key}>
+                        {index === 0 && rowLink && typeof row.id === 'string' ? (
+                          <SiteLink to={rowLink.replace(/:id\b/g, encodeURIComponent(row.id))}>{cell}</SiteLink>
+                        ) : (
+                          cell
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
           </tbody>
@@ -826,6 +841,14 @@ export const DATA_TABLE_COMPONENTS: readonly ComponentDefinition[] = [
         maxLength: 500,
         group: 'data',
         description: 'Field API names, separated by commas, shown until a view is chosen. Empty: the first six fields.',
+      },
+      {
+        kind: 'text',
+        name: 'rowLink',
+        label: 'Open a record at',
+        maxLength: 200,
+        group: 'data',
+        description: 'A page of the site each row links to, with :id for the record — e.g. “/deals/:id”, a detail page over the same table. Empty: rows link nowhere.',
       },
       { kind: 'number', name: 'pageSize', label: 'Rows per page', default: 25, min: 5, max: 100, step: 1, group: 'data', description: 'How many records one page shows.' },
       { kind: 'boolean', name: 'search', label: 'Search box', default: true, group: 'behaviour', description: 'Visitors can search the records.' },

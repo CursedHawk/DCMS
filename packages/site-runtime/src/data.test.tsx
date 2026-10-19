@@ -433,3 +433,88 @@ describe('pictures', () => {
     expect(el.querySelector('img.dcms-image:not(.dcms-gallery img)')?.getAttribute('src')).toBe(`/api/media/${B}/webp-1280`);
   });
 });
+
+describe('Dynamic Apps tables as sources', () => {
+  const source = { app: 'crm', table: 'deals', sort: '-amount', expand: ['account'] };
+  const deals = [
+    { id: 'aaaaaaaa-0000-0000-0000-000000000001', version: 1, name: 'Big one', amount: 900, account: { id: 'acc1', name: 'Acme' } },
+    { id: 'aaaaaaaa-0000-0000-0000-000000000002', version: 1, name: 'Small one', amount: 10, account: { id: 'acc2', name: 'Globex' } },
+  ];
+
+  it('list records through the app’s public API, with the id standing in for a slug', async () => {
+    const node: Node = {
+      id: 'list',
+      type: 'dcms.collection',
+      props: { source, limit: 2 },
+      slots: {
+        item: [
+          { id: 't', type: 'dcms.heading', bind: { text: 'name' } },
+          { id: 'a', type: 'dcms.text', bind: { text: 'account.name' } },
+          { id: 'b', type: 'dcms.button', props: { label: 'Open' }, action: { type: 'navigate', to: '/deals/:id' } },
+        ],
+      },
+    };
+    const data = client({ '/api/crm/data/deals?pageSize=2&sort=-amount&expand=account': { items: deals, total: 2, page: 1, pageSize: 2, totalCapped: false } });
+    const el = await render(<RenderNode node={node} registry={builtinRegistry} />, data);
+    expect([...el.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Big one', 'Small one']);
+    expect(el.textContent).toContain('Acme');
+    expect([...el.querySelectorAll('a')].map((a) => a.getAttribute('href'))).toEqual([`/deals/${deals[0]!.id}`, `/deals/${deals[1]!.id}`]);
+  });
+
+  it('give a detail page the record its address names', async () => {
+    const page: Page = { schemaVersion: 1, id: 'deal', title: 'Deal', data: { source, param: 'id' }, root: { id: 'r', type: 'dcms.page', slots: { default: [{ id: 'h', type: 'dcms.heading', bind: { text: 'name' } }] } } };
+    const documents = loadDocuments({ 'dcms/app.json': { schemaVersion: 1, routes: [{ id: 'deal', path: '/deals/:id', page: 'deal' }] }, 'dcms/pages/deal.json': page });
+    const data = client({ [`/api/crm/data/deals/${deals[0]!.id}?expand=account`]: deals[0] });
+    const shown = await render(<RouterProvider router={createMemoryRouter(siteRoutes(documents), { initialEntries: [`/deals/${deals[0]!.id}`] })} />, data);
+    expect(shown.querySelector('h2')?.textContent).toBe('Big one');
+  });
+
+  it('on a record’s detail page, list the records related to it', async () => {
+    const account = { id: 'bbbbbbbb-0000-0000-0000-000000000001', version: 1, name: 'Acme' };
+    const page: Page = {
+      schemaVersion: 1,
+      id: 'account',
+      title: 'Account',
+      data: { source: { app: 'crm', table: 'accounts' }, param: 'id' },
+      root: { id: 'r', type: 'dcms.page', slots: { default: [
+        { id: 'h', type: 'dcms.heading', bind: { text: 'name' } },
+        { id: 'l', type: 'dcms.collection', props: { source: { app: 'crm', table: 'accounts', related: 'deals' }, limit: 5 }, slots: { item: [{ id: 't', type: 'dcms.text', bind: { text: 'name' } }] } },
+      ] } },
+    };
+    const documents = loadDocuments({ 'dcms/app.json': { schemaVersion: 1, routes: [{ id: 'account', path: '/accounts/:id', page: 'account' }] }, 'dcms/pages/account.json': page });
+    const data = client({
+      [`/api/crm/data/accounts/${account.id}`]: account,
+      [`/api/crm/data/accounts/${account.id}/deals?pageSize=5`]: { items: deals, total: 2, page: 1, pageSize: 5, totalCapped: false },
+    });
+    const shown = await render(<RouterProvider router={createMemoryRouter(siteRoutes(documents), { initialEntries: [`/accounts/${account.id}`] })} />, data);
+    expect(shown.querySelector('h2')?.textContent).toBe('Acme');
+    expect(shown.textContent).toContain('Big one');
+    expect(shown.textContent).toContain('Small one');
+  });
+
+  it('are checked against what the site can read, including lookups it does not expand', () => {
+    const json = (v: unknown) => `${JSON.stringify(v, null, 2)}\n`;
+    const files = (src: unknown, bind: string, extra: Node[] = []) => ({
+      'dcms/app.json': json({ schemaVersion: 1, routes: [{ id: 'home', path: '/', page: 'home' }] }),
+      'dcms/pages/home.json': json({ schemaVersion: 1, id: 'home', title: 'Home', root: { id: 'r', type: 'dcms.page', slots: { default: [
+        { id: 'l', type: 'dcms.collection', props: { source: src }, slots: { item: [{ id: 't', type: 'dcms.heading', bind: { text: bind } }] } },
+        ...extra,
+      ] } } }),
+    });
+    const content = new Map([['apps/crm/deals', new Set(['name', 'amount', 'account', 'lookup:account', 'account.name'])]]);
+    expect(checkVisualSite(files(source, 'account.name'), undefined, content)).toEqual([]);
+    expect(checkVisualSite(files({ app: 'crm', table: 'deals' }, 'account.name'), undefined, content).map((p) => p.message)).toContain(
+      'Heading › Text reads “account.name” through the lookup “account”, which the source does not expand — add "account" to its expand.',
+    );
+    expect(checkVisualSite(files({ app: 'crm', table: 'leads' }, 'name'), undefined, content).map((p) => p.message)[0]).toMatch(
+      /^The collection shows the table crm\/leads, which this site cannot read/,
+    );
+    expect(checkVisualSite(files({ app: 'crm', table: 'accounts', related: 'deals' }, 'name'), undefined, content).map((p) => p.message)).toContain(
+      'The collection shows records related through “deals” to the record in scope, but nothing around it is a record of crm/accounts — put it on that table’s detail page.',
+    );
+    const table: Node = { id: 'dt', type: 'dcms.data-table', props: { instance: 'crm', table: 'deals', columns: 'name, stage' } };
+    expect(checkVisualSite(files(source, 'name', [table]), undefined, content).map((p) => p.message)).toContain(
+      'The data table’s column “stage” is not a field of crm/deals the site can read.',
+    );
+  });
+});

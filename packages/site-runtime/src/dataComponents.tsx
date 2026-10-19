@@ -6,7 +6,10 @@ import {
   DataClientContext,
   DataError,
   ItemContext,
+  isAppSource,
   isConnectionSource,
+  relatedPath,
+  useItem,
   listParser,
   listPath,
   parseItemList,
@@ -68,10 +71,18 @@ export function Collection({ nodeId, props, slot }: ComponentRenderProps<Props>)
   const connection = source.success && isConnectionSource(source.data);
   const want = paging === 'more' ? Math.min(limit * shown, 100) : limit;
   const atPage = paging === 'pages' ? page : 1;
-  const list = useData(
-    source.success ? listPath(source.data, connection ? {} : { limit: want, tag, page: atPage > 1 ? atPage : undefined }) : null,
-    source.success ? listParser(source.data) : parseItemList,
-  );
+  // Records related to the one in scope (an account's deals) read from that record; with no record
+  // around, there is nothing to relate to and nothing is asked for.
+  const outer = useItem();
+  const related = source.success && isAppSource(source.data) && source.data.related ? source.data : null;
+  const path = !source.success
+    ? null
+    : related
+      ? outer
+        ? relatedPath(related, outer.item.id, { limit: want, page: atPage > 1 ? atPage : undefined })
+        : null
+      : listPath(source.data, connection ? {} : { limit: want, tag, page: atPage > 1 ? atPage : undefined });
+  const list = useData(path, source.success ? listParser(source.data) : parseItemList);
   const windowed = useMemo(
     () =>
       list.state === 'ready' && connection

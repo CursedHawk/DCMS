@@ -2,7 +2,7 @@ import { CHOICE_FIELDS, fieldOptions } from './dataComponents';
 import { EMBED_SERVICES, embedUrl, videoTarget } from './mediaComponents';
 import { codeContractOf, codeContractPath, codeDefinitions, codeSourceOf, codeSourcePath, readCodeContracts, type CodeContract } from './code';
 import { BUILTIN_COMPONENTS, anchorId } from './components';
-import { BINDABLE, isConnectionSource, sourceSchema, type Source } from './data';
+import { BINDABLE, isAppSource, isConnectionSource, sourceSchema, type Source } from './data';
 import { appSchema, pageSchema, walk, type App, type NavItem, type Node, type Page } from './document';
 import { isInternalPath } from './ids';
 import { APP_JSON, THEME_JSON, pageIdFromPath } from './paths';
@@ -64,12 +64,28 @@ function navPaths(items: readonly NavItem[]): string[] {
  * Source key → the field paths its items have. A set holding `*` accepts any field: an external
  * connection's items are whatever its API returns.
  */
+/**
+ * What each source offers: `instance/contentType`, `connections/{slug}{op}` or `apps/{app}/{table}`
+ * → its field paths. A Dynamic Apps lookup appears as `lookup:{field}` beside its `{field}.{target
+ * field}` paths: those read only when the source expands the lookup.
+ */
 export type ContentSchema = ReadonlyMap<string, ReadonlySet<string>>;
 
 const META = new Set(['#slug', '#id', '#publishedAt', '#index', '#number', '#count']);
 
 /** What bindings in a subtree read from: a known source, an item of unknown shape, or nothing. */
-type Scope = { kind: 'none' } | { kind: 'unknown' } | { kind: 'source'; key: string };
+type Scope = { kind: 'none' } | { kind: 'unknown' } | { kind: 'source'; key: string; expand?: readonly string[] };
+
+function scopeOf(source: Source): Scope {
+  return { kind: 'source', key: sourceKey(source), expand: isAppSource(source) ? (source.expand ?? []) : undefined };
+}
+
+/** What a missing source is called, so the fix it suggests is the right one. */
+function missingSource(key: string): string {
+  return key.startsWith('apps/')
+    ? `the table ${key.slice(5)}, which this site cannot read — it does not exist, is not published yet, or the app does not let the public read it (describe_apps lists what the site can read)`
+    : `${key}, which this site’s plugins do not provide`;
+}
 
 /**
  * Page state: whatever a node shows `when`, or an action sets or toggles, is a value its page
@@ -157,6 +173,12 @@ function checkTree(
         problem('error', `${definition.label} › ${prop.label} shows “${path}”, but nothing around it provides an item — put it inside a collection, or on a detail page.`, node.id);
       } else if (scope.kind === 'source' && content && !META.has(path) && !content.get(scope.key)?.has(fieldOf(path)) && !content.get(scope.key)?.has('*')) {
         problem('error', `${definition.label} › ${prop.label} shows the field “${path}”, which ${scope.key} does not have.`, node.id);
+      } else if (scope.kind === 'source' && scope.expand && content) {
+        // A Dynamic Apps lookup is an id unless the source expands it: `account.name` reads nothing.
+        const head = path.split('.')[0]!;
+        if (path.includes('.') && content.get(scope.key)?.has(`lookup:${head}`) && !scope.expand.includes(head)) {
+          problem('error', `${definition.label} › ${prop.label} reads “${path}” through the lookup “${head}”, which the source does not expand — add "${head}" to its expand.`, node.id);
+        }
       }
     }
     if (node.action?.type === 'navigate' && /:(slug|id)\b/.test(node.action.to) && scope.kind === 'none') {
@@ -200,7 +222,36 @@ function checkTree(
     if (node.type === 'dcms.collection' && content) {
       const source = sourceSchema.safeParse(node.props?.source);
       if (source.success && !content.has(sourceKey(source.data))) {
-        problem('error', `The collection shows ${sourceKey(source.data)}, which this site’s plugins do not provide.`, node.id);
+        problem('error', `The collection shows ${missingSource(sourceKey(source.data))}.`, node.id);
+      }
+    }
+    // Related records are read from the record in scope, which must be a record of that table.
+    if (node.type === 'dcms.collection') {
+      const source = sourceSchema.safeParse(node.props?.source);
+      if (source.success && isAppSource(source.data) && source.data.related) {
+        const parent = `apps/${source.data.app}/${source.data.table}`;
+        if (scope.kind !== 'source' || scope.key !== parent) {
+          problem('error', `The collection shows records related through “${source.data.related}” to the record in scope, but nothing around it is a record of ${source.data.app}/${source.data.table} — put it on that table’s detail page.`, node.id);
+        }
+      }
+    }
+
+    // A data table names its app and table as text: check them against what the site can read.
+    if (node.type === 'dcms.data-table' && content) {
+      const app = typeof node.props?.instance === 'string' ? node.props.instance.trim() : '';
+      const table = typeof node.props?.table === 'string' ? node.props.table.trim() : '';
+      const fields = app && table ? content.get(`apps/${app}/${table}`) : undefined;
+      if (app && table && !fields) {
+        problem('error', `The data table shows ${missingSource(`apps/${app}/${table}`)}.`, node.id);
+      }
+      const rowLink = typeof node.props?.rowLink === 'string' ? node.props.rowLink.trim() : '';
+      if (rowLink && !rowLink.startsWith('/')) {
+        problem('error', `The data table opens records at “${rowLink}”, which is not a page of this site — start it with /, e.g. /deals/:id.`, node.id);
+      }
+      if (fields && typeof node.props?.columns === 'string') {
+        for (const column of node.props.columns.split(',').map((c) => c.trim()).filter(Boolean)) {
+          if (!fields.has(column)) problem('error', `The data table’s column “${column}” is not a field of ${app}/${table} the site can read.`, node.id);
+        }
       }
     }
 
@@ -213,7 +264,7 @@ function checkTree(
       let childScope = scope;
       if (node.type === 'dcms.collection' && slot === 'item') {
         const source = sourceSchema.safeParse(node.props?.source);
-        childScope = source.success ? { kind: 'source', key: sourceKey(source.data) } : { kind: 'unknown' };
+        childScope = source.success ? scopeOf(source.data) : { kind: 'unknown' };
       }
       children.forEach((child, index) => {
         const placement = canPlace(registry, node.type, slot, child.type, index);
@@ -235,7 +286,9 @@ function checkTree(
 }
 
 export function sourceKey(source: Source): string {
-  return isConnectionSource(source) ? `connections/${source.connection}${source.operation}` : `${source.instance}/${source.contentType}`;
+  if (isConnectionSource(source)) return `connections/${source.connection}${source.operation}`;
+  if (isAppSource(source)) return `apps/${source.app}/${source.table}${source.related ? `/${source.related}` : ''}`;
+  return `${source.instance}/${source.contentType}`;
 }
 
 /**
@@ -352,7 +405,7 @@ export function checkVisualSite(files: Readonly<Record<string, string>>, given?:
     if (page.data.id !== id) out.push({ severity: 'error', file: path, message: `its id is “${page.data.id}” but the file is named “${id}”.` });
     pageIds.add(id);
     pageData.set(id, page.data.data);
-    const scope: Scope = page.data.data ? { kind: 'source', key: sourceKey(page.data.data.source) } : { kind: 'none' };
+    const scope: Scope = page.data.data ? scopeOf(page.data.data.source) : { kind: 'none' };
     checkTree(page.data.root, path, 'page', registry, out, scope, content);
     checkState(page.data.root, path, page.data.state ?? {}, out);
     // Two sections answering to one anchor: a link to it lands on the first only.
@@ -364,8 +417,12 @@ export function checkVisualSite(files: Readonly<Record<string, string>>, given?:
     for (const [anchor, count] of anchors) {
       if (count > 1) out.push({ severity: 'warning', file: path, message: `${count} sections use the anchor “${anchor}”; a link to /#${anchor} reaches only the first.` });
     }
+    const detail = page.data.data?.source;
+    if (detail && isAppSource(detail) && detail.related) {
+      out.push({ severity: 'error', file: path, message: 'A detail page shows one record of a table; related records belong in a collection on it.' });
+    }
     if (page.data.data && content && !content.has(sourceKey(page.data.data.source))) {
-      out.push({ severity: 'error', file: path, message: `It shows one item of ${sourceKey(page.data.data.source)}, which this site’s plugins do not provide.` });
+      out.push({ severity: 'error', file: path, message: `It shows one item of ${missingSource(sourceKey(page.data.data.source))}.` });
     }
   }
 
