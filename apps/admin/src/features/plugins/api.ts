@@ -90,9 +90,10 @@ export function usePluginCatalog() {
   });
 }
 
-export function usePluginInstances() {
+export function usePluginInstances(enabled = true) {
   return useQuery({
     queryKey: ['plugin-instances'],
+    enabled,
     queryFn: () => api.get<PluginInstance[]>('/admin/plugins/instances'),
   });
 }

@@ -45,7 +45,7 @@ test.describe('somebody who holds only audit:read', () => {
 
     await expect(sub.getByRole('link', { name: /Audit log/ })).toBeVisible();
     // The API reference names no permission, which is also why /settings is never empty.
-    await expect(sub.getByRole('link', { name: /API Docs/ })).toBeVisible();
+    await expect(sub.getByRole('link', { name: /API documentation/ })).toBeVisible();
     // Absent rather than disabled: a column of greyed-out section links teaches nothing and
     // makes the ones you can use harder to find. (Buttons follow the opposite rule.)
     await expect(sub.getByRole('link', { name: /Members/ })).toHaveCount(0);

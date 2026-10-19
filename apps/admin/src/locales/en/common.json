@@ -15,7 +15,7 @@
     "media": "Media",
     "forms": "Forms",
     "sites": "Sites",
-    "openapi": "API Docs",
+    "openapi": "API documentation",
     "ai": "AI",
     "analytics": "Analytics",
     "chat": "Chat",
@@ -36,7 +36,10 @@
       "extend": "Extend",
       "workspace": "Workspace",
       "platform": "Platform"
-    }
+    },
+    "jobs": "Background jobs",
+    "account": "Your account",
+    "notifications": "Notifications"
   },
   "palette": {
     "pages": "Pages",
@@ -383,7 +386,7 @@
     "itemsTab": "Items"
   },
   "media": {
-    "title": "Media library",
+    "title": "Media",
     "upload": "Upload files",
     "dropHere": "Drop files here or click to upload",
     "processing": "Processing",
@@ -976,7 +979,7 @@
     "noInstances": "Enable plugins to generate API documentation."
   },
   "ai": {
-    "title": "AI settings",
+    "title": "AI",
     "provider": "Provider",
     "model": "Model",
     "baseUrl": "Base URL",
@@ -995,8 +998,8 @@
     "compatibleHint": "Any OpenAI-compatible service works: choose “OpenAI-compatible” and point the base URL at it (OpenRouter, Groq, Together, Azure OpenAI, a self-hosted vLLM…). Hosted services must use https; the two local options may use a plain address on your own network."
   },
   "account": {
-    "menuItem": "Account settings",
-    "title": "Account settings",
+    "menuItem": "Your account",
+    "title": "Your account",
     "subtitle": "Manage your profile and git access credentials.",
     "profile": "Profile",
     "email": "Email",
@@ -1054,7 +1057,7 @@
     "copied": "Copied."
   },
   "workspace": {
-    "title": "Workspace",
+    "title": "General",
     "slugFixed": "Identifier {{slug}} cannot be changed — it is used in URLs, the git organisation and stored file paths.",
     "owner": "Owner",
     "noOwner": "No owner",

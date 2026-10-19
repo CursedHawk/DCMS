@@ -27,6 +27,17 @@ describe('paletteItems', () => {
     expect(at('/content?instance=x')).toMatchObject({ group: 'pages', label: 'Press room' });
   });
 
+  it('finds a site or a plugin instance by its name', () => {
+    const items = paletteItems({ isSuperAdmin: false, permissions: [] }, [], t, 'en', {
+      sites: [{ id: 's1', name: 'Acme shop' }],
+      instances: [{ slug: 'press-room', name: 'Press room' }],
+    });
+    expect(items.find((i) => i.to === '/sites/s1')).toMatchObject({ group: 'sites', label: 'Acme shop' });
+    expect(items.find((i) => i.to === '/plugins/press-room')).toMatchObject({ group: 'plugins', label: 'Press room' });
+    // And the pages the topbar leads to, which the menu does not list.
+    expect(items.some((i) => i.to === '/jobs')).toBe(true);
+  });
+
   it('lists each destination once', () => {
     const items = paletteItems({ isSuperAdmin: true, permissions: [] }, [...server, ...server], t, 'en');
     expect(new Set(items.map((i) => i.to)).size).toBe(items.length);

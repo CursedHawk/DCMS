@@ -140,7 +140,7 @@ test('"Switch account" asks the edge for identity\'s account list and comes back
   await useBffMode(page);
   await page.goto('/sites');
 
-  await page.getByRole('button', { name: 'Account settings' }).click();
+  await page.getByRole('button', { name: 'Your account' }).click();
   const signin = page.waitForRequest((r) => r.url().includes('/.edge/signin'));
   await page.getByRole('menuitem', { name: 'Switch account' }).click();
 

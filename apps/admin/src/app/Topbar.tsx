@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Bot, Languages, Moon, Search, Settings, Sun } from 'lucide-react';
+import { ArrowLeftRight, Bot, Languages, Moon, Search, Sun, UserCog } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -152,7 +152,7 @@ export function Topbar({
               ...preferenceEntries,
               {
                 label: t('account.menuItem'),
-                icon: Settings,
+                icon: UserCog,
                 onSelect: () => void navigate({ to: '/account' as string }),
               },
               {

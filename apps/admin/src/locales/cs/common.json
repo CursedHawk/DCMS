@@ -36,7 +36,10 @@
       "extend": "Rozšíření",
       "workspace": "Pracovní prostor",
       "platform": "Platforma"
-    }
+    },
+    "jobs": "Úlohy na pozadí",
+    "account": "Váš účet",
+    "notifications": "Oznámení"
   },
   "palette": {
     "pages": "Stránky",
@@ -393,7 +396,7 @@
     "itemsTab": "Položky"
   },
   "media": {
-    "title": "Knihovna médií",
+    "title": "Média",
     "upload": "Nahrát soubory",
     "dropHere": "Přetáhněte soubory sem nebo klikněte pro nahrání",
     "processing": "Zpracovává se",
@@ -1004,7 +1007,7 @@
     "noInstances": "Zapněte pluginy pro vygenerování API dokumentace."
   },
   "ai": {
-    "title": "Nastavení AI",
+    "title": "AI",
     "provider": "Poskytovatel",
     "model": "Model",
     "baseUrl": "Základní URL",
@@ -1023,8 +1026,8 @@
     "compatibleHint": "Funguje jakákoli služba kompatibilní s OpenAI: zvolte „OpenAI-compatible“ a nasměrujte na ni základní URL (OpenRouter, Groq, Together, Azure OpenAI, vlastní vLLM…). Hostované služby musí používat https; dvě lokální volby mohou použít běžnou adresu ve vaší síti."
   },
   "account": {
-    "menuItem": "Nastavení účtu",
-    "title": "Nastavení účtu",
+    "menuItem": "Váš účet",
+    "title": "Váš účet",
     "subtitle": "Spravujte svůj profil a přihlašovací údaje pro git.",
     "profile": "Profil",
     "email": "E-mail",
@@ -1082,7 +1085,7 @@
     "copied": "Zkopírováno."
   },
   "workspace": {
-    "title": "Pracovní prostor",
+    "title": "Obecné",
     "slugFixed": "Identifikátor {{slug}} nelze změnit — používá se v URL, git organizaci i cestách uložených souborů.",
     "owner": "Vlastník",
     "noOwner": "Bez vlastníka",

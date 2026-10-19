@@ -88,7 +88,7 @@ test.describe('at 360px', () => {
   for (const path of PAGES) {
     test(`nothing on ${path} sits past the edge of the screen`, async ({ page }) => {
       await page.goto(path);
-      await expect(page.getByRole('button', { name: 'Account settings' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Your account' })).toBeVisible();
       // The page itself, not the shell around its lazy chunk: measured before this, a sweep
       // could pass on a spinner.
       await expect(page.locator('main h1').first()).toBeVisible();
@@ -113,7 +113,7 @@ test.describe('at 360px with long names', () => {
     test(`long names on ${path} stay inside their boxes`, async ({ page, api }) => {
       useLongStrings(api);
       await page.goto(path);
-      await expect(page.getByRole('button', { name: 'Account settings' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Your account' })).toBeVisible();
       // The page itself, not the shell around its lazy chunk: measured before this, a sweep
       // could pass on a spinner.
       await expect(page.locator('main h1').first()).toBeVisible();
@@ -130,7 +130,7 @@ test('on a phone, theme and language move into the account menu', async ({ page 
   await page.goto('/');
   await expect(page.getByRole('button', { name: 'Language' })).toBeHidden();
 
-  await page.getByRole('button', { name: 'Account settings' }).click();
+  await page.getByRole('button', { name: 'Your account' }).click();
   await expect(page.getByRole('menuitem', { name: 'Čeština' })).toBeVisible();
   await page.getByRole('menuitem', { name: 'Toggle theme' }).click();
   await expect(page.locator('html')).toHaveClass(/\bdark\b/);

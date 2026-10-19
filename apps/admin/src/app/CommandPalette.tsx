@@ -2,9 +2,12 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { Command } from 'cmdk';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Settings, type LucideIcon } from 'lucide-react';
+import { Bell, Loader, PanelsTopLeft, Plug, Settings, UserCog, type LucideIcon } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { Dialog, DialogContent, usePermissions } from '@dcms/ui';
-import { can, type MyPermissions } from '../lib/permissions';
+import { api } from '../lib/api';
+import { Perm, can, type MyPermissions } from '../lib/permissions';
+import { usePluginInstances } from '../features/plugins/api';
 import { getCurrentTenantSlug } from '../tenants';
 import { NAV, navGroup } from './nav';
 import { iconByName, navLabel, useNavigation, type NavResponseItem } from './navApi';
@@ -14,7 +17,13 @@ export interface PaletteItem {
   to: string;
   label: string;
   icon: LucideIcon;
-  group: 'pages' | 'apps' | 'settings';
+  group: 'pages' | 'apps' | 'sites' | 'plugins' | 'settings';
+}
+
+/** Things with names, as well as pages: a site, a plugin instance. From the lists' own caches. */
+export interface PaletteRecords {
+  sites?: readonly { id: string; name: string }[];
+  instances?: readonly { slug: string; name: string }[];
 }
 
 /**
@@ -34,6 +43,7 @@ export function paletteItems(
   server: readonly NavResponseItem[] | undefined,
   t: (key: string) => string,
   language: string,
+  records: PaletteRecords = {},
 ): PaletteItem[] {
   const items: PaletteItem[] = [
     ...NAV.filter((i) => (i.superAdmin ? me?.isSuperAdmin : !i.perm || can(me, i.perm))).map(
@@ -47,6 +57,20 @@ export function paletteItems(
         icon: iconByName(i.icon),
         group: navGroup(i.group) === 'apps' ? 'apps' : 'pages',
       })),
+    // Reached from the topbar rather than the menu, so they were not in the palette either.
+    { to: '/notifications', label: t('nav.notifications'), icon: Bell, group: 'pages' },
+    { to: '/jobs', label: t('nav.jobs'), icon: Loader, group: 'pages' },
+    { to: '/account', label: t('nav.account'), icon: UserCog, group: 'pages' },
+    /*
+     * A site by its name. "Open the Acme site" was the sidebar, then the Sites grid, then the
+     * card — the palette knew the page called Sites and nothing on it.
+     */
+    ...(records.sites ?? []).map(
+      (s): PaletteItem => ({ to: `/sites/${s.id}`, label: s.name, icon: PanelsTopLeft, group: 'sites' }),
+    ),
+    ...(records.instances ?? []).map(
+      (i): PaletteItem => ({ to: `/plugins/${i.slug}`, label: i.name, icon: Plug, group: 'plugins' }),
+    ),
     ...SETTINGS_SECTIONS.filter((s) => !s.perm || can(me, s.perm)).map(
       (s): PaletteItem => ({ to: s.to, label: t(s.labelKey), icon: Settings, group: 'settings' }),
     ),
@@ -106,7 +130,18 @@ export function CommandPalette({
     return () => document.removeEventListener('keydown', onKey);
   }, [open, onOpenChange]);
 
-  const items = paletteItems(me, nav.data?.items, t, i18n.language);
+  // Only while open, and the same keys as the Sites and Plugins pages: usually already cached.
+  const sites = useQuery({
+    queryKey: ['sites'],
+    enabled: open && can(me, Perm.SiteEdit),
+    queryFn: () => api.get<{ id: string; name: string }[]>('/admin/sites'),
+  });
+  const instances = usePluginInstances(open && can(me, Perm.PluginsManage));
+
+  const items = paletteItems(me, nav.data?.items, t, i18n.language, {
+    sites: sites.data,
+    instances: instances.data,
+  });
   const byPath = new Map(items.map((i) => [i.to, i]));
 
   /*
@@ -152,6 +187,8 @@ export function CommandPalette({
   const groups: { id: PaletteItem['group']; label: string }[] = [
     { id: 'pages', label: t('palette.pages') },
     { id: 'apps', label: t('nav.groups.apps') },
+    { id: 'sites', label: t('nav.sites') },
+    { id: 'plugins', label: t('nav.plugins') },
     { id: 'settings', label: t('nav.settings') },
   ];
 
