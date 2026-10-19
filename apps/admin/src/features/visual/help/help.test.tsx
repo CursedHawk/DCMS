@@ -1,7 +1,5 @@
-import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { ARTICLES, articles, search } from './articles';
-import { Markdown } from './Markdown';
 
 describe('help articles', () => {
   it('every article has a title and text in English and Czech', () => {
@@ -22,17 +20,5 @@ describe('help articles', () => {
     expect(search(list, 'NAHLED').length).toBeGreaterThan(0);
     expect(search(articles('en'), 'phone')[0]!.id).toBe('responsive');
     expect(search(list, '')).toEqual(list);
-  });
-});
-
-describe('Markdown', () => {
-  it('draws headings, lists and emphasis as elements, never as HTML', () => {
-    render(<Markdown text={'## Head\n\n- **one**\n- `two`\n\n1. *three*\n\nA <b>tag</b> stays text.'} />);
-    expect(screen.getByRole('heading', { name: 'Head' })).toBeInTheDocument();
-    expect(screen.getAllByRole('list')).toHaveLength(2);
-    expect(screen.getByText('one').tagName).toBe('STRONG');
-    expect(screen.getByText('two').tagName).toBe('CODE');
-    expect(screen.getByText('three').tagName).toBe('EM');
-    expect(screen.getByText('A <b>tag</b> stays text.')).toBeInTheDocument();
   });
 });

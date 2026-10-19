@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Input, Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from '@dcms/ui';
 import { useVisual } from '../store';
 import { articles, search } from './articles';
-import { Markdown } from './Markdown';
+import { AgentMarkdown } from '../../../components/AgentMarkdown';
 import type { MiniTour } from './tours';
 
 /**
@@ -39,7 +39,7 @@ export function HelpDrawer({ onTour }: { onTour: (which: MiniTour) => void }) {
         <SheetBody className="text-sm">
           {article ? (
             <>
-              <Markdown text={article.body} />
+              <AgentMarkdown text={article.body} className="mb-3" />
               {article.tour && (
                 <Button
                   size="sm"
