@@ -93,7 +93,7 @@ export function usePreviewAuth(siteId: string | undefined) {
       const res = await fetch(`${base}/view-as`, {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...csrfHeader() },
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'Idempotency-Key': crypto.randomUUID(), ...csrfHeader() },
         body: JSON.stringify({ instance, userId }),
       });
       if (!res.ok) {

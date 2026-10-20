@@ -376,6 +376,11 @@ public sealed class EdgePreviewSignInTests : IAsyncLifetime
             {
                 return new HttpResponseMessage(HttpStatusCode.Unauthorized);
             }
+            // As admin-api answers a person's write without one (IdempotencyMiddleware, RequireForUsers).
+            if (request.Method != HttpMethod.Get && !request.Headers.Contains("Idempotency-Key"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = JsonContent.Create(new { error = "idempotency-key-required" }) };
+            }
             var path = request.RequestUri!.AbsolutePath;
             if (request.Method == HttpMethod.Get && path == $"/api/admin/sites/{Site}/preview/realm")
             {

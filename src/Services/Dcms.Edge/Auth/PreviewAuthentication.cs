@@ -484,6 +484,13 @@ public sealed class PreviewTargets(HttpClient http, IMemoryCache cache, BffToken
         using var request = new HttpRequestMessage(method, edge.Value.Upstreams.AdminApi.TrimEnd('/') + path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.TryAddWithoutValidation("X-Dcms-Tenant", tenant);
+        // admin-api refuses a person's write without a key (ADR 0024). The console's own key when it
+        // sent one, so its retry is the same operation; else this call's own.
+        if (method != HttpMethod.Get)
+        {
+            var key = context.Request.Headers["Idempotency-Key"].ToString();
+            request.Headers.TryAddWithoutValidation("Idempotency-Key", key is { Length: > 0 and <= 128 } && key.All(c => c is >= '!' and <= '~') ? key : Guid.NewGuid().ToString("N"));
+        }
         if (body is not null)
         {
             request.Content = JsonContent.Create(body);
