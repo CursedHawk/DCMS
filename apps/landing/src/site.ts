@@ -26,9 +26,9 @@ export const routes: Route[] = [
   {
     path: '/',
     file: 'index.html',
-    title: 'DCMS — website builder and headless CMS on your own domain',
+    title: 'DCMS — website builder, CMS and app platform on your own domain',
     description:
-      'Build websites visually, in React or with an AI agent, manage content with plugins, and publish to your own domain with automatic HTTPS. Every site is versioned in git and hosted in the EU.',
+      'Design pages by dragging them together, add a blog, galleries, forms or a members’ area from the plugin marketplace, build your own apps and automations, and publish on your own domain. Hosted in the EU.',
     indexed: true,
   },
   {

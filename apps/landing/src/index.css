@@ -91,115 +91,71 @@
   }
 }
 
-/* Faint dot grid behind the hero. Static on purpose: the demo is the only thing that moves. */
-.dot-grid {
-  background-image: radial-gradient(hsl(var(--foreground) / 0.09) 1px, transparent 1px);
-  background-size: 22px 22px;
-  mask-image: radial-gradient(ellipse 70% 60% at 60% 40%, #000 30%, transparent 75%);
+/* ---- Motion ----------------------------------------------------------------------------- */
+/*
+ * Scroll-linked, in CSS (animation-timeline), so nothing runs on the main thread. Browsers
+ * without it, and anyone who asked for reduced motion, get the finished state.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  /* Hero text: one entrance on load. */
+  .hero-in {
+    animation: rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  @supports (animation-timeline: scroll()) {
+    /* The hero shot starts tipped back and settles flat over the first screen of scrolling. */
+    .hero-stage {
+      perspective: 1800px;
+    }
+    .hero-tilt {
+      transform-origin: 50% 0;
+      animation: tilt linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 70vh;
+    }
+    /* Everything else marked .reveal eases in as it enters the viewport. */
+    .reveal {
+      animation: rise linear both;
+      animation-timeline: view();
+      animation-range: entry 5% cover 28%;
+    }
+  }
+
+  .typing-dot {
+    animation: typing 1.2s ease-in-out infinite;
+  }
 }
 
-/* ---- Hero publish sequence ------------------------------------------------------------- */
-/*
- * One orchestrated run on load: blocks drop into the canvas, the change is committed, the
- * build runs, the certificate is issued, and the address bar flips to the live domain. Every
- * step is an `animation-delay` on the same clock (--t), so retiming means changing one number.
- * Ends on its final frame; the Replay button remounts it.
- */
-.demo {
-  --t: calc(1s * var(--motion));
-}
-.demo .step {
-  opacity: 0;
-  animation: demo-in calc(var(--t) * 0.45) cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
-  animation-delay: calc(var(--t) * var(--at));
-}
-.demo .drop {
-  opacity: 0;
-  animation: demo-drop calc(var(--t) * 0.6) cubic-bezier(0.2, 0.9, 0.25, 1.15) forwards;
-  animation-delay: calc(var(--t) * var(--at));
-}
-.demo .out {
-  animation: demo-out calc(var(--t) * 0.3) ease-in forwards;
-  animation-delay: calc(var(--t) * var(--at));
-}
-.demo .pick {
-  animation: demo-pick calc(var(--t) * 0.6) ease-out;
-  animation-delay: calc(var(--t) * var(--at));
-}
-.demo .bar {
-  transform-origin: left;
-  transform: scaleX(0);
-  animation: demo-bar calc(var(--t) * 1.6) cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  animation-delay: calc(var(--t) * var(--at));
-}
-.demo .pulse {
-  animation: demo-pulse 2.4s ease-out infinite;
-  animation-delay: calc(var(--t) * var(--at));
-}
-@keyframes demo-in {
+@keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
+    transform: translateY(32px);
   }
 }
-@keyframes demo-drop {
+@keyframes tilt {
   from {
-    opacity: 0;
-    transform: translate(-28px, -10px) scale(0.94);
-  }
-  to {
-    opacity: 1;
-    transform: none;
+    transform: rotateX(24deg) scale(0.9);
   }
 }
-@keyframes demo-out {
-  to {
-    opacity: 0;
-  }
-}
-@keyframes demo-pick {
+@keyframes typing {
   0%,
+  60%,
   100% {
-    background: transparent;
+    opacity: 0.35;
+    transform: none;
   }
   30% {
-    background: hsl(var(--primary) / 0.18);
-  }
-}
-@keyframes demo-bar {
-  to {
-    transform: scaleX(1);
-  }
-}
-@keyframes demo-pulse {
-  0% {
-    box-shadow: 0 0 0 0 hsl(var(--success) / 0.55);
-  }
-  70%,
-  100% {
-    box-shadow: 0 0 0 8px hsl(var(--success) / 0);
+    opacity: 1;
+    transform: translateY(-3px);
   }
 }
 
-/* Reduced motion: show the finished state at once instead of an imperceptibly fast run. */
-@media (prefers-reduced-motion: reduce) {
-  .demo .step,
-  .demo .drop {
-    opacity: 1;
-    animation: none;
-  }
-  .demo .out {
-    opacity: 0;
-    animation: none;
-  }
-  .demo .bar {
-    transform: none;
-    animation: none;
-  }
+/* Plugin tiles: each sets --hue; the picture sits on a wash of it. */
+.tint {
+  background: hsl(var(--hue) 80% 95%);
+}
+.dark .tint {
+  background: hsl(var(--hue) 30% 13%);
 }
 
 /* ---- Legal pages: long-form prose without a typography plugin ---- */

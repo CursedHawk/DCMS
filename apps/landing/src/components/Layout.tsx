@@ -40,9 +40,9 @@ function ThemeToggle() {
 }
 
 const nav = [
-  ['/#build', 'How you build'],
+  ['/#features', 'Features'],
   ['/#plugins', 'Plugins'],
-  ['/#hosting', 'Hosting'],
+  ['/#ai', 'AI assistant'],
   ['/#faq', 'FAQ'],
 ] as const;
 
