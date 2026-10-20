@@ -231,8 +231,18 @@ public sealed class OpenAiStreamTranslator
     private int? _textBlock;
     private string _finishReason = "end_turn";
 
-    public long PromptTokens { get; private set; }
+    private long _promptTotal;
+
+    /// <summary>
+    /// The uncached part of the prompt, matching what Anthropic means by <c>input_tokens</c>.
+    /// OpenAI's <c>prompt_tokens</c> includes the cached part, so without the subtraction the
+    /// same conversation would count its cached prefix twice on one path and once on the other.
+    /// </summary>
+    public long PromptTokens => Math.Max(0, _promptTotal - CacheReadTokens);
     public long CompletionTokens { get; private set; }
+
+    /// <summary>OpenAI caches prefixes automatically and reports only reads, never writes.</summary>
+    public long CacheReadTokens { get; private set; }
 
     /// <summary>
     /// Translates one `data:` payload. Returns the Anthropic SSE frames to write, which may be
@@ -259,7 +269,9 @@ public sealed class OpenAiStreamTranslator
 
         if (chunk["usage"] is JsonObject usage)
         {
-            PromptTokens = Math.Max(PromptTokens, usage["prompt_tokens"]?.GetValue<long>() ?? 0);
+            _promptTotal = Math.Max(_promptTotal, usage["prompt_tokens"]?.GetValue<long>() ?? 0);
+            CacheReadTokens = Math.Max(CacheReadTokens,
+                usage["prompt_tokens_details"]?["cached_tokens"]?.GetValue<long>() ?? 0);
             CompletionTokens = Math.Max(CompletionTokens, usage["completion_tokens"]?.GetValue<long>() ?? 0);
         }
 
@@ -374,6 +386,7 @@ public sealed class OpenAiStreamTranslator
             {
                 ["input_tokens"] = PromptTokens,
                 ["output_tokens"] = CompletionTokens,
+                ["cache_read_input_tokens"] = CacheReadTokens,
             },
         }));
 

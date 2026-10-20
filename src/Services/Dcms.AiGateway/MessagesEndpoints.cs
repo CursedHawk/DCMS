@@ -126,6 +126,8 @@ public static class MessagesEndpoints
 
             long promptTokens = 0;
             long completionTokens = 0;
+            long cacheWriteTokens = 0;
+            long cacheReadTokens = 0;
             await using var upstreamStream = await upstream.Content.ReadAsStreamAsync(ct);
             try
             {
@@ -141,6 +143,7 @@ public static class MessagesEndpoints
                     var usage = new AnthropicUsageScanner();
                     await usage.CopyAsync(upstreamStream, ctx.Response.Body, ct);
                     (promptTokens, completionTokens) = (usage.PromptTokens, usage.CompletionTokens);
+                    (cacheWriteTokens, cacheReadTokens) = (usage.CacheWriteTokens, usage.CacheReadTokens);
                 }
                 else if (!upstream.IsSuccessStatusCode)
                 {
@@ -157,6 +160,7 @@ public static class MessagesEndpoints
                     var translator = new OpenAiStreamTranslator();
                     await TranslateAsync(upstreamStream, ctx.Response, translator, ct);
                     (promptTokens, completionTokens) = (translator.PromptTokens, translator.CompletionTokens);
+                    cacheReadTokens = translator.CacheReadTokens;
                 }
             }
             finally
@@ -166,10 +170,15 @@ public static class MessagesEndpoints
                 // them for the same reason — a ceiling a broken stream can walk through is not
                 // a ceiling.
                 metrics.AiCall(body.TenantId, systemName, model,
-                    promptTokens, completionTokens, Stopwatch.GetElapsedTime(started));
-                await quota.RecordAsync(body.TenantId, promptTokens + completionTokens, CancellationToken.None);
+                    promptTokens, completionTokens, Stopwatch.GetElapsedTime(started),
+                    cacheWriteTokens, cacheReadTokens);
+                await quota.RecordAsync(body.TenantId,
+                    AiQuota.Weigh(promptTokens, completionTokens, cacheWriteTokens, cacheReadTokens),
+                    CancellationToken.None);
                 activity?.SetTag("gen_ai.usage.input_tokens", promptTokens);
                 activity?.SetTag("gen_ai.usage.output_tokens", completionTokens);
+                activity?.SetTag("gen_ai.usage.cache_creation_input_tokens", cacheWriteTokens);
+                activity?.SetTag("gen_ai.usage.cache_read_input_tokens", cacheReadTokens);
                 upstream.Dispose();
             }
             return Results.Empty;

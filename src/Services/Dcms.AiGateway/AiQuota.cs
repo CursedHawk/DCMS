@@ -105,6 +105,18 @@ public sealed class AiQuota(
         await BumpAsync(TokenKey(tenantId), tokens, TimeSpan.FromHours(48), ct);
     }
 
+    /// <summary>
+    /// What one call costs against the daily budget, in uncached-input-token equivalents.
+    ///
+    /// <para>A cache read is billed at a tenth of an input token and a cache write at a quarter
+    /// more, so counting them at face value would make a cached agent run look ten times dearer
+    /// than it is, and leaving them out would let a cached conversation run free.</para>
+    /// </summary>
+    // ponytail: Anthropic's 5-minute-TTL multipliers, reused for every provider; per-provider
+    // rates if a provider's cache pricing ever diverges enough to matter.
+    public static long Weigh(long input, long output, long cacheWrite, long cacheRead) =>
+        input + output + (long)Math.Ceiling(cacheWrite * 1.25) + (long)Math.Ceiling(cacheRead * 0.1);
+
     private static string CallKey(Guid tenantId, Guid? userId) =>
         $"ai:rl:{tenantId}:{userId?.ToString() ?? "tenant"}:{DateTimeOffset.UtcNow:yyyyMMddHHmm}";
 

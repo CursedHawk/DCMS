@@ -325,6 +325,21 @@ public class AnthropicOpenAiBridgeTests
     }
 
     [Fact]
+    public void Cached_prompt_tokens_are_split_out_the_way_anthropic_reports_them()
+    {
+        // OpenAI's prompt_tokens includes the cached prefix; Anthropic's input_tokens does not.
+        // Left unsplit, the quota and the dashboard would count the same prefix twice as often
+        // on one provider as on the other.
+        var translator = new OpenAiStreamTranslator();
+        translator.Feed("""{"choices":[],"usage":{"prompt_tokens":1000,"completion_tokens":45,"prompt_tokens_details":{"cached_tokens":800}}}""");
+
+        translator.PromptTokens.Should().Be(200);
+        translator.CacheReadTokens.Should().Be(800);
+        translator.Finish().Single(f => f.Contains("message_delta"))
+            .Should().Contain("\"input_tokens\":200").And.Contain("\"cache_read_input_tokens\":800");
+    }
+
+    [Fact]
     public void A_malformed_or_empty_chunk_is_ignored_rather_than_fatal()
     {
         // A keep-alive, the [DONE] sentinel and a truncated chunk are all things a provider

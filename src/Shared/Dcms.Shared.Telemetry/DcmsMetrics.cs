@@ -212,7 +212,10 @@ public sealed class DcmsMetrics : IDisposable
     /// never the relay's message, which is unbounded free text.</param>
     public void EmailFailed(string reason) => _emailFailed.Add(1, new KeyValuePair<string, object?>("reason", reason));
 
-    public void AiCall(Guid tenantId, string provider, string model, long promptTokens, long completionTokens, TimeSpan elapsed)
+    /// <param name="promptTokens">The uncached part of the prompt; cached parts are counted
+    /// under their own directions so a cache hit ratio can be read off one counter.</param>
+    public void AiCall(Guid tenantId, string provider, string model, long promptTokens, long completionTokens, TimeSpan elapsed,
+        long cacheWriteTokens = 0, long cacheReadTokens = 0)
     {
         var baseTags = new TagList { Tenant(tenantId), new("provider", provider), new("model", model) };
 
@@ -223,6 +226,14 @@ public sealed class DcmsMetrics : IDisposable
         var completion = baseTags;
         completion.Add("direction", "output");
         _aiTokens.Add(completionTokens, completion);
+
+        var cacheWrite = baseTags;
+        cacheWrite.Add("direction", "cache_write");
+        _aiTokens.Add(cacheWriteTokens, cacheWrite);
+
+        var cacheRead = baseTags;
+        cacheRead.Add("direction", "cache_read");
+        _aiTokens.Add(cacheReadTokens, cacheRead);
 
         _aiDuration.Record(elapsed.TotalSeconds, baseTags);
     }

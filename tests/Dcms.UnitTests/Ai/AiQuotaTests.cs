@@ -28,6 +28,15 @@ public class AiQuotaTests
     private static readonly Guid Other = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private static readonly Guid User = Guid.Parse("33333333-3333-3333-3333-333333333333");
 
+    [Fact]
+    public void Cached_tokens_count_at_what_they_cost()
+    {
+        // 100 input + 50 output + 1000 written (×1.25) + 10000 read (×0.1).
+        AiQuota.Weigh(100, 50, 1000, 10_000).Should().Be(100 + 50 + 1250 + 1000);
+        // Rounded up, so a run of tiny cached calls cannot add up to nothing.
+        AiQuota.Weigh(0, 0, 1, 1).Should().Be(2 + 1);
+    }
+
     // ---------- calls per minute ----------
 
     [Fact]

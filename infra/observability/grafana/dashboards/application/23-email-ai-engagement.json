@@ -566,6 +566,68 @@
       }
     },
     {
+      "id": 48,
+      "type": "stat",
+      "title": "Cache hit ratio (24h)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "dcms-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 10
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "dcms-prometheus"
+          },
+          "expr": "sum(increase(dcms_ai_tokens_total{direction=\"cache_read\"}[24h])) / clamp_min(sum(increase(dcms_ai_tokens_total{direction=~\"input|cache_read|cache_write\"}[24h])), 1)",
+          "refId": "A",
+          "format": "time_series",
+          "legendFormat": "hit"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "description": "Share of prompt tokens served from the prompt cache: read / (read + write + uncached input). Near zero on a busy day means something in the request prefix keeps changing."
+    },
+    {
       "id": 42,
       "type": "timeseries",
       "title": "Tokens by tenant",

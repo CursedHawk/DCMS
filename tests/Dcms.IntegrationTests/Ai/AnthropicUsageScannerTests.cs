@@ -81,6 +81,25 @@ public class AnthropicUsageScannerTests
     }
 
     [Fact]
+    public void Reads_cache_tokens_without_mistaking_them_for_input_tokens()
+    {
+        // With caching on, input_tokens is the uncached remainder. The cache keys END in
+        // "input_tokens", so a key match without its leading quote would read 9000 as the input.
+        const string start =
+            "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":12," +
+            "\"cache_creation_input_tokens\":2048,\"cache_read_input_tokens\":9000,\"output_tokens\":1}}}\n\n";
+        var scanner = new AnthropicUsageScanner();
+        foreach (var b in Encoding.UTF8.GetBytes(start))
+        {
+            scanner.Feed([b]);
+        }
+
+        scanner.PromptTokens.Should().Be(12);
+        scanner.CacheWriteTokens.Should().Be(2048);
+        scanner.CacheReadTokens.Should().Be(9000);
+    }
+
+    [Fact]
     public void Reports_zero_rather_than_guessing_when_usage_is_absent()
     {
         var scanner = new AnthropicUsageScanner();

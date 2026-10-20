@@ -30,6 +30,12 @@ public sealed class AnthropicUsageScanner
     private const string InputKey = "\"input_tokens\":";
     private const string OutputKey = "\"output_tokens\":";
 
+    // With prompt caching on, `input_tokens` is only the uncached part of the prompt; the cached
+    // part arrives in these two. The leading quote on every key is what keeps "input_tokens"
+    // from matching inside "cache_creation_input_tokens".
+    private const string CacheWriteKey = "\"cache_creation_input_tokens\":";
+    private const string CacheReadKey = "\"cache_read_input_tokens\":";
+
     // The longest key plus room for the number that follows it, so a count split across a chunk
     // boundary is still whole once the carry-over is prepended.
     private const int CarryOver = 48;
@@ -38,6 +44,8 @@ public sealed class AnthropicUsageScanner
 
     public long PromptTokens { get; private set; }
     public long CompletionTokens { get; private set; }
+    public long CacheWriteTokens { get; private set; }
+    public long CacheReadTokens { get; private set; }
 
     public void Feed(ReadOnlySpan<byte> chunk)
     {
@@ -49,6 +57,8 @@ public sealed class AnthropicUsageScanner
 
             PromptTokens = Math.Max(PromptTokens, LastValue(text, InputKey));
             CompletionTokens = Math.Max(CompletionTokens, LastValue(text, OutputKey));
+            CacheWriteTokens = Math.Max(CacheWriteTokens, LastValue(text, CacheWriteKey));
+            CacheReadTokens = Math.Max(CacheReadTokens, LastValue(text, CacheReadKey));
 
             _tail = text.Length <= CarryOver ? text : text[^CarryOver..];
         }
