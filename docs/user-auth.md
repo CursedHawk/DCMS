@@ -93,6 +93,9 @@ What stays true however it is configured:
 
 - Builder blocks (Forms category): **Sign-in button**, **Sign-out button**, and **Signed-in
   section** (shown only to signed-in users, or only to signed-out ones, with the user's name).
+- Visual (React) builder: **Sign-in** (a button for site users), **Signed-in section** and
+  **Signed-in user**, each with *Accounts: Site users*; Visitor Authentication's forms are the same
+  components with *Visitor accounts* ([mode-d-builder.md](mode-d-builder.md#signing-in)).
 - Custom code: `window.dcms.user.current()`, `.signIn(returnUrl)`, `.signOut()`.
 - The site API client: `api.siteUser()`, `api.siteSignInUrl()`, `api.siteSignOutUrl()`,
   `api.siteAccess(paths)`; `ApiError.signInRequired` for a session that ended under an open app.

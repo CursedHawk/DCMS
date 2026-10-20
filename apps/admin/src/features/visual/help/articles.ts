@@ -17,6 +17,7 @@ export const ARTICLES: readonly { id: string; tour?: MiniTour }[] = [
   { id: 'collections', tour: 'content' },
   { id: 'apps' },
   { id: 'forms' },
+  { id: 'signin' },
   { id: 'state' },
   { id: 'components', tour: 'reusable' },
   { id: 'developer' },

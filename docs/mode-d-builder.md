@@ -159,6 +159,38 @@ content: content delivery owns `/api/{slug}/{contentType}`, an app serves
   the public), a binding through an unexpanded lookup, a data table's unknown column or a rowLink
   that is not a site path, and related records outside a record of their table.
 
+## Signing in
+
+Two plugins sign people in (see [user-auth.md](user-auth.md)); the runtime's `accounts.ts` keeps
+who is signed in with each, and three components draw it. Each takes `accounts`: `users` or
+`visitors`.
+
+- **User Authentication** (`users`) signs in at the edge: `dcms.sign-in` is a button to
+  `/.edge/site/signin?returnUrl=` (`afterSignIn`, else the page); who it is comes from the edge's
+  `/me`, sign-out is `/.edge/site/signout`. Both go through `SiteEdge.signIn`/`signOut`, which the
+  builder's preview points at its popup. No password form and no registration — ever.
+- **Visitor Authentication** (`visitors`): `dcms.sign-in` with `instance` and `mode`
+  (`sign-in`|`register`) is the email and password form, posting `/api/{instance}/login` or
+  `/register`. The tokens are kept in `localStorage` (`dcms.visitor`); the site's data client
+  sends the access token as a bearer on every `/api` call and renews it with the refresh token
+  once its `exp` is near, so Forms and Dynamic Apps (public access `own`) see the visitor. A
+  refused renewal signs out.
+- **`dcms.signed-in`** (`show`: `signed-in`|`signed-out`) draws its slot only on that side, and
+  nothing until it is known; **`dcms.account`** is the name (`greeting` with `{name}`) and Sign
+  out. Both are cosmetic: pages are protected by the edge's rules, data by API access.
+- Signing in or out runs `resetSiteAccess`, which also drops the data cache and makes mounted
+  `useData` readers and data tables fetch again — one person's records are never the next one's.
+- **Preview.** The toolbar's User Authentication menu (Sign in, View as, Sign out) serves the page's
+  buttons too. A visitor's token cannot ride `Authorization` through the console (it is the
+  member's), so the preview's data client sends `X-Dcms-Visitor-Token` and the preview proxy
+  forwards it as the bearer to content-api — with `X-Dcms-Sandbox`, so preview visitors are
+  sandbox accounts. The visitor menu shows and signs out the visitor and resets the sandbox. No
+  View as for visitors: real ones are not in the sandbox.
+- **Checks.** A Forms form with a password field is an error (it would store the password in the
+  inbox), one named like a login a warning; a visitor sign-in without `instance`, and
+  registration for site users, are errors. The agent's `describe_sign_in` says which plugins
+  are installed, the instance slugs, sign-in methods, the main domain and this site's page rules.
+
 ## Page state, custom CSS, language
 
 - **Page state** — `page.state` declares named values with defaults (`{ "tab": "dates",
@@ -178,7 +210,7 @@ The Agent tab runs the shared agent with kind `visual`. Its tools edit documents
 `remove_node`, `duplicate_node`, `set_props` (with a device), `bind_props`, `set_action`,
 `create_page`, `update_page`, `delete_page` (asks first), `create_component`,
 `start_component_version`, `expose_setting`, `expose_slot`, `update_instances`,
-`set_design_kit`, `set_css`, `set_when`, `inspect_selected` (what the author means by “this”), `list_connections`, `describe_apps` (each Dynamic Apps app's tables, fields, relationships and public access, as the site reads them), `check_visual_site`. `list_component_types` with `types` returns those components with every setting explained. The prompt's Data section separates plugin content, Dynamic Apps records and external APIs — three tools, three source shapes.
+`set_design_kit`, `set_css`, `set_when`, `inspect_selected` (what the author means by “this”), `list_connections`, `describe_apps` (each Dynamic Apps app's tables, fields, relationships and public access, as the site reads them), `describe_sign_in` (which of the two account plugins the site can use, and how it is set up), `check_visual_site`. `list_component_types` with `types` returns those components with every setting explained. The prompt's Data section separates plugin content, Dynamic Apps records and external APIs — three tools, three source shapes.
 
 From the server's AI catalog the agent also gets an app's `dynamic-apps.config` reads, draft
 preview and validation, and `apply_change_set` — only for apps whose AI tools are on and members

@@ -159,10 +159,20 @@ There are three kinds, each with its own discovery tool and its own source shape
 
 Use list_component_types with types ["dcms.data-table", "dcms.record-form"] to read their settings in full before placing them.`,
 
+    `## Signing in
+Two plugins sign people in, and they work nothing alike. describe_sign_in first: it says which are installed, their instance slugs and how this site is set up.
+- Site users — User Authentication (accounts: "users"): staff, partners, clients the workspace invites or admits by their organisation's domain. They sign in on the workspace's sign-in page (email and password, Google, Microsoft…), never in a form on the site, and cannot register themselves. A "Sign in" is dcms.sign-in { accounts: "users", afterSignIn? } — a button. "Portal", "intranet", "client area", "employees" usually mean this.
+- Visitor accounts — Visitor Authentication (accounts: "visitors"): the public registering for themselves — members, customers, a community. dcms.sign-in { accounts: "visitors", instance, mode: "sign-in" } is the email-and-password form; mode "register" makes the account. A "Sign up" or "Create an account" means this.
+- When both are installed and the author does not say, ask which people should sign in. When neither is, say so and stop: there is nothing to sign in with.
+- dcms.signed-in { accounts, show: "signed-in" | "signed-out" } holds what only one side sees (a members' menu, "Sign in to see more"); dcms.account { accounts } is the signed-in name with Sign out, for the header. A sign-in page is usually a page at /sign-in with a heading, the dcms.sign-in, and — for visitors — a link to /register with mode "register".
+- Never build sign-in from a Forms form, form fields or a code component: a Forms form stores what it is sent, password included, in an inbox. check_visual_site refuses it.
+- Hiding is not protecting: what a dcms.signed-in hides is still in the page. Which pages need signing in is User Authentication's Access → Site access, and which data is its Access → API access — rules the author sets on that plugin's screen; you cannot. When a page must be private, build it and tell the author the rule to add (e.g. /portal → Any signed-in user). Visitor accounts protect no pages; they gate data: Dynamic Apps tables whose public access is "own" show each visitor only their records.
+- In the preview the author can sign in as a site user (or View as one) from the toolbar, and visitor sign-ins on the page make test accounts in the preview's sandbox.`,
+
     `## The environment
 - Your edits apply to the live working draft and autosave; the author publishes separately, which builds the site.
 - There is no code to write: no JSX, no CSS, no scripts. Everything is a component with props.
-- You cannot change who may sign in or which pages need signing in: that is the User Authentication plugin's access rules, which the author sets in its own screen. If the author wants a page for signed-in users, build it and tell them which rule to add.`,
+- You cannot change who may sign in or which pages need signing in (see “## Signing in”).`,
 
     SHARED_INSTRUCTION_RULES,
   ].join('\n\n');

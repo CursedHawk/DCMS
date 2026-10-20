@@ -493,6 +493,62 @@ export const VISUAL_TOOLS: Tool[] = [
     },
   },
   {
+    name: 'describe_sign_in',
+    description:
+      'How people can sign in on this site, from the two plugins that sign people in: User Authentication (the workspace’s site users — invited, or admitted by their organisation; they sign in on the sign-in page, never a form of the site’s) and Visitor Authentication (accounts visitors register themselves; the site’s own email-and-password form). Says which are installed, the instance slugs, the sign-in methods, the main domain sign-in needs, and this site’s page access rules. Call it before building any sign-in, registration, account or members-only page. Build them only with dcms.sign-in, dcms.signed-in and dcms.account — never a Forms form, form fields or code.',
+    input_schema: { type: 'object', properties: {}, additionalProperties: false },
+    describe: () => 'describe sign-in',
+    maxResultChars: 12_000,
+    run: async (_input, ctx) => {
+      type Ui = { pluginId: string; instances: { slug: string; name: string; enabled: boolean }[] };
+      const ui = await api.get<Ui[]>('/admin/plugin-ui');
+      const enabled = (pluginId: string) => (ui.find((p) => p.pluginId === pluginId)?.instances ?? []).filter((i) => i.enabled);
+      const [users] = enabled('user-auth');
+      const visitors = enabled('visitor-auth');
+      if (!users && visitors.length === 0) {
+        return err(
+          'Nobody can sign in on this workspace’s sites yet: neither User Authentication (site users the workspace invites — staff, partners, clients) nor Visitor Authentication (visitors who register themselves) is installed. Ask the author which they want; it is added in Marketplace. Do not build a sign-in form from Forms fields or code in the meantime.',
+        );
+      }
+      // Each answer needs its own permission (users-read for the plugin's screens); one refused is left out.
+      const tryGet = <T,>(path: string) => api.get<T>(path).catch(() => undefined);
+      const out: Record<string, unknown> = {};
+      if (users) {
+        const [realm, host, providers, sites] = await Promise.all([
+          tryGet<{ passwordEnabled?: boolean; clientReady?: boolean }>(`/admin/plugins/${users.slug}/realm`),
+          tryGet<{ host?: string | null }>(`/admin/sites/${ctx.siteId}/preview/realm`),
+          tryGet<{ kind: string; displayName: string; enabled: boolean; provisioning?: string; allowedDomains?: string[] }[]>(`/admin/plugins/${users.slug}/providers`),
+          tryGet<{ id: string; rules: { prefix: string; access: string; groups: string[] }[] }[]>(`/admin/plugins/${users.slug}/sites`),
+        ]);
+        const notes: string[] = [];
+        if (host && !host.host) notes.push('This site has no verified domain yet, so nobody can sign in on it until one is added in Settings → Domains.');
+        if (realm?.clientReady === false) notes.push('Sign-in is not configured on this server yet; the Sign-in screen of User Authentication says so.');
+        out.users = {
+          instance: users.slug,
+          accounts: 'users',
+          mainDomain: host?.host ?? undefined,
+          methods: [
+            ...(realm?.passwordEnabled ? ['email and password (invited people)'] : []),
+            ...(providers ?? []).filter((p) => p.enabled).map((p) => `${p.displayName} (${p.kind}${p.provisioning === 'allowedDomains' ? `, anyone at ${(p.allowedDomains ?? []).join(', ')}` : ', invited people'})`),
+          ],
+          pageRules: sites?.find((x) => x.id === ctx.siteId)?.rules,
+          notes: notes.length ? notes : undefined,
+          build:
+            'dcms.sign-in { accounts: "users" } is a button to the sign-in page (afterSignIn: where to come back to). No password fields and no registration: people are invited on the plugin’s Users screen, or admitted by their organisation. dcms.signed-in { accounts: "users", show } and dcms.account { accounts: "users" } for the signed-in parts. Pages only some people may open need a rule on Access → Site access, which the author sets — you cannot.',
+        };
+      }
+      if (visitors.length > 0) {
+        out.visitors = {
+          instances: visitors.map((v) => ({ instance: v.slug, name: v.name })),
+          accounts: 'visitors',
+          build:
+            'dcms.sign-in { accounts: "visitors", instance, mode: "sign-in" } is the email-and-password form; mode "register" creates the account (and signs in). Put each on its own page or side by side, and send people on with afterSignIn. dcms.signed-in { accounts: "visitors", show } and dcms.account { accounts: "visitors" } for the signed-in parts. The visitor’s token goes with the site’s API calls, so Dynamic Apps tables with “own” public access show each visitor their own records.',
+        };
+      }
+      return { content: JSON.stringify(out) };
+    },
+  },
+  {
     name: 'list_connections',
     description:
       'The external APIs this workspace has connected (Settings › Connections): each operation a site may read, where its list sits in the response and the fields an item has. A Collection (or a detail page) reads one as source { connection, operation, items? } — e.g. { connection: "tickets", operation: "/events", items: "data" }; bind item fields by their paths. Plugin content is describe_content_types instead.',
