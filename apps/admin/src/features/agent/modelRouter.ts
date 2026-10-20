@@ -22,7 +22,7 @@ import type { Complexity } from './classify';
 
 export interface ModelParams {
   max_tokens: number;
-  thinking: { type: 'adaptive' | 'disabled' };
+  thinking: { type: 'adaptive' };
   output_config?: { effort: 'low' | 'medium' | 'high' };
 }
 
@@ -47,9 +47,11 @@ export function paramsFor(
 
   switch (complexity) {
     case 'trivial':
-      // No thinking budget and a small ceiling. A one-line edit that needs deliberation was
-      // misclassified, and the repair path above catches that.
-      return { max_tokens: 4000, thinking: { type: 'disabled' }, output_config: { effort: 'low' } };
+      // Low effort and a small ceiling. Thinking stays adaptive rather than disabled: the
+      // browser does not know the model, and Opus 5.5 / Sonnet 5.5 refuse a disabled-thinking
+      // request outright. Low effort is what keeps a one-line edit cheap. A one-line edit that
+      // needs deliberation was misclassified, and the repair path above catches that.
+      return { max_tokens: 4000, thinking: { type: 'adaptive' }, output_config: { effort: 'low' } };
 
     case 'normal':
       return {
@@ -67,41 +69,30 @@ export function paramsFor(
   }
 }
 
+const EPHEMERAL = { type: 'ephemeral' } as const;
+
 /**
- * Order a request so its stable half can be cached by providers that support it.
+ * Mark a request so a provider with prompt caching reuses everything it has already seen.
  *
- * <p>Prompt caching keys on an exact prefix, so anything that changes between turns must come
- * after everything that does not. The system prompt and the tool definitions are fixed for a
- * whole run; the conversation is not. Interleaving them costs the cache on every turn.</p>
+ * <p>Caching is a prefix match over tools → system → messages, in that order. Two breakpoints:</p>
+ * <ul>
+ *   <li><b>Top-level <code>cache_control</code></b> — automatic caching, which moves the
+ *   breakpoint to the last block of every request. Each turn of a run then reads the whole
+ *   conversation so far from the cache and pays full price only for what was appended.</li>
+ *   <li><b>One on the system prompt</b> — so that when `pruneHistory` does rewrite the front of
+ *   the history, tools and system are still a hit and only the messages are rebuilt.</li>
+ * </ul>
  *
- * <p>`cache_control` is set on the last tool definition, which marks the end of the stable
- * prefix. Providers that do not understand the field ignore it, so this is safe to send
- * everywhere — and ai-gateway's OpenAI bridge already drops fields it does not translate.</p>
+ * <p>A breakpoint on the last <i>tool</i>, which this used to set, cached the tools alone: the
+ * system prompt and every message after it were paid in full on every turn.</p>
+ *
+ * <p>Providers without caching ignore the field, and ai-gateway's OpenAI bridge rebuilds the
+ * request without it (OpenAI caches prefixes on its own).</p>
  */
 export function withCacheHints(body: Record<string, unknown>): Record<string, unknown> {
-  const tools = body.tools;
-  if (!Array.isArray(tools) || tools.length === 0) return body;
-
-  const marked = tools.map((tool, index) =>
-    index === tools.length - 1
-      ? { ...(tool as object), cache_control: { type: 'ephemeral' } }
-      : tool,
-  );
-
-  // Key order is what a provider hashes for a prefix cache, so the stable fields are written
-  // first and `messages` last.
-  return {
-    system: body.system,
-    tools: marked,
-    ...omit(body, ['system', 'tools', 'messages']),
-    messages: body.messages,
-  };
-}
-
-function omit(source: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(source)) {
-    if (!keys.includes(key)) out[key] = value;
-  }
-  return out;
+  const system =
+    typeof body.system === 'string' && body.system
+      ? [{ type: 'text', text: body.system, cache_control: EPHEMERAL }]
+      : body.system;
+  return { ...body, system, cache_control: EPHEMERAL };
 }

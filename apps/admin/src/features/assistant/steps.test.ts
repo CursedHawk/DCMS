@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Message } from '../ide/agent/client';
-import { fieldChanges, prettyPayload, stepsFromMessages, type ToolStep } from './steps';
+import { fieldChanges, PAGE_CONTEXT, prettyPayload, stepsFromMessages, type ToolStep } from './steps';
 import { ASSISTANT_TOOLS } from './tools';
 
 /**
@@ -8,6 +8,15 @@ import { ASSISTANT_TOOLS } from './tools';
  * transcript is a projection of them rather than a second record that could disagree.
  */
 describe('stepsFromMessages', () => {
+  it('does not show the operator the page context their message carried', () => {
+    const steps = stepsFromMessages(
+      [{ role: 'user', content: [{ type: 'text', text: 'hi' }, { type: 'text', text: `${PAGE_CONTEXT} Media` }] }],
+      ASSISTANT_TOOLS,
+    );
+    expect(JSON.stringify(steps)).not.toContain('Media');
+    expect(JSON.stringify(steps)).toContain('hi');
+  });
+
   const conversation: Message[] = [
     { role: 'user', content: 'draft something' },
     {

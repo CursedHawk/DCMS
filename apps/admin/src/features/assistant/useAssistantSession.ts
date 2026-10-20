@@ -21,6 +21,7 @@ import { api } from '../../lib/api';
 import { type AiMode, decide, DEFAULT_MODE, rememberMode, storedMode } from '../agent/modes';
 import {
   errorStep,
+  PAGE_CONTEXT,
   sayStep,
   type Step,
   stepsFromMessages,
@@ -30,6 +31,9 @@ import {
 } from './steps';
 import { canWrite, findTool, toolDefinitions, toolsFor, type AssistantTool } from './tools';
 import { capResult, markUntrusted } from '../agent/runtime';
+import { withCacheHints } from '../agent/modelRouter';
+import { newPruneState, pruneHistory, type PruneState } from '../agent/context';
+import { DEFAULT_CONTEXT_BUDGET } from '../agent/contracts';
 import { useContractTools } from './contractTools';
 
 /*
@@ -112,12 +116,23 @@ function systemPrompt(page: AiPageContext | null, mode: AiMode, attachments: num
           '- If you have no dynamic-apps tools, the app’s "AI tools" switch is off: say so, and that the Ask AI button on the app’s Configuration screen (or the plugin’s settings) turns it on. Do not guess at the configuration.',
         ]
       : []),
-    page
-      ? `\nThe operator is currently looking at: ${page.summary}${
-          page.selection?.length ? ` (${page.selection.length} selected)` : ''
-        }`
-      : '',
   ].join('\n');
+}
+
+/**
+ * Where the operator is, sent with their message rather than in the system prompt.
+ *
+ * <p>It changes on every navigation, and the system prompt is the front of the prompt cache's
+ * prefix: a page summary there rebuilt the cache for the whole conversation every time the
+ * operator moved. On their message it is appended like everything else.</p>
+ */
+function withPageContext(prompt: string, page: AiPageContext | null): Message['content'] {
+  if (!page) return prompt;
+  const selected = page.selection?.length ? ` (${page.selection.length} selected)` : '';
+  return [
+    { type: 'text', text: prompt },
+    { type: 'text', text: `${PAGE_CONTEXT} ${page.summary}${selected}` },
+  ] as ContentBlock[];
 }
 
 /**
@@ -150,6 +165,10 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
 
   const abort = useRef<AbortController | null>(null);
   const history = useRef<Message[]>([]);
+  /** Where `history` has been cut for the wire. Reset whenever `history` is replaced. */
+  const pruneState = useRef<PruneState>(newPruneState());
+  /** The system prompt and tool names last sent, to notice a mode switch changing them. */
+  const requestShape = useRef<string | null>(null);
   const decideCall = useRef<((ok: boolean) => void) | null>(null);
   // Tools the operator has waved through for the rest of this conversation. Per conversation,
   // never per browser: "yes, publish, stop asking" is about this piece of work.
@@ -234,6 +253,8 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
   const reset = useCallback(() => {
     stop();
     history.current = [];
+    pruneState.current = newPruneState();
+    requestShape.current = null;
     standing.current = new Set();
     conversation.current = null;
     loaded.current = null;
@@ -276,6 +297,10 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
           content: m.content,
         }));
         history.current = messages;
+        // A stored conversation's thinking was bound to whatever was sent then; start the cut
+        // fresh and strip it, since nothing guarantees this session sends the same prefix.
+        pruneState.current = { ...newPruneState(), strippedBefore: messages.length };
+        requestShape.current = null;
         conversation.current = detail.id;
         loaded.current = detail.id;
         standing.current = new Set();
@@ -336,7 +361,7 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
       const runId = crypto.randomUUID();
 
       push(userStep(question, files));
-      history.current.push({ role: 'user', content: prompt });
+      history.current.push({ role: 'user', content: withPageContext(prompt, page) });
       const firstQuestion = history.current.length === 1;
 
       const controller = new AbortController();
@@ -376,13 +401,28 @@ export function useAssistantSession(page: AiPageContext | null, options: Session
              * and watching one being written, and it costs one more setState per token.</p>
              */
             let sayId: string | null = null;
+            const system = systemPrompt(page, effectiveMode, attachments.length);
+            const definitions = toolDefinitions(tools);
+            // A thinking block is bound to the system prompt and tools it was produced under.
+            // When a mode switch changes either, the ones already in the history are stripped
+            // rather than replayed into a request the provider would refuse.
+            const shape = JSON.stringify([system, definitions.map((d) => d.name)]);
+            if (requestShape.current !== null && requestShape.current !== shape) {
+              pruneState.current.strippedBefore = history.current.length;
+            }
+            requestShape.current = shape;
             const turn = await streamAssistantTurn(
-              {
+              withCacheHints({
                 max_tokens: MAX_TOKENS,
-                system: systemPrompt(page, effectiveMode, attachments.length),
-                messages: history.current,
-                tools: toolDefinitions(tools),
-              },
+                system,
+                messages: pruneHistory(
+                  history.current,
+                  DEFAULT_CONTEXT_BUDGET,
+                  { goal: question, filesChanged: [], notes: [] },
+                  pruneState.current,
+                ).messages,
+                tools: definitions,
+              }),
               {
                 onText: (delta) => {
                   streamed += delta;

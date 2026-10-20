@@ -79,60 +79,132 @@ function blockText(block: ContentBlock): string {
 }
 
 /**
+ * Where a conversation has been cut, carried from one turn to the next.
+ *
+ * <p>Pruning used to be recomputed from scratch every turn, so once a run went over budget the
+ * front of every request differed from the one before it. That costs twice: the prompt cache
+ * keys on an exact prefix and missed on every turn, and models that bind thinking blocks to the
+ * history they were produced in (Opus 5.5, Sonnet 5.5, Fable 5.1) reject a request whose
+ * earlier turns changed under them.</p>
+ *
+ * <p>Holding the cut here makes it move only when the budget is crossed. Between compactions
+ * the request is append-only.</p>
+ */
+export interface PruneState {
+  /** Messages before this index of the full history are not sent. */
+  droppedBefore: number;
+  /** Tool results before this index are replaced by a stub. */
+  elidedBefore: number;
+  /**
+   * Thinking blocks before this index are removed: they were bound to a history that no longer
+   * exists. Removing a leading run of them is the one thinking edit the API accepts.
+   */
+  strippedBefore: number;
+  /** Rendered once per compaction, so it is the same text until the next one. */
+  memory: string | null;
+  /** Whole exchanges dropped so far. */
+  exchangesDropped: number;
+}
+
+export function newPruneState(): PruneState {
+  return { droppedBefore: 0, elidedBefore: 0, strippedBefore: 0, memory: null, exchangesDropped: 0 };
+}
+
+/**
+ * Compact to this share of the budget, not just under it, so the turns after a compaction have
+ * room to append before the next one.
+ */
+const COMPACT_TO = 0.6;
+
+/**
  * Bring a conversation within budget, least-destructive step first.
  *
  * <p>Returns a new array; the caller's history is not mutated, so a compressed request can be
- * sent while the full transcript is still what gets stored.</p>
+ * sent while the full transcript is still what gets stored. The history must only ever be
+ * appended to between calls sharing one `state`.</p>
  */
 export function pruneHistory(
   messages: readonly Message[],
   budget: ContextBudget,
   memory?: WorkingMemory,
+  state: PruneState = newPruneState(),
 ): PruneResult {
-  let working = messages.map(cloneMessage);
+  let applied = applyState(messages, state);
+  if (applied.estimated > budget.maxInputTokens) {
+    const target = budget.maxInputTokens * COMPACT_TO;
+    const before = { ...state };
+
+    // Step 1 — elide old tool results, oldest first. Cheapest and least lossy: the content is
+    // recoverable by re-running the tool, and usually describes code that has since changed.
+    const protectedFrom = Math.max(0, messages.length - KEEP_VERBATIM);
+    while (state.elidedBefore < protectedFrom && applyState(messages, state).estimated > target) {
+      state.elidedBefore++;
+    }
+
+    // Step 2 — drop whole exchanges from the front.
+    //
+    // In PAIRS, because an assistant message carrying tool_use must keep the user message
+    // carrying its tool_result: orphaning either is a request the provider refuses outright.
+    while (
+      applyState(messages, state).estimated > target &&
+      messages.length - state.droppedBefore > KEEP_VERBATIM + 1
+    ) {
+      const removed = dropLeadingExchange(messages.slice(state.droppedBefore));
+      if (removed === 0) break;
+      state.droppedBefore += removed;
+      state.exchangesDropped++;
+    }
+
+    // Step 3 — the history changed, so every thinking block in it is now bound to a prefix that
+    // is gone; and prepend what was lost, so the run does not forget its own goal.
+    if (state.elidedBefore !== before.elidedBefore || state.droppedBefore !== before.droppedBefore) {
+      state.strippedBefore = messages.length;
+      if (memory) state.memory = renderMemory(memory);
+    }
+    applied = applyState(messages, state);
+  }
+
+  return {
+    messages: applied.messages,
+    elided: applied.elided,
+    dropped: state.exchangesDropped,
+    estimated: applied.estimated,
+  };
+}
+
+function applyState(
+  messages: readonly Message[],
+  state: PruneState,
+): { messages: Message[]; elided: number; estimated: number } {
+  const out: Message[] = state.memory ? [{ role: 'user', content: state.memory }] : [];
   let elided = 0;
-  let dropped = 0;
 
-  const withinBudget = () => estimateMessages(working) <= budget.maxInputTokens;
-  if (withinBudget()) {
-    return { messages: working, elided, dropped, estimated: estimateMessages(working) };
+  for (let i = state.droppedBefore; i < messages.length; i++) {
+    const message = cloneMessage(messages[i]);
+    if (Array.isArray(message.content)) {
+      let blocks = message.content as ContentBlock[];
+      if (i < state.elidedBefore) {
+        let changed = false;
+        blocks = blocks.map((block) => {
+          if (block.type !== 'tool_result') return block;
+          const result = block as unknown as ToolResultBlock;
+          if (result.content === ELIDED) return block;
+          changed = true;
+          return { ...result, content: ELIDED } as unknown as ContentBlock;
+        });
+        if (changed) elided++;
+      }
+      if (i < state.strippedBefore) {
+        blocks = blocks.filter((b) => b.type !== 'thinking' && b.type !== 'redacted_thinking');
+        // An assistant turn that was nothing but thinking has nothing left to say.
+        if (blocks.length === 0) continue;
+      }
+      message.content = blocks as Message['content'];
+    }
+    out.push(message);
   }
 
-  // Step 1 — elide old tool results, oldest first. Cheapest and least lossy: the content is
-  // recoverable by re-running the tool, and usually describes code that has since changed.
-  const protectedFrom = Math.max(0, working.length - KEEP_VERBATIM);
-  for (let i = 0; i < protectedFrom && !withinBudget(); i++) {
-    const message = working[i];
-    if (typeof message.content === 'string' || !Array.isArray(message.content)) continue;
-
-    let changed = false;
-    message.content = (message.content as ContentBlock[]).map((block) => {
-      if (block.type !== 'tool_result') return block;
-      const result = block as unknown as ToolResultBlock;
-      if (result.content === ELIDED) return block;
-      changed = true;
-      return { ...result, content: ELIDED } as unknown as ContentBlock;
-    }) as Message['content'];
-    if (changed) elided++;
-  }
-
-  // Step 2 — drop whole exchanges from the front.
-  //
-  // In PAIRS, because an assistant message carrying tool_use must keep the user message
-  // carrying its tool_result: orphaning either is a request the provider refuses outright.
-  while (!withinBudget() && working.length > KEEP_VERBATIM + 1) {
-    const removed = dropLeadingExchange(working);
-    if (removed === 0) break;
-    working = working.slice(removed);
-    dropped++;
-  }
-
-  // Step 3 — prepend what was lost, so the run does not forget its own goal.
-  if ((dropped > 0 || elided > 0) && memory) {
-    working = [{ role: 'user', content: renderMemory(memory) }, ...working];
-  }
-
-  return { messages: working, elided, dropped, estimated: estimateMessages(working) };
+  return { messages: out, elided, estimated: estimateMessages(out) };
 }
 
 /**

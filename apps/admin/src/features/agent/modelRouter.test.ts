@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { paramsFor, withCacheHints } from './modelRouter';
 
 describe('paramsFor', () => {
-  it('spends nothing on thinking for a trivial task', () => {
+  it('spends little on a trivial task, without disabling thinking', () => {
     // Every turn used to ask for adaptive thinking at high effort, including "change the button
     // text" — the default that makes an agent feel expensive on the work that should feel instant.
+    // Disabled thinking is a 400 on Opus 5.5 / Sonnet 5.5, so effort is the lever.
     expect(paramsFor('trivial')).toMatchObject({
-      thinking: { type: 'disabled' },
+      thinking: { type: 'adaptive' },
       output_config: { effort: 'low' },
     });
   });
@@ -42,28 +43,20 @@ describe('withCacheHints', () => {
     max_tokens: 100,
   };
 
-  it('puts the stable prefix before the volatile tail', () => {
-    // A prefix cache keys on exact order, so anything that changes between turns must come
-    // after everything that does not.
-    const keys = Object.keys(withCacheHints(body));
-    expect(keys[0]).toBe('system');
-    expect(keys[1]).toBe('tools');
-    expect(keys.at(-1)).toBe('messages');
+  it('caches the whole conversation, not just the tools', () => {
+    // Top-level cache_control moves the breakpoint to the last block of every request.
+    expect(withCacheHints(body).cache_control).toEqual({ type: 'ephemeral' });
+    expect((withCacheHints(body).tools as { cache_control?: unknown }[]).some((t) => t.cache_control)).toBe(false);
   });
 
-  it('marks the end of the stable prefix on the last tool', () => {
-    const tools = withCacheHints(body).tools as { cache_control?: unknown }[];
-    expect(tools[0].cache_control).toBeUndefined();
-    expect(tools[1].cache_control).toEqual({ type: 'ephemeral' });
+  it('keeps tools + system cached when pruning rewrites the history', () => {
+    expect(withCacheHints(body).system).toEqual([
+      { type: 'text', text: 'you are an agent', cache_control: { type: 'ephemeral' } },
+    ]);
   });
 
   it('preserves every other field', () => {
-    expect(withCacheHints(body)).toMatchObject({ max_tokens: 100, system: 'you are an agent' });
-  });
-
-  it('leaves a body with no tools alone', () => {
-    const toolless = { system: 's', messages: [] };
-    expect(withCacheHints(toolless)).toBe(toolless);
+    expect(withCacheHints(body)).toMatchObject({ max_tokens: 100, messages: body.messages, tools: body.tools });
   });
 
   it('does not mutate the caller’s body', () => {

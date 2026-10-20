@@ -2,6 +2,12 @@ import type { ContentBlock, Message, ToolResultBlock, ToolUseBlock } from '../id
 import type { AssistantTool, ToolRisk } from './tools';
 
 /**
+ * How the page the operator is on is told to the model: a text block of its own on their
+ * message, which the transcript does not show back to them.
+ */
+export const PAGE_CONTEXT = 'The operator is currently looking at:';
+
+/**
  * What the transcript is made of.
  *
  * <p>It used to be `{ type, text }` — one flat string per event — which is why a run of twelve
@@ -164,7 +170,7 @@ export function stepsFromMessages(
     for (const block of blocks) {
       if (block.type === 'text') {
         const text = String((block as { text?: unknown }).text ?? '').trim();
-        if (!text) continue;
+        if (!text || text.startsWith(PAGE_CONTEXT)) continue;
         steps.push(message.role === 'user' ? userStep(text) : sayStep(text));
         continue;
       }

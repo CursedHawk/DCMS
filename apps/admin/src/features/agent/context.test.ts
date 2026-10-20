@@ -4,6 +4,7 @@ import type { ContextBudget } from './contracts';
 import {
   estimateMessages,
   findOrphanedToolUses,
+  newPruneState,
   pruneHistory,
   type WorkingMemory,
 } from './context';
@@ -164,6 +165,68 @@ describe('pruneHistory', () => {
     const once = pruneHistory(messages, BUDGET, MEMORY);
     const twice = pruneHistory(once.messages, BUDGET, MEMORY);
     expect(twice.elided).toBe(0);
+  });
+});
+
+describe('pruneHistory across turns', () => {
+  const thinks = (text: string, id: string): Message => ({
+    role: 'assistant',
+    content: [
+      { type: 'thinking', thinking: 'hmm', signature: 'sig' },
+      { type: 'text', text },
+      { type: 'tool_use', id, name: 'read_file', input: {} },
+    ] as ContentBlock[],
+  });
+  const longRun = (): Message[] => {
+    const messages: Message[] = [user('go')];
+    for (let i = 0; i < 8; i++) {
+      messages.push(thinks(`step ${i}`, `t${i}`));
+      messages.push(toolResult(`t${i}`, big(600)));
+    }
+    return messages;
+  };
+
+  it('compacts well under the budget, so the next turns have room to append', () => {
+    const result = pruneHistory(longRun(), BUDGET, MEMORY, newPruneState());
+    expect(result.estimated).toBeLessThanOrEqual(BUDGET.maxInputTokens * 0.6);
+  });
+
+  it('keeps the sent prefix byte-identical between compactions', () => {
+    // A prefix that changes every turn misses the prompt cache every turn.
+    const messages = longRun();
+    const state = newPruneState();
+    const first = pruneHistory(messages, BUDGET, MEMORY, state).messages;
+
+    messages.push(thinks('next', 'n1'), toolResult('n1', 'small'));
+    const second = pruneHistory(messages, BUDGET, { ...MEMORY, notes: ['changed'] }, state).messages;
+
+    expect(JSON.stringify(second.slice(0, first.length))).toBe(JSON.stringify(first));
+  });
+
+  it('strips thinking from the history it rewrote, and only from that', () => {
+    // A thinking block is bound to the history it was produced in; replaying it after that
+    // history changed is a 400 on Opus 5.5 / Sonnet 5.5.
+    const messages = longRun();
+    const state = newPruneState();
+    const compacted = pruneHistory(messages, BUDGET, MEMORY, state).messages;
+    expect(JSON.stringify(compacted)).not.toContain('"thinking"');
+
+    messages.push(thinks('next', 'n1'), toolResult('n1', 'small'));
+    const next = pruneHistory(messages, BUDGET, MEMORY, state).messages;
+    expect(next.filter((m) => JSON.stringify(m).includes('"thinking"'))).toHaveLength(1);
+    expect(findOrphanedToolUses(next)).toEqual([]);
+  });
+
+  it('never edits an assistant turn except to strip its thinking', () => {
+    const messages = longRun();
+    const sent = pruneHistory(messages, BUDGET, MEMORY, newPruneState()).messages;
+    for (const m of sent.filter((x) => x.role === 'assistant')) {
+      const original = messages.find(
+        (o) => o.role === 'assistant' && JSON.stringify(o).includes(JSON.stringify((m.content as ContentBlock[])[0])),
+      );
+      const withoutThinking = (original!.content as ContentBlock[]).filter((b) => b.type !== 'thinking');
+      expect(m.content).toEqual(withoutThinking);
+    }
   });
 });
 

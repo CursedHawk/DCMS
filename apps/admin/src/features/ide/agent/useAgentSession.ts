@@ -48,8 +48,6 @@ import { buildSystemPrompt, type SiteAgentKind } from './systemPrompt';
  * builder's old one-shot "generate and apply JSON" flow is gone rather than ported.</p>
  */
 
-const MAX_TOKENS = 16000;
-
 /**
  * Tools that only mean something for a Mode B site.
  *
@@ -705,10 +703,6 @@ export function useAgentSession(opts: {
                 approveRef.current = resolve;
                 setPending({ tools: calls });
               }),
-            modelParams: {
-              max_tokens: MAX_TOKENS,
-              thinking: { type: 'adaptive' },
-            },
           })) {
             applyEvent(event);
           }

@@ -6,7 +6,7 @@ import type {
   ToolUseBlock,
 } from '../ide/agent/client';
 import { classify, type Classification } from './classify';
-import { pruneHistory, type WorkingMemory } from './context';
+import { newPruneState, pruneHistory, type WorkingMemory } from './context';
 import {
   DEFAULT_CONTEXT_BUDGET,
   riskOf,
@@ -66,14 +66,6 @@ export interface RunOptions<TContext> {
    * this should refuse dangerous tools, not run them unattended.</p>
    */
   approve?: (calls: readonly ToolCall[]) => Promise<ApprovalDecision>;
-
-  /**
-   * Extra body fields for the model request.
-   *
-   * <p>Merged OVER the router's choice, so a caller can pin something deliberately while still
-   * getting sensible defaults for everything it does not mention.</p>
-   */
-  modelParams?: Record<string, unknown>;
 
   /** Ceiling the conversation is compressed to fit. */
   budget?: ContextBudget;
@@ -139,6 +131,9 @@ async function drive<TContext>(
   // Maintained by the runtime rather than asked of the model: a model asked to summarise its
   // own history spends a turn doing it, and this is all knowable for free.
   const memory: WorkingMemory = { goal: opts.task, filesChanged: [], notes: [] };
+  // Per run: the cut moves only when the budget is crossed, so turns in between are append-only
+  // and read their whole prefix from the prompt cache.
+  const pruneState = newPruneState();
 
   /** Tools the operator has said not to ask about again — for this run, and only this run. */
   const allowedForRun = new Set<string>();
@@ -152,7 +147,7 @@ async function drive<TContext>(
 
       // Compress to fit before sending. The full transcript stays in `opts.messages` — what is
       // pruned is the copy on the wire, so what gets stored is still complete.
-      const pruned = pruneHistory(opts.messages, budget, memory);
+      const pruned = pruneHistory(opts.messages, budget, memory, pruneState);
 
       const turn = await opts.transport(
         withCacheHints({
@@ -164,7 +159,6 @@ async function drive<TContext>(
             input_schema: t.input_schema,
           })),
           ...paramsFor(classification.complexity, { repairing: repairs > 0 }),
-          ...opts.modelParams,
         }),
         {
           onText: (delta) => out.push({ type: 'text.delta', delta }),

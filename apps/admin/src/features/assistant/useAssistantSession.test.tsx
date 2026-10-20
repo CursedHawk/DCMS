@@ -202,6 +202,30 @@ describe('read-only mode', () => {
   });
 });
 
+describe('the prompt cache', () => {
+  it('keeps the page out of the system prompt and on the operator\'s message', async () => {
+    // The system prompt is the front of the cached prefix; a page summary there rebuilt the
+    // cache for the whole conversation on every navigation.
+    vi.mocked(streamAssistantTurn).mockResolvedValue({
+      content: [{ type: 'text', text: 'hi' }],
+      stopReason: 'end_turn',
+    } as never);
+    const page = { area: 'content', summary: 'Article "Autumn"' } as never;
+    const { result } = renderHook(() => useAssistantSession(page, options), { wrapper });
+
+    act(() => result.current.send('hello'));
+    await waitFor(() => expect(streamAssistantTurn).toHaveBeenCalled());
+    const body = vi.mocked(streamAssistantTurn).mock.calls[0][0] as {
+      system: unknown;
+      messages: unknown[];
+      cache_control?: unknown;
+    };
+    expect(JSON.stringify(body.system)).not.toContain('Autumn');
+    expect(JSON.stringify(body.messages.at(-1))).toContain('Autumn');
+    expect(body.cache_control).toEqual({ type: 'ephemeral' });
+  });
+});
+
 describe('a reader', () => {
   it('is held in read mode, even with a remembered agent mode', () => {
     localStorage.setItem('dcms.ai.mode', 'agent');
