@@ -180,6 +180,17 @@ export const BRIDGE_SCRIPT = `
     try { parent.postMessage({ __dcms: 'edge-nav', url: String(url) }, '*'); } catch (e) {}
   };
   window.__dcmsPreviewLeave = leave;
+  // An opaque-origin frame has no storage, and the site runtime keeps its signed-in visitor in
+  // one. The parent lends a store for the page's life, seeded into the document as
+  // __dcmsPreviewStore (so a rebuild stays signed in) and told of every change.
+  var lent = window.__dcmsPreviewStore || {};
+  window.__dcmsPreviewStorage = {
+    get: function (k) { return Object.prototype.hasOwnProperty.call(lent, k) ? lent[k] : null; },
+    set: function (k, v) {
+      if (v === null) delete lent[k]; else lent[k] = String(v);
+      try { parent.postMessage({ __dcms: 'preview-store', key: String(k), value: v === null ? null : String(v) }, '*'); } catch (e) {}
+    },
+  };
   // The address bar: the app's router (the bundler's router shim) reports where it is, and the
   // bar's back, forward and typed paths come back as 'preview-go'.
   window.__dcmsPreviewNav = function (path) {
@@ -275,6 +286,8 @@ export function attachPreview(
   onEdgeNav?: (url: string) => void,
   /** Where the app's router is now, for the preview's address bar. */
   onNav?: (path: string) => void,
+  /** The page writing to the store the parent lends it (`__dcmsPreviewStorage`); null removes. */
+  onStore?: (key: string, value: string | null) => void,
 ): () => void {
   // Detach whatever was listening first.
   //
@@ -307,6 +320,8 @@ export function attachPreview(
         method?: string;
         headers?: Record<string, string>;
         body?: string | null;
+        key?: string;
+        value?: string | null;
       } | undefined;
     if (!data || typeof data !== 'object') return;
 
@@ -317,6 +332,10 @@ export function attachPreview(
     }
     if (data.__dcms === 'preview-nav' && typeof data.path === 'string') {
       onNav?.(data.path);
+      return;
+    }
+    if (data.__dcms === 'preview-store' && typeof data.key === 'string' && (typeof data.value === 'string' || data.value === null)) {
+      onStore?.(data.key, data.value);
       return;
     }
     // The site leaving for its edge's sign-in, sign-out or a page it may not open (#269).

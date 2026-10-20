@@ -24,7 +24,11 @@ export function previewClient(siteId: string): DataClient {
   };
   return {
     get: async (path) => api.get<unknown>(`${base}${path}`, await visitor()),
-    post: async (path, body) => api.post<unknown>(`${base}${path}`, body, await visitor()),
+    // One key per write, as the site's own client sends (ADR 0024): content-api refuses a POST without one.
+    post: async (path, body) => {
+      const opts = await visitor();
+      return api.post<unknown>(`${base}${path}`, body, { headers: { ...opts?.headers, 'Idempotency-Key': crypto.randomUUID() } });
+    },
   };
 }
 

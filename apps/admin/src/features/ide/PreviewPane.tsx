@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { renewSilently } from '../../auth';
 import { adminHeaders } from '../../tenants';
 import { PreviewAddressBar } from '../site-source/PreviewAddressBar';
-import { PreviewIdentityMenu, usePreviewAuth } from '../site-source/previewAuth';
+import { PreviewIdentityMenu, PreviewVisitorMenu, usePreviewAuth } from '../site-source/previewAuth';
 import { attachPreview, previewGo, type PreviewFetchProxy } from './preview/previewBridge';
 import { previewEdgeTarget, previewProxyTarget } from './preview/proxyTarget';
 import type { PreviewControls } from './preview/usePreview';
@@ -15,6 +15,25 @@ import type { PreviewControls } from './preview/usePreview';
 //
 // The build itself is driven by IdePage, not here. Two callers of usePreview would be two
 // workers building the same project, and the Problems view needs the same build's messages.
+
+/**
+ * What each site's sandboxed preview keeps in the storage it is lent (`__dcmsPreviewStorage` — an
+ * opaque-origin frame has none): the signed-in visitor. Per site, for as long as the console page
+ * is open, so a rebuild — or going to the canvas and back — stays signed in.
+ */
+const lentStores = new Map<string, Record<string, string>>();
+
+/** Who a preview's visitor is, from the access token it holds (Visitor Authentication's carries the email). */
+function visitorOfToken(session: string | null | undefined): { email: string } | null {
+  try {
+    const token = (JSON.parse(session ?? 'null') as { accessToken?: string } | null)?.accessToken;
+    if (!token) return null;
+    const claims = JSON.parse(atob(token.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/'))) as { email?: unknown };
+    return { email: typeof claims.email === 'string' ? claims.email : '' };
+  } catch {
+    return null;
+  }
+}
 
 export function PreviewPane({ preview, siteId }: { preview: PreviewControls; siteId: string }) {
   const { t } = useTranslation();
@@ -34,12 +53,25 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
     setPath(at);
   }, []);
   const [reloads, setReloads] = useState(0);
+  const [lent, setLent] = useState<Record<string, string>>(() => lentStores.get(siteId) ?? {});
+  const lentRef = useRef(lent);
+  const onStore = useCallback(
+    (key: string, value: string | null) => {
+      const next = { ...lentRef.current };
+      if (value === null) delete next[key];
+      else next[key] = value;
+      lentRef.current = next;
+      lentStores.set(siteId, next);
+      setLent(next);
+    },
+    [siteId],
+  );
   const doc = useMemo(
     () =>
       srcdoc?.replace(
         '<head>',
-        // Escaped so a path can never close the script it is written into.
-        `<head><script>window.__dcmsPreviewPath=${JSON.stringify(pathRef.current).replace(/</g, '\\u003c')}</script>`,
+        // Escaped so a path (or a stored value) can never close the script it is written into.
+        `<head><script>window.__dcmsPreviewPath=${JSON.stringify(pathRef.current).replace(/</g, '\\u003c')};window.__dcmsPreviewStore=${JSON.stringify(lentRef.current).replace(/</g, '\\u003c')}</script>`,
       ) ?? null,
     // Re-read on every new build and every reload; the path is taken as it is at that moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -81,8 +113,16 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
       }
       const send = async () => {
         const headers: Record<string, string> = { ...(await adminHeaders()) };
-        const contentType = req.headers['content-type'] ?? req.headers['Content-Type'];
+        const header = (name: string) => Object.entries(req.headers).find(([k]) => k.toLowerCase() === name)?.[1];
+        const contentType = header('content-type');
         if (contentType) headers['Content-Type'] = contentType;
+        // A write's own key, so a retried write is the same write (ADR 0024; content-api refuses a POST without one).
+        const idempotency = header('idempotency-key');
+        if (idempotency) headers['Idempotency-Key'] = idempotency;
+        // The visitor the page signed in (Visitor Authentication, in the sandbox): Authorization here is the
+        // console's, so their bearer goes as the header the preview proxy forwards in its place.
+        const visitor = /^Bearer ([\w.-]+)$/.exec(header('authorization') ?? '')?.[1];
+        if (visitor) headers['X-Dcms-Visitor-Token'] = visitor;
         return fetch(target, {
           method: req.method,
           headers,
@@ -119,6 +159,12 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
     [signIn, signOut, t],
   );
 
+  // The visitor signed out from the toolbar, or the sandbox reset: forget them, and draw the page again.
+  const signOutVisitor = useCallback(() => {
+    onStore('dcms.visitor', null);
+    setReloads((n) => n + 1);
+  }, [onStore]);
+
   // Signed in, out or as someone else: draw the page again as them.
   const version = useRef(auth.version);
   useEffect(() => {
@@ -138,8 +184,8 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
    */
   useEffect(() => {
     if (!doc) return;
-    return attachPreview(frameRef.current?.contentWindow ?? null, proxyFetch, onEdgeNav, onNav);
-  }, [doc, reloads, proxyFetch, onEdgeNav, onNav]);
+    return attachPreview(frameRef.current?.contentWindow ?? null, proxyFetch, onEdgeNav, onNav, onStore);
+  }, [doc, reloads, proxyFetch, onEdgeNav, onNav, onStore]);
 
   return (
     <div className="relative flex h-full flex-col bg-white">
@@ -153,6 +199,12 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
         }}
       >
         <PreviewIdentityMenu auth={auth} />
+        <PreviewVisitorMenu
+          siteId={siteId}
+          visitor={visitorOfToken(lent['dcms.visitor'])}
+          onSignOut={signOutVisitor}
+          onReset={signOutVisitor}
+        />
       </PreviewAddressBar>
       <div className="relative min-h-0 flex-1">
         {doc ? (

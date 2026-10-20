@@ -181,6 +181,55 @@ describe('the data cache', () => {
   });
 });
 
+describe('in a sandboxed builder preview', () => {
+  afterEach(() => {
+    delete (globalThis as { __dcmsPreviewStorage?: unknown }).__dcmsPreviewStorage;
+    delete (window as { __dcmsPreviewLeave?: unknown }).__dcmsPreviewLeave;
+  });
+
+  it('keeps the visitor in the storage the preview lends, and in memory when there is none', async () => {
+    const lent = new Map<string, string>();
+    (globalThis as { __dcmsPreviewStorage?: unknown }).__dcmsPreviewStorage = {
+      get: (k: string) => lent.get(k) ?? null,
+      set: (k: string, v: string | null) => (v === null ? lent.delete(k) : lent.set(k, v)),
+    };
+    const data = { ...visitors(), get: async () => ({ id: 'v1', email: 'ann@example.com', displayName: 'Ann' }) };
+    const el = await render([{ id: 'in', type: 'dcms.sign-in', props: { accounts: 'visitors', instance: 'members' } }], data);
+    (el.querySelector('input[name="email"]') as HTMLInputElement).value = 'ann@example.com';
+    (el.querySelector('input[name="password"]') as HTMLInputElement).value = 'right';
+    await act(async () => el.querySelector('form')!.requestSubmit());
+    await settle();
+    expect(JSON.parse(lent.get('dcms.visitor')!)).toMatchObject({ instance: 'members' });
+    expect(localStorage.getItem('dcms.visitor')).toBeNull();
+    signOutVisitor();
+
+    // An opaque-origin frame: every storage access throws. Signing in still holds for the page.
+    (globalThis as { __dcmsPreviewStorage?: unknown }).__dcmsPreviewStorage = {
+      get: () => {
+        throw new DOMException('sandboxed', 'SecurityError');
+      },
+      set: () => {
+        throw new DOMException('sandboxed', 'SecurityError');
+      },
+    };
+    const again = await render([{ id: 'in2', type: 'dcms.sign-in', props: { accounts: 'visitors', instance: 'members' } }], data);
+    (again.querySelector('input[name="email"]') as HTMLInputElement).value = 'ann@example.com';
+    (again.querySelector('input[name="password"]') as HTMLInputElement).value = 'right';
+    await act(async () => again.querySelector('form')!.requestSubmit());
+    await settle();
+    expect(again.textContent).toContain('Signed in as Ann');
+  });
+
+  it('leaves for the edge through the preview, which opens its popup', async () => {
+    const leave = vi.fn();
+    (window as { __dcmsPreviewLeave?: unknown }).__dcmsPreviewLeave = leave;
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ signedIn: false }), { status: 200 })));
+    const el = await render([{ id: 'in', type: 'dcms.sign-in', props: { afterSignIn: '/portal' } }], createFetchDataClient());
+    await act(async () => el.querySelector('button')!.click());
+    expect(leave).toHaveBeenCalledWith('/.edge/site/signin?returnUrl=%2Fportal');
+  });
+});
+
 describe('site users', () => {
   it('signs in at the edge, back to the page, and asks the edge who is signed in', async () => {
     const signIn = vi.fn();

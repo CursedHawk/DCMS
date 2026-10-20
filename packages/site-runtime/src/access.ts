@@ -25,11 +25,21 @@ export interface SiteEdge {
   signOut: () => void;
 }
 
+/**
+ * Leaves the app for the edge. A sandboxed builder preview (the developer components' build) cannot
+ * navigate its frame to the edge, so it defines `__dcmsPreviewLeave` and opens its popup instead.
+ */
+function go(url: string): void {
+  const preview = (window as { __dcmsPreviewLeave?: (url: string) => void }).__dcmsPreviewLeave;
+  if (preview) preview(url);
+  else window.location.assign(url);
+}
+
 let edge: SiteEdge = {
   base: '/.edge/site',
-  leave: (url) => window.location.assign(url),
-  signIn: (returnUrl) => window.location.assign(`${edge.base}/signin?returnUrl=${encodeURIComponent(returnUrl)}`),
-  signOut: () => window.location.assign(`${edge.base}/signout`),
+  leave: go,
+  signIn: (returnUrl) => go(`${edge.base}/signin?returnUrl=${encodeURIComponent(returnUrl)}`),
+  signOut: () => go(`${edge.base}/signout`),
 };
 
 const resets = new Set<() => void>();

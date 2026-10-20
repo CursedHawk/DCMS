@@ -273,6 +273,30 @@ describe('edge navigation', () => {
   });
 });
 
+describe('lent storage', () => {
+  it('hears what the page keeps (the signed-in visitor), from the attached frame only', () => {
+    const onStore = vi.fn();
+    attachPreview({ postMessage: vi.fn() } as unknown as Window, undefined, undefined, undefined, onStore);
+
+    fromFrame({ __dcms: 'preview-store', key: 'dcms.visitor', value: '{"instance":"members"}' });
+    fromFrame({ __dcms: 'preview-store', key: 'dcms.visitor', value: null });
+    fromFrame({ __dcms: 'preview-store', key: 'dcms.visitor', value: 42 });
+    expect(onStore.mock.calls).toEqual([
+      ['dcms.visitor', '{"instance":"members"}'],
+      ['dcms.visitor', null],
+    ]);
+
+    window.dispatchEvent(new MessageEvent('message', { data: { __dcms: 'preview-store', key: 'x', value: 'y' }, source: window }));
+    expect(onStore).toHaveBeenCalledTimes(2);
+  });
+
+  it('is lent to the page by the injected script, seeded from the document', () => {
+    expect(BRIDGE_SCRIPT).toContain('window.__dcmsPreviewStorage');
+    expect(BRIDGE_SCRIPT).toContain('window.__dcmsPreviewStore');
+    expect(BRIDGE_SCRIPT).toContain("__dcms: 'preview-store'");
+  });
+});
+
 describe('address bar', () => {
   it('hears where the app has gone, and sends it back, forward or to a typed path', () => {
     const postMessage = vi.fn();

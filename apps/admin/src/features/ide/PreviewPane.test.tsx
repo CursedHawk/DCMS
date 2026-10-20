@@ -13,6 +13,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('../site-source/previewAuth', () => ({
   usePreviewAuth: () => auth,
   PreviewIdentityMenu: () => null,
+  PreviewVisitorMenu: () => null,
 }));
 vi.mock('./preview/previewBridge', () => ({
   attachPreview: vi.fn(() => () => {}),
@@ -30,13 +31,13 @@ describe('PreviewPane', () => {
     render(<PreviewPane preview={preview} siteId="s1" />);
     const attach = vi.mocked(attachPreview);
     const first = screen.getByTitle('ide.preview') as HTMLIFrameElement;
-    expect(attach).toHaveBeenLastCalledWith(first.contentWindow, expect.any(Function), expect.any(Function), expect.any(Function));
+    expect(attach).toHaveBeenLastCalledWith(first.contentWindow, expect.any(Function), expect.any(Function), expect.any(Function), expect.any(Function));
 
     fireEvent.click(screen.getByRole('button', { name: 'previewBar.reload' }));
 
     const second = screen.getByTitle('ide.preview') as HTMLIFrameElement;
     expect(second).not.toBe(first);
     expect(preview.refresh).toHaveBeenCalled();
-    expect(attach).toHaveBeenLastCalledWith(second.contentWindow, expect.any(Function), expect.any(Function), expect.any(Function));
+    expect(attach).toHaveBeenLastCalledWith(second.contentWindow, expect.any(Function), expect.any(Function), expect.any(Function), expect.any(Function));
   });
 });

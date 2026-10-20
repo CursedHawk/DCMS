@@ -54,23 +54,48 @@ interface VisitorSession {
   refreshToken: string;
 }
 
+/** Where the session is kept: a sandboxed builder preview has no storage of its own and lends one. */
+interface KeyValueStore {
+  get(key: string): string | null;
+  set(key: string, value: string | null): void;
+}
+
+function store(): KeyValueStore {
+  const preview = (globalThis as { __dcmsPreviewStorage?: KeyValueStore }).__dcmsPreviewStorage;
+  if (preview) return preview;
+  return {
+    get: (key) => localStorage.getItem(key),
+    set: (key, value) => (value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value)),
+  };
+}
+
+/** The last session written, for when storage refuses (private mode, blocked site data): signed in for this page. */
+let memory: string | null = null;
+
 function readSession(): VisitorSession | null {
+  let raw: string | null;
   try {
-    const value = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<VisitorSession> | null;
+    raw = store().get(KEY);
+  } catch {
+    // No storage (the prerender, an opaque-origin frame): what this page wrote, if anything.
+    raw = memory;
+  }
+  try {
+    const value = JSON.parse(raw ?? 'null') as Partial<VisitorSession> | null;
     return value && typeof value.instance === 'string' && typeof value.accessToken === 'string' && typeof value.refreshToken === 'string'
       ? (value as VisitorSession)
       : null;
   } catch {
-    return null; // no storage (the prerender, private mode, blocked site data): signed out
+    return null;
   }
 }
 
 function writeSession(session: VisitorSession | null): void {
+  memory = session ? JSON.stringify(session) : null;
   try {
-    if (session) localStorage.setItem(KEY, JSON.stringify(session));
-    else localStorage.removeItem(KEY);
+    store().set(KEY, memory);
   } catch {
-    /* storage refused: signed in for this page only, which the state below still is */
+    /* storage refused: `memory` keeps it for this page */
   }
 }
 
