@@ -2165,7 +2165,14 @@
     "cannotSignIn": "Can't sign in",
     "viewAsFailed": "Could not view as this user: {{reason}}",
     "pageNeedsSignIn": "On the live site, this page is only for signed-in users.",
-    "pageForbidden": "On the live site, the person you are previewing as can't open this page."
+    "pageForbidden": "On the live site, the person you are previewing as can't open this page.",
+    "visitorMenu": "Which visitor the preview is signed in as",
+    "noVisitor": "No visitor",
+    "visitorAs": "Visitor: {{name}}",
+    "visitorHint": "Visitors who sign in or register on the page here are test accounts in the preview's sandbox, never the site's real ones.",
+    "visitorSignOut": "Sign the visitor out",
+    "resetSandbox": "Reset test data",
+    "sandboxReset": "Preview test data cleared: test visitors, form submissions and chats."
   },
   "views": {
     "matchAll": "all",

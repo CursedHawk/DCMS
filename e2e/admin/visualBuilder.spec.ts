@@ -349,6 +349,77 @@ test('the preview signs in as the site’s users: its main domain’s rules, and
   expect(csrf, 'View as is a write: it carries the console CSRF token').toBeTruthy();
 });
 
+test('the page’s own sign-in works in the preview: a visitor signs in to the sandbox, a site user through the popup', async ({ page, api }) => {
+  const token = `h.${Buffer.from(JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600 })).toString('base64url')}.s`;
+  await page.route('**/.edge/preview/**', async (route, request) => {
+    const url = new URL(request.url());
+    if (url.pathname.endsWith('/me')) return route.fulfill({ json: { available: true, signedIn: false, name: null, email: null, groups: [], viewAs: false } });
+    if (url.pathname.endsWith('/access')) return route.fulfill({ json: { [url.searchParams.get('path')!]: 'allow' } });
+    return route.fulfill({ status: 404, json: {} });
+  });
+  api
+    .on('GET', '/api/admin/plugin-ui', [
+      ...data.PLUGIN_UI,
+      { pluginId: 'user-auth', name: 'User Authentication', icon: null, source: 'builtin', module: null, screens: [], instances: [{ id: 'ua', slug: 'users', name: 'Site users', enabled: true }] },
+      { pluginId: 'visitor-auth', name: 'Visitor Authentication', icon: null, source: 'builtin', module: null, screens: [], instances: [{ id: 'va', slug: 'members', name: 'Members', enabled: true }] },
+    ])
+    .on('POST', `/api/admin/sites/${SITE}/preview/api/members/login`, { accessToken: token, refreshToken: 'r1' })
+    .on('GET', `/api/admin/sites/${SITE}/preview/api/members/me`, ({ request, route }: { request: { headers(): Record<string, string> }; route: { fulfill(o: unknown): Promise<void> } }) =>
+      request.headers()['x-dcms-visitor-token'] === token ? { id: 'v1', email: 'ann@example.com', displayName: 'Ann' } : route.fulfill({ status: 401, json: {} }).then(() => undefined),
+    );
+  const signInPage = {
+    ...twoPages,
+    'dcms/pages/home.json': doc({
+      schemaVersion: 1,
+      id: 'home',
+      title: 'Home',
+      root: {
+        id: 'r',
+        type: 'dcms.page',
+        slots: {
+          default: [
+            { id: 'h', type: 'dcms.heading', props: { text: 'Welcome home', level: '1' } },
+            { id: 'staff', type: 'dcms.sign-in', props: { label: 'Staff sign-in' } },
+            { id: 'out', type: 'dcms.signed-in', props: { accounts: 'visitors', show: 'signed-out' }, slots: { default: [
+              { id: 'in', type: 'dcms.sign-in', props: { accounts: 'visitors', instance: 'members' } },
+            ] } },
+            { id: 'members', type: 'dcms.signed-in', props: { accounts: 'visitors', show: 'signed-in' }, slots: { default: [
+              { id: 'm', type: 'dcms.text', props: { text: 'Members area' } },
+              { id: 'who', type: 'dcms.account', props: { accounts: 'visitors' } },
+            ] } },
+          ],
+        },
+      },
+    }),
+  };
+
+  await open(page, api, signInPage);
+  await page.getByRole('group', { name: 'View' }).getByTitle('Preview').click();
+  const preview = page.frameLocator('iframe[title="Preview"]');
+  const visitor = page.getByRole('button', { name: 'Which visitor the preview is signed in as' });
+  await expect(visitor).toContainText('No visitor');
+
+  await preview.getByLabel('Email').fill('ann@example.com');
+  await preview.getByLabel('Password').fill('secret');
+  await preview.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(preview.getByText('Members area')).toBeVisible();
+  await expect(preview.getByText('Signed in as Ann')).toBeVisible();
+  await expect(preview.getByLabel('Password')).toHaveCount(0);
+  await expect(visitor).toContainText('Visitor: Ann');
+  expect(api.requestsTo('POST', `/api/admin/sites/${SITE}/preview/api/members/login`)[0]!.body).toEqual({ email: 'ann@example.com', password: 'secret' });
+
+  await visitor.click();
+  await page.getByRole('menuitem', { name: 'Sign the visitor out' }).click();
+  await expect(preview.getByText('Members area')).toHaveCount(0);
+  await expect(preview.getByLabel('Password')).toBeVisible();
+  await expect(visitor).toContainText('No visitor');
+
+  // A site user's sign-in is the preview's own popup, as the toolbar's is.
+  const popup = page.waitForEvent('popup');
+  await preview.getByRole('button', { name: 'Staff sign-in' }).click();
+  expect((await popup).url()).toMatch(/\/\.edge\/preview\/[^/]+\/[^/]+\/signin$/);
+});
+
 test('publishing is refused while the site has errors, and says where they are', async ({ page, api }) => {
   const broken = {
     ...twoPages,

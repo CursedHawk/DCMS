@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { DataClientContext, DataError } from './data';
+import { DataClientContext, DataError, useSignInGeneration } from './data';
 import type { ComponentDefinition, ComponentRenderProps } from './registry';
 import { useRenderMode } from './renderMode';
 import { SiteLink } from './site';
@@ -226,6 +226,7 @@ export function DataTable({ props }: ComponentRenderProps<Props>) {
   const shown = definition.columns.map((c) => fields.find((f) => f.key === c)).filter((f): f is ViewField => !!f);
   const shownKey = shown.map((f) => f.key).join(',');
   useEffect(() => setPage(1), [filterJson, sortJson, term]);
+  const signedInAs = useSignInGeneration();
   useEffect(() => {
     if (!table) return;
     let live = true;
@@ -250,7 +251,7 @@ export function DataTable({ props }: ComponentRenderProps<Props>) {
     };
     // filter and sort by their JSON: a re-render that rebuilds them equal asks nothing again.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, base, tableName, table, page, pageSize, term, filterJson, sortJson, shownKey]);
+  }, [client, base, tableName, table, page, pageSize, term, filterJson, sortJson, shownKey, signedInAs]);
 
   const [panel, setPanel] = useState<'filter' | 'columns' | 'save' | 'share' | null>(null);
   const toggle = (p: typeof panel) => setPanel((open) => (open === p ? null : p));

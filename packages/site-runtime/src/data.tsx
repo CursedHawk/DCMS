@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 import { z } from 'zod';
+import { onSiteAccessReset } from './access';
 import { visitorToken } from './accounts';
 import type { Action } from './actions';
 import type { PropDefinition } from './props';
@@ -206,7 +207,28 @@ export function itemPath(source: Source, slug: string): string {
  * same content makes one call. Results are kept for the life of the page — published content
  * does not change under a visitor often enough to be worth more.
  */
-const cache = new WeakMap<DataClient, Map<string, Promise<unknown>>>();
+let cache = new WeakMap<DataClient, Map<string, Promise<unknown>>>();
+// Someone signed in or out: what was fetched as the last person is not this one's to see, and
+// what is on screen fetches again as the new one.
+let generation = 0;
+const generationListeners = new Set<() => void>();
+onSiteAccessReset(() => {
+  cache = new WeakMap();
+  generation++;
+  for (const listener of generationListeners) listener();
+});
+
+/** Changes whenever someone signs in or out: a component that fetches by itself re-fetches on it. */
+export function useSignInGeneration(): number {
+  return useSyncExternalStore(
+    (listener) => {
+      generationListeners.add(listener);
+      return () => generationListeners.delete(listener);
+    },
+    () => generation,
+    () => 0,
+  );
+}
 
 function cached(client: DataClient, path: string): Promise<unknown> {
   let byPath = cache.get(client);
@@ -231,6 +253,7 @@ export type Loadable<T> = { state: 'loading' } | { state: 'error'; error: Error 
 /** Fetch through the client in context. `path === null` means "not configured": nothing happens. */
 export function useData<T>(path: string | null, parse: (json: unknown) => T): Loadable<T> {
   const client = useContext(DataClientContext);
+  const signedInAs = useSignInGeneration();
   const [state, setState] = useState<Loadable<T>>({ state: 'loading' });
   useEffect(() => {
     if (!path) return;
@@ -249,7 +272,7 @@ export function useData<T>(path: string | null, parse: (json: unknown) => T): Lo
     };
     // `parse` is a module-level function at every call site.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, path]);
+  }, [client, path, signedInAs]);
   return path ? state : { state: 'error', error: new Error('not configured') };
 }
 

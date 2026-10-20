@@ -8,14 +8,29 @@ import {
   resetSiteAccess,
   routeTitles,
   siteRoutes,
+  signOutVisitor,
+  useAccount,
+  type DataClient,
   type SiteAccess,
 } from '@dcms/site-runtime';
-import { LogIn, Lock } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
+import { Eraser, LogIn, LogOut, Lock, UserRound } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { useTranslation } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
-import { Button } from '@dcms/ui';
+import { toast } from 'sonner';
+import {
+  Button,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@dcms/ui';
+import { api } from '../../lib/api';
+import { usePluginUi } from '../../pluginHost/api';
 import { PreviewAddressBar, PreviewIdentityMenu, usePreviewAuth, useVfs } from '../site-source';
 import { assetIdOf, resolveMedia } from '../builder/panels/media';
 import { useVisual } from './store';
@@ -69,16 +84,22 @@ export function VisualPreview({ siteId, initialPath, width }: { siteId: string; 
     return loadDocuments(modules);
   }, [dcmsFiles]);
 
+  // The page's own sign-in and sign-out buttons open the preview's popup, as the toolbar's do.
+  const { signIn, signOut } = auth;
   useEffect(() => {
     if (!auth.base) return;
-    configureSiteEdge({ base: auth.base, leave: (_url, access) => setBlocked(access) });
-  }, [auth.base]);
+    configureSiteEdge({ base: auth.base, leave: (_url, access) => setBlocked(access), signIn, signOut });
+  }, [auth.base, signIn, signOut]);
+  const drawnAs = useRef<number | null>(null);
 
   useEffect(() => {
     const doc = frame.current?.contentDocument;
     if (!doc) return;
-    // Signed in, out or as someone else since the last draw: ask the rules afresh.
-    resetSiteAccess();
+    // Signed in, out or as someone else since the last draw: ask the rules, and who it is, afresh.
+    if (drawnAs.current !== auth.version) {
+      drawnAs.current = auth.version;
+      resetSiteAccess();
+    }
     setBlocked(null);
     if (!root.current) {
       doc.open();
@@ -122,6 +143,7 @@ export function VisualPreview({ siteId, initialPath, width }: { siteId: string; 
         onReload={() => setReloads((n) => n + 1)}
       >
         {auth.identity?.available ? <PreviewIdentityMenu auth={auth} /> : null}
+        <PreviewVisitorMenu siteId={siteId} dataClient={dataClient} onReset={() => setReloads((n) => n + 1)} />
       </PreviewAddressBar>
     <div className="relative flex min-h-0 flex-1 justify-center overflow-auto bg-muted/40">
       <iframe
@@ -145,6 +167,51 @@ export function VisualPreview({ siteId, initialPath, width }: { siteId: string; 
       ) : null}
     </div>
     </div>
+  );
+}
+
+/**
+ * The visitor the preview is signed in as (Visitor Authentication): the page's own sign-in and
+ * registration forms sign test visitors in to the preview's sandbox, never the site's real
+ * accounts, so there is no "View as" here — register one. Nothing when no instance is installed.
+ */
+function PreviewVisitorMenu({ siteId, dataClient, onReset }: { siteId: string; dataClient: DataClient; onReset: () => void }) {
+  const { t } = useTranslation();
+  const ui = usePluginUi();
+  const installed = !!ui.data?.find((p) => p.pluginId === 'visitor-auth')?.instances.some((i) => i.enabled);
+  const visitor = useAccount('visitors', dataClient, installed);
+  const reset = useMutation({
+    mutationFn: () => api.post(`/admin/sites/${siteId}/preview/sandbox/reset`),
+    onSuccess: () => {
+      signOutVisitor();
+      onReset();
+      toast.success(t('previewAuth.sandboxReset'));
+    },
+    onError: () => toast.error(t('errors.generic')),
+  });
+  if (!installed) return null;
+  const label = visitor ? t('previewAuth.visitorAs', { name: visitor.name ?? visitor.email ?? '' }) : t('previewAuth.noVisitor');
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-6 min-w-0 gap-1 px-1.5 text-xs" aria-label={t('previewAuth.visitorMenu')}>
+          <UserRound className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 truncate">{label}</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel className="max-w-64 text-xs font-normal text-muted-foreground">{t('previewAuth.visitorHint')}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {visitor ? (
+          <DropdownMenuItem onSelect={signOutVisitor}>
+            <LogOut className="h-4 w-4" /> {t('previewAuth.visitorSignOut')}
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem disabled={reset.isPending} onSelect={() => reset.mutate()}>
+          <Eraser className="h-4 w-4" /> {t('previewAuth.resetSandbox')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

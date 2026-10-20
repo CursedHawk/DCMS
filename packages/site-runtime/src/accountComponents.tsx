@@ -103,9 +103,10 @@ function SignInBody({ props, navigate }: ComponentRenderProps<Props> & { navigat
       if (after.startsWith('/') && navigate) navigate(after);
     } catch (err) {
       setState('error');
-      const status = err instanceof DataError ? err.status : 0;
-      const body = err instanceof DataError ? (err.body as { error?: string } | undefined) : undefined;
-      setMessage(status === 401 ? 'That email and password do not match an account.' : (body?.error ?? null));
+      // The site's client throws a DataError; a builder's preview client its own error, with a status too.
+      const status = (err as { status?: unknown }).status;
+      const reason = err instanceof DataError ? (err.body as { error?: string } | undefined)?.error : status ? (err as Error).message : undefined;
+      setMessage(status === 401 ? 'That email and password do not match an account.' : (reason ?? null));
     }
   };
 

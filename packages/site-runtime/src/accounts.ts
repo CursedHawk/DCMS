@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import { currentSiteEdge, onSiteAccessReset } from './access';
+import { currentSiteEdge, onSiteAccessReset, resetSiteAccess } from './access';
 import type { DataClient } from './data';
 
 /**
@@ -134,12 +134,14 @@ export async function signInVisitor(
   const tokens = tokensOf(await client.post(`/api/${instance}/${mode === 'register' ? 'register' : 'login'}`, body));
   if (!tokens) throw new Error('The sign-in answered without tokens.');
   writeSession({ instance, ...tokens });
-  set('visitors', undefined); // ask who it is: the components draw the name from /me
+  // Someone else now: forget what was fetched and asked as the last person; the components ask /me.
+  resetSiteAccess();
 }
 
 /** Forgets the visitor's tokens. Nothing to tell the server: an access token lapses within minutes. */
 export function signOutVisitor(): void {
   writeSession(null);
+  resetSiteAccess();
   set('visitors', null);
 }
 

@@ -31,6 +31,7 @@ public static class SitePreviewEndpoints
 
     /// <summary>A site user's realm access token (ADR 0022); the same name the edge and content-api use.</summary>
     private const string RealmTokenHeader = "X-Dcms-Realm-Token";
+    private const string VisitorTokenHeader = "X-Dcms-Visitor-Token";
 
     public static IEndpointRouteBuilder MapSitePreview(this IEndpointRouteBuilder app)
     {
@@ -165,6 +166,16 @@ public static class SitePreviewEndpoints
         if (http.Request.Headers.TryGetValue(RealmTokenHeader, out var realmToken))
         {
             request.Headers.TryAddWithoutValidation(RealmTokenHeader, realmToken.ToArray());
+        }
+        // The visitor the preview signed in (Visitor Authentication, in the sandbox): their own
+        // bearer, which cannot travel as Authorization here — that header is the console's. It
+        // grants nothing the caller could not get by calling the site's API directly, and the
+        // sandbox header keeps it to sandbox accounts.
+        if (http.Request.Headers.TryGetValue(VisitorTokenHeader, out var visitorToken)
+            && visitorToken.ToString() is { Length: > 0 and < 4096 } token
+            && token.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.'))
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         }
         if (http.Request.Headers.Accept.Count > 0)
         {

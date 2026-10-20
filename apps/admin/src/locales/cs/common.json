@@ -2213,7 +2213,14 @@
     "cannotSignIn": "Nemůže se přihlásit",
     "viewAsFailed": "Zobrazit jako tento uživatel se nepodařilo: {{reason}}",
     "pageNeedsSignIn": "Na živém webu je tato stránka jen pro přihlášené uživatele.",
-    "pageForbidden": "Na živém webu tuto stránku osoba, za kterou se díváte, otevřít nemůže."
+    "pageForbidden": "Na živém webu tuto stránku osoba, za kterou se díváte, otevřít nemůže.",
+    "visitorMenu": "Za kterého návštěvníka je náhled přihlášen",
+    "noVisitor": "Žádný návštěvník",
+    "visitorAs": "Návštěvník: {{name}}",
+    "visitorHint": "Návštěvníci, kteří se zde na stránce přihlásí nebo zaregistrují, jsou testovací účty v sandboxu náhledu, nikdy skutečné účty webu.",
+    "visitorSignOut": "Odhlásit návštěvníka",
+    "resetSandbox": "Smazat testovací data",
+    "sandboxReset": "Testovací data náhledu smazána: testovací návštěvníci, odeslané formuláře a chaty."
   },
   "views": {
     "matchAll": "všem",

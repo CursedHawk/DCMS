@@ -4,7 +4,8 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureSiteEdge, resetSiteAccess } from './access';
 import { builtinRegistry } from './components';
-import { DataClientContext, DataError, createFetchDataClient, type DataClient } from './data';
+import { signOutVisitor } from './accounts';
+import { DataClientContext, DataError, createFetchDataClient, useData, type DataClient } from './data';
 import type { Node } from './document';
 import { RenderNode } from './render';
 import { RenderModeContext } from './renderMode';
@@ -152,6 +153,31 @@ describe('visitor accounts', () => {
     localStorage.setItem('dcms.visitor', JSON.stringify({ instance: 'members', accessToken: jwt(-60), refreshToken: 'gone' }));
     await expect(createFetchDataClient().get('/api/crm/data/deals')).rejects.toThrow();
     expect(localStorage.getItem('dcms.visitor')).toBeNull();
+  });
+});
+
+describe('the data cache', () => {
+  it('fetches again once the visitor signed out: one visitor’s records are not the next one’s', async () => {
+    let gets = 0;
+    const data: DataClient = { get: async () => ({ n: ++gets }), post: async () => ({}) };
+    function Show() {
+      const got = useData('/api/crm/data/mine', (j) => (j as { n: number }).n);
+      return <p>{got.state === 'ready' ? `fetch ${got.value}` : '…'}</p>;
+    }
+    const el = document.createElement('div');
+    document.body.append(el);
+    const root = createRoot(el);
+    const draw = () => act(async () => root.render(<DataClientContext.Provider value={data}><Show /></DataClientContext.Provider>));
+    await draw();
+    await settle();
+    await draw();
+    await settle();
+    expect(el.textContent).toBe('fetch 1');
+    expect(gets).toBe(1);
+    signOutVisitor();
+    await draw();
+    await settle();
+    expect(gets).toBe(2);
   });
 });
 

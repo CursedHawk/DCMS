@@ -1,5 +1,5 @@
 import { META_FIELDS, contentFields, type ContentField } from '@dcms/gjs-blocks';
-import { sourceSchema, sourceKey, type ContentItem, type ContentSchema, type DataClient, type Source } from '@dcms/site-runtime';
+import { sourceSchema, sourceKey, visitorToken, type ContentItem, type ContentSchema, type DataClient, type Source } from '@dcms/site-runtime';
 import type { Component } from 'grapesjs';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
@@ -16,9 +16,15 @@ import { ID, PROPS, SLOT } from './canvas/tree';
  */
 export function previewClient(siteId: string): DataClient {
   const base = `/admin/sites/${siteId}/preview`;
+  // The visitor the preview signed in (Visitor Authentication, in the sandbox) goes along in a
+  // header of its own: Authorization here is the console's.
+  const visitor = async () => {
+    const token = await visitorToken((instance, refreshToken) => api.post(`${base}/api/${instance}/refresh`, { refreshToken }));
+    return token ? { headers: { 'X-Dcms-Visitor-Token': token } } : undefined;
+  };
   return {
-    get: (path) => api.get<unknown>(`${base}${path}`),
-    post: (path, body) => api.post<unknown>(`${base}${path}`, body),
+    get: async (path) => api.get<unknown>(`${base}${path}`, await visitor()),
+    post: async (path, body) => api.post<unknown>(`${base}${path}`, body, await visitor()),
   };
 }
 
