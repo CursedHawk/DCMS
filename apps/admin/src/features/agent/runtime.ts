@@ -404,12 +404,6 @@ async function runOne<TContext>(
 const DEFAULT_MAX_RESULT_CHARS = 8000;
 
 /**
- * Clip an oversized result and say how to get the rest.
- *
- * <p>Truncating silently is the trap: the model reads a partial answer as a complete one and
- * reasons from it. Saying so turns a wrong conclusion into a narrower second request.</p>
- */
-/**
  * Put a boundary around output that came from outside the workspace.
  *
  * <p>A form submission is written by any visitor on the internet; the rendered page shows
@@ -429,13 +423,24 @@ export function markUntrusted(content: string, source: string | undefined): stri
   return `${open}\n${content}\n[End of untrusted data from ${source}.]`;
 }
 
+/**
+ * Clip an oversized result and say how to get the rest.
+ *
+ * <p>Truncating silently is the trap: the model reads a partial answer as a complete one and
+ * reasons from it. Saying so turns a wrong conclusion into a narrower second request.</p>
+ *
+ * <p>The cut is taken from the middle, keeping the start and the end. Build and test output puts
+ * its verdict and its errors last; a head-only cut kept the noise and lost the failure.</p>
+ */
 function capResult(
   content: string,
   max = DEFAULT_MAX_RESULT_CHARS,
 ): { content: string; truncated: boolean } {
   if (content.length <= max) return { content, truncated: false };
+  const tail = Math.floor(max / 3);
+  const head = max - tail;
   return {
-    content: `${content.slice(0, max)}\n\n… truncated at ${max} characters. Narrow the request — a line range, a path filter, or a more specific query.`,
+    content: `${content.slice(0, head)}\n\n… ${content.length - max} characters omitted here; truncated at ${max} characters. Narrow the request — a line range, a path filter, or a more specific query.\n\n${content.slice(-tail)}`,
     truncated: true,
   };
 }

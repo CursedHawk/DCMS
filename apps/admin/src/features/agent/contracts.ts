@@ -4,11 +4,12 @@ import type { ToolRisk } from './modes';
 /**
  * The vocabulary both agent surfaces speak.
  *
- * <p>There are two of them — the workspace assistant in the admin console and the coding agent
- * in the Mode B IDE — and under the rework they are two UIs over <b>one</b> runtime, one tool
- * registry and one mode model. That only holds if they agree on what a tool is, what an event
- * is, and what a workspace revision is; two surfaces each with their own near-identical types is
- * how they drift back apart.</p>
+ * <p>There are two of them — the workspace assistant in the admin console and the site agent in
+ * the IDE and builders. They share one tool vocabulary and one mode model, and the assistant
+ * borrows the runtime's result capping, prompt-cache hints and history pruning — but it still
+ * drives its own turn loop (`assistant/useAssistantSession.ts`) rather than `runtime.ts`. That
+ * only holds if they agree on what a tool is, what an event is, and what a workspace revision is;
+ * two surfaces each with their own near-identical types is how they drift back apart.</p>
  *
  * <p>Nothing here talks to a server, imports a UI framework, or knows which surface it is
  * serving. That is deliberate: this module is the contract, and a contract that depends on one
@@ -246,10 +247,6 @@ export interface SearchHit {
 export interface ContextBudget {
   /** Ceiling on the assembled request, before the model is called. */
   maxInputTokens: number;
-  /** Ceiling on one tool result, before truncation. */
-  maxToolResultTokens: number;
-  /** How many whole files one turn may pull in before it must narrow to ranges. */
-  maxFilesPerRead: number;
 }
 
 /**
@@ -260,8 +257,6 @@ export interface ContextBudget {
  */
 export const DEFAULT_CONTEXT_BUDGET: ContextBudget = {
   maxInputTokens: 40_000,
-  maxToolResultTokens: 8_000,
-  maxFilesPerRead: 5,
 };
 
 /**

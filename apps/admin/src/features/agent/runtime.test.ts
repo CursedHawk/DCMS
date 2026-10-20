@@ -443,6 +443,13 @@ describe('result capping', () => {
     expect(r.content).toContain('Narrow the request');
   });
 
+  it('keeps the end of the output, where a build puts its errors', () => {
+    const log = `${'compiling…\n'.repeat(500)}error TS2304: Cannot find name 'Foo'.`;
+    const r = capResult(log, 300);
+    expect(r.content).toContain("Cannot find name 'Foo'");
+    expect(r.content.startsWith('compiling')).toBe(true);
+  });
+
   it('honours a tool-specific ceiling', async () => {
     const chatty = {
       ...tool('read', undefined, async () => ({ content: 'y'.repeat(100) })),

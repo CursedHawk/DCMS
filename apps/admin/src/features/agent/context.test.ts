@@ -9,11 +9,7 @@ import {
   type WorkingMemory,
 } from './context';
 
-const BUDGET: ContextBudget = {
-  maxInputTokens: 1000,
-  maxToolResultTokens: 500,
-  maxFilesPerRead: 5,
-};
+const BUDGET: ContextBudget = { maxInputTokens: 1000 };
 
 const user = (text: string): Message => ({ role: 'user', content: text });
 const assistant = (text: string): Message => ({
