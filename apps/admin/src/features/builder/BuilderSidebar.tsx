@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Editor } from 'grapesjs';
 import { Blocks, FileText, GitBranch, Layers, LayoutTemplate, Puzzle, Rocket, Sparkles } from 'lucide-react';
@@ -46,6 +47,8 @@ export function BuilderSidebar({
   onViewChange: (v: SidebarView) => void;
   editor: Editor | null;
 }) {
+  const [agentOpened, setAgentOpened] = useState(false);
+  if (view === 'agent' && !agentOpened) setAgentOpened(true);
   const { t } = useTranslation();
   const branch = useVfs((s) => s.branch);
   const changes = useQuery({
@@ -119,14 +122,19 @@ export function BuilderSidebar({
           />
         )}
         {view === 'deploy' && <DeploymentsView siteId={siteId} />}
-        {view === 'agent' && (
-          <AgentPanel
-            siteId={siteId}
-            siteName={siteName}
-            kind="static"
-            tools={STATIC_TOOLS}
-            validate={validateStaticSite}
-          />
+        {/* Kept mounted once opened, so the conversation (and a run in progress) survives switching
+            views; it ends with the page. */}
+        {agentOpened && (
+          <div className={view === 'agent' ? 'h-full' : 'hidden'}>
+            <AgentPanel
+              key={siteId}
+              siteId={siteId}
+              siteName={siteName}
+              kind="static"
+              tools={STATIC_TOOLS}
+              validate={validateStaticSite}
+            />
+          </div>
         )}
       </div>
     </div>

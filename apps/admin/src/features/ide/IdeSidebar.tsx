@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Files, GitBranch, Rocket, Search, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +46,8 @@ export function IdeSidebar({
   /** Width (px) of the active-view panel; the activity rail stays fixed. */
   viewWidth?: number;
 }) {
+  const [agentOpened, setAgentOpened] = useState(false);
+  if (view === 'agent' && !agentOpened) setAgentOpened(true);
   const { t } = useTranslation();
   const changes = useQuery({
     queryKey: ['git-changes', siteId, branch],
@@ -111,7 +114,13 @@ export function IdeSidebar({
           />
         )}
         {view === 'deploy' && <DeploymentsView siteId={siteId} />}
-        {view === 'agent' && <AgentPanel siteId={siteId} siteName={siteName} />}
+        {/* Kept mounted once opened, so the conversation (and a run in progress) survives switching
+            views; it ends with the page. */}
+        {agentOpened && (
+          <div className={view === 'agent' ? 'h-full' : 'hidden'}>
+            <AgentPanel key={siteId} siteId={siteId} siteName={siteName} />
+          </div>
+        )}
       </div>
     </div>
   );

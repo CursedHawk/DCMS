@@ -116,6 +116,8 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
   const queryClient = useQueryClient();
   const [editor, setEditor] = useState<Editor | null>(null);
   const [sidebar, setSidebar] = useState<SidebarView>('components');
+  const [agentOpened, setAgentOpened] = useState(false);
+  if (sidebar === 'agent' && !agentOpened) setAgentOpened(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -540,8 +542,12 @@ export function VisualBuilderPage({ siteId }: { siteId: string }) {
             )}
             {sidebar === 'deploy' && <DeploymentsView siteId={siteId} />}
             {sidebar === 'problems' && <ProblemsPanel problems={problems} editor={editor} />}
-            {sidebar === 'agent' && (
-              <AgentPanel siteId={siteId} siteName={site.data?.name} kind="visual" tools={agentTools} validate={validateVisualSite} />
+            {/* Kept mounted once opened, like the palette, so the conversation (and a run in
+                progress) survives switching views; it ends with the page. */}
+            {agentOpened && (
+              <div className={cn('h-full', sidebar !== 'agent' && 'hidden')}>
+                <AgentPanel key={siteId} siteId={siteId} siteName={site.data?.name} kind="visual" tools={agentTools} validate={validateVisualSite} />
+              </div>
             )}
           </div>
         </div>

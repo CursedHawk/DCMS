@@ -65,6 +65,13 @@ test('the agent builds a section with components, and it lands on the canvas and
 
   const home = JSON.parse(saved(api, HOME)!);
   expect(home.root.slots.default.map((n: { type: string }) => n.type)).toEqual(['dcms.heading', 'dcms.section']);
+
+  // Away to another panel and back: the conversation is still the one on screen, not a new one.
+  await page.getByRole('tab', { name: 'Layers' }).click();
+  await expect(page.getByText('Added a section with a heading.')).toBeHidden();
+  await page.getByRole('tab', { name: 'Agent' }).click();
+  await expect(page.getByText('Added a section with a heading.')).toBeVisible();
+  await expect(page.getByText('Add a section', { exact: true })).toBeVisible();
 });
 
 /*
