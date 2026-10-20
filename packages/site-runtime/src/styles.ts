@@ -191,6 +191,8 @@ body { margin: 0; }
 .dcms-field-help { margin: 0; font-size: var(--dcms-text-sm, 0.875rem); color: var(--dcms-color-muted, #64748b); }
 .dcms-field input:focus-visible, .dcms-field textarea:focus-visible, .dcms-field select:focus-visible { outline: 2px solid var(--dcms-color-brand, #4f46e5); outline-offset: 1px; }
 .dcms-form-error { color: var(--dcms-color-danger, #dc2626); }
+.dcms-account { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; min-width: 0; font-family: var(--dcms-font-body, inherit); }
+.dcms-account-name { min-width: 0; overflow-wrap: anywhere; }
 .dcms-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .dcms-data-table { display: flex; flex-direction: column; gap: var(--dcms-space-sm, 0.75rem); min-width: 0; font-family: var(--dcms-font-body, inherit); }
 .dcms-data-table-toolbar, .dcms-data-table-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }

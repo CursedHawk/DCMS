@@ -12,6 +12,7 @@ import { NAV_COMPONENTS } from './navComponents';
 import { Collection, FIELD_TYPES, Form, FormField, Modal, RichText, runAction } from './dataComponents';
 import { DATA_TABLE_COMPONENTS } from './dataTable';
 import { RECORD_FORM_COMPONENTS } from './recordForm';
+import { ACCOUNT_COMPONENTS } from './accountComponents';
 import { SiteLink, useSite } from './site';
 import { PageStateContext } from './state';
 
@@ -868,6 +869,7 @@ export const BUILTIN_COMPONENTS: readonly ComponentDefinition[] = [
   ...NAV_COMPONENTS,
   ...DATA_TABLE_COMPONENTS,
   ...RECORD_FORM_COMPONENTS,
+  ...ACCOUNT_COMPONENTS,
 ];
 
 export const builtinRegistry = createRegistry(BUILTIN_COMPONENTS);

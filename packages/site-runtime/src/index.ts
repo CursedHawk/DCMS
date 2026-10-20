@@ -1,4 +1,6 @@
 export * from './access';
+export * from './accountComponents';
+export * from './accounts';
 export * from './actions';
 export * from './app';
 export * from './code';

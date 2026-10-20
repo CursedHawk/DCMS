@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { z } from 'zod';
+import { visitorToken } from './accounts';
 import type { Action } from './actions';
 import type { PropDefinition } from './props';
 
@@ -90,15 +91,30 @@ export interface DataClient {
   send?(method: 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<unknown>;
 }
 
-/** Same-origin `fetch`: on a published site `/api/*` is served by site-host's proxy. */
-/** A client for the delivery API at `base` (empty: the site's own origin, which proxies /api). */
+/**
+ * A client for the delivery API at `base` (empty: the site's own origin, which proxies /api).
+ * A signed-in visitor's token goes with every call (accounts.ts), so the plugins know them.
+ */
 export function createFetchDataClient(base = ''): DataClient {
+  const bearer = async (): Promise<Record<string, string>> => {
+    const token = await visitorToken(async (instance, refreshToken) => {
+      const res = await fetch(`${base}/api/${instance}/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+      if (!res.ok) throw new DataError(res.status, '/refresh');
+      return res.json();
+    });
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
   const send: NonNullable<DataClient['send']> = async (method, path, body) => {
     const res = await fetch(base + path, {
       method,
       // One key per write: a double click, or a retry after a dropped connection, is the same
       // write to content-api rather than a second record (ADR 0024).
       headers: {
+        ...(await bearer()),
         'Idempotency-Key': crypto.randomUUID(),
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
@@ -109,7 +125,7 @@ export function createFetchDataClient(base = ''): DataClient {
   };
   return {
     async get(path) {
-      const res = await fetch(base + path, { headers: { Accept: 'application/json' } });
+      const res = await fetch(base + path, { headers: { ...(await bearer()), Accept: 'application/json' } });
       if (!res.ok) throw new DataError(res.status, path);
       return res.json();
     },

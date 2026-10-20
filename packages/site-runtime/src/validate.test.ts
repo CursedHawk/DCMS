@@ -78,4 +78,27 @@ describe('checkVisualSite', () => {
     const out = messages({ 'dcms/app.json': '{', 'dcms/pages/home.json': '{"schemaVersion": 1}', 'dcms/theme.json': '[' });
     expect(out.filter((m) => m.startsWith('error'))).toHaveLength(3);
   });
+  it('keeps sign-in out of Forms forms, and checks the sign-in component', () => {
+    const form: Node = {
+      id: 'f', type: 'dcms.form', props: { instance: 'forms', form: 'login' },
+      slots: { fields: [{ id: 'e', type: 'dcms.field', props: { name: 'email' } }, { id: 'p', type: 'dcms.field', props: { name: 'password' } }] },
+    };
+    const named: Node = { id: 'g', type: 'dcms.form', props: { instance: 'forms', form: 'sign-in' } };
+    const out = messages({
+      'dcms/app.json': app(),
+      'dcms/pages/home.json': page('home', [
+        form,
+        named,
+        { id: 'v', type: 'dcms.sign-in', props: { accounts: 'visitors' } },
+        { id: 'u', type: 'dcms.sign-in', props: { accounts: 'users', mode: 'register' } },
+        { id: 'ok', type: 'dcms.sign-in', props: { accounts: 'visitors', instance: 'members', mode: 'register' } },
+      ]),
+    });
+    expect(out).toEqual([
+      'error: A Forms form cannot sign anyone in: it would store the password in the Forms inbox. Use Sign-in (dcms.sign-in) instead.',
+      'warning: A Forms form only collects messages; it does not sign anyone in. For signing in use Sign-in (dcms.sign-in).',
+      'error: A visitor sign-in needs its Visitor Authentication instance (“instance”).',
+      'error: Site users (User Authentication) cannot create their own accounts: they are invited, or admitted by their organisation. Registration is for visitor accounts.',
+    ]);
+  });
 });

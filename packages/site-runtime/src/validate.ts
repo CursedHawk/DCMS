@@ -200,6 +200,21 @@ function checkTree(
       for (const [name, count] of seen) {
         if (count > 1) problem('error', `${count} fields of this form are named “${name}”; each needs its own name, or one answer overwrites the other.`, node.id);
       }
+      // A Forms form stores what it is sent in the Forms inbox, for staff to read: it signs no one in.
+      if ([...seen.keys()].some((name) => /pass(word|wd)?$/i.test(name))) {
+        problem('error', 'A Forms form cannot sign anyone in: it would store the password in the Forms inbox. Use Sign-in (dcms.sign-in) instead.', node.id);
+      } else if (/log-?in|sign-?in/i.test(String(node.props?.form ?? ''))) {
+        problem('warning', 'A Forms form only collects messages; it does not sign anyone in. For signing in use Sign-in (dcms.sign-in).', node.id);
+      }
+    }
+    if (node.type === 'dcms.sign-in') {
+      const visitors = node.props?.accounts === 'visitors';
+      if (visitors && !(typeof node.props?.instance === 'string' && node.props.instance.trim())) {
+        problem('error', 'A visitor sign-in needs its Visitor Authentication instance (“instance”).', node.id);
+      }
+      if (!visitors && node.props?.mode === 'register') {
+        problem('error', 'Site users (User Authentication) cannot create their own accounts: they are invited, or admitted by their organisation. Registration is for visitor accounts.', node.id);
+      }
     }
     if (node.type === 'dcms.field' && CHOICE_FIELDS.includes(String(node.props?.type)) && fieldOptions(node.props?.options).length === 0) {
       problem('warning', 'This choice field has no options to choose from.', node.id);

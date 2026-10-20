@@ -19,12 +19,30 @@ export interface SiteEdge {
   base: string;
   /** Leave the app for the edge's sign-in (`access` = `signin`) or its "no access" page load. */
   leave: (url: string, access: SiteAccess) => void;
+  /** A sign-in button: the edge's sign-in, coming back to `returnUrl`. A preview opens its popup. */
+  signIn: (returnUrl: string) => void;
+  /** A sign-out button: the edge's sign-out (of the site and of the workspace's sign-in). */
+  signOut: () => void;
 }
 
 let edge: SiteEdge = {
   base: '/.edge/site',
   leave: (url) => window.location.assign(url),
+  signIn: (returnUrl) => window.location.assign(`${edge.base}/signin?returnUrl=${encodeURIComponent(returnUrl)}`),
+  signOut: () => window.location.assign(`${edge.base}/signout`),
 };
+
+const resets = new Set<() => void>();
+
+/** Called whenever the answers are forgotten — whoever is signed in may have changed. */
+export function onSiteAccessReset(listener: () => void): void {
+  resets.add(listener);
+}
+
+/** The edge the runtime asks now. */
+export function currentSiteEdge(): SiteEdge {
+  return edge;
+}
 
 /**
  * Points the runtime at another edge: a builder's preview asks the console's preview endpoints,
@@ -32,12 +50,13 @@ let edge: SiteEdge = {
  */
 export function configureSiteEdge(next: Partial<SiteEdge>): void {
   edge = { ...edge, ...next };
-  known.clear();
+  resetSiteAccess();
 }
 
 /** Forgets every answer: the visitor has signed in or out. */
 export function resetSiteAccess(): void {
   known.clear();
+  for (const listener of resets) listener();
 }
 
 /** The site's rules on `path` for this visitor, asked once per path per page load. */
