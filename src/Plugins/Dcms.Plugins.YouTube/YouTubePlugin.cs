@@ -39,8 +39,9 @@ public sealed class YouTubePlugin : IPlugin
                 Name: VideoType,
                 Fields:
                 [
-                    new ContentFieldDefinition("videoId", ContentFieldType.Text, Required: true, "The video's id on YouTube. Also the item slug."),
+                    // Title first: the console titles an item by its first text field.
                     new ContentFieldDefinition("title", ContentFieldType.Text, Required: false, "The video's title."),
+                    new ContentFieldDefinition("videoId", ContentFieldType.Text, Required: true, "The video's id on YouTube. Also the item slug."),
                     new ContentFieldDefinition("description", ContentFieldType.Text, Required: false, "The video's description."),
                     new ContentFieldDefinition("url", ContentFieldType.Text, Required: false, "The video's page on YouTube."),
                     new ContentFieldDefinition("embedUrl", ContentFieldType.Text, Required: false,

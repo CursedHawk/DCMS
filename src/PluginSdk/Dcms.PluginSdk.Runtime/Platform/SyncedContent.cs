@@ -29,8 +29,12 @@ public static class SyncedContent
     ///
     /// <para><paramref name="keepHistory"/> false rewrites the latest version in place instead of
     /// adding one — for a source whose items change on every pass (view counts), where a version
-    /// per pass would grow the table without telling anyone anything. An item an admin has a
-    /// draft of always gets a new version, so the draft is never rewritten underneath them.</para>
+    /// per pass would grow the table without telling anyone anything. A version a person wrote
+    /// (an admin's edit) is never rewritten: the sync adds its own after it.</para>
+    ///
+    /// <para>The draft pointer follows every write, as a manual publish leaves it: the console's
+    /// editor shows the version <c>CurrentDraftVersionId</c> names, and an item without one opens
+    /// as an empty form.</para>
     /// </summary>
     public static async Task<bool> UpsertAsync(
         CmsDbContext cms, Guid tenantId, Guid instanceId, string contentType, string slug, JsonObject data,
@@ -48,10 +52,18 @@ public static class SyncedContent
         if (existing is not null)
         {
             var latest = existing.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
-            if (latest is not null && latest.DataJson == json) return false;
+            // Compared as JSON, not as text: jsonb hands the row back with its own key order and
+            // spacing, so a string comparison saw a change on every pass and republished
+            // everything, unchanged or not.
+            if (latest is not null && JsonNode.DeepEquals(JsonNode.Parse(latest.DataJson), data))
+            {
+                // Items synced before the sync set the pointer get it on their next pass.
+                existing.CurrentDraftVersionId ??= latest.Id;
+                return false;
+            }
 
             ContentVersion next;
-            if (!keepHistory && latest is not null && existing.CurrentDraftVersionId is null)
+            if (!keepHistory && latest is not null && latest.CreatedBy is null)
             {
                 latest.DataJson = json;
                 next = latest;
@@ -69,6 +81,7 @@ public static class SyncedContent
                 cms.ContentVersions.Add(next);
             }
 
+            existing.CurrentDraftVersionId = next.Id;
             existing.UpdatedAt = DateTimeOffset.UtcNow;
             // Only move the published pointer for an item that is actually published; leaving
             // an unpublished item alone is what makes the hide toggle stick.
@@ -98,6 +111,7 @@ public static class SyncedContent
             ContentType = contentType,
             Slug = slug,
             Status = ContentStatus.Published,
+            CurrentDraftVersionId = versionId,
             PublishedVersionId = versionId,
             CreatedAt = postedAt,
             PublishedAt = postedAt,

@@ -87,6 +87,71 @@ public class YouTubeSyncTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task The_console_titles_and_opens_a_synced_video_with_its_YouTube_data()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = Client();
+        Channel(uploads: 2);
+        var t = await InstanceAsync(client, new { channel = "@acme", maxVideos = 2 }, ct);
+        await SyncAsync(client, t, ct);
+
+        // The collection list titles an item by its first text field: the title, not the id.
+        var page = await client.SendAsync(Req(HttpMethod.Get,
+            $"/api/admin/content/page?instanceId={t.InstanceId}&contentType={YouTubePlugin.VideoType}", t), ct);
+        page.EnsureSuccessStatusCode();
+        var rows = (await page.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("items").EnumerateArray().ToList();
+        rows.Select(r => r.GetProperty("title").GetString()).Should().BeEquivalentTo(["Video v0", "Video v1"]);
+
+        // The editor shows the version the draft pointer names; a synced item without one opened empty.
+        var id = rows.Single(r => r.GetProperty("slug").GetString() == "v0").GetProperty("id").GetGuid();
+        var item = await (await client.SendAsync(Req(HttpMethod.Get, $"/api/admin/content/{id}", t), ct))
+            .Content.ReadFromJsonAsync<JsonElement>(ct);
+        var draft = item.GetProperty("draft");
+        draft.GetProperty("title").GetString().Should().Be("Video v0");
+        draft.GetProperty("description").GetString().Should().Be("About v0");
+        draft.GetProperty("durationSeconds").GetInt32().Should().Be(65);
+        draft.GetProperty("viewCount").GetInt64().Should().Be(10);
+    }
+
+    [DockerFact]
+    public async Task An_unchanged_resync_writes_nothing_and_repairs_an_item_without_a_draft_pointer()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = Client();
+        Channel(uploads: 2);
+        var t = await InstanceAsync(client, new { channel = "@acme", maxVideos = 2 }, ct);
+        await SyncAsync(client, t, ct);
+        var before = await ItemRowAsync(t, "v0", ct);
+
+        // As the items synced before the sync set the pointer were left.
+        await WithItemAsync(t, "v1", item => item.CurrentDraftVersionId = null, ct);
+        await SyncAsync(client, t, ct);
+
+        var after = await ItemRowAsync(t, "v0", ct);
+        after.UpdatedAt.Should().Be(before.UpdatedAt, "jsonb's own key order is not a change to republish");
+        (await ItemRowAsync(t, "v1", ct)).CurrentDraftVersionId.Should().NotBeNull();
+    }
+
+    [DockerFact]
+    public async Task An_admins_edit_is_kept_as_its_own_version()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = Client();
+        Channel(uploads: 1);
+        var t = await InstanceAsync(client, new { channel = "@acme", maxVideos = 1 }, ct);
+        await SyncAsync(client, t, ct);
+        var id = (await ContentAsync(client, t, ct)).Single().GetProperty("id").GetGuid();
+
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/content/{id}", t, new { data = new { title = "Mine" } }), ct))
+            .EnsureSuccessStatusCode();
+        fixture.YouTubeStub.Videos["v0"] = fixture.YouTubeStub.Videos["v0"] with { Views = 500 };
+        await SyncAsync(client, t, ct);
+
+        (await VersionCountAsync(t, "v0", ct)).Should().Be(3, "the sync adds its own version after the admin's instead of rewriting it");
+        (await ItemDataAsync(t, "v0", ct)).GetProperty("viewCount").GetInt64().Should().Be(500);
+    }
+
+    [DockerFact]
     public async Task An_item_the_admin_unpublished_stays_hidden_across_a_sync()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -238,6 +303,24 @@ public class YouTubeSyncTests(AdminApiFixture fixture)
             .Join(cms.ContentVersions.IgnoreQueryFilters(), c => c.PublishedVersionId, v => v.Id, (_, v) => v.DataJson)
             .FirstAsync(ct);
         return JsonDocument.Parse(json).RootElement.Clone();
+    }
+
+    private async Task<ContentItem> ItemRowAsync(Tenant t, string slug, CancellationToken ct)
+    {
+        using var scope = fixture.Factory.Services.CreateScope();
+        var cms = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
+        using var rls = RlsScope.Platform();
+        return await cms.ContentItems.IgnoreQueryFilters().AsNoTracking()
+            .SingleAsync(c => c.Slug == slug && c.PluginInstanceId == t.InstanceId, ct);
+    }
+
+    private async Task WithItemAsync(Tenant t, string slug, Action<ContentItem> change, CancellationToken ct)
+    {
+        using var scope = fixture.Factory.Services.CreateScope();
+        var cms = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
+        using var rls = RlsScope.Platform();
+        change(await cms.ContentItems.IgnoreQueryFilters().SingleAsync(c => c.Slug == slug && c.PluginInstanceId == t.InstanceId, ct));
+        await cms.SaveChangesAsync(ct);
     }
 
     private async Task<int> VersionCountAsync(Tenant t, string slug, CancellationToken ct)
