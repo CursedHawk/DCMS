@@ -127,7 +127,8 @@ export function useContentCatalog(): ContentCatalog {
         const source = sourceSchema.safeParse({ instance: instance.slug, contentType: contentType.name });
         if (!source.success) continue;
         // A JSON list of image ids (Events' photos, a gallery's images) is an image to Mode D:
-        // the runtime shows its first. Mode A's picker keeps calling it text — its runtime cannot.
+        // the runtime shows its first. So is a text field holding an image's URL that the plugin
+        // marks the same way (YouTube's thumbnail). Mode A's picker keeps calling them text.
         const images = new Set(contentType.fields.filter((f) => f.reference?.mediaCategory === 'Image').map((f) => f.name));
         const fields = contentFields(contentType, customFieldsOf(contentType, parseInstanceConfig(instance.config))).map((f) =>
           images.has(f.path) ? { ...f, kind: 'media' as const } : f,

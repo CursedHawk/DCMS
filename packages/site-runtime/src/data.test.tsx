@@ -87,6 +87,36 @@ describe('Collection', () => {
   });
 });
 
+describe('a YouTube video list', () => {
+  it('binds an Image to the thumbnail URL and a Video to the watch URL', async () => {
+    const node: Node = {
+      id: 'list',
+      type: 'dcms.collection',
+      props: { source: { instance: 'videos', contentType: 'youtube-video' }, limit: 1 },
+      slots: {
+        item: [
+          { id: 'img', type: 'dcms.image', bind: { src: 'thumbnail' }, props: { alt: 'still' } },
+          { id: 'v', type: 'dcms.video', bind: { url: 'url', title: 'title' } },
+        ],
+      },
+    };
+    const video: ContentItem = {
+      id: '1',
+      slug: 'dQw4w9WgXcQ',
+      data: {
+        title: 'Launch day',
+        url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        thumbnail: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg',
+      },
+    };
+    const data = client({ '/api/videos/youtube-video?pageSize=1': { items: [video], totalCount: 1 } });
+    const el = await render(<RenderNode node={node} registry={builtinRegistry} />, data);
+
+    expect(el.querySelector('img')?.getAttribute('src')).toBe('https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg');
+    expect(el.innerHTML).toContain('youtube-nocookie.com/embed/dQw4w9WgXcQ');
+  });
+});
+
 describe('detail pages', () => {
   const page: Page = {
     schemaVersion: 1,

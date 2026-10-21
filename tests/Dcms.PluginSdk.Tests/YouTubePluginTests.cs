@@ -108,6 +108,16 @@ public class YouTubePluginTests
     public void The_public_config_endpoint_serves_only_the_display_name() =>
         new YouTubePlugin().Manifest.PublicConfigKeys.Should().Equal(YouTubeSettings.ChannelTitleKey);
 
+    [Fact]
+    public void The_thumbnail_is_marked_as_an_image_so_Mode_D_can_bind_one_to_it()
+    {
+        // The visual builder offers a field to an Image only when the plugin says it holds one;
+        // the thumbnail is YouTube's URL (Text), so the reference is the only thing that says so.
+        var thumbnail = new YouTubePlugin().Manifest.ContentTypes.Single().Fields.Single(f => f.Name == "thumbnail");
+        thumbnail.Type.Should().Be(Dcms.PluginSdk.Abstractions.ContentFieldType.Text);
+        thumbnail.Reference?.MediaCategory.Should().Be(Dcms.PluginSdk.Abstractions.MediaCategory.Image);
+    }
+
     private static YouTubeSettings Read(string json) => YouTubeSettings.Read(JsonDocument.Parse(json))!;
 
     private static VideoInfo Video(DateTimeOffset at) =>

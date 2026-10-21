@@ -45,7 +45,10 @@ public sealed class YouTubePlugin : IPlugin
                     new ContentFieldDefinition("url", ContentFieldType.Text, Required: false, "The video's page on YouTube."),
                     new ContentFieldDefinition("embedUrl", ContentFieldType.Text, Required: false,
                         "The privacy-enhanced player (youtube-nocookie.com), ready for an iframe."),
-                    new ContentFieldDefinition("thumbnail", ContentFieldType.Text, Required: false, "YouTube's largest still of the video."),
+                    // Text, because it is YouTube's URL and not a DCMS asset; the Image reference
+                    // tells the builders it is a picture, so Mode D can bind an Image to it.
+                    new ContentFieldDefinition("thumbnail", ContentFieldType.Text, Required: false, "YouTube's largest still of the video.",
+                        new ContentReferenceTarget(null, null, MediaCategory.Image)),
                     new ContentFieldDefinition("publishedAt", ContentFieldType.DateTime, Required: false, "When it was published on YouTube."),
                     new ContentFieldDefinition("durationSeconds", ContentFieldType.Number, Required: false, "Length in seconds."),
                     new ContentFieldDefinition("viewCount", ContentFieldType.Number, Required: false, "Views, as of the last sync."),
