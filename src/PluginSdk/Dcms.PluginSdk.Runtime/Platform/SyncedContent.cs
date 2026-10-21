@@ -35,10 +35,17 @@ public static class SyncedContent
     /// <para>The draft pointer follows every write, as a manual publish leaves it: the console's
     /// editor shows the version <c>CurrentDraftVersionId</c> names, and an item without one opens
     /// as an empty form.</para>
+    ///
+    /// <para>Only a new item can be news. Refreshing one that is already live republishes it
+    /// quietly (see <see cref="ContentPublished.Quiet"/>): a feed's counters change on every pass,
+    /// and announcing each change notified the admins about every item, every pass.
+    /// <paramref name="publish"/> false creates a new item as a draft for an admin to publish;
+    /// <paramref name="announce"/> false publishes it without a notification.</para>
     /// </summary>
     public static async Task<bool> UpsertAsync(
         CmsDbContext cms, Guid tenantId, Guid instanceId, string contentType, string slug, JsonObject data,
-        DateTimeOffset? postedAtUtc, CancellationToken ct, bool keepHistory = true)
+        DateTimeOffset? postedAtUtc, CancellationToken ct, bool keepHistory = true, bool publish = true,
+        bool announce = true)
     {
         var json = data.ToJsonString();
 
@@ -88,7 +95,7 @@ public static class SyncedContent
             if (existing.Status == ContentStatus.Published)
             {
                 existing.PublishedVersionId = next.Id;
-                EnqueuePublished(cms, existing);
+                EnqueuePublished(cms, existing, quiet: true);
             }
             return false;
         }
@@ -110,11 +117,11 @@ public static class SyncedContent
             PluginInstanceId = instanceId,
             ContentType = contentType,
             Slug = slug,
-            Status = ContentStatus.Published,
+            Status = publish ? ContentStatus.Published : ContentStatus.Draft,
             CurrentDraftVersionId = versionId,
-            PublishedVersionId = versionId,
+            PublishedVersionId = publish ? versionId : null,
             CreatedAt = postedAt,
-            PublishedAt = postedAt,
+            PublishedAt = publish ? postedAt : null,
         };
         cms.ContentItems.Add(item);
         cms.ContentVersions.Add(new ContentVersion
@@ -126,7 +133,7 @@ public static class SyncedContent
             DataJson = json,
         });
 
-        EnqueuePublished(cms, item);
+        if (publish) EnqueuePublished(cms, item, quiet: !announce);
         return true;
     }
 
@@ -173,6 +180,7 @@ public static class SyncedContent
     /// <summary>
     /// A removed item that was live gets an unpublish event, the same one a manual unpublish
     /// writes, so the delivery cache and the search index drop it rather than serving it on.
+    /// A quiet one: an old post making room for a new one is not something to warn anyone about.
     /// </summary>
     private static List<string> Remove(CmsDbContext cms, List<ContentItem> stale)
     {
@@ -180,7 +188,7 @@ public static class SyncedContent
         {
             var evt = new ContentUnpublished(
                 Guid.NewGuid(), DateTimeOffset.UtcNow, item.TenantId,
-                item.PluginInstanceId, item.Id, item.ContentType, item.Slug);
+                item.PluginInstanceId, item.Id, item.ContentType, item.Slug, Quiet: true);
             cms.Outbox.Add(new ContentOutboxMessage
             {
                 Id = Guid.NewGuid(),
@@ -197,11 +205,11 @@ public static class SyncedContent
     /// Writes the publish event to the same outbox a manual publish uses, so the Redis cache
     /// invalidation and the search index update come for free rather than being reimplemented.
     /// </summary>
-    private static void EnqueuePublished(CmsDbContext cms, ContentItem item)
+    private static void EnqueuePublished(CmsDbContext cms, ContentItem item, bool quiet)
     {
         var evt = new ContentPublished(
             Guid.NewGuid(), DateTimeOffset.UtcNow, item.TenantId,
-            item.PluginInstanceId, item.Id, item.ContentType, item.Slug);
+            item.PluginInstanceId, item.Id, item.ContentType, item.Slug, quiet);
 
         cms.Outbox.Add(new ContentOutboxMessage
         {

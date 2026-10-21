@@ -93,8 +93,8 @@ public sealed class YouTubeClient(HttpClient http, IOptions<YouTubeOptions> opti
             : null;
     }
 
-    /// <summary>One page of a playlist's video ids, in playlist order.</summary>
-    public async Task<(IReadOnlyList<string> VideoIds, string? NextPageToken)> PlaylistPageAsync(
+    /// <summary>One page of a playlist's video ids, in playlist order, and how long the whole playlist is.</summary>
+    public async Task<(IReadOnlyList<string> VideoIds, string? NextPageToken, int? Total)> PlaylistPageAsync(
         string playlistId, string? pageToken, CancellationToken ct)
     {
         var url = $"playlistItems?part=contentDetails&maxResults={PageSize}&playlistId={Uri.EscapeDataString(playlistId)}"
@@ -104,7 +104,7 @@ public sealed class YouTubeClient(HttpClient http, IOptions<YouTubeOptions> opti
             .Select(i => i.ContentDetails?.VideoId)
             .OfType<string>()
             .ToList();
-        return (ids, page.NextPageToken);
+        return (ids, page.NextPageToken, page.PageInfo?.TotalResults);
     }
 
     /// <summary>
@@ -174,7 +174,9 @@ public sealed class YouTubeClient(HttpClient http, IOptions<YouTubeOptions> opti
 
     // ---------- wire shapes: only the fields read above ----------
 
-    private sealed record ItemList<T>(List<T>? Items, string? NextPageToken);
+    private sealed record PageInfo(int? TotalResults);
+
+    private sealed record ItemList<T>(List<T>? Items, string? NextPageToken, PageInfo? PageInfo = null);
 
     private sealed record Thumbnail(string? Url);
 

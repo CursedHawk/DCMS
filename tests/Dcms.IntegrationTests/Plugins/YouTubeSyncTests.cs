@@ -2,7 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Dcms.IntegrationTests.Tenancy;
+using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Plugins.YouTube;
+using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Rls;
 using Microsoft.EntityFrameworkCore;
@@ -209,6 +211,53 @@ public class YouTubeSyncTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
+    public async Task The_timer_skips_an_unchanged_feed_and_only_a_new_video_is_news()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = Client();
+        Channel(uploads: 4);
+        var t = await InstanceAsync(client, new { channel = "@acme", maxVideos = 3 }, ct);
+        await SyncAsync(client, t, ct);
+        (await OutboxAsync(t, ct)).Should().OnlyContain(e => e.Quiet, "the first import is not news");
+
+        // Only the counters moved: the timer pass reads one page and stops there.
+        fixture.YouTubeStub.Videos["v0"] = fixture.YouTubeStub.Videos["v0"] with { Views = 999 };
+        var videosRead = fixture.YouTubeStub.RequestsFor("/youtube/v3/videos");
+        (await TimerPassAsync(t, ct)).Created.Should().Be(0);
+        fixture.YouTubeStub.RequestsFor("/youtube/v3/videos").Should().Be(videosRead);
+        (await ItemDataAsync(t, "v0", ct)).GetProperty("viewCount").GetInt64().Should().Be(10);
+
+        // A new upload: synced, announced on its own; the refreshes and the trimmed oldest are quiet.
+        fixture.YouTubeStub.Videos["new"] = new YouTubeStubServer.Video("new", Newest.AddDays(1));
+        fixture.YouTubeStub.Playlists[Uploads].Insert(0, "new");
+        var before = (await OutboxAsync(t, ct)).Count;
+        var pass = await TimerPassAsync(t, ct);
+
+        pass.Created.Should().Be(1);
+        pass.Removed.Should().Be(1);
+        var events = (await OutboxAsync(t, ct)).Skip(before).ToList();
+        events.Where(e => !e.Quiet).Select(e => (e.Subject, e.Slug)).Should().Equal((Subjects.ContentPublished, "new"));
+        (await ItemDataAsync(t, "v0", ct)).GetProperty("viewCount").GetInt64().Should().Be(999);
+    }
+
+    [DockerFact]
+    public async Task With_auto_publish_off_new_videos_wait_as_drafts()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = Client();
+        Channel(uploads: 2);
+        var t = await InstanceAsync(client, new { channel = "@acme", maxVideos = 3, autoPublish = false }, ct);
+
+        await SyncAsync(client, t, ct);
+
+        var row = await ItemRowAsync(t, "v0", ct);
+        row.Status.Should().Be(ContentStatus.Draft);
+        row.PublishedVersionId.Should().BeNull();
+        row.CurrentDraftVersionId.Should().NotBeNull();
+        (await OutboxAsync(t, ct)).Should().BeEmpty();
+    }
+
+    [DockerFact]
     public async Task A_cap_above_the_ceiling_is_refused_by_the_server()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -228,6 +277,39 @@ public class YouTubeSyncTests(AdminApiFixture fixture)
     }
 
     // ---------- helpers ----------
+
+    private sealed record OutboxEvent(string Subject, string Slug, bool Quiet);
+
+    /// <summary>The content events the instance's syncs wrote, oldest first.</summary>
+    private async Task<List<OutboxEvent>> OutboxAsync(Tenant t, CancellationToken ct)
+    {
+        var tenantId = (await ItemRowAsync(t, "v0", ct)).TenantId;
+        using var scope = fixture.Factory.Services.CreateScope();
+        var cms = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
+        using var rls = RlsScope.Platform();
+        var rows = await cms.Outbox.IgnoreQueryFilters().AsNoTracking()
+            .Where(o => o.TenantId == tenantId)
+            .OrderBy(o => o.OccurredAt)
+            .Select(o => new { o.Subject, o.PayloadJson })
+            .ToListAsync(ct);
+        return rows.Select(r =>
+        {
+            var e = JsonDocument.Parse(r.PayloadJson).RootElement;
+            return new OutboxEvent(r.Subject, e.GetProperty("Slug").GetString()!, e.GetProperty("Quiet").GetBoolean());
+        }).ToList();
+    }
+
+    /// <summary>What the 30-minute job does for the instance (the job itself is off in tests).</summary>
+    private async Task<YouTubeSyncOutcome> TimerPassAsync(Tenant t, CancellationToken ct)
+    {
+        using var scope = fixture.Factory.Services.CreateScope();
+        var tenantId = (await ItemRowAsync(t, "v0", ct)).TenantId;
+        var instance = (await scope.ServiceProvider.GetRequiredService<PluginContextFactory>()
+            .EnabledInstancesAsync(tenantId, ct)).Single(i => i.InstanceId == t.InstanceId);
+        var outcome = await scope.ServiceProvider.GetRequiredService<YouTubeSync>().SyncAsync(instance, ct, onlyWhenChanged: true);
+        outcome.Error.Should().BeNull();
+        return outcome;
+    }
 
     private sealed record Tenant(Guid Owner, string Slug, Guid InstanceId = default);
 

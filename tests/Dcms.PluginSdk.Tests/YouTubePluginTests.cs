@@ -87,6 +87,14 @@ public class YouTubePluginTests
     }
 
     [Fact]
+    public void New_videos_publish_themselves_unless_turned_off()
+    {
+        // On by default, so an instance saved before the setting existed keeps publishing.
+        Read("""{"channel":"@a"}""").AutoPublish.Should().BeTrue();
+        Read("""{"channel":"@a","autoPublish":false}""").AutoPublish.Should().BeFalse();
+    }
+
+    [Fact]
     public void Shorts_live_and_old_videos_are_kept_only_when_asked_for()
     {
         var defaults = Read("""{"channel":"@a","syncSince":"2026-03-01"}""");

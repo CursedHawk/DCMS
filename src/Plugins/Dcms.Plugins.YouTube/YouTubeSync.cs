@@ -1,4 +1,6 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions;
@@ -10,6 +12,7 @@ using Dcms.Shared.Caching;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Security;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -26,10 +29,12 @@ public sealed record YouTubeSyncOutcome(int Created, int Updated, int Removed, s
 /// <c>youtube-video</c> items and drop the ones that are no longer among them.
 ///
 /// <para>The same code serves the timer and the "Sync now" button, so the two cannot drift.
-/// Quota: ≤4 units a pass (handle lookup, cached a day; one playlist page per 50 videos; one
-/// videos read per 50; the Shorts page).
-/// ponytail: one Google project gets 10,000 units a day, so a fixed 30-minute pass serves about
-/// 50 instances per key. Past that, raise the quota with Google or make the interval per instance.</para>
+/// Quota: one unit for a timer pass that finds nothing new (the first playlist page); ≤4 for a
+/// full sync (handle lookup cached a day; one playlist page per 50 videos, that first one
+/// included; one videos read per 50; the Shorts page).
+/// ponytail: one Google project gets 10,000 units a day; a quiet 30-minute pass costs one unit
+/// (two for a playlist source), so a key serves about 100 instances. Past that, raise the quota
+/// with Google or make the interval per instance.</para>
 /// </summary>
 public sealed class YouTubeSync(
     CmsDbContext cms,
@@ -38,8 +43,15 @@ public sealed class YouTubeSync(
     ILogger<YouTubeSync> logger)
 {
     private static readonly TimeSpan ChannelCacheTtl = TimeSpan.FromHours(24);
+    private static readonly TimeSpan FeedCacheTtl = TimeSpan.FromDays(7);
 
-    public async Task<YouTubeSyncOutcome> SyncAsync(PluginInstanceContext instance, CancellationToken ct)
+    /// <param name="onlyWhenChanged">
+    /// The timer's mode: read the playlist's first page (one unit) and stop there when it, the
+    /// playlist's length and the settings are what the last sync saw. So the stored videos — titles,
+    /// view counts — refresh when a new video arrives or someone presses Sync now, not every pass.
+    /// </param>
+    public async Task<YouTubeSyncOutcome> SyncAsync(
+        PluginInstanceContext instance, CancellationToken ct, bool onlyWhenChanged = false)
     {
         if (!youtube.IsConfigured) return new(0, 0, 0, "YouTube is not configured on this deployment.");
         var settings = YouTubeSettings.Read(instance.Config);
@@ -51,7 +63,20 @@ public sealed class YouTubeSync(
             var source = await ResolveAsync(settings, ct);
             if (source.Problem is { } problem) return new(0, 0, 0, problem, SourceProblem: true);
 
-            var videos = await HarvestAsync(source.PlaylistId!, source.ChannelId, settings, ct);
+            var feedKey = $"youtube:feed:{instance.InstanceId:N}";
+            var first = await FirstPageAsync(source.PlaylistId!, ct);
+            var feed = Fingerprint(source.PlaylistId!, settings, first);
+            if (onlyWhenChanged && await cache.GetAsync<string>(feedKey, ct) == feed) return new(0, 0, 0, null);
+
+            var videos = await HarvestAsync(source.PlaylistId!, first, source.ChannelId, settings, ct);
+
+            // A new video is news only when it is newer than every one already here: not on the
+            // first import, and not when a raised cap backfills older ones.
+            var newest = await cms.ContentItems.IgnoreQueryFilters()
+                .Where(c => c.TenantId == instance.TenantId
+                            && c.PluginInstanceId == instance.InstanceId
+                            && c.ContentType == YouTubePlugin.VideoType)
+                .MaxAsync(c => (DateTimeOffset?)c.CreatedAt, ct);
 
             var created = 0;
             var updated = 0;
@@ -59,7 +84,9 @@ public sealed class YouTubeSync(
             {
                 var isNew = await SyncedContent.UpsertAsync(
                     cms, instance.TenantId, instance.InstanceId, YouTubePlugin.VideoType, video.Info.Id,
-                    ToData(video), video.Info.PublishedAt, ct, keepHistory: false);
+                    ToData(video), video.Info.PublishedAt, ct, keepHistory: false,
+                    publish: settings.AutoPublish,
+                    announce: newest is not null && video.Info.PublishedAt > newest);
                 if (isNew) created++;
                 else updated++;
             }
@@ -69,6 +96,7 @@ public sealed class YouTubeSync(
                 videos.Select(v => v.Info.Id).ToList(), ct);
 
             await cms.SaveChangesAsync(ct);
+            await cache.SetAsync(feedKey, feed, FeedCacheTtl, ct);
             return new(created, updated, removed.Count, null);
         }
         catch (YouTubeApiException ex) when (ex.IsQuota)
@@ -131,6 +159,30 @@ public sealed class YouTubeSync(
         return found;
     }
 
+    private sealed record Page(IReadOnlyList<string> VideoIds, string? NextPageToken, int? Total);
+
+    /// <summary>Null for a channel that has never uploaded: it has no uploads playlist yet.</summary>
+    private async Task<Page?> FirstPageAsync(string playlistId, CancellationToken ct)
+    {
+        try
+        {
+            var (ids, next, total) = await youtube.PlaylistPageAsync(playlistId, null, ct);
+            return new Page(ids, next, total);
+        }
+        catch (YouTubeApiException ex) when (ex.Status == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// What the sync would see, in a hash: the settings, and the playlist's first page and length.
+    /// A new upload changes the first page; a video added to or removed from a playlist, its length.
+    /// </summary>
+    private static string Fingerprint(string playlistId, YouTubeSettings settings, Page? first) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"{settings}|{playlistId}|{first?.Total}:{string.Join(',', first?.VideoIds ?? [])}")));
+
     private sealed record Harvested(VideoInfo Info, string Kind);
 
     /// <summary>
@@ -138,25 +190,18 @@ public sealed class YouTubeSync(
     /// with a hard page ceiling so a channel of nothing but Shorts cannot walk its whole history.
     /// </summary>
     private async Task<List<Harvested>> HarvestAsync(
-        string playlistId, string? channelId, YouTubeSettings settings, CancellationToken ct)
+        string playlistId, Page? first, string? channelId, YouTubeSettings settings, CancellationToken ct)
     {
+        var kept = new List<Harvested>();
+        if (first is null) return kept;
+
         var shorts = channelId is null ? [] : await ShortsAsync(channelId, ct);
         var maxPages = settings.MaxVideos / YouTubeClient.PageSize + 3;
-        var kept = new List<Harvested>();
-        string? pageToken = null;
+        var (ids, pageToken) = (first.VideoIds, first.NextPageToken);
 
         for (var page = 0; page < maxPages && kept.Count < settings.MaxVideos; page++)
         {
-            IReadOnlyList<string> ids;
-            try
-            {
-                (ids, pageToken) = await youtube.PlaylistPageAsync(playlistId, pageToken, ct);
-            }
-            catch (YouTubeApiException ex) when (ex.Status == HttpStatusCode.NotFound && page == 0)
-            {
-                // A channel that has never uploaded has no uploads playlist yet.
-                break;
-            }
+            if (page > 0) (ids, pageToken, _) = await youtube.PlaylistPageAsync(playlistId, pageToken, ct);
 
             foreach (var video in await youtube.VideosAsync(ids, ct))
             {
@@ -183,7 +228,7 @@ public sealed class YouTubeSync(
     {
         try
         {
-            var (ids, _) = await youtube.PlaylistPageAsync(YouTubeSource.ShortsPlaylist(channelId), null, ct);
+            var (ids, _, _) = await youtube.PlaylistPageAsync(YouTubeSource.ShortsPlaylist(channelId), null, ct);
             return [.. ids];
         }
         catch (YouTubeApiException ex) when (ex.Status == HttpStatusCode.NotFound)
@@ -240,7 +285,7 @@ public sealed class YouTubeSyncJob(
             YouTubeSyncOutcome outcome;
             try
             {
-                outcome = await sync.SyncAsync(instance, ct);
+                outcome = await sync.SyncAsync(instance, ct, onlyWhenChanged: true);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

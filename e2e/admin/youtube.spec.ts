@@ -63,5 +63,4 @@ test('shows the channel a link resolves to and syncs it', async ({ page, api }) 
 
   await page.getByRole('textbox', { name: 'Channel' }).fill('@nobody');
   await expect(page.getByText('No YouTube channel matches “@nobody”.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Sync now' })).toHaveCount(0);
 });

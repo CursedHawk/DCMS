@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
-import { Button, Input, cn, toast, toastApiError } from '@dcms/ui';
+import { useQuery } from '@tanstack/react-query';
+import { AlertTriangle } from 'lucide-react';
+import { Input } from '@dcms/ui';
 import { instancePath, usePluginApi, usePluginT, type PluginWidgetProps } from '@dcms/plugin-ui';
 
 interface Resolved {
@@ -12,7 +12,7 @@ interface Resolved {
 /**
  * RJSF widget for the `"format": "youtube-channel"` field. A channel link is easy to get
  * subtly wrong (a video link, someone else's channel), so the widget shows which channel it
- * resolves to before the admin saves — and offers Sync now for the saved settings.
+ * resolves to before the admin saves.
  */
 export function YouTubeChannelWidget({ id, value, onChange, disabled, readonly, registry }: PluginWidgetProps) {
   const { t } = usePluginT();
@@ -34,12 +34,6 @@ export function YouTubeChannelWidget({ id, value, onChange, disabled, readonly, 
     enabled: !!slug && settled.length > 0,
     staleTime: 5 * 60_000,
     retry: false,
-  });
-
-  const sync = useMutation({
-    mutationFn: () => api.post<{ created: number; updated: number; removed: number }>(instancePath(slug!, '/sync')),
-    onSuccess: (r) => toast.success(t('youtube.syncDone', r)),
-    onError: (e) => toastApiError(e, t, t('youtube.syncFailed')),
   });
 
   const notConfigured = (resolve.error as { status?: number } | null)?.status === 501;
@@ -73,10 +67,6 @@ export function YouTubeChannelWidget({ id, value, onChange, disabled, readonly, 
             <span className="block truncate font-medium">{channel.title}</span>
             {channel.handle && <span className="block truncate text-xs text-muted-foreground">{channel.handle}</span>}
           </span>
-          <Button type="button" variant="ghost" size="sm" disabled={sync.isPending} onClick={() => sync.mutate()}>
-            <RefreshCw className={cn('size-4', sync.isPending && 'animate-spin')} />
-            {t('youtube.syncNow')}
-          </Button>
         </div>
       )}
     </div>

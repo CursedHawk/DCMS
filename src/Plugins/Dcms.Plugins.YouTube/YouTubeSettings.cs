@@ -16,7 +16,8 @@ public sealed record YouTubeSettings(
     int MaxVideos,
     bool IncludeShorts,
     bool IncludeLive,
-    DateOnly? SyncSince)
+    DateOnly? SyncSince,
+    bool AutoPublish = true)
 {
     public const int MaxVideosCeiling = 200;
     public const int DefaultMaxVideos = 12;
@@ -27,6 +28,7 @@ public sealed record YouTubeSettings(
     public const string IncludeShortsKey = "includeShorts";
     public const string IncludeLiveKey = "includeLive";
     public const string SyncSinceKey = "syncSince";
+    public const string AutoPublishKey = "autoPublish";
     public const string ChannelTitleKey = "channelTitle";
 
     public static readonly string Schema = $$"""
@@ -55,6 +57,10 @@ public sealed record YouTubeSettings(
             "{{SyncSinceKey}}": {
               "type": "string", "format": "date", "title": "Only videos after",
               "description": "Optional. Nothing published before this date is synced."
+            },
+            "{{AutoPublishKey}}": {
+              "type": "boolean", "title": "Publish new videos automatically", "default": true,
+              "description": "Off: new videos arrive as drafts for you to publish. A notification comes only when a new video is published."
             },
             "{{ChannelTitleKey}}": {
               "type": "string", "title": "Display name", "maxLength": 200,
@@ -85,7 +91,9 @@ public sealed record YouTubeSettings(
             Math.Clamp(max, 1, MaxVideosCeiling),
             Bool(root, IncludeShortsKey),
             Bool(root, IncludeLiveKey),
-            since);
+            since,
+            // Default on: an instance saved before the setting existed keeps publishing.
+            !(root.TryGetProperty(AutoPublishKey, out var a) && a.ValueKind == JsonValueKind.False));
     }
 
     private static string? String(JsonElement root, string key) =>

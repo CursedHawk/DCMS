@@ -26,7 +26,7 @@ public sealed class ContentPublishedNotificationConsumer(
 
     protected override Task<NotificationRequest?> MapAsync(
         ContentPublished evt, IServiceProvider scope, CancellationToken ct) =>
-        Task.FromResult<NotificationRequest?>(new NotificationRequest(
+        Task.FromResult<NotificationRequest?>(evt.Quiet ? null : new NotificationRequest(
             TenantId: evt.TenantId,
             Kind: NotificationKinds.ContentPublished,
             Severity: NotificationSeverity.Info,
@@ -60,7 +60,7 @@ public sealed class ContentUnpublishedNotificationConsumer(
 
     protected override Task<NotificationRequest?> MapAsync(
         ContentUnpublished evt, IServiceProvider scope, CancellationToken ct) =>
-        Task.FromResult<NotificationRequest?>(new NotificationRequest(
+        Task.FromResult<NotificationRequest?>(evt.Quiet ? null : new NotificationRequest(
             TenantId: evt.TenantId,
             Kind: NotificationKinds.ContentUnpublished,
             Severity: NotificationSeverity.Warning,

@@ -107,6 +107,7 @@ public sealed class YouTubeStubServer : IAsyncDisposable
             {
                 items = page.Select(v => new { contentDetails = new { videoId = v } }),
                 nextPageToken = offset + size < all.Count ? (offset + size).ToString() : null,
+                pageInfo = new { totalResults = all.Count },
             });
         });
 
