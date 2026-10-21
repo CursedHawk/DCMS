@@ -89,8 +89,8 @@ held to the same coverage rules as a built-in one.
 ## Amendment (2026-10-21): every instance is an app (#337)
 
 Where screens live and how they reach the menu changed; what a screen is and how it is loaded did
-not. Every enabled instance is an app at `/apps/{slug}`, one entry in the menu with its work
-screens under it; a plugin-wide screen is shown in each of the plugin's apps rather than at
+not. Every enabled instance is an app at `/apps/{slug}`, one entry in the menu (its pages are
+the app's own sub-navigation, not listed in the menu); a plugin-wide screen is shown in each of the plugin's apps rather than at
 `/app/{pluginId}/{id}`, and an instance screen is a page of the app rather than a tab of
 `/plugins/{slug}`. Screens declare a `Section` (`Work` or `Admin`) instead of a `Nav` placement,
 and every plugin provides a `settings` screen. Every role sees the same app, listing only what it

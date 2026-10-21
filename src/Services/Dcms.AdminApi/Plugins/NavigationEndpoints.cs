@@ -79,7 +79,7 @@ public static class NavigationEndpoints
         string To, string? LabelKey, string Icon, string Group,
         string? Label = null, string? Detail = null, IReadOnlyList<NavChild>? Children = null);
 
-    /// <summary>A screen of an app, under it in the menu. <paramref name="Labels"/> by language, as the plugin declares them.</summary>
+    /// <summary>A page of an app, for the command palette. <paramref name="Labels"/> by language, as the plugin declares them.</summary>
     public sealed record NavChild(string To, string Label, IReadOnlyDictionary<string, string>? Labels = null);
 
     /// <summary>

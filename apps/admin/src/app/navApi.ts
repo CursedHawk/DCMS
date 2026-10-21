@@ -19,7 +19,7 @@ export interface NavResponseItem {
   label: string | null;
   /** The plugin an app is (Dynamic Apps), for a second line or a tooltip. */
   detail?: string | null;
-  /** An app's work screens and content collections, drawn under it while it is open. */
+  /** An app's work screens and content collections; the command palette lists them under the app's name. */
   children?: NavResponseChild[] | null;
 }
 

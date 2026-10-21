@@ -22,7 +22,7 @@ namespace Dcms.PluginSdk.Abstractions;
 /// <param name="Title">English; the menu label and page title.</param>
 /// <param name="Permission">A bare action of the plugin's own or a full key; null means plugins:manage.</param>
 /// <param name="IconName">A lucide icon name.</param>
-/// <param name="Nav">No longer read: every enabled instance is in the menu, with its work screens under it.
+/// <param name="Nav">No longer read: every enabled instance is in the menu as an app.
 /// Kept so plugins built against an older SDK still load.</param>
 /// <param name="Titles">The title in other languages, by language code (<c>{ ["cs"] = "Doručené" }</c>).</param>
 public sealed record AdminScreen(

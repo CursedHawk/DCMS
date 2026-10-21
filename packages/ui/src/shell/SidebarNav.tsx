@@ -1,7 +1,7 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { cn } from '../cn';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
-import { type ShellNavGroup, type ShellNavItem, activeItem, isActive } from './nav';
+import { type ShellNavGroup, type ShellNavItem, isActive } from './nav';
 
 /**
  * The navigation rail, shared by both consoles.
@@ -55,8 +55,11 @@ export function SidebarNav({
             ) : null}
             {group.items.map((item) => {
               const active = isActive(item, pathname);
-              const linkClass = (on: boolean) =>
-                cn(
+              const body = renderLink(item, {
+                active,
+                collapsed,
+                onNavigate,
+                className: cn(
                   'group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-accent',
                   /*
@@ -68,52 +71,22 @@ export function SidebarNav({
                    * the tint and the bar the app draws beside it; what changed is that the label
                    * is now readable.
                    */
-                  on
+                  active
                     ? 'bg-sidebar-accent/15 text-sidebar-foreground'
                     : 'text-sidebar-muted hover:bg-white/5 hover:text-sidebar-foreground',
                   collapsed && 'justify-center px-0',
-                );
-              /*
-               * The open app's pages, under it. Only the open one's: twelve apps with four pages
-               * each would be a fifty-line menu, and the app's own sub-navigation lists them all.
-               * The page is then the current one, not the app, so one link in the menu is.
-               */
-              const children = active && !collapsed ? (item.children ?? []) : [];
-              const current = activeItem(children, pathname);
-              const body = renderLink(item, {
-                active: active && !current,
-                collapsed,
-                onNavigate,
-                className: linkClass(active && !current),
+                ),
               });
 
               // Collapsed to icons, the label has to come back as a tooltip or the rail is
               // a column of glyphs with no names.
-              if (collapsed) {
-                return (
-                  <Tooltip key={item.to}>
-                    <TooltipTrigger asChild>{body as React.ReactElement}</TooltipTrigger>
-                    <TooltipContent side="right">{item.detail ? `${item.label} · ${item.detail}` : item.label}</TooltipContent>
-                  </Tooltip>
-                );
-              }
-              if (children.length === 0) return body;
-              return (
-                <div key={item.to}>
-                  {body}
-                  <ul className="ml-5 mt-0.5 space-y-0.5 border-l border-white/10 pl-2">
-                    {children.map((child) => (
-                      <li key={child.to}>
-                        {renderLink(child, {
-                          active: child === current,
-                          collapsed: false,
-                          onNavigate,
-                          className: cn(linkClass(child === current), 'py-1.5 text-[13px] font-normal'),
-                        })}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+              return collapsed ? (
+                <Tooltip key={item.to}>
+                  <TooltipTrigger asChild>{body as React.ReactElement}</TooltipTrigger>
+                  <TooltipContent side="right">{item.detail ? `${item.label} · ${item.detail}` : item.label}</TooltipContent>
+                </Tooltip>
+              ) : (
+                body
               );
             })}
           </div>

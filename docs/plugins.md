@@ -445,7 +445,8 @@ name, the plugin it is and its on/off switch, then a sub-navigation:
   pages of every app — Data (when the plugin has data sets), Integration (wiring, site routes,
   the developer reference) and Activity.
 
-The menu lists the open app's work under it. A member sees an app when they may open any of it,
+The menu shows the app alone; its pages are the app's sub-navigation (and the command palette's
+"Records · CRM"). A member sees an app when they may open any of it,
 and only the pages they may open — the people who use an app's records every day get its records,
 not its configuration. A switched-off app keeps its Admin pages and says so instead of its work.
 
@@ -487,7 +488,7 @@ export default definePluginAdmin({
   `apps/admin/src/pluginHost/modules.test.ts` check both); an installed plugin built before this
   gets the console's form in its place.
 - `Nav` (`AdminNavPlacement`) is no longer read — every enabled instance is in the menu with its
-  work under it. It stays so plugins built against an older SDK still load.
+  pages listed in the app. It stays so plugins built against an older SDK still load.
 - The old addresses redirect: `/plugins/{slug}?tab=…` and `/plugins/{slug}/{screen}` to the app,
   `/app/{pluginId}/{screen}` to the first enabled instance's app. `/plugins` itself is
   **Installed**: what is added to the workspace, switched on or off.

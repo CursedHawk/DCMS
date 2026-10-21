@@ -11,10 +11,13 @@ test("opens an app's screen from the menu", async ({ page }) => {
   const nav = page.getByRole('navigation', { name: 'Sections' });
   await nav.getByRole('link', { name: 'Contact' }).click();
 
-  // The app opens on its work, which the menu then lists under it.
+  // The app opens on its work. The menu marks the app; its pages are the app's own sub-navigation.
   await expect(page).toHaveURL(/\/apps\/contact\/inbox$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Contact' })).toBeVisible();
-  await expect(nav.getByRole('link', { name: 'Inbox' })).toHaveAttribute('aria-current', 'page');
+  await expect(nav.getByRole('link', { name: 'Contact' })).toHaveAttribute('aria-current', 'page');
+  await expect(nav.getByRole('link', { name: 'Inbox' })).toHaveCount(0);
+  await expect(page.getByRole('navigation', { name: 'Contact' }).getByRole('link', { name: 'Inbox' }))
+    .toHaveAttribute('aria-current', 'page');
   // Rendered by the Forms plugin's module, from the plugin's own admin routes.
   await expect(page.getByRole('table').getByText('Do you ship to Brno?')).toBeVisible();
 });

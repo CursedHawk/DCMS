@@ -1,5 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router';
-import { Dot, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   NavLinkBody,
@@ -61,8 +61,8 @@ export function Sidebar({
           icon: iconByName(item.icon),
           group: navGroup(item.group),
           exact: item.to === '/',
+          // An app's pages are not listed under it: its own sub-navigation and the palette list them.
           detail: item.detail ?? undefined,
-          children: item.children?.map((c) => ({ to: c.to, label: navLabel(c, i18n.language, t), icon: Dot })),
         }))
       : NAV.filter((item) => !item.superAdmin && (!item.perm || can(me, item.perm))).map((item) => ({
           to: item.to,

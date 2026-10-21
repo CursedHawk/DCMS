@@ -73,7 +73,7 @@ public sealed class GuestbookSampleTests(ContentFlowFixture fixture)
         var overview = await Json(admin, Req(HttpMethod.Get, "/api/admin/guestbook/overview", owner, tenant), ct);
         overview.GetProperty("guestbooks").EnumerateArray().Single().GetProperty("approved").GetInt64().Should().Be(1);
 
-        // Screens: its app in the menu, with its pages under it, and its UI module served from its folder.
+        // Screens: its app in the menu, with its pages for the palette, and its UI module served from its folder.
         var app = (await Json(admin, Req(HttpMethod.Get, "/api/admin/navigation", owner, tenant), ct))
             .GetProperty("items").EnumerateArray().Single(i => i.GetProperty("to").GetString() == "/apps/guests");
         app.GetProperty("children").EnumerateArray().Select(c => c.GetProperty("to").GetString())

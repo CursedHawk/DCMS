@@ -128,28 +128,4 @@ describe('SidebarNav', () => {
       expect(onToggle).toHaveBeenCalledOnce();
     });
   });
-
-  it("lists the open app's pages under it, and makes the page the current link", () => {
-    const apps: ShellNavItem[] = [
-      ...items,
-      {
-        to: '/apps/crm',
-        label: 'CRM',
-        icon: Image,
-        group: 'build',
-        detail: 'Dynamic Apps',
-        children: [
-          { to: '/apps/crm/records', label: 'Records', icon: Home },
-          { to: '/apps/crm/content/note', label: 'Note', icon: Home },
-        ],
-      },
-      { to: '/apps/hr', label: 'HR', icon: Image, group: 'build', children: [{ to: '/apps/hr/records', label: 'HR records', icon: Home }] },
-    ];
-    render(<Nav items={apps} pathname="/apps/crm/records" />);
-    expect(screen.getByRole('link', { name: 'Note' })).toBeInTheDocument();
-    // A closed app keeps its pages to itself.
-    expect(screen.queryByRole('link', { name: 'HR records' })).toBeNull();
-    const current = screen.getAllByRole('link').filter((l) => l.getAttribute('aria-current') === 'page');
-    expect(current.map((l) => l.textContent)).toEqual(['Records']);
-  });
 });
