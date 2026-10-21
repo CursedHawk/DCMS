@@ -39,6 +39,7 @@
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.VideoGallery\Dcms.Plugins.VideoGallery.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.VideoStreaming\Dcms.Plugins.VideoStreaming.csproj" />
     <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.VisitorAuth\Dcms.Plugins.VisitorAuth.csproj" />
+    <ProjectReference Include="..\..\src\Plugins\Dcms.Plugins.YouTube\Dcms.Plugins.YouTube.csproj" />
   </ItemGroup>
 
   <!-- The sample external plugin, installed the way an operator would: its build output in a

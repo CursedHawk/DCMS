@@ -48,6 +48,9 @@ public sealed class AdminApiFixture : IAsyncLifetime
     /// </summary>
     public MetaStubServer MetaStub { get; private set; } = null!;
 
+    /// <summary>In-process stub of the YouTube Data API, for the YouTube plugin's sync.</summary>
+    public Dcms.IntegrationTests.Plugins.YouTubeStubServer YouTubeStub { get; private set; } = null!;
+
     /// <summary>In-process stub of the Drive v3 API, for the Google Drive import.</summary>
     public Dcms.IntegrationTests.Media.DriveStubServer DriveStub { get; private set; } = null!;
 
@@ -88,6 +91,7 @@ public sealed class AdminApiFixture : IAsyncLifetime
 
         MetaStub = await MetaStubServer.StartAsync();
         DriveStub = await Dcms.IntegrationTests.Media.DriveStubServer.StartAsync();
+        YouTubeStub = await Dcms.IntegrationTests.Plugins.YouTubeStubServer.StartAsync();
 
         if (RlsEnforced)
         {
@@ -147,6 +151,11 @@ public sealed class AdminApiFixture : IAsyncLifetime
             builder.UseSetting("GoogleDrive:ApiKey", "test-key");
             builder.UseSetting("GoogleDrive:AppId", "test-app");
             builder.UseSetting("GoogleDrive:ApiBase", DriveStub.ApiBase);
+            // YouTube looks configured; every call goes to the stub, and only the Sync-now route
+            // runs a sync (the scheduled pass would race the tests).
+            builder.UseSetting("YouTube:ApiKey", "test-youtube-key");
+            builder.UseSetting("YouTube:OverrideBaseUrl", YouTubeStub.BaseUrl);
+            builder.UseSetting("YouTube:SyncEnabled", "false");
             // The Guestbook sample as an installed plugin: the coverage tests hold its routes to
             // the same rules as the platform's.
             builder.UseSetting("Plugins:Directory", Dcms.IntegrationTests.Cms.ContentFlowFixture.InstalledPluginsDirectory);
@@ -190,6 +199,10 @@ public sealed class AdminApiFixture : IAsyncLifetime
         if (DriveStub is not null)
         {
             await DriveStub.DisposeAsync();
+        }
+        if (YouTubeStub is not null)
+        {
+            await YouTubeStub.DisposeAsync();
         }
         await Task.WhenAll(
             _postgres.DisposeAsync().AsTask(),

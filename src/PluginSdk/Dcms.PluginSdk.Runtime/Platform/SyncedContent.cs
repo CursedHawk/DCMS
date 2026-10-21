@@ -13,9 +13,11 @@ namespace Dcms.PluginSdk.Runtime.Platform;
 ///
 /// <para>Shared so the rules that are easy to get wrong live in one place: a sync never
 /// republishes what an admin unpublished, dates items by when the source posted them, and
-/// trims the oldest by that date. Nothing here saves: the caller saves the
+/// trims the oldest by that date or drops what the source no longer has. Nothing here saves: the caller saves the
 /// <see cref="CmsDbContext"/> once per pass, outbox rows included.</para>
 /// </summary>
+// rls: every caller is a sync that has already entered RlsScope.Tenant for the instance's
+// tenant, and every query here also names that tenant explicitly.
 public static class SyncedContent
 {
     /// <summary>
@@ -24,10 +26,15 @@ public static class SyncedContent
     /// <para>An existing item's <c>Status</c> is deliberately left alone. That is the hide
     /// toggle: an admin who unpublishes a post is telling the site not to show it, and a sync
     /// that re-published it fifteen minutes later would make the control useless.</para>
+    ///
+    /// <para><paramref name="keepHistory"/> false rewrites the latest version in place instead of
+    /// adding one — for a source whose items change on every pass (view counts), where a version
+    /// per pass would grow the table without telling anyone anything. An item an admin has a
+    /// draft of always gets a new version, so the draft is never rewritten underneath them.</para>
     /// </summary>
     public static async Task<bool> UpsertAsync(
         CmsDbContext cms, Guid tenantId, Guid instanceId, string contentType, string slug, JsonObject data,
-        DateTimeOffset? postedAtUtc, CancellationToken ct)
+        DateTimeOffset? postedAtUtc, CancellationToken ct, bool keepHistory = true)
     {
         var json = data.ToJsonString();
 
@@ -43,15 +50,24 @@ public static class SyncedContent
             var latest = existing.Versions.OrderByDescending(v => v.VersionNo).FirstOrDefault();
             if (latest is not null && latest.DataJson == json) return false;
 
-            var next = new ContentVersion
+            ContentVersion next;
+            if (!keepHistory && latest is not null && existing.CurrentDraftVersionId is null)
             {
-                Id = Guid.NewGuid(),
-                TenantId = tenantId,
-                ItemId = existing.Id,
-                VersionNo = (latest?.VersionNo ?? 0) + 1,
-                DataJson = json,
-            };
-            cms.ContentVersions.Add(next);
+                latest.DataJson = json;
+                next = latest;
+            }
+            else
+            {
+                next = new ContentVersion
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenantId,
+                    ItemId = existing.Id,
+                    VersionNo = (latest?.VersionNo ?? 0) + 1,
+                    DataJson = json,
+                };
+                cms.ContentVersions.Add(next);
+            }
 
             existing.UpdatedAt = DateTimeOffset.UtcNow;
             // Only move the published pointer for an item that is actually published; leaving
@@ -118,6 +134,47 @@ public static class SyncedContent
             .Skip(cap)
             .ToListAsync(ct);
 
+        return Remove(cms, stale);
+    }
+
+    /// <summary>
+    /// Removes every item of one type whose slug is not in <paramref name="keep"/> — for a
+    /// source that returns its whole current set each pass, so a post deleted at the source,
+    /// or one a changed filter now excludes, leaves the site too. Returns the removed slugs.
+    /// </summary>
+    public static async Task<IReadOnlyList<string>> RetainOnlyAsync(
+        CmsDbContext cms, Guid tenantId, Guid instanceId, string contentType, IReadOnlyCollection<string> keep,
+        CancellationToken ct)
+    {
+        var stale = await cms.ContentItems.IgnoreQueryFilters()
+            .Where(c => c.TenantId == tenantId
+                        && c.PluginInstanceId == instanceId
+                        && c.ContentType == contentType
+                        && !keep.Contains(c.Slug))
+            .ToListAsync(ct);
+
+        return Remove(cms, stale);
+    }
+
+    /// <summary>
+    /// A removed item that was live gets an unpublish event, the same one a manual unpublish
+    /// writes, so the delivery cache and the search index drop it rather than serving it on.
+    /// </summary>
+    private static List<string> Remove(CmsDbContext cms, List<ContentItem> stale)
+    {
+        foreach (var item in stale.Where(i => i.Status == ContentStatus.Published))
+        {
+            var evt = new ContentUnpublished(
+                Guid.NewGuid(), DateTimeOffset.UtcNow, item.TenantId,
+                item.PluginInstanceId, item.Id, item.ContentType, item.Slug);
+            cms.Outbox.Add(new ContentOutboxMessage
+            {
+                Id = Guid.NewGuid(),
+                TenantId = item.TenantId,
+                Subject = Subjects.ContentUnpublished,
+                PayloadJson = JsonSerializer.Serialize(evt),
+            });
+        }
         cms.ContentItems.RemoveRange(stale);
         return stale.Select(s => s.Slug).ToList();
     }
