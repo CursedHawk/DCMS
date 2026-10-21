@@ -430,6 +430,15 @@ export function playable(url: string): string {
   return url.replace(/^(\/api\/media\/[0-9a-f-]{36})\/original$/i, '$1/aac');
 }
 
+/**
+ * A YouTube link plays in YouTube's own (privacy-enhanced) player rather than a `<video>` tag that
+ * cannot load it. Mirrors youtubeEmbed() in hydrate.js.
+ */
+export function youtubeEmbed(url: string): string | null {
+  const m = /(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/.exec(url);
+  return m ? `https://www.youtube-nocookie.com/embed/${m[1]}?rel=0` : null;
+}
+
 function playerHtml(item: PreviewItem, props: PreviewProps, tag: 'video' | 'audio'): string {
   const { title, media, meta, link } = slotsOf(item, props);
   const out = ['<div class="dcms-card" data-variant="outline"><div class="dcms-card-body">'];
@@ -439,7 +448,14 @@ function playerHtml(item: PreviewItem, props: PreviewProps, tag: 'video' | 'audi
     out.push(`<h3 class="dcms-card-title">${linked(escapeHtml(title), link, 'dcms-card-link')}</h3>`);
   }
   if (meta) out.push(`<p class="dcms-card-meta">${escapeHtml(meta)}</p>`);
-  if (media) {
+  const embed = tag === 'video' ? youtubeEmbed(media) : null;
+  if (embed) {
+    out.push(
+      `<iframe class="dcms-media dcms-media-embed" src="${escapeHtml(embed)}" title="${escapeHtml(title || 'Video')}"` +
+        ' loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen' +
+        ' referrerpolicy="strict-origin-when-cross-origin"></iframe>',
+    );
+  } else if (media) {
     out.push(`<${tag} class="dcms-media" controls preload="metadata" src="${escapeHtml(tag === 'audio' ? playable(media) : media)}"></${tag}>`);
   }
   out.push('</div></div>');

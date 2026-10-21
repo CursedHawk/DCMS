@@ -1142,6 +1142,7 @@ a.dcms-card-link { text-decoration: none; color: inherit; display: block; }
 .dcms-article-body { font-size: var(--dcms-text-lg); }
 
 .dcms-media { width: 100%; border-radius: var(--dcms-radius); display: block; }
+.dcms-media-embed { aspect-ratio: 16 / 9; height: auto; border: 0; }
 
 .dcms-downloads { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--dcms-space-xs); }
 .dcms-download a {

@@ -95,6 +95,15 @@
     return url.replace(LIBRARY_ORIGINAL, '$1/aac');
   }
 
+  // A YouTube link plays in YouTube's own player, not a <video> tag that cannot load it. The
+  // privacy-enhanced host sets no cookies until the visitor presses play. Mirrors
+  // youtubeEmbed() in preview.ts and videoTarget() in site-runtime's mediaComponents.tsx.
+  var YOUTUBE = /(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{11})/;
+  function youtubeEmbed(url) {
+    var m = YOUTUBE.exec(url || '');
+    return m ? 'https://www.youtube-nocookie.com/embed/' + m[1] + '?rel=0' : null;
+  }
+
   // Read a field by path, following dots — mirrors readField() in preview.ts.
   //
   // Tenant-defined fields do not sit beside the plugin's own: a content type
@@ -312,6 +321,7 @@
       ':where(.dcms-article-meta){color:' + muted + ';font-size:.9rem;margin:0 0 1rem;}',
       ':where(.dcms-article-img){width:100%;border-radius:' + radius + ';margin:0 0 1rem;display:block;}',
       ':where(.dcms-media){width:100%;border-radius:' + radius + ';display:block;}',
+      ':where(.dcms-media-embed){aspect-ratio:16/9;height:auto;border:0;}',
       ':where(.dcms-downloads){list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.5rem;}',
       ':where(.dcms-download a){display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;border:1px solid ' + border + ';border-radius:' + radius + ';color:var(--dcms-color-brand,#2563eb);text-decoration:none;}',
       ':where(.dcms-tags){display:flex;flex-wrap:wrap;gap:.25rem;}',
@@ -412,7 +422,14 @@
       // an anchor makes every click a navigation. The title is the way through.
       if (s.title) out.push('<h3 class="dcms-card-title">' + linked(esc(s.title), s.link, 'dcms-card-link') + '</h3>');
       if (s.meta) out.push('<p class="dcms-card-meta">' + esc(s.meta) + '</p>');
-      if (s.media) out.push('<' + tag + ' class="dcms-media" controls preload="metadata" src="' + esc(tag === 'audio' ? playable(s.media) : s.media) + '"></' + tag + '>');
+      var embed = tag === 'video' ? youtubeEmbed(s.media) : null;
+      if (embed) {
+        out.push('<iframe class="dcms-media dcms-media-embed" src="' + esc(embed) + '" title="' + esc(s.title || 'Video') +
+          '" loading="lazy" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen' +
+          ' referrerpolicy="strict-origin-when-cross-origin"></iframe>');
+      } else if (s.media) {
+        out.push('<' + tag + ' class="dcms-media" controls preload="metadata" src="' + esc(tag === 'audio' ? playable(s.media) : s.media) + '"></' + tag + '>');
+      }
       out.push('</div></div>');
       return out.join('');
     });

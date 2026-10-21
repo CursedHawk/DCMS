@@ -6,7 +6,7 @@ import { BIND_TARGETS, TEMPLATE_ATTRS, parseBind } from '@dcms/gjs-schema';
 import { describe, expect, it } from 'vitest';
 import { BLOCKS_CSS } from './blocks-css';
 import { HOME_LABEL_ATTR, NAV_ATTR, normalize } from './nav';
-import { PREVIEW_LAYOUTS, playable, previewHtml, type PreviewItem } from './preview';
+import { PREVIEW_LAYOUTS, playable, previewHtml, youtubeEmbed, type PreviewItem } from './preview';
 import { renderTemplate } from './render';
 import { navigationSpecs } from './specs';
 import {
@@ -96,6 +96,30 @@ describe('hydrate.js and the canvas preview', () => {
       expect(runtimePlayable(url), url).toBe(playable(url));
     }
     expect(runtime).toContain("tag === 'audio' ? playable(s.media) : s.media");
+  });
+
+  it('embed the same YouTube links in the same player', () => {
+    const source = runtime.match(/var YOUTUBE = [^\n]+\n\s*function youtubeEmbed\(url\) \{[^}]+\}/);
+    expect(source, 'hydrate.js no longer declares youtubeEmbed()').not.toBeNull();
+    const runtimeEmbed = new Function(`${source![0]}; return youtubeEmbed;`)() as (url: string) => string | null;
+    for (const url of [
+      'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+      'https://www.youtube.com/watch?list=PL1&v=dQw4w9WgXcQ',
+      'https://youtu.be/dQw4w9WgXcQ',
+      'https://www.youtube.com/shorts/dQw4w9WgXcQ',
+      'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ',
+      '/api/media/3f2504e0-4f89-11d3-9a0c-0305e82c3301/original',
+      'https://vimeo.com/76979871',
+    ]) {
+      expect(runtimeEmbed(url), url).toBe(youtubeEmbed(url));
+    }
+    expect(youtubeEmbed('https://youtu.be/dQw4w9WgXcQ')).toBe('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0');
+    expect(youtubeEmbed('/a.mp4')).toBeNull();
+
+    const html = previewHtml([{ data: { title: 'Launch', url: 'https://youtu.be/dQw4w9WgXcQ' } }], { layout: 'video' });
+    expect(html).toContain('<iframe class="dcms-media dcms-media-embed" src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0" title="Launch"');
+    expect(html).not.toContain('<video');
+    expect(BLOCKS_CSS).toContain('.dcms-media-embed');
   });
 
   it('build an item link from the same pattern', () => {
