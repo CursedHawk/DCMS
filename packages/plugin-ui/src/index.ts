@@ -54,7 +54,7 @@ export interface PluginWidgetProps {
   readonly?: boolean;
   schema: Record<string, unknown>;
   options?: Record<string, unknown>;
-  registry?: { formContext?: { instanceId?: string } & Record<string, unknown> };
+  registry?: { formContext?: { instanceId?: string; instanceSlug?: string } & Record<string, unknown> };
 }
 
 export interface PluginAdminModule {

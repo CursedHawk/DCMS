@@ -1,0 +1,11 @@
+{
+  "youtube": {
+    "placeholder": "https://www.youtube.com/@vaskanal",
+    "checking": "Hledám kanál…",
+    "notConfigured": "Toto nasazení nemá nastavený přístup k YouTube, videa zatím nelze synchronizovat.",
+    "lookupFailed": "Odkaz se teď nepodařilo ověřit.",
+    "syncNow": "Synchronizovat",
+    "syncDone": "Synchronizováno: {{created}} nových, {{updated}} obnovených, {{removed}} odebraných.",
+    "syncFailed": "Synchronizaci se nepodařilo spustit."
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "youtube": {
+    "placeholder": "https://www.youtube.com/@yourchannel",
+    "checking": "Looking up the channel…",
+    "notConfigured": "This deployment has no YouTube access configured, so videos cannot be synced yet.",
+    "lookupFailed": "The link could not be checked right now.",
+    "syncNow": "Sync now",
+    "syncDone": "Synced: {{created}} new, {{updated}} refreshed, {{removed}} removed.",
+    "syncFailed": "The sync could not be run."
+  }
+}

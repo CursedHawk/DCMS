@@ -136,8 +136,9 @@ function SettingsForm({ instance, manifest }: { instance: PluginInstance; manife
               formData={config}
               onChange={setConfig}
               widgets={widgets}
-              // The Meta widget's Sync-now button needs the instance it belongs to.
-              formContext={{ instanceId: instance.id }}
+              // Widgets' Sync-now buttons need the instance they belong to (Meta by id,
+              // plugin-owned routes by slug).
+              formContext={{ instanceId: instance.id, instanceSlug: instance.slug }}
             />
           </CardContent>
         </Card>
