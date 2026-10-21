@@ -15,6 +15,7 @@ import {
   Table2,
   TrendingUp,
   Users,
+  Youtube,
 } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 
@@ -266,6 +267,7 @@ const more = [
   },
   { icon: Instagram, name: 'Instagram', body: 'Your Instagram feed on your site.' },
   { icon: Facebook, name: 'Facebook', body: 'Your Facebook page’s posts on your site.' },
+  { icon: Youtube, name: 'YouTube', body: 'Your channel’s latest videos, ready to play on your site.' },
   {
     icon: Download,
     name: 'File Downloads',

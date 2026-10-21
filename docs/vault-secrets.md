@@ -118,6 +118,7 @@ rm -f /tmp/s.pfx
 | `Social__Instagram__AppId`, `Social__Instagram__AppSecret` | the Instagram Login app, for professional accounts with no Facebook Page |
 | `Social__RedirectUri` | the OAuth callback, registered verbatim in the Meta app — `https://<admin host>/api/admin/social/callback` |
 | `GoogleDrive__ClientId`, `GoogleDrive__ApiKey`, `GoogleDrive__AppId` | the console's Drive import: the OAuth client id (may be identity's SSO client), a browser API key restricted to the Picker API and the admin origin, and the Cloud **project number**. Optional — absent hides the button |
+| `YouTube__ApiKey` | the YouTube plugin's sync: a **server** key restricted to the YouTube Data API v3 (not to HTTP referrers — the Drive key above will not work). Optional — absent, the plugin installs but says the deployment has no YouTube access |
 
 **`Audit__ChainKey` must be stable forever.** Rotating it makes every previously written audit
 record fail verification — the chain cannot be re-linked, and `audit verify` reports tampering

@@ -151,7 +151,8 @@ const sections: Section[] = [
           If you import files from Google Drive, Google gives us access only to the files you pick,
           for that one import; the access token is not stored. If you connect an Instagram account
           or Facebook Page, we store an encrypted access token and copy the posts you chose to
-          display.
+          display. If you show a YouTube channel or playlist, we read its public videos with our
+          own key; no Google account of yours is connected and no token is stored.
         </p>
       </>
     ),
@@ -257,6 +258,11 @@ const sections: Section[] = [
           </tbody>
         </table>
         <p>
+          A site that embeds a YouTube video loads it from youtube-nocookie.com, YouTube’s
+          privacy-enhanced mode: YouTube sets no cookies until the visitor plays the video, and from
+          then on its own policy applies.
+        </p>
+        <p>
           The admin console also keeps preferences such as language, theme and the last workspace
           you opened in your browser’s local storage. None of this is used to track you.
         </p>
@@ -303,7 +309,7 @@ const sections: Section[] = [
             </tr>
             <tr>
               <td>Google</td>
-              <td>Only if you sign in with Google or import from Google Drive</td>
+              <td>Only if you sign in with Google, import from Google Drive or show a YouTube channel</td>
               <td>USA</td>
             </tr>
             <tr>
