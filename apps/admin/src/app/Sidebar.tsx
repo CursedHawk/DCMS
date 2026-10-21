@@ -1,5 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router';
-import { Sparkles } from 'lucide-react';
+import { Dot, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   NavLinkBody,
@@ -55,12 +55,14 @@ export function Sidebar({
     nav.data
       ? nav.data.items.map((item) => ({
           to: item.to,
-          // The product's own destinations have translation keys; a plugin's screens carry
-          // their own titles, and a per-instance entry its instance's name.
+          // The product's own destinations have translation keys; an app carries its
+          // instance's name, and its screens their own titles.
           label: navLabel(item, i18n.language, t),
           icon: iconByName(item.icon),
           group: navGroup(item.group),
           exact: item.to === '/',
+          detail: item.detail ?? undefined,
+          children: item.children?.map((c) => ({ to: c.to, label: navLabel(c, i18n.language, t), icon: Dot })),
         }))
       : NAV.filter((item) => !item.superAdmin && (!item.perm || can(me, item.perm))).map((item) => ({
           to: item.to,

@@ -102,7 +102,8 @@ public sealed class RosterPlugin : IPlugin
         summary: "People and line-ups that other plugins can reference.",
         iconName: "Users",
         provides: [ContractProvision.Of<IRosterMembers, RosterMembersSource>()],
-        consumes: [ContractRequirement.Of<IPluginContent>()]);
+        consumes: [ContractRequirement.Of<IPluginContent>()],
+        adminScreens: [AdminScreen.Settings]);
 
 
     public void MapEndpoints(IPluginEndpointBuilder endpoints)

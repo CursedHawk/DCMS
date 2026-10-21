@@ -33,7 +33,10 @@ export interface PluginInstanceRef {
 export interface PluginScreenProps {
   pluginId: string;
   screenId: string;
-  /** The instance an instance-scoped screen belongs to; null on a plugin-wide screen. */
+  /**
+   * The app the screen is shown in. A plugin-wide screen (one inbox for every instance) gets it
+   * too, as the instance to start from; it is null only outside an app.
+   */
   instance: PluginInstanceRef | null;
   /** Every instance of the plugin in this workspace, enabled or not. */
   instances: PluginInstanceRef[];
@@ -108,6 +111,8 @@ export interface PluginHost {
     DataSet: ComponentType<{ slug: string; set: string }>;
     /** The console's code editor (Monaco), with its language workers and themes already set up. */
     CodeEditor: ComponentType<CodeEditorProps>;
+    /** An instance's settings form: name, description, AI tools and the form its config schema describes. */
+    SchemaSettings: ComponentType<{ slug: string }>;
   };
 }
 
@@ -165,6 +170,16 @@ export function usePluginHost(): PluginHost {
   const host = useContext(HostContext);
   if (!host) throw new Error('usePluginHost: not inside the DCMS console (no PluginHostProvider).');
   return host;
+}
+
+/**
+ * An app's Settings screen that is the console's form for the plugin's config schema. Every plugin
+ * provides a `settings` screen; one with nothing more to say than its schema provides this:
+ * `screens: { settings: SchemaSettings }`.
+ */
+export function SchemaSettings({ instance }: PluginScreenProps) {
+  const { components } = usePluginHost();
+  return instance ? createElement(components.SchemaSettings, { slug: instance.slug }) : null;
 }
 
 /** The screen being rendered: plugin, instance and the plugin's instances. */

@@ -288,7 +288,7 @@ function InstanceNav({
 }
 
 /** Right pane: searchable, filterable list of one collection's items. */
-function CollectionView({
+export function CollectionView({
   instance,
   contentType,
   openItemId,
@@ -311,9 +311,10 @@ function CollectionView({
    * header would make Back step through every intermediate list.
    */
   const params = useSearch({ strict: false }) as ContentSearch;
+  // On whatever page shows it: Content, or the collection's screen in its app.
   const setParams = (next: Partial<ContentSearch>) =>
     void navigate({
-      to: '/content' as string,
+      to: '.',
       search: ((prev: ContentSearch) => ({ ...prev, ...next })) as never,
       replace: true,
     });

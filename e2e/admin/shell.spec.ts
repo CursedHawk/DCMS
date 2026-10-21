@@ -42,7 +42,7 @@ test('groups the menu by kind of work, and an unknown section still shows its en
     items: [
       ...data.NAVIGATION.items,
       // A section this console has never heard of: drawn under Apps rather than dropped.
-      { to: '/app/guestbook/overview', labelKey: null, icon: 'BookOpen', group: 'somewhere-new', label: 'Guestbooks' },
+      { to: '/apps/guestbook', labelKey: null, icon: 'BookOpen', group: 'somewhere-new', label: 'Guestbooks' },
     ],
   });
   await page.goto('/');
@@ -52,7 +52,7 @@ test('groups the menu by kind of work, and an unknown section still shows its en
   await expect(nav.getByRole('link', { name: 'Guestbooks' })).toBeVisible();
   // Installed plugins stay in the menu once the server has answered: it used to be drawn on
   // first paint from the bundle's list and then removed because the server's list lacked it.
-  await expect(nav.getByRole('link', { name: 'Plugins' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Installed' })).toBeVisible();
   await expect(nav.getByRole('link', { name: 'Marketplace' })).toBeVisible();
 });
 
@@ -161,7 +161,9 @@ test.describe('the command palette', () => {
     const palette = page.getByRole('dialog');
     // Grouped, with where you were before this page first.
     await expect(palette.getByRole('group', { name: 'Recent' }).getByRole('option', { name: 'Media' })).toBeVisible();
-    await expect(palette.getByRole('group', { name: 'Apps' }).getByRole('option', { name: 'Forms' })).toBeVisible();
+    // Each app, and each of its pages under the app's name.
+    await expect(palette.getByRole('group', { name: 'Apps' }).getByRole('option', { name: 'Contact', exact: true })).toBeVisible();
+    await expect(palette.getByRole('group', { name: 'Apps' }).getByRole('option', { name: 'Inbox · Contact' })).toBeVisible();
 
     // Members, Domains and the rest have no sidebar line; the palette is how you reach them.
     await palette.getByRole('combobox').fill('domains');

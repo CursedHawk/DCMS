@@ -1,10 +1,9 @@
 import { Outlet, createRootRoute, createRoute, redirect, useParams } from '@tanstack/react-router';
 import { lazy } from 'react';
-import { CenteredSpinner, RequirePermission, usePermissions } from '@dcms/ui';
+import { RequirePermission } from '@dcms/ui';
 import { AppShell } from './app/AppShell';
 import { LEGACY_PLUGIN_PATHS, LEGACY_SETTINGS_PATHS, ROUTE_GUARDS, type RouteGuard } from './app/routeGuards';
 import { DashboardPage } from './features/dashboard/DashboardPage';
-import { can } from './lib/permissions';
 
 /*
  * Every page except the dashboard is loaded on demand.
@@ -58,15 +57,8 @@ const WorkspacePage = page(() => import('./features/workspace/WorkspacePage'), '
 const PluginReferencePage = lazy(() =>
   import('./features/marketplace/PluginReferencePage').then((m) => ({ default: m.PluginReferencePage })),
 );
-const PluginAppPage = lazy(() =>
-  import('./pluginHost/PluginScreenView').then((m) => ({ default: m.PluginAppPage })),
-);
-const PluginInstanceScreenPage = lazy(() =>
-  import('./pluginHost/PluginScreenView').then((m) => ({ default: m.PluginInstanceScreenPage })),
-);
-const PluginInstancePage = lazy(() =>
-  import('./features/plugins/PluginInstancePage').then((m) => ({ default: m.PluginInstancePage })),
-);
+const AppPage = lazy(() => import('./features/apps/AppPage').then((m) => ({ default: m.AppPage })));
+const PluginAppRedirect = lazy(() => import('./features/apps/AppPage').then((m) => ({ default: m.PluginAppRedirect })));
 const SiteWorkspace = lazy(() =>
   import('./features/sites/SiteWorkspace').then((m) => ({ default: m.SiteWorkspace })),
 );
@@ -135,48 +127,54 @@ const pluginReferenceRoute = createRoute({
     );
   },
 });
-/** One plugin instance: its wiring, data, settings, integration and history. */
-const pluginInstanceRoute = createRoute({
+/*
+ * An enabled plugin instance is an app (#337): one frame whose sub-navigation is the plugin's
+ * screens, its content collections and, under Admin, its settings and the platform's pages of it.
+ * No route guard: the frame lists only what the member may open, and each screen is guarded by
+ * its own permission.
+ */
+function appRoute(path: string) {
+  return createRoute({
+    getParentRoute: () => appLayoutRoute,
+    path,
+    component: function App() {
+      const { slug, page, type } = useParams({ strict: false }) as { slug: string; page?: string; type?: string };
+      return <AppPage key={slug} slug={slug} page={type ? 'content' : page} type={type} />;
+    },
+  });
+}
+const appIndexRoute = appRoute('/apps/$slug');
+const appPageRoute = appRoute('/apps/$slug/$page');
+const appContentRoute = appRoute('/apps/$slug/content/$type');
+
+/*
+ * Where an instance and its screens lived before. Job links and notification rows in the database
+ * still carry these, and people bookmark: `/plugins/{slug}?tab=…` was a tab of the instance page,
+ * `/plugins/{slug}/{screen}` one of the plugin's screens on it.
+ */
+const legacyInstanceRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/plugins/$slug',
-  component: function PluginInstance() {
-    const { slug } = useParams({ strict: false });
-    return (
-      <RequirePermission perm={ROUTE_GUARDS['/plugins/$slug'].perm}>
-        <PluginInstancePage slug={slug as string} />
-      </RequirePermission>
-    );
+  beforeLoad: ({ params, search }) => {
+    const { tab, ...rest } = search as { tab?: string };
+    const page = tab && tab !== 'overview' ? `/${tab}` : '';
+    throw redirect({ to: `/apps/${params.slug}${page}` as string, search: rest as never, replace: true });
   },
 });
-/**
- * An instance screen a plugin adds. For a plugin manager, a tab of the instance's page; for
- * anyone else — the people an app's records or a realm's users are for — the screen alone,
- * guarded by the screen's own permission rather than plugins:manage.
- */
-const pluginInstanceScreenRoute = createRoute({
+const legacyInstanceScreenRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/plugins/$slug/$screen',
-  component: function PluginInstanceScreen() {
-    const { slug, screen } = useParams({ strict: false });
-    const me = usePermissions();
-    if (!me) return <CenteredSpinner />;
-    return can(me, ROUTE_GUARDS['/plugins/$slug'].perm!) ? (
-      <PluginInstancePage slug={slug as string} screen={screen as string} />
-    ) : (
-      <PluginInstanceScreenPage slug={slug as string} screenId={screen as string} />
-    );
+  beforeLoad: ({ params, search }) => {
+    throw redirect({ to: `/apps/${params.slug}/${params.screen}` as string, search: search as never, replace: true });
   },
 });
-/**
- * A plugin-wide screen a plugin adds (the Forms inbox, the chat console). No route guard: the
- * screen's own permission, from the plugin's manifest, is checked by the page.
- */
-const pluginAppRoute = createRoute({
+/** A plugin-wide screen's page before it was a screen of each app: the first enabled instance's. */
+const legacyPluginAppRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/app/$pluginId/$screen',
-  component: function PluginApp() {
+  component: function LegacyPluginApp() {
     const { pluginId, screen } = useParams({ strict: false });
-    return <PluginAppPage key={`${pluginId}/${screen}`} pluginId={pluginId as string} screenId={screen as string} />;
+    return <PluginAppRedirect pluginId={pluginId as string} screenId={screen as string} />;
   },
 });
 const mediaRoute = child('/media', MediaPage);
@@ -299,9 +297,12 @@ export const routeTree = rootRoute.addChildren([
     indexRoute,
     tenantsRoute,
     pluginsRoute,
-    pluginInstanceRoute,
-    pluginInstanceScreenRoute,
-    pluginAppRoute,
+    appIndexRoute,
+    appPageRoute,
+    appContentRoute,
+    legacyInstanceRoute,
+    legacyInstanceScreenRoute,
+    legacyPluginAppRoute,
     contentRoute,
     marketplaceRoute,
     pluginReferenceRoute,

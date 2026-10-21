@@ -34,6 +34,17 @@ function CodeEditor(props: CodeEditorProps) {
   );
 }
 
+// Lazy as well: it renders through this module's own widgets hook, so a static import is a cycle.
+const LazySchemaSettings = lazy(() => import('../features/apps/SchemaSettings').then((m) => ({ default: m.SchemaSettings })));
+
+function SchemaSettings(props: { slug: string }) {
+  return (
+    <Suspense fallback={null}>
+      <LazySchemaSettings {...props} />
+    </Suspense>
+  );
+}
+
 /** A data set embedded in a plugin screen: the plugin page's own view, by slug and set id. */
 function EmbeddedDataSet({ slug, set }: { slug: string; set: string }) {
   const sets = useDataSets(slug);
@@ -74,7 +85,7 @@ export function useConsolePluginHost(): PluginHost {
             },
           }
         : undefined,
-      components: { DataSet: EmbeddedDataSet, CodeEditor },
+      components: { DataSet: EmbeddedDataSet, CodeEditor, SchemaSettings },
     }),
     [me.data, navigate, setPage, setOpen, ask, qc],
   );

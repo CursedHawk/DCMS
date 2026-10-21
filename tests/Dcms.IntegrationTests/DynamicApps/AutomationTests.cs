@@ -263,9 +263,9 @@ public sealed class AutomationTests(ContentFlowFixture fixture)
         job.GetProperty("links").EnumerateArray()
             .Select(l => (l.GetProperty("rel").GetString(), l.GetProperty("path").GetString()))
             .Should().BeEquivalentTo([
-                ("source", "/plugins/crm"),
-                ("config", "/plugins/crm/configuration?tab=automation&flow=tick"),
-                ("run", $"/plugins/crm/configuration?tab=automation&run={runId}"),
+                ("source", "/apps/crm"),
+                ("config", "/apps/crm/configuration?tab=automation&flow=tick"),
+                ("run", $"/apps/crm/configuration?tab=automation&run={runId}"),
             ]);
         (await JobIdsAsync(app, "finished", ct)).Should().Contain(runId);
         (await JobIdsAsync(app, "recent", ct)).Should().NotContain(runId, "an hourly tick that went fine is not news");

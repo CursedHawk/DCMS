@@ -253,10 +253,6 @@ function PluginDetail({ item }: { item: MarketplaceItem }) {
               ? t('marketplace.multipleAllowed')
               : t('marketplace.singleInstance')}
           </dd>
-          <dt>{t('marketplace.menuEntry')}</dt>
-          <dd className="text-foreground">
-            {item.addsNavEntry ? t('marketplace.addsMenuEntry') : t('marketplace.noMenuEntry')}
-          </dd>
           {item.provides && item.provides.length > 0 ? (
             <>
               <dt>{t('marketplace.provides')}</dt>
@@ -300,7 +296,7 @@ function PluginDetail({ item }: { item: MarketplaceItem }) {
         {existing ? (
           <Button
             onClick={() =>
-              void navigate({ to: '/plugins/$slug' as string, params: { slug: existing.slug } as never })
+              void navigate({ to: '/apps/$slug' as string, params: { slug: existing.slug } as never })
             }
           >
             {t('marketplace.manage')}
@@ -323,7 +319,7 @@ function PluginDetail({ item }: { item: MarketplaceItem }) {
           manifest={manifest}
           onClose={() => setAdding(false)}
           onDone={(created) =>
-            void navigate({ to: '/plugins/$slug' as string, params: { slug: created.slug } as never })
+            void navigate({ to: '/apps/$slug' as string, params: { slug: created.slug } as never })
           }
         />
       ) : null}

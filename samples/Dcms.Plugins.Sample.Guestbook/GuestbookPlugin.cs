@@ -132,8 +132,9 @@ public sealed class GuestbookPlugin : IPlugin
         // Screens in the admin console, drawn by admin/src (the Vite-built UI module).
         adminScreens:
         [
+            AdminScreen.Settings,
             new AdminScreen("overview", "Guestbooks", AdminScreenScope.Plugin, Permission: "read", IconName: "BookOpen",
-                Nav: new AdminNavPlacement("apps", 60), Titles: new Dictionary<string, string> { ["cs"] = "Knihy návštěv" },
+                Titles: new Dictionary<string, string> { ["cs"] = "Knihy návštěv" },
                 Description: "Every guestbook with what waits for approval."),
             new AdminScreen("moderation", "Moderation", AdminScreenScope.Instance, Permission: "moderate", IconName: "ShieldCheck",
                 Titles: new Dictionary<string, string> { ["cs"] = "Moderace" },

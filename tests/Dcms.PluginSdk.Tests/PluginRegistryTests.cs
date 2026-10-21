@@ -75,4 +75,31 @@ public class PluginRegistryTests
         catalog.Find("blog").Should().NotBeNull();
         catalog.Find("missing").Should().BeNull();
     }
+
+    private sealed class Screens(params AdminScreen[] screens) : IPlugin
+    {
+        public PluginManifest Manifest { get; } = PluginManifest.Create("screens", "Screens", "", false, adminScreens: screens);
+    }
+
+    [Theory]
+    [InlineData("data")]
+    [InlineData("integration")]
+    [InlineData("activity")]
+    [InlineData("content")]
+    public void A_screen_cannot_take_a_page_the_console_draws_in_every_app(string id)
+    {
+        var act = () => new PluginRegistry([new Screens(new AdminScreen(id, "Mine", AdminScreenScope.Instance))]);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*console's own page*");
+    }
+
+    [Fact]
+    public void Settings_are_an_instance_screen_under_admin()
+    {
+        var plugin = () => new PluginRegistry([new Screens(new AdminScreen(AdminScreen.SettingsId, "Settings", AdminScreenScope.Plugin))]);
+        plugin.Should().Throw<InvalidOperationException>().WithMessage("*Instance screen in the Admin section*");
+        var work = () => new PluginRegistry([new Screens(new AdminScreen(AdminScreen.SettingsId, "Settings", AdminScreenScope.Instance))]);
+        work.Should().Throw<InvalidOperationException>();
+
+        new PluginRegistry([new Screens(AdminScreen.Settings)]).Manifests.Should().ContainSingle();
+    }
 }

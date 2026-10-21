@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -51,6 +51,7 @@ export function InstallPluginDialog({
   const [config, setConfig] = useState<unknown>({});
   const schema = parseConfigSchema(manifest.configJsonSchema);
   const ui = usePluginUi();
+  const qc = useQueryClient();
   const pluginWidgets = usePluginWidgets(ui.data?.find((p) => p.pluginId === manifest.id), null);
   const widgets = useMemo(() => ({ ...configWidgets, ...pluginWidgets }), [pluginWidgets]);
   // For multi-instance plugins the description distinguishes each instance's
@@ -66,8 +67,14 @@ export function InstallPluginDialog({
         description: description.trim() || undefined,
         config: JSON.stringify(config ?? {}),
       }),
-    onSuccess: (created) => {
+    onSuccess: async (created) => {
       toast.success(t('common.saved'));
+      // A new instance is a new app: its frame reads plugin-ui, and the menu lists it.
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['plugin-instances'] }),
+        qc.invalidateQueries({ queryKey: ['plugin-ui'] }),
+        qc.invalidateQueries({ queryKey: ['navigation'] }),
+      ]);
       onDone(created);
     },
     onError: (e) => (isSlugTaken(e) ? setTakenSlug(slug.trim()) : toastApiError(e, t)),

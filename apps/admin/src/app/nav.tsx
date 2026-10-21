@@ -48,7 +48,7 @@ export const NAV: NavItem[] = [
   { to: '/content', labelKey: 'nav.content', icon: FileText, perm: Perm.ContentRead, group: 'manage' },
   { to: '/media', labelKey: 'nav.media', icon: Image, perm: Perm.MediaRead, group: 'manage' },
 
-  { to: '/plugins', labelKey: 'nav.plugins', icon: Plug, perm: Perm.PluginsManage, group: 'extend' },
+  { to: '/plugins', labelKey: 'nav.installed', icon: Plug, perm: Perm.PluginsManage, group: 'extend' },
   { to: '/marketplace', labelKey: 'nav.marketplace', icon: Store, perm: Perm.PluginsManage, group: 'extend' },
 
   /*

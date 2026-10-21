@@ -51,12 +51,20 @@ export function paletteItems(
     ),
     ...(server ?? [])
       .filter((i) => i.label !== null)
-      .map((i): PaletteItem => ({
-        to: i.to,
-        label: navLabel(i, language, t),
-        icon: iconByName(i.icon),
-        group: navGroup(i.group) === 'apps' ? 'apps' : 'pages',
-      })),
+      .flatMap((i): PaletteItem[] => {
+        const app = navLabel(i, language, t);
+        const group = navGroup(i.group) === 'apps' ? 'apps' : 'pages';
+        return [
+          { to: i.to, label: app, icon: iconByName(i.icon), group },
+          // "Records" alone matches every app that has records; with the app's name it is one.
+          ...(i.children ?? []).map((c): PaletteItem => ({
+            to: c.to,
+            label: `${navLabel(c, language, t)} · ${app}`,
+            icon: iconByName(i.icon),
+            group,
+          })),
+        ];
+      }),
     // Reached from the topbar rather than the menu, so they were not in the palette either.
     { to: '/notifications', label: t('nav.notifications'), icon: Bell, group: 'pages' },
     { to: '/jobs', label: t('nav.jobs'), icon: Loader, group: 'pages' },
@@ -69,7 +77,7 @@ export function paletteItems(
       (s): PaletteItem => ({ to: `/sites/${s.id}`, label: s.name, icon: PanelsTopLeft, group: 'sites' }),
     ),
     ...(records.instances ?? []).map(
-      (i): PaletteItem => ({ to: `/plugins/${i.slug}`, label: i.name, icon: Plug, group: 'plugins' }),
+      (i): PaletteItem => ({ to: `/apps/${i.slug}`, label: i.name, icon: Plug, group: 'plugins' }),
     ),
     ...SETTINGS_SECTIONS.filter((s) => !s.perm || can(me, s.perm)).map(
       (s): PaletteItem => ({ to: s.to, label: t(s.labelKey), icon: Settings, group: 'settings' }),

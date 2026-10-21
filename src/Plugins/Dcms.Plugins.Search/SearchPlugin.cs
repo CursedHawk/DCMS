@@ -29,7 +29,8 @@ public sealed class SearchPlugin : IPlugin
         category: "Engagement",
         summary: "Full-text search across published content.",
         iconName: "Search",
-        consumes: [ContractRequirement.Of<IPluginSearch>()]);
+        consumes: [ContractRequirement.Of<IPluginSearch>()],
+        adminScreens: [AdminScreen.Settings]);
 
     public void ConfigureServices(IServiceCollection services, PluginHost host)
     {

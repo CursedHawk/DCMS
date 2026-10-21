@@ -51,7 +51,7 @@ const ENTRA = {
 };
 
 const screen = (id: string, title: string, icon: string) => ({
-  id, title, titles: {}, description: null, scope: 'instance', icon, permission: 'plugin:user-auth:users-read', nav: null, allowed: true,
+  id, title, titles: {}, description: null, scope: 'instance', icon, permission: 'plugin:user-auth:users-read', section: id === 'users' ? 'work' : 'admin', allowed: true,
 });
 
 test.beforeEach(async ({ api }) => {
@@ -90,7 +90,7 @@ test('an invitation goes out with its groups, and its link is offered for when m
     user: { ...PAT, id: 'eeeeeeee-0000-0000-0000-000000000003', email: 'sam@corp.test', status: 'invited' },
     inviteUrl: 'https://auth.test/realm/acme/invite?token=abc',
   });
-  await page.goto('/plugins/users/users');
+  await page.goto('/apps/users/users');
 
   await expect(page.getByRole('table').getByText('pat@corp.test')).toBeVisible();
   await expect(page.getByRole('table').getByText('Staff')).toBeVisible();
@@ -109,7 +109,7 @@ test('an invitation goes out with its groups, and its link is offered for when m
 
 test("a site's rules are saved whole and in order", async ({ page, api }) => {
   api.on('PUT', `/api/admin/plugins/users/sites/${SITE.id}/rules`, {});
-  await page.goto('/plugins/users/access');
+  await page.goto('/apps/users/access');
 
   await expect(page.getByText('intranet.corp.test')).toBeVisible();
   // A site's address opens the site, in a new tab so the rules being edited stay put.
@@ -132,7 +132,7 @@ test("a site's rules are saved whole and in order", async ({ page, api }) => {
 
 test("a provider's stored secret is kept unless a new one is typed", async ({ page, api }) => {
   api.on('PUT', '/api/admin/plugins/users/providers/entra', ENTRA);
-  await page.goto('/plugins/users/sign-in');
+  await page.goto('/apps/users/sign-in');
   await expect(page.getByRole('link', { name: 'intranet.corp.test' })).toHaveAttribute('href', 'https://intranet.corp.test');
 
   await expect(page.getByText('https://auth.test/realm/sso/1/callback')).toBeVisible();
@@ -154,7 +154,7 @@ test("a single-page app's rules point at its data's API access and at an /assets
     .on('GET', '/api/admin/plugins/users/groups', [STAFF, ADMINS])
     .on('PUT', `/api/admin/plugins/users/api-access/${LIBRARY.instanceId}`, {})
     .on('PUT', `/api/admin/plugins/users/sites/${APP.id}/rules`, {});
-  await page.goto('/plugins/users/access');
+  await page.goto('/apps/users/access');
 
   await expect(page.getByText(/single-page app/)).toBeVisible();
   await page.getByRole('button', { name: 'Require sign-in for its API' }).click();
@@ -180,7 +180,7 @@ test("an instance's API access is set, and a permission level names the permissi
       current = { ...LIBRARY, access: 'permission' };
       return {};
     });
-  await page.goto('/plugins/users/access');
+  await page.goto('/apps/users/access');
   await page.getByRole('tab', { name: 'API access' }).click();
 
   await expect(page.getByText('/api/audio-library-1')).toBeVisible();
@@ -193,7 +193,7 @@ test("an instance's API access is set, and a permission level names the permissi
 
 test('a role is saved with whether it bypasses row-level access', async ({ page, api }) => {
   api.on('POST', '/api/admin/plugins/users/roles', { id: 'ffffffff-0000-0000-0000-000000000001' });
-  await page.goto('/plugins/users/access');
+  await page.goto('/apps/users/access');
   await page.getByRole('tab', { name: 'Roles' }).click();
 
   await page.getByRole('button', { name: 'New role' }).click();

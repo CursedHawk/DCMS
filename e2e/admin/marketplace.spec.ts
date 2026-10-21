@@ -45,13 +45,6 @@ test('states the permissions a plugin will request before it is added', async ({
   ).toBeVisible();
 });
 
-test('says whether it will appear in the menu', async ({ page }) => {
-  await page.goto('/marketplace');
-  await card(page, 'Forms').click();
-
-  await expect(page.getByRole('dialog').getByText('Adds an entry to your sidebar')).toBeVisible();
-});
-
 test('filters down to nothing honestly', async ({ page }) => {
   await page.goto('/marketplace');
 
@@ -85,7 +78,7 @@ test('adds a plugin where it was chosen, and lands on the new instance', async (
   await add.getByRole('button', { name: 'Install' }).click();
 
   await expect.poll(() => api.requestsTo('POST', '/api/admin/plugins/instances').length).toBe(1);
-  await expect(page).toHaveURL(/\/plugins\/blog$/);
+  await expect(page).toHaveURL(/\/apps\/blog/);
 });
 
 test('an old /plugins?add= link still opens the add dialog', async ({ page }) => {

@@ -85,3 +85,14 @@ held to the same coverage rules as a built-in one.
   the console says so where they would be.
 - `@dcms/plugin-ui` is not yet published as an npm package; outside this repository it is consumed
   from source until CI publishes it beside the NuGet packages.
+
+## Amendment (2026-10-21): every instance is an app (#337)
+
+Where screens live and how they reach the menu changed; what a screen is and how it is loaded did
+not. Every enabled instance is an app at `/apps/{slug}`, one entry in the menu with its work
+screens under it; a plugin-wide screen is shown in each of the plugin's apps rather than at
+`/app/{pluginId}/{id}`, and an instance screen is a page of the app rather than a tab of
+`/plugins/{slug}`. Screens declare a `Section` (`Work` or `Admin`) instead of a `Nav` placement,
+and every plugin provides a `settings` screen. Every role sees the same app, listing only what it
+may open, so the separate screen-alone page for members without `plugins:manage` is gone. The old
+addresses redirect. See docs/plugins.md, "Apps, admin screens and menu entries".

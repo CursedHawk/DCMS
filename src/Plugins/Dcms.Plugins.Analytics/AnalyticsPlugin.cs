@@ -42,8 +42,9 @@ public sealed class AnalyticsPlugin : IPlugin
         iconName: "TrendingUp",
         adminScreens:
         [
-            new AdminScreen("dashboard", "Analytics", Permission: "analytics:read", IconName: "TrendingUp",
-                Nav: new AdminNavPlacement("apps", 30), Titles: new Dictionary<string, string> { ["cs"] = "Analytika" },
+            AdminScreen.Settings,
+            new AdminScreen("dashboard", "Dashboard", Permission: "analytics:read", IconName: "TrendingUp",
+                Titles: new Dictionary<string, string> { ["cs"] = "Přehled" },
                 Description: "Visits, sources and campaigns across your sites."),
         ]);
 

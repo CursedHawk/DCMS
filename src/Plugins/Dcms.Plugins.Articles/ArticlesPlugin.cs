@@ -57,5 +57,6 @@ public sealed class ArticlesPlugin : IPlugin
         consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Content",
         summary: "Long-form articles with authors, tags and scheduled publishing.",
-        iconName: "Newspaper");
+        iconName: "Newspaper",
+        adminScreens: [AdminScreen.Settings]);
 }

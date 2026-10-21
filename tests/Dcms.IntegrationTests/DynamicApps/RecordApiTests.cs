@@ -199,11 +199,14 @@ public sealed class RecordApiTests(ContentFlowFixture fixture)
         await app.PublishAsync(Crm, ct);
         var reader = await app.AddMemberAsync(["plugin:dynamic-apps:data-read"], ct);
 
-        // The menu offers the app's records to the people who use them, under Apps.
+        // The menu offers the app to the people who use it, under Apps, with its records under it
+        // and not its configuration.
         var entry = (await Menu(app, reader, ct))
-            .Single(i => i.GetProperty("to").GetString() == "/plugins/crm/records");
+            .Single(i => i.GetProperty("to").GetString() == "/apps/crm");
         entry.GetProperty("group").GetString().Should().Be("apps");
-        entry.GetProperty("detail").GetString().Should().Be("CRM");
+        entry.GetProperty("label").GetString().Should().Be("CRM");
+        entry.GetProperty("children").EnumerateArray().Select(c => c.GetProperty("to").GetString())
+            .Should().Equal("/apps/crm/records");
 
         // And the screen behind it can draw: the published model without its configuration-only
         // parts — never the configuration itself.
@@ -216,7 +219,7 @@ public sealed class RecordApiTests(ContentFlowFixture fixture)
         var outsider = await app.AddMemberAsync(["content:read"], ct);
         (await app.SendAsync(HttpMethod.Get, "/_model/records", null, ct, outsider)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await Menu(app, outsider, ct)).Select(i => i.GetProperty("to").GetString())
-            .Should().NotContain("/plugins/crm/records");
+            .Should().NotContain("/apps/crm");
     }
 
     private static async Task<List<JsonElement>> Menu(AppHarness app, Guid who, CancellationToken ct)

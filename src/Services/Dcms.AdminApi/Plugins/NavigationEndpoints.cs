@@ -4,6 +4,7 @@ using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
 using Dcms.Shared.Security.Authorization;
 using Dcms.AdminApi.Tenancy;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Plugins;
@@ -47,7 +48,7 @@ public static class NavigationEndpoints
         // The installed instances and the shopfront are two different questions — "what do I
         // have" and "what could I add" — and the first one was missing from this list, so it was
         // drawn on first paint from the SPA's fallback and then vanished when this answered.
-        new("/plugins", "nav.plugins", "Plug", PlatformPermissions.PluginsManage, "extend"),
+        new("/plugins", "nav.installed", "Plug", PlatformPermissions.PluginsManage, "extend"),
         new("/marketplace", "nav.marketplace", "Store", PlatformPermissions.PluginsManage, "extend"),
 
         /*
@@ -66,31 +67,58 @@ public static class NavigationEndpoints
         new("/settings", "nav.settings", "Settings", null, "workspace"),
     ];
 
-    /// <summary>
-    /// Where a plugin's screen goes: <c>apps</c> or <c>manage</c>. A section an older SDK
-    /// offered maps to its successor — <c>build</c> was Sites/Content/Media, so <c>manage</c>;
-    /// <c>main</c> and <c>admin</c> to <c>apps</c>. A plugin must not be able to add a heading
-    /// to the menu or sit beside Dashboard, and an entry in a section the console does not draw
-    /// would silently vanish.
-    /// </summary>
-    public static string PluginGroup(string? declared) => declared switch
-    {
-        "manage" or "build" => "manage",
-        _ => "apps",
-    };
-
     public sealed record NavEntry(
         string To, string LabelKey, string Icon, string? Permission, string Group);
 
     /// <summary>
-    /// A menu entry. Platform entries name an i18n <paramref name="LabelKey"/>; plugin entries
-    /// carry their own <paramref name="Label"/> (English) and <paramref name="Labels"/> by language,
-    /// because no locale bundle of the console knows a plugin's words. <paramref name="Detail"/>
-    /// is the instance a per-instance entry belongs to — a tenant-authored name, never translated.
+    /// A menu entry. Platform entries name an i18n <paramref name="LabelKey"/>; an app carries its
+    /// instance's name as <paramref name="Label"/> (tenant-authored, never translated), the plugin's
+    /// name as <paramref name="Detail"/>, and its work screens as <paramref name="Children"/>.
     /// </summary>
-    private sealed record NavItem(
-        string To, string? LabelKey, string Icon, string Group, int Order,
-        string? Label = null, IReadOnlyDictionary<string, string>? Labels = null, string? Detail = null);
+    public sealed record NavItem(
+        string To, string? LabelKey, string Icon, string Group,
+        string? Label = null, string? Detail = null, IReadOnlyList<NavChild>? Children = null);
+
+    /// <summary>A screen of an app, under it in the menu. <paramref name="Labels"/> by language, as the plugin declares them.</summary>
+    public sealed record NavChild(string To, string Label, IReadOnlyDictionary<string, string>? Labels = null);
+
+    /// <summary>
+    /// One app per enabled instance (#337), in name order, for a member who may open any of it:
+    /// one of its screens, one of its content collections, or — holding plugins:manage — its
+    /// settings and the platform's pages of it. Under it, the work it holds: the plugin's Work
+    /// screens (plugin-wide ones too, which show the app's instance) and its content collections.
+    /// </summary>
+    public static IEnumerable<NavItem> Apps(
+        IEnumerable<(string PluginId, string Slug, string Name)> enabled,
+        Func<string, PluginManifest?> find,
+        Func<string?, bool> may)
+    {
+        foreach (var instance in enabled)
+        {
+            if (find(instance.PluginId) is not { } manifest) continue;
+            var screens = (manifest.AdminScreens ?? [])
+                .Where(s => may(PluginPermissions.Resolve(manifest.Id, s.Permission ?? PlatformPermissions.PluginsManage)))
+                .ToList();
+            var children = screens
+                .Where(s => s.Section == AdminScreenSection.Work)
+                .OrderBy(s => s.Scope == AdminScreenScope.Instance ? 0 : 1)
+                .Select(s => new NavChild($"/apps/{instance.Slug}/{s.Id}", s.Title, s.Titles))
+                .Concat(may(PlatformPermissions.ContentRead)
+                    ? manifest.ContentTypes.Select(ct => new NavChild($"/apps/{instance.Slug}/content/{ct.Name}", Humanize(ct.Name)))
+                    : [])
+                .ToList();
+            if (children.Count == 0 && screens.Count == 0 && !may(PlatformPermissions.PluginsManage)) continue;
+            yield return new NavItem($"/apps/{instance.Slug}", null, manifest.IconName ?? "Plug", "apps",
+                instance.Name, manifest.Name, children);
+        }
+    }
+
+    /// <summary><c>galleryImage</c> → "Gallery Image", as the console names a content type.</summary>
+    public static string Humanize(string name)
+    {
+        var spaced = Regex.Replace(Regex.Replace(name, "[_-]+", " "), "([a-z0-9])([A-Z])", "$1 $2").Trim();
+        return spaced.Length == 0 ? spaced : char.ToUpperInvariant(spaced[0]) + spaced[1..];
+    }
 
     public static IEndpointRouteBuilder MapNavigationEndpoints(this IEndpointRouteBuilder app)
     {
@@ -109,55 +137,22 @@ public static class NavigationEndpoints
             bool May(string? permission) =>
                 permission is null || me.IsSuperAdmin || held.Contains(permission);
 
-            // Platform entries keep their declared order (index × 10), so a plugin places itself
-            // between them with AdminNavPlacement.Order.
+            // Platform entries in their declared order; the apps after them.
             var items = Platform
-                .Select((e, index) => (Entry: e, Order: index * 10))
-                .Where(x => May(x.Entry.Permission))
-                .Select(x => new NavItem(x.Entry.To, x.Entry.LabelKey, x.Entry.Icon, x.Entry.Group, x.Order))
+                .Where(e => May(e.Permission))
+                .Select(e => new NavItem(e.To, e.LabelKey, e.Icon, e.Group))
                 .ToList();
 
-            /*
-             * Plugin screens with a menu entry, from ENABLED instances only. A disabled instance
-             * keeps its data, config and page (reachable from Plugins), but a switched-off plugin
-             * has no business in the menu.
-             *
-             * A plugin-wide screen appears once while any instance is enabled; an instance
-             * screen once per enabled instance, carrying the instance's own name — a tenant with
-             * two galleries needs "Homepage" and "Press kit", not two identical entries.
-             */
+            // Apps after the platform's entries; a disabled instance keeps its data and config
+            // (reachable from Installed) but has no business in the menu.
             var enabled = await db.PluginInstances
                 .Where(p => p.Enabled)
                 .OrderBy(p => p.Name)
                 .Select(p => new { p.PluginId, p.Slug, p.Name })
                 .ToListAsync(ct);
+            items.AddRange(Apps(enabled.Select(i => (i.PluginId, i.Slug, i.Name)), catalog.Find, May));
 
-            foreach (var group in enabled.GroupBy(i => i.PluginId))
-            {
-                if (catalog.Find(group.Key) is not { } manifest) continue;
-                foreach (var screen in manifest.AdminScreens ?? [])
-                {
-                    if (screen.Nav is not { } nav
-                        || !May(PluginPermissions.Resolve(manifest.Id, screen.Permission ?? PlatformPermissions.PluginsManage)))
-                    {
-                        continue;
-                    }
-                    var icon = screen.IconName ?? manifest.IconName ?? "Plug";
-                    if (screen.Scope == AdminScreenScope.Plugin)
-                    {
-                        items.Add(new NavItem($"/app/{manifest.Id}/{screen.Id}", null, icon, PluginGroup(nav.Group), nav.Order,
-                            screen.Title, screen.Titles));
-                        continue;
-                    }
-                    foreach (var instance in group)
-                    {
-                        items.Add(new NavItem($"/plugins/{instance.Slug}/{screen.Id}", null, icon, PluginGroup(nav.Group), nav.Order,
-                            screen.Title, screen.Titles, instance.Name));
-                    }
-                }
-            }
-
-            return Results.Ok(new { items = items.OrderBy(i => i.Order).ToList() });
+            return Results.Ok(new { items });
         }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
 
         return app;

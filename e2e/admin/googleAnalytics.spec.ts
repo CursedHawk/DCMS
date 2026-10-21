@@ -28,7 +28,7 @@ test.beforeEach(async ({ api }) => {
         screens: [
           {
             id: 'sites', title: 'Sites', titles: {}, description: null, scope: 'instance', icon: 'Globe',
-            permission: 'plugins:manage', nav: null, allowed: true,
+            permission: 'plugins:manage', section: 'admin', allowed: true,
           },
         ],
         instances: [{ id: INSTANCE.id, slug: INSTANCE.slug, name: INSTANCE.name, enabled: true }],
@@ -48,7 +48,7 @@ test.beforeEach(async ({ api }) => {
 });
 
 test('saves a Measurement ID per site and refuses a malformed one', async ({ page, api }) => {
-  await page.goto('/plugins/google/sites');
+  await page.goto('/apps/google/sites');
 
   const shop = page.getByRole('textbox', { name: 'Measurement ID: Shop' });
   const blog = page.getByRole('textbox', { name: 'Measurement ID: Blog' });

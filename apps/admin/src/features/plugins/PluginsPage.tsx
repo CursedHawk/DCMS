@@ -35,7 +35,9 @@ export function PluginsPage() {
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
       api.post(`/admin/plugins/instances/${id}/${enabled ? 'enable' : 'disable'}`),
-    onSuccess: async () => qc.invalidateQueries({ queryKey: ['plugin-instances'] }),
+    // Switched on or off, an instance enters or leaves the menu.
+    onSuccess: async () =>
+      Promise.all(['plugin-instances', 'plugin-ui', 'navigation'].map((key) => qc.invalidateQueries({ queryKey: [key] }))),
     // A 409 names the plugins this one needs, or the ones that need it.
     onError: (e) => toastApiError(e, t),
   });
@@ -104,7 +106,7 @@ export function PluginsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <Link
-                          to={'/plugins/$slug' as string}
+                          to={'/apps/$slug' as string}
                           params={{ slug: inst.slug } as never}
                           className="truncate font-medium hover:underline"
                           data-testid="plugin-instance-link"
@@ -124,7 +126,7 @@ export function PluginsPage() {
                       ) : null}
                     </div>
                     <Link
-                      to={'/plugins/$slug' as string}
+                      to={'/apps/$slug' as string}
                       params={{ slug: inst.slug } as never}
                       search={{ tab: 'settings' } as never}
                       title={t('plugins.configuration')}
@@ -152,9 +154,8 @@ export function PluginsPage() {
         <InstallPluginDialog
           manifest={adding}
           onClose={() => void navigate({ to: '/plugins' as string, replace: true })}
-          onDone={async (created) => {
-            await qc.invalidateQueries({ queryKey: ['plugin-instances'] });
-            void navigate({ to: '/plugins/$slug' as string, params: { slug: created.slug } as never });
+          onDone={(created) => {
+            void navigate({ to: '/apps/$slug' as string, params: { slug: created.slug } as never });
           }}
         />
       ) : null}

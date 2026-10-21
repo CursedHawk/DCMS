@@ -55,5 +55,6 @@ public sealed class CarouselPlugin : IPlugin
         consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Presentation",
         summary: "Rotating banners for a page hero.",
-        iconName: "GalleryHorizontalEnd");
+        iconName: "GalleryHorizontalEnd",
+        adminScreens: [AdminScreen.Settings]);
 }

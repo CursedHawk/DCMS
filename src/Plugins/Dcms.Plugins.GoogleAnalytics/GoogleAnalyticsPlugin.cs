@@ -65,9 +65,13 @@ public sealed partial class GoogleAnalyticsPlugin : IPlugin
         iconName: "ChartColumn",
         adminScreens:
         [
+            AdminScreen.Settings,
             new AdminScreen("sites", "Sites", AdminScreenScope.Instance,
                 IconName: "Globe", Titles: new Dictionary<string, string> { ["cs"] = "Weby" },
-                Description: "The Measurement ID each site sends to."),
+                Description: "The Measurement ID each site sends to.")
+            {
+                Section = AdminScreenSection.Admin,
+            },
         ]);
 
     public void MapHostEndpoints(IEndpointRouteBuilder app, PluginHost host)

@@ -16,7 +16,7 @@ const FILTERS: StatusFilter[] = ['pending', 'approved', 'rejected'];
 
 /**
  * An instance screen (manifest: "moderation", scope Instance): a tab of each guestbook's page,
- * /plugins/{slug}/moderation. The entries are a wall of notes in the guestbook's own accent, so
+ * /apps/{slug}/moderation. The entries are a wall of notes in the guestbook's own accent, so
  * reading them feels like reading the book; approving one is one click.
  */
 export function ModerationScreen({ instance }: PluginScreenProps) {

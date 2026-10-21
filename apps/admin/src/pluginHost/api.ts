@@ -10,7 +10,8 @@ export interface PluginScreenInfo {
   scope: 'plugin' | 'instance';
   icon: string | null;
   permission: string;
-  nav: { group: string; order: number } | null;
+  /** Its group in the app's sub-navigation: the app's work, or under Admin. */
+  section: 'work' | 'admin';
   /** Whether the signed-in member may open it. */
   allowed: boolean;
 }

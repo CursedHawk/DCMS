@@ -65,7 +65,8 @@ public sealed class VisitorAuthPlugin : IPlugin
             DataSetDeclaration.Of<VisitorsDataSet>("visitors", "Visitors",
                 "Accounts registered on the site, with their profiles.",
                 readPermission: ReadPermission, writePermission: ManagePermission, iconName: "Users"),
-        ]);
+        ],
+        adminScreens: [AdminScreen.Settings]);
 
     public void ConfigureServices(IServiceCollection services, PluginHost host)
     {

@@ -21,6 +21,10 @@ export interface ShellNavItem {
   exact?: boolean;
   /** A count to show beside the label — unread submissions, failing builds. */
   badge?: number;
+  /** What the entry is, beside its name: the plugin an app is. In the collapsed rail's tooltip. */
+  detail?: string;
+  /** Pages inside it — an app's screens — listed under it while it is the active entry. */
+  children?: readonly ShellNavItem[];
 }
 
 export interface ShellNavGroup {

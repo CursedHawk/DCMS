@@ -50,5 +50,6 @@ public sealed class VideoGalleryPlugin : IPlugin
         consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Media",
         summary: "Video collections with posters and captions.",
-        iconName: "Video");
+        iconName: "Video",
+        adminScreens: [AdminScreen.Settings]);
 }

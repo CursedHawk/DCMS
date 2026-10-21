@@ -13,21 +13,31 @@ export interface NavResponseItem {
   icon: string;
   group: string;
   /**
-   * A tenant-authored name — an instance called "Press kit". Present only for plugin entries,
-   * and deliberately NOT run through i18n: there is no key for a name somebody typed.
+   * An app's name: its instance's, tenant-authored ("Press kit"), and deliberately NOT run through
+   * i18n — there is no key for a name somebody typed. Null on platform entries.
    */
   label: string | null;
-  /** A plugin screen's title in other languages, by language code. */
-  labels?: Record<string, string> | null;
-  /** The instance a per-instance plugin entry belongs to (a tenant-authored name). */
+  /** The plugin an app is (Dynamic Apps), for a second line or a tooltip. */
   detail?: string | null;
+  /** An app's work screens and content collections, drawn under it while it is open. */
+  children?: NavResponseChild[] | null;
 }
 
-/** The label to draw for an entry in `language`. */
-export function navLabel(item: NavResponseItem, language: string, t: (key: string) => string): string {
+export interface NavResponseChild {
+  to: string;
+  label: string;
+  /** The screen's title in other languages, by language code. */
+  labels?: Record<string, string> | null;
+}
+
+/** The label to draw for an entry, or an app's screen, in `language`. */
+export function navLabel(
+  item: Pick<NavResponseItem, 'label' | 'to'> & { labelKey?: string | null; labels?: Record<string, string> | null },
+  language: string,
+  t: (key: string) => string,
+): string {
   const own = item.labels?.[language] ?? item.labels?.[language.split('-')[0]] ?? item.label;
-  const label = own ?? (item.labelKey ? t(item.labelKey) : item.to);
-  return item.detail ? `${label} (${item.detail})` : label;
+  return own ?? (item.labelKey ? t(item.labelKey) : item.to);
 }
 
 /**

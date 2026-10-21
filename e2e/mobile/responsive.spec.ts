@@ -77,13 +77,13 @@ test('the IDE refuses the screen instead of rendering badly on it', async ({ pag
  * still common, and a layout that fits it fits the rest.
  */
 const PAGES = [
-  '/', '/content', '/media', '/sites', '/plugins', '/plugins/press-room', '/marketplace',
+  '/', '/content', '/media', '/sites', '/plugins', '/apps/press-room/content/post', '/marketplace',
   '/marketplace/forms', '/notifications', '/settings/members', '/settings/roles',
-  '/settings/domains', '/settings/usage', '/app/forms/inbox',
+  '/settings/domains', '/settings/usage', '/apps/contact/inbox',
   '/account', '/assistant', '/jobs', '/settings/general', '/settings/ai', '/settings/audit',
-  '/settings/api', '/settings/connections', '/plugins/press-room?tab=data',
-  '/plugins/press-room?tab=settings', '/plugins/press-room?tab=integration',
-  '/plugins/press-room?tab=activity',
+  '/settings/api', '/settings/connections', '/apps/press-room/data',
+  '/apps/press-room/settings', '/apps/press-room/integration',
+  '/apps/press-room/activity',
 ];
 
 test.describe('at 360px', () => {

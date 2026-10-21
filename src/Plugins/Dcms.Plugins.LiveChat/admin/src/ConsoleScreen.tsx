@@ -32,7 +32,7 @@ const CHAT_HUB = 'chat';
 
 /**
  * The live chat console: every conversation as it happens, with takeover from the chatbot.
- * A screen of the AI Chatbot plugin (manifest screen "console"), at /app/live-chat/console.
+ * A screen of the AI Chatbot plugin (manifest screen "console"), at /apps/{slug}/console.
  * The hub is the plugin's own (content-api /hub/chat); history comes from its admin routes.
  */
 export function ConsoleScreen() {

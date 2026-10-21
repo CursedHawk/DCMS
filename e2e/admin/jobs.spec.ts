@@ -33,9 +33,9 @@ const FLOW_RUN = {
   origin: { actorKind: 'System', actorName: null, service: null, traceId: null },
   result: { written: 5 },
   links: [
-    { rel: 'run', path: '/plugins/crm/configuration?tab=automation&run=aaaaaaaa-0000-0000-0000-000000000003', name: null },
-    { rel: 'source', path: '/plugins/crm', name: 'Northwind CRM' },
-    { rel: 'config', path: '/plugins/crm/configuration?tab=automation&flow=kpi_hourly', name: 'Hourly KPIs' },
+    { rel: 'run', path: '/apps/crm/configuration?tab=automation&run=aaaaaaaa-0000-0000-0000-000000000003', name: null },
+    { rel: 'source', path: '/apps/crm', name: 'Northwind CRM' },
+    { rel: 'config', path: '/apps/crm/configuration?tab=automation&flow=kpi_hourly', name: 'Hourly KPIs' },
   ],
 };
 
@@ -117,11 +117,11 @@ test('a job’s details say where it came from and link to its configuration and
   await expect(details).toContainText('On a schedule');
   await expect(details).toContainText('2 s');
   await expect(details).toContainText('written 5');
-  await expect(details.getByRole('link', { name: 'Northwind CRM' })).toHaveAttribute('href', '/plugins/crm');
+  await expect(details.getByRole('link', { name: 'Northwind CRM' })).toHaveAttribute('href', '/apps/crm');
   await expect(details.getByRole('link', { name: 'Hourly KPIs' }))
-    .toHaveAttribute('href', '/plugins/crm/configuration?tab=automation&flow=kpi_hourly');
+    .toHaveAttribute('href', '/apps/crm/configuration?tab=automation&flow=kpi_hourly');
   await expect(details.getByRole('link', { name: 'Open' }))
-    .toHaveAttribute('href', `/plugins/crm/configuration?tab=automation&run=${FLOW_RUN.id}`);
+    .toHaveAttribute('href', `/apps/crm/configuration?tab=automation&run=${FLOW_RUN.id}`);
   // Source first, then configuration, run details: in that order whatever order they were stored in.
   await expect(details.locator('dt').first()).toHaveText('Source');
 });

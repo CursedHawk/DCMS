@@ -135,8 +135,8 @@ public sealed class FlowRunQueue(AppsDbContext db, IPluginContext context, Confi
                 // The flow's definition and this run's steps, both on the app's Automation tab.
                 Links:
                 [
-                    new TrackedJobLink("config", $"/plugins/{slug}/configuration?tab=automation&flow={Uri.EscapeDataString(flow.ApiName)}", name),
-                    new TrackedJobLink("run", $"/plugins/{slug}/configuration?tab=automation&run={runId}"),
+                    new TrackedJobLink("config", $"/apps/{slug}/configuration?tab=automation&flow={Uri.EscapeDataString(flow.ApiName)}", name),
+                    new TrackedJobLink("run", $"/apps/{slug}/configuration?tab=automation&run={runId}"),
                 ]), ct);
         }
         catch (Exception e) when (e is not OperationCanceledException)

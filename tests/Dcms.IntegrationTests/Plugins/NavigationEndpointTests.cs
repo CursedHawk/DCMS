@@ -1,6 +1,7 @@
 extern alias AdminApiApp;
 
 using AdminApiApp::Dcms.AdminApi.Plugins;
+using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Security;
 
 namespace Dcms.IntegrationTests.Plugins;
@@ -49,22 +50,57 @@ public sealed class NavigationEndpointTests
             e => known.Should().Contain(e.Group, $"'{e.To}' is in group '{e.Group}'"));
     }
 
-    [Theory]
-    [InlineData("apps", "apps")]
-    [InlineData("manage", "manage")]
-    // What SDKs before apps/manage offered: a plugin built against one keeps a menu entry.
-    [InlineData("main", "apps")]
-    [InlineData("admin", "apps")]
-    [InlineData("build", "manage")]
-    // A plugin cannot add a heading, or put itself in a platform section.
-    [InlineData("overview", "apps")]
-    [InlineData("workspace", "apps")]
-    [InlineData("anything", "apps")]
-    [InlineData(null, "apps")]
-    public void Plugins_place_themselves_in_apps_or_manage_only(string? declared, string expected)
+    private static readonly PluginManifest Crm = PluginManifest.Create("dynamic-apps", "Dynamic Apps", "", true,
+        iconName: "DatabaseZap",
+        permissions: [new PermissionDefinition("data-read", "Read records")],
+        contentTypes: [new ContentTypeDefinition("galleryImage", [], false, null)],
+        adminScreens:
+        [
+            new AdminScreen("inbox", "Inbox", AdminScreenScope.Plugin, Permission: "data-read"),
+            new AdminScreen("records", "Records", AdminScreenScope.Instance, Permission: "data-read"),
+            new AdminScreen("configuration", "Configuration", AdminScreenScope.Instance) { Section = AdminScreenSection.Admin },
+            AdminScreen.Settings,
+        ]);
+
+    private static List<NavigationEndpoints.NavItem> AppsFor(params string[] held) =>
+        NavigationEndpoints.Apps(
+            [("dynamic-apps", "crm", "CRM"), ("dynamic-apps", "hr", "HR desk"), ("gone", "old", "Uninstalled")],
+            id => id == Crm.Id ? Crm : null,
+            p => p is null || held.Contains(p)).ToList();
+
+    [Fact]
+    public void Every_enabled_instance_is_an_app_with_its_work_under_it()
     {
-        NavigationEndpoints.PluginGroup(declared).Should().Be(expected);
+        var apps = AppsFor(PlatformPermissions.PluginsManage, PlatformPermissions.ContentRead, "plugin:dynamic-apps:data-read");
+
+        // One per instance, named by the instance; an instance of a plugin no longer installed is not one.
+        apps.Select(a => (a.To, a.Label, a.Detail)).Should().Equal(
+            ("/apps/crm", "CRM", "Dynamic Apps"), ("/apps/hr", "HR desk", "Dynamic Apps"));
+        apps.Should().AllSatisfy(a => a.Group.Should().Be("apps"));
+        // Work only, instance screens first, then the collections; configuration and settings are in the app's Admin group.
+        apps[0].Children!.Select(c => (c.To, c.Label)).Should().Equal(
+            ("/apps/crm/records", "Records"), ("/apps/crm/inbox", "Inbox"), ("/apps/crm/content/galleryImage", "Gallery Image"));
     }
+
+    [Fact]
+    public void A_member_sees_only_the_apps_and_screens_they_may_open()
+    {
+        var reader = AppsFor("plugin:dynamic-apps:data-read");
+        reader.Should().HaveCount(2);
+        reader[0].Children!.Select(c => c.To).Should().Equal("/apps/crm/records", "/apps/crm/inbox");
+
+        // Nothing to open in it: no screen, no collection, not a plugin manager.
+        AppsFor().Should().BeEmpty();
+        // A plugin manager may open its settings, so it is there, with no work under it.
+        AppsFor(PlatformPermissions.PluginsManage).Should().AllSatisfy(a => a.Children.Should().BeEmpty());
+    }
+
+    [Theory]
+    [InlineData("galleryImage", "Gallery Image")]
+    [InlineData("blog_post", "Blog post")]
+    [InlineData("event", "Event")]
+    public void Content_types_are_named_as_the_console_names_them(string name, string expected) =>
+        NavigationEndpoints.Humanize(name).Should().Be(expected);
 
     [Fact]
     public void Installed_plugins_and_the_marketplace_are_both_in_the_menu()

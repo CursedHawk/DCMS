@@ -72,7 +72,8 @@ public sealed class InstagramPlugin : IPlugin
         ],
         category: "Integrations",
         summary: "Mirrors an Instagram feed into your content.",
-        iconName: "Instagram");
+        iconName: "Instagram",
+        adminScreens: [AdminScreen.Settings]);
 
 
     public void MapEndpoints(IPluginEndpointBuilder endpoints)

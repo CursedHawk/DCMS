@@ -432,39 +432,65 @@ them anywhere a permission is named — routes (`RequirePluginPermission`), data
 screens, contract operations (`[Operation(Permission = "plugin:…")]`, a full key there) — and
 in screens with `useCan("moderate")`.
 
-## Admin screens and menu entries
+## Apps, admin screens and menu entries
 
-A plugin draws its own screens in the admin console: React components, rendered inside the
-console with its theme, components, data cache, permissions and language. The manifest
-**declares** them — so the platform draws the menu and guards the route without running plugin
-code — and the plugin's admin UI module **implements** them:
+**Every enabled plugin instance is an app** in the admin console (#337): one entry under Apps in
+the menu, named by the instance, at `/apps/{slug}`. The app is one frame for every plugin — its
+name, the plugin it is and its on/off switch, then a sub-navigation:
+
+- **its work**: the plugin's `Work` screens (instance screens first, then plugin-wide ones, which
+  are shown in each of the plugin's apps and get that app's instance to start from), then one
+  page per content type the plugin declares — the same collection list Content shows;
+- **Admin**: the plugin's `settings` screen, its other `Admin` screens, and the console's own
+  pages of every app — Data (when the plugin has data sets), Integration (wiring, site routes,
+  the developer reference) and Activity.
+
+The menu lists the open app's work under it. A member sees an app when they may open any of it,
+and only the pages they may open — the people who use an app's records every day get its records,
+not its configuration. A switched-off app keeps its Admin pages and says so instead of its work.
+
+The plugin draws the screens: React components, rendered inside the console with its theme,
+components, data cache, permissions and language. The manifest **declares** them — so the
+platform draws the menu and guards the route without running plugin code — and the plugin's admin
+UI module **implements** them:
 
 ```csharp
 adminScreens:
 [
-    // One page for the tenant, /app/{pluginId}/{id}, with a menu entry.
+    // Every plugin provides its app's settings (plugins:manage, under Admin).
+    AdminScreen.Settings,
+    // Plugin-wide: one view of every guestbook, shown in each guestbook's app at /apps/{slug}/overview.
     new AdminScreen("overview", "Guestbooks", AdminScreenScope.Plugin, Permission: "read", IconName: "BookOpen",
-        Nav: new AdminNavPlacement("apps", 60), Titles: new Dictionary<string, string> { ["cs"] = "Knihy návštěv" }),
-    // A tab on each instance's page, /plugins/{slug}/{id}.
+        Titles: new Dictionary<string, string> { ["cs"] = "Knihy návštěv" }),
+    // One instance's, /apps/{slug}/moderation.
     new AdminScreen("moderation", "Moderation", AdminScreenScope.Instance, Permission: "moderate"),
+    // Configuration beyond the settings form goes under Admin.
+    // new AdminScreen("rules", "Rules", AdminScreenScope.Instance) { Section = AdminScreenSection.Admin },
 ],
 ```
 
 ```tsx
 // admin/src/index.tsx
-import { definePluginAdmin } from '@dcms/plugin-ui';
+import { definePluginAdmin, SchemaSettings } from '@dcms/plugin-ui';
 export default definePluginAdmin({
-  screens: { overview: OverviewScreen, moderation: ModerationScreen },
+  // SchemaSettings is the console's form for the config schema: name, description, AI tools and
+  // the schema's fields. A plugin with more to configure renders it inside a screen of its own.
+  screens: { settings: SchemaSettings, overview: OverviewScreen, moderation: ModerationScreen },
   configWidgets: { 'guestbook-accent': AccentWidget },   // for "format": "guestbook-accent" in schemas
   locales: { en, cs },                                    // read with usePluginT()
 });
 ```
 
-- **Menu entries appear only while an instance of the plugin is enabled**, in the section and
-  order `Nav` names — `apps` (the default: an inbox, a dashboard, an app's records) or `manage`
-  (beside Sites, Content and Media) — titled in the reader's language. A plugin cannot add a
-  section; the older `main`/`build`/`admin` still load and are placed in `apps`/`manage`. A switched-off plugin's plugin-wide screen says so and links to its page;
-  its instance screens stay reachable from that page.
+- Screen ids are kebab-case; `data`, `integration`, `activity` and `content` are the console's
+  pages and refused. `settings` must be an `Instance` screen in the `Admin` section. Every
+  built-in plugin declares it and its module provides it (`MarketplaceMetadataTests` and
+  `apps/admin/src/pluginHost/modules.test.ts` check both); an installed plugin built before this
+  gets the console's form in its place.
+- `Nav` (`AdminNavPlacement`) is no longer read — every enabled instance is in the menu with its
+  work under it. It stays so plugins built against an older SDK still load.
+- The old addresses redirect: `/plugins/{slug}?tab=…` and `/plugins/{slug}/{screen}` to the app,
+  `/app/{pluginId}/{screen}` to the first enabled instance's app. `/plugins` itself is
+  **Installed**: what is added to the workspace, switched on or off.
 - A screen renders behind the permission its manifest names (default `plugins:manage`) and in its
   own error boundary; a plugin that throws does not take the console down.
 - Everything a screen needs from the console comes through `@dcms/plugin-ui`, never console
@@ -472,13 +498,14 @@ export default definePluginAdmin({
   the instance's own admin routes, `useCan(permission)`, `usePluginT()` (the plugin's
   `locales`, falling back to the console's words), `usePluginScreen()` (plugin, instance,
   instances), `usePluginHost()` (auth headers and the content API base for a hub,
-  `navigate`, and `components.DataSet` to embed one of its data sets). Use `@dcms/ui` for
+  `navigate`, `components.DataSet` to embed one of its data sets, `components.SchemaSettings` for
+  the settings form). Use `@dcms/ui` for
   components and `toast`.
 - **Built-in plugins** keep their UI beside their C#: `src/Plugins/{Assembly}/admin`, a pnpm
   package whose `src/index.tsx` is the module. The console compiles every such folder in,
-  lazily, by folder name — adding a plugin with a UI is adding the folder. Forms (inbox),
-  AI Chatbot (chat console), Analytics (dashboard) and Instagram/Facebook (the Meta account
-  widget) are the examples.
+  lazily, by folder name — adding a plugin is adding the folder, since every plugin provides at
+  least its settings. Forms (inbox), AI Chatbot (chat console), Analytics (dashboard) and
+  Instagram/Facebook (the Meta account widget) are the examples; Blog's is the settings alone.
 - **Installed plugins** ship `admin/index.js` (and optionally `admin/index.css`) in their folder,
   built with the SDK's preset, which leaves React, `@dcms/ui`, react-query, i18n and
   `@dcms/plugin-ui` to the console's copies:

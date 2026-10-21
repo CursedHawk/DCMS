@@ -76,7 +76,6 @@ public static class MarketplaceEndpoints
                             .DistinctBy(d => d.pluginId),
                         provides = (m.Provides ?? []).Select(p => ContractIds.Of(p.Contract)),
                         consumes = (m.Consumes ?? []).Select(c => new { c.ContractId, c.Optional }),
-                        addsNavEntry = (m.AdminScreens ?? []).Any(screen => screen.Nav is not null),
                         screens = (m.AdminScreens ?? []).Select(screen => new { screen.Id, screen.Title }),
                         instanceCount = counts?.total ?? 0,
                         enabledCount = counts?.enabled ?? 0,

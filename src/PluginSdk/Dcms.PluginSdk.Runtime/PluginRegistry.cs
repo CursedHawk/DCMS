@@ -305,13 +305,17 @@ public sealed class PluginRegistry : IPluginCatalog
                 throw new InvalidOperationException(
                     $"Plugin '{manifest.Id}' admin screen id '{screen.Id}' must be unique kebab-case.");
             }
-            // apps and manage are the sections a plugin may use. main/build/admin are what SDKs
-            // before them offered; a plugin built against one still loads, and the menu places
-            // it (NavigationEndpoints.PluginGroup). Anything else is a typo worth failing on.
-            if (screen.Nav is { } nav && nav.Group is not ("apps" or "manage" or "main" or "build" or "admin"))
+            if (AdminScreen.Reserved.Contains(screen.Id))
             {
                 throw new InvalidOperationException(
-                    $"Plugin '{manifest.Id}' admin screen '{screen.Id}' goes in menu section '{nav.Group}'; use apps or manage.");
+                    $"Plugin '{manifest.Id}' admin screen id '{screen.Id}' is the console's own page of every app.");
+            }
+            // An instance's settings: one per instance, and with the app's other configuration.
+            if (screen.Id == AdminScreen.SettingsId
+                && (screen.Scope != AdminScreenScope.Instance || screen.Section != AdminScreenSection.Admin))
+            {
+                throw new InvalidOperationException(
+                    $"Plugin '{manifest.Id}' screen '{AdminScreen.SettingsId}' must be an Instance screen in the Admin section.");
             }
             if (string.IsNullOrWhiteSpace(screen.Title))
             {

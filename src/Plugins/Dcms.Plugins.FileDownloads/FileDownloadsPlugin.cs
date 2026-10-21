@@ -51,5 +51,6 @@ public sealed class FileDownloadsPlugin : IPlugin
         consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Media",
         summary: "Downloadable files with counts and access rules.",
-        iconName: "Download");
+        iconName: "Download",
+        adminScreens: [AdminScreen.Settings]);
 }

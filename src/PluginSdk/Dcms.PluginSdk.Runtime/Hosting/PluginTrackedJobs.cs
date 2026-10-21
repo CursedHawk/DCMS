@@ -124,7 +124,7 @@ public sealed partial class PluginTrackedJobs(IPluginContext caller, PluginRegis
         }).ToList();
         if (caller.Instance is { } instance && links.All(l => l.Rel != JobLinkRels.Source))
         {
-            links.Insert(0, new JobLink(JobLinkRels.Source, $"/plugins/{instance.Slug}", instance.Name));
+            links.Insert(0, new JobLink(JobLinkRels.Source, $"/apps/{instance.Slug}", instance.Name));
         }
         return links;
     }

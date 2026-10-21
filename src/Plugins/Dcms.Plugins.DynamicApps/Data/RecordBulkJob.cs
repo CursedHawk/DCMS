@@ -50,7 +50,7 @@ public sealed class RecordBulkJob(RecordService records) : IPluginJobHandler
             TitleKey: $"jobs.kinds.records.{op.Replace("-", "")}.title",
             TitleParams: new Dictionary<string, string> { ["table"] = table, ["count"] = count.ToString() },
             RequiredPermission: permission,
-            Links: [new TrackedJobLink("result", $"/plugins/{context.Instance?.Slug}/records?table={Uri.EscapeDataString(table)}", table)]), ct);
+            Links: [new TrackedJobLink("result", $"/apps/{context.Instance?.Slug}/records?table={Uri.EscapeDataString(table)}", table)]), ct);
     }
 
     public async Task RunAsync(JsonElement? payload, IPluginContext context, CancellationToken ct)

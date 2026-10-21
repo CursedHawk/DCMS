@@ -51,5 +51,6 @@ public sealed class VideoStreamingPlugin : IPlugin
         consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Media",
         summary: "HLS streaming for long-form video.",
-        iconName: "MonitorPlay");
+        iconName: "MonitorPlay",
+        adminScreens: [AdminScreen.Settings]);
 }

@@ -24,8 +24,8 @@ export const PLUGIN_UI = [
     module: { kind: 'builtin', key: 'Dcms.Plugins.Forms' },
     screens: [
       {
-        id: 'inbox', title: 'Forms', titles: { cs: 'Formuláře' }, description: null, scope: 'plugin',
-        icon: 'Inbox', permission: 'content:read', nav: { group: 'apps', order: 20 }, allowed: true,
+        id: 'inbox', title: 'Inbox', titles: { cs: 'Doručené' }, description: null, scope: 'plugin',
+        icon: 'Inbox', permission: 'content:read', section: 'work', allowed: true,
       },
     ],
     instances: [{ id: 'cccccccc-0000-0000-0000-0000000000f1', slug: 'contact', name: 'Contact', enabled: true }],
@@ -35,12 +35,24 @@ export const PLUGIN_UI = [
     module: { kind: 'builtin', key: 'Dcms.Plugins.LiveChat' },
     screens: [
       {
-        id: 'console', title: 'Chat', titles: null, description: null, scope: 'plugin',
-        icon: 'MessagesSquare', permission: 'chat:read', nav: { group: 'apps', order: 40 }, allowed: true,
+        id: 'console', title: 'Conversations', titles: null, description: null, scope: 'plugin',
+        icon: 'MessagesSquare', permission: 'chat:read', section: 'work', allowed: true,
       },
     ],
-    // Installed, but switched off: its screen says so instead of rendering.
+    // Installed, but switched off: its app says so instead of rendering the screen.
     instances: [{ id: 'cccccccc-0000-0000-0000-0000000000f2', slug: 'chatbot', name: 'Chatbot', enabled: false }],
+  },
+  {
+    pluginId: 'dcms.blog', name: 'Blog', icon: 'Newspaper', source: 'builtin',
+    module: { kind: 'builtin', key: 'Dcms.Plugins.Blog' },
+    // What every plugin declares: its settings, provided by its module (#337).
+    screens: [
+      {
+        id: 'settings', title: 'Settings', titles: { cs: 'Nastavení' }, description: null, scope: 'instance',
+        icon: 'Settings', permission: 'plugins:manage', section: 'admin', allowed: true,
+      },
+    ],
+    instances: [{ id: 'cccccccc-0000-0000-0000-000000000001', slug: 'press-room', name: 'Press room', enabled: true }],
   },
 ];
 
@@ -77,17 +89,23 @@ export const NAVIGATION = {
     { to: '/sites', labelKey: 'nav.sites', icon: 'PanelsTopLeft', group: 'manage', label: null },
     { to: '/content', labelKey: 'nav.content', icon: 'FileText', group: 'manage', label: null },
     { to: '/media', labelKey: 'nav.media', icon: 'Image', group: 'manage', label: null },
-    // One plugin instance's own entry. `label` is the tenant's name for it and is deliberately
-    // not an i18n key — this is the case the hard-coded nav array could not express, so it is
-    // the case the shell spec asserts on.
+    // Every enabled instance is an app (#337). `label` is the tenant's name for it and is
+    // deliberately not an i18n key — the case the hard-coded nav array could not express, so it
+    // is the case the shell spec asserts on. Under it, its work: its content collections and the
+    // plugin's own screens, in their own titles, translated by the plugin.
     {
-      to: '/content?instance=cccccccc-0000-0000-0000-000000000001',
-      labelKey: 'nav.content', icon: 'Newspaper', group: 'manage', label: 'Press room',
+      to: '/apps/press-room', labelKey: null, icon: 'Newspaper', group: 'apps', label: 'Press room', detail: 'Blog',
+      children: [{ to: '/apps/press-room/content/post', label: 'Post' }],
     },
-    // Plugins' own screens (ADR 0019): their own titles, translated by the plugin, no i18n key.
-    { to: '/app/forms/inbox', labelKey: null, icon: 'Inbox', group: 'apps', label: 'Forms', labels: { cs: 'Formuláře' } },
-    { to: '/app/analytics/dashboard', labelKey: null, icon: 'TrendingUp', group: 'apps', label: 'Analytics', labels: { cs: 'Analytika' } },
-    { to: '/plugins', labelKey: 'nav.plugins', icon: 'Plug', group: 'extend', label: null },
+    {
+      to: '/apps/contact', labelKey: null, icon: 'Inbox', group: 'apps', label: 'Contact', detail: 'Forms',
+      children: [{ to: '/apps/contact/inbox', label: 'Inbox', labels: { cs: 'Doručené' } }],
+    },
+    {
+      to: '/apps/analytics', labelKey: null, icon: 'TrendingUp', group: 'apps', label: 'Analytics', detail: 'Analytics',
+      children: [{ to: '/apps/analytics/dashboard', label: 'Dashboard', labels: { cs: 'Přehled' } }],
+    },
+    { to: '/plugins', labelKey: 'nav.installed', icon: 'Plug', group: 'extend', label: null },
     { to: '/marketplace', labelKey: 'nav.marketplace', icon: 'Store', group: 'extend', label: null },
     // One Settings entry over seven sections; the SPA draws that sub-navigation itself.
     { to: '/settings', labelKey: 'nav.settings', icon: 'Settings', group: 'workspace', label: null },
@@ -215,7 +233,7 @@ export const MARKETPLACE = {
       description: 'A blog with drafts, scheduled publishing and a tag vocabulary.',
       category: 'Content', tags: ['content', 'writing'], icon: 'Newspaper', allowMultiple: true,
       permissions: [{ key: 'content:write', displayName: 'Write content' }],
-      contentTypes: ['post'], dependencies: [], addsNavEntry: true,
+      contentTypes: ['post'], dependencies: [],
       instanceCount: 1, enabledCount: 1, installed: true, source: 'builtin',
     },
     {
@@ -226,7 +244,7 @@ export const MARKETPLACE = {
         { key: 'forms:read', displayName: 'Read submissions' },
         { key: 'forms:manage', displayName: 'Manage forms' },
       ],
-      contentTypes: [], dependencies: [], addsNavEntry: true,
+      contentTypes: [], dependencies: [],
       instanceCount: 0, enabledCount: 0, installed: false, source: 'builtin',
     },
   ],

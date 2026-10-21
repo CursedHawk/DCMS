@@ -30,7 +30,7 @@ public sealed class PluginScreensTests(ContentFlowFixture fixture)
             (await Json(admin, Req(HttpMethod.Get, "/api/admin/navigation", owner, tenant), ct))
             .GetProperty("items").EnumerateArray().Select(i => i.GetProperty("to").GetString()!).ToList();
 
-        (await Menu()).Should().NotContain("/app/forms/inbox", "no Forms instance yet");
+        (await Menu()).Should().NotContain("/apps/contact", "no Forms instance yet");
 
         var created = await admin.SendAsync(Req(HttpMethod.Post, "/api/admin/plugins/instances", owner, tenant,
             body: new { pluginId = "forms", slug = "contact", name = "Contact", description = "Contact form", config = "{}" }), ct);
@@ -38,16 +38,19 @@ public sealed class PluginScreensTests(ContentFlowFixture fixture)
         var id = (await created.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("id").GetGuid();
 
         var menu = await Menu();
-        menu.Should().Contain("/app/forms/inbox");
-        (await Json(admin, Req(HttpMethod.Get, "/api/admin/navigation", owner, tenant), ct))
+        menu.Should().Contain("/apps/contact");
+        var app = (await Json(admin, Req(HttpMethod.Get, "/api/admin/navigation", owner, tenant), ct))
             .GetProperty("items").EnumerateArray()
-            .Single(i => i.GetProperty("to").GetString() == "/app/forms/inbox")
-            .GetProperty("group").GetString().Should().Be("apps", "a plugin's screens sit under Apps, not beside Dashboard");
+            .Single(i => i.GetProperty("to").GetString() == "/apps/contact");
+        app.GetProperty("group").GetString().Should().Be("apps", "an instance is an app, under Apps, not beside Dashboard");
+        // Its work under it — the plugin-wide inbox too — and not its settings.
+        app.GetProperty("children").EnumerateArray().Select(c => c.GetProperty("to").GetString())
+            .Should().Equal("/apps/contact/inbox");
         menu.Should().NotContain("/forms", "the inbox is the plugin's screen now, not a platform section");
 
         (await admin.SendAsync(Req(HttpMethod.Post, $"/api/admin/plugins/instances/{id}/disable", owner, tenant), ct))
             .StatusCode.Should().Be(HttpStatusCode.NoContent);
-        (await Menu()).Should().NotContain("/app/forms/inbox", "a switched-off plugin has no menu entries");
+        (await Menu()).Should().NotContain("/apps/contact", "a switched-off plugin has no menu entries");
 
         var ui = await Json(admin, Req(HttpMethod.Get, "/api/admin/plugin-ui", owner, tenant), ct);
         var forms = ui.EnumerateArray().Single(p => p.GetProperty("pluginId").GetString() == "forms");

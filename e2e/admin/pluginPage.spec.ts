@@ -1,22 +1,28 @@
 import { test, expect } from '../fixtures/test';
 
 /**
- * A plugin instance's own page (docs/adr/0018): reached from the plugin list, and able to show
- * and edit any data set the plugin describes without the console knowing the plugin.
+ * A plugin instance as an app (docs/adr/0018, #337): reached from the list of what is installed,
+ * and able to show and edit any data set the plugin describes without the console knowing the
+ * plugin.
  */
 
-test('opens from the plugin list', async ({ page }) => {
+test('opens from the list of installed plugins, on its work', async ({ page }) => {
   await page.goto('/plugins');
   await page.getByTestId('plugin-instance-link').filter({ hasText: 'Press room' }).click();
 
-  await expect(page).toHaveURL(/\/plugins\/press-room/);
+  // A blog's work is its posts: the collection Content shows, inside the app.
+  await expect(page).toHaveURL(/\/apps\/press-room\/content\/post$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Press room' })).toBeVisible();
-  // The overview lists the data sets the plugin keeps, with a way into each.
-  await expect(page.getByText('Subscribers')).toBeVisible();
+  await expect(page.getByRole('table').getByText('Hello, world')).toBeVisible();
+  // Under Admin, its settings and the platform's pages of it.
+  const app = page.getByRole('navigation', { name: 'Press room' });
+  for (const name of ['Settings', 'Data', 'Integration', 'Activity']) {
+    await expect(app.getByRole('link', { name })).toBeVisible();
+  }
 });
 
 test('browses, searches and edits a data set the plugin describes', async ({ page, api }) => {
-  await page.goto('/plugins/press-room?tab=data');
+  await page.goto('/apps/press-room/data');
 
   const table = page.getByRole('table');
   await expect(table.getByText('ada@example.test')).toBeVisible();
@@ -39,7 +45,7 @@ test('browses, searches and edits a data set the plugin describes', async ({ pag
 });
 
 test('runs an action on the selected rows', async ({ page, api }) => {
-  await page.goto('/plugins/press-room?tab=data');
+  await page.goto('/apps/press-room/data');
 
   await page.getByRole('table').getByRole('checkbox', { name: 'Select all' }).check();
   await page.getByRole('button', { name: 'Confirm (2)' }).click();
@@ -50,7 +56,7 @@ test('runs an action on the selected rows', async ({ page, api }) => {
 });
 
 test('a view filters a data set on the columns the plugin declares filterable, and hides columns', async ({ page, api }) => {
-  await page.goto('/plugins/press-room?tab=data');
+  await page.goto('/apps/press-room/data');
   const table = page.getByRole('table');
   await expect(table.getByText('ada@example.test')).toBeVisible();
 

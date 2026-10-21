@@ -56,7 +56,7 @@ public static class PluginUiEndpoints
                         scope = screen.Scope == AdminScreenScope.Instance ? "instance" : "plugin",
                         icon = screen.IconName ?? manifest.IconName,
                         permission,
-                        nav = screen.Nav is { } nav ? new { group = nav.Group, order = nav.Order } : null,
+                        section = screen.Section == AdminScreenSection.Admin ? "admin" : "work",
                         allowed = authz is not null
                                   && (await authz.AuthorizeAsync(http.User, null, PermissionPolicyProvider.PolicyName(permission))).Succeeded,
                     });

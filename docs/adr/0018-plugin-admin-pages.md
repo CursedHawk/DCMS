@@ -69,3 +69,9 @@ everywhere, mark verified, delete), Forms **submissions**, AI Chatbot **conversa
 - The data of a disabled instance is not browsable (the instance resolver only serves enabled
   instances); enabling it again shows everything.
 - `PluginConfigValidator` moved into the SDK runtime, which validates data-set values with it.
+
+## Amendment (2026-10-21): the instance page is an app (#337)
+
+The instance page's tabs became the Admin group of the instance's app (`/apps/{slug}`): Settings
+is the plugin's own screen, Data, Integration and Activity are the console's pages, and the
+overview's wiring and facts moved into Integration. `/plugins/{slug}?tab=…` redirects there.

@@ -24,7 +24,6 @@ export interface MarketplaceItem {
   provides?: string[];
   /** Contracts this plugin uses; platform ones (`dcms.*`) are always available. */
   consumes?: { contractId: string; optional: boolean }[];
-  addsNavEntry: boolean;
   instanceCount: number;
   enabledCount: number;
   installed: boolean;

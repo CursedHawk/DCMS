@@ -69,9 +69,9 @@ test.beforeEach(async ({ api }) => {
         module: { kind: 'builtin', key: 'Dcms.Plugins.DynamicApps' },
         screens: [
           { id: 'configuration', title: 'Configuration', titles: { cs: 'Konfigurace' }, description: null, scope: 'instance',
-            icon: 'Blocks', permission: 'plugin:dynamic-apps:model-read', nav: null, allowed: true },
+            icon: 'Blocks', permission: 'plugin:dynamic-apps:model-read', section: 'admin', allowed: true },
           { id: 'records', title: 'Records', titles: { cs: 'Záznamy' }, description: null, scope: 'instance',
-            icon: 'Table', permission: 'plugin:dynamic-apps:data-read', nav: { group: 'apps', order: 10 }, allowed: true },
+            icon: 'Table', permission: 'plugin:dynamic-apps:data-read', section: 'work', allowed: true },
         ],
         instances: [{ id: INSTANCE.id, slug: 'crm', name: 'CRM', enabled: true }],
       },
@@ -103,9 +103,9 @@ test.beforeEach(async ({ api }) => {
 
 test('a field is added to the draft as a change set naming the hash it was made against', async ({ page, api }) => {
   api.on('POST', '/api/admin/plugins/crm/_model/draft/changes', { draft: DRAFT, changes: [], issues: [] });
-  await page.goto('/plugins/crm/configuration');
+  await page.goto('/apps/crm/configuration');
 
-  await expect(page.getByRole('tab', { name: 'Configuration', selected: true })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'CRM' }).getByRole('link', { name: 'Configuration' })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByText('Draft r2')).toBeVisible();
   await expect(page.getByRole('table').getByText('Amount', { exact: true })).toBeVisible();
 
@@ -126,7 +126,7 @@ test('a field is added to the draft as a change set naming the hash it was made 
 test('a stale draft is reported and reloaded rather than overwritten', async ({ page, api }) => {
   api.on('POST', '/api/admin/plugins/crm/_model/draft/changes', ({ route }: { route: import('@playwright/test').Route }) =>
     route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: 'changed' }) }).then(() => undefined));
-  await page.goto('/plugins/crm/configuration');
+  await page.goto('/apps/crm/configuration');
   const loads = api.requestsTo('GET', '/api/admin/plugins/crm/_model').length;
 
   await page.getByRole('button', { name: 'Add field' }).click();
@@ -138,7 +138,7 @@ test('a stale draft is reported and reloaded rather than overwritten', async ({ 
 });
 
 test('publishing goes through a review that flags destructive changes', async ({ page, api }) => {
-  await page.goto('/plugins/crm/configuration');
+  await page.goto('/apps/crm/configuration');
 
   await page.getByRole('button', { name: 'Review & publish' }).click();
   const review = page.getByRole('dialog');
@@ -156,7 +156,7 @@ test('a record is edited with the version it was read at', async ({ page, api })
   api
     .on('POST', '/api/admin/plugins/crm/_records/deals/query', { items: [record], total: 1, page: 1, pageSize: 25 })
     .on('PATCH', '/api/admin/plugins/crm/_records/deals/:id', { ...record, version: 4, title: 'Bigger one' });
-  await page.goto('/plugins/crm/records');
+  await page.goto('/apps/crm/records');
 
   await page.getByRole('table').getByText('Big one').click();
   await page.getByRole('dialog').getByLabel('Title').fill('Bigger one');
@@ -167,7 +167,7 @@ test('a record is edited with the version it was read at', async ({ page, api })
 });
 
 test('Ask AI opens the assistant on this app, and the conversation can move to the full page', async ({ page }) => {
-  await page.goto('/plugins/crm/configuration');
+  await page.goto('/apps/crm/configuration');
 
   await page.getByRole('button', { name: 'Ask AI' }).click();
   const dock = page.getByRole('dialog', { name: 'Assistant' });
@@ -192,7 +192,7 @@ test('Ask AI on an app whose AI tools are off offers to turn them on first', asy
     .on('GET', '/api/admin/plugins/instances', [...data.PLUGIN_INSTANCES, { ...INSTANCE, aiToolsEnabled: false }])
     .on('PUT', `/api/admin/plugins/instances/${INSTANCE.id}`, ({ route }: { route: import('@playwright/test').Route }) =>
       route.fulfill({ status: 204 }).then(() => undefined));
-  await page.goto('/plugins/crm/configuration');
+  await page.goto('/apps/crm/configuration');
 
   await page.getByRole('button', { name: 'Ask AI' }).click();
   const offer = page.getByRole('dialog', { name: 'Let the assistant work on this app?' });
@@ -214,7 +214,7 @@ test('a publish the server refuses says why', async ({ page, api }) => {
           message: '1 existing record(s) have no value for it. Give it a default, fill it in first, or leave it optional.' }],
       }),
     }).then(() => undefined));
-  await page.goto('/plugins/crm/configuration');
+  await page.goto('/apps/crm/configuration');
 
   await page.getByRole('button', { name: 'Review & publish' }).click();
   const review = page.getByRole('dialog');
@@ -236,7 +236,7 @@ test("a record's choice is changed right in the list, and the list is filtered b
   api
     .on('POST', '/api/admin/plugins/crm/_records/deals/query', { items: [record], total: 1, page: 1, pageSize: 25 })
     .on('PATCH', '/api/admin/plugins/crm/_records/deals/:id', { ...record, version: 6, stage: 'won' });
-  await page.goto('/plugins/crm/records');
+  await page.goto('/apps/crm/records');
 
   const table = page.getByRole('table');
   await table.getByRole('combobox', { name: 'Change Stage' }).click();
@@ -257,7 +257,7 @@ test('a row access rule is saved as part of the table public access', async ({ p
   api
     .on('GET', '/api/admin/plugins/crm/_model/public', { revision: 1, tables: [] })
     .on('POST', '/api/admin/plugins/crm/_model/draft/changes', { draft: DRAFT, changes: [], issues: [] });
-  await page.goto('/plugins/crm/configuration');
+  await page.goto('/apps/crm/configuration');
   await page.getByRole('tab', { name: 'Public access & API' }).click();
 
   await page.getByRole('button', { name: 'Add rule' }).click();
@@ -284,7 +284,7 @@ test('a CSV file is checked, then imported into the table', async ({ page, api }
       query.get('dryRun') === 'true'
         ? { rows: 2, created: 0, dryRun: true, errors: [], errorCount: 0 }
         : { rows: 2, created: 2, dryRun: false, errors: [], errorCount: 0 });
-  await page.goto('/plugins/crm/records');
+  await page.goto('/apps/crm/records');
 
   await page.getByRole('button', { name: 'Import CSV' }).click();
   await page.getByLabel('CSV file').setInputFiles({ name: 'deals.csv', mimeType: 'text/csv', buffer: Buffer.from('title,amount\nBig one,100\nSmall one,5\n') });
@@ -309,20 +309,39 @@ test.describe('a member who may read the app\'s records and nothing else', () =>
       .on('GET', '/api/admin/navigation', {
         items: [
           { to: '/', labelKey: 'nav.dashboard', icon: 'LayoutDashboard', group: 'overview', label: null },
-          { to: '/plugins/crm/records', labelKey: null, icon: 'Table', group: 'apps', label: 'Records', detail: 'CRM' },
+          {
+            to: '/apps/crm', labelKey: null, icon: 'DatabaseZap', group: 'apps', label: 'CRM', detail: 'Dynamic Apps',
+            children: [{ to: '/apps/crm/records', label: 'Records' }],
+          },
           { to: '/settings', labelKey: 'nav.settings', icon: 'Settings', group: 'workspace', label: null },
         ],
       })
+      // What the server says this member may open: the records, not the configuration.
+      .on('GET', '/api/admin/plugin-ui', [
+        {
+          pluginId: 'dynamic-apps', name: 'Dynamic Apps', icon: 'DatabaseZap', source: 'builtin',
+          module: { kind: 'builtin', key: 'Dcms.Plugins.DynamicApps' },
+          screens: [
+            { id: 'configuration', title: 'Configuration', titles: null, description: null, scope: 'instance',
+              icon: 'Blocks', permission: 'plugin:dynamic-apps:model-read', section: 'admin', allowed: false },
+            { id: 'records', title: 'Records', titles: null, description: null, scope: 'instance',
+              icon: 'Table', permission: 'plugin:dynamic-apps:data-read', section: 'work', allowed: true },
+          ],
+          instances: [{ id: INSTANCE.id, slug: 'crm', name: 'CRM', enabled: true }],
+        },
+      ])
       .on('POST', '/api/admin/plugins/crm/_records/deals/query', { items: [record], total: 1, page: 1, pageSize: 25 });
     await page.goto('/');
 
-    await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Records (CRM)' }).click();
+    await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'CRM' }).click();
 
-    await expect(page).toHaveURL(/\/plugins\/crm\/records$/);
-    await expect(page.getByRole('heading', { name: 'Records', level: 1 })).toBeVisible();
+    await expect(page).toHaveURL(/\/apps\/crm\/records$/);
+    await expect(page.getByRole('heading', { name: 'CRM', level: 1 })).toBeVisible();
     await expect(page.getByRole('table').getByText('Small one')).toBeVisible();
-    // Not the instance page: its tabs are plugin management, which this member does not hold.
-    await expect(page.getByRole('tab', { name: 'Configuration' })).toHaveCount(0);
+    // The same app as anyone's, with only what this member may open: no Admin group at all.
+    const app = page.getByRole('navigation', { name: 'CRM' });
+    await expect(app.getByRole('link')).toHaveText(['Records']);
+    await expect(page.getByRole('switch', { name: 'Plugin enabled' })).toHaveCount(0);
     expect(api.requestsTo('GET', '/api/admin/plugins/crm/_model/published')).toHaveLength(0);
   });
 });
@@ -337,7 +356,7 @@ test("the maker's default view opens the table, and a member filters and saves a
       total: 1, page: 1, pageSize: 25,
     })
     .on('POST', '/api/admin/views', ({ body }) => ({ id: 'v9', mine: true, ...(body as object) }));
-  await page.goto('/plugins/crm/records');
+  await page.goto('/apps/crm/records');
 
   // Built in, read-only here, and the table opens with it: its columns and its order.
   await expect(page.getByRole('button', { name: 'View: Big deals' })).toBeVisible();
@@ -380,7 +399,7 @@ test("a job's run link opens the configuration on that run's steps", async ({ pa
     triggerEvent: null,
     chain: [],
   });
-  await page.goto(`/plugins/crm/configuration?tab=automation&run=${RUN}`);
+  await page.goto(`/apps/crm/configuration?tab=automation&run=${RUN}`);
 
   await expect(page.getByRole('dialog')).toContainText('kpi_hourly');
   await expect(page.getByRole('dialog')).toContainText('count');
@@ -410,7 +429,7 @@ test.describe('the flow editor', () => {
     api
       .on('POST', '/api/admin/plugins/crm/_automation/check', { problems: [] })
       .on('POST', '/api/admin/plugins/crm/_model/draft/changes', { draft: DRAFT, changes: [], issues: [] });
-    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.goto('/apps/crm/configuration?tab=automation');
     await page.getByRole('button', { name: 'Edit' }).first().click();
     const dialog = page.getByRole('dialog');
     await settled(dialog).toContainText('Edit flow');
@@ -452,7 +471,7 @@ test.describe('the flow editor', () => {
       .on('POST', '/api/admin/plugins/crm/_automation/check', { problems: [] })
       .on('POST', '/api/admin/plugins/crm/_automation/typings', { typings: TYPINGS })
       .on('POST', '/api/admin/plugins/crm/_model/draft/changes', { draft: DRAFT, changes: [], issues: [] });
-    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.goto('/apps/crm/configuration?tab=automation');
     await page.getByRole('button', { name: 'Edit' }).first().click();
     const dialog = page.getByRole('dialog');
 
@@ -491,7 +510,7 @@ test.describe('the flow editor', () => {
     api
       .on('POST', '/api/admin/plugins/crm/_automation/check', { problems: [] })
       .on('POST', '/api/admin/plugins/crm/_model/draft/changes', { draft: DRAFT, changes: [], issues: [] });
-    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.goto('/apps/crm/configuration?tab=automation');
     await page.getByRole('button', { name: 'Edit' }).first().click();
     const dialog = page.getByRole('dialog');
 
@@ -508,7 +527,7 @@ test.describe('the flow editor', () => {
 
   test("the server's parser underlines what a save would refuse", async ({ page, api }) => {
     api.on('POST', '/api/admin/plugins/crm/_automation/check', { problems: [{ message: "Unknown name 'secrets'", start: 0, end: 7 }] });
-    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.goto('/apps/crm/configuration?tab=automation');
     await page.getByRole('button', { name: 'Edit' }).first().click();
     await page.getByRole('dialog').getByRole('textbox', { name: 'Condition' }).focus({ timeout: 20_000 });
     await page.keyboard.type('secrets');
@@ -533,7 +552,7 @@ test.describe('the assistant on automations', () => {
       },
       steps: [], triggerEvent: null, chain: [],
     });
-    await page.goto(`/plugins/crm/configuration?tab=automation&run=${RUN}`);
+    await page.goto(`/apps/crm/configuration?tab=automation&run=${RUN}`);
 
     await page.getByRole('dialog').getByRole('button', { name: 'Ask AI' }).click();
     const dock = page.getByRole('dialog', { name: 'Assistant' });
@@ -546,7 +565,7 @@ test.describe('the assistant on automations', () => {
     api
       .on('GET', '/api/admin/plugins/crm/_model/draft', () => ({ revision: DRAFT, config: { ...CONFIG, flows: [version] } }))
       .on('GET', '/api/admin/plugins/crm/_automation/language', { functions: [], variables: [], maxSourceChars: 2000 });
-    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.goto('/apps/crm/configuration?tab=automation');
     await page.getByRole('button', { name: 'Edit' }).first().click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByLabel('Name', { exact: true })).toHaveValue('Big deal');
@@ -579,7 +598,7 @@ test.describe('writing a flow with AI', () => {
       .on('POST', '/api/admin/plugins/crm/_automation/check', { problems: [] })
       .on('POST', '/api/admin/plugins/crm/_automation/compose', { flow: WRITTEN, note: 'Notifies the team when a deal is won.', issues: [] })
       .on('POST', '/api/admin/plugins/crm/_model/draft/changes', { draft: DRAFT, changes: [], issues: [] });
-    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.goto('/apps/crm/configuration?tab=automation');
     await page.getByRole('button', { name: 'Add' }).first().click();
     const dialog = page.getByRole('dialog');
     await settled(dialog).toContainText('New flow');
@@ -624,7 +643,7 @@ test.describe('writing a flow with AI', () => {
         flow: { ...FLOW, displayName: 'Big deal, emailed' }, note: null,
         issues: [{ severity: 'error', code: 'unknown-action', path: 'flows.big_deal.mail', message: "'x@1' is not an action" }],
       });
-    await page.goto('/plugins/crm/configuration?tab=automation');
+    await page.goto('/apps/crm/configuration?tab=automation');
     await page.getByRole('button', { name: 'Edit' }).first().click();
     const ai = page.getByRole('dialog').getByRole('region', { name: 'Write with AI' });
     await settled(ai.getByLabel('Ask for a change')).toBeVisible();

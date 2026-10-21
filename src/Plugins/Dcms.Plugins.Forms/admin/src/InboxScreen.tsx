@@ -16,8 +16,7 @@ import {
   DialogTitle,
   EmptyState,
   Input,
-  Page,
-  PageHeader,
+  SectionHeader,
   Select,
   SelectContent,
   SelectItem,
@@ -25,7 +24,7 @@ import {
   SelectValue,
   toast,
 } from '@dcms/ui';
-import { useCan, usePluginApi, usePluginT } from '@dcms/plugin-ui';
+import { useCan, usePluginApi, usePluginScreen, usePluginT } from '@dcms/plugin-ui';
 import {
   type FormDef,
   type HandledFilter,
@@ -48,7 +47,7 @@ interface Selection {
 
 /**
  * The Forms inbox: every Forms instance's submissions in one place. A screen of the Forms
- * plugin (manifest screen "inbox"), rendered by the console at /app/forms/inbox.
+ * plugin (manifest screen "inbox"), rendered by the console at /apps/{slug}/inbox.
  */
 export function InboxScreen() {
   const { t } = usePluginT();
@@ -57,6 +56,8 @@ export function InboxScreen() {
   const canWrite = useCan('content:write');
 
   const instances = useFormsInstances();
+  // The app the inbox is opened in: its forms come first.
+  const app = usePluginScreen().instance;
   const [selected, setSelected] = useState<Selection | null>(null);
   const [handled, setHandled] = useState<HandledFilter>('all');
   const [page, setPage] = useState(1);
@@ -70,14 +71,15 @@ export function InboxScreen() {
   // something to read.
   useEffect(() => {
     if (selected || !instances.data) return;
-    for (const instance of instances.data) {
+    const ordered = [...instances.data].sort((a, b) => Number(b.instanceId === app?.id) - Number(a.instanceId === app?.id));
+    for (const instance of ordered) {
       const first = instance.forms[0];
       if (first) {
         setSelected({ instanceId: instance.instanceId, formName: first.name });
         return;
       }
     }
-  }, [instances.data, selected]);
+  }, [instances.data, selected, app?.id]);
 
   const form: FormDef | undefined = useMemo(() => {
     if (!selected || !instances.data) return undefined;
@@ -221,25 +223,25 @@ export function InboxScreen() {
 
   if (instances.isLoading) {
     return (
-      <Page>
-        <PageHeader title={t('forms.title')} description={t('forms.subtitle')} />
+      <div>
+        <SectionHeader title={t('forms.title')} description={t('forms.subtitle')} />
         <CenteredSpinner />
-      </Page>
+      </div>
     );
   }
 
   if (!hasAnyForm) {
     return (
-      <Page>
-        <PageHeader title={t('forms.title')} description={t('forms.subtitle')} />
+      <div>
+        <SectionHeader title={t('forms.title')} description={t('forms.subtitle')} />
         <EmptyState icon={Inbox} title={t('forms.noForms')} description={t('forms.noFormsHint')} />
-      </Page>
+      </div>
     );
   }
 
   return (
-    <Page>
-      <PageHeader
+    <div>
+      <SectionHeader
         title={t('forms.title')}
         description={t('forms.subtitle')}
         actions={
@@ -398,7 +400,7 @@ export function InboxScreen() {
           }}
         />
       ) : null}
-    </Page>
+    </div>
   );
 }
 

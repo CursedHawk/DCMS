@@ -57,6 +57,16 @@ public class MarketplaceMetadataTests
 
     [Theory]
     [MemberData(nameof(PluginIds))]
+    public void Every_plugin_provides_its_apps_settings(string id)
+    {
+        // Every enabled instance is an app, and its settings are the plugin's own screen (#337):
+        // without one, nobody can rename or configure the instance from its app.
+        Find(id).AdminScreens.Should().Contain(s => s.Id == AdminScreen.SettingsId,
+            "the plugin's admin module provides it — SchemaSettings for its config form");
+    }
+
+    [Theory]
+    [MemberData(nameof(PluginIds))]
     public void Every_plugin_declares_an_icon(string id)
     {
         var icon = Find(id).IconName;

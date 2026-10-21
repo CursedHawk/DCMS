@@ -79,8 +79,9 @@ public class NotificationLinkPathTests
 
     /// <summary>
     /// The paths declared in <c>apps/admin/src/routes.tsx</c>: the <c>child('/x', …)</c> helper
-    /// calls, the <c>settingsChild('x', …)</c> ones (relative to <c>/settings</c>), and any route
-    /// declaring <c>path:</c> directly (the parameterised site workspace).
+    /// calls, the <c>appRoute('/apps/…')</c> ones (an app's pages), the <c>settingsChild('x', …)</c>
+    /// ones (relative to <c>/settings</c>), and any route declaring <c>path:</c> directly (the
+    /// parameterised site workspace).
     ///
     /// <para>Plus the old top-level URLs, which are declared as data in
     /// <c>app/routeGuards.ts</c> and turned into redirect routes in a loop, so no literal appears
@@ -93,7 +94,7 @@ public class NotificationLinkPathTests
         var source = File.ReadAllText(Path.Combine(admin, "routes.tsx"));
         var guards = File.ReadAllText(Path.Combine(admin, "app", "routeGuards.ts"));
 
-        var routes = Regex.Matches(source, @"child\(\s*'(?<path>[^']+)'")
+        var routes = Regex.Matches(source, @"(?:child|appRoute)\(\s*'(?<path>[^']+)'")
             .Concat(Regex.Matches(source, @"path:\s*'(?<path>[^']+)'"))
             .Select(m => m.Groups["path"].Value)
             .ToList();

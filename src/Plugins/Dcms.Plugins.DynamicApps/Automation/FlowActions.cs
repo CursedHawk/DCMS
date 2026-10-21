@@ -516,7 +516,7 @@ internal sealed class NotificationRaiseAction : FlowAction<NotifyInput>
         };
         await context.Plugin.Contracts.Get<IPluginNotifications>().RaiseAsync(new NotificationRaise(
             input.Title, input.Body, DynamicAppsPermissions.DataRead, context.IdempotencyKey, severity,
-            input.LinkPath ?? $"/plugins/{context.Plugin.Instance?.Slug}"), ct);
+            input.LinkPath ?? $"/apps/{context.Plugin.Instance?.Slug}"), ct);
         return new JsonObject();
     }
 }

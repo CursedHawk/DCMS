@@ -1,4 +1,4 @@
-import { definePluginAdmin } from '@dcms/plugin-ui';
+import { definePluginAdmin, SchemaSettings } from '@dcms/plugin-ui';
 import { AccentWidget } from './AccentWidget';
 import { ModerationScreen } from './ModerationScreen';
 import { OverviewScreen } from './OverviewScreen';
@@ -11,6 +11,7 @@ import './guestbook.css';
  */
 export default definePluginAdmin({
   screens: {
+    settings: SchemaSettings,
     overview: OverviewScreen,
     moderation: ModerationScreen,
   },

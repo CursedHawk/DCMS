@@ -54,5 +54,6 @@ public sealed class ImageGalleryPlugin : IPlugin
         consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Media",
         summary: "Image galleries served as webp variants, originals preserved.",
-        iconName: "Images");
+        iconName: "Images",
+        adminScreens: [AdminScreen.Settings]);
 }

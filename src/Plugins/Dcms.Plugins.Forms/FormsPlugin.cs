@@ -149,8 +149,9 @@ public sealed class FormsPlugin : IPlugin
         // The inbox: every instance's submissions in one place. Its UI is in admin/ beside this file.
         adminScreens:
         [
-            new AdminScreen("inbox", "Forms", Permission: FormsPermissions.SubmissionsRead, IconName: "Inbox",
-                Nav: new AdminNavPlacement("apps", 20), Titles: new Dictionary<string, string> { ["cs"] = "Formuláře" },
+            AdminScreen.Settings,
+            new AdminScreen("inbox", "Inbox", Permission: FormsPermissions.SubmissionsRead, IconName: "Inbox",
+                Titles: new Dictionary<string, string> { ["cs"] = "Doručené" },
                 Description: "Submissions from every form on your sites."),
         ]);
 

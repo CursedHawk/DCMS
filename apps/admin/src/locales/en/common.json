@@ -39,7 +39,8 @@
     },
     "jobs": "Background jobs",
     "account": "Your account",
-    "notifications": "Notifications"
+    "notifications": "Notifications",
+    "installed": "Installed"
   },
   "palette": {
     "pages": "Pages",
@@ -243,8 +244,8 @@
       "disabled": "disabled",
       "missing": "{{slug}} (no longer available)"
     },
-    "title": "Plugins",
-    "subtitle": "Install plugins and manage their instances.",
+    "title": "Installed plugins",
+    "subtitle": "Every plugin added to this workspace. Each one that is switched on is an app in your menu.",
     "installed": "Installed",
     "install": "Install plugin",
     "installedBadge": "Installed",
@@ -1397,9 +1398,6 @@
     "instances": "Instances",
     "multipleAllowed": "You can add several",
     "singleInstance": "One per workspace",
-    "menuEntry": "Menu",
-    "addsMenuEntry": "Adds an entry to your sidebar",
-    "noMenuEntry": "No sidebar entry",
     "requires": "Requires",
     "provides": "Offers to other plugins",
     "uses": "Uses",
@@ -1544,17 +1542,12 @@
     "notFound": "No plugin at this address",
     "notFoundHint": "Nothing is installed under /{{slug}} in this workspace. It may have been removed or renamed.",
     "tabs": {
-      "overview": "Overview",
       "data": "Data",
       "settings": "Settings",
       "integration": "Integration",
       "activity": "Activity"
     },
     "version": "Version {{version}}",
-    "source": {
-      "builtin": "Built in",
-      "installed": "Installed by your operator"
-    },
     "enabledLabel": "Plugin enabled",
     "wiring": {
       "label": "How this plugin connects to others",
@@ -1567,16 +1560,8 @@
       "optionalMissing": "not connected (optional)"
     },
     "overview": {
-      "data": "Data",
-      "content": "Content",
-      "fields_one": "{{count}} field",
-      "fields_other": "{{count}} fields",
-      "openContent": "Open in Content",
       "background": "Runs in the background",
-      "onDemand": "when triggered",
-      "rows_one": "{{count}} row",
-      "rows_other": "{{count}} rows",
-      "browse": "Browse"
+      "onDemand": "when triggered"
     },
     "facts": {
       "plugin": "Plugin",
@@ -1607,11 +1592,7 @@
       "actionDone_other": "{{action}}: {{count}} rows changed",
       "actionOn_one": "Runs on the selected row.",
       "actionOn_other": "Runs on {{count}} selected rows.",
-      "invalidJson": "Not valid JSON yet.",
-      "none": "No data to browse here",
-      "noneHint": "This plugin keeps no data of its own.",
-      "noneContentHint": "This plugin's content is edited in Content; see the Overview tab for links.",
-      "disabledNotice": "This plugin is switched off: your sites can't reach it, but its data is still here to browse and edit."
+      "invalidJson": "Not valid JSON yet."
     },
     "integration": {
       "site": "On your website",
@@ -1633,11 +1614,8 @@
     "loadFailed": "{{plugin}}'s screens could not be loaded: {{message}}",
     "noPlugin": "No such plugin",
     "noPluginHint": "Nothing called {{plugin}} is installed on this platform.",
-    "off": "{{plugin}} is switched off",
-    "offHint": "Switch it on to use this screen. Its data was kept while it was off.",
     "notInstalled": "{{plugin}} isn't added to this workspace",
     "notInstalledHint": "Add it from the marketplace to use this screen.",
-    "openPlugin": "Open {{plugin}}",
     "openMarketplace": "Open the marketplace"
   },
   "visual": {
@@ -2249,5 +2227,11 @@
     "forward": "Forward",
     "reload": "Reload",
     "address": "Page address"
+  },
+  "apps": {
+    "admin": "Admin",
+    "disabledNotice": "This app is switched off: your sites can't reach it, but its data and settings are still here.",
+    "noPage": "Nothing to open here",
+    "noPageHint": "This page isn't part of the app, or you don't have access to it."
   }
 }

@@ -152,7 +152,8 @@ public sealed class BrandingPlugin : IPlugin
         consumes: [ContractRequirement.Of<IPluginMedia>()],
         category: "Presentation",
         summary: "Logo, colours and typography for the published site.",
-        iconName: "Palette");
+        iconName: "Palette",
+        adminScreens: [AdminScreen.Settings]);
 
     /// <summary>Any origin may GET (no credentials), so externally hosted tenant sites can fetch their branding.</summary>
     public const string ReadCorsPolicy = "branding-read";

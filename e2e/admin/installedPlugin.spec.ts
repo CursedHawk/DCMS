@@ -69,12 +69,13 @@ test.beforeEach(async ({ api }) => {
         screens: [
           {
             id: 'overview', title: 'Guestbooks', titles: { cs: 'Knihy návštěv' }, description: null, scope: 'plugin',
-            icon: 'BookOpen', permission: 'plugin:sample-guestbook:read', nav: { group: 'apps', order: 60 }, allowed: true,
+            icon: 'BookOpen', permission: 'plugin:sample-guestbook:read', section: 'work', allowed: true,
           },
           {
             id: 'moderation', title: 'Moderation', titles: null, description: null, scope: 'instance',
-            icon: 'ShieldCheck', permission: 'plugin:sample-guestbook:moderate', nav: null, allowed: true,
+            icon: 'ShieldCheck', permission: 'plugin:sample-guestbook:moderate', section: 'work', allowed: true,
           },
+          // No settings screen: built before every plugin provided one, so the console's form stands in.
         ],
         instances: [{ id: INSTANCE.id, slug: 'guests', name: 'Guests', enabled: true }],
       },
@@ -110,7 +111,10 @@ test.beforeEach(async ({ api }) => {
 test('an installed plugin’s screen loads from its folder and uses the console’s components', async ({ page }) => {
   await page.goto('/app/sample-guestbook/overview');
 
-  await expect(page.getByRole('heading', { level: 1, name: 'Guestbooks' })).toBeVisible();
+  // In the app of its first instance, under the app's own name.
+  await expect(page).toHaveURL(/\/apps\/guests\/overview$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Guests' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Guestbooks' })).toBeVisible();
   await expect(page.getByText('2 waiting')).toBeVisible();
   // The console's data-set view, embedded by the plugin through host.components.DataSet.
   await expect(page.getByRole('table').getByText('What a fine site, thank you!')).toBeVisible();
@@ -118,10 +122,11 @@ test('an installed plugin’s screen loads from its folder and uses the console�
   await expect(page.locator('link[data-plugin-css]')).toHaveCount(1);
 });
 
-test('an instance screen is a tab of the instance page, calling the plugin’s own routes', async ({ page, api }) => {
-  await page.goto('/plugins/guests/moderation');
+test('an instance screen is a page of the app, calling the plugin’s own routes', async ({ page, api }) => {
+  await page.goto('/apps/guests/moderation');
 
-  await expect(page.getByRole('tab', { name: 'Moderation', selected: true })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Guests' }).getByRole('link', { name: 'Moderation' }))
+    .toHaveAttribute('aria-current', 'page');
   await expect(page.getByText('What a fine site, thank you!')).toBeVisible();
   await page.getByRole('button', { name: 'Approve' }).click();
 
@@ -129,7 +134,7 @@ test('an instance screen is a tab of the instance page, calling the plugin’s o
 });
 
 test('a plugin’s config widget replaces the plain field on its settings', async ({ page, api }) => {
-  await page.goto('/plugins/guests?tab=settings');
+  await page.goto('/apps/guests/settings');
 
   const accent = page.getByRole('radiogroup', { name: 'Accent colour' });
   await expect(accent.getByRole('radio', { name: 'Teal' })).toHaveAttribute('aria-checked', 'true');

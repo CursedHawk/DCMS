@@ -39,7 +39,8 @@
     },
     "jobs": "Úlohy na pozadí",
     "account": "Váš účet",
-    "notifications": "Oznámení"
+    "notifications": "Oznámení",
+    "installed": "Nainstalované"
   },
   "palette": {
     "pages": "Stránky",
@@ -244,8 +245,8 @@
       "disabled": "vypnuto",
       "missing": "{{slug}} (již není k dispozici)"
     },
-    "title": "Pluginy",
-    "subtitle": "Instalujte pluginy a spravujte jejich instance.",
+    "title": "Nainstalované pluginy",
+    "subtitle": "Všechny pluginy přidané do tohoto pracovního prostoru. Každý zapnutý je aplikace ve vašem menu.",
     "installed": "Nainstalované",
     "install": "Nainstalovat plugin",
     "installedBadge": "Nainstalováno",
@@ -1428,9 +1429,6 @@
     "instances": "Instance",
     "multipleAllowed": "Lze přidat více",
     "singleInstance": "Jedna na workspace",
-    "menuEntry": "Menu",
-    "addsMenuEntry": "Přidá položku do bočního menu",
-    "noMenuEntry": "Bez položky v menu",
     "requires": "Vyžaduje",
     "provides": "Nabízí ostatním pluginům",
     "uses": "Používá",
@@ -1578,17 +1576,12 @@
     "notFound": "Na této adrese není žádný plugin",
     "notFoundHint": "V tomto prostoru není pod /{{slug}} nic nainstalováno. Mohl být odebrán nebo přejmenován.",
     "tabs": {
-      "overview": "Přehled",
       "data": "Data",
       "settings": "Nastavení",
       "integration": "Integrace",
       "activity": "Aktivita"
     },
     "version": "Verze {{version}}",
-    "source": {
-      "builtin": "Vestavěný",
-      "installed": "Nainstaloval provozovatel"
-    },
     "enabledLabel": "Plugin zapnut",
     "wiring": {
       "label": "Jak je plugin propojen s ostatními",
@@ -1601,18 +1594,8 @@
       "optionalMissing": "nepropojeno (volitelné)"
     },
     "overview": {
-      "data": "Data",
-      "content": "Obsah",
-      "fields_one": "{{count}} pole",
-      "fields_few": "{{count}} pole",
-      "fields_other": "{{count}} polí",
-      "openContent": "Otevřít v Obsahu",
       "background": "Běží na pozadí",
-      "onDemand": "při spuštění",
-      "rows_one": "{{count}} řádek",
-      "rows_few": "{{count}} řádky",
-      "rows_other": "{{count}} řádků",
-      "browse": "Procházet"
+      "onDemand": "při spuštění"
     },
     "facts": {
       "plugin": "Plugin",
@@ -1645,11 +1628,7 @@
       "actionOn_one": "Provede se pro vybraný řádek.",
       "actionOn_few": "Provede se pro {{count}} vybrané řádky.",
       "actionOn_other": "Provede se pro {{count}} vybraných řádků.",
-      "invalidJson": "Zatím to není platný JSON.",
-      "none": "Není co procházet",
-      "noneHint": "Tento plugin neukládá vlastní data.",
-      "noneContentHint": "Obsah tohoto pluginu se upravuje v sekci Obsah; odkazy najdete na kartě Přehled.",
-      "disabledNotice": "Plugin je vypnutý: vaše weby ho nevidí, ale jeho data můžete dál procházet a upravovat."
+      "invalidJson": "Zatím to není platný JSON."
     },
     "integration": {
       "site": "Na vašem webu",
@@ -1671,11 +1650,8 @@
     "loadFailed": "Obrazovky pluginu {{plugin}} se nepodařilo načíst: {{message}}",
     "noPlugin": "Takový plugin neexistuje",
     "noPluginHint": "Na této platformě není nainstalováno nic s názvem {{plugin}}.",
-    "off": "{{plugin}} je vypnutý",
-    "offHint": "Zapněte ho, abyste mohli tuto obrazovku používat. Jeho data zůstala zachována.",
     "notInstalled": "{{plugin}} v tomto prostoru není",
     "notInstalledHint": "Přidejte ho z tržiště, abyste mohli tuto obrazovku používat.",
-    "openPlugin": "Otevřít {{plugin}}",
     "openMarketplace": "Otevřít tržiště"
   },
   "visual": {
@@ -2297,5 +2273,11 @@
     "forward": "Vpřed",
     "reload": "Načíst znovu",
     "address": "Adresa stránky"
+  },
+  "apps": {
+    "admin": "Správa",
+    "disabledNotice": "Tato aplikace je vypnutá: vaše weby se k ní nedostanou, ale její data a nastavení tu zůstávají.",
+    "noPage": "Tady nic není",
+    "noPageHint": "Tato stránka do aplikace nepatří, nebo k ní nemáte přístup."
   }
 }

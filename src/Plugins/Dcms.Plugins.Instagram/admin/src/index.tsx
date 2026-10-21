@@ -1,10 +1,11 @@
-import { definePluginAdmin } from '@dcms/plugin-ui';
+import { definePluginAdmin, SchemaSettings } from '@dcms/plugin-ui';
 import { MetaConnectionWidget } from '@dcms/plugin-meta-admin';
 
 /**
- * The Instagram plugin's admin UI: no screens of its own, one widget — its config's
+ * The Instagram plugin's admin UI: its settings, with one widget of its own — its config's
  * `"format": "meta-connection"` field picks an account connected through Meta's consent.
  */
 export default definePluginAdmin({
+  screens: { settings: SchemaSettings },
   configWidgets: { 'meta-connection': MetaConnectionWidget },
 });

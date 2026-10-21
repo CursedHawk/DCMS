@@ -56,5 +56,6 @@ public sealed class BlogPlugin : IPlugin
         consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Content",
         summary: "A dated blog with categories and an archive.",
-        iconName: "Rss");
+        iconName: "Rss",
+        adminScreens: [AdminScreen.Settings]);
 }

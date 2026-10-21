@@ -23,8 +23,8 @@ test.beforeEach(async ({ api, page }) => {
         module: { kind: 'builtin', key: 'Dcms.Plugins.Analytics' },
         screens: [
           {
-            id: 'dashboard', title: 'Analytics', titles: null, description: null, scope: 'plugin',
-            icon: 'TrendingUp', permission: 'analytics:read', nav: { group: 'apps', order: 30 }, allowed: true,
+            id: 'dashboard', title: 'Dashboard', titles: null, description: null, scope: 'plugin',
+            icon: 'TrendingUp', permission: 'analytics:read', section: 'work', allowed: true,
           },
         ],
         instances: [{ id: 'cccccccc-0000-0000-0000-0000000000f3', slug: 'analytics', name: 'Analytics', enabled: true }],
@@ -40,7 +40,7 @@ test.beforeEach(async ({ api, page }) => {
 test('loads once, then refreshes on the chosen period', async ({ page, api }) => {
   const fetches = () => api.requestsTo('GET', '/api/admin/analytics').length;
 
-  await page.goto('/app/analytics/dashboard');
+  await page.goto('/apps/analytics/dashboard');
   await expect(page.getByRole('combobox', { name: 'Refresh rate' })).toHaveText('Refresh every 5 min');
   // The current and the previous period, once each — and then nothing.
   await expect.poll(fetches).toBe(2);
@@ -57,7 +57,7 @@ test('loads once, then refreshes on the chosen period', async ({ page, api }) =>
 });
 
 test('filters by site, and carries the site into the comparison period', async ({ page }) => {
-  await page.goto('/app/analytics/dashboard');
+  await page.goto('/apps/analytics/dashboard');
   await page.getByRole('combobox').filter({ hasText: 'Any site' }).click();
 
   const current = page.waitForRequest((r) => /\/api\/admin\/analytics\?.*days=30.*site=1111/.test(r.url()));

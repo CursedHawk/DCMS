@@ -49,5 +49,6 @@ public sealed class AudioLibraryPlugin : IPlugin
         consumes: [ContractRequirement.Of<IPluginContent>()],
         category: "Media",
         summary: "Audio tracks with artwork and transcoded variants.",
-        iconName: "Music");
+        iconName: "Music",
+        adminScreens: [AdminScreen.Settings]);
 }

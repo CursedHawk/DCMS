@@ -23,8 +23,7 @@ import {
   ConfirmDeleteDialog,
   EmptyState,
   Input,
-  Page,
-  PageHeader,
+  SectionHeader,
   Select,
   SelectContent,
   StatCard,
@@ -133,7 +132,7 @@ function countryName(code: string): string {
 
 /**
  * The analytics dashboard: visits, sources and campaigns. A screen of the Analytics plugin
- * (manifest screen "dashboard"), at /app/analytics/dashboard; data from the plugin's host
+ * (manifest screen "dashboard"), at /apps/{slug}/dashboard; data from the plugin's host
  * routes under /api/admin/analytics.
  */
 export function DashboardScreen() {
@@ -250,8 +249,8 @@ export function DashboardScreen() {
   };
 
   return (
-    <Page>
-      <PageHeader
+    <div>
+      <SectionHeader
         title={t('analytics.title')}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -501,7 +500,7 @@ export function DashboardScreen() {
         pending={clear.isPending}
         onConfirm={() => clear.mutate()}
       />
-    </Page>
+    </div>
   );
 }
 

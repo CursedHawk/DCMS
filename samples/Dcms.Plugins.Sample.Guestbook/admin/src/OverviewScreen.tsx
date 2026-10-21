@@ -1,12 +1,12 @@
 import { useMutation } from '@tanstack/react-query';
 import { BookOpen, Download } from 'lucide-react';
-import { Button, CenteredSpinner, EmptyState, Page, PageHeader, toast, toastApiError } from '@dcms/ui';
+import { Button, CenteredSpinner, EmptyState, SectionHeader, toast, toastApiError } from '@dcms/ui';
 import { useCan, usePluginHost, usePluginT, type PluginScreenProps } from '@dcms/plugin-ui';
 import { useGuestbookApi, useOverview } from './api';
 
 /**
  * A plugin-wide screen (manifest: "overview", scope Plugin, with a menu entry): every guestbook
- * in the workspace, at /app/sample-guestbook/overview. It draws the whole page; the console only
+ * in the workspace, at /apps/{slug}/overview. It draws the whole page; the console only
  * decided it may be drawn (the `read` permission, an enabled instance).
  */
 export function OverviewScreen({ instances }: PluginScreenProps) {
@@ -27,8 +27,8 @@ export function OverviewScreen({ instances }: PluginScreenProps) {
   const first = instances.find((i) => i.enabled);
 
   return (
-    <Page>
-      <PageHeader title={t('overview.title')} description={t('overview.subtitle')} />
+    <div>
+      <SectionHeader title={t('overview.title')} description={t('overview.subtitle')} />
       {overview.isLoading ? (
         <CenteredSpinner />
       ) : (overview.data?.guestbooks.length ?? 0) === 0 ? (
@@ -47,7 +47,7 @@ export function OverviewScreen({ instances }: PluginScreenProps) {
               <span className="gb-quiet">{t('overview.shown', { count: g.approved })}</span>
               <span className="gb-book-actions">
                 {mayModerate ? (
-                  <Button size="sm" variant={g.pending > 0 ? 'default' : 'outline'} onClick={() => host.navigate(`/plugins/${g.slug}/moderation`)}>
+                  <Button size="sm" variant={g.pending > 0 ? 'default' : 'outline'} onClick={() => host.navigate(`/apps/${g.slug}/moderation`)}>
                     {t('overview.moderate')}
                   </Button>
                 ) : null}
@@ -72,6 +72,6 @@ export function OverviewScreen({ instances }: PluginScreenProps) {
           <DataSet slug={first.slug} set="entries" />
         </section>
       ) : null}
-    </Page>
+    </div>
   );
 }

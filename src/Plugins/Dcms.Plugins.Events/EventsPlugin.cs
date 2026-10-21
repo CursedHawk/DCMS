@@ -95,7 +95,8 @@ public sealed class EventsPlugin : IPlugin
         ],
         category: "Content",
         summary: "Events with dates, venues and line-ups.",
-        iconName: "CalendarDays");
+        iconName: "CalendarDays",
+        adminScreens: [AdminScreen.Settings]);
 
 
     public void MapEndpoints(IPluginEndpointBuilder endpoints)

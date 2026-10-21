@@ -53,7 +53,8 @@ public sealed class FacebookPlugin : IPlugin
         publicConfigKeys: MetaFeedConfig.PublicKeys(includeStories: false),
         category: "Integrations",
         summary: "Mirrors a Facebook page feed into your content.",
-        iconName: "Facebook");
+        iconName: "Facebook",
+        adminScreens: [AdminScreen.Settings]);
 
 
     public void ConfigureServices(IServiceCollection services, PluginHost host) => MetaSocial.AddServices(services, host);
