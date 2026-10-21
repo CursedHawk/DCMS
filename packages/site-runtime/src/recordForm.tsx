@@ -251,7 +251,7 @@ function RecordField({ field, app, value }: { field: ModelField; app: string; va
                 : field.type === 'url'
                   ? 'url'
                   : 'text';
-      const initial = field.type === 'dateTime' && typeof shown === 'string' && shown ? shown.slice(0, 16) : String(shown);
+      const initial = field.type === 'dateTime' ? localInput(shown) : String(shown);
       return (
         <div className="dcms-field">
           <label htmlFor={id}>{label}</label>
@@ -352,3 +352,16 @@ export const RECORD_FORM_COMPONENTS: readonly ComponentDefinition[] = [
     ],
   },
 ];
+
+/**
+ * A stored dateTime (UTC, `…Z`) as the visitor's wall clock, the only form `datetime-local`
+ * takes. Slicing the stored text showed UTC as if it were local, and since a save converts the
+ * input back from local time, saving a record unchanged moved it by the visitor's offset.
+ * Mirrors `toDateTimeLocal()` in @dcms/ui, which a site cannot import.
+ */
+function localInput(value: unknown): string {
+  if (typeof value !== 'string' || value === '') return '';
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return '';
+  return new Date(at.getTime() - at.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}

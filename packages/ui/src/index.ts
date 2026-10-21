@@ -9,6 +9,7 @@
  */
 export * from './ui';
 export * from './cn';
+export * from './dateTime';
 export * from './theme';
 export * from './errors';
 export * from './hooks';

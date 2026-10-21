@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { builtinRegistry } from './components';
 import { DataClientContext, ItemContext, type DataClient } from './data';
 import type { Node } from './document';
@@ -106,5 +106,30 @@ describe('Record form', () => {
     expect(data.writes).toEqual([]);
     const missing = await render(<RenderNode node={form({ table: 'leads' })} registry={builtinRegistry} />, data, 'edit');
     expect(missing.textContent).toContain('“leads” is not a table the site can write to');
+  });
+});
+
+describe('Record form dates', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('shows a stored time in the visitor’s zone, so saving it unchanged keeps it', async () => {
+    vi.stubEnv('TZ', 'Europe/Prague');
+    const data = client();
+    const model = { tables: [{ apiName: 'deals', displayName: 'Deal', fields: [{ apiName: 'closeAt', displayName: 'Close', type: 'dateTime' }] }] };
+    data.get = async (path) => {
+      if (path === '/api/crm/_model') return model;
+      throw new Error(`404 ${path}`);
+    };
+    const scope = { item: { id: 'r1', slug: 'r1', data: { id: 'r1', version: 1, closeAt: '2026-10-07T16:00:00Z' } }, index: 0, count: 1 };
+    const el = await render(
+      <ItemContext.Provider value={scope}>
+        <RenderNode node={form({ mode: 'edit' })} registry={builtinRegistry} />
+      </ItemContext.Provider>,
+      data,
+    );
+
+    expect((el.querySelector('input[name="closeAt"]') as HTMLInputElement).value).toBe('2026-10-07T18:00');
+    await submit(el);
+    expect((data.writes[0]!.body as Record<string, unknown>).closeAt).toBe('2026-10-07T16:00:00.000Z');
   });
 });

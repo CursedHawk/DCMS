@@ -2,7 +2,7 @@ import type { Editor } from 'grapesjs';
 import { X } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Input, Textarea } from '@dcms/ui';
+import { Button, Input, Textarea, toDateTimeLocal } from '@dcms/ui';
 import { MediaPicker } from '../../media/MediaPicker';
 import { useEditorEvent, useSelected } from './useEditorEvent';
 
@@ -120,7 +120,7 @@ function TraitRow({ trait }: { trait: TraitModel }) {
         return (
           <Input
             type="datetime-local"
-            value={String(value ?? '')}
+            value={toDateTimeLocal(value)}
             onChange={(e) => trait.setValue(e.target.value)}
             className="h-8"
           />

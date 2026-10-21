@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Input, Label, Switch, TagsInput, Textarea, toTagList } from '@dcms/ui';
+import { Input, Label, Switch, TagsInput, Textarea, toDateTimeLocal, toTagList } from '@dcms/ui';
 import type { MediaCategory } from '../media/api';
 import { MediaMultiPicker } from '../media/MediaMultiPicker';
 import { MediaPicker } from '../media/MediaPicker';
@@ -164,7 +164,7 @@ export function ContentFieldInput({
         return (
           <Input
             type="datetime-local"
-            value={(value as string) ?? ''}
+            value={toDateTimeLocal(value)}
             onChange={(e) => onChange(e.target.value)}
           />
         );

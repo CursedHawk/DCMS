@@ -27,6 +27,7 @@ import {
   Textarea,
   toast,
   toastApiError,
+  toDateTimeLocal,
   type Column,
   LoadFailed,
   TableViewControls,
@@ -535,7 +536,7 @@ function MemberInput({ slug, config, member, value, disabled, error, onChange }:
         input = <Input id={id} type="date" value={text} disabled={disabled} onChange={(e) => onChange(e.target.value)} />;
         break;
       case 'dateTime':
-        input = <Input id={id} type="datetime-local" value={text ? toLocalInput(text) : ''} disabled={disabled}
+        input = <Input id={id} type="datetime-local" value={toDateTimeLocal(text)} disabled={disabled}
           onChange={(e) => onChange(e.target.value ? new Date(e.target.value).toISOString() : '')} />;
         break;
       case 'choice':
@@ -613,10 +614,4 @@ function LookupInput({ slug, config, relationship, id, value, disabled, onChange
       </SelectContent>
     </Select>
   );
-}
-
-function toLocalInput(iso: string): string {
-  const date = new Date(iso);
-  const offset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
 }
