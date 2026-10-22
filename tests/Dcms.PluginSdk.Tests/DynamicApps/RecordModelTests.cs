@@ -161,10 +161,21 @@ public sealed class RecordModelTests
               "sort": [ { "field": "amount", "direction": "desc" } ], "search": "big", "page": 2, "pageSize": 25 }
             """);
 
-        compiled.Where.Should().NotContain(Hostile).And.NotContain("10000").And.NotContain("lead").And.Contain("EXISTS");
+        compiled.Where.Should().NotContain(Hostile).And.NotContain("10000").And.NotContain("lead").And.Contain("IN (SELECT t1.\"Id\"::text");
         compiled.Specs.Select(p => p.Value).Should().Contain(Hostile);
         compiled.OrderBy.Should().StartWith("((r.\"Data\" ->> @").And.Contain("::numeric DESC NULLS LAST").And.EndWith("r.\"Id\"");
         (compiled.Limit, compiled.Offset).Should().Be((25, 25));
+    }
+
+    [Fact]
+    public void A_filter_through_a_lookup_is_a_set_the_planner_hashes_once()
+    {
+        var compiled = Compile("""{ "filter": { "field": "company.name", "op": "eq", "value": "Acme" } }""");
+
+        // A correlated EXISTS nested-looped on vps1 (deals x companies, 11.9 s a page): no reference
+        // to the outer row inside the set, and IS TRUE so it is not planned as a semi-join.
+        compiled.Where.Should().NotContain("EXISTS").And.NotContain("= r.\"TenantId\"").And.NotContain("= r.\"InstanceId\"");
+        compiled.Where.Should().Contain("((r.\"Data\" ->> @").And.Contain(") IN (SELECT t1.\"Id\"::text FROM apps.records t1").And.EndWith(") IS TRUE");
     }
 
     [Fact]
@@ -285,7 +296,7 @@ public sealed class RecordModelTests
         // deals.company points at companies, which is private: a match would leak its rows.
         var act = () => Compile("""{ "filter": { "field": "company.name", "op": "startsWith", "value": "A" } }""", RecordPlane.Public);
         act.Should().Throw<ContractValidationException>().Which.Message.Should().Contain("no field 'company.name'");
-        Compile("""{ "filter": { "field": "company.name", "op": "startsWith", "value": "A" } }""").Where.Should().Contain("EXISTS",
+        Compile("""{ "filter": { "field": "company.name", "op": "startsWith", "value": "A" } }""").Where.Should().Contain("IN (SELECT t1.",
             "members in the admin may");
     }
 

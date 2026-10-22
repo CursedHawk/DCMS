@@ -29,6 +29,8 @@ public sealed class QueryCompiler
     private readonly List<(string Name, object? Value, NpgsqlDbType Type)> _parameters = [];
     private int _predicates;
     private int _aliases;
+    private string _tenant = "";
+    private string _instance = "";
 
     public QueryCompiler(RuntimeModel model, RuntimeTable table, RecordPlane plane)
     {
@@ -69,10 +71,12 @@ public sealed class QueryCompiler
             }
         }
 
+        _tenant = Parameter(tenantId, NpgsqlDbType.Uuid);
+        _instance = Parameter(instanceId, NpgsqlDbType.Uuid);
         var where = new List<string>
         {
-            $"""r."TenantId" = {Parameter(tenantId, NpgsqlDbType.Uuid)}""",
-            $"""r."InstanceId" = {Parameter(instanceId, NpgsqlDbType.Uuid)}""",
+            $"""r."TenantId" = {_tenant}""",
+            $"""r."InstanceId" = {_instance}""",
             $"""r."TableId" = {Parameter(_table.Id, NpgsqlDbType.Uuid)}""",
         };
         if (scope is not null)
@@ -160,9 +164,14 @@ public sealed class QueryCompiler
             }
             var t = $"t{++_aliases}";
             var inner = Predicate(t, target, node with { Field = field[(dot + 1)..] }, depth + 1, allowHop: false);
+            // A set Postgres hashes once, as a row-rule hop is (RowRules.Step): uncorrelated, and
+            // IS TRUE so it is not turned into a semi-join. As a correlated EXISTS the planner,
+            // expecting about one target (it multiplies `left(x) = v AND x = v`), nested-looped
+            // 17,892 deals against 585 companies: 11.9 s on vps1, 26 ms hashed.
             return $"""
-                EXISTS (SELECT 1 FROM apps.records {t} WHERE {t}."TenantId" = {alias}."TenantId" AND {t}."InstanceId" = {alias}."InstanceId"
-                AND {t}."TableId" = {Parameter(target.Id, NpgsqlDbType.Uuid)} AND {t}."Id"::text = ({alias}."Data" ->> {Key(lookup)}) AND {inner})
+                (({alias}."Data" ->> {Key(lookup)}) IN (SELECT {t}."Id"::text FROM apps.records {t}
+                WHERE {t}."TenantId" = {_tenant} AND {t}."InstanceId" = {_instance}
+                AND {t}."TableId" = {Parameter(target.Id, NpgsqlDbType.Uuid)} AND {inner})) IS TRUE
                 """;
         }
 

@@ -246,6 +246,12 @@ public sealed class AuditMiddleware(RequestDelegate next)
         }
 
         var endpoint = context.GetEndpoint();
+        // .AuditExempt / .SkipAudit: declared not worth a record per request. Only this generic one
+        // is withheld; RecordDenial and RecordServerFailure still record on the same route.
+        if (endpoint?.Metadata.GetMetadata<AuditExemptMetadata>() is not null)
+        {
+            return;
+        }
         var declared = endpoint?.Metadata.GetMetadata<AuditMetadata>();
         var route = (endpoint as RouteEndpoint)?.RoutePattern.RawText;
 

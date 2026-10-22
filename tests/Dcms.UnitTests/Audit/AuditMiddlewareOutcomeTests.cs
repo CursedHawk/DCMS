@@ -104,6 +104,35 @@ public sealed class AuditMiddlewareOutcomeTests
         _sink.Events.Should().ContainSingle().Which.Outcome.Should().Be(AuditOutcome.Success);
     }
 
+    [Fact]
+    public async Task An_undeclared_post_gets_the_generic_record()
+    {
+        await RunAsync(_ => Task.CompletedTask);
+
+        _sink.Events.Should().ContainSingle().Which.Outcome.Should().Be(AuditOutcome.Success);
+    }
+
+    [Fact]
+    public async Task An_exempt_post_records_nothing()
+    {
+        // The analytics beacon: until 2026-10-22 every page view was an audit record.
+        await RunAsync(_ => Task.CompletedTask, new AuditExemptMetadata("Visitor telemetry."));
+
+        _sink.Events.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task An_exempt_post_still_records_a_refusal()
+    {
+        await RunAsync(ctx =>
+        {
+            ctx.Response.StatusCode = 403;
+            return Task.CompletedTask;
+        }, new AuditExemptMetadata("Visitor telemetry."));
+
+        _sink.Events.Should().ContainSingle().Which.Outcome.Should().Be(AuditOutcome.Denied);
+    }
+
     /// <summary>What <c>.WithAudit(MediaImported, "media_asset")</c> opens before the handler.</summary>
     private void Declare()
     {
@@ -112,11 +141,15 @@ public sealed class AuditMiddlewareOutcomeTests
         _scope.Declared = entry;
     }
 
-    private Task RunAsync(RequestDelegate handler)
+    private Task RunAsync(RequestDelegate handler, params object[] endpointMetadata)
     {
         var context = new DefaultHttpContext();
         context.Request.Method = HttpMethods.Post;
         context.Request.Path = "/api/admin/media/google-drive/import";
+        if (endpointMetadata.Length > 0)
+        {
+            context.SetEndpoint(new Endpoint(null, new EndpointMetadataCollection(endpointMetadata), "test"));
+        }
         return new AuditMiddleware(handler).InvokeAsync(context, _recorder, _scope, new TestActor(), new AuditAmbient());
     }
 
