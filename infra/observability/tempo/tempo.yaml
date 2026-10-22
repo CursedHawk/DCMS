@@ -29,6 +29,14 @@ ingester:
   max_block_duration: 5m
   # Small, because a block is only searchable once flushed. Five minutes is roughly the
   # longest anyone will wait while looking at a trace id a user just gave them.
+  #
+  # Also cut by size, and flushed two at a time. Completing a block is done in memory, and the
+  # 2.x defaults (500 MB a block, four flushes at once) are past this container's 384m on their
+  # own: the 2026-10-21 load test's span volume had Tempo OOM-killed by its cgroup ~59 times in
+  # 40 minutes, silently (exit 0 to docker, "tempo invoked oom-killer" in the kernel log), each
+  # time mid-completion. 50 MB is the default Tempo's newer live-store uses.
+  max_block_bytes: 50000000
+  concurrent_flushes: 2
 
 compactor:
   compaction:
