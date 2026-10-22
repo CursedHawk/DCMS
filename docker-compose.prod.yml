@@ -141,6 +141,13 @@ services:
       - pg_stat_statements.track=top
       - -c
       - track_io_timing=on
+      # Sized for vps1's 7.6 GB (load test 2026-10-21, finding 1). The default 128 MB of buffers is
+      # small for a 2-4 GB database; and the default effective_cache_size of 4 GB told the planner
+      # about OS cache the host does not have (~1.5 GB available under load).
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-256MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1536MB}
     environment:
       POSTGRES_DB: dcms
       POSTGRES_USER: dcms

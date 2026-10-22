@@ -136,6 +136,9 @@ services:
     logging: *default-logging
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
+      # A soft limit under the hard one: Go collects before the cgroup starts reclaiming its pages
+      # into swap (load test 2026-10-21, finding 1).
+      GOMEMLIMIT: "300MiB"
       MINIO_ROOT_USER: dcms
       MINIO_ROOT_PASSWORD: dcms-dev-secret
     volumes:
@@ -1093,6 +1096,9 @@ services:
       - --storage.path=/var/lib/alloy/data
       - /etc/alloy/config.alloy
     environment:
+      # A soft limit under the hard one: Go collects before the cgroup starts reclaiming its pages
+      # into swap (load test 2026-10-21, finding 1).
+      GOMEMLIMIT: "430MiB"
       # Read-only reporting role, same one Grafana's Postgres datasource uses. The exporter
       # needs pg_stat_* views, which are readable by any role — it never touches table data.
       POSTGRES_EXPORTER_USER: "${GRAFANA_DB_USER:-dcms_grafana}"
@@ -1243,6 +1249,10 @@ services:
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 384m
+    environment:
+      # A soft limit under the hard one: Go collects before the cgroup starts reclaiming its pages
+      # into swap (load test 2026-10-21, finding 1).
+      GOMEMLIMIT: "320MiB"
     command: ["-config.file=/etc/loki/loki.yaml"]
     volumes:
       - ./infra/observability/loki/loki.yaml:/etc/loki/loki.yaml:ro
@@ -1253,6 +1263,10 @@ services:
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 384m
+    environment:
+      # A soft limit under the hard one: Go collects before the cgroup starts reclaiming its pages
+      # into swap (load test 2026-10-21, finding 1).
+      GOMEMLIMIT: "320MiB"
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     volumes:
       - ./infra/observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
@@ -1272,6 +1286,10 @@ services:
       default: {}
       scripts: {}
     mem_limit: 384m
+    environment:
+      # A soft limit under the hard one: Go collects before the cgroup starts reclaiming its pages
+      # into swap (load test 2026-10-21, finding 1).
+      GOMEMLIMIT: "320MiB"
     volumes:
       - ./infra/observability/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro
       - pyroscope-data:/data
@@ -1288,6 +1306,9 @@ services:
     logging: *default-logging
     mem_limit: 256m
     environment:
+      # A soft limit under the hard one: Go collects before the cgroup starts reclaiming its pages
+      # into swap (load test 2026-10-21, finding 1).
+      GOMEMLIMIT: "210MiB"
       GF_PATHS_PROVISIONING: /etc/grafana/provisioning
       GRAFANA_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin-dev}"
       GRAFANA_DB_PASSWORD: "${GRAFANA_DB_PASSWORD:-dcms-grafana-dev}"
