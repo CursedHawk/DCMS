@@ -1,3 +1,4 @@
+using Dcms.Shared.Data;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Rls;
 using Microsoft.EntityFrameworkCore;
@@ -8,6 +9,9 @@ namespace Dcms.AdminApi.Connections;
 /// Refreshes every connection whose snapshots are older than its interval. Finds them across
 /// tenants (a platform-scoped read), then refreshes each as its own tenant, one at a time — a
 /// slow provider delays the next refresh, never anyone's site, which serves snapshots.
+///
+/// <para>One replica per pass, elected by an advisory lock: admin-api and jobs-worker both run
+/// this, and without it each would call every due provider.</para>
 /// </summary>
 public sealed class ApiConnectionWorker(IServiceProvider services, IConfiguration configuration, ILogger<ApiConnectionWorker> logger)
     : BackgroundService
@@ -32,6 +36,16 @@ public sealed class ApiConnectionWorker(IServiceProvider services, IConfiguratio
 
     private async Task SweepAsync(CancellationToken ct)
     {
+        var connectionString = configuration.GetConnectionString("Postgres");
+        if (string.IsNullOrWhiteSpace(connectionString)) return;
+        await using var leadership = await PostgresAdvisoryLock.TryAcquireAsync(
+            connectionString, PostgresAdvisoryLock.ApiConnectionRefreshLockKey, logger, ct);
+        if (leadership is null)
+        {
+            logger.LogDebug("Another replica is refreshing API connections; skipping this pass.");
+            return;
+        }
+
         List<(Guid Tenant, Guid Id)> due;
         using (RlsScope.Platform())
         using (var scope = services.CreateScope())

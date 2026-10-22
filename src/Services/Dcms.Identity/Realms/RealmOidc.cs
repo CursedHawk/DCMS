@@ -48,6 +48,11 @@ public sealed class RealmOidcBackchannel(HttpMessageHandler handler)
 /// exchange and token validation for every tenant's Google, Entra or OIDC client, each with its
 /// own callback path. A provider's settings are loaded into this cache before its scheme is
 /// used, because options are built synchronously; changing a provider evicts both.
+///
+/// <para>The eviction only reaches the replica that took the change, so a cached entry is
+/// trusted only while it carries the row's <c>UpdatedAt</c>, and a callback always reads the
+/// row. Otherwise a sibling replica keeps a rotated secret, or a deleted provider, until it
+/// restarts.</para>
 /// </summary>
 public sealed class RealmOidcSchemes(
     IAuthenticationSchemeProvider schemes,
@@ -65,14 +70,14 @@ public sealed class RealmOidcSchemes(
     public async Task<string> EnsureAsync(RealmProvider provider, CancellationToken ct)
     {
         var name = RealmExternal.SchemeFor(provider.Id);
-        if (_settings.ContainsKey(name) && await schemes.GetSchemeAsync(name) is not null)
+        if (IsCurrent(name, provider) && await schemes.GetSchemeAsync(name) is not null)
         {
             return name;
         }
         await _gate.WaitAsync(ct);
         try
         {
-            if (!_settings.ContainsKey(name))
+            if (!IsCurrent(name, provider))
             {
                 using var scope = scopes.CreateScope();
                 var secret = provider.SecretCiphertext is { } ciphertext
@@ -94,23 +99,26 @@ public sealed class RealmOidcSchemes(
     }
 
     /// <summary>
-    /// The provider a callback is for, registered if this process has not seen it yet — after a
-    /// restart, or on another replica than the one that sent the person out.
+    /// The provider a callback is for, with the settings it has now — after a restart, on another
+    /// replica than the one that sent the person out, or after a sibling replica saved a change.
+    /// One query per callback: a callback is a sign-in, not a hot path.
     /// </summary>
     public async Task EnsureByIdAsync(Guid providerId, CancellationToken ct)
     {
-        if (_settings.ContainsKey(RealmExternal.SchemeFor(providerId)))
-        {
-            return;
-        }
         using var scope = scopes.CreateScope();
         var provider = await scope.ServiceProvider.GetRequiredService<IdentityDbContext>().RealmProviders.AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == providerId && p.Enabled && p.Kind != RealmProviderKind.Dcms, ct);
-        if (provider is not null)
+        if (provider is null)
         {
-            await EnsureAsync(provider, ct);
+            // Deleted or disabled, possibly on another replica: no scheme, so the callback fails.
+            Evict(providerId);
+            return;
         }
+        await EnsureAsync(provider, ct);
     }
+
+    private bool IsCurrent(string name, RealmProvider provider) =>
+        _settings.TryGetValue(name, out var cached) && cached.Provider.UpdatedAt == provider.UpdatedAt;
 
     public void Evict(Guid providerId)
     {

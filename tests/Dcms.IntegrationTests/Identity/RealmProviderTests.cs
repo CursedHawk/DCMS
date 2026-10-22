@@ -7,10 +7,12 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dcms.IntegrationTests.Social;
 using Dcms.Shared.Vault;
+using IdentityApp::Dcms.Identity.Data;
 using IdentityApp::Dcms.Identity.Realms;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.IntegrationTests.Identity;
@@ -55,6 +57,29 @@ public sealed class RealmProviderTests(IdentityAppFixture fixture) : IDisposable
 
         // The link is to the provider's subject, so a renamed address still signs in.
         (await SignInAsync(realm, "corp", "corp-client", Person("u-1", "renamed@elsewhere.test"), ct)).Location.Should().Be($"/realm/{realm.Slug}/");
+    }
+
+    [DockerFact]
+    public async Task A_provider_changed_by_another_replica_signs_in_with_its_new_settings()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var realm = await RealmAsync(ct);
+        await ProviderAsync(realm, "corp", new { kind = "oidc", displayName = "Corp", clientId = "old-client", clientSecret = "s", issuer = _idp.Issuer }, ct);
+        var email = $"{Guid.NewGuid():N}@corp.test";
+        await InviteAsync(realm, email, ct);
+        // Caches the provider's settings in this process.
+        (await SignInAsync(realm, "corp", "old-client", Person("u-1", email), ct)).Location.Should().Be($"/realm/{realm.Slug}/");
+
+        // A sibling replica's save: the row changes and this process is never told.
+        using (var scope = Factory.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<IdentityDbContext>().RealmProviders
+                .Where(p => p.TenantId == realm.TenantId && p.Key == "corp")
+                .ExecuteUpdateAsync(u => u.SetProperty(p => p.ClientId, "new-client").SetProperty(p => p.UpdatedAt, DateTimeOffset.UtcNow), ct);
+        }
+
+        (await SignInAsync(realm, "corp", "new-client", Person("u-1", email), ct)).Location
+            .Should().Be($"/realm/{realm.Slug}/", "the token is issued to the new client id, which a stale scheme would reject");
     }
 
     [DockerFact]

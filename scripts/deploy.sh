@@ -727,24 +727,29 @@ fi
 
 FAILED=()
 for svc in "${CHECK_LIST[@]}"; do
-  cid=$(compose ps -q "$svc" 2>/dev/null | head -1)
-  if [ -z "$cid" ]; then
+  cids=$(compose ps -q "$svc" 2>/dev/null || true)
+  if [ -z "$cids" ]; then
     warn "$svc: no container -- not deployed in this environment?"
     continue
   fi
 
+  # Every replica: one healthy container says nothing about its siblings. The
+  # first that does not come up decides the service's status.
   deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
-  status=""
-  while [ "$(date +%s)" -lt "$deadline" ]; do
-    # `docker inspect` rather than `compose ps --format json`: the JSON field
-    # names have moved between compose releases and this has to work on
-    # whatever the target host happens to be running.
-    status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null || echo "gone")
-    case "$status" in
-      healthy|running) break ;;
-      exited|dead|gone) break ;;
-    esac
-    sleep 3
+  for cid in $cids; do
+    status=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+      # `docker inspect` rather than `compose ps --format json`: the JSON field
+      # names have moved between compose releases and this has to work on
+      # whatever the target host happens to be running.
+      status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$cid" 2>/dev/null || echo "gone")
+      case "$status" in
+        healthy|running) break ;;
+        exited|dead|gone) break ;;
+      esac
+      sleep 3
+    done
+    case "$status" in healthy|running) ;; *) break ;; esac
   done
 
   case "$status" in

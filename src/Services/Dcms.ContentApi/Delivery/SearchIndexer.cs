@@ -13,10 +13,10 @@ using Dcms.Shared.Data.Rls;
 namespace Dcms.ContentApi.Delivery;
 
 /// <summary>
-/// Maintains the sitewide search index. On content.published it projects the
-/// item into a search_document (title + searchable text fields, per the plugin's
-/// content-type definition); on content.unpublished it removes it. Cross-tenant
-/// (no ambient tenant), so ids are explicit and query filters bypassed.
+/// Maintains the sitewide search index. On any content event it projects the item's
+/// published version into a search_document (title + searchable text fields, per the
+/// plugin's content-type definition), or removes the document when nothing is published.
+/// Cross-tenant (no ambient tenant), so ids are explicit and query filters bypassed.
 /// </summary>
 public sealed class SearchIndexer(
     INatsJSContext jetStream,
@@ -43,7 +43,7 @@ public sealed class SearchIndexer(
                     {
                         if (msg.Data is { } e)
                         {
-                            await HandleAsync(msg.Subject, e, stoppingToken);
+                            await HandleAsync(e, stoppingToken);
                         }
                         await msg.AckAsync(cancellationToken: stoppingToken);
                     }
@@ -66,7 +66,16 @@ public sealed class SearchIndexer(
         }
     }
 
-    private async Task HandleAsync(string subject, IndexEvent e, CancellationToken ct)
+    /// <summary>
+    /// Brings the item's document in line with the item as it is now, whichever event arrived.
+    ///
+    /// <para>The durable is shared, so with several content-api replicas a publish and the
+    /// unpublish after it can be handled at the same moment, in either order. Acting on the event
+    /// lets the wrong one win: an unpublish deleting nothing while the publish is still writing,
+    /// or a late unpublish deleting an item that has since been republished. So both subjects
+    /// re-read the item, under a per-item lock held until the write commits.</para>
+    /// </summary>
+    private async Task HandleAsync(IndexEvent e, CancellationToken ct)
     {
         // The event's tenant, for the database too: the plugin-instance, item and version lookups
         // below go by id alone, and this is what keeps them inside that tenant (ADR 0015).
@@ -75,61 +84,69 @@ public sealed class SearchIndexer(
         var cms = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
         var search = scope.ServiceProvider.GetRequiredService<SearchDbContext>();
 
-        if (subject == Subjects.ContentUnpublished)
-        {
-            var existing = await search.Documents.IgnoreQueryFilters()
-                .FirstOrDefaultAsync(d => d.TenantId == e.TenantId && d.ContentItemId == e.ContentItemId, ct);
-            if (existing is not null)
-            {
-                search.Documents.Remove(existing);
-                await search.SaveChangesAsync(ct);
-            }
-            return;
-        }
+        await using var tx = await search.Database.BeginTransactionAsync(ct);
+        await search.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({"search-index:" + e.ContentItemId}, 0))", ct);
 
-        // content.published — resolve the content type via the instance's plugin.
+        var doc = await search.Documents.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(d => d.TenantId == e.TenantId && d.ContentItemId == e.ContentItemId, ct);
+        if (await PublishedAsync(cms, e, ct) is not { } published)
+        {
+            if (doc is not null)
+            {
+                search.Documents.Remove(doc);
+            }
+        }
+        else
+        {
+            if (doc is null)
+            {
+                doc = new SearchDocument { Id = Guid.NewGuid(), TenantId = e.TenantId, ContentItemId = e.ContentItemId };
+                search.Documents.Add(doc);
+            }
+            doc.PluginInstanceId = e.PluginInstanceId;
+            doc.ContentType = e.ContentType;
+            doc.Title = published.Title;
+            doc.Body = published.Body;
+            doc.Url = published.Url;
+            doc.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+        await search.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+    }
+
+    /// <summary>What the item's document should hold now, or null when it should have none: not
+    /// published (any more), gone, or not a searchable content type.</summary>
+    private async Task<(string Title, string Body, string Url)?> PublishedAsync(CmsDbContext cms, IndexEvent e, CancellationToken ct)
+    {
+        // Resolve the content type via the instance's plugin.
         var instance = await cms.PluginInstances.IgnoreQueryFilters().AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == e.PluginInstanceId, ct);
         if (instance is null)
         {
-            return;
+            return null;
         }
         var typeDef = catalog.Find(instance.PluginId)?.ContentTypes.FirstOrDefault(t => t.Name == e.ContentType);
         if (typeDef is not { Searchable: true })
         {
-            return; // not a searchable content type
+            return null; // not a searchable content type
         }
 
         var item = await cms.ContentItems.IgnoreQueryFilters().AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == e.ContentItemId, ct);
         if (item?.PublishedVersionId is not { } versionId)
         {
-            return;
+            return null;
         }
         var version = await cms.ContentVersions.IgnoreQueryFilters().AsNoTracking()
             .FirstOrDefaultAsync(v => v.Id == versionId, ct);
         if (version is null)
         {
-            return;
+            return null;
         }
 
         var (title, body) = Project(version.DataJson, typeDef);
-        var url = $"/api/{instance.Slug}/{e.ContentType}/{e.Slug}";
-
-        var doc = await search.Documents.IgnoreQueryFilters()
-            .FirstOrDefaultAsync(d => d.TenantId == e.TenantId && d.ContentItemId == e.ContentItemId, ct);
-        if (doc is null)
-        {
-            doc = new SearchDocument { Id = Guid.NewGuid(), TenantId = e.TenantId, ContentItemId = e.ContentItemId };
-            search.Documents.Add(doc);
-        }
-        doc.PluginInstanceId = e.PluginInstanceId;
-        doc.ContentType = e.ContentType;
-        doc.Title = title;
-        doc.Body = body;
-        doc.Url = url;
-        doc.UpdatedAt = DateTimeOffset.UtcNow;
-        await search.SaveChangesAsync(ct);
+        return (title, body, $"/api/{instance.Slug}/{e.ContentType}/{e.Slug}");
     }
 
     // Default contributor: title from the slug field (or "title"); body from all
