@@ -314,6 +314,26 @@ public sealed class AuditSealingTests : IAsyncLifetime
         gaps.Should().BeEmpty();
     }
 
+    [DockerFact]
+    public async Task The_outbox_keeps_a_week_of_delivered_rows_and_everything_undelivered()
+    {
+        var now = DateTimeOffset.UtcNow;
+        AuditOutboxMessage Row(DateTimeOffset? applied, DateTimeOffset? published = null) =>
+            new() { EventId = Guid.NewGuid(), OccurredAt = now.AddDays(-30), AppliedAt = applied, PublishedAt = published };
+        _db.Outbox.AddRange(
+            Row(now.AddDays(-20), now.AddDays(-20)),   // delivered long ago: goes
+            Row(now.AddDays(-10)),                     // applied, fan-out failed, never retried: goes
+            Row(now.AddDays(-2), now.AddDays(-2)),     // inside the week: stays
+            Row(null));                                // not yet chained: stays, however old
+        await _db.SaveChangesAsync();
+
+        var pruned = await RetentionFor(400).PruneOutboxAsync();
+
+        pruned.Should().Be(2);
+        var left = await _db.Outbox.AsNoTracking().Select(o => o.AppliedAt).ToListAsync();
+        left.Should().HaveCount(2).And.Contain((DateTimeOffset?)null);
+    }
+
     private AuditGapDetector Detector() => new(_db, NullLogger<AuditGapDetector>.Instance);
 
     private AuditRetention RetentionFor(int retentionDays, AuditDbContext? db = null) => new(

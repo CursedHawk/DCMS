@@ -98,6 +98,7 @@ public sealed class AuditMaintenanceWorker(
 
         var retention = scope.ServiceProvider.GetRequiredService<AuditRetention>();
         await retention.ApplyAsync(ct);
+        await retention.PruneOutboxAsync(ct);
 
         await ObserveAsync(db, ct);
         await CheckForOmissionsAsync(

@@ -126,4 +126,44 @@ public sealed class AuditRetention(
 
         return true;
     }
+
+    /// <summary>How long a delivered outbox row is kept; past it nothing reads the row again.</summary>
+    public static readonly TimeSpan OutboxRetention = TimeSpan.FromDays(7);
+
+    private const int OutboxBatch = 5_000;
+    private const int MaxOutboxBatchesPerPass = 400;
+
+    /// <summary>
+    /// Deletes outbox rows applied to the chain more than <see cref="OutboxRetention"/> ago,
+    /// published or not: the chain is the record, and a failed fan-out is never retried (its only
+    /// reader is the best-effort Loki projection). Nothing pruned them until 2026-10-22, when the
+    /// outbox was the largest table in the database (1.56 GB, 896k rows).
+    /// </summary>
+    /// <remarks>
+    /// Oldest first, a primary-key batch at a time, stopping at the first batch with anything too
+    /// young: the writer applies in <c>Id</c> order, so <c>AppliedAt</c> rises with it, and an
+    /// unapplied row (null) is never deleted. No index on <c>AppliedAt</c> is needed for that.
+    /// </remarks>
+    public async Task<int> PruneOutboxAsync(CancellationToken ct = default)
+    {
+        var cutoff = DateTimeOffset.UtcNow - OutboxRetention;
+        var total = 0;
+        for (var i = 0; i < MaxOutboxBatchesPerPass; i++)
+        {
+            var deleted = await db.Database.ExecuteSqlInterpolatedAsync($"""
+                WITH head AS (SELECT "Id", "AppliedAt" FROM audit.audit_outbox ORDER BY "Id" LIMIT {OutboxBatch})
+                DELETE FROM audit.audit_outbox o USING head h WHERE o."Id" = h."Id" AND h."AppliedAt" < {cutoff}
+                """, ct);
+            total += deleted;
+            if (deleted < OutboxBatch)
+            {
+                break;
+            }
+        }
+        if (total > 0)
+        {
+            logger.LogInformation("Pruned {Count} delivered audit outbox row(s).", total);
+        }
+        return total;
+    }
 }
