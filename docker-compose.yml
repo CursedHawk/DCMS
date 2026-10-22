@@ -503,6 +503,9 @@ services:
     mem_limit: "${JOBS_WORKER_MEM_LIMIT:-512m}"
     environment:
       Dcms__Role: "worker"
+      # The image is admin-api's, whose Dockerfile names the profiler after it; traces and logs take
+      # the worker's own name from Dcms:Role, and so must its profiles.
+      PYROSCOPE_APPLICATION_NAME: "jobs-worker"
       # Its own share of the connection budget (see content-api): admin-api's 35 became 25
       # for requests and 10 for the work that left it. Never the owner, even in dev: only the
       # migrators may be (ComposeOwnerConnectionTests), and admin-api is the one that migrates.
