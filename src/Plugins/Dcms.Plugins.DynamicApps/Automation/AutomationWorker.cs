@@ -74,7 +74,7 @@ public sealed class AutomationWorker(
             }
             return routed == OutboxBatch;
         }, stoppingToken),
-        LoopAsync(async ct => await ExecuteRunsAsync(ct) == Concurrency, stoppingToken));
+        RunSlotsAsync(stoppingToken));
 
     /// <summary>Runs <paramref name="pass"/> every tick, and again at once while it reports more waiting.</summary>
     private async Task LoopAsync(Func<CancellationToken, Task<bool>> pass, CancellationToken stoppingToken)
@@ -283,7 +283,7 @@ public sealed class AutomationWorker(
         WHERE r."Id" IN (
             SELECT "Id" FROM apps.flow_runs
             WHERE ("Status" = 'Pending' AND "NextAttemptAt" <= now()) OR ("Status" = 'Running' AND "LeaseUntil" < now())
-            ORDER BY "NextAttemptAt" FOR UPDATE SKIP LOCKED LIMIT {Concurrency})
+            ORDER BY "NextAttemptAt" FOR UPDATE SKIP LOCKED LIMIT {"{0}"})
         RETURNING r."Id", r."TenantId", r."InstanceId"
         """;
 
@@ -321,18 +321,26 @@ public sealed class AutomationWorker(
         public Guid InstanceId { get; init; }
     }
 
-    /// <summary>Claims up to <see cref="Concurrency"/> runnable runs — due pending ones, and running ones whose lease ran out — and runs them.</summary>
-    public async Task<int> ExecuteRunsAsync(CancellationToken ct)
+    /// <summary>
+    /// Keeps <see cref="Concurrency"/> runs going (<see cref="RunSlots"/>). Claiming four and waiting
+    /// for all four let one slow script hold three slots idle: 10 % of runs at the 2 s script limit cut
+    /// 14.2 runs/s to 4.1 (load test 2026-10-21, finding 7).
+    /// </summary>
+    private Task RunSlotsAsync(CancellationToken stoppingToken) => RunSlots.RunAsync(
+        Concurrency,
+        ClaimRunsAsync,
+        run => ExecuteAsync(run, stoppingToken),
+        Tick,
+        ex => logger.LogWarning(ex, "Dynamic Apps automation pass failed; retrying."),
+        stoppingToken);
+
+    /// <summary>Claims up to <paramref name="max"/> runnable runs: due pending ones, and running ones whose lease ran out.</summary>
+    private async Task<IReadOnlyCollection<ClaimedRun>> ClaimRunsAsync(int max, CancellationToken ct)
     {
-        List<ClaimedRun> claimed;
-        using (var scope = services.CreateScope())
-        using (RlsScope.Platform())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<AppsDbContext>();
-            claimed = await db.Database.SqlQueryRaw<ClaimedRun>(ClaimRunsSql).ToListAsync(ct);
-        }
-        await Task.WhenAll(claimed.Select(run => ExecuteAsync(run, ct)));
-        return claimed.Count;
+        using var scope = services.CreateScope();
+        using var platform = RlsScope.Platform();
+        var db = scope.ServiceProvider.GetRequiredService<AppsDbContext>();
+        return await db.Database.SqlQueryRaw<ClaimedRun>(ClaimRunsSql, max).ToListAsync(ct);
     }
 
     private async Task ExecuteAsync(ClaimedRun run, CancellationToken ct)
