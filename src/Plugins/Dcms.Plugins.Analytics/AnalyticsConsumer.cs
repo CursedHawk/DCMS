@@ -24,6 +24,12 @@ internal sealed class AnalyticsConsumer(
 {
     private const string DurableName = "admin-api-analytics";
 
+    /// <summary>
+    /// Events in flight at once. One at a time it stored ~120 events/s while the beacon accepted
+    /// ~280/s (load test 2026-10-21, finding 4). Each holds a connection of jobs-worker's 10.
+    /// </summary>
+    private const int MaxConcurrency = 4;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -32,25 +38,34 @@ internal sealed class AnalyticsConsumer(
             {
                 var consumer = await jetStream.CreateOrUpdateConsumerAsync(
                     Streams.Analytics,
-                    new ConsumerConfig(DurableName) { AckPolicy = ConsumerConfigAckPolicy.Explicit },
+                    new ConsumerConfig(DurableName)
+                    {
+                        AckPolicy = ConsumerConfigAckPolicy.Explicit,
+                        MaxAckPending = MaxConcurrency,
+                    },
                     stoppingToken);
 
-                await foreach (var msg in consumer.ConsumeAsync<AnalyticsEventBatch>(cancellationToken: stoppingToken))
-                {
-                    try
+                // Order does not matter and a redelivery is skipped by its event id, so hits are
+                // stored concurrently; a rollup row two of them share is an upsert either way.
+                await Parallel.ForEachAsync(
+                    consumer.ConsumeAsync<AnalyticsEventBatch>(cancellationToken: stoppingToken),
+                    new ParallelOptions { MaxDegreeOfParallelism = MaxConcurrency, CancellationToken = stoppingToken },
+                    async (msg, ct) =>
                     {
-                        if (msg.Data is { } batch)
+                        try
                         {
-                            await PersistAsync(batch, stoppingToken);
+                            if (msg.Data is { } batch)
+                            {
+                                await PersistAsync(batch, ct);
+                            }
+                            await msg.AckAsync(cancellationToken: ct);
                         }
-                        await msg.AckAsync(cancellationToken: stoppingToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogWarning(ex, "Analytics batch failed; will redeliver.");
-                        await msg.NakAsync(cancellationToken: stoppingToken);
-                    }
-                }
+                        catch (Exception ex) when (!ct.IsCancellationRequested)
+                        {
+                            logger.LogWarning(ex, "Analytics batch failed; will redeliver.");
+                            await msg.NakAsync(cancellationToken: ct);
+                        }
+                    });
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

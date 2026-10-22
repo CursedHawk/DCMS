@@ -57,13 +57,15 @@ internal static class AnalyticsIngestEndpoints
         // client-side error.
         app.MapPost("/api/collect", async (
             CollectRequest body, HttpContext http, ITenantContext tenant, ISandboxContext sandbox,
-            CmsDbContext cms, IEventPublisher events, HeaderGeoIpResolver geo, CancellationToken ct) =>
+            CmsDbContext cms, ICacheService cache, IEventPublisher events, HeaderGeoIpResolver geo, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
             {
                 return Results.NotFound();
             }
-            if (await EnabledAsync(cms, ct) && !sandbox.IsSandbox)
+            // Cached like the status route: uncached, every page view on every site cost Postgres
+            // a round trip before the beacon could answer (load test 2026-10-21, finding 4).
+            if (await CachedEnabledAsync(tenantId, cms, cache, ct) && !sandbox.IsSandbox)
             {
                 await PublishAsync(events, tenantId, body, http, geo, ct);
             }
@@ -84,19 +86,21 @@ internal static class AnalyticsIngestEndpoints
             {
                 return Results.NotFound();
             }
-            var key = $"t:{tenantId}:analytics:enabled";
-            var cached = await cache.GetAsync<bool?>(key, ct);
-            if (cached is not { } enabled)
-            {
-                enabled = await EnabledAsync(cms, ct);
-                await cache.SetAsync(key, (bool?)enabled, TimeSpan.FromMinutes(5), ct);
-            }
-            return Results.Ok(new { enabled });
+            return Results.Ok(new { enabled = await CachedEnabledAsync(tenantId, cms, cache, ct) });
         }).RequireCors(CollectCorsPolicy).AuditExempt(NotAnAction).PermissionExempt(Anonymous);
     }
 
-    private static Task<bool> EnabledAsync(CmsDbContext cms, CancellationToken ct) =>
-        cms.PluginInstances.AsNoTracking().AnyAsync(p => p.PluginId == AnalyticsPlugin.PluginId && p.Enabled, ct);
+    private static async Task<bool> CachedEnabledAsync(Guid tenantId, CmsDbContext cms, ICacheService cache, CancellationToken ct)
+    {
+        var key = $"t:{tenantId}:analytics:enabled";
+        if (await cache.GetAsync<bool?>(key, ct) is { } cached)
+        {
+            return cached;
+        }
+        var enabled = await cms.PluginInstances.AsNoTracking().AnyAsync(p => p.PluginId == AnalyticsPlugin.PluginId && p.Enabled, ct);
+        await cache.SetAsync(key, (bool?)enabled, TimeSpan.FromMinutes(5), ct);
+        return enabled;
+    }
 
     private static ValueTask PublishAsync(
         IEventPublisher events, Guid tenantId, CollectRequest body, HttpContext http, HeaderGeoIpResolver geo, CancellationToken ct)
