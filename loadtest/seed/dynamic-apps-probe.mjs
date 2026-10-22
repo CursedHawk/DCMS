@@ -613,8 +613,12 @@ async function scripts() {
     const delta = Object.fromEntries(Object.keys(after).map((k) => [k, after[k] - before[k]]));
     measure(`scriptStorm_${label}`, { rows: rows.length, importMs: r.ms, runsPerSec: +(rows.length / (d.drainedMs / 1000)).toFixed(1),
       scored: await scored(tag), ...delta, ...d });
-    await check(`scripts ${label}: all 1,000 runs succeed and write their score`, async () =>
-      delta.ok === rows.length && (await scored(tag)) === rows.length || { ok: false, detail: delta });
+    // A heavy row runs ~2 s of CPU on purpose: it may end at the script time limit (terminated),
+    // never fail; every light row must be scored either way.
+    const heavy = heavyN === 1000 ? 0 : rows.length / 10;
+    await check(`scripts ${label}: no run fails, every light row is scored`, async () =>
+      delta.failed === 0 && delta.ok + delta.terminated === rows.length && (await scored(tag)) >= rows.length - heavy
+        || { ok: false, detail: delta });
   }
 }
 
