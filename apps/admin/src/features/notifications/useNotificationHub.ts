@@ -91,6 +91,8 @@ export function useNotificationHub(enabled: boolean, myUserId: string | undefine
         void qc.invalidateQueries({ queryKey: notificationsKey() });
         maybeToast(n, myUserIdRef.current, tRef.current, navigateRef.current);
       });
+      // One already in the bell grew (a publish burst): refresh it, but do not toast again.
+      connection.on('NotificationUpdated', () => void qc.invalidateQueries({ queryKey: notificationsKey() }));
 
       connection.on('ResourceChanged', (change: ResourceChange) => invalidate(change));
 

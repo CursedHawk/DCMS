@@ -198,8 +198,15 @@ public sealed class NotificationPublisher(
         await resources.PublishAsync(request.TenantId, tag, request.ResourceId?.ToString(), ct);
     }
 
+    /// <summary>
+    /// Tells each recipient that a notification they already have changed (a publish burst grew),
+    /// as "NotificationUpdated": the bell refreshes and nothing toasts again.
+    /// </summary>
+    public Task PushUpdatedAsync(Notification notification, List<NotificationRecipient> rows, CancellationToken ct) =>
+        PushAsync(notification, rows, ct, "NotificationUpdated");
+
     private async Task PushAsync(
-        Notification notification, List<NotificationRecipient> rows, CancellationToken ct)
+        Notification notification, List<NotificationRecipient> rows, CancellationToken ct, string method = "Notification")
     {
         foreach (var row in rows)
         {
@@ -208,7 +215,7 @@ public sealed class NotificationPublisher(
             {
                 await hub.Clients
                     .Group(NotificationHub.UserGroup(notification.TenantId, row.UserId))
-                    .SendAsync("Notification", dto, ct);
+                    .SendAsync(method, dto, ct);
             }
             catch (Exception ex)
             {

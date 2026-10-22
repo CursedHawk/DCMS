@@ -24,6 +24,12 @@ public static class NotificationKinds
 
     // Content
     public const string ContentPublished = "content.published";
+
+    /// <summary>
+    /// Not a stored kind: the i18n keys of a <see cref="ContentPublished"/> notification that
+    /// publishes within a minute of it joined ("25 items are now live").
+    /// </summary>
+    public const string ContentPublishedMany = "content.published.many";
     public const string ContentUnpublished = "content.unpublished";
 
     // Tenancy / access

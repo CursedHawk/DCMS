@@ -2,6 +2,8 @@ extern alias AdminApiApp;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Dcms.IntegrationTests.Tenancy;
+using Dcms.Shared.Contracts.Events;
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Notifications;
 using Dcms.Shared.Security;
 using Microsoft.Extensions.DependencyInjection;
@@ -9,6 +11,7 @@ using Npgsql;
 
 using NotificationRequest = AdminApiApp::Dcms.AdminApi.Notifications.NotificationRequest;
 using NotificationPublisher = AdminApiApp::Dcms.AdminApi.Notifications.NotificationPublisher;
+using ContentPublishedNotificationConsumer = AdminApiApp::Dcms.AdminApi.Notifications.ContentPublishedNotificationConsumer;
 
 namespace Dcms.IntegrationTests.Notifications;
 
@@ -96,6 +99,52 @@ public class NotificationPublisherTests(AdminApiFixture fixture)
             DedupeKey: Guid.NewGuid().ToString("N")), ct);
 
         raised.Should().Be(0);
+    }
+
+    [DockerFact]
+    public async Task A_burst_of_publishes_is_one_notification_that_counts_them()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (tenantId, _) = await CreateTenantAsync(fixture.Factory.CreateClient(), Guid.NewGuid(), ct);
+        var instance = Guid.NewGuid();
+        var items = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+        ContentPublished Published(Guid item) =>
+            new(Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, instance, item, "post", $"p-{item:N}");
+
+        // What the consumer does per event: join the last minute's notification, or raise one.
+        // The second item arrives twice, as at-least-once delivery does.
+        foreach (var item in items.Append(items[1]))
+        {
+            using var scope = fixture.Factory.Services.CreateScope();
+            using var rls = RlsScope.Tenant(tenantId);
+            if (!await ContentPublishedNotificationConsumer.JoinBurstAsync(Published(item), scope.ServiceProvider, ct))
+            {
+                await RaiseAsync(ContentPublishedNotificationConsumer.Single(Published(item)), ct);
+            }
+        }
+
+        await using var conn = new NpgsqlConnection(fixture.PostgresConnectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT "TitleKey", "ParamsJson", "LinkPath" FROM notifications.notifications
+            WHERE "TenantId" = @t AND "Kind" = 'content.published'
+            """;
+        cmd.Parameters.AddWithValue("t", tenantId);
+        var rows = new List<(string Title, string Params, string? Link)>();
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                rows.Add((reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2)));
+            }
+        }
+
+        var burst = rows.Should().ContainSingle("publishes within a minute of each other are one piece of news").Subject;
+        burst.Title.Should().Be("notifications.kinds.content_published_many.title");
+        JsonDocument.Parse(burst.Params).RootElement.GetProperty("count").GetInt32()
+            .Should().Be(3, "the redelivered publish is not counted again");
+        burst.Link.Should().Be($"/content?instance={instance}&type=post");
     }
 
     private async Task<int> RaiseAsync(NotificationRequest request, CancellationToken ct)

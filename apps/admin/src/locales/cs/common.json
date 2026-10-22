@@ -1225,6 +1225,10 @@
         "title": "Obsah publikován",
         "body": "{{slug}} ({{contentType}}) je nyní online."
       },
+      "content_published_many": {
+        "title": "Obsah publikován",
+        "body": "Publikováno položek: {{count}}."
+      },
       "content_unpublished": {
         "title": "Publikování zrušeno",
         "body": "{{slug}} ({{contentType}}) již není veřejný."

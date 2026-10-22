@@ -1196,6 +1196,10 @@
         "title": "Content published",
         "body": "{{slug}} ({{contentType}}) is now live."
       },
+      "content_published_many": {
+        "title": "Content published",
+        "body": "{{count}} items are now live."
+      },
       "content_unpublished": {
         "title": "Content unpublished",
         "body": "{{slug}} ({{contentType}}) is no longer public."
