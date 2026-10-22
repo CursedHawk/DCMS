@@ -64,6 +64,9 @@ public class SiteBuildLaneTests
             l.FilterSubjects.Contains(Subjects.SitePublishRequestedReactApp));
 
         react.FilterSubjects.Should().NotContain(Subjects.SitePublishRequestedStaticFiles);
+        // Nor with Mode A: a one-second prerender waited behind React builds, p95 51.4 s against
+        // 2.1 s alone, while the two shared a lane (load test 2026-10-21).
+        react.FilterSubjects.Should().NotContain(Subjects.SitePublishRequestedStaticPrerender);
     }
 
     [Fact]

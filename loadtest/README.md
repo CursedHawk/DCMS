@@ -74,10 +74,11 @@ Mode B build sandbox is allotted `DCMS_BUILD_CPUS=2` and `DCMS_BUILD_MEM=2g`. Tw
 Mode B builds claim the whole host.
 
 Note that `--build-mode all` no longer measures what it originally did. Publishes are routed
-by render mode onto separate subjects and site-builder drains the git-backed modes
-(`site-builder-git`) separately from static bundles (`site-builder-static`), so the 95x
-head-of-line blocking that run first found is gone by construction. It is now a regression
-test for the split: Mode C's p95 under `all` should stay close to its p95 alone.
+by render mode onto separate subjects and site-builder drains each on its own lane
+(`site-builder-prerender`, `site-builder-git`, `site-builder-static`), so the 95x head-of-line
+blocking that run first found is gone by construction. It is now a regression test for the
+split: Mode A's and Mode C's p95 under `all` should stay close to their p95 alone (Mode A shared
+the Mode B lane until 2026-10-22: 51 s mixed, 2 s alone).
 
 ### `sitebuild --build-mode`
 

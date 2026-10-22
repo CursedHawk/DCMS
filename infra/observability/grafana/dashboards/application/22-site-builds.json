@@ -288,7 +288,7 @@
         },
         "overrides": []
       },
-      "description": "Across every build lane. site-builder drains git-backed publishes (site-builder-git) separately from static-bundle ones (site-builder-static) so an expensive React build cannot sit in front of a cheap extract \u2014 which one is backed up is the panel below."
+      "description": "Across every build lane. site-builder drains each render mode on its own lane (site-builder-prerender for Mode A, site-builder-git for Mode B, site-builder-static for Mode C) so an expensive React build cannot sit in front of a cheap prerender or extract \u2014 which one is backed up is the panel below."
     },
     {
       "id": 26,
@@ -437,7 +437,7 @@
           "legendFormat": "{{consumer_name}}"
         }
       ],
-      "description": "site-builder-git carries Modes A and B, site-builder-static carries Mode C, and they drain independently. Before the split all three shared one consumer, and because JetStream delivers in order a 340 ms bundle extract behind a running 30 s React build had a p95 of 34.8 seconds. A rising git lane beside a flat static lane is this working; both rising together means the host is short of capacity rather than the queue being mis-shaped. site-builder is the legacy pre-split lane and should stay at zero.",
+      "description": "site-builder-prerender carries Mode A, site-builder-git Mode B and site-builder-static Mode C, and they drain independently (Mode A shared the git lane until 2026-10-22, and waited behind React builds). Before the split all three shared one consumer, and because JetStream delivers in order a 340 ms bundle extract behind a running 30 s React build had a p95 of 34.8 seconds. A rising git lane beside a flat static lane is this working; both rising together means the host is short of capacity rather than the queue being mis-shaped. site-builder is the legacy pre-split lane and should stay at zero.",
       "options": {
         "legend": {
           "displayMode": "list",

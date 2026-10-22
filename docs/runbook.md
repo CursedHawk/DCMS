@@ -147,13 +147,14 @@ a build and emits `site.publish.requested`). Domains link to a site via
 
 The publish job is routed by render mode — `site.publish.requested.staticfiles`,
 `.staticprerender` or `.reactapp` — and site-builder drains those on **separate consumers**:
-`site-builder-git` takes Modes A and B, `site-builder-static` takes Mode C. They cost two
+`site-builder-prerender` takes Mode A, `site-builder-git` Mode B and `site-builder-static` Mode C. They cost two
 orders of magnitude apart (measured on vps1: ~340 ms, ~1 s and ~30 s), and JetStream delivers
 in order, so on one consumer a Mode C publish behind a running Mode B build had a p95 of
 **34.8 seconds** while its minimum stayed at 338 ms. Which lane is backed up is the "Queue
 depth by lane" panel on the Site builds dashboard; `nats consumer report SITES` says the same
 thing from the command line. `DCMS_BUILD_CONCURRENCY` sizes the git lane (default 1 — a Mode B
-sandbox holds two of four cores) and `DCMS_BUILD_CONCURRENCY_STATIC` the static one
+sandbox holds two of four cores), `DCMS_BUILD_CONCURRENCY_PRERENDER` the Mode A one (default 2) and
+`DCMS_BUILD_CONCURRENCY_STATIC` the static one
 (default 2). Lane membership lives in `src/Services/Dcms.SiteBuilder/SiteBuildLane.cs`.
 
 site-builder consumes the publish job and
