@@ -52,7 +52,7 @@ const measure = (key, value) => { report.measures[key] = value; console.log(`  m
 async function call(method, path, body, { site = false, as = null, headers = {} } = {}) {
   const url = site ? `${fx.siteBase}${path}` : `${t.admin}${path.startsWith('/api') ? path : A + path}`;
   const h = { ...headers };
-  if (!site) Object.assign(h, adminHeaders);
+  if (!site) Object.assign(h, adminHeaders, method === 'GET' ? {} : { 'Idempotency-Key': crypto.randomUUID() });
   if (as) h.cookie = user[as].cookie;
   if (body !== undefined) { h['content-type'] = 'application/json'; }
   const s = performance.now();
@@ -294,14 +294,16 @@ async function limits() {
     const st = (await call('GET', '/_model')).body;
     return expect(await call('POST', '/_model/draft/changes', { expectedHash: st.hash, operations: Array.from({ length: 201 }, () => ({ op: 'update', type: 'settings', value: { description: 'x' } })) }), 400);
   });
-  await check('import of 1,001 rows refused', async () => expect(await call('POST', '/_records/audit_log/import?dryRun=true', { rows: Array.from({ length: 1001 }, (_, i) => ({ message: `m${i}` })) }), 400));
+  // Past the request ceilings the work becomes a tracked job (dcms.jobs@2), no longer a 400.
+  const asJob = (r) => r.status === 202 && r.body?.jobId ? { ok: true } : { ok: false, detail: `${r.status} ${r.text.slice(0, 200)}` };
+  await check('import of 1,001 rows runs as a job', async () => asJob(await call('POST', '/_records/audit_log/import?dryRun=true', { rows: Array.from({ length: 1001 }, (_, i) => ({ message: `m${i}` })) })));
   await check('import is all or nothing: one bad row writes nothing', async () => {
     const before = (await call('GET', '/_records/audit_log?pageSize=1&select=id')).body.total;
     const r = await call('POST', '/_records/audit_log/import?dryRun=false', { rows: [...Array.from({ length: 50 }, (_, i) => ({ message: `aon ${i}` })), { level: 'no message' }] });
     const after = (await call('GET', '/_records/audit_log?pageSize=1&select=id')).body.total;
     return r.body?.created === 0 && r.body?.errorCount === 1 && after - before < 50 || { ok: false, detail: `${r.status} ${r.text.slice(0, 150)} ${before}->${after}` };
   });
-  await check('bulk update of 501 ids refused', async () => expect(await call('POST', '/_records/deals/bulk-update', { ids: Array.from({ length: 501 }, () => fx.ids.deals[0]), values: { priority: 'low' } }), 400));
+  await check('bulk update of 501 ids runs as a job', async () => asJob(await call('POST', '/_records/deals/bulk-update', { ids: Array.from({ length: 501 }, () => fx.ids.deals[0]), values: { priority: 'low' } })));
   await check('record over 256 KB refused', async () => expect(await call('POST', '/_records/companies', { name: `Huge ${Date.now()}`, notes: 'x'.repeat(260_000) }), 400, 413));
   await check('public write throttle: 429 within 120 writes an hour from one address', async () => {
     let n = 0, last;
@@ -550,7 +552,73 @@ async function model() {
   measure('wideListSite', await timed(5, () => site('GET', '/api/limits/data/t000?pageSize=200')));
 }
 
-const sections = { functional, limits, automation, scale, model };
+// ===================================================================== scripts
+// script.run@1 (ADR 0025): every step is a fresh Deno process in script-runner, two at a time
+// (ScriptRunner__MaxConcurrency), behind a 15 s client timeout. The table and flow are added to
+// `crm` on first use. 10 % of rows run a CPU-heavy script, to see whether a few slow scripts
+// holding both slots starve the rest.
+const SCRIPT_MODEL = [
+  { op: 'create', type: 'table', value: { apiName: 'script_jobs', displayName: 'Script job', primaryFieldId: 'label',
+    fields: [f('label', 'text', { required: true }), f('n', 'integer'), f('score', 'integer')] } },
+  { op: 'create', type: 'flow', value: { apiName: 'script_score', displayName: 'Score (script)',
+    trigger: { event: 'row.created', tableId: 'script_jobs' },
+    steps: [
+      { id: 'score', action: 'script.run@1', input: { language: 'ts', code: [
+        'export default function main(ctx: { row: { n: number } }) {',
+        '  let x = 0;',
+        '  for (let i = 0; i < ctx.row.n; i++) x = (x * 31 + i) % 1000003;',
+        '  return { score: x };',
+        '}'].join('\n') } },
+      { id: 'save', action: 'records.update@1', input: { table: 'script_jobs', id: '{{ row.id }}', values: { score: '{{ steps.score.score }}' } } },
+    ] } },
+];
+function f(apiName, type, extra = {}) { return { apiName, displayName: apiName, type, ...extra }; }
+
+async function scripts() {
+  console.log('\n== scripts (script.run@1)');
+  const live = (await call('GET', '/_model/published')).body.config;
+  if (!live.flows.some((x) => x.apiName === 'script_score')) {
+    const st = (await call('GET', '/_model')).body;
+    const applied = await call('POST', '/_model/draft/changes', { expectedHash: st.hash, operations: SCRIPT_MODEL, description: 'DA stress: script.run storm' });
+    if (applied.status !== 200) return check('scripts: model applied', async () => ({ ok: false, detail: applied.text.slice(0, 300) }));
+    const pub = await call('POST', '/_model/draft/publish', { expectedHash: applied.body.draft.hash });
+    console.log(`  script_score published (${pub.status})`);
+    await sleep(5000);
+  }
+  const scored = async (tag) => (await call('POST', '/_records/script_jobs/query',
+    { filter: { and: [{ field: 'label', op: 'startsWith', value: tag }, { field: 'score', op: 'isNull', value: false }] }, pageSize: 1 })).body?.total ?? 0;
+
+  // 1. Idle latency: one row at a time, create -> score written.
+  const one = [];
+  for (let i = 0; i < 10; i++) {
+    const tag = `one${Date.now()}`;
+    const s = Date.now();
+    await call('POST', '/_records/script_jobs', { label: tag, n: 1000 });
+    if (await waitFor(() => scored(tag), 60_000, 200)) one.push(Date.now() - s);
+  }
+  one.sort((a, b) => a - b);
+  measure('scriptIdleLatency', { n: one.length, p50: one[5], max: one.at(-1) });
+
+  // 2. Storm: one import of 1,000 rows (each row its own action), 10 % heavy.
+  for (const [label, heavyN] of [['light', 1000], ['heavy10pct', 300_000_000]]) {
+    const tag = `st${label}${Date.now()}`;
+    const rows = Array.from({ length: 1000 }, (_, i) => ({ label: `${tag} ${i}`, n: i % 10 === 0 ? heavyN : 1000 }));
+    const before = { ok: await runs('script_score', 'succeeded'), failed: await runs('script_score', 'failed'), terminated: await runs('script_score', 'terminated') };
+    const base = await runs('script_score');
+    const s = Date.now();
+    const r = await call('POST', '/_records/script_jobs/import?dryRun=false', { rows });
+    if (r.status !== 200) { await check(`scripts ${label}: import`, async () => ({ ok: false, detail: r.text.slice(0, 200) })); continue; }
+    const d = await drain(s, `scripts-${label}`, 'script_score', base, rows.length);
+    const after = { ok: await runs('script_score', 'succeeded'), failed: await runs('script_score', 'failed'), terminated: await runs('script_score', 'terminated') };
+    const delta = Object.fromEntries(Object.keys(after).map((k) => [k, after[k] - before[k]]));
+    measure(`scriptStorm_${label}`, { rows: rows.length, importMs: r.ms, runsPerSec: +(rows.length / (d.drainedMs / 1000)).toFixed(1),
+      scored: await scored(tag), ...delta, ...d });
+    await check(`scripts ${label}: all 1,000 runs succeed and write their score`, async () =>
+      delta.ok === rows.length && (await scored(tag)) === rows.length || { ok: false, detail: delta });
+  }
+}
+
+const sections = { functional, limits, automation, scale, model, scripts };
 for (const [name, fn] of Object.entries(sections)) if (!only || only === name) await fn();
 
 report.finishedAt = new Date().toISOString();

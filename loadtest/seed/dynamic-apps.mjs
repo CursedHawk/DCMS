@@ -187,7 +187,15 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
 // ---------------------------------------------------------------- data
 
 async function count(app, table) {
-  return (await app.get(`/_records/${table}?pageSize=1&select=id`)).total;
+  const first = await app.get(`/_records/${table}?pageSize=1&select=id`);
+  if (!first.totalCapped) return first.total;
+  // Totals stop at 5,000 (89236e6): find the last non-empty one-row page instead. Offsets go to 100,000.
+  let lo = first.total, hi = 100_000;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if ((await app.get(`/_records/${table}?pageSize=1&page=${mid}&select=id`)).items.length) lo = mid; else hi = mid - 1;
+  }
+  return lo;
 }
 
 /** Imports rows in calls of 1,000, timing each. Skips what the table already holds. */

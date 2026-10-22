@@ -18,7 +18,7 @@
 import http from 'k6/http';
 import { check, fail, sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
-import { adminHeaders, pickTenant, requireSession, thresholds } from '../lib/k6.js';
+import { adminHeaders, pickTenant, requireSession, thresholds, writeKey } from '../lib/k6.js';
 
 const BASE = __ENV.ADMIN_BASE;
 const PROFILE = __ENV.PROFILE || 'local';
@@ -67,7 +67,7 @@ export default function () {
 
   const uploaded = http.post(`${BASE}/api/admin/media`, {
     file: http.file(image.bytes, `loadtest-${__VU}-${__ITER}-${image.name}`, 'image/png'),
-  }, { headers: auth, tags: { step: 'upload', width: String(image.width) } });
+  }, { headers: { ...auth, ...writeKey() }, tags: { step: 'upload', width: String(image.width) } });
 
   if (!check(uploaded, { 'upload 200/201': (r) => r.status === 200 || r.status === 201 })) return;
   const id = uploaded.json('id');

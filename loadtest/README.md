@@ -66,6 +66,7 @@ domain is just a `Host` header.
 | `sitebuild` | site-builder, build queue, all three render modes | yes | **no — run alone** |
 | `ratelimit` | content-api's per-IP limiter, deliberately | no | alone |
 | `mixed` | all of the above at realistic ratios | yes | — |
+| `analytics` | the anonymous beacon, ANALYTICS ingest, dashboard; teardown waits for the drain | yes (dashboard) | yes |
 
 `media` and `sitebuild` are marked because of arithmetic, not caution: the image consumer
 runs four handlers, the git build lane one by default (`DCMS_BUILD_CONCURRENCY`), and each
@@ -208,7 +209,7 @@ node loadtest/seed/dynamic-apps-probe.mjs --env vps1            # all sections, 
   from the site, revisions, delete behaviours, forms -> flows, cascade limit), answers every hard
   cap, runs two automation storms (one bulk update; one PATCH per record), times the expensive
   read shapes at full size, and builds instance `limits` up to the configuration ceiling.
-  It writes `runs/da-probe-*.json`.
+  `--only scripts` adds a `script.run@1` table and flow to `crm` and times script storms. It writes `runs/da-probe-*.json`.
 - **The scenario** mixes admin reads and writes with site-API reads as anonymous, rule-bound,
   wide and bypassing users. It has no public writes: the site API allows 120 an hour per address.
 
@@ -235,7 +236,7 @@ Four choices worth knowing:
   merges into release and returns no build id — the build then comes from Forgejo's push
   webhook, so a seeder taking that path would have to guess which build was its own.
   Publishing while already on release enqueues directly and returns the id to wait on.
-- **Mode B's source is fetched, not written.** `GET /api/admin/sites/{id}/starter-files?flavor=starter`
+- **Mode B's source is fetched, not written.** `GET /api/admin/sites/{id}/starter-files?template=content`
   returns the scaffold the IDE seeds a new React app with — package.json, lockfile, vite
   config, and a client generated from that tenant's own OpenAPI. Mode A's source is
   generated in `seed/sites.mjs` instead, shaped like the builder's `starterFiles()` but
@@ -322,7 +323,7 @@ measurement that proves it, and the fix. A finding without a number is a guess; 
 without a file is not actionable.
 
 Findings so far: [`2026-09-02`](findings/2026-09-02-vps1.md), [`2026-09-24`](findings/2026-09-24-vps1.md), [`2026-10-11` Dynamic Apps](findings/2026-10-11-vps1-dynamic-apps.md),
-[`2026-09-26` stress/limits](findings/2026-09-26-vps1-stress.md).
+[`2026-09-26` stress/limits](findings/2026-09-26-vps1-stress.md), [`2026-10-21` full re-run + analytics + flow scripts](findings/2026-10-21-vps1.md).
 
 ---
 

@@ -22,7 +22,7 @@
 import http from 'k6/http';
 import { check, fail, sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
-import { adminHeaders as sessionHeaders, deliveryTarget, pickTenant, requireSession, thresholds } from '../lib/k6.js';
+import { adminHeaders as sessionHeaders, deliveryTarget, pickTenant, requireSession, thresholds, writeKey } from '../lib/k6.js';
 
 const BASE = __ENV.ADMIN_BASE;
 
@@ -64,14 +64,14 @@ export default function () {
     contentType: tenant.contentType,
     slug,
     data: { title: `Publish probe ${slug}`, body: '<p>probe</p>', tags: ['loadtest'] },
-  }), { headers: adminHeaders, tags: { step: 'create' } });
+  }), { headers: { ...adminHeaders, ...writeKey() }, tags: { step: 'create' } });
 
   if (!check(created, { 'create 200/201': (r) => r.status === 200 || r.status === 201 })) return;
   const id = created.json('id');
 
   const publishedAt = Date.now();
   const published = http.post(`${BASE}/api/admin/content/${id}/publish`, '{}',
-    { headers: adminHeaders, tags: { step: 'publish' } });
+    { headers: { ...adminHeaders, ...writeKey() }, tags: { step: 'publish' } });
   if (!check(published, { 'publish 200/202': (r) => r.status === 200 || r.status === 202 })) return;
 
   // Poll delivery until the item is servable. Tagged separately so these reads do not

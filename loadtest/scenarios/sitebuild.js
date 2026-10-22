@@ -36,7 +36,7 @@
 import http from 'k6/http';
 import { check, fail, sleep } from 'k6';
 import { Trend, Counter } from 'k6/metrics';
-import { adminHeaders, pickTenant, requireSession, thresholds } from '../lib/k6.js';
+import { adminHeaders, pickTenant, requireSession, thresholds, writeKey } from '../lib/k6.js';
 
 const BASE = __ENV.ADMIN_BASE;
 const MODE = __ENV.BUILD_MODE || 'StaticFiles';
@@ -119,7 +119,7 @@ export default function () {
     : `${BASE}/api/admin/sites/${siteId}/builds`;
 
   const requested = http.post(url, '{}', {
-    headers: { ...auth, 'Content-Type': 'application/json' },
+    headers: { ...auth, ...writeKey(), 'Content-Type': 'application/json' },
     tags: { step: 'publish', mode },
   });
   if (!check(requested, { 'build accepted': (r) => r.status === 200 || r.status === 202 })) return;

@@ -65,6 +65,7 @@ async function main() {
     // tenant and the request runs with no tenant context.
     const scoped = api.forTenant(tenant.slug);
     const instance = await ensureBlogInstance(scoped, slug);
+    await ensureAnalytics(scoped);
     const items = await ensureContent(scoped, instance, contentPerTenant, slug);
     const media = await ensureMedia(scoped, mediaPerTenant, slug);
     const site = await ensureSite(scoped, slug);
@@ -147,14 +148,29 @@ async function ensureBlogInstance(api, slug) {
   return { ...created, slug: 'blog' };
 }
 
+/** The analytics scenario's beacon stores nothing unless the tenant has analytics enabled. */
+async function ensureAnalytics(api) {
+  const instances = await api.get('/api/admin/plugins/instances');
+  let found = instances.find((x) => x.pluginId === 'analytics');
+  // "analytics" itself is a reserved slug: the plugin's host routes would shadow it.
+  found ??= await api.post('/api/admin/plugins/instances', { pluginId: 'analytics', slug: 'insights', name: 'Analytics' });
+  if (!found.enabled) await api.post(`/api/admin/plugins/instances/${found.id}/enable`);
+}
+
 async function ensureContent(api, instance, count, tenantSlug) {
   // Only published items are visible to delivery, so the count that matters is the
   // published one. An existing item is left alone rather than republished — republishing
   // would bump the cache generation and quietly warm nothing.
   // instanceId is a required (non-nullable) query parameter on this endpoint, not an
   // optional filter -- omitting it is a 400, not an unfiltered list.
-  const existing = await api.get(`/api/admin/content?instanceId=${instance.id}&contentType=post`);
-  const have = new Set((existing.items ?? existing).map((x) => x.slug));
+  // Paged since 2026-09-26: a first page alone made a re-run re-create every slug past it (409).
+  const have = new Set();
+  let cursor = '';
+  do {
+    const page = await api.get(`/api/admin/content?instanceId=${instance.id}&contentType=post&limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+    for (const x of page.items) have.add(x.slug);
+    cursor = page.nextCursor;
+  } while (cursor);
 
   const slugs = [];
   for (let i = 1; i <= count; i++) {
@@ -289,7 +305,7 @@ async function ensureGitSite(api, tenantSlug, renderMode, seed) {
   // the scaffold the IDE seeds a new React app with, generated against THIS tenant's
   // OpenAPI. Anything else would be measuring a project no tenant actually has.
   const source = renderMode === 'ReactApp'
-    ? (await api.get(`/api/admin/sites/${siteId}/starter-files?flavor=starter`)).files
+    ? (await api.get(`/api/admin/sites/${siteId}/starter-files?template=content`)).files
     : modeASource(name, seed.modeAPages ?? 12).files;
 
   const current = await api.get(`/api/admin/sites/${siteId}`);

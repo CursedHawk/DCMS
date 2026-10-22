@@ -12,7 +12,7 @@
 // single page cannot show. What is shared with it is the shape: a v2 manifest, a header
 // and footer region, one default layout, theme + global CSS, and `pages/<slug>.html`.
 //
-// Mode B is NOT generated here at all. `GET /api/admin/sites/{id}/starter-files?flavor=starter`
+// Mode B is NOT generated here at all. `GET /api/admin/sites/{id}/starter-files?template=content`
 // returns the real scaffold the IDE seeds a new React app with — package.json, lockfile,
 // vite config, a typed API client generated from that tenant's own OpenAPI — and building
 // something else would measure a project no tenant has.

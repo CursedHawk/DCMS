@@ -22,7 +22,7 @@
 import http from 'k6/http';
 import { check } from 'k6';
 import { SharedArray } from 'k6/data';
-import { adminHeaders, ramp, requireSession, thresholds } from '../lib/k6.js';
+import { adminHeaders, ramp, requireSession, thresholds, writeKey } from '../lib/k6.js';
 
 const BASE = __ENV.ADMIN_BASE;
 const FX = new SharedArray('da', () => [JSON.parse(open(`../fixtures/${__ENV.DA_FIXTURES || `da-${__ENV.PROFILE || 'local'}`}.json`))])[0];
@@ -56,7 +56,7 @@ export default function () {
   ok(http.post(`${A}/_records/deals/query`, JSON.stringify({
     filter: { and: [{ field: 'company.industry', op: 'eq', value: pick(INDUSTRIES, i) }, { field: 'amount', op: 'gte', value: (i % 9) * 10000 }] },
     sort: [{ field: 'close_date', direction: 'desc' }], pageSize: 25,
-  }), { headers: { ...h, ...json }, tags: { endpoint: 'da_admin_query' } }), 'query', 200);
+  }), { headers: { ...h, ...json, ...writeKey() }, tags: { endpoint: 'da_admin_query' } }), 'query', 200);
   ok(http.get(`${A}/_records/deals/${pick(FX.ids.deals, i)}?expand=company,primary_contact`, { headers: h, tags: { endpoint: 'da_admin_get' } }), 'get', 200);
   ok(http.get(`${A}/_records/companies/${pick(FX.ids.companies, i)}/activities?pageSize=25`, { headers: h, tags: { endpoint: 'da_admin_related' } }), 'related', 200);
   if (i % 3 === 0) {
@@ -67,13 +67,13 @@ export default function () {
   if (i % 4 === 0) {
     const r = http.post(`${A}/_records/activities`, JSON.stringify({
       subject: `k6 ${__VU}-${__ITER}`, kind: i % 8 === 0 ? 'meeting' : 'call', company: pick(FX.ids.companies, i), done: false,
-    }), { headers: { ...h, ...json }, tags: { endpoint: 'da_admin_create' } });
+    }), { headers: { ...h, ...json, ...writeKey() }, tags: { endpoint: 'da_admin_create' } });
     if (ok(r, 'create', 201)) created.push(r.json('id'));
     ok(http.patch(`${A}/_records/deals/${pick(FX.ids.deals, i + 13)}`, JSON.stringify({ priority: pick(['low', 'normal', 'high'], i) }),
-      { headers: { ...h, ...json }, tags: { endpoint: 'da_admin_update' } }), 'update', 200);
+      { headers: { ...h, ...json, ...writeKey() }, tags: { endpoint: 'da_admin_update' } }), 'update', 200);
   }
   if (i % 8 === 4 && created.length) {
-    ok(http.del(`${A}/_records/activities/${created.shift()}`, null, { headers: h, tags: { endpoint: 'da_admin_delete' } }), 'delete', 204, 404);
+    ok(http.del(`${A}/_records/activities/${created.shift()}`, null, { headers: { ...h, ...writeKey() }, tags: { endpoint: 'da_admin_delete' } }), 'delete', 204, 404);
   }
 
   // ---- the site API

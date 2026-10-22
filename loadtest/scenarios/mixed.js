@@ -18,7 +18,7 @@
 
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { adminHeaders, deliveryTarget, hasSession, siteTarget, pickTenant, thresholds } from '../lib/k6.js';
+import { adminHeaders, deliveryTarget, hasSession, siteTarget, pickTenant, thresholds, writeKey } from '../lib/k6.js';
 
 const BASE = __ENV.ADMIN_BASE;
 const VUS = Number(__ENV.VUS || 30);
@@ -103,7 +103,7 @@ export function author() {
     contentType: tenant.contentType,
     slug,
     data: { title: `Mixed ${slug}`, body: '<p>mixed</p>', tags: ['loadtest'] },
-  }), { headers, tags: { surface: 'admin', endpoint: 'create' } });
+  }), { headers: { ...headers, ...writeKey() }, tags: { surface: 'admin', endpoint: 'create' } });
 
   if (created.status !== 200 && created.status !== 201) return;
 
@@ -111,6 +111,6 @@ export function author() {
   // cached list for this tenant. The readers above then all miss at once -- which is
   // exactly the cache-stampede question this scenario exists to ask.
   check(http.post(`${BASE}/api/admin/content/${created.json('id')}/publish`, '{}',
-    { headers, tags: { surface: 'admin', endpoint: 'publish' } }),
+    { headers: { ...headers, ...writeKey() }, tags: { surface: 'admin', endpoint: 'publish' } }),
     { 'publish 200/202': (r) => r.status === 200 || r.status === 202 });
 }

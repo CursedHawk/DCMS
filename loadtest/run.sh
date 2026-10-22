@@ -102,7 +102,7 @@ FIXTURES="$REPO/loadtest/fixtures/$PROFILE.json"
 # ---------------------------------------------------------------------------
 ADMIN_SESSION=""
 case "$SCENARIO" in
-    admin|publish|media|sitebuild|mixed|dynamicapps)
+    admin|publish|media|sitebuild|mixed|dynamicapps|analytics)
         # Internal mode skips the edge, and the edge is the only thing that turns a session
         # into a bearer admin-api accepts. No client can mint that token itself any more.
         if [ "$MODE" = "internal" ]; then

@@ -36,6 +36,8 @@ export class AdminApi {
       headers: {
         ...sessionHeaders(this.#session),
         ...(this.#tenant ? { 'X-Dcms-Tenant': this.#tenant } : {}),
+        // admin-api and platform-api refuse a person's write without one (ADR 0024).
+        ...(method === 'GET' ? {} : { 'Idempotency-Key': crypto.randomUUID() }),
         ...headers,
       },
     };

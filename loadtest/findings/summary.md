@@ -6,7 +6,12 @@ re-run. Target vps1 (4 cores, 7.6 GB), generator VPSM, over the public internet 
 Each row says what a test found, the commit that changed it, and what the next measurement
 showed. "Not re-measured" means exactly that.
 
-## Where the platform stands now
+> **2026-10-21/22 re-run: see [2026-10-21-vps1.md](2026-10-21-vps1.md).** vps1 now swaps under load
+> (memory, not CPU, is the first limit) and the single-surface ceilings below fell ~30 %; mixed traffic
+> improved. Dynamic Apps lookup filters went quadratic again (28.5 → 4.4 req/s, fix measured), every
+> analytics page view lands in the audit log, and the audit outbox (1.56 GB) is never pruned.
+
+## Where the platform stands now (2026-09-27)
 
 | surface | first measured | now | what changed it |
 |---|---|---|---|

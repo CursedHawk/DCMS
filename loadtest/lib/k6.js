@@ -130,5 +130,11 @@ export function adminHeaders(tenant) {
   };
 }
 
+/**
+ * A fresh Idempotency-Key, spread into every admin write: admin-api refuses a person's POST, PUT,
+ * PATCH or DELETE without one (ADR 0024), and a reused key replays the first response instead.
+ */
+export const writeKey = () => ({ 'Idempotency-Key': crypto.randomUUID() });
+
 /** For a scenario whose admin traffic is optional (mixed): run it only with a session. */
 export const hasSession = SESSION !== null;
