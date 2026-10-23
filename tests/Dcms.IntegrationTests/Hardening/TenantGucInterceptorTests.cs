@@ -8,6 +8,7 @@ using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using Dcms.Shared.Data;
 
 namespace Dcms.IntegrationTests.Hardening;
 
@@ -94,33 +95,76 @@ public class TenantGucInterceptorTests(AdminApiFixture fixture)
     }
 
     [DockerFact]
-    public async Task A_raw_command_on_a_connection_EF_opened_carries_the_tenant()
+    public async Task A_raw_command_on_a_connection_EF_opened_carries_the_tenant_once_prepared()
     {
         var ct = TestContext.Current.CancellationToken;
         var (a, _) = await TwoTenantsAsync(ct);
 
-        // The shape ContentListQueries and TagQueries use: EF opens, the SQL is hand-written.
-        // A raw OpenAsync would skip the interceptor and see nothing.
+        // The shape ContentListQueries and TagQueries use: EF opens, the SQL is hand-written. Such a
+        // command passes no EF interceptor, so it carries the tenant only through Prepare -- and
+        // without it the database shows it nothing (RawCommandRlsCoverageTests keeps every one prepared).
         await using var db = Context(new SettableTenant { TenantId = a }, AppConnection());
         await db.Database.OpenConnectionAsync(ct);
         try
         {
-            await using var command = db.Database.GetDbConnection().CreateCommand();
-            command.CommandText = "SELECT DISTINCT \"TenantId\" FROM tenancy.tenant_memberships";
-            var seen = new List<Guid>();
-            await using (var reader = await command.ExecuteReaderAsync(ct))
-            {
-                while (await reader.ReadAsync(ct))
-                {
-                    seen.Add(reader.GetGuid(0));
-                }
-            }
-            seen.Should().BeEquivalentTo([a]);
+            (await RawTenantIdsAsync(db, prepare: false, ct)).Should().BeEmpty("unprepared is fail-closed");
+            (await RawTenantIdsAsync(db, prepare: true, ct)).Should().BeEquivalentTo([a]);
         }
         finally
         {
             await db.Database.CloseConnectionAsync();
         }
+    }
+
+    [DockerFact]
+    public async Task A_failed_command_or_a_rollback_does_not_leave_a_tenant_the_database_forgot()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (a, b) = await TwoTenantsAsync(ct);
+        var tenant = new SettableTenant { TenantId = a };
+        await using var db = Context(tenant, AppConnection());
+        await db.Database.OpenConnectionAsync(ct);
+        try
+        {
+            (await TenantIdsAsync(db, ct)).Should().BeEquivalentTo([a]);
+
+            // The switch to b rides on a command that fails, and the failure undoes it: the next
+            // command has to set b again rather than trust that it already did.
+            tenant.TenantId = b;
+            var failing = () => db.Database.ExecuteSqlRawAsync("SELECT 1/0", ct);
+            await failing.Should().ThrowAsync<PostgresException>();
+            (await TenantIdsAsync(db, ct)).Should().BeEquivalentTo([b]);
+
+            // A rollback undoes a SET made inside it.
+            await using (var transaction = await db.Database.BeginTransactionAsync(ct))
+            {
+                tenant.TenantId = a;
+                (await TenantIdsAsync(db, ct)).Should().BeEquivalentTo([a]);
+                await transaction.RollbackAsync(ct);
+            }
+            (await TenantIdsAsync(db, ct)).Should().BeEquivalentTo([a], "the database is back on b; a must be set again");
+        }
+        finally
+        {
+            await db.Database.CloseConnectionAsync();
+        }
+    }
+
+    private static async Task<List<Guid>> RawTenantIdsAsync(TenancyDbContext db, bool prepare, CancellationToken ct)
+    {
+        await using var command = db.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT DISTINCT \"TenantId\" FROM tenancy.tenant_memberships";
+        if (prepare)
+        {
+            TenantGucInterceptor.Prepare(db, command);
+        }
+        var seen = new List<Guid>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            seen.Add(reader.GetGuid(0));
+        }
+        return seen;
     }
 
     [DockerFact]
@@ -181,10 +225,10 @@ public class TenantGucInterceptorTests(AdminApiFixture fixture)
     }
 
     private static TenancyDbContext Context(ITenantContext tenant, string connection)
-        => new(new DbContextOptionsBuilder<TenancyDbContext>()
+        => new TenancyDbContext(new DbContextOptionsBuilder<TenancyDbContext>()
             .UseNpgsql(connection)
-            .AddInterceptors(new TenantGucInterceptor(tenant, NullLogger<TenantGucInterceptor>.Instance))
-            .Options, tenant);
+            .AddInterceptors(new TenantGucInterceptor(NullLogger<TenantGucInterceptor>.Instance))
+            .Options).WithTenant(tenant);
 
     private static async Task<List<Guid>> TenantIdsAsync(TenancyDbContext db, CancellationToken ct)
         => await db.Memberships.IgnoreQueryFilters().Select(m => m.TenantId).Distinct().ToListAsync(ct);

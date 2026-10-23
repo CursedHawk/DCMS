@@ -88,7 +88,7 @@ public sealed class DailyRollup
 /// Owns the "analytics" schema. Written by the admin-api consumer, read by the
 /// dashboard. (Event-table range partitioning is a documented later optimization.)
 /// </summary>
-public class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> options) : DbContext(options)
+public class AnalyticsDbContext(DbContextOptions<AnalyticsDbContext> options) : ScopedDbContext(options)
 {
     public const string Schema = "analytics";
 
@@ -160,10 +160,7 @@ public static class AnalyticsServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<AnalyticsDbContext>((sp, options) =>
-            options.UseNpgsql(connectionString, npgsql =>
-                    npgsql.MigrationsHistoryTable("__ef_migrations_history", AnalyticsDbContext.Schema))
-                .UseDcmsAuditInterceptors(sp));
+        services.AddDcmsDbContext<AnalyticsDbContext>(connectionString, AnalyticsDbContext.Schema);
 
         return services;
     }

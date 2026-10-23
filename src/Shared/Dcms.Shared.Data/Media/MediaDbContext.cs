@@ -9,12 +9,13 @@ namespace Dcms.Shared.Data.Media;
 /// (variants); read by content-api (serving). Same tenant isolation pattern as
 /// the other contexts.
 /// </summary>
-public class MediaDbContext(DbContextOptions<MediaDbContext> options, ITenantContext tenantContext)
-    : DbContext(options)
+public class MediaDbContext(DbContextOptions<MediaDbContext> options)
+    : ScopedDbContext(options)
 {
+
     public const string Schema = "media";
 
-    private Guid CurrentTenantId => Rls.RlsScope.TenantOverride ?? tenantContext.TenantId ?? Guid.Empty;
+    private Guid CurrentTenantId => Rls.RlsScope.TenantOverride ?? TenantContext?.TenantId ?? Guid.Empty;
 
     public DbSet<MediaAsset> Assets => Set<MediaAsset>();
     public DbSet<MediaVariant> Variants => Set<MediaVariant>();

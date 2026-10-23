@@ -8,12 +8,13 @@ namespace Dcms.Shared.Data.Sites;
 /// Owns the "sites" schema. Written by admin-api (editor) and site-builder
 /// (builds); read by site-host (serving). Same tenant isolation pattern.
 /// </summary>
-public class SitesDbContext(DbContextOptions<SitesDbContext> options, ITenantContext tenantContext)
-    : DbContext(options)
+public class SitesDbContext(DbContextOptions<SitesDbContext> options)
+    : ScopedDbContext(options)
 {
+
     public const string Schema = "sites";
 
-    private Guid CurrentTenantId => tenantContext.TenantId ?? Guid.Empty;
+    private Guid CurrentTenantId => TenantContext?.TenantId ?? Guid.Empty;
 
     public DbSet<Site> Sites => Set<Site>();
     public DbSet<SiteBuild> Builds => Set<SiteBuild>();

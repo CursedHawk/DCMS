@@ -110,12 +110,13 @@ public sealed class ApiRule : TenantEntity
 }
 
 /// <summary>Owns the "userauth" schema: the User Authentication plugin's access policy (ADR 0022).</summary>
-public class UserAuthDbContext(DbContextOptions<UserAuthDbContext> options, ITenantContext tenantContext) : DbContext(options)
+public class UserAuthDbContext(DbContextOptions<UserAuthDbContext> options) : ScopedDbContext(options)
 {
+
     public const string Schema = "userauth";
 
     // An enclosing RlsScope.Tenant wins: the edge's gate lookups run with no tenant request.
-    private Guid CurrentTenantId => RlsScope.TenantOverride ?? tenantContext.TenantId ?? Guid.Empty;
+    private Guid CurrentTenantId => RlsScope.TenantOverride ?? TenantContext?.TenantId ?? Guid.Empty;
 
     public DbSet<UserRole> Roles => Set<UserRole>();
     public DbSet<UserGrant> Grants => Set<UserGrant>();
@@ -183,7 +184,7 @@ public sealed class UserAuthDbContextFactory : IDesignTimeDbContextFactory<UserA
                 "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev",
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", UserAuthDbContext.Schema))
             .Options;
-        return new UserAuthDbContext(options, new NullTenantContext());
+        return new UserAuthDbContext(options).WithTenant(new NullTenantContext());
     }
 
     private sealed class NullTenantContext : ITenantContext
@@ -200,10 +201,7 @@ public static class UserAuthServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<UserAuthDbContext>((sp, options) =>
-            options.UseNpgsql(connectionString, npgsql =>
-                    npgsql.MigrationsHistoryTable("__ef_migrations_history", UserAuthDbContext.Schema))
-                .UseDcmsAuditInterceptors(sp));
+        services.AddDcmsDbContext<UserAuthDbContext>(connectionString, UserAuthDbContext.Schema);
         return services;
     }
 }

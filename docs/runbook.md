@@ -978,6 +978,16 @@ teach content-api to resolve a tenant from the `Host` header (falling back to
 `X-Dcms-Tenant` for the operator plane), which keeps the resolution in a service that
 already owns tenancy and lets the edge forward without knowing anything.
 
+**Built 2026-10-23.** The edge now routes a tenant domain's `/api` and `/hub` straight to
+content-api (`tenant-api`, `tenant-hub`), forwarding the visitor's Host and nothing else it
+knows; its role still reaches the `edge` schema only. content-api resolves the Host in
+`SiteHostResolution`, before Finbuckle, with **site-host's own** `DomainResolver` and its
+invalidators, moved to `Dcms.Shared.Sites` so both services share one answer and one
+invalidation path. A request that already names its tenant (the admin host's hub, site-host's
+proxy) or arrives on an undotted internal name is left alone. The hop cost ~2 ms of CPU and two
+spans per delivery request (`loadtest/findings/2026-10-23-vps1-route-cost.md`). site-host's
+`ApiProxy` stays for anything that still reaches it.
+
 ## Observability
 
 Full design in [ADR 0008](adr/0008-observability.md); deployment and

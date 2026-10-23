@@ -73,7 +73,9 @@ public class PlatformRouteTableTests
     [InlineData("www.example.test", "/", PlatformRoutes.SiteHost)]
     // ---- Tenant custom domains: anything not named above ----
     [InlineData("shop.tenant.example", "/", PlatformRoutes.SiteHost)]
-    [InlineData("shop.tenant.example", "/api/content/pages", PlatformRoutes.SiteHost)]
+    // A tenant's API and hub go straight to content-api, which resolves the Host; site-host is not in the path.
+    [InlineData("shop.tenant.example", "/api/content/pages", PlatformRoutes.ContentApi)]
+    [InlineData("shop.tenant.example", "/hub/chat", PlatformRoutes.ContentApi)]
     [InlineData("shop.tenant.example", "/connect/authorize", PlatformRoutes.SiteHost)]
     // The consoles' own hosts no longer serve authentication at all: /connect on the admin host
     // is the SPA's client-side router now, not the token endpoint.
@@ -119,6 +121,21 @@ public class PlatformRouteTableTests
         }
     }
 
+    /// <summary>
+    /// The tenant API routes match /api and /hub on any host, so every named host's own routes must
+    /// out-rank them: a platform host's /api is its own service's, never content-api for a tenant.
+    /// </summary>
+    [Fact]
+    public void Tenant_api_never_wins_on_a_platform_host()
+    {
+        ResolveCluster(Admin, "/api/admin/domains").Should().Be(PlatformRoutes.AdminApi);
+        ResolveCluster(Platform, "/api/platform/observability").Should().Be(PlatformRoutes.PlatformApi);
+        foreach (var host in new[] { Auth, Grafana, Git, Landing })
+        {
+            ResolveCluster(host, "/api/anything").Should().NotBe(PlatformRoutes.ContentApi, $"{host} is a platform-owned host");
+        }
+    }
+
     [Fact]
     public void Every_route_names_a_cluster_that_exists()
     {
@@ -136,17 +153,17 @@ public class PlatformRouteTableTests
         => Clusters.Should().OnlyContain(c => c.Destinations != null && c.Destinations.Count > 0);
 
     /// <summary>
-    /// Only the tenant catch-all serves anonymous visitors, and it is the only route on which
-    /// tenant-selection headers are scrubbed. If another route ever gains that mark, the
-    /// scrubbing has widened to somewhere the admin SPA legitimately sends X-Dcms-Tenant.
+    /// Only the tenant routes -- the catch-all and its API and hub -- serve anonymous visitors, and they
+    /// are the only routes on which tenant-selection headers are scrubbed. If another route ever gains
+    /// that mark, the scrubbing has widened to somewhere the admin SPA legitimately sends X-Dcms-Tenant.
     /// </summary>
     [Fact]
-    public void Only_the_tenant_catch_all_is_marked_public_plane()
+    public void Only_the_tenant_routes_are_marked_public_plane()
     {
         var marked = Routes
             .Where(r => r.Metadata?.ContainsKey(PlatformRoutes.PublicPlaneMetadataKey) == true)
             .Select(r => r.RouteId);
-        marked.Should().BeEquivalentTo(["tenant-sites"]);
+        marked.Should().BeEquivalentTo(["tenant-sites", "tenant-api", "tenant-hub"]);
     }
 
     /// <summary>

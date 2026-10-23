@@ -22,10 +22,9 @@ public static class AuditInterceptorRegistration
     /// service that never called <c>AddDcmsAuditData</c> — the workers confined to one schema —
     /// this resolves to nothing and costs nothing.</para>
     ///
-    /// <para>Requires the <c>(IServiceProvider, DbContextOptionsBuilder)</c> overload of
-    /// <c>AddDbContext</c>, which is what makes the provider here the request's scope rather
-    /// than the root: the recorder these interceptors write into is scoped to the request whose
-    /// changes they are describing.</para>
+    /// <para>The provider is the root for a pooled context (<see cref="DcmsDbContextRegistration"/>) and
+    /// a scope for one registered with <c>AddDbContext</c>; either way every interceptor is a singleton,
+    /// and finds the request whose changes it describes through <see cref="ScopedDbContext.ServicesOf"/>.</para>
     /// </summary>
     public static DbContextOptionsBuilder UseDcmsAuditInterceptors(
         this DbContextOptionsBuilder options,

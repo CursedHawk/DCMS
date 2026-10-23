@@ -28,12 +28,13 @@ public sealed class SearchDocument : TenantEntity
 }
 
 /// <summary>Owns the "search" schema. Written by the content-api indexer, read by search delivery.</summary>
-public class SearchDbContext(DbContextOptions<SearchDbContext> options, ITenantContext tenantContext)
-    : DbContext(options)
+public class SearchDbContext(DbContextOptions<SearchDbContext> options)
+    : ScopedDbContext(options)
 {
+
     public const string Schema = "search";
 
-    private Guid CurrentTenantId => tenantContext.TenantId ?? Guid.Empty;
+    private Guid CurrentTenantId => TenantContext?.TenantId ?? Guid.Empty;
 
     public DbSet<SearchDocument> Documents => Set<SearchDocument>();
 
@@ -104,7 +105,7 @@ public sealed class SearchDbContextFactory : Microsoft.EntityFrameworkCore.Desig
                 "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev",
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", SearchDbContext.Schema))
             .Options;
-        return new SearchDbContext(options, new NullTenantContext());
+        return new SearchDbContext(options).WithTenant(new NullTenantContext());
     }
 
     private sealed class NullTenantContext : ITenantContext

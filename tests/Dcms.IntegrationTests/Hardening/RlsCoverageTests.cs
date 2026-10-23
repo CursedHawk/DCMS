@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using Dcms.Shared.Data;
 
 namespace Dcms.IntegrationTests.Hardening;
 
@@ -187,9 +188,8 @@ public sealed class RlsCoverageTests(AdminApiFixture fixture)
     private static Task ExecAsync(DbContext db, string sql, CancellationToken ct) =>
         db.Database.ExecuteSqlRawAsync(sql, ct);
 
-    private TenancyDbContext OwnerContext() => new(
-        new DbContextOptionsBuilder<TenancyDbContext>().UseNpgsql(fixture.PostgresConnectionString).Options,
-        new NoTenant());
+    private TenancyDbContext OwnerContext() => new TenancyDbContext(
+        new DbContextOptionsBuilder<TenancyDbContext>().UseNpgsql(fixture.PostgresConnectionString).Options).WithTenant(new NoTenant());
 
     private sealed class NoTenant : Dcms.Shared.Kernel.Abstractions.ITenantContext
     {

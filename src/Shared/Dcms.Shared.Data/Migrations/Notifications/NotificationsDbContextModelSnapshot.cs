@@ -150,7 +150,14 @@ namespace Dcms.Shared.Data.Migrations.Notifications
                     b.HasIndex("NotificationId", "UserId")
                         .IsUnique();
 
-                    b.HasIndex("TenantId", "UserId", "ReadAt", "CreatedAt");
+                    b.HasIndex("TenantId", "UserId")
+                        .HasDatabaseName("IX_recipients_unread")
+                        .HasFilter("\"ReadAt\" IS NULL AND \"DismissedAt\" IS NULL");
+
+                    b.HasIndex("TenantId", "UserId", "CreatedAt")
+                        .IsDescending(false, false, true)
+                        .HasDatabaseName("IX_recipients_inbox")
+                        .HasFilter("\"DismissedAt\" IS NULL");
 
                     b.ToTable("recipients", "notifications");
                 });

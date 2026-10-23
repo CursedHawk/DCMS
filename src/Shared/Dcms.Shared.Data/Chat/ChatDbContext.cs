@@ -55,14 +55,26 @@ public sealed class ChatMessage : TenantEntity, ISandboxScoped
 }
 
 /// <summary>Owns the "chat" schema. Read/written by content-api (visitor hub) and admin-api (agent console).</summary>
-public class ChatDbContext(
-    DbContextOptions<ChatDbContext> options, ITenantContext tenantContext, ISandboxContext sandboxContext)
-    : DbContext(options)
+public class ChatDbContext(DbContextOptions<ChatDbContext> options) : ScopedDbContext(options)
 {
+
+    private ISandboxContext? _sandbox;
+
+    protected override void OnBind(IServiceProvider scope) => _sandbox = scope.GetService<ISandboxContext>();
+
+    protected override void OnRelease() => _sandbox = null;
+
+    /// <summary>For a context built by hand: whether it acts for a site preview's sandbox.</summary>
+    public ChatDbContext WithSandbox(ISandboxContext sandbox)
+    {
+        _sandbox = sandbox;
+        return this;
+    }
+
     public const string Schema = "chat";
 
-    private Guid CurrentTenantId => tenantContext.TenantId ?? Guid.Empty;
-    private bool CurrentSandbox => sandboxContext.IsSandbox;
+    private Guid CurrentTenantId => TenantContext?.TenantId ?? Guid.Empty;
+    private bool CurrentSandbox => _sandbox?.IsSandbox ?? false;
 
     public DbSet<ChatConversation> Conversations => Set<ChatConversation>();
     public DbSet<ChatMessage> Messages => Set<ChatMessage>();
@@ -143,7 +155,7 @@ public sealed class ChatDbContextFactory : IDesignTimeDbContextFactory<ChatDbCon
                 "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev",
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", ChatDbContext.Schema))
             .Options;
-        return new ChatDbContext(options, new NullTenantContext(), Sandbox.DisabledSandboxContext.Instance);
+        return new ChatDbContext(options).WithTenant(new NullTenantContext()).WithSandbox(Sandbox.DisabledSandboxContext.Instance);
     }
 
     private sealed class NullTenantContext : ITenantContext
@@ -160,10 +172,7 @@ public static class ChatServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<ChatDbContext>((sp, options) =>
-            options.UseNpgsql(connectionString, npgsql =>
-                    npgsql.MigrationsHistoryTable("__ef_migrations_history", ChatDbContext.Schema))
-                .UseDcmsAuditInterceptors(sp));
+        services.AddDcmsDbContext<ChatDbContext>(connectionString, ChatDbContext.Schema);
 
         services.TryAddScoped<ISandboxContext>(_ => Sandbox.DisabledSandboxContext.Instance);
         return services;

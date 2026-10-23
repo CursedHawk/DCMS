@@ -1,7 +1,9 @@
 using System.Data.Common;
 using System.Text.RegularExpressions;
 using Dcms.Shared.Audit;
+using Dcms.Shared.Data.Rls;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Shared.Data.Audit;
 
@@ -27,8 +29,9 @@ namespace Dcms.Shared.Data.Audit;
 /// meaningful record instead — which is what the tenant purge does, since twenty-five rows
 /// saying a table got shorter tell an investigator less than one saying what was destroyed.</para>
 /// </summary>
-public sealed partial class AuditBulkCommandInterceptor(IAuditRecorder recorder, AuditScope scope)
-    : DbCommandInterceptor
+/// <remarks>A singleton (contexts are pooled): the recorder and scope are the request's, found through
+/// the command's context.</remarks>
+public sealed partial class AuditBulkCommandInterceptor : DbCommandInterceptor
 {
     /// <summary>Enough of the statement to identify it; never enough to be a data leak.</summary>
     private const int MaxSqlLength = 400;
@@ -59,7 +62,13 @@ public sealed partial class AuditBulkCommandInterceptor(IAuditRecorder recorder,
             return;
         }
 
-        if (scope.BulkCaptureSuppressions > 0)
+        if (ScopedDbContext.ServicesOf(eventData.Context) is not { } services
+            || services.GetService<IAuditRecorder>() is not { } recorder)
+        {
+            return;
+        }
+
+        if (services.GetRequiredService<AuditScope>().BulkCaptureSuppressions > 0)
         {
             return;
         }
@@ -72,7 +81,7 @@ public sealed partial class AuditBulkCommandInterceptor(IAuditRecorder recorder,
         }
 
         var deleted = eventData.CommandSource == CommandSource.ExecuteDelete;
-        var sql = command.CommandText ?? string.Empty;
+        var sql = TenantGucInterceptor.WithoutPrefix(command.CommandText ?? string.Empty);
 
         recorder.Record(deleted ? AuditActions.BulkDeleted : AuditActions.BulkUpdated)
             .For("table", TableOf(sql))

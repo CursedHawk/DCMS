@@ -347,7 +347,8 @@ deployment note rather than a code change.
   list**~~ **Dropped.** The list turned out to be clean — prod named only
   `PUBLIC_BASE_URL`, and unlike identity it inherited no localhost origins from the base
   compose file — but nothing used it either: Vite proxies `/api` and `/hub` in dev, the
-  edge routes them in production, and site-host proxies `/api/*` for tenant sites, so
+  edge routes them in production, including a tenant site's own `/api/*` (through site-host until
+  2026-10-23, straight to content-api since), so
   every browser reaching content-api is same-origin. The default policy is gone and the
   prod env var with it; the three anonymous any-origin policies (`collect`, form submit,
   branding read) are now content-api's whole cross-origin surface.

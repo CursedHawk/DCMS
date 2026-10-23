@@ -87,14 +87,15 @@ public sealed class NotificationRecipient : TenantEntity
 /// this schema publish <c>notify.raise</c> instead, the way audit's <c>audit.submitted</c>
 /// works, so the table keeps a single writer.
 /// </summary>
-public class NotificationsDbContext(DbContextOptions<NotificationsDbContext> options, ITenantContext tenantContext)
-    : DbContext(options)
+public class NotificationsDbContext(DbContextOptions<NotificationsDbContext> options)
+    : ScopedDbContext(options)
 {
+
     public const string Schema = "notifications";
 
     // Read live rather than captured: the same scoped context is resolved before Finbuckle
     // has settled a tenant and then used by handlers once it has.
-    private Guid CurrentTenantId => tenantContext.TenantId ?? Guid.Empty;
+    private Guid CurrentTenantId => TenantContext?.TenantId ?? Guid.Empty;
 
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<NotificationRecipient> Recipients => Set<NotificationRecipient>();
@@ -147,8 +148,17 @@ public class NotificationsDbContext(DbContextOptions<NotificationsDbContext> opt
 
             e.HasIndex(r => new { r.NotificationId, r.UserId }).IsUnique();
 
-            // The bell's two queries: unread count, and the newest-first list for one user.
-            e.HasIndex(r => new { r.TenantId, r.UserId, r.ReadAt, r.CreatedAt });
+            // The bell's two queries, one index each. The newest-first list walks this one and stops
+            // at the page; with ReadAt between UserId and CreatedAt (the single index until
+            // 2026-10-23) it could not be read in order, so every poll sorted all of a user's rows.
+            e.HasIndex(r => new { r.TenantId, r.UserId, r.CreatedAt })
+                .IsDescending(false, false, true)
+                .HasFilter("\"DismissedAt\" IS NULL")
+                .HasDatabaseName("IX_recipients_inbox");
+            // The unread count, and "mark all read".
+            e.HasIndex(r => new { r.TenantId, r.UserId })
+                .HasFilter("\"ReadAt\" IS NULL AND \"DismissedAt\" IS NULL")
+                .HasDatabaseName("IX_recipients_unread");
 
             e.HasQueryFilter(r => r.TenantId == CurrentTenantId);
         });
@@ -229,7 +239,7 @@ public sealed class NotificationsDbContextFactory : IDesignTimeDbContextFactory<
                 "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev",
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", NotificationsDbContext.Schema))
             .Options;
-        return new NotificationsDbContext(options, new NullTenantContext());
+        return new NotificationsDbContext(options).WithTenant(new NullTenantContext());
     }
 
     private sealed class NullTenantContext : ITenantContext
@@ -247,10 +257,7 @@ public static class NotificationsServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<NotificationsDbContext>((sp, options) =>
-            options.UseNpgsql(connectionString, npgsql =>
-                    npgsql.MigrationsHistoryTable("__ef_migrations_history", NotificationsDbContext.Schema))
-                .UseDcmsAuditInterceptors(sp));
+        services.AddDcmsDbContext<NotificationsDbContext>(connectionString, NotificationsDbContext.Schema);
 
         return services;
     }

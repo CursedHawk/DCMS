@@ -13,12 +13,13 @@ namespace Dcms.Shared.Data.Social;
 /// content-api never touches it, because it holds the tenants' Meta tokens and the
 /// public service is deliberately kept unable to decrypt them.
 /// </summary>
-public class SocialDbContext(DbContextOptions<SocialDbContext> options, ITenantContext tenantContext)
-    : DbContext(options)
+public class SocialDbContext(DbContextOptions<SocialDbContext> options)
+    : ScopedDbContext(options)
 {
+
     public const string Schema = "social";
 
-    private Guid CurrentTenantId => tenantContext.TenantId ?? Guid.Empty;
+    private Guid CurrentTenantId => TenantContext?.TenantId ?? Guid.Empty;
 
     public DbSet<MetaConnection> Connections => Set<MetaConnection>();
     public DbSet<MetaSyncState> SyncStates => Set<MetaSyncState>();
@@ -100,7 +101,7 @@ public sealed class SocialDbContextFactory : IDesignTimeDbContextFactory<SocialD
                 "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev",
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", SocialDbContext.Schema))
             .Options;
-        return new SocialDbContext(options, new DesignTimeTenantContext());
+        return new SocialDbContext(options).WithTenant(new DesignTimeTenantContext());
     }
 
     /// <summary>Design-time only: migrations are generated, not executed, so no tenant exists.</summary>
@@ -119,10 +120,7 @@ public static class SocialServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<SocialDbContext>((sp, options) =>
-            options.UseNpgsql(connectionString, npgsql =>
-                    npgsql.MigrationsHistoryTable("__ef_migrations_history", SocialDbContext.Schema))
-                .UseDcmsAuditInterceptors(sp));
+        services.AddDcmsDbContext<SocialDbContext>(connectionString, SocialDbContext.Schema);
 
         return services;
     }

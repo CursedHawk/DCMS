@@ -1,6 +1,8 @@
 using Dcms.Shared.Data.Rls;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Shared.Data.UserAuth;
 
@@ -29,14 +31,37 @@ public static class ApiRuleVisibility
         {
             return [];
         }
-        using var rls = RlsScope.Tenant(tenantId);
-        var restricted = await db.ApiRules.IgnoreQueryFilters().AsNoTracking()
-            .Where(r => r.TenantId == tenantId).Select(r => r.InstanceId).ToListAsync(ct);
-        var hidden = restricted.ToHashSet();
+        var hidden = (http?.RequestServices.GetService<IMemoryCache>() is { } cache
+            ? await RulesAsync(db, cache, tenantId, ct)
+            : await LoadAsync(db, tenantId, ct)).Keys.ToHashSet();
         if (http?.Items[ReadableItem] is IReadOnlySet<Guid> readable)
         {
             hidden.ExceptWith(readable);
         }
         return hidden;
+    }
+
+    // ponytail: per process, so a change made in the console reaches content-api within this.
+    private static readonly TimeSpan RulesTtl = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// The tenant's API rules by instance, held for <see cref="RulesTtl"/>. One entry for both readers:
+    /// content-api's API access check on every request, and the cross-instance reads above (which
+    /// queried on every request of their own until 2026-10-23).
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<Guid, ApiAccess>> RulesAsync(
+        UserAuthDbContext db, IMemoryCache cache, Guid tenantId, CancellationToken ct) =>
+        (await cache.GetOrCreateAsync($"userauth:api-rules:{tenantId}", entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = RulesTtl;
+            return LoadAsync(db, tenantId, ct);
+        }))!;
+
+    private static async Task<IReadOnlyDictionary<Guid, ApiAccess>> LoadAsync(UserAuthDbContext db, Guid tenantId, CancellationToken ct)
+    {
+        using var rls = RlsScope.Tenant(tenantId);
+        return await db.ApiRules.IgnoreQueryFilters().AsNoTracking()
+            .Where(r => r.TenantId == tenantId)
+            .ToDictionaryAsync(r => r.InstanceId, r => r.Access, ct);
     }
 }

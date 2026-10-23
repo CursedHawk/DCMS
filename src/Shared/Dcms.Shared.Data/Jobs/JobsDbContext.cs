@@ -178,12 +178,13 @@ public static class JobLanes
 }
 
 /// <summary>Owns the "jobs" schema (ADR 0024).</summary>
-public class JobsDbContext(DbContextOptions<JobsDbContext> options, ITenantContext tenantContext)
-    : DbContext(options)
+public class JobsDbContext(DbContextOptions<JobsDbContext> options)
+    : ScopedDbContext(options)
 {
+
     public const string Schema = "jobs";
 
-    private Guid? CurrentTenantId => tenantContext.TenantId;
+    private Guid? CurrentTenantId => TenantContext?.TenantId;
 
     public DbSet<Job> Jobs => Set<Job>();
 
@@ -246,7 +247,7 @@ public sealed class JobsDbContextFactory : IDesignTimeDbContextFactory<JobsDbCon
                 "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev",
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", JobsDbContext.Schema))
             .Options;
-        return new JobsDbContext(options, new NullTenantContext());
+        return new JobsDbContext(options).WithTenant(new NullTenantContext());
     }
 
     private sealed class NullTenantContext : ITenantContext
@@ -263,10 +264,7 @@ public static class JobsServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<JobsDbContext>((sp, options) =>
-            options.UseNpgsql(connectionString, npgsql =>
-                    npgsql.MigrationsHistoryTable("__ef_migrations_history", JobsDbContext.Schema))
-                .UseDcmsAuditInterceptors(sp));
+        services.AddDcmsDbContext<JobsDbContext>(connectionString, JobsDbContext.Schema);
 
         return services;
     }

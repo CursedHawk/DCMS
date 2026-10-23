@@ -96,6 +96,18 @@ public class SitePublishTests(SitePublishFixture fixture)
         (await hostClient.GetFromJsonAsync<string[]>("/internal/tls-hostnames", ct))
             .Should().Contain(hostname);
 
+        // The site's own /api is content-api's, reached straight from the edge with nothing but the
+        // Host: content-api resolves it with the same DomainResolver site-host uses (ADR 0010).
+        var content = fixture.Content.CreateClient();
+        HttpRequestMessage Api(string host)
+        {
+            var req = new HttpRequestMessage(HttpMethod.Get, "/api/openapi.json");
+            req.Headers.Host = host;
+            return req;
+        }
+        (await content.SendAsync(Api(hostname), ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await content.SendAsync(Api("unknown.example.com"), ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+
         // Suspension reaches the public site through TenantStatusInvalidator, which reads the
         // tenant's domains as that tenant. If it read nothing, the route would stay cached for
         // its five-minute TTL and the suspended site would keep serving well past this poll.
@@ -107,6 +119,9 @@ public class SitePublishTests(SitePublishFixture fixture)
             req.Headers.Host = hostname;
             return (await hostClient.SendAsync(req, ct)).StatusCode == HttpStatusCode.NotFound;
         }, TimeSpan.FromSeconds(15));
+        // And its API, through content-api's own copy of the same invalidator.
+        await PollUntil(async () => (await content.SendAsync(Api(hostname), ct)).StatusCode == HttpStatusCode.NotFound,
+            TimeSpan.FromSeconds(15));
     }
 
     [DockerFact]
@@ -181,7 +196,7 @@ public class SitePublishTests(SitePublishFixture fixture)
 
         async Task<HttpResponseMessage> GetAsync(string hostname)
         {
-            fixture.Host.Services.GetRequiredService<SiteHostApp::Dcms.SiteHost.DomainResolver>().Invalidate(hostname);
+            fixture.Host.Services.GetRequiredService<Dcms.Shared.Sites.DomainResolver>().Invalidate(hostname);
             var req = new HttpRequestMessage(HttpMethod.Get, "/");
             req.Headers.Host = hostname;
             return await hostClient.SendAsync(req, ct);

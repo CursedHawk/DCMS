@@ -29,10 +29,7 @@ public static class AuditDataServiceCollectionExtensions
 
         // Not UseDcmsAuditInterceptors -- the audit log does not audit itself -- but the tenant GUC
         // interceptor, yes: audit_events carries a policy like any other tenant table (ADR 0015).
-        services.AddDbContext<AuditDbContext>((sp, options) =>
-            options.UseNpgsql(connectionString, npgsql =>
-                    npgsql.MigrationsHistoryTable("__ef_migrations_history", AuditDbContext.Schema))
-                .UseDcmsRlsEnforcement(sp));
+        services.AddDcmsDbContext<AuditDbContext>(connectionString, AuditDbContext.Schema, audited: false);
 
         var options = configuration.GetSection(AuditOptions.SectionName).Get<AuditOptions>() ?? new AuditOptions();
         services.TryAddSingleton(options);
@@ -66,8 +63,8 @@ public static class AuditDataServiceCollectionExtensions
         // Omitting that line costs no error and no warning — the interceptor simply never
         // runs and the atomicity guarantee is quietly inert, which is exactly how it was
         // missed the first time. AuditInterceptorDiscoveryTests exists to catch a recurrence.
-        services.AddScoped<IInterceptor, AuditOutboxInterceptor>();
-        services.AddScoped<IInterceptor, AuditBulkCommandInterceptor>();
+        services.AddSingleton<IInterceptor, AuditOutboxInterceptor>();
+        services.AddSingleton<IInterceptor, AuditBulkCommandInterceptor>();
 
         return services;
     }

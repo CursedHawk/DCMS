@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Dcms.Shared.Data\Dcms.Shared.Data.csproj" />
+    <ProjectReference Include="..\Dcms.Shared.Messaging\Dcms.Shared.Messaging.csproj" />
+  </ItemGroup>
+
+</Project>

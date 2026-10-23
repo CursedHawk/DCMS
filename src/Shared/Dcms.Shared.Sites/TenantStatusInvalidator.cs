@@ -2,11 +2,14 @@ using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Contracts.Messaging;
 using Dcms.Shared.Data.Tenancy;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using Dcms.Shared.Data.Rls;
 
-namespace Dcms.SiteHost;
+namespace Dcms.Shared.Sites;
 
 /// <summary>
 /// Drops the route cache for a tenant's domains the moment it is suspended or resumed.

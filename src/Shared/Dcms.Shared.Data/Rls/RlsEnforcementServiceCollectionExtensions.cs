@@ -26,11 +26,11 @@ public static class RlsEnforcementServiceCollectionExtensions
             return services;
         }
 
-        // Registered as itself too, and as the same instance per scope: the interceptor keeps
-        // per-connection bookkeeping, and a context that attaches it directly (see
-        // UseDcmsRlsEnforcement) must share that with the ones that get it as an IInterceptor.
-        services.AddScoped<TenantGucInterceptor>();
-        services.AddScoped<IInterceptor>(sp => sp.GetRequiredService<TenantGucInterceptor>());
+        // A singleton, as every interceptor of a pooled context must be: it reads the tenant from the
+        // context it runs for, and keeps its per-connection bookkeeping on the connection. Registered
+        // as itself too, so the raw-command helper and UseDcmsRlsEnforcement find the same instance.
+        services.AddSingleton<TenantGucInterceptor>();
+        services.AddSingleton<IInterceptor>(sp => sp.GetRequiredService<TenantGucInterceptor>());
         return services;
     }
 

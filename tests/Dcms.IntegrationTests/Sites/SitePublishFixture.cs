@@ -19,9 +19,9 @@ using Testcontainers.Redis;
 namespace Dcms.IntegrationTests.Sites;
 
 /// <summary>
-/// Boots admin-api (authoring), site-builder (render) and site-host (serving)
-/// against shared Postgres + MinIO + NATS, exercising the publish → render →
-/// serve-by-domain vertical.
+/// Boots admin-api (authoring), site-builder (render), site-host (serving) and content-api (a site's
+/// /api, resolved from its Host) against shared Postgres + MinIO + NATS, exercising the publish →
+/// render → serve-by-domain vertical.
 /// </summary>
 public sealed class SitePublishFixture : IAsyncLifetime
 {
@@ -35,6 +35,7 @@ public sealed class SitePublishFixture : IAsyncLifetime
 
     public WebApplicationFactory<AdminApiApp::Program> Admin { get; private set; } = null!;
     public WebApplicationFactory<SiteHostApp::Program> Host { get; private set; } = null!;
+    public WebApplicationFactory<Program> Content { get; private set; } = null!;
     private WebApplicationFactory<SiteBuilderApp::Program> _builder = null!;
 
     public async ValueTask InitializeAsync()
@@ -93,6 +94,14 @@ public sealed class SitePublishFixture : IAsyncLifetime
             b.UseSetting("Rls:Enforce", "true");
         });
         using (Host.CreateClient()) { }
+
+        Content = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
+        {
+            Storage(b);
+            b.UseSetting("ConnectionStrings:Postgres", AppRole.ConnectionString(_postgres.GetConnectionString()));
+            b.UseSetting("Rls:Enforce", "true");
+        });
+        using (Content.CreateClient()) { }
     }
 
     public async ValueTask DisposeAsync()
@@ -100,6 +109,7 @@ public sealed class SitePublishFixture : IAsyncLifetime
         if (Admin is not null) await Admin.DisposeAsync();
         if (_builder is not null) await _builder.DisposeAsync();
         if (Host is not null) await Host.DisposeAsync();
+        if (Content is not null) await Content.DisposeAsync();
         await Task.WhenAll(_postgres.DisposeAsync().AsTask(), _nats.DisposeAsync().AsTask(),
             _minio.DisposeAsync().AsTask(), _redis.DisposeAsync().AsTask());
     }

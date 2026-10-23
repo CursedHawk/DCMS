@@ -22,6 +22,7 @@ using SixLabors.ImageSharp.PixelFormats;
 using Testcontainers.Minio;
 using Testcontainers.Nats;
 using Testcontainers.PostgreSql;
+using Dcms.Shared.Data;
 
 namespace Dcms.IntegrationTests.Media;
 
@@ -312,7 +313,7 @@ public class MediaWorkerTests : IAsyncLifetime
     {
         var options = new DbContextOptionsBuilder<MediaDbContext>()
             .UseNpgsql(_postgres.GetConnectionString()).Options;
-        return new MediaDbContext(options, new FixedTenant(tenantId));
+        return new MediaDbContext(options).WithTenant(new FixedTenant(tenantId));
     }
 
     private static IMinioClient MinioClientFactory(string endpoint, string accessKey, string secretKey) => new MinioClient()

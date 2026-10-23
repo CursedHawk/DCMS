@@ -14,7 +14,7 @@ public sealed class CmsDbContextFactory : IDesignTimeDbContextFactory<CmsDbConte
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", CmsDbContext.CmsSchema))
             .Options;
 
-        return new CmsDbContext(options, new NullTenantContext());
+        return new CmsDbContext(options).WithTenant(new NullTenantContext());
     }
 
     private sealed class NullTenantContext : ITenantContext

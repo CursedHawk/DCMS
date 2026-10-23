@@ -22,14 +22,14 @@ export const MODE = __ENV.MODE || 'edge';
  * Where a tenant's *delivery* surface lives, which is not the same place in both modes.
  *
  * The edge routes /api on the admin host to admin-api; content delivery is only reachable
- * through a tenant domain, where site-host proxies /api on to content-api and injects the
- * tenant slug (src/Services/Dcms.SiteHost/ApiProxy.cs). So:
+ * through a tenant domain, whose /api the edge sends straight to content-api, which resolves
+ * the tenant from the Host (SiteHostResolution; through site-host's proxy until 2026-10-23). So:
  *
- *   edge     -> https://<tenant-domain>/api/...   through the edge and site-host, the real path
+ *   edge     -> https://<tenant-domain>/api/...   through the edge, the real path
  *   internal -> http://content-api:8080/api/...   with the tenant header set by hand
  *
- * The internal form skips both the edge and site-host's proxy hop, which is the point:
- * differencing the two says how much of the latency belongs to each.
+ * The internal form skips the edge, which is the point: differencing the two says how much of
+ * the latency belongs to it.
  */
 export function deliveryTarget(tenant) {
   if (MODE === 'internal') {

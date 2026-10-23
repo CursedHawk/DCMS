@@ -39,16 +39,28 @@ public sealed class FormSubmission : TenantEntity, ISandboxScoped
 }
 
 /// <summary>Owns the "forms" schema. Written by content-api, read by admin-api.</summary>
-public class FormsDbContext(
-    DbContextOptions<FormsDbContext> options, ITenantContext tenantContext, ISandboxContext sandboxContext)
-    : DbContext(options)
+public class FormsDbContext(DbContextOptions<FormsDbContext> options) : ScopedDbContext(options)
 {
+
+    private ISandboxContext? _sandbox;
+
+    protected override void OnBind(IServiceProvider scope) => _sandbox = scope.GetService<ISandboxContext>();
+
+    protected override void OnRelease() => _sandbox = null;
+
+    /// <summary>For a context built by hand: whether it acts for a site preview's sandbox.</summary>
+    public FormsDbContext WithSandbox(ISandboxContext sandbox)
+    {
+        _sandbox = sandbox;
+        return this;
+    }
+
     public const string Schema = "forms";
 
     // An enclosing RlsScope.Tenant wins, as for CmsDbContext: forms.submissions@1 is read by
     // plugin event handlers and jobs with no request behind them.
-    private Guid CurrentTenantId => RlsScope.TenantOverride ?? tenantContext.TenantId ?? Guid.Empty;
-    private bool CurrentSandbox => sandboxContext.IsSandbox;
+    private Guid CurrentTenantId => RlsScope.TenantOverride ?? TenantContext?.TenantId ?? Guid.Empty;
+    private bool CurrentSandbox => _sandbox?.IsSandbox ?? false;
 
     public DbSet<FormSubmission> Submissions => Set<FormSubmission>();
 
@@ -119,7 +131,7 @@ public sealed class FormsDbContextFactory : IDesignTimeDbContextFactory<FormsDbC
                 "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev",
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", FormsDbContext.Schema))
             .Options;
-        return new FormsDbContext(options, new NullTenantContext(), Sandbox.DisabledSandboxContext.Instance);
+        return new FormsDbContext(options).WithTenant(new NullTenantContext()).WithSandbox(Sandbox.DisabledSandboxContext.Instance);
     }
 
     private sealed class NullTenantContext : ITenantContext
@@ -136,10 +148,7 @@ public static class FormsServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<FormsDbContext>((sp, options) =>
-            options.UseNpgsql(connectionString, npgsql =>
-                    npgsql.MigrationsHistoryTable("__ef_migrations_history", FormsDbContext.Schema))
-                .UseDcmsAuditInterceptors(sp));
+        services.AddDcmsDbContext<FormsDbContext>(connectionString, FormsDbContext.Schema);
 
         services.TryAddScoped<ISandboxContext>(_ => Sandbox.DisabledSandboxContext.Instance);
         return services;

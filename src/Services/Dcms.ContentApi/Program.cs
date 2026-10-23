@@ -28,6 +28,8 @@ using Finbuckle.MultiTenant.AspNetCore.Extensions;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Dcms.Shared.Data.Rls;
+using Dcms.Shared.Sites;
+using Dcms.Shared.Data.Sites;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddDcmsServiceDefaults("content-api");
@@ -35,9 +37,11 @@ builder.Services.AddDcmsMessaging(builder.Configuration);
 builder.Services.AddDcmsCaching(builder.Configuration);
 builder.Services.AddDcmsObjectStorage(builder.Configuration);
 
-// Tenant resolution: header in Phase 4 (host/domain routing arrives with
-// site-host in Phase 8). Reads the tenancy + CMS schemas owned by admin-api.
+// Tenant resolution: by header (the operator plane, site-host), and for a tenant domain's own /api
+// and /hub, from the Host (SiteHostResolution). Reads the tenancy + CMS schemas owned by admin-api.
 builder.Services.AddDcmsTenancyData(builder.Configuration);
+builder.Services.AddDcmsSitesData(builder.Configuration);
+builder.Services.AddDcmsSiteRouting();
 builder.Services.AddDcmsAuditData(builder.Configuration);
 // ADR 0015: sets app.tenant_id / app.scope per unit of work when Rls:Enforce is on; absent otherwise.
 builder.Services.AddDcmsRlsEnforcement(builder.Configuration);
@@ -141,6 +145,8 @@ app.UseDcmsSecurityHeaders();
 app.UseRateLimiter();
 app.UseCors();
 app.UseDcmsAudit();
+// Before the tenant is resolved: a tenant domain's request arrives naming none, only its Host.
+app.UseSiteHostResolution();
 app.UseMultiTenant();
 app.UseAuthentication();
 // One Idempotency-Key, one operation (ADR 0024): honoured when a caller sends one, never required.

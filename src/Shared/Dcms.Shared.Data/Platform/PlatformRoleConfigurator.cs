@@ -92,6 +92,7 @@ public static class PlatformRoleConfigurator
 
     private static async Task<bool> RoleExistsAsync(DbContext context, CancellationToken ct)
     {
+        // rls: pg_roles is the catalogue, not a policed table; no tenant to tell it.
         await using var command = context.Database.GetDbConnection().CreateCommand();
         command.CommandText = $"SELECT 1 FROM pg_roles WHERE rolname = '{RoleName}'";
 

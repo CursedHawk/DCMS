@@ -12,7 +12,7 @@ namespace Dcms.Shared.Data.Audit;
 /// Migrated by admin-api along with every other context (ADR 0003). Written by the outbox
 /// sink from any service that owns the schema, and drained by AuditChainWriter in admin-api.
 /// </summary>
-public class AuditDbContext(DbContextOptions<AuditDbContext> options) : DbContext(options)
+public class AuditDbContext(DbContextOptions<AuditDbContext> options) : ScopedDbContext(options)
 {
     public const string Schema = "audit";
 

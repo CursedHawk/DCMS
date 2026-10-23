@@ -171,6 +171,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dcms.Plugins.YouTube", "src
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dcms.Plugins.YouTube.Api", "src\Plugins\Dcms.Plugins.YouTube.Api\Dcms.Plugins.YouTube.Api.csproj", "{D70EB47E-52CA-44A6-9511-DF028F795BC3}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dcms.Shared.Sites", "src\Shared\Dcms.Shared.Sites\Dcms.Shared.Sites.csproj", "{063724F7-3E5D-412B-A690-D98011309CED}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -1081,6 +1083,18 @@ Global
 		{D70EB47E-52CA-44A6-9511-DF028F795BC3}.Release|x64.Build.0 = Release|Any CPU
 		{D70EB47E-52CA-44A6-9511-DF028F795BC3}.Release|x86.ActiveCfg = Release|Any CPU
 		{D70EB47E-52CA-44A6-9511-DF028F795BC3}.Release|x86.Build.0 = Release|Any CPU
+		{063724F7-3E5D-412B-A690-D98011309CED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{063724F7-3E5D-412B-A690-D98011309CED}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{063724F7-3E5D-412B-A690-D98011309CED}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{063724F7-3E5D-412B-A690-D98011309CED}.Debug|x64.Build.0 = Debug|Any CPU
+		{063724F7-3E5D-412B-A690-D98011309CED}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{063724F7-3E5D-412B-A690-D98011309CED}.Debug|x86.Build.0 = Debug|Any CPU
+		{063724F7-3E5D-412B-A690-D98011309CED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{063724F7-3E5D-412B-A690-D98011309CED}.Release|Any CPU.Build.0 = Release|Any CPU
+		{063724F7-3E5D-412B-A690-D98011309CED}.Release|x64.ActiveCfg = Release|Any CPU
+		{063724F7-3E5D-412B-A690-D98011309CED}.Release|x64.Build.0 = Release|Any CPU
+		{063724F7-3E5D-412B-A690-D98011309CED}.Release|x86.ActiveCfg = Release|Any CPU
+		{063724F7-3E5D-412B-A690-D98011309CED}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -1165,5 +1179,6 @@ Global
 		{543F9548-E767-42C2-9E4A-D13B717A512F} = {5854FF58-B8C5-05C6-5BF2-ACE42193F22B}
 		{E2BED71A-737A-4ACD-AD3C-6564E25E478F} = {58D3A2C3-F96F-5E57-2C6B-ECE59D6A18FC}
 		{D70EB47E-52CA-44A6-9511-DF028F795BC3} = {58D3A2C3-F96F-5E57-2C6B-ECE59D6A18FC}
+		{063724F7-3E5D-412B-A690-D98011309CED} = {C8E42992-5E42-0C2B-DBFE-AA848D06431C}
 	EndGlobalSection
 EndGlobal

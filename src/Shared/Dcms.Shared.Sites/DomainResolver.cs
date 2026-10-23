@@ -2,9 +2,10 @@ using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Dcms.Shared.Data.Rls;
 
-namespace Dcms.SiteHost;
+namespace Dcms.Shared.Sites;
 
 /// <param name="NoIndex">The domain serves a publishing branch, not release: kept out of search.</param>
 public sealed record SiteRoute(Guid TenantId, string TenantSlug, Guid SiteId, string ArtifactPrefix, bool NoIndex = false);

@@ -11,16 +11,17 @@ namespace Dcms.Shared.Data.Tenancy;
 /// Finbuckle is used only for resolving the ambient tenant. Cross-tenant reads
 /// (SuperAdmin, "my tenants") must call <c>IgnoreQueryFilters()</c>.
 /// </summary>
-public class TenancyDbContext(DbContextOptions<TenancyDbContext> options, ITenantContext tenantContext)
-    : DbContext(options)
+public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
+    : ScopedDbContext(options)
 {
+
     public const string Schema = "tenancy";
 
     // Read live (not captured) because the same scoped context may be used by
     // Finbuckle's store during resolution (no tenant yet) and then by request
     // handlers (tenant set). EF re-evaluates instance members in query filters
     // per query, so isolation tracks the resolved tenant.
-    private Guid CurrentTenantId => tenantContext.TenantId ?? Guid.Empty;
+    private Guid CurrentTenantId => TenantContext?.TenantId ?? Guid.Empty;
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<Domain> Domains => Set<Domain>();

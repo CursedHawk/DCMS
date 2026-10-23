@@ -16,10 +16,7 @@ public static class CmsServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<CmsDbContext>((sp, options) =>
-            options.UseNpgsql(connectionString, npgsql =>
-                    npgsql.MigrationsHistoryTable("__ef_migrations_history", CmsDbContext.CmsSchema))
-                .UseDcmsAuditInterceptors(sp));
+        services.AddDcmsDbContext<CmsDbContext>(connectionString, CmsDbContext.CmsSchema);
 
         return services;
     }

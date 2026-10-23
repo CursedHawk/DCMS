@@ -222,6 +222,28 @@ public static class PlatformRoutes
         }
         routes.Add(forgejo);
 
+        // ---- Tenant custom domains: their API, straight to content-api ----
+        //
+        // Ahead of the catch-all below and behind every named host. Until 2026-10-23 these went
+        // through site-host, which only resolved the Host and proxied on: ~2 ms of CPU and two spans
+        // a request. content-api resolves the Host itself now (SiteHostResolution, with site-host's
+        // own DomainResolver), so the edge forwards knowing nothing about whose the domain is -- the
+        // edge still holds no grant on tenancy (ADR 0010). Public plane: the visitor's own tenant and
+        // site headers are scrubbed, and the Host is all content-api goes by.
+        foreach (var (routeId, path) in new[] { ("tenant-api", "/api/{**catch-all}"), ("tenant-hub", "/hub/{**catch-all}") })
+        {
+            routes.Add(new RouteConfig
+            {
+                RouteId = routeId,
+                ClusterId = ContentApi,
+                Order = 99,
+                Match = new RouteMatch { Path = path },
+                Metadata = new Dictionary<string, string> { [PublicPlaneMetadataKey] = "true" },
+                // The API keeps the cache it had under the catch-all; a hub's connections have nothing to cache.
+                OutputCachePolicy = cacheEnabled && routeId == "tenant-api" ? EdgeOutputCache.PublicPolicy : null,
+            });
+        }
+
         // ---- Tenant custom domains: everything else ----
         //
         // No Hosts filter and the highest Order, so it is reached only when no named host above

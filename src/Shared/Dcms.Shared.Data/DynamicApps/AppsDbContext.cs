@@ -338,12 +338,13 @@ public sealed class AppSiteViewDefault : TenantEntity
 }
 
 /// <summary>Owns the "apps" schema: the Dynamic Apps plugin's applications (ADR 0021).</summary>
-public class AppsDbContext(DbContextOptions<AppsDbContext> options, ITenantContext tenantContext) : DbContext(options)
+public class AppsDbContext(DbContextOptions<AppsDbContext> options) : ScopedDbContext(options)
 {
+
     public const string Schema = "apps";
 
     // An enclosing RlsScope.Tenant wins: flows and the outbox dispatcher run with no request.
-    private Guid CurrentTenantId => RlsScope.TenantOverride ?? tenantContext.TenantId ?? Guid.Empty;
+    private Guid CurrentTenantId => RlsScope.TenantOverride ?? TenantContext?.TenantId ?? Guid.Empty;
 
     public DbSet<DynamicApp> Apps => Set<DynamicApp>();
     public DbSet<AppRevision> Revisions => Set<AppRevision>();
@@ -550,7 +551,7 @@ public sealed class AppsDbContextFactory : IDesignTimeDbContextFactory<AppsDbCon
                 "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev",
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", AppsDbContext.Schema))
             .Options;
-        return new AppsDbContext(options, new NullTenantContext());
+        return new AppsDbContext(options).WithTenant(new NullTenantContext());
     }
 
     private sealed class NullTenantContext : ITenantContext
@@ -567,10 +568,7 @@ public static class AppsServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<AppsDbContext>((sp, options) =>
-            options.UseNpgsql(connectionString, npgsql =>
-                    npgsql.MigrationsHistoryTable("__ef_migrations_history", AppsDbContext.Schema))
-                .UseDcmsAuditInterceptors(sp));
+        services.AddDcmsDbContext<AppsDbContext>(connectionString, AppsDbContext.Schema);
         return services;
     }
 }

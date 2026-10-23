@@ -14,7 +14,7 @@ public sealed class SitesDbContextFactory : IDesignTimeDbContextFactory<SitesDbC
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", SitesDbContext.Schema))
             .Options;
 
-        return new SitesDbContext(options, new NullTenantContext());
+        return new SitesDbContext(options).WithTenant(new NullTenantContext());
     }
 
     private sealed class NullTenantContext : ITenantContext

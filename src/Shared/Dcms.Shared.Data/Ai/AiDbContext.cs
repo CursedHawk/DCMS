@@ -18,7 +18,7 @@ namespace Dcms.Shared.Data.Ai;
 /// rows per tenant — so they carry a TenantId column and are covered by the RLS
 /// backstop; see <see cref="Dcms.Shared.Data.Rls.RlsConfigurator"/>.
 /// </summary>
-public class AiDbContext(DbContextOptions<AiDbContext> options) : DbContext(options)
+public class AiDbContext(DbContextOptions<AiDbContext> options) : ScopedDbContext(options)
 {
     public const string Schema = "ai";
 
@@ -146,10 +146,7 @@ public static class AiServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<AiDbContext>((sp, options) =>
-            options.UseNpgsql(connectionString, npgsql =>
-                    npgsql.MigrationsHistoryTable("__ef_migrations_history", AiDbContext.Schema))
-                .UseDcmsAuditInterceptors(sp));
+        services.AddDcmsDbContext<AiDbContext>(connectionString, AiDbContext.Schema);
 
         return services;
     }

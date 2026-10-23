@@ -91,7 +91,10 @@ public class EdgeGatingTests
 
         // The catch-all is anonymous visitors on somebody else's domain. A policy here would
         // redirect the public internet to a DCMS login.
-        routes.Single(r => r.RouteId == "tenant-sites").AuthorizationPolicy.Should().BeNull();
+        foreach (var id in new[] { "tenant-sites", "tenant-api", "tenant-hub" })
+        {
+            routes.Single(r => r.RouteId == id).AuthorizationPolicy.Should().BeNull($"{id} serves anonymous visitors");
+        }
         // As are the SPAs and the APIs: both consoles run browser-side OIDC and their APIs are
         // bearer-token resource servers, so a cookie policy at the edge would break them and
         // secure nothing that is not already checked behind it.

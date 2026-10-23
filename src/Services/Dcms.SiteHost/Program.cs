@@ -5,6 +5,7 @@ using Dcms.Shared.Data.Sites;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Hosting;
 using Dcms.Shared.Messaging;
+using Dcms.Shared.Sites;
 using Dcms.Shared.Storage;
 using Microsoft.AspNetCore.HttpOverrides;
 using Dcms.Shared.Data.Rls;
@@ -23,11 +24,10 @@ builder.Services.AddDcmsAuditData(builder.Configuration);
 // ADR 0015: sets app.tenant_id / app.scope per unit of work when Rls:Enforce is on; absent otherwise.
 builder.Services.AddDcmsRlsEnforcement(builder.Configuration);
 builder.Services.AddNullTenantContext();
-builder.Services.AddSingleton<DomainResolver>();
+// Host -> site, with its invalidators: suspension has to reach the delivery plane promptly, not at
+// the next cache TTL. Shared with content-api, which serves a site's /api itself.
+builder.Services.AddDcmsSiteRouting();
 builder.Services.AddSingleton<SiteArtifactCache>();
-builder.Services.AddHostedService<SiteCacheInvalidator>();
-// Suspension has to reach the delivery plane promptly, not at the next cache TTL.
-builder.Services.AddHostedService<TenantStatusInvalidator>();
 
 var contentApi = builder.Configuration["Services:ContentApi"] ?? "http://localhost:5003";
 
@@ -69,7 +69,7 @@ app.MapGet("/internal/tls-allowed", async (string? domain, DomainResolver resolv
 app.MapGet("/internal/tls-hostnames", async (DomainResolver resolver, CancellationToken ct) =>
     Results.Ok(await resolver.TlsAllowedHostnamesAsync(ct)));
 
-app.MapApiProxy(contentApi);   // /api, /hub → content-api (must precede the catch-all)
+app.MapApiProxy(contentApi);   // /api, /hub → content-api, for any that reach here rather than the edge's direct route
 app.MapSiteHost();             // everything else → static artifacts
 app.Run();
 

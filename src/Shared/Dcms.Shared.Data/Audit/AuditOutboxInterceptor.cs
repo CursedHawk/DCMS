@@ -1,7 +1,9 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Dcms.Shared.Audit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Shared.Data.Audit;
 
@@ -27,17 +29,18 @@ namespace Dcms.Shared.Data.Audit;
 /// that misses the attaching line commits changes and records none of them without complaint.
 /// <c>AuditInterceptorDiscoveryTests</c> saves through every context and asserts the buffer
 /// drained, because the failure mode is silence.</para>
+///
+/// <para>A singleton (contexts are pooled, <see cref="ScopedDbContext"/>): the recorder and the change
+/// capture are the request's, found through the context being saved.</para>
 /// </summary>
-public sealed class AuditOutboxInterceptor(
-    IAuditRecorder recorder,
-    AuditChangeCapture capture,
-    AuditEventSerializer serializer) : SaveChangesInterceptor
+public sealed class AuditOutboxInterceptor(AuditEventSerializer serializer) : SaveChangesInterceptor
 {
     /// <summary>
     /// The rows this interceptor added to the current save, so they can be withdrawn if it
-    /// fails. Per-context, because one scope may save through several.
+    /// fails. Per-context, because one scope may save through several; weak, so a context that
+    /// goes back to its pool mid-save leaves nothing behind.
     /// </summary>
-    private readonly Dictionary<DbContext, List<AuditOutboxMessage>> _enlisted = [];
+    private readonly ConditionalWeakTable<DbContext, List<AuditOutboxMessage>> _enlisted = new();
 
     public override InterceptionResult<int> SavingChanges(
         DbContextEventData eventData,
@@ -96,9 +99,15 @@ public sealed class AuditOutboxInterceptor(
             return;
         }
 
+        if (ScopedDbContext.ServicesOf(context) is not { } services
+            || services.GetService<IAuditRecorder>() is not { } recorder)
+        {
+            return; // built by hand, outside any request: there is nobody's buffer to drain
+        }
+
         // Before the drain, because the diff belongs on the entry it describes and the drain
         // is what freezes an entry into an immutable record.
-        capture.Capture(context);
+        services.GetRequiredService<AuditChangeCapture>().Capture(context);
 
         if (recorder.Pending.Count == 0)
         {
@@ -118,7 +127,7 @@ public sealed class AuditOutboxInterceptor(
             rows.Add(row);
         }
 
-        _enlisted[context] = rows;
+        _enlisted.AddOrUpdate(context, rows);
     }
 
     private void Forget(DbContext? context)
@@ -140,10 +149,11 @@ public sealed class AuditOutboxInterceptor(
     /// </summary>
     private void Withdraw(DbContext? context)
     {
-        if (context is null || !_enlisted.Remove(context, out var rows))
+        if (context is null || !_enlisted.TryGetValue(context, out var rows))
         {
             return;
         }
+        _enlisted.Remove(context);
 
         foreach (var row in rows)
         {

@@ -444,6 +444,7 @@ public static class RlsConfigurator
             await connection.OpenAsync(ct);
         }
 
+        // rls: reads and writes the policy catalogue itself, as the owner; nothing here is a tenant's row.
         var command = connection.CreateCommand();
         command.CommandText = sql;
         AddArray(command, "schemas", [.. tables.Select(t => t.Schema)]);

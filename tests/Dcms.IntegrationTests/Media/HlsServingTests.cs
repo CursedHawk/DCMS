@@ -12,6 +12,7 @@ using Minio;
 using Minio.DataModel.Args;
 using Testcontainers.Minio;
 using Testcontainers.PostgreSql;
+using Dcms.Shared.Data;
 
 namespace Dcms.IntegrationTests.Media;
 
@@ -52,7 +53,7 @@ public class HlsServingTests : IAsyncLifetime
         // Migrate + seed a tenant and a ready video asset.
         var conn = _postgres.GetConnectionString();
         await using (var tenancy = new TenancyDbContext(
-            new DbContextOptionsBuilder<TenancyDbContext>().UseNpgsql(conn).Options, new NullCtx()))
+            new DbContextOptionsBuilder<TenancyDbContext>().UseNpgsql(conn).Options).WithTenant(new NullCtx()))
         {
             await tenancy.Database.MigrateAsync();
             tenancy.Tenants.Add(new Tenant { Id = _tenantId.ToString(), Identifier = Slug, Name = "HLS" });
@@ -60,12 +61,12 @@ public class HlsServingTests : IAsyncLifetime
         }
         // content-api reads every tenant's API access rules (ADR 0022) before any route.
         await using (var userAuth = new UserAuthDbContext(new DbContextOptionsBuilder<UserAuthDbContext>()
-            .UseNpgsql(conn, o => o.MigrationsHistoryTable("__ef_migrations_history", UserAuthDbContext.Schema)).Options, new NullCtx()))
+            .UseNpgsql(conn, o => o.MigrationsHistoryTable("__ef_migrations_history", UserAuthDbContext.Schema)).Options).WithTenant(new NullCtx()))
         {
             await userAuth.Database.MigrateAsync();
         }
         await using (var media = new MediaDbContext(
-            new DbContextOptionsBuilder<MediaDbContext>().UseNpgsql(conn).Options, new FixedCtx(_tenantId)))
+            new DbContextOptionsBuilder<MediaDbContext>().UseNpgsql(conn).Options).WithTenant(new FixedCtx(_tenantId)))
         {
             await media.Database.MigrateAsync();
             media.Assets.Add(new MediaAsset

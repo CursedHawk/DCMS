@@ -94,4 +94,6 @@ host → tenant" is false — it asks whether a hostname is *allowed*, never who
 precisely so the most exposed process on the platform holds no grant on
 `tenancy.domains`. Folding it in would mean widening that grant or replicating the
 host → tenant cache with its own TTL, where a stale entry is one tenant's data answered
-to another. `docs/runbook.md` records the version worth building instead.
+to another. `docs/runbook.md` records the version worth building instead — built on
+2026-10-23: the edge forwards tenant `/api` and `/hub` to content-api knowing nothing, and
+content-api resolves the Host with site-host's shared `DomainResolver` (`Dcms.Shared.Sites`).

@@ -94,10 +94,10 @@ public class EdgeResilienceTests
     {
         var routes = PlatformRoutes.Build(new EdgeOptions(), authEnabled: true, cacheEnabled: true).Routes;
 
-        // Caching an operator console, an API or the token endpoint would serve one operator's
-        // response to the next. The catch-all is the only route serving anonymous visitors
-        // identical published pages.
-        routes.Where(r => r.OutputCachePolicy != null)
-            .Should().ContainSingle().Which.RouteId.Should().Be("tenant-sites");
+        // Caching an operator console, an operator API or the token endpoint would serve one
+        // operator's response to the next. Only anonymous visitors' identical answers are cached:
+        // the catch-all's published pages, and the tenant API it carried until 2026-10-23.
+        routes.Where(r => r.OutputCachePolicy != null).Select(r => r.RouteId)
+            .Should().BeEquivalentTo(["tenant-sites", "tenant-api"]);
     }
 }

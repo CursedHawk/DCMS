@@ -2,12 +2,10 @@ using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Runtime;
 using Dcms.PluginSdk.Runtime.Contracts;
-using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -31,9 +29,6 @@ public sealed class UserApiAccess : IPluginRequestGate
 
     /// <summary>Every route of one instance: its own (PluginEndpoints), delivery, config and site contracts.</summary>
     private const string InstancePrefix = "/api/{slug}";
-
-    // ponytail: per process, so a change made in the console reaches content-api within this.
-    private static readonly TimeSpan RulesTtl = TimeSpan.FromSeconds(10);
 
     /// <summary><c>{plugin}:{slug}:api:read</c> for reads, <c>…:api:write</c> for everything else.</summary>
     public static string Permission(string pluginId, string slug, bool write) => $"{pluginId}:{slug}:api:{(write ? "write" : "read")}";
@@ -126,19 +121,9 @@ public sealed class UserApiAccess : IPluginRequestGate
         return permissions;
     }
 
-    private static async Task<IReadOnlyDictionary<Guid, ApiAccess>> RulesAsync(HttpContext http, Guid tenantId)
-    {
-        var cache = http.RequestServices.GetRequiredService<IMemoryCache>();
-        return (await cache.GetOrCreateAsync($"userauth:api-rules:{tenantId}", async entry =>
-        {
-            entry.AbsoluteExpirationRelativeToNow = RulesTtl;
-            var db = http.RequestServices.GetRequiredService<UserAuthDbContext>();
-            using var rls = RlsScope.Tenant(tenantId);
-            return (IReadOnlyDictionary<Guid, ApiAccess>)await db.ApiRules.IgnoreQueryFilters().AsNoTracking()
-                .Where(r => r.TenantId == tenantId)
-                .ToDictionaryAsync(r => r.InstanceId, r => r.Access, http.RequestAborted);
-        }))!;
-    }
+    private static Task<IReadOnlyDictionary<Guid, ApiAccess>> RulesAsync(HttpContext http, Guid tenantId) =>
+        ApiRuleVisibility.RulesAsync(http.RequestServices.GetRequiredService<UserAuthDbContext>(),
+            http.RequestServices.GetRequiredService<IMemoryCache>(), tenantId, http.RequestAborted);
 
     private static Task RefuseAsync(HttpContext http, int status, string error, string title)
     {

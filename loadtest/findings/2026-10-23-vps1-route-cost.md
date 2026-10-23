@@ -177,6 +177,31 @@ execution time instead of capturing it. `EF.CompileAsyncQuery` for the handful o
 | 10 | DbContext pooling / compiled queries | refactor | a share of EF's 16–21 % |
 | 11 | edge → content-api directly for tenant `/api` | medium | ~4 ms and 4 spans per delivery request |
 
+## Fixed — 2026-10-23
+
+| | fix | where |
+|---|---|---|
+| 1 | site-host's YARP per-request Information logs off | `SiteHost/appsettings.json` |
+| 2 | sensitive-name verdict memoised per tag name | `SensitiveAttributeProcessor` |
+| 3 | Dynamic Apps reads the revision id, the snapshot only on a cache miss | `PublishedModels.LoadAsync` |
+| 4 | media and large site assets stream from **one** presigned GET (minio-dotnet 7 sent a bucket-exists HEAD before every call and a stat inside GetObject: five requests; `.WithRegion` changes none of that, measured); ranges are a real ranged GET | `IObjectStorage.OpenReadAsync`, `ObjectStreaming` |
+| 5 | enabled plugin instances cached per process under a Redis generation every instance write bumps; delivery and OpenAPI read them there; an OpenAPI 304 no longer pulls the document out of Redis | `PluginInstanceCache` |
+| 6 | the RLS GUC is no longer its own span | `TenantGucInterceptor` |
+| 7 | Dynamic Apps totals: none counted for a short page; full-page counts cached per filter under a per-app generation bumped after each committed write (decided: cache, API unchanged) | `RecordCounts` |
+| 8 | the RLS GUC travels **in front of the command** (`SET …; SET …;` prepended) instead of a separate round trip per open; separate only for migrations and SaveChanges batches (EF checks row counts by statement position). A failed command or rollback forgets what was set; raw ADO commands call `TenantGucInterceptor.Prepare`, enforced by `RawCommandRlsCoverageTests` | `TenantGucInterceptor` |
+| 10 | DbContexts pooled: `ScopedDbContext` binds the tenant per lease and drops it on return; the RLS and audit interceptors are singletons that read the request through the context | `ScopedDbContext`, `AddDcmsDbContext` |
+| 11 | tenant `/api` and `/hub` go edge → content-api; content-api resolves the Host with site-host's own `DomainResolver` (moved to `Dcms.Shared.Sites` with its invalidators), the edge still knows nothing about tenancy (ADR 0010's "version worth building") | `SiteHostResolution`, `PlatformRoutes` |
+| §6 | `/api/tags` reads API rules from the 10 s cache the request gate already keeps | `ApiRuleVisibility.RulesAsync` |
+| §7 | outbox queue tables vacuum after 2,000 dead rows (34,361 dead entries were being walked to find an empty queue); notification inbox and unread indexes; `AuditDbContext` built only when something is written | migrations, `OutboxAuditSink` |
+
+Not done, deliberately:
+
+- **Trace sampling (9)** — kept at everything (decision: every trace id must resolve).
+- **Audit member-branch LATERAL** — measured 1.3 ms warm (the 34 ms was a cold cache); its
+  `ponytail:` ceiling still holds.
+- **Analytics ingest batching** — batching messages per transaction changes the consumer's
+  ack/nak semantics; its per-beacon overhead shrinks with 6, 8 and 10 instead.
+
 ## Reproduce
 
 ```bash

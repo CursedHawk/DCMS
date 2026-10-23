@@ -3,7 +3,6 @@ using Dcms.IntegrationTests.Social;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Data.Ai;
 using Dcms.Shared.Data.Rls;
-using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Vault;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -84,7 +83,7 @@ public sealed class AiProviderResolverRlsTests : IAsyncLifetime
 
         return new AiDbContext(new DbContextOptionsBuilder<AiDbContext>()
             .UseNpgsql(connection)
-            .AddInterceptors(new TenantGucInterceptor(new NoTenant(), NullLogger<TenantGucInterceptor>.Instance))
+            .AddInterceptors(new TenantGucInterceptor(NullLogger<TenantGucInterceptor>.Instance))
             .Options);
     }
 
@@ -105,13 +104,6 @@ public sealed class AiProviderResolverRlsTests : IAsyncLifetime
             ["Ai:Defaults:ApiKey"] = "sk-platform",
         })
         .Build();
-
-    /// <summary>What ai-gateway has: audit's tenantless context, since no request carries a tenant.</summary>
-    private sealed class NoTenant : ITenantContext
-    {
-        public Guid? TenantId => null;
-        public string? TenantSlug => null;
-    }
 
     private sealed class NullRecorder : IAuditRecorder
     {

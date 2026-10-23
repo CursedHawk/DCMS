@@ -1,6 +1,7 @@
 using System.Data;
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Dcms.Shared.Data.Rls;
 
 namespace Dcms.Shared.Data.Cms;
 
@@ -236,16 +237,16 @@ public static class TagQueries
         var opened = connection.State != ConnectionState.Open;
         if (opened)
         {
-            // Through EF, not the raw connection: EF's open is what runs the connection
-            // interceptors, and under RLS enforcement (ADR 0015) that is what tells the
-            // database which tenant this query belongs to. A raw OpenAsync would run it with
-            // no tenant set and return nothing.
+            // Through EF, not the raw connection: EF's open is what tells the RLS interceptor
+            // (ADR 0015) the session is a new one. The tenant itself goes in front of the
+            // command, below -- a raw command passes no EF interceptor.
             await db.Database.OpenConnectionAsync(ct);
         }
         try
         {
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
+            TenantGucInterceptor.Prepare(db, command);
             Bind(command, "@tenantId", tenantId);
             foreach (var (name, value) in TagFieldParameters(tagFields))
             {
@@ -295,16 +296,16 @@ public static class TagQueries
         var opened = connection.State != ConnectionState.Open;
         if (opened)
         {
-            // Through EF, not the raw connection: EF's open is what runs the connection
-            // interceptors, and under RLS enforcement (ADR 0015) that is what tells the
-            // database which tenant this query belongs to. A raw OpenAsync would run it with
-            // no tenant set and return nothing.
+            // Through EF, not the raw connection: EF's open is what tells the RLS interceptor
+            // (ADR 0015) the session is a new one. The tenant itself goes in front of the
+            // command, below -- a raw command passes no EF interceptor.
             await db.Database.OpenConnectionAsync(ct);
         }
         try
         {
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
+            TenantGucInterceptor.Prepare(db, command);
             Bind(command, "@tenantId", tenantId);
             Bind(command, "@instanceId", instanceId);
             Bind(command, "@contentType", contentType);
@@ -338,16 +339,16 @@ public static class TagQueries
         var opened = connection.State != ConnectionState.Open;
         if (opened)
         {
-            // Through EF, not the raw connection: EF's open is what runs the connection
-            // interceptors, and under RLS enforcement (ADR 0015) that is what tells the
-            // database which tenant this query belongs to. A raw OpenAsync would run it with
-            // no tenant set and return nothing.
+            // Through EF, not the raw connection: EF's open is what tells the RLS interceptor
+            // (ADR 0015) the session is a new one. The tenant itself goes in front of the
+            // command, below -- a raw command passes no EF interceptor.
             await db.Database.OpenConnectionAsync(ct);
         }
         try
         {
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
+            TenantGucInterceptor.Prepare(db, command);
             foreach (var (name, value) in parameters)
             {
                 Bind(command, name, value);

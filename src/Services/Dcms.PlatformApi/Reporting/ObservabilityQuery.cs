@@ -43,6 +43,8 @@ public sealed class ObservabilityQuery(PlatformDbContext db)
 
         try
         {
+            // rls: PlatformDbContext attaches no RLS interceptor; platform-api reads the observability
+            // views as its own role, which they are granted to whole.
             await using var command = connection.CreateCommand();
             command.CommandText = sql;
             if (parameters is not null)

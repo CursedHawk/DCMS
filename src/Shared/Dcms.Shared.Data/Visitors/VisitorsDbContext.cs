@@ -44,16 +44,28 @@ public sealed class VisitorRefreshToken : TenantEntity, ISandboxScoped
 }
 
 /// <summary>Owns the "visitors" schema. Used by content-api's VisitorAuth endpoints.</summary>
-public class VisitorsDbContext(
-    DbContextOptions<VisitorsDbContext> options, ITenantContext tenantContext, ISandboxContext sandboxContext)
-    : DbContext(options)
+public class VisitorsDbContext(DbContextOptions<VisitorsDbContext> options) : ScopedDbContext(options)
 {
+
+    private ISandboxContext? _sandbox;
+
+    protected override void OnBind(IServiceProvider scope) => _sandbox = scope.GetService<ISandboxContext>();
+
+    protected override void OnRelease() => _sandbox = null;
+
+    /// <summary>For a context built by hand: whether it acts for a site preview's sandbox.</summary>
+    public VisitorsDbContext WithSandbox(ISandboxContext sandbox)
+    {
+        _sandbox = sandbox;
+        return this;
+    }
+
     public const string Schema = "visitors";
 
     // An enclosing RlsScope.Tenant wins, as for CmsDbContext and the RLS GUC: plugin event
     // handlers and jobs read visitor profiles with no request behind them.
-    private Guid CurrentTenantId => RlsScope.TenantOverride ?? tenantContext.TenantId ?? Guid.Empty;
-    private bool CurrentSandbox => sandboxContext.IsSandbox;
+    private Guid CurrentTenantId => RlsScope.TenantOverride ?? TenantContext?.TenantId ?? Guid.Empty;
+    private bool CurrentSandbox => _sandbox?.IsSandbox ?? false;
 
     public DbSet<VisitorAccount> Accounts => Set<VisitorAccount>();
     public DbSet<VisitorRefreshToken> RefreshTokens => Set<VisitorRefreshToken>();
@@ -134,7 +146,7 @@ public sealed class VisitorsDbContextFactory : IDesignTimeDbContextFactory<Visit
                 "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev",
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", VisitorsDbContext.Schema))
             .Options;
-        return new VisitorsDbContext(options, new NullTenantContext(), Sandbox.DisabledSandboxContext.Instance);
+        return new VisitorsDbContext(options).WithTenant(new NullTenantContext()).WithSandbox(Sandbox.DisabledSandboxContext.Instance);
     }
 
     private sealed class NullTenantContext : ITenantContext
@@ -151,10 +163,7 @@ public static class VisitorsServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Postgres")
                                ?? "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev";
 
-        services.AddDbContext<VisitorsDbContext>((sp, options) =>
-            options.UseNpgsql(connectionString, npgsql =>
-                    npgsql.MigrationsHistoryTable("__ef_migrations_history", VisitorsDbContext.Schema))
-                .UseDcmsAuditInterceptors(sp));
+        services.AddDcmsDbContext<VisitorsDbContext>(connectionString, VisitorsDbContext.Schema);
 
         services.TryAddScoped<ISandboxContext>(_ => Sandbox.DisabledSandboxContext.Instance);
         return services;

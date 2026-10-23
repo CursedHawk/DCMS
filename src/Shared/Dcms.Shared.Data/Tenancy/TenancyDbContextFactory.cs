@@ -18,7 +18,7 @@ public sealed class TenancyDbContextFactory : IDesignTimeDbContextFactory<Tenanc
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", TenancyDbContext.Schema))
             .Options;
 
-        return new TenancyDbContext(options, new NullTenantContext());
+        return new TenancyDbContext(options).WithTenant(new NullTenantContext());
     }
 
     private sealed class NullTenantContext : ITenantContext

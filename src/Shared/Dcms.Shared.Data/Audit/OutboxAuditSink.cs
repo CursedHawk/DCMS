@@ -1,5 +1,5 @@
 using Dcms.Shared.Audit;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.Shared.Data.Audit;
 
@@ -17,8 +17,11 @@ namespace Dcms.Shared.Data.Audit;
 /// own <c>SaveChangesAsync</c> lands here, and a crash in between would lose it. That is why
 /// the convention is to record before saving, and why the tests assert the ordering for the
 /// operations where losing the record would matter.</para>
+///
+/// <para>The context is resolved when there is something to write, not with the sink: the recorder
+/// that holds this sink is built for every request, and so was an AuditDbContext nobody used.</para>
 /// </summary>
-public sealed class OutboxAuditSink(AuditDbContext db, AuditEventSerializer serializer) : IAuditSink
+public sealed class OutboxAuditSink(IServiceProvider services, AuditEventSerializer serializer) : IAuditSink
 {
     public async ValueTask WriteAsync(IReadOnlyList<AuditEvent> events, CancellationToken cancellationToken = default)
     {
@@ -27,6 +30,7 @@ public sealed class OutboxAuditSink(AuditDbContext db, AuditEventSerializer seri
             return;
         }
 
+        var db = services.GetRequiredService<AuditDbContext>();
         foreach (var @event in events)
         {
             db.Outbox.Add(new AuditOutboxMessage

@@ -14,7 +14,7 @@ public sealed class MediaDbContextFactory : IDesignTimeDbContextFactory<MediaDbC
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", MediaDbContext.Schema))
             .Options;
 
-        return new MediaDbContext(options, new NullTenantContext());
+        return new MediaDbContext(options).WithTenant(new NullTenantContext());
     }
 
     private sealed class NullTenantContext : ITenantContext

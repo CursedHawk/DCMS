@@ -18,6 +18,7 @@ using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
+using Dcms.Shared.Data;
 
 namespace Dcms.UnitTests.Data;
 
@@ -47,21 +48,21 @@ public class RlsCoverageTests
 
     private static DbContext[] AllContexts() =>
     [
-        new TenancyDbContext(Options<TenancyDbContext>(), Tenant),
-        new CmsDbContext(Options<CmsDbContext>(), Tenant),
-        new MediaDbContext(Options<MediaDbContext>(), Tenant),
-        new SitesDbContext(Options<SitesDbContext>(), Tenant),
+        new TenancyDbContext(Options<TenancyDbContext>()).WithTenant(Tenant),
+        new CmsDbContext(Options<CmsDbContext>()).WithTenant(Tenant),
+        new MediaDbContext(Options<MediaDbContext>()).WithTenant(Tenant),
+        new SitesDbContext(Options<SitesDbContext>()).WithTenant(Tenant),
         new AiDbContext(Options<AiDbContext>()),
-        new SearchDbContext(Options<SearchDbContext>(), Tenant),
+        new SearchDbContext(Options<SearchDbContext>()).WithTenant(Tenant),
         new AnalyticsDbContext(Options<AnalyticsDbContext>()),
-        new VisitorsDbContext(Options<VisitorsDbContext>(), Tenant, Sandbox),
-        new ChatDbContext(Options<ChatDbContext>(), Tenant, Sandbox),
-        new FormsDbContext(Options<FormsDbContext>(), Tenant, Sandbox),
-        new SocialDbContext(Options<SocialDbContext>(), Tenant),
-        new AppsDbContext(Options<AppsDbContext>(), Tenant),
-        new UserAuthDbContext(Options<UserAuthDbContext>(), Tenant),
+        new VisitorsDbContext(Options<VisitorsDbContext>()).WithTenant(Tenant).WithSandbox(Sandbox),
+        new ChatDbContext(Options<ChatDbContext>()).WithTenant(Tenant).WithSandbox(Sandbox),
+        new FormsDbContext(Options<FormsDbContext>()).WithTenant(Tenant).WithSandbox(Sandbox),
+        new SocialDbContext(Options<SocialDbContext>()).WithTenant(Tenant),
+        new AppsDbContext(Options<AppsDbContext>()).WithTenant(Tenant),
+        new UserAuthDbContext(Options<UserAuthDbContext>()).WithTenant(Tenant),
         new AuditDbContext(Options<AuditDbContext>()),
-        new JobsDbContext(Options<JobsDbContext>(), Tenant),
+        new JobsDbContext(Options<JobsDbContext>()).WithTenant(Tenant),
     ];
 
     [Fact]
@@ -86,7 +87,7 @@ public class RlsCoverageTests
         // Same shape as the user_ai_settings miss below, and the same silence: the tokens stay
         // encrypted whether or not a policy exists, so nothing looks wrong from the outside.
         // meta_connections holds a tenant's live Facebook/Instagram credentials.
-        using var social = new SocialDbContext(Options<SocialDbContext>(), Tenant);
+        using var social = new SocialDbContext(Options<SocialDbContext>()).WithTenant(Tenant);
 
         var entity = social.Model.GetEntityTypes()
             .Single(e => e.ClrType == typeof(MetaConnection));
