@@ -10,7 +10,9 @@ showed. "Not re-measured" means exactly that.
 > A static page costs the host 2 CPU-ms, cached delivery JSON 11–14, Dynamic Apps reads ~29, a publish 75.
 > Shared causes: telemetry (14 % of the host plus 6–30 % inside each service), an RLS `set_config` round
 > trip per connection open (2.2 per request), every plugin request reloading every plugin instance, and
-> EF Core's per-context setup.
+> EF Core's per-context setup. **All fixed the same day** (pooled contexts, RLS tenant on the command,
+> instance cache, tenant /api straight to content-api, …): weighted host CPU per request 15.4 → 13.2 ms,
+> Dynamic Apps lists −31 %, media −37 %, cached item/tag delivery −40 %.
 >
 > **2026-10-21/22 re-run: see [2026-10-21-vps1.md](2026-10-21-vps1.md).** vps1 now swaps under load
 > (memory, not CPU, is the first limit) and the single-surface ceilings below fell ~30 %; mixed traffic

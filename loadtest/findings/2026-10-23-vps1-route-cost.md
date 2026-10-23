@@ -194,6 +194,33 @@ execution time instead of capturing it. `EF.CompileAsyncQuery` for the handful o
 | §6 | `/api/tags` reads API rules from the 10 s cache the request gate already keeps | `ApiRuleVisibility.RulesAsync` |
 | §7 | outbox queue tables vacuum after 2,000 dead rows (34,361 dead entries were being walked to find an empty queue); notification inbox and unread indexes; `AuditDbContext` built only when something is written | migrations, `OutboxAuditSink` |
 
+Re-measured the same afternoon on `8cda48d` (deployed 14:49 UTC), same settings, 47,054 requests,
+0 failed (`runs/20261023T145813Z-routecost-vps1`). CPU-ms per request, before → after:
+
+| route | host | content-api | admin-api | postgres | site-host | minio |
+|---|---|---|---|---|---|---|
+| da_list | 28.7 → **19.8** | — | 8.1 → 6.3 | 15.8 → **8.0** | — | — |
+| da_site_anon | 26.8 → **18.4** | 7.7 → 5.6 | — | 9.9 → 5.1 | 2.0 → 0 | — |
+| da_get_expand | 28.8 → **23.4** | — | 8.6 → 5.8 | 14.5 → 12.5 | — | — |
+| delivery_media | 20.6 → **12.9** | 6.5 → 3.5 | — | — | 1.8 → 0 | 4.5 → 2.0 |
+| site_asset | 20.5 → **15.4** | — | — | — | 5.4 → 3.1 | 5.9 → 3.1 |
+| analytics_collect | 17.0 → **10.5** | 4.0 → 2.7 | — | 1.6 → 1.2 | 1.9 → 0 | — |
+| delivery_item | 10.9 → **6.2** | 3.5 → 2.1 | — | 0.8 → 0.2 | 1.9 → 0 | — |
+| delivery_tags | 10.1 → **6.2** | 3.2 → 1.7 | — | 0.5 → 0.1 | 1.8 → 0 | — |
+| delivery_list | 13.8 → 13.1 | 4.2 → 3.0 | — | 0.5 → 0.2 | 2.1 → 0 | — |
+| delivery_openapi | 12.9 → 14.5 | 4.0 → 2.8 | — | — | 2.0 → 0 | — |
+| admin_analytics | 35.6 → 37.8 | — | 18.3 → 14.1 | 14.5 → 15.5 | — | — |
+| admin_publish | 75.5 → 73.0 | 6.1 → 3.7 | 23.6 → 21.0 | 14.8 → 13.8 | — | — |
+
+**Weighted over every request: 15.4 → 13.2 CPU-ms (−15 %).** The services the fixes touched fell
+30–50 % (content-api on delivery, MinIO, Postgres on Dynamic Apps lists) and site-host left the
+delivery path. The host totals move less than that on light routes, and a few rose (openapi,
+admin_media, site_page): in those rows the services are flat or down and the difference is Tempo
+(openapi's 1.6 → 4.0 ms), whose cost per request swings with its flush and compaction timing, plus
+the ~±2 ms idle-subtraction noise on routes this cheap. Telemetry, kept unsampled by decision, is now
+the largest single share of a cached delivery request. The analytics dashboard (raw-event
+aggregates) was not addressed and is unchanged.
+
 Not done, deliberately:
 
 - **Trace sampling (9)** — kept at everything (decision: every trace id must resolve).
