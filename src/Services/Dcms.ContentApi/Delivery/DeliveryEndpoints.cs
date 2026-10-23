@@ -1,6 +1,7 @@
 using Dcms.PluginSdk.Runtime.Platform;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Runtime;
+using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.EntityFrameworkCore;
@@ -18,10 +19,10 @@ public static class DeliveryEndpoints
     {
         app.MapGet("/api/{slug}/{contentType}", async (
             string slug, string contentType, int? page, int? pageSize, string? tag, string? tagField,
-            ITenantContext tenant, CmsDbContext db, PluginRouteTable routes,
+            ITenantContext tenant, CmsDbContext db, PluginInstanceCache instances, PluginRouteTable routes,
             PublishedContentReader reader, CancellationToken ct) =>
         {
-            var resolved = await ResolveAsync(slug, contentType, tenant, db, routes, ct);
+            var resolved = await ResolveAsync(slug, contentType, tenant, db, instances, routes, ct);
             if (resolved is not { } r || !r.Route.List)
             {
                 return Results.NotFound();
@@ -49,10 +50,10 @@ public static class DeliveryEndpoints
 
         app.MapGet("/api/{slug}/{contentType}/{itemSlug}", async (
             string slug, string contentType, string itemSlug,
-            ITenantContext tenant, CmsDbContext db, PluginRouteTable routes,
+            ITenantContext tenant, CmsDbContext db, PluginInstanceCache instances, PluginRouteTable routes,
             PublishedContentReader reader, CancellationToken ct) =>
         {
-            var resolved = await ResolveAsync(slug, contentType, tenant, db, routes, ct);
+            var resolved = await ResolveAsync(slug, contentType, tenant, db, instances, routes, ct);
             if (resolved is not { } r || !r.Route.GetBySlug)
             {
                 return Results.NotFound();
@@ -65,14 +66,14 @@ public static class DeliveryEndpoints
     }
 
     private static async Task<Resolved?> ResolveAsync(
-        string slug, string contentType, ITenantContext tenant, CmsDbContext db, PluginRouteTable routes, CancellationToken ct)
+        string slug, string contentType, ITenantContext tenant, CmsDbContext db, PluginInstanceCache instances, PluginRouteTable routes, CancellationToken ct)
     {
         if (tenant.TenantId is not { } tenantId)
         {
             return null;
         }
-        var instance = await db.PluginInstances.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Slug == slug && p.Enabled, ct);
+        var instance = (await instances.EnabledAsync(tenantId, db, ct)).Rows
+            .FirstOrDefault(p => string.Equals(p.Slug, slug, StringComparison.Ordinal));
         if (instance is null)
         {
             return null;

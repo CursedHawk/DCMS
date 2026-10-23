@@ -11,6 +11,7 @@ using Dcms.Shared.Kernel.Views;
 using Dcms.Shared.Telemetry;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 using NpgsqlTypes;
 using DeleteBehavior = Dcms.Plugins.DynamicApps.Api.Model.DeleteBehavior;
@@ -34,7 +35,8 @@ public sealed class RecordService(
     AppEventLog events,
     IAuditRecorder audit,
     TimeProvider clock,
-    IHttpContextAccessor http)
+    IHttpContextAccessor http,
+    RecordCounts counts)
 {
     public const int MaxBulk = 500;
 
@@ -122,7 +124,10 @@ public sealed class RecordService(
             .IgnoreQueryFilters() // the tenant is in the compiled WHERE, under this method's RlsScope
             .AsNoTracking()
             .ToListAsync(ct);
-        var counted = await db.Database.SqlQueryRaw<int>(countSql, compiled.Parameters()).SingleAsync(ct);
+        // A page that came back short is the end, so the total is known without counting.
+        var counted = Short(rows.Count, compiled.Offset, compiled.Limit)
+            ?? await counts.CountAsync(context.TenantId, InstanceId, model.Revision.Number, countSql, compiled,
+                () => db.Database.SqlQueryRaw<int>(countSql, compiled.Parameters()).SingleAsync(ct), ct);
 
         var items = rows.Select(r => RecordCodec.Read(table, r, plane, query.Select)).ToList();
         await ExpandAsync(model, table, rows, items, query.Expand, plane, ct);
@@ -190,9 +195,9 @@ public sealed class RecordService(
                 related = Records(model, other, plane).Where(r => ids.Contains(r.Id));
                 break;
         }
-        var counted = await related.Take(MaxCount + 1).CountAsync(ct);
         var rows = await related.AsNoTracking().OrderByDescending(r => r.CreatedAt).ThenBy(r => r.Id)
             .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
+        var counted = Short(rows.Count, (page - 1) * pageSize, pageSize) ?? await related.Take(MaxCount + 1).CountAsync(ct);
         return new RecordPage(rows.Select(r => RecordCodec.Read(other, r, plane)).ToList(), Math.Min(counted, MaxCount), page, pageSize, counted > MaxCount);
     }
 
@@ -228,7 +233,7 @@ public sealed class RecordService(
 
         Declare("record.created", table, record.Id);
         await SaveAsync(ct);
-        await tx.CommitAsync(ct);
+        await CommitAsync(tx, ct);
         return RecordCodec.Read(table, record, plane);
     }
 
@@ -250,7 +255,7 @@ public sealed class RecordService(
         Declare("record.updated", table, record.Id);
         await SaveAsync(ct);
         await CheckReachAsync(model, table, record.Id, plane, ct);
-        await tx.CommitAsync(ct);
+        await CommitAsync(tx, ct);
         return RecordCodec.Read(table, record, plane);
     }
 
@@ -276,7 +281,7 @@ public sealed class RecordService(
         await DeleteCoreAsync(model, table, record, removed, 0, ct);
         Declare("record.deleted", table, record.Id).With("cascaded", removed.Count - 1);
         await SaveAsync(ct);
-        await tx.CommitAsync(ct);
+        await CommitAsync(tx, ct);
         return true;
     }
 
@@ -301,7 +306,7 @@ public sealed class RecordService(
         }
         Declare("record.bulk_updated", table, null).With("count", records.Count);
         await SaveAsync(ct);
-        await tx.CommitAsync(ct);
+        await CommitAsync(tx, ct);
         return new BulkResult(records.Count);
     }
 
@@ -327,7 +332,7 @@ public sealed class RecordService(
         }
         Declare("record.bulk_deleted", table, null).With("count", records.Count).With("cascaded", removed.Count - records.Count);
         await SaveAsync(ct);
-        await tx.CommitAsync(ct);
+        await CommitAsync(tx, ct);
         return new BulkResult(records.Count);
     }
 
@@ -479,7 +484,7 @@ public sealed class RecordService(
         }
         Declare("record.imported", table, null).With("count", accepted.Count);
         await SaveAsync(ct);
-        await tx.CommitAsync(ct);
+        await CommitAsync(tx, ct);
         return new ImportResult(rows.Count, accepted.Count, false, [], 0);
     }
 
@@ -584,6 +589,7 @@ public sealed class RecordService(
                 Link(model, nav, source, target));
             Declare("relation.linked", table, id).With("relationship", nav.Relationship.ApiName).With("target", targetId);
             await SaveAsync(ct);
+            await counts.ChangedAsync(context.TenantId, InstanceId, ct);
         }
         return true;
     }
@@ -607,7 +613,7 @@ public sealed class RecordService(
         }
         events.Add(db, model.Revision.Number, AppEvent.RelationDeleted, Entity(table, id), Link(model, nav, source, target));
         await SaveAsync(ct);
-        await tx.CommitAsync(ct);
+        await CommitAsync(tx, ct);
         return true;
     }
 
@@ -793,6 +799,19 @@ public sealed class RecordService(
         table.Uniques.FirstOrDefault(u => u.Id == constraintId) is { } u
             ? string.Join(" + ", u.Members.Select(m => m.ApiName))
             : "value";
+
+    /// <summary>The total, when a page that came back short says it: everything before it plus what
+    /// it holds. Null for a full page (there may be more) and for an empty one past the first (the
+    /// caller is beyond the end and needs to be told where it is).</summary>
+    private static int? Short(int rows, int offset, int limit) =>
+        rows < limit && (rows > 0 || offset == 0) ? offset + rows : null;
+
+    /// <summary>Commits, then tells the cached totals (RecordCounts) that the instance changed.</summary>
+    private async Task CommitAsync(IDbContextTransaction tx, CancellationToken ct)
+    {
+        await tx.CommitAsync(ct);
+        await counts.ChangedAsync(context.TenantId, InstanceId, ct);
+    }
 
     /// <summary>Saves, turning the database's refusals into the caller's conflicts.</summary>
     private async Task SaveAsync(CancellationToken ct)

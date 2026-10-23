@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.PluginSdk.Runtime;
+using Dcms.PluginSdk.Runtime.Contracts;
 using Dcms.Shared.Caching;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Kernel.Abstractions;
@@ -23,14 +24,17 @@ public static class OpenApiEndpoints
     public static IEndpointRouteBuilder MapOpenApi(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/openapi.json", async (HttpContext http, ITenantContext tenant, CmsDbContext db,
-            OpenApiAssembler assembler, ICacheService cache, CancellationToken ct) =>
+            PluginInstanceCache instances, OpenApiAssembler assembler, ICacheService cache, CancellationToken ct) =>
         {
-            var built = await BuildAsync(tenant, db, assembler, cache, http.RequestServices, ct);
+            // The ETag is known before the document is: a client that already has it gets its 304
+            // without the document (hundreds of KB) ever leaving Redis.
+            var built = await BuildAsync(tenant, db, instances, assembler, cache, http.RequestServices,
+                etag => NotModified(http, etag), ct);
             if (built is null)
             {
                 return Results.NotFound();
             }
-            if (NotModified(http, built.Value.Etag))
+            if (built.Value.Gzip is null)
             {
                 return Results.StatusCode(StatusCodes.Status304NotModified);
             }
@@ -45,10 +49,10 @@ public static class OpenApiEndpoints
         });
 
         app.MapGet("/api/openapi.yaml", async (HttpContext http, ITenantContext tenant, CmsDbContext db,
-            OpenApiAssembler assembler, ICacheService cache, CancellationToken ct) =>
+            PluginInstanceCache instances, OpenApiAssembler assembler, ICacheService cache, CancellationToken ct) =>
         {
-            var built = await BuildAsync(tenant, db, assembler, cache, http.RequestServices, ct);
-            if (built is null)
+            var built = await BuildAsync(tenant, db, instances, assembler, cache, http.RequestServices, _ => false, ct);
+            if (built?.Gzip is null)
             {
                 return Results.NotFound();
             }
@@ -69,33 +73,36 @@ public static class OpenApiEndpoints
     /// turned every request into tens of megabytes of string copies — content-api ran out of memory
     /// at 640 MB on vps1 (2026-10-12). Compressed it is a few hundred kilobytes.
     /// </summary>
-    private static async Task<(byte[] Gzip, string Etag)?> BuildAsync(
-        ITenantContext tenant, CmsDbContext db, OpenApiAssembler assembler, ICacheService cache, IServiceProvider services, CancellationToken ct)
+    /// <para><paramref name="fresh"/> is asked with the ETag first; when it says the caller already has
+    /// that document, the result carries no bytes.</para>
+    private static async Task<(byte[]? Gzip, string Etag)?> BuildAsync(
+        ITenantContext tenant, CmsDbContext db, PluginInstanceCache cachedInstances, OpenApiAssembler assembler,
+        ICacheService cache, IServiceProvider services, Func<string, bool> fresh, CancellationToken ct)
     {
         if (tenant.TenantId is not { } tenantId)
         {
             return null;
         }
 
-        var instances = await db.PluginInstances.AsNoTracking()
-            .Where(p => p.Enabled)
-            .OrderBy(p => p.Slug)
-            .ToListAsync(ct);
+        var enabled = await cachedInstances.EnabledAsync(tenantId, db, ct);
+        var instances = enabled.Rows;
 
         // Part of the key, not just the document: the tag index appears in the spec
         // the moment a tenant publishes its first tag, and a key that ignored it
         // would serve the pre-tag document for another 24 hours.
         var tagging = await TagDeliveryEndpoints.HasTagsAsync(
             tenantId, db, cache, services.GetRequiredService<IPluginCatalog>().TagFields(), ct);
-        var contexts = instances.Select(p => new PluginInstanceContext(
-            p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description,
-            JsonDocument.Parse(string.IsNullOrWhiteSpace(p.ConfigJson) ? "{}" : p.ConfigJson))).ToList();
+        var contexts = enabled.Contexts.OrderBy(c => c.Slug, StringComparer.Ordinal).ToList();
 
         // A plugin whose API is runtime data (a published Dynamic Apps model) says so through
         // its API version; without it a publish would keep serving the old document for a day.
         var versions = await assembler.ApiVersionsAsync(contexts, services, ct);
         var hash = PluginInstanceFingerprint.Of(instances) + (tagging ? "t" : "")
                    + (versions.Length > 0 ? PluginInstanceFingerprint.Hash(versions)[..12] : "");
+        if (fresh(Quote(hash)))
+        {
+            return (null, Quote(hash));
+        }
         var cacheKey = $"t:{tenantId}:openapi.gz:{hash}";
         var cached = await cache.GetAsync<byte[]>(cacheKey, ct);
         if (cached is not null)

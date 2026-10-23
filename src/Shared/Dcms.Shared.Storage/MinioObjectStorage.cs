@@ -7,6 +7,10 @@ namespace Dcms.Shared.Storage;
 
 public sealed class MinioObjectStorage(IMinioClient client) : IObjectStorage
 {
+    /// <summary>For <see cref="OpenReadAsync"/>: a presigned URL carries its own credentials, so one
+    /// pooled client serves every bucket. Recycled so a MinIO address change is picked up.</summary>
+    private static readonly HttpClient Http = new(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
+
     public async Task PutAsync(string bucket, string key, Stream content, long size, string contentType, CancellationToken ct = default)
     {
         var args = new PutObjectArgs()
@@ -92,6 +96,70 @@ public sealed class MinioObjectStorage(IMinioClient client) : IObjectStorage
         finally
         {
             ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    /// <summary>
+    /// One GET on a presigned URL. The SDK's own calls each begin with a bucket-exists HEAD, and
+    /// GetObject stats the object first, so stat-then-get was five requests per media response
+    /// (HEAD bucket, HEAD object, twice, then GET; measured 2026-10-23). Presigning is local.
+    /// A range is a real ranged GET, which minio-dotnet 7's GetObject cannot do (see GetToAsync).
+    /// </summary>
+    public async Task<ObjectRead?> OpenReadAsync(string bucket, string key, ByteRange? range = null, CancellationToken ct = default)
+    {
+        var url = await client.PresignedGetObjectAsync(new PresignedGetObjectArgs()
+            .WithBucket(bucket).WithObject(key).WithExpiry(300));
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (range is { } r)
+        {
+            request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(r.Start, r.End);
+        }
+        var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            response.Dispose();
+            return null;
+        }
+        try
+        {
+            response.EnsureSuccessStatusCode();
+            var content = response.Content.Headers;
+            var size = content.ContentRange?.Length ?? content.ContentLength
+                       ?? throw new InvalidOperationException($"MinIO sent no length for {bucket}/{key}");
+            return new ObjectRead(new ResponseStream(response, await response.Content.ReadAsStreamAsync(ct)),
+                size, content.ContentType?.ToString());
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>The body, owning the response it came from.</summary>
+    private sealed class ResponseStream(HttpResponseMessage response, Stream inner) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) => inner.ReadAsync(buffer, ct);
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct) => inner.ReadAsync(buffer, offset, count, ct);
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                inner.Dispose();
+                response.Dispose();
+            }
+            base.Dispose(disposing);
         }
     }
 

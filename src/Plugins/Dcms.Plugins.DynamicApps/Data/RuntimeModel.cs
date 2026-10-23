@@ -141,21 +141,25 @@ public static class PublishedModels
     public static async Task<RuntimeModel?> LoadAsync(AppsDbContext db, IMemoryCache cache, Guid tenantId, Guid instanceId, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(tenantId);
+        // Which revision only: the snapshot (164 KB for a CRM, 5.5 MB at the limits) is read on a
+        // cache miss. Selecting the whole row here shipped and discarded it on every request -- 10 %
+        // of admin-api's CPU on a record read (2026-10-23).
         var revision = await (
                 from app in db.Apps
                 where app.InstanceId == instanceId
                 join r in db.Revisions on app.PublishedRevisionId equals r.Id
-                select r)
-            .AsNoTracking().FirstOrDefaultAsync(ct);
+                select new { r.Id, r.Number, r.Hash })
+            .FirstOrDefaultAsync(ct);
         if (revision is null)
         {
             return null;
         }
-        return await cache.GetOrCreateAsync(("dynamic-apps:model", revision.Id), entry =>
+        return await cache.GetOrCreateAsync(("dynamic-apps:model", revision.Id), async entry =>
         {
             entry.SlidingExpiration = TimeSpan.FromMinutes(30);
+            var snapshot = await db.Revisions.Where(r => r.Id == revision.Id).Select(r => r.Snapshot).SingleAsync(ct);
             var info = new RevisionInfo { Id = revision.Id, Number = revision.Number, Hash = revision.Hash, Status = "published" };
-            return Task.FromResult(RuntimeModel.Compile(new RevisionDocument(info, ConfigJson.Parse(revision.Snapshot))));
+            return RuntimeModel.Compile(new RevisionDocument(info, ConfigJson.Parse(snapshot)));
         });
     }
 

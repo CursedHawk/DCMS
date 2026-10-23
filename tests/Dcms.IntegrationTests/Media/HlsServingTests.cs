@@ -220,6 +220,24 @@ public class HlsServingTests : IAsyncLifetime
         using var all = new MemoryStream();
         await storage.GetToAsync(Bucket, key, all, ct: ct);
         all.ToArray().Should().Equal(Segment);
+
+        // What delivery serves from: one presigned GET, size and type from its headers.
+        await using (var whole = await storage.OpenReadAsync(Bucket, key, ct: ct))
+        {
+            whole!.Size.Should().Be(4096);
+            whole.ContentType.Should().Be("application/octet-stream");
+            using var copy = new MemoryStream();
+            await whole.Body.CopyToAsync(copy, ct);
+            copy.ToArray().Should().Equal(Segment);
+        }
+        await using (var slice = await storage.OpenReadAsync(Bucket, key, new ByteRange(3996, 4095), ct))
+        {
+            slice!.Size.Should().Be(4096);
+            using var copy = new MemoryStream();
+            await slice.Body.CopyToAsync(copy, ct);
+            copy.ToArray().Should().Equal(Segment[3996..]);
+        }
+        (await storage.OpenReadAsync(Bucket, key + ".missing", ct: ct)).Should().BeNull();
     }
 
     private static HttpRequestMessage Req(string url)

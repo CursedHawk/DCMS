@@ -28,6 +28,25 @@ public interface IObjectStorage
     /// <summary>Size and content type without transferring the body; null when absent.</summary>
     Task<StoredObjectInfo?> StatAsync(string bucket, string key, CancellationToken ct = default);
 
+    /// <summary>
+    /// The object's body as a stream, with its size and content type, from one request; null when
+    /// absent. <paramref name="range"/> asks for that slice only. What request paths serve from:
+    /// a stat and then a get is five round trips through the MinIO SDK (2026-10-23).
+    ///
+    /// <para>The default buffers and exists for in-memory test doubles only.</para>
+    /// </summary>
+    async Task<ObjectRead?> OpenReadAsync(string bucket, string key, ByteRange? range = null, CancellationToken ct = default)
+    {
+        if (await StatAsync(bucket, key, ct) is not { } info)
+        {
+            return null;
+        }
+        var body = new MemoryStream();
+        await GetToAsync(bucket, key, body, range?.Start, range?.Length, ct);
+        body.Position = 0;
+        return new ObjectRead(body, info.Size, info.ContentType);
+    }
+
     Task<bool> ExistsAsync(string bucket, string key, CancellationToken ct = default);
     Task DeleteAsync(string bucket, string key, CancellationToken ct = default);
 
@@ -49,6 +68,13 @@ public interface IObjectStorage
 /// <summary>What a HEAD on an object tells us: enough to answer a range request without
 /// transferring the body. Named to avoid colliding with MinIO's own <c>ObjectStat</c>.</summary>
 public sealed record StoredObjectInfo(long Size, string? ContentType);
+
+/// <summary>An open object: <see cref="Body"/> is the requested bytes, <see cref="Size"/> the whole
+/// object's. Dispose it to release the connection.</summary>
+public sealed record ObjectRead(Stream Body, long Size, string? ContentType) : IAsyncDisposable
+{
+    public ValueTask DisposeAsync() => Body.DisposeAsync();
+}
 
 public static class StorageKeys
 {

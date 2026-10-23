@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Dcms.Shared.Audit.Redaction;
 using OpenTelemetry;
@@ -25,6 +26,14 @@ public sealed class SensitiveAttributeProcessor : BaseProcessor<Activity>
 {
     private const string Redacted = "[redacted]";
 
+    /// <summary>The verdict per tag name. Names come from the instrumentations and are a small fixed
+    /// vocabulary, while the test is eleven case-insensitive scans -- which ran for every tag of every
+    /// span and was the hottest frame in content-api (2026-10-23). Capped, so a library that puts
+    /// something unbounded in a tag name costs the scan again rather than memory.</summary>
+    private static readonly ConcurrentDictionary<string, bool> Verdicts = new(StringComparer.Ordinal);
+
+    private const int MaxVerdicts = 4096;
+
     public override void OnEnd(Activity activity)
     {
         // TagObjects is a linked list rebuilt by SetTag, so the removals are collected first
@@ -34,7 +43,7 @@ public sealed class SensitiveAttributeProcessor : BaseProcessor<Activity>
 
         foreach (var tag in activity.TagObjects)
         {
-            if (AuditRedactor.LooksSensitiveName(tag.Key))
+            if (LooksSensitive(tag.Key))
             {
                 (sensitive ??= []).Add(tag.Key);
                 continue;
@@ -61,6 +70,20 @@ public sealed class SensitiveAttributeProcessor : BaseProcessor<Activity>
         }
 
         base.OnEnd(activity);
+    }
+
+    private static bool LooksSensitive(string key)
+    {
+        if (Verdicts.TryGetValue(key, out var known))
+        {
+            return known;
+        }
+        var verdict = AuditRedactor.LooksSensitiveName(key);
+        if (Verdicts.Count < MaxVerdicts)
+        {
+            Verdicts.TryAdd(key, verdict);
+        }
+        return verdict;
     }
 
     /// <summary>

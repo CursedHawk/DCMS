@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Rls;
@@ -11,40 +10,16 @@ namespace Dcms.PluginSdk.Runtime.Contracts;
 /// is given, in both the predicate and the RLS GUC, rather than by the ambient request tenant —
 /// which a job or event handler does not have.
 /// </summary>
-public sealed class CmsPluginInstanceStore(CmsDbContext db) : IPluginInstanceStore
+public sealed class CmsPluginInstanceStore(CmsDbContext db, PluginInstanceCache cache) : IPluginInstanceStore
 {
     public async Task<IReadOnlyList<PluginInstanceContext>> ListEnabledAsync(Guid tenantId, CancellationToken ct)
-    {
-        // Explicit tenant, not the ambient one: jobs and event handlers run with no request.
-        using var rls = RlsScope.Tenant(tenantId);
-        var rows = await db.PluginInstances.IgnoreQueryFilters().AsNoTracking()
-            .Where(p => p.TenantId == tenantId && p.Enabled)
-            .OrderBy(p => p.CreatedAt)
-            .ToListAsync(ct);
-
-        return rows.Select(ToContext).ToList();
-    }
+        => (await cache.EnabledAsync(tenantId, db, ct)).Contexts;
 
     public async Task<PluginInstanceContext?> FindAnyAsync(Guid tenantId, string slug, CancellationToken ct)
     {
         using var rls = RlsScope.Tenant(tenantId);
         var row = await db.PluginInstances.IgnoreQueryFilters().AsNoTracking()
             .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Slug == slug, ct);
-        return row is null ? null : ToContext(row);
-    }
-
-    private static PluginInstanceContext ToContext(PluginInstance p) =>
-        new(p.Id, p.TenantId, p.PluginId, p.Slug, p.Name, p.Description, ParseConfig(p.ConfigJson), p.AiToolsEnabled);
-
-    private static JsonDocument ParseConfig(string json)
-    {
-        try
-        {
-            return JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
-        }
-        catch (JsonException)
-        {
-            return JsonDocument.Parse("{}");
-        }
+        return row is null ? null : PluginInstanceCache.ToContext(row);
     }
 }

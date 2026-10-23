@@ -1,6 +1,8 @@
 using Dcms.Shared.Data.Tenancy;
 using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Runtime;
+using Dcms.PluginSdk.Runtime.Contracts;
+using Dcms.Shared.Caching;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.PluginSdk.Abstractions;
@@ -48,7 +50,7 @@ public static class PluginInstanceEndpoints
 
         app.MapPost("/api/admin/plugins/instances", async (
             CreateInstanceRequest body, IPluginCatalog catalog, PluginRegistry registry, PluginConfigValidator validator,
-            CmsDbContext db, TenancyDbContext tenancy, ITenantContext tenant, IEventPublisher events, DcmsMetrics metrics,
+            CmsDbContext db, TenancyDbContext tenancy, ITenantContext tenant, IEventPublisher events, ICacheService cache, DcmsMetrics metrics,
             CancellationToken ct) =>
         {
             var manifest = catalog.Find(body.PluginId);
@@ -105,14 +107,14 @@ public static class PluginInstanceEndpoints
             {
                 await PluginDefaultGrants.ApplyAsync(tenancy, instance.TenantId, manifest, ct);
             }
-            await PublishChange(events, metrics, instance, PluginInstanceChangeKind.Created, ct);
+            await PublishChange(events, cache, metrics, instance, PluginInstanceChangeKind.Created, ct);
 
             return Results.Created($"/api/admin/plugins/instances/{instance.Id}", new { id = instance.Id });
         }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceCreated, "plugin_instance");
 
         app.MapPut("/api/admin/plugins/instances/{id:guid}", async (
             Guid id, UpdateInstanceRequest body, IPluginCatalog catalog, PluginConfigValidator validator,
-            CmsDbContext db, IEventPublisher events, DcmsMetrics metrics, CancellationToken ct) =>
+            CmsDbContext db, IEventPublisher events, ICacheService cache, DcmsMetrics metrics, CancellationToken ct) =>
         {
             var instance = await db.PluginInstances.FirstOrDefaultAsync(p => p.Id == id, ct);
             if (instance is null)
@@ -134,12 +136,12 @@ public static class PluginInstanceEndpoints
             instance.AiToolsEnabled = body.AiToolsEnabled ?? instance.AiToolsEnabled;
             instance.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
-            await PublishChange(events, metrics, instance, PluginInstanceChangeKind.Updated, ct);
+            await PublishChange(events, cache, metrics, instance, PluginInstanceChangeKind.Updated, ct);
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceUpdated, "plugin_instance");
 
         app.MapPost("/api/admin/plugins/instances/{id:guid}/{action}", async (
-            Guid id, string action, CmsDbContext db, PluginRegistry registry, IEventPublisher events, DcmsMetrics metrics,
+            Guid id, string action, CmsDbContext db, PluginRegistry registry, IEventPublisher events, ICacheService cache, DcmsMetrics metrics,
             CancellationToken ct) =>
         {
             if (action is not ("enable" or "disable"))
@@ -177,7 +179,7 @@ public static class PluginInstanceEndpoints
             instance.Enabled = action == "enable";
             instance.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
-            await PublishChange(events, metrics, instance,
+            await PublishChange(events, cache, metrics, instance,
                 instance.Enabled ? PluginInstanceChangeKind.Enabled : PluginInstanceChangeKind.Disabled, ct);
             return Results.NoContent();
         }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceActioned, "plugin_instance");
@@ -205,13 +207,15 @@ public static class PluginInstanceEndpoints
     /// lives here rather than at the three call sites: a fourth kind of change added later gets
     /// counted by construction instead of by remembering.
     /// </summary>
-    private static Task PublishChange(IEventPublisher events, DcmsMetrics metrics, PluginInstance instance, PluginInstanceChangeKind kind, CancellationToken ct)
+    private static async Task PublishChange(IEventPublisher events, ICacheService cache, DcmsMetrics metrics, PluginInstance instance, PluginInstanceChangeKind kind, CancellationToken ct)
     {
         // Plugin id, not instance id: the catalogue is a fixed, small set, whereas instances
         // are created per tenant without bound.
         metrics.PluginInstanceChanged(instance.PluginId, kind.ToString());
-        return events.PublishAsync(Subjects.PluginInstanceChanged,
-            new PluginInstanceChanged(Guid.NewGuid(), DateTimeOffset.UtcNow, instance.TenantId, instance.Id, instance.PluginId, kind), ct).AsTask();
+        // Every process's cached instance list for the tenant is now stale (PluginInstanceCache).
+        await PluginInstanceCache.BumpAsync(cache, instance.TenantId, ct);
+        await events.PublishAsync(Subjects.PluginInstanceChanged,
+            new PluginInstanceChanged(Guid.NewGuid(), DateTimeOffset.UtcNow, instance.TenantId, instance.Id, instance.PluginId, kind), ct);
     }
 
     private static object ToManifestDto(PluginManifest m) => new

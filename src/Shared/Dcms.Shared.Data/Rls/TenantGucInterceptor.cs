@@ -2,6 +2,7 @@ using System.Data.Common;
 using Dcms.Shared.Kernel.Abstractions;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry;
 
 namespace Dcms.Shared.Data.Rls;
 
@@ -115,19 +116,28 @@ public sealed class TenantGucInterceptor(ITenantContext tenant, ILogger<TenantGu
     private bool Stale(DbConnection connection)
         => !applied.TryGetValue(connection, out var last) || last != Desired;
 
+    // Untraced: this runs on every connection open, 2.2 times a request on average and 15 times on
+    // the analytics dashboard, and each span cost again in Alloy and Tempo while saying only "a
+    // connection was opened" (2026-10-23). The SDK's sampler drops anything started inside the scope.
     private void Apply(DbConnection connection, DbTransaction? transaction)
     {
         var desired = Desired;
-        using var command = Command(connection, transaction, desired);
-        command.ExecuteNonQuery();
+        using (SuppressInstrumentationScope.Begin())
+        using (var command = Command(connection, transaction, desired))
+        {
+            command.ExecuteNonQuery();
+        }
         Record(connection, desired);
     }
 
     private async Task ApplyAsync(DbConnection connection, DbTransaction? transaction, CancellationToken ct)
     {
         var desired = Desired;
-        await using var command = Command(connection, transaction, desired);
-        await command.ExecuteNonQueryAsync(ct);
+        using (SuppressInstrumentationScope.Begin())
+        await using (var command = Command(connection, transaction, desired))
+        {
+            await command.ExecuteNonQueryAsync(ct);
+        }
         Record(connection, desired);
     }
 

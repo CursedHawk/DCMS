@@ -155,6 +155,7 @@ public sealed class DynamicAppsPlugin : IPlugin
         services.AddScoped<ConfigurationService>();
         services.AddScoped<RuntimeModelProvider>();
         services.AddScoped<RecordService>();
+        services.AddSingleton<RecordCounts>();
         services.AddScoped<FlowRunQueue>();
         services.AddScoped<FlowExecutor>();
         services.AddScoped<FlowRunService>();

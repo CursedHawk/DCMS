@@ -102,6 +102,9 @@ public static class ObjectStreaming
     /// <summary>
     /// Writes an object to the response, honouring <c>Range</c>, and returns the result the
     /// endpoint should hand back. 404 when the object is gone.
+    ///
+    /// <para>A plain GET is one storage request: the open carries the size. Only a <c>Range</c>
+    /// (which needs the size before it can be resolved) or a HEAD stats first.</para>
     /// </summary>
     public static async Task<IResult> WriteObjectAsync(
         HttpContext http,
@@ -111,13 +114,29 @@ public static class ObjectStreaming
         string contentType,
         CancellationToken ct)
     {
+        var response = http.Response;
+        var head = HttpMethods.IsHead(http.Request.Method);
+
+        if (!head && string.IsNullOrWhiteSpace(http.Request.Headers.Range))
+        {
+            await using var whole = await storage.OpenReadAsync(bucket, key, ct: ct);
+            if (whole is null)
+            {
+                return Results.NotFound();
+            }
+            response.Headers.AcceptRanges = "bytes";
+            response.ContentType = contentType;
+            response.ContentLength = whole.Size;
+            await whole.Body.CopyToAsync(response.Body, ct);
+            return Results.Empty;
+        }
+
         var info = await storage.StatAsync(bucket, key, ct);
         if (info is null)
         {
             return Results.NotFound();
         }
 
-        var response = http.Response;
         response.Headers.AcceptRanges = "bytes";
         response.ContentType = contentType;
 
@@ -133,19 +152,37 @@ public static class ObjectStreaming
                 response.Headers.ContentRange = $"bytes {range.Start}-{range.End}/{info.Size}";
                 response.ContentLength = range.Length;
                 // HEAD must carry the headers and no body, exactly like the 200 path below.
-                if (!HttpMethods.IsHead(http.Request.Method))
+                if (!head)
                 {
-                    await storage.GetToAsync(bucket, key, response.Body, range.Start, range.Length, ct);
+                    await using var slice = await storage.OpenReadAsync(bucket, key, range, ct);
+                    if (slice is null)
+                    {
+                        return Gone(response);
+                    }
+                    await slice.Body.CopyToAsync(response.Body, ct);
                 }
                 return Results.Empty;
 
             default:
                 response.ContentLength = info.Size;
-                if (!HttpMethods.IsHead(http.Request.Method))
+                if (!head)
                 {
-                    await storage.GetToAsync(bucket, key, response.Body, ct: ct);
+                    await using var whole = await storage.OpenReadAsync(bucket, key, ct: ct);
+                    if (whole is null)
+                    {
+                        return Gone(response);
+                    }
+                    await whole.Body.CopyToAsync(response.Body, ct);
                 }
                 return Results.Empty;
         }
+    }
+
+    /// <summary>Deleted between the stat and the read: undo the headers already set for it.</summary>
+    private static IResult Gone(HttpResponse response)
+    {
+        response.ContentLength = null;
+        response.Headers.ContentRange = default;
+        return Results.NotFound();
     }
 }

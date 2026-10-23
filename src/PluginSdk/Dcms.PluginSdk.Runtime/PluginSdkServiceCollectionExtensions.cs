@@ -129,6 +129,8 @@ public static class PluginSdkServiceCollectionExtensions
 
     private static void AddPluginContexts(IServiceCollection services)
     {
+        services.AddMemoryCache();
+        services.TryAddSingleton<PluginInstanceCache>();
         services.TryAddScoped<IPluginInstanceStore, CmsPluginInstanceStore>();
         services.TryAddScoped<Platform.PublishedContentReader>();
         services.AddScoped<PluginContextFactory>();
