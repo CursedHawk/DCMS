@@ -6,6 +6,12 @@ re-run. Target vps1 (4 cores, 7.6 GB), generator VPSM, over the public internet 
 Each row says what a test found, the commit that changed it, and what the next measurement
 showed. "Not re-measured" means exactly that.
 
+> **2026-10-23 cost per request: see [2026-10-23-vps1-route-cost.md](2026-10-23-vps1-route-cost.md).**
+> A static page costs the host 2 CPU-ms, cached delivery JSON 11–14, Dynamic Apps reads ~29, a publish 75.
+> Shared causes: telemetry (14 % of the host plus 6–30 % inside each service), an RLS `set_config` round
+> trip per connection open (2.2 per request), every plugin request reloading every plugin instance, and
+> EF Core's per-context setup.
+>
 > **2026-10-21/22 re-run: see [2026-10-21-vps1.md](2026-10-21-vps1.md).** vps1 now swaps under load
 > (memory, not CPU, is the first limit) and the single-surface ceilings below fell ~30 %; mixed traffic
 > improved. Dynamic Apps lookup filters went quadratic again (28.5 → 4.4 req/s, fix measured), every

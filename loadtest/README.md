@@ -67,6 +67,7 @@ domain is just a `Host` header.
 | `ratelimit` | content-api's per-IP limiter, deliberately | no | alone |
 | `mixed` | all of the above at realistic ratios | yes | — |
 | `analytics` | the anonymous beacon, ANALYTICS ingest, dashboard; teardown waits for the drain | yes (dashboard) | yes |
+| `routecost` | every route alone at a fixed rate: CPU-ms per request per container (below) | yes | **no — run alone** |
 
 `media` and `sitebuild` are marked because of arithmetic, not caution: the image consumer
 runs four handlers, the git build lane one by default (`DCMS_BUILD_CONCURRENCY`), and each
@@ -169,6 +170,24 @@ A DoS control relaxed for convenience and never restored is the one nobody check
 That scenario exists so this one cannot happen quietly.
 
 ---
+
+## What a request costs: `routecost`
+
+The staircases find where a surface stops scaling; at that point every request queues, so their
+latencies say the host is full, not which request filled it. `routecost` runs each of ~20 routes
+alone at a fixed rate well below the knee (`RC_RATE`, default 30 req/s; writes a fifth of that) for
+`RC_SEG` seconds, `RC_GAP` apart, after an idle baseline of the same length. run.sh records every
+container's cgroup CPU every 5 s for it (`collect/cpusample.sh`, over `--via`) and finishes with
+`collect/routecost.mjs`, which writes `routecost.txt`: CPU-ms per request per container, idle
+subtracted, costliest route first. `RC_ONLY=a,b` re-measures a subset after a fix.
+
+```bash
+./loadtest/run.sh --env vps1 --scenario routecost --via vps1 -E RC_RATE=40 -E RC_SEG=60 -E RC_GAP=15
+```
+
+Each route owns its window, so Tempo's traces and Pyroscope's profiles for that window are that
+route's alone -- which is what turns a cost into a cause
+([2026-10-23](findings/2026-10-23-vps1-route-cost.md)).
 
 ## Finding the limits: `stress.sh`
 
@@ -324,7 +343,7 @@ measurement that proves it, and the fix. A finding without a number is a guess; 
 without a file is not actionable.
 
 Findings so far: [`2026-09-02`](findings/2026-09-02-vps1.md), [`2026-09-24`](findings/2026-09-24-vps1.md), [`2026-10-11` Dynamic Apps](findings/2026-10-11-vps1-dynamic-apps.md),
-[`2026-09-26` stress/limits](findings/2026-09-26-vps1-stress.md), [`2026-10-21` full re-run + analytics + flow scripts](findings/2026-10-21-vps1.md).
+[`2026-09-26` stress/limits](findings/2026-09-26-vps1-stress.md), [`2026-10-21` full re-run + analytics + flow scripts](findings/2026-10-21-vps1.md), [`2026-10-23` cost per request](findings/2026-10-23-vps1-route-cost.md).
 
 ---
 

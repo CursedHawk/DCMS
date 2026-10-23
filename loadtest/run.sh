@@ -102,7 +102,7 @@ FIXTURES="$REPO/loadtest/fixtures/$PROFILE.json"
 # ---------------------------------------------------------------------------
 ADMIN_SESSION=""
 case "$SCENARIO" in
-    admin|publish|media|sitebuild|mixed|dynamicapps|analytics)
+    admin|publish|media|sitebuild|mixed|dynamicapps|analytics|routecost)
         # Internal mode skips the edge, and the edge is the only thing that turns a session
         # into a bearer admin-api accepts. No client can mint that token itself any more.
         if [ "$MODE" = "internal" ]; then
@@ -130,6 +130,13 @@ K6_ENV=(
     "${SCENARIO_ENV[@]+"${SCENARIO_ENV[@]}"}"
 )
 
+# routecost divides CPU by requests, so it needs exact per-container CPU at its window edges.
+if [ "$SCENARIO" = "routecost" ]; then
+    if [ -n "$VIA" ]; then ssh "$VIA" 'bash -s' < "$REPO/loadtest/collect/cpusample.sh" > "$OUT/cpusample.txt" &
+    else bash "$REPO/loadtest/collect/cpusample.sh" > "$OUT/cpusample.txt" & fi
+    SAMPLER=$!
+fi
+
 # Docker's own -e sets the container environment; k6 populates __ENV from its OWN -e flags.
 # Passing these as `docker run -e` would leave every __ENV lookup undefined and the run
 # would silently use the built-in defaults, at the wrong VU count, against the wrong host.
@@ -148,6 +155,13 @@ docker run --rm -i \
     --out "json=/out/k6-samples.json" \
     "/src/loadtest/scenarios/$SCENARIO.js" 2>&1 | tee "$OUT/k6.log"
 K6_STATUS=${PIPESTATUS[0]}
+
+if [ -n "${SAMPLER:-}" ]; then
+    # One more sample past the last window's end first. Over ssh the remote loop then dies of
+    # SIGPIPE on its next write once this end is gone.
+    sleep 6; kill "$SAMPLER" 2>/dev/null; wait "$SAMPLER" 2>/dev/null
+    echo; node "$REPO/loadtest/collect/routecost.mjs" "$OUT"
+fi
 
 END=$(( $(date -u +%s) + 30 ))
 
