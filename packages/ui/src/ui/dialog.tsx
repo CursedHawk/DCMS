@@ -28,12 +28,14 @@ export const DialogContent = forwardRef<
         onInteractOutside?.(e);
       }}
       className={cn(
-        'dcms-pop fixed left-1/2 top-1/2 z-50 flex w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-lg border bg-card p-6 shadow-xl',
+        // Hung from a fixed top edge rather than centred: most dialogs open on a spinner and grow
+        // when their data arrives, and a centred one jumped up by half of every height change.
+        'dcms-pop fixed left-1/2 top-[max(1rem,8dvh)] z-50 flex w-[calc(100%-2rem)] -translate-x-1/2 flex-col gap-4 rounded-lg border bg-card p-6 shadow-xl',
         // Never taller than the viewport. Dialogs that wrap their body in
         // DialogBody scroll just that region (header, footer and the close
         // button stay put); the rest fall back to scrolling as a whole, which
         // still beats content running off the top and bottom of the screen.
-        'max-h-[calc(100dvh-2rem)] overflow-y-auto',
+        'max-h-[calc(100dvh-max(1rem,8dvh)-1rem)] overflow-y-auto',
         wide ? 'max-w-2xl' : 'max-w-md',
         className,
       )}

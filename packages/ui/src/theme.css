@@ -317,30 +317,11 @@
 .dcms-sheet-bottom[data-state='open'] { animation: dcms-sheet-in-bottom calc(0.22s * var(--motion)) cubic-bezier(0.32, 0.72, 0, 1); }
 .dcms-sheet-bottom[data-state='closed'] { animation: dcms-sheet-out-bottom calc(0.18s * var(--motion)) ease-in forwards; }
 
-/* Dialog content is centered via translate(-50%,-50%); keep that during animation. */
-.dcms-pop[role='dialog'][data-state='open'] {
-  animation: dcms-dialog-enter calc(0.18s * var(--motion)) ease-out;
-}
-.dcms-pop[role='dialog'][data-state='closed'] {
-  animation: dcms-dialog-exit calc(0.14s * var(--motion)) ease-in forwards;
-}
-@keyframes dcms-dialog-enter {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -48%) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-  }
-}
-@keyframes dcms-dialog-exit {
-  from {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translate(-50%, -48%) scale(0.97);
-  }
-}
+/*
+ * No dialog-specific keyframes. Tailwind v4's `-translate-x-1/2` centres a dialog with the
+ * separate `translate` property, which composes with the `transform` dcms-enter animates, so
+ * the plain pop is right for it as well. Keyframes that repeated translate(-50%,-50%) in
+ * `transform` doubled the offset for the whole animation and every popup jumped into place at
+ * the end of it, and a `[role='dialog']` selector reached Radix popovers too (they carry that
+ * role) and shifted them up and left by half their size.
+ */
