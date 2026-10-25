@@ -120,10 +120,42 @@ public static class ObservabilityViewConfigurator
             granted.Add(role);
         }
 
+        await ApplyPlatformOnlyAsync(context, logger, ct);
+
         logger.LogInformation(
             "Observability views applied (version {Version}) and granted to {Roles}.",
             ObservabilityViews.Version,
             granted.Count == 0 ? "nobody" : string.Join(", ", granted));
+    }
+
+    /// <summary>
+    /// The audit record detail, readable by platform-api and by nobody else — see
+    /// <see cref="ObservabilityViews.PlatformAuditDetail"/> for why it is not in <c>obs</c>.
+    /// SELECT only; dcms_grafana is revoked explicitly in case anything ever grants it broadly.
+    /// </summary>
+    private static async Task ApplyPlatformOnlyAsync(DbContext context, ILogger logger, CancellationToken ct)
+    {
+        const string schema = ObservabilityViews.PlatformSchemaName;
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync($"CREATE SCHEMA IF NOT EXISTS {schema}", ct);
+            await context.Database.ExecuteSqlRawAsync(ObservabilityViews.PlatformAuditDetail, ct);
+            if (await RoleExistsAsync(context, RoleName, ct))
+            {
+                await context.Database.ExecuteSqlRawAsync(
+                    $"REVOKE ALL ON ALL TABLES IN SCHEMA {schema} FROM {RoleName}; REVOKE ALL ON SCHEMA {schema} FROM {RoleName};", ct);
+            }
+            if (await RoleExistsAsync(context, PlatformRoleName, ct))
+            {
+                await context.Database.ExecuteSqlRawAsync(
+                    $"GRANT USAGE ON SCHEMA {schema} TO {PlatformRoleName}; GRANT SELECT ON ALL TABLES IN SCHEMA {schema} TO {PlatformRoleName};", ct);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Same reasoning as the obs views: never take out the startup of the migrating service.
+            logger.LogError(ex, "Failed to create {Schema}.v_audit_detail. The platform console's audit record detail will fail.", schema);
+        }
     }
 
     private static async Task<bool> RoleExistsAsync(DbContext context, string role, CancellationToken ct)

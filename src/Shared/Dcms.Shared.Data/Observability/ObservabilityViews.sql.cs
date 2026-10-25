@@ -37,7 +37,68 @@ internal static class ObservabilityViews
     /// Bumped when a view's shape changes. Recorded in <c>obs.view_version</c> so a dashboard
     /// showing nothing can be told apart from a cluster that has not run the configurator.
     /// </summary>
-    public const int Version = 5;
+    public const int Version = 6;
+
+    /// <summary>Readable by dcms_platform only; see <see cref="PlatformAuditDetail"/>.</summary>
+    public const string PlatformSchemaName = "obs_platform";
+
+    /// <summary>
+    /// Everything one audit record holds, for the platform console's record detail.
+    ///
+    /// <para><b>Not in <c>obs</c>.</b> Every view there is granted to dcms_grafana, and Grafana
+    /// permits raw SQL — this one carries metadata and changes as written (only entity diffs
+    /// pass the redactor on the way in), client addresses and user agents, for every tenant.
+    /// platform-api scrubs before it answers; Grafana would not. Nor in <c>platform</c>, where
+    /// dcms_platform holds DML: a plain view over audit_events is auto-updatable, and DELETE
+    /// through it would reach the chain. Its own schema, SELECT for dcms_platform, nothing else.</para>
+    /// </summary>
+    public const string PlatformAuditDetail = $"""
+        CREATE OR REPLACE VIEW {PlatformSchemaName}.v_audit_detail AS
+        SELECT
+            e."OccurredAt"                        AS occurred_at,
+            e."TenantId"                          AS tenant_id,
+            e."Action"                            AS action,
+            e."Category"                          AS category,
+            e."Outcome"                           AS outcome,
+            e."Severity"                          AS severity,
+            e."IsSandbox"                         AS is_sandbox,
+            e."ActorKind"                         AS actor_kind,
+            e."ActorDisplay"                      AS actor_display,
+            e."ActorAttribution"                  AS actor_attribution,
+            e."ResourceType"                      AS resource_type,
+            e."ResourceLabel"                     AS resource_label,
+            e."ServiceName"                       AS service,
+            e."HttpMethod"                        AS http_method,
+            e."RoutePattern"                      AS route,
+            e."StatusCode"                        AS status_code,
+            e."TraceId"                           AS trace_id,
+            e."CorrelationId"                     AS correlation_id,
+            e."Id"                                AS id,
+            e."Seq"                               AS seq,
+            e."EventId"                           AS event_id,
+            e."RecordedAt"                        AS recorded_at,
+            e."ActorId"                           AS actor_id,
+            e."ActorRef"                          AS actor_ref,
+            e."SubjectUserId"                     AS subject_user_id,
+            e."ResourceId"                        AS resource_id,
+            e."ServiceInstance"                   AS service_instance,
+            e."ProducerSeq"                       AS producer_seq,
+            e."CausationId"                       AS causation_id,
+            e."SpanId"                            AS span_id,
+            e."IpAddress"                         AS ip_address,
+            e."IpTrusted"                         AS ip_trusted,
+            e."UserAgent"                         AS user_agent,
+            e."MetadataJson"                      AS metadata_json,
+            e."ChangesJson"                       AS changes_json,
+            e."RedactionVersion"                  AS redaction_version,
+            e."SchemaVersion"                     AS schema_version,
+            e."ChainKey"                          AS chain_key,
+            e."Period"                            AS period,
+            e."HashVersion"                       AS hash_version,
+            encode(e."PrevHash", 'hex')           AS prev_hash,
+            encode(e."Hash", 'hex')               AS hash
+        FROM audit.audit_events e
+        """;
 
     public static readonly string[] Statements =
     [
@@ -64,6 +125,20 @@ internal static class ObservabilityViews
         // The trace id is the whole point of this one: it is what turns a row in the audit log
         // into a link to the span tree that produced it, and it is why a user quoting a trace
         // id can be answered at all.
+        // v5 briefly appended the whole record here, which put unscrubbed metadata, changes and
+        // client addresses in front of dcms_grafana — and Grafana permits raw SQL. They moved to
+        // obs_platform.v_audit_detail (see PlatformAuditDetail). CREATE OR REPLACE cannot drop
+        // columns, so a cluster that ran v5 drops the view once; the grants below re-apply.
+        """
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_schema = 'obs' AND table_name = 'v_audit_recent'
+                         AND column_name = 'metadata_json') THEN
+                DROP VIEW obs.v_audit_recent;
+            END IF;
+        END $$
+        """,
+
         """
         CREATE OR REPLACE VIEW obs.v_audit_recent AS
         SELECT
@@ -97,33 +172,7 @@ internal static class ObservabilityViews
             -- or repeat rows whenever two records share a timestamp, which they routinely do --
             -- a request and the record of its own denial are written in the same tick.
             e."Id"                                AS id,
-            e."Seq"                               AS seq,
-            -- APPENDED (v5): everything else a record holds, for the platform console's record
-            -- detail. Read by id and occurred_at, so the primary key finds it in one partition.
-            -- Metadata and changes are not secret-free by construction (only entity diffs pass
-            -- the redactor), so platform-api scrubs them before they leave.
-            e."EventId"                           AS event_id,
-            e."RecordedAt"                        AS recorded_at,
-            e."ActorId"                           AS actor_id,
-            e."ActorRef"                          AS actor_ref,
-            e."SubjectUserId"                     AS subject_user_id,
-            e."ResourceId"                        AS resource_id,
-            e."ServiceInstance"                   AS service_instance,
-            e."ProducerSeq"                       AS producer_seq,
-            e."CausationId"                       AS causation_id,
-            e."SpanId"                            AS span_id,
-            e."IpAddress"                         AS ip_address,
-            e."IpTrusted"                         AS ip_trusted,
-            e."UserAgent"                         AS user_agent,
-            e."MetadataJson"                      AS metadata_json,
-            e."ChangesJson"                       AS changes_json,
-            e."RedactionVersion"                  AS redaction_version,
-            e."SchemaVersion"                     AS schema_version,
-            e."ChainKey"                          AS chain_key,
-            e."Period"                            AS period,
-            e."HashVersion"                       AS hash_version,
-            encode(e."PrevHash", 'hex')           AS prev_hash,
-            encode(e."Hash", 'hex')               AS hash
+            e."Seq"                               AS seq
         FROM audit.audit_events e
         LEFT JOIN tenancy.tenants t ON t."Id" = e."TenantId"::text
         """,

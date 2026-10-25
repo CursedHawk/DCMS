@@ -59,6 +59,9 @@ public class ReportingRoleTests(AdminApiFixture fixture)
                 "the last statement having run is what says the configurator got to the end");
             created.Should().HaveCount(10,
                 "every view that does not depend on identity should have been created");
+            (await ScalarAsync(owner,
+                    "SELECT count(*) FROM information_schema.views WHERE table_schema = 'obs_platform' AND table_name = 'v_audit_detail'", ct))
+                .Should().Be(1L, "the platform console's record detail reads it, and Grafana must be refused it below");
         }
 
         var reporting = new NpgsqlConnectionStringBuilder(fixture.PostgresConnectionString)
@@ -89,6 +92,8 @@ public class ReportingRoleTests(AdminApiFixture fixture)
                      "audit.audit_events",
                      "ai.tenant_ai_settings",
                      "tenancy.tenants",
+                     // The whole audit record, metadata and client addresses included: platform-api's alone.
+                     "obs_platform.v_audit_detail",
                  })
         {
             var read = async () => await ScalarAsync(grafana, $"SELECT count(*) FROM {table}", ct);

@@ -196,7 +196,7 @@ public static class PlatformAuditEndpoints
                        a.span_id, a.metadata_json, a.changes_json, a.redaction_version,
                        a.schema_version, a.chain_key, a.period, a.seq, a.hash_version,
                        a.prev_hash, a.hash
-                FROM obs.v_audit_recent a
+                FROM obs_platform.v_audit_detail a
                 WHERE a.tenant_id = '00000000-0000-0000-0000-000000000000'
                   AND a.occurred_at = @at
                   AND a.id = @id
