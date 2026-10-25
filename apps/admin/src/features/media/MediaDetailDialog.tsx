@@ -144,17 +144,25 @@ export function MediaDetailDialog({
           <DialogBody className="space-y-5">
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               {/* Preview */}
-              <div className="overflow-hidden rounded-lg border bg-muted">
-                <div className="flex aspect-video items-center justify-center">
-                  {a.category === 'Image' && a.status === 'Ready' ? (
-                    <AuthedImage id={a.id} className="max-h-full max-w-full object-contain" />
-                  ) : a.category === 'Audio' && a.status === 'Ready' ? (
-                    <AuthedAudio id={a.id} variant={a.variants.some((v) => v.kind === 'aac') ? 'aac' : undefined} />
-                  ) : (
-                    <MediaThumb id={a.id} category={a.category} status={a.status} className="h-full w-full" />
-                  )}
+              {a.category === 'Image' && a.status === 'Ready' ? (
+                // The picture at its own proportions, framed by its own edge: a fixed 16:9 box
+                // letterboxed every other shape with blank bars.
+                <AuthedImage
+                  id={a.id}
+                  className="mx-auto block h-auto max-h-[60dvh] w-auto max-w-full self-start rounded-lg border"
+                  fallback={<div className="aspect-video w-full rounded-lg border bg-muted" />}
+                />
+              ) : (
+                <div className="overflow-hidden rounded-lg border bg-muted">
+                  <div className="flex aspect-video items-center justify-center">
+                    {a.category === 'Audio' && a.status === 'Ready' ? (
+                      <AuthedAudio id={a.id} variant={a.variants.some((v) => v.kind === 'aac') ? 'aac' : undefined} />
+                    ) : (
+                      <MediaThumb id={a.id} category={a.category} status={a.status} className="h-full w-full" />
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Metadata */}
               <div className="space-y-3 text-sm">
