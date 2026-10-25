@@ -23,6 +23,7 @@ public static class TenancyServiceCollectionExtensions
 
         services.AddDcmsDbContext<TenancyDbContext>(connectionString, TenancyDbContext.Schema);
 
+        services.AddHttpContextAccessor();
         services.AddScoped<ITenantContext, FinbuckleTenantContext>();
         services.AddMemoryCache();
         services.AddScoped<TenantStore>();

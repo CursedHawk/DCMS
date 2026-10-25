@@ -37,7 +37,7 @@ internal static class ObservabilityViews
     /// Bumped when a view's shape changes. Recorded in <c>obs.view_version</c> so a dashboard
     /// showing nothing can be told apart from a cluster that has not run the configurator.
     /// </summary>
-    public const int Version = 4;
+    public const int Version = 5;
 
     public static readonly string[] Statements =
     [
@@ -97,7 +97,33 @@ internal static class ObservabilityViews
             -- or repeat rows whenever two records share a timestamp, which they routinely do --
             -- a request and the record of its own denial are written in the same tick.
             e."Id"                                AS id,
-            e."Seq"                               AS seq
+            e."Seq"                               AS seq,
+            -- APPENDED (v5): everything else a record holds, for the platform console's record
+            -- detail. Read by id and occurred_at, so the primary key finds it in one partition.
+            -- Metadata and changes are not secret-free by construction (only entity diffs pass
+            -- the redactor), so platform-api scrubs them before they leave.
+            e."EventId"                           AS event_id,
+            e."RecordedAt"                        AS recorded_at,
+            e."ActorId"                           AS actor_id,
+            e."ActorRef"                          AS actor_ref,
+            e."SubjectUserId"                     AS subject_user_id,
+            e."ResourceId"                        AS resource_id,
+            e."ServiceInstance"                   AS service_instance,
+            e."ProducerSeq"                       AS producer_seq,
+            e."CausationId"                       AS causation_id,
+            e."SpanId"                            AS span_id,
+            e."IpAddress"                         AS ip_address,
+            e."IpTrusted"                         AS ip_trusted,
+            e."UserAgent"                         AS user_agent,
+            e."MetadataJson"                      AS metadata_json,
+            e."ChangesJson"                       AS changes_json,
+            e."RedactionVersion"                  AS redaction_version,
+            e."SchemaVersion"                     AS schema_version,
+            e."ChainKey"                          AS chain_key,
+            e."Period"                            AS period,
+            e."HashVersion"                       AS hash_version,
+            encode(e."PrevHash", 'hex')           AS prev_hash,
+            encode(e."Hash", 'hex')               AS hash
         FROM audit.audit_events e
         LEFT JOIN tenancy.tenants t ON t."Id" = e."TenantId"::text
         """,

@@ -399,6 +399,23 @@ export const PLATFORM_AUDIT = {
   nextCursor: null,
 };
 
+/** GET /api/platform/audit/:id — the row above, in full, as platform-api scrubs it. */
+export const PLATFORM_AUDIT_RECORD = {
+  ...PLATFORM_AUDIT.items[0],
+  eventId: '99999999-0000-0000-0000-0000000000e1', recordedAt: '2026-09-07T10:00:01Z',
+  isSandbox: false, actorId: '11111111-0000-0000-0000-000000000001', actorRef: null,
+  subjectUserId: null, resourceId: 'globex-id', serviceInstance: 'a1b2c3', producerSeq: 7,
+  httpMethod: 'POST', route: '/api/admin/tenants/{id}/suspend', ipAddress: '203.0.113.9',
+  ipTrusted: false, userAgent: 'Mozilla/5.0 (e2e)', causationId: null, spanId: '0123456789abcdef',
+  metadata: JSON.stringify({ reason: 'unpaid', client_secret: '[withheld]' }),
+  changes: JSON.stringify([
+    { field: 'Status', before: 'Active', after: 'Suspended', redacted: false },
+    { field: 'ApiKey', before: null, after: null, redacted: true },
+  ]),
+  redactionVersion: 1, schemaVersion: 1, chainKey: '00000000-0000-0000-0000-000000000000',
+  period: '2026-09-01', hashVersion: 2, prevHash: 'aa'.repeat(32), hash: 'bb'.repeat(32),
+};
+
 /** GET /api/admin/marketplace/:id/reference — a plugin's developer reference. */
 export const PLUGIN_REFERENCE = {
   id: 'forms', name: 'Forms', version: '1.0.0', description: 'Visitor forms and their submissions.',

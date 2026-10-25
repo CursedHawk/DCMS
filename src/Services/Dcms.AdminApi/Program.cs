@@ -259,7 +259,7 @@ builder.Services.Configure<ServiceClientOptions>(builder.Configuration.GetSectio
 // container; email-worker is deliberately the only thing that speaks to the relay.
 builder.Services.Configure<Dcms.AdminApi.Observability.AlertingOptions>(
     builder.Configuration.GetSection("Alerting"));
-builder.Services.AddHttpClient<IServiceTokenProvider, ServiceTokenClient>();
+builder.Services.AddServiceTokenProvider();
 // identity's realm admin API (ADR 0022): the User Authentication plugin's directory, and the
 // realm a deleted tenant leaves behind.
 builder.Services.AddRealmAdminClient(builder.Configuration, builder.Environment.IsDevelopment());

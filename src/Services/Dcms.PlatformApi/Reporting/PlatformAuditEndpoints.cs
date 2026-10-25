@@ -1,4 +1,7 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Dcms.PlatformApi.Delegation;
+using Dcms.Shared.Audit.Redaction;
 using Dcms.Shared.Security;
 using Dcms.Shared.Security.Authorization;
 
@@ -59,6 +62,50 @@ public static class PlatformAuditEndpoints
         long Seq);
 
     public sealed record AuditPage(IReadOnlyList<AuditItem> Items, bool HasMore, AuditCursor? NextCursor);
+
+    /// <summary>Everything one record holds, for the detail a row opens. Secrets scrubbed — see <see cref="AuditPayloadScrubber"/>.</summary>
+    public sealed record AuditDetail(
+        Guid Id,
+        Guid EventId,
+        DateTimeOffset OccurredAt,
+        DateTimeOffset RecordedAt,
+        string Action,
+        string Category,
+        string Outcome,
+        short Severity,
+        bool IsSandbox,
+        string ActorKind,
+        Guid? ActorId,
+        string? ActorRef,
+        string? ActorDisplay,
+        string ActorAttribution,
+        Guid? SubjectUserId,
+        string? ResourceType,
+        string? ResourceId,
+        string? ResourceLabel,
+        string Service,
+        string ServiceInstance,
+        long ProducerSeq,
+        string? HttpMethod,
+        string? Route,
+        int? StatusCode,
+        string? IpAddress,
+        bool IpTrusted,
+        string? UserAgent,
+        string? CorrelationId,
+        Guid? CausationId,
+        string? TraceId,
+        string? SpanId,
+        string? Metadata,
+        string? Changes,
+        short RedactionVersion,
+        short SchemaVersion,
+        Guid ChainKey,
+        DateOnly Period,
+        long Seq,
+        short HashVersion,
+        string? PrevHash,
+        string Hash);
 
     public static IEndpointRouteBuilder MapPlatformAuditEndpoints(this IEndpointRouteBuilder app)
     {
@@ -132,6 +179,149 @@ public static class PlatformAuditEndpoints
         .RequirePlatformPermission(PlatformConsolePermissions.AuditRead)
         .WithName("PlatformAuditRecent");
 
+        // One record in full. The occurred_at travels with the id because the table is
+        // partitioned on it: with both, the primary key finds the row in one partition; with
+        // the id alone, Postgres would scan every partition there is.
+        app.MapGet("/api/platform/audit/{id:guid}", async (
+            ObservabilityQuery obs, Guid id, DateTimeOffset at, CancellationToken ct) =>
+        {
+            var rows = await obs.QueryAsync(
+                """
+                SELECT a.id, a.event_id, a.occurred_at, a.recorded_at, a.action, a.category,
+                       a.outcome, a.severity, a.is_sandbox, a.actor_kind, a.actor_id, a.actor_ref,
+                       a.actor_display, a.actor_attribution, a.subject_user_id, a.resource_type,
+                       a.resource_id, a.resource_label, a.service, a.service_instance,
+                       a.producer_seq, a.http_method, a.route, a.status_code, a.ip_address,
+                       a.ip_trusted, a.user_agent, a.correlation_id, a.causation_id, a.trace_id,
+                       a.span_id, a.metadata_json, a.changes_json, a.redaction_version,
+                       a.schema_version, a.chain_key, a.period, a.seq, a.hash_version,
+                       a.prev_hash, a.hash
+                FROM obs.v_audit_recent a
+                WHERE a.tenant_id = '00000000-0000-0000-0000-000000000000'
+                  AND a.occurred_at = @at
+                  AND a.id = @id
+                """,
+                r => new AuditDetail(
+                    r.GetGuid(0),
+                    r.GetGuid(1),
+                    r.GetFieldValue<DateTimeOffset>(2),
+                    r.GetFieldValue<DateTimeOffset>(3),
+                    r.GetString(4),
+                    r.GetString(5),
+                    r.GetString(6),
+                    r.GetInt16(7),
+                    r.GetBoolean(8),
+                    r.GetString(9),
+                    r.IsDBNull(10) ? null : r.GetGuid(10),
+                    r.IsDBNull(11) ? null : r.GetString(11),
+                    r.IsDBNull(12) ? null : r.GetString(12),
+                    r.GetString(13),
+                    r.IsDBNull(14) ? null : r.GetGuid(14),
+                    r.IsDBNull(15) ? null : r.GetString(15),
+                    r.IsDBNull(16) ? null : r.GetString(16),
+                    r.IsDBNull(17) ? null : r.GetString(17),
+                    r.GetString(18),
+                    r.GetString(19),
+                    r.GetInt64(20),
+                    r.IsDBNull(21) ? null : r.GetString(21),
+                    r.IsDBNull(22) ? null : r.GetString(22),
+                    r.IsDBNull(23) ? null : r.GetInt32(23),
+                    r.IsDBNull(24) ? null : r.GetString(24),
+                    r.GetBoolean(25),
+                    r.IsDBNull(26) ? null : r.GetString(26),
+                    r.IsDBNull(27) ? null : r.GetString(27),
+                    r.IsDBNull(28) ? null : r.GetGuid(28),
+                    r.IsDBNull(29) ? null : r.GetString(29),
+                    r.IsDBNull(30) ? null : r.GetString(30),
+                    AuditPayloadScrubber.Scrub(r.GetString(31)),
+                    AuditPayloadScrubber.Scrub(r.IsDBNull(32) ? null : r.GetString(32)),
+                    r.GetInt16(33),
+                    r.GetInt16(34),
+                    r.GetGuid(35),
+                    r.GetFieldValue<DateOnly>(36),
+                    r.GetInt64(37),
+                    r.GetInt16(38),
+                    r.IsDBNull(39) ? null : r.GetString(39),
+                    r.GetString(40)),
+                new Dictionary<string, object?> { ["id"] = id, ["at"] = at },
+                ct);
+
+            return rows.Count == 0 ? Results.NotFound() : Results.Ok(rows[0]);
+        })
+        .RequirePlatformPermission(PlatformConsolePermissions.AuditRead)
+        .WithName("PlatformAuditRecord");
+
         return app;
+    }
+}
+
+/// <summary>
+/// Withholds anything that looks like a secret from a record's metadata and changes before they
+/// leave platform-api.
+///
+/// <para>Needed because only entity diffs pass <see cref="AuditRedactor"/> on the way in;
+/// <c>.With(key, value)</c> metadata and hand-written <c>.Changed(...)</c> values are recorded
+/// as given. The test is the redactor's own name heuristic, so the two cannot drift: a property
+/// whose name looks sensitive keeps its key and loses its value, at any depth, and a change
+/// whose field looks sensitive is shown as redacted. A payload that is not JSON cannot be vetted
+/// and is withheld whole.</para>
+/// </summary>
+public static class AuditPayloadScrubber
+{
+    public const string Withheld = "[withheld]";
+
+    public static string? Scrub(string? json)
+    {
+        if (string.IsNullOrEmpty(json))
+        {
+            return json;
+        }
+
+        JsonNode? node;
+        try
+        {
+            node = JsonNode.Parse(json);
+        }
+        catch (JsonException)
+        {
+            return JsonSerializer.Serialize(Withheld);
+        }
+
+        Visit(node);
+        return node?.ToJsonString() ?? json;
+    }
+
+    private static void Visit(JsonNode? node)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                // A field change: {"field": "ApiKey", "before": ..., "after": ..., "redacted": false}.
+                if (obj["field"] is JsonValue field && field.TryGetValue<string>(out var name)
+                    && AuditRedactor.LooksSensitiveName(name))
+                {
+                    obj["before"] = null;
+                    obj["after"] = null;
+                    obj["redacted"] = true;
+                }
+                foreach (var (key, value) in obj.ToList())
+                {
+                    if (value is not null && AuditRedactor.LooksSensitiveName(key))
+                    {
+                        obj[key] = Withheld;
+                    }
+                    else
+                    {
+                        Visit(value);
+                    }
+                }
+                break;
+            case JsonArray array:
+                foreach (var item in array)
+                {
+                    Visit(item);
+                }
+                break;
+        }
     }
 }

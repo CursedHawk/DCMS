@@ -110,7 +110,7 @@ builder.Services.AddCors();
 // Outbound client-credentials token provider + ai-gateway client, used by the AI
 // Chatbot to generate visitor replies. Reuses the shared dcms.ai service client.
 builder.Services.Configure<ServiceClientOptions>(builder.Configuration.GetSection(ServiceClientOptions.SectionName));
-builder.Services.AddHttpClient<IServiceTokenProvider, ServiceTokenClient>();
+builder.Services.AddServiceTokenProvider();
 builder.Services.AddHttpClient("ai-gateway", (sp, client) =>
 {
     var baseUrl = sp.GetRequiredService<IConfiguration>()["Services:AiGateway"] ?? "http://localhost:5007";

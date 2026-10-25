@@ -79,7 +79,7 @@ builder.Services.AddScoped<ObservabilityQuery>();
 // service instead of the person who asked for it.
 builder.Services.Configure<ServiceClientOptions>(
     builder.Configuration.GetSection(ServiceClientOptions.SectionName));
-builder.Services.AddHttpClient<IServiceTokenProvider, ServiceTokenClient>();
+builder.Services.AddServiceTokenProvider();
 builder.Services.AddHttpClient<AdminApiProxy>(client =>
 {
     client.BaseAddress = new Uri(

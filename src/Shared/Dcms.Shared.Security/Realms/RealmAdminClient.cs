@@ -131,7 +131,7 @@ public static class RealmAdminClientExtensions
         services.AddHttpClient(TokenClientName);
         // A token cache of its own: the shared IServiceTokenProvider holds admin-api's other client.
         services.AddSingleton(sp => new RealmAdminTokens(
-            new ServiceTokenClient(sp.GetRequiredService<IHttpClientFactory>().CreateClient(TokenClientName), credentials)));
+            new ServiceTokenClient(sp.GetRequiredService<IHttpClientFactory>(), credentials, TokenClientName)));
         services.AddHttpClient(nameof(RealmAdminClient), client => client.BaseAddress = new Uri(new Uri(tokenEndpoint), "/"))
             .AddTypedClient((http, sp) => new RealmAdminClient(http, sp.GetRequiredService<RealmAdminTokens>().Provider));
         return services;

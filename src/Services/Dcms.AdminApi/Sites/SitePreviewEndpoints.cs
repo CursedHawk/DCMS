@@ -133,7 +133,7 @@ public static class SitePreviewEndpoints
     private static async Task ProxyAsync(
         Guid siteId, string? path, HttpContext http,
         SitesDbContext sites, ITenantContext tenant,
-        IHttpClientFactory httpClientFactory, CancellationToken ct)
+        IHttpClientFactory httpClientFactory, AuditScope audit, CancellationToken ct)
     {
         // The caller's own tenant, and the site must belong to it. The tenant query filter (no
         // IgnoreQueryFilters here) is what enforces that: a site in another tenant is invisible,
@@ -185,6 +185,8 @@ public static class SitePreviewEndpoints
         var client = httpClientFactory.CreateClient("content-api");
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
 
+        // content-api recorded any refusal itself, against the sandbox tenant.
+        audit.StatusRelayed = true;
         http.Response.StatusCode = (int)response.StatusCode;
         if (response.Content.Headers.ContentType is { } responseType)
         {

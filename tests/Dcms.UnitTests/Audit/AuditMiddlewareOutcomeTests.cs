@@ -133,6 +133,21 @@ public sealed class AuditMiddlewareOutcomeTests
         _sink.Events.Should().ContainSingle().Which.Outcome.Should().Be(AuditOutcome.Denied);
     }
 
+    [Fact]
+    public async Task A_proxy_relaying_its_upstreams_refusal_records_no_second_one()
+    {
+        // The site preview: content-api refused a data call behind a site sign-in and recorded
+        // it; admin-api relayed the 401 and recorded the signed-in editor as unauthenticated.
+        await RunAsync(ctx =>
+        {
+            _scope.StatusRelayed = true;
+            ctx.Response.StatusCode = 401;
+            return Task.CompletedTask;
+        }, new AuditExemptMetadata("Transparent proxy."));
+
+        _sink.Events.Should().BeEmpty();
+    }
+
     /// <summary>What <c>.WithAudit(MediaImported, "media_asset")</c> opens before the handler.</summary>
     private void Declare()
     {

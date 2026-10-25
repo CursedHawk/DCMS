@@ -1,3 +1,4 @@
+using Dcms.Shared.Audit;
 using Dcms.Shared.Security;
 
 namespace Dcms.PlatformApi.Delegation;
@@ -96,6 +97,8 @@ public sealed class AdminApiProxy(HttpClient http, IServiceTokenProvider tokens,
 
         using (response)
         {
+            // admin-api recorded any refusal itself, against the operator it was told about.
+            context.RequestServices.GetRequiredService<AuditScope>().StatusRelayed = true;
             context.Response.StatusCode = (int)response.StatusCode;
             if (response.Content.Headers.ContentType is { } contentType)
             {

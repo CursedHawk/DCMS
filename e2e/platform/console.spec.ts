@@ -75,6 +75,21 @@ test('the audit log fills the columns that used to be empty on every row', async
   await expect(table.getByText('via service')).toBeVisible();
 });
 
+test('a platform audit record opens with everything it holds', async ({ page }) => {
+  await page.goto('/audit');
+  await page.getByRole('table').getByRole('cell', { name: 'tenant.suspend' }).click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('POST /api/admin/tenants/{id}/suspend → 200')).toBeVisible();
+  await expect(dialog.getByText('203.0.113.9')).toBeVisible();
+  await expect(dialog.getByText('Mozilla/5.0 (e2e)')).toBeVisible();
+  await expect(dialog.getByRole('cell', { name: 'Suspended' })).toBeVisible();
+  // A withheld change is shown as changed, never with its value.
+  await expect(dialog.getByText('Value withheld')).toBeVisible();
+  await expect(dialog.getByText(/"reason": "unpaid"/)).toBeVisible();
+  await expect(dialog.getByText('bb'.repeat(32))).toBeVisible();
+});
+
 test('"Switch account" sends the operator to identity\'s account list', async ({ page }) => {
   await page.goto('/');
 

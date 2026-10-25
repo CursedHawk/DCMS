@@ -190,7 +190,8 @@ public sealed class AuditMiddleware(RequestDelegate next)
     private static void RecordDenial(HttpContext context, IAuditRecorder recorder, AuditScope scope)
     {
         var status = context.Response.StatusCode;
-        if (status is not (StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden))
+        if (scope.StatusRelayed
+            || status is not (StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden))
         {
             return;
         }

@@ -153,14 +153,23 @@ public static class AuthorizationEndpoints
         HttpContext context,
         UserManager<DcmsUser> userManager,
         IOpenIddictScopeManager scopeManager,
-        BrowserAccounts browserAccounts)
+        BrowserAccounts browserAccounts,
+        IAuditRecorder audit)
     {
         var request = context.GetOpenIddictServerRequest()
                       ?? throw new InvalidOperationException("OpenIddict request not found.");
 
+        // Which client asked, for what. Without these every record is an anonymous POST to
+        // /connect/token, and "who is minting all these tokens" has no answer in the log.
+        audit.Declared?
+            .With("grant_type", request.GrantType)
+            .With("client_id", request.ClientId)
+            .With("scope", request.Scope);
+
         if (request.IsClientCredentialsGrantType())
         {
             // Service-to-service: the subject is the client application itself.
+            audit.Declared?.For("client", request.ClientId, request.ClientId);
             var identity = new ClaimsIdentity(
                 OpenIddictServerAspNetCoreDefaults.AuthenticationScheme,
                 Claims.Name,
@@ -256,6 +265,7 @@ public static class AuthorizationEndpoints
             {
                 await browserAccounts.TouchAsync(loginSessionId, context.RequestAborted);
             }
+            audit.Declared?.For("user", user.Id, user.Email).About(user.Id);
 
             // Carried forward from the authorization code (and then from each refresh token),
             // which is what puts it in the ID token the client actually receives: in the code

@@ -89,6 +89,16 @@ public sealed class AuditScope
     public bool SuppressFallback { get; set; }
 
     /// <summary>
+    /// Set by a reverse proxy once the status it is about to write is its upstream's answer
+    /// rather than its own decision. The upstream already recorded its own refusal, so the
+    /// middleware records no second one here — that record would say the proxy's caller was
+    /// refused, which is untrue: a signed-in editor whose site preview asked content-api for
+    /// data behind a site sign-in was logged as "security.unauthenticated" with site:edit.
+    /// A refusal by the proxy itself happens before the relay and is still recorded.
+    /// </summary>
+    public bool StatusRelayed { get; set; }
+
+    /// <summary>
     /// The entry opened by <c>.WithAudit(...)</c> before the handler ran. Held here so the
     /// EF layer can hang a field diff on the endpoint's own semantic record instead of
     /// emitting an anonymous second one, and so the middleware can withdraw it again if the

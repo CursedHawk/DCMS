@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Button, type Column, DataTable, EmptyState } from '@dcms/ui';
 import { platformApi } from '../../lib/api';
 import { date } from '../../lib/format';
+import { AuditRecordDialog } from './AuditRecordDialog';
 
 interface AuditItem {
   id: string;
@@ -115,6 +117,7 @@ const columns: Column<AuditItem>[] = [
 ];
 
 export function AuditPage() {
+  const [open, setOpen] = useState<AuditItem | null>(null);
   const q = useInfiniteQuery({
     queryKey: ['platform-audit'],
     initialPageParam: null as { occurredAt: string; seq: number } | null,
@@ -137,7 +140,8 @@ export function AuditPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Audit log</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           What has been done to the platform itself — tenant suspensions, role changes, sign-ins.
-          Records are hash-chained and kept 400 days; nothing on this console can delete one.
+          Records are hash-chained and kept 400 days; nothing on this console can delete one. Open a
+          record for everything it holds.
         </p>
       </header>
 
@@ -145,6 +149,7 @@ export function AuditPage() {
         rows={items}
         columns={columns}
         rowKey={(e) => e.id}
+        onRowClick={setOpen}
         isLoading={q.isLoading}
         caption="Platform audit log"
         empty={
@@ -154,6 +159,8 @@ export function AuditPage() {
           />
         }
       />
+
+      <AuditRecordDialog record={open} onClose={() => setOpen(null)} />
 
       {q.hasNextPage && (
         <div className="mt-4">
