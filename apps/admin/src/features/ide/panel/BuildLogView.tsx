@@ -81,7 +81,7 @@ function Row({ build }: { build: BuildSnapshot }) {
         {errors > 0 && warnings > 0 ? ', ' : null}
         {warnings > 0 ? t('ide.problems.warnings', { count: warnings }) : null}
       </span>
-      <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground/70">
+      <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
         {clockTime(build.at)}
       </span>
     </li>

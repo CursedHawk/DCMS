@@ -205,7 +205,7 @@ export function NotificationRow({
         {text.body ? (
           <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{text.body}</p>
         ) : null}
-        <p className="mt-1 text-[11px] text-muted-foreground/70">
+        <p className="mt-1 text-[11px] text-muted-foreground">
           {relativeTime(item.createdAt, locale)}
         </p>
       </button>

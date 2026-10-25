@@ -44,7 +44,7 @@ export function SidebarNav({
   ].filter((g) => g.items.length > 0);
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col bg-sidebar text-sidebar-foreground', className)}>
+    <div className={cn('flex h-full min-h-0 flex-col border-r bg-sidebar text-sidebar-foreground', className)}>
       {brand ? <div className="flex h-14 shrink-0 items-center gap-2 px-4">{brand}</div> : null}
 
       <nav aria-label={ariaLabel} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-2 py-3">
@@ -65,7 +65,7 @@ export function SidebarNav({
                   /*
                    * The active item is the sidebar's own foreground, not its accent.
                    *
-                   * Brand indigo on a 15%-indigo tint over the dark rail measures 2.58:1 — below
+                   * Brand indigo on a 15%-indigo tint over the dark rail measured 2.58:1 — below
                    * the 4.5:1 minimum, and on the one item somebody is most likely to be looking
                    * for. axe caught it on every page. The accent still marks the item, through
                    * the tint and the bar the app draws beside it; what changed is that the label
@@ -73,7 +73,7 @@ export function SidebarNav({
                    */
                   active
                     ? 'bg-sidebar-accent/15 text-sidebar-foreground'
-                    : 'text-sidebar-muted hover:bg-white/5 hover:text-sidebar-foreground',
+                    : 'text-sidebar-muted hover:bg-sidebar-foreground/5 hover:text-sidebar-foreground',
                   collapsed && 'justify-center px-0',
                 ),
               });
@@ -100,7 +100,7 @@ export function SidebarNav({
           aria-label={collapseLabel}
           aria-pressed={collapsed}
           className={cn(
-            'flex shrink-0 items-center gap-3 border-t border-white/10 px-4 py-3 text-sm text-sidebar-muted',
+            'flex shrink-0 items-center gap-3 border-t border-sidebar-foreground/10 px-4 py-3 text-sm text-sidebar-muted',
             'hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sidebar-accent',
             collapsed && 'justify-center px-0',
           )}
@@ -136,7 +136,7 @@ export function NavLinkBody({ item, collapsed }: { item: ShellNavItem; collapsed
           <span className="truncate">{item.label}</span>
           {item.badge ? (
             // Same reason as the active label: accent-on-accent-tint does not meet contrast on
-            // the dark rail, and a count nobody can read is not a count.
+            // the rail, and a count nobody can read is not a count.
             <span className="ml-auto rounded-full bg-sidebar-accent px-1.5 text-[11px] font-semibold text-white">
               {item.badge > 99 ? '99+' : item.badge}
             </span>

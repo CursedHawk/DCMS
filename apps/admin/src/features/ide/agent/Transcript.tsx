@@ -149,7 +149,7 @@ function ToolCard({ entry }: { entry: Extract<AgentEntry, { kind: 'tool' }> }) {
         <span className="shrink-0 font-mono text-foreground">{entry.name}</span>
         <span className="min-w-0 flex-1 truncate text-muted-foreground">{entry.label}</span>
         {duration != null ? (
-          <span className="shrink-0 tabular-nums text-muted-foreground/60">
+          <span className="shrink-0 tabular-nums text-muted-foreground">
             {formatDuration(duration)}
           </span>
         ) : null}

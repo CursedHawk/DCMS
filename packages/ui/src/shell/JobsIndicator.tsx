@@ -238,7 +238,7 @@ export function JobRow({
           </div>
         )
       ) : null}
-      <p className="mt-1 truncate text-[11px] text-muted-foreground/70">
+      <p className="mt-1 truncate text-[11px] text-muted-foreground">
         {relativeTime(job.finishedAt ?? job.createdAt, locale)}
         {text.origin ? ` · ${text.origin}` : null}
       </p>

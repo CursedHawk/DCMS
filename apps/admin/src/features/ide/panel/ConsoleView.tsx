@@ -71,7 +71,7 @@ export function ConsoleView({ previewEnabled }: { previewEnabled: boolean }) {
             key={`${message.at}-${index}`}
             className="flex gap-2 py-px font-mono text-2xs leading-relaxed"
           >
-            <span className="shrink-0 tabular-nums text-muted-foreground/70">
+            <span className="shrink-0 tabular-nums text-muted-foreground">
               {clockTime(message.at)}
             </span>
             <span className="w-[4.5rem] shrink-0 truncate text-muted-foreground">

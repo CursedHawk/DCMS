@@ -23,7 +23,8 @@
   --secondary: 220 14% 96%;
   --secondary-foreground: 222 47% 11%;
   --muted: 220 14% 96%;
-  --muted-foreground: 220 9% 46%;
+  /* 6.4:1 on white, 5.8:1 on --muted: secondary text is still text, read all day. */
+  --muted-foreground: 220 10% 38%;
   --accent: 243 75% 96%;
   --accent-foreground: 243 75% 40%;
   --destructive: 0 72% 51%;
@@ -33,14 +34,16 @@
   /* Text on a success/warning tint: the fills above are too light to read as text on white. */
   --success-foreground: 142 72% 26%;
   --warning-foreground: 32 95% 30%;
-  --border: 220 13% 91%;
-  --input: 220 13% 91%;
+  --border: 220 13% 87%;
+  /* A field's edge is how you find it (WCAG 1.4.11); darker than the rules between cards. */
+  --input: 220 13% 80%;
   --ring: 243 75% 59%;
   --radius: 0.65rem;
 
-  --sidebar: 222 47% 11%;
-  --sidebar-foreground: 220 14% 96%;
-  --sidebar-muted: 220 9% 60%;
+  /* A light rail in light mode: a step off the white page, so the two read as separate planes. */
+  --sidebar: 220 20% 97%;
+  --sidebar-foreground: 222 47% 11%;
+  --sidebar-muted: 220 10% 36%;
   --sidebar-accent: 243 75% 59%;
 }
 
@@ -56,7 +59,7 @@
   --secondary: 217 33% 17%;
   --secondary-foreground: 210 20% 96%;
   --muted: 217 33% 15%;
-  --muted-foreground: 217 11% 65%;
+  --muted-foreground: 217 14% 72%;
   --accent: 243 40% 22%;
   --accent-foreground: 243 75% 85%;
   --destructive: 0 63% 50%;
@@ -65,13 +68,13 @@
   --warning: 38 92% 55%;
   --success-foreground: 142 64% 62%;
   --warning-foreground: 43 96% 64%;
-  --border: 217 33% 20%;
-  --input: 217 33% 22%;
+  --border: 217 33% 21%;
+  --input: 217 30% 28%;
   --ring: 243 75% 66%;
 
   --sidebar: 222 47% 5%;
   --sidebar-foreground: 210 20% 96%;
-  --sidebar-muted: 217 11% 55%;
+  --sidebar-muted: 217 12% 68%;
   --sidebar-accent: 243 75% 66%;
 }
 

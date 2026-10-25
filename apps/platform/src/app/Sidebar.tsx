@@ -41,7 +41,7 @@ export function Sidebar({
       pathname={pathname}
       ariaLabel="Platform sections"
       onNavigate={onNavigate}
-      className={inDrawer ? 'w-full' : 'w-60 border-r border-black/30'}
+      className={inDrawer ? 'w-full' : 'w-60'}
       brand={
         <div>
           <span className="font-mono text-[0.8125rem] tracking-tight text-sidebar-accent">dcms</span>

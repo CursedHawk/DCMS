@@ -57,7 +57,7 @@ function RunMeter({ run }: { run: AgentRunMetrics }) {
 function Stat({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
     <span className="flex items-baseline gap-1" title={title}>
-      <dt className="text-muted-foreground/60">{label}</dt>
+      <dt className="text-muted-foreground">{label}</dt>
       <dd className="tabular-nums text-foreground">{value}</dd>
     </span>
   );

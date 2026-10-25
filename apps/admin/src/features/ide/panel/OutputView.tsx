@@ -45,7 +45,7 @@ export function OutputView() {
 function Line({ line }: { line: OutputLine }) {
   return (
     <li className="flex gap-2 py-px font-mono text-2xs leading-relaxed">
-      <span className="shrink-0 tabular-nums text-muted-foreground/70">{clockTime(line.at)}</span>
+      <span className="shrink-0 tabular-nums text-muted-foreground">{clockTime(line.at)}</span>
       {/* The channel, not a severity chip: which part of the workspace spoke is the thing that
           makes a mixed log readable, and severity is already carried by the colour. */}
       <span className="w-[4.5rem] shrink-0 truncate text-muted-foreground">{line.channel}</span>

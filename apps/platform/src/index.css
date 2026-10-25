@@ -45,7 +45,7 @@
   --secondary: 185 14% 92%;
   --secondary-foreground: 197 30% 12%;
   --muted: 185 14% 92%;
-  --muted-foreground: 196 12% 42%;
+  --muted-foreground: 196 14% 33%;
   --accent: 191 50% 92%;
   --accent-foreground: 191 84% 22%;
 
@@ -57,8 +57,8 @@
   --success-foreground: 132 55% 25%;
   --warning-foreground: 32 80% 30%;
 
-  --border: 190 12% 86%;
-  --input: 190 12% 86%;
+  --border: 190 12% 83%;
+  --input: 190 12% 74%;
   --ring: 191 84% 27%;
 
   /* Squarer than the admin SPA's 0.65rem. A console of measured bars and aligned ceilings
@@ -66,10 +66,11 @@
      rather than only in colour. */
   --radius: 0.375rem;
 
-  --sidebar: 197 34% 13%;
-  --sidebar-foreground: 185 18% 92%;
-  --sidebar-muted: 195 12% 62%;
-  --sidebar-accent: 187 68% 45%;
+  /* A light rail, a step darker than the paper; the teal accent darkens with it to stay legible. */
+  --sidebar: 185 14% 92%;
+  --sidebar-foreground: 197 30% 12%;
+  --sidebar-muted: 196 14% 31%;
+  --sidebar-accent: 191 84% 27%;
 }
 
 .dark {
@@ -89,7 +90,7 @@
   --secondary: 197 20% 17%;
   --secondary-foreground: 185 16% 92%;
   --muted: 197 20% 17%;
-  --muted-foreground: 193 10% 60%;
+  --muted-foreground: 193 11% 68%;
   --accent: 191 40% 20%;
   --accent-foreground: 187 68% 70%;
 
@@ -100,13 +101,13 @@
   --success-foreground: 132 45% 64%;
   --warning-foreground: 43 80% 68%;
 
-  --border: 197 18% 22%;
-  --input: 197 18% 22%;
+  --border: 197 18% 23%;
+  --input: 197 16% 30%;
   --ring: 187 68% 45%;
 
   --sidebar: 197 32% 10%;
   --sidebar-foreground: 185 18% 90%;
-  --sidebar-muted: 195 10% 55%;
+  --sidebar-muted: 195 10% 66%;
   --sidebar-accent: 187 68% 45%;
 }
 
