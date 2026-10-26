@@ -52,6 +52,8 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.HasIndex(t => t.Identifier).IsUnique();
             e.Property(t => t.Name).HasMaxLength(256);
             e.Property(t => t.Status).HasConversion<string>().HasMaxLength(32);
+            e.Property(t => t.EnvironmentName).HasMaxLength(32);
+            e.HasIndex(t => t.WorkspaceId);
         });
 
         builder.Entity<Domain>(e =>

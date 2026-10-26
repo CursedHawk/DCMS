@@ -277,6 +277,18 @@ public sealed class TenantDeleter(
 {
     public async Task<TenantDeletionResult?> DeleteAsync(Guid tenantId, CancellationToken ct)
     {
+        // A workspace goes with its environments (ADR 0026). Each is a whole tenant and is deleted
+        // the same way, before the root, so no environment is left pointing at a missing workspace.
+        // tenancy.tenants carries no policy, so this needs no scope.
+        var environments = await tenancy.Tenants.AsNoTracking()
+            .Where(t => t.WorkspaceId == tenantId && t.Id != tenantId.ToString())
+            .Select(t => t.Id)
+            .ToListAsync(ct);
+        foreach (var environment in environments)
+        {
+            await DeleteAsync(Guid.Parse(environment), ct);
+        }
+
         // Every statement below is keyed on this one tenant, whether an owner or the platform
         // console asked for it -- so the database is told exactly that, not "all tenants". A
         // delete that lost its predicate empties this tenant's table, not everyone's (ADR 0015).
@@ -411,6 +423,16 @@ public sealed class TenantDeleter(
             ("tenancy.Domains", () => tenancy.Domains.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.Usage", () => tenancy.Usage.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.Tenants", () => tenancy.Tenants.Where(t => t.Id == key).ExecuteDeleteAsync(ct)));
+        // The other environments of its workspace may no longer be promoted into from it.
+        if (tenant.WorkspaceId is { } workspaceId && workspaceId != tenantId)
+        {
+            var siblings = await tenancy.Tenants.Where(t => t.WorkspaceId == workspaceId).ToListAsync(ct);
+            foreach (var sibling in siblings)
+            {
+                sibling.PromotesFrom.Remove(tenantId);
+            }
+            await tenancy.SaveChangesAsync(ct);
+        }
         // Resolution is cached for 30 s (TenantStore). Without this the deleted tenant keeps
         // resolving here -- and a new tenant created under the same slug meanwhile resolves to
         // the dead one, so its writes land under a TenantId nothing can read back.

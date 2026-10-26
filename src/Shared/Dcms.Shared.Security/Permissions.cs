@@ -35,12 +35,22 @@ public static class PlatformPermissions
     public const string AuditRead = "audit:read";
     public const string AuditExport = "audit:export";
 
+    /// <summary>
+    /// Enable environments and add, rename, reorder or delete them; create migrations. Checked in
+    /// the workspace root, because environments are the workspace's (ADR 0026).
+    /// </summary>
+    public const string EnvironmentsManage = "environments:manage";
+
+    /// <summary>Apply or roll back migrations into this environment.</summary>
+    public const string EnvironmentsPromote = "environments:promote";
+
     /// <summary>All platform permission keys (excludes plugin-contributed ones).</summary>
     public static readonly IReadOnlyList<string> All =
     [
         TenantSettings, MembersManage, RolesManage, DomainsManage, PluginsManage,
         MediaRead, MediaWrite, SiteEdit, SitePublish, AiSettings, AiChatsReadAll, AnalyticsRead,
         ContentRead, ContentWrite, ContentPublish, ChatRead, ChatManage, AuditRead, AuditExport,
+        EnvironmentsManage, EnvironmentsPromote,
     ];
 
     public static string ForPlugin(string pluginId, string action) => $"plugin:{pluginId}:{action}";

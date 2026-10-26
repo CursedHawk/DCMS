@@ -41,11 +41,16 @@ public static class TenancyEndpoints
 
             var result = memberships
                 .Where(m => tenants.ContainsKey(m.TenantId))
-                .Select(m => new
+                .Select(m => tenants[m.TenantId])
+                .Select(t => new
                 {
-                    tenantId = m.TenantId,
-                    slug = tenants[m.TenantId].Identifier,
-                    name = tenants[m.TenantId].Name,
+                    tenantId = t.TenantId,
+                    slug = t.Identifier,
+                    name = t.Name,
+                    // Environments (ADR 0026): the switcher groups tenants by workspace.
+                    workspaceId = t.WorkspaceId,
+                    environment = t.EnvironmentName,
+                    environmentOrder = t.EnvironmentOrder,
                 });
             return Results.Ok(result);
         }).RequireAuthorization().AllowNonMemberTenant(AllowNonMemberTenantAttribute.SelfScoped);
@@ -621,6 +626,8 @@ public static class TenancyEndpoints
         PlatformPermissions.ContentPublish => "Publish content",
         PlatformPermissions.ChatRead => "View chat",
         PlatformPermissions.ChatManage => "Manage chat",
+        PlatformPermissions.EnvironmentsManage => "Manage environments",
+        PlatformPermissions.EnvironmentsPromote => "Deploy into this environment",
         _ => key,
     };
 
@@ -640,6 +647,8 @@ public static class TenancyEndpoints
         PlatformPermissions.ContentRead or PlatformPermissions.ContentWrite
             or PlatformPermissions.ContentPublish => "/content",
         PlatformPermissions.ChatRead or PlatformPermissions.ChatManage => "/chat",
+        PlatformPermissions.EnvironmentsManage => "/settings/environments",
+        PlatformPermissions.EnvironmentsPromote => "/deployments",
         _ => null,
     };
 
@@ -738,6 +747,14 @@ public static class TenancyEndpoints
 
         var suspended = status == TenantStatus.Suspended;
         tenant.Status = status;
+        // A workspace is suspended or resumed whole: its environments follow the root (ADR 0026).
+        var environments = tenant.WorkspaceId == tenantId
+            ? await db.Tenants.Where(t => t.WorkspaceId == tenantId && t.Id != tenant.Id).ToListAsync(ct)
+            : [];
+        foreach (var environment in environments)
+        {
+            environment.Status = status;
+        }
 
         // BEFORE SaveChangesAsync, and that ordering is load-bearing. The EF interceptor drains
         // the audit buffer into the transaction that commits the change, so anything added to
@@ -752,6 +769,7 @@ public static class TenancyEndpoints
         // TenantStore caches resolution for 30 s; TenantMembershipMiddleware, which enforces the
         // suspension on this plane, reads through it -- so this process drops its copy now.
         store.Evict(tenant);
+        environments.ForEach(store.Evict);
 
         // Best-effort, and deliberately not allowed to fail the request.
         //
@@ -764,11 +782,14 @@ public static class TenancyEndpoints
         // completed suspension is a lie.
         try
         {
-            await events.PublishAsync(
-                suspended ? Subjects.TenantSuspended : Subjects.TenantResumed,
-                new TenantStatusChanged(
-                    Guid.NewGuid(), DateTimeOffset.UtcNow, tenantId, tenant.Identifier, suspended),
-                ct);
+            foreach (var t in environments.Prepend(tenant))
+            {
+                await events.PublishAsync(
+                    suspended ? Subjects.TenantSuspended : Subjects.TenantResumed,
+                    new TenantStatusChanged(
+                        Guid.NewGuid(), DateTimeOffset.UtcNow, t.TenantId, t.Identifier, suspended),
+                    ct);
+            }
         }
         catch (Exception ex)
         {

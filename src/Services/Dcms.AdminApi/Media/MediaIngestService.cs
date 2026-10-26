@@ -266,14 +266,11 @@ public sealed class MediaIngestService(
     }
 
     /// <summary>
-    /// What the tenant's library holds, originals and renditions together: the number the cap is
-    /// measured against, and the one the console's tenant list shows.
+    /// What the workspace's libraries hold, originals and renditions together, across its
+    /// environments: the number the cap is measured against.
     /// </summary>
-    public async Task<long> UsedBytesAsync(Guid tenantId, CancellationToken ct)
-    {
-        var (originals, renditions) = await MediaFootprint.OfAsync(db, tenantId, ct);
-        return originals + renditions;
-    }
+    public Task<long> UsedBytesAsync(Guid tenantId, CancellationToken ct) =>
+        MediaFootprint.WorkspaceUsedAsync(db, tenancy, tenantId, ct);
 
     public Task<long> QuotaBytesAsync(Guid tenantId, CancellationToken ct) =>
         MediaFootprint.QuotaAsync(tenancy, tenantId, ct);

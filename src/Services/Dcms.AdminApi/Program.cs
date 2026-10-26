@@ -422,6 +422,7 @@ app.UseRateLimiter();
 app.MapDcmsDefaultEndpoints();
 app.MapTenancyEndpoints();
 app.MapTenantAdminEndpoints();
+app.MapEnvironmentEndpoints();
 app.MapTenantUsageEndpoints();
 app.MapMyAccountEndpoints();
 app.MapInvitationEndpoints();

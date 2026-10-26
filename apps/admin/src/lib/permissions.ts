@@ -28,6 +28,8 @@ export const Perm = {
   ChatManage: 'chat:manage',
   AuditRead: 'audit:read',
   AuditExport: 'audit:export',
+  EnvironmentsManage: 'environments:manage',
+  EnvironmentsPromote: 'environments:promote',
 } as const;
 
 /** Per-site git repo permission keys (resource-scoped; mirrors PlatformPermissions). */

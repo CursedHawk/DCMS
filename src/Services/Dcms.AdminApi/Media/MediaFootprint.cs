@@ -1,4 +1,5 @@
 using Dcms.Shared.Data.Media;
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Tenancy;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,9 +26,43 @@ public static class MediaFootprint
         return (originals, renditions);
     }
 
-    public static async Task<long> QuotaAsync(TenancyDbContext tenancy, Guid tenantId, CancellationToken ct) =>
-        await tenancy.Tenants.IgnoreQueryFilters()
+    /// <summary>
+    /// The cap: the workspace root's, because a workspace's environments share one (ADR 0026) --
+    /// otherwise every environment added would multiply it.
+    /// </summary>
+    public static async Task<long> QuotaAsync(TenancyDbContext tenancy, Guid tenantId, CancellationToken ct)
+    {
+        var row = await tenancy.Tenants.IgnoreQueryFilters()
             .Where(t => t.Id == tenantId.ToString())
-            .Select(t => (long?)t.StorageQuotaBytes)
-            .FirstOrDefaultAsync(ct) ?? Tenant.DefaultStorageQuotaBytes;
+            .Select(t => new { t.StorageQuotaBytes, t.WorkspaceId })
+            .FirstOrDefaultAsync(ct);
+        if (row is null) return Tenant.DefaultStorageQuotaBytes;
+        return row.WorkspaceId is { } root && root != tenantId
+            ? await QuotaAsync(tenancy, root, ct)
+            : row.StorageQuotaBytes;
+    }
+
+    /// <summary>What the cap is measured against: the media of every environment of the workspace.</summary>
+    public static async Task<long> WorkspaceUsedAsync(
+        MediaDbContext media, TenancyDbContext tenancy, Guid tenantId, CancellationToken ct)
+    {
+        var workspaceId = await tenancy.Tenants.IgnoreQueryFilters()
+            .Where(t => t.Id == tenantId.ToString())
+            .Select(t => t.WorkspaceId)
+            .FirstOrDefaultAsync(ct);
+        var tenantIds = workspaceId is { } root
+            ? (await tenancy.Tenants.IgnoreQueryFilters().Where(t => t.WorkspaceId == root).Select(t => t.Id).ToListAsync(ct))
+                .Select(Guid.Parse).ToList()
+            : [tenantId];
+
+        long used = 0;
+        foreach (var id in tenantIds)
+        {
+            // rls: each environment's own rows, read as that environment -- a sum, nothing returned.
+            using var rls = RlsScope.Tenant(id);
+            var (originals, renditions) = await OfAsync(media, id, ct);
+            used += originals + renditions;
+        }
+        return used;
+    }
 }

@@ -28,6 +28,13 @@ public static class AuditActions
     public const string TenantPurgeStarted = "tenant.purge.started";
     public const string TenantPurged = "tenant.purged";
 
+    // ---- environments (ADR 0026) ----
+    public const string EnvironmentsEnabled = "environments.enabled";
+    public const string EnvironmentsDisabled = "environments.disabled";
+    public const string EnvironmentCreated = "environment.created";
+    public const string EnvironmentUpdated = "environment.updated";
+    public const string EnvironmentDeleted = "environment.deleted";
+
     public const string MemberInvited = "member.invited";
     public const string MemberInviteResent = "member.invite.resent";
     public const string MemberInviteRevoked = "member.invite.revoked";

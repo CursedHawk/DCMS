@@ -20,8 +20,11 @@ public sealed class TenantProvisioning(
     public const string OwnerRole = "Owner";
     public const string MemberRoleName = "Member";
 
+    /// <param name="shape">Sets anything else on the new row before it is saved -- an
+    /// environment's workspace fields (ADR 0026).</param>
     public async Task<Tenant> CreateTenantAsync(
-        string slug, string? name, Guid ownerUserId, string ownerEmail, CancellationToken ct)
+        string slug, string? name, Guid ownerUserId, string ownerEmail, CancellationToken ct,
+        Action<Tenant>? shape = null)
     {
         var tenant = new Tenant
         {
@@ -30,6 +33,7 @@ public sealed class TenantProvisioning(
             Name = name ?? slug,
             Status = TenantStatus.Active,
         };
+        shape?.Invoke(tenant);
         var tenantId = tenant.TenantId;
         db.Tenants.Add(tenant);
 

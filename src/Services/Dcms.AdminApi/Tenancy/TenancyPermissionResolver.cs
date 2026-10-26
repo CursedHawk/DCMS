@@ -1,4 +1,5 @@
 using Dcms.Shared.Caching;
+using Dcms.Shared.Data.Rls;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Security.Authorization;
 using Microsoft.EntityFrameworkCore;
@@ -26,20 +27,26 @@ public sealed class TenancyPermissionResolver(TenancyDbContext db, ICacheService
             return cached.ToHashSet(StringComparer.Ordinal);
         }
 
-        // Tenant-scoped query filters restrict these to the current tenant, which
-        // equals tenantId for the request being authorized.
-        var roleIds = await db.Memberships
-            .Where(m => m.UserId == userId)
-            .SelectMany(m => m.Roles.Select(r => r.TenantRoleId))
-            .ToListAsync(ct);
+        // Keyed on tenantId explicitly, not on the ambient tenant: environments ask for the
+        // workspace root's permissions from inside another environment (ADR 0026), and an
+        // answer read through the ambient filter would be the wrong tenant's -- cached under
+        // this tenant's key for five minutes.
+        string[] permissions;
+        using (RlsScope.Tenant(tenantId))
+        {
+            var roleIds = await db.Memberships.IgnoreQueryFilters()
+                .Where(m => m.TenantId == tenantId && m.UserId == userId)
+                .SelectMany(m => m.Roles.Select(r => r.TenantRoleId))
+                .ToListAsync(ct);
 
-        var permissions = roleIds.Count == 0
-            ? []
-            : await db.TenantRolePermissions
-                .Where(p => roleIds.Contains(p.TenantRoleId))
-                .Select(p => p.Permission)
-                .Distinct()
-                .ToArrayAsync(ct);
+            permissions = roleIds.Count == 0
+                ? []
+                : await db.TenantRolePermissions.IgnoreQueryFilters()
+                    .Where(p => p.TenantId == tenantId && roleIds.Contains(p.TenantRoleId))
+                    .Select(p => p.Permission)
+                    .Distinct()
+                    .ToArrayAsync(ct);
+        }
 
         await cache.SetAsync(key, permissions, Ttl, ct);
         return permissions.ToHashSet(StringComparer.Ordinal);
