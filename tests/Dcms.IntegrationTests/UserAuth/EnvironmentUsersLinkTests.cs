@@ -70,6 +70,8 @@ public sealed class EnvironmentUsersLinkTests(ContentFlowFixture fixture)
         var refused = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/users/groups", app.Owner, dev,
             body: new { name = "Staff" }), ct);
         refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, $"/api/admin/plugins/users/users/{pat}/preview-token", app.Owner, dev,
+            body: new { }), ct)).StatusCode.Should().Be(HttpStatusCode.Conflict, "a token production would accept, for someone nobody there let this member be");
 
         // Unlinked: development's hosts are its own realm's again.
         var link = (await Ok(await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Get, $"/api/admin/environments/{devId}/links", app.Owner, app.Tenant), ct), ct))

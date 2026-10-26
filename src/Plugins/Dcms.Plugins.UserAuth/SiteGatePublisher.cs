@@ -141,7 +141,7 @@ public sealed class SiteGatePublisher(
                 using (RlsScope.Tenant(environment))
                 {
                     var own = environment == tenantId ? target : await TargetAsync(environment, ct);
-                    hosts.AddRange((await WantedAsync(environment, own, ct)).Keys);
+                    hosts.AddRange((await WantedAsync(environment, own, ct)).Keys.Order(StringComparer.Ordinal));
                 }
             }
         }
@@ -158,7 +158,8 @@ public sealed class SiteGatePublisher(
         }
         // ponytail: identity takes 50 redirect hosts per realm; a tenant with more sites than that
         // gets sign-in on the first 50. Raise identity's MaxHosts (or page the client) if one does.
-        var sorted = hosts.Order(StringComparer.Ordinal).Take(50).ToList();
+        // The realm's own hosts come first, so environments signing in through it never crowd them out.
+        var sorted = hosts.Take(50).Order(StringComparer.Ordinal).ToList();
         if (current is not null && current.Slug == target.Slug && current.Name == target.Name
             && current.Hosts.Order(StringComparer.Ordinal).SequenceEqual(sorted)
             && (passwordEnabled is null || passwordEnabled == current.PasswordEnabled))

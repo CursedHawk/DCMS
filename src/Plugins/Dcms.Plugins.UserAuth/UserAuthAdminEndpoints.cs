@@ -512,8 +512,9 @@ public sealed class RealmRelay(RealmAdminClient realms, SiteGatePublisher publis
     public async Task<IResult> SendAsync(HttpMethod method, string path, object? body, CancellationToken ct, Func<string, Task>? then = null)
     {
         var realmTenant = await RealmTenantAsync(ct);
-        // A preview "view as" token is asked for with a POST, and changes nothing.
-        if (realmTenant != context.TenantId && method != HttpMethod.Get && !path.EndsWith("/preview-token", StringComparison.Ordinal))
+        // Every write refused, "view as" too: a token for the other environment's person is one
+        // that environment would accept, and nobody there granted this member that.
+        if (realmTenant != context.TenantId && method != HttpMethod.Get)
         {
             return Linked;
         }

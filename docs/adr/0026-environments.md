@@ -104,7 +104,7 @@ audited with both ids.
   consumer accepts only the target's realm tokens. **Who may do what stays the consumer's**: its
   roles, grants and group-gated rules, which name the target's people and groups. The consumer's
   User Authentication screens read the target's users and groups and change none of them
-  (`409 environment_users_linked`). The gate reconciler applies a link change within five minutes.
+  (`409 environment_users_linked`). Nor do they issue "view as" tokens, which the target would accept. The gate reconciler applies a link change within five minutes.
 - **Plugin services**: not built.
 
 ### The preview sandbox is deleted
