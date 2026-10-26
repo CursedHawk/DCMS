@@ -207,7 +207,7 @@ public static class PluginInstanceEndpoints
     /// lives here rather than at the three call sites: a fourth kind of change added later gets
     /// counted by construction instead of by remembering.
     /// </summary>
-    private static async Task PublishChange(IEventPublisher events, ICacheService cache, DcmsMetrics metrics, PluginInstance instance, PluginInstanceChangeKind kind, CancellationToken ct)
+    internal static async Task PublishChange(IEventPublisher events, ICacheService cache, DcmsMetrics metrics, PluginInstance instance, PluginInstanceChangeKind kind, CancellationToken ct)
     {
         // Plugin id, not instance id: the catalogue is a fixed, small set, whereas instances
         // are created per tenant without bound.

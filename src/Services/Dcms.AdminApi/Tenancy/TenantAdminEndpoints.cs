@@ -422,6 +422,9 @@ public sealed class TenantDeleter(
             ("tenancy.Invitations", () => tenancy.Invitations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.Domains", () => tenancy.Domains.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.Usage", () => tenancy.Usage.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.EnvironmentMigrations", () => tenancy.EnvironmentMigrations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.EnvironmentBaselines", () => tenancy.EnvironmentBaselines.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.EnvironmentPolicies", () => tenancy.EnvironmentPolicies.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.Tenants", () => tenancy.Tenants.Where(t => t.Id == key).ExecuteDeleteAsync(ct)));
         // The other environments of its workspace may no longer be promoted into from it.
         if (tenant.WorkspaceId is { } workspaceId && workspaceId != tenantId)

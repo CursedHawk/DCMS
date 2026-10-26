@@ -1,6 +1,8 @@
+using Dcms.AdminApi.Environments;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.Shared.Data.Tenancy;
+using Dcms.Shared.Jobs;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
 using Dcms.Shared.Security.Authorization;
@@ -100,7 +102,7 @@ public static class EnvironmentEndpoints
         app.MapPost("/api/admin/environments", async (
             CreateEnvironmentRequest body, ITenantContext tenant, TenancyDbContext db, CurrentUser me,
             IPermissionResolver permissions, TenantProvisioning provisioning, WorkspaceMembers members,
-            IAuditRecorder audit, CancellationToken ct) =>
+            IJobQueue jobs, IAuditRecorder audit, CancellationToken ct) =>
         {
             var current = await CurrentAsync(db, tenant, ct);
             if (current is null) return Results.BadRequest(new { error = "Select a workspace first." });
@@ -156,6 +158,16 @@ public static class EnvironmentEndpoints
             upstream.PromotesFrom.Add(created.TenantId);
             await db.SaveChangesAsync(ct);
             await members.SeedAsync(created.TenantId, root.TenantId, ct);
+            // Its configuration follows as a job (a site's repository is pushed; plugins are set up):
+            // the environment exists now and fills in over the next moments.
+            if (body.Empty != true)
+            {
+                await jobs.EnqueueAsync(new JobSpec(
+                    EnvironmentCopyJob.Kind, created.TenantId, new EnvironmentCopyPayload(root.TenantId),
+                    "jobs.kinds.environmentCopy.title", new { environment = name },
+                    RequiredPermission: PlatformPermissions.EnvironmentsManage, MaxAttempts: 1,
+                    LinkPath: "/deployments"), ct);
+            }
 
             return Results.Created($"/api/admin/environments/{created.TenantId}", View(created, true));
         }).RequireAuthorization().WithAudit(AuditActions.EnvironmentCreated, "tenant");
@@ -280,6 +292,7 @@ public static class EnvironmentEndpoints
         && value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')
         && !value.StartsWith('-') && !value.EndsWith('-');
 
-    private sealed record CreateEnvironmentRequest(string? Name);
+    /// <param name="Empty">True for an environment without the root's configuration.</param>
+    private sealed record CreateEnvironmentRequest(string? Name, bool? Empty);
     private sealed record UpdateEnvironmentRequest(string? Name, int? Order, List<Guid>? PromotesFrom);
 }

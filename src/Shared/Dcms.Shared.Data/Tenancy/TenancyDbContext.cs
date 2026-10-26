@@ -34,6 +34,9 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
     public DbSet<TableView> TableViews => Set<TableView>();
     public DbSet<TableViewShare> TableViewShares => Set<TableViewShare>();
     public DbSet<TableViewDefault> TableViewDefaults => Set<TableViewDefault>();
+    public DbSet<EnvironmentMigration> EnvironmentMigrations => Set<EnvironmentMigration>();
+    public DbSet<EnvironmentBaseline> EnvironmentBaselines => Set<EnvironmentBaseline>();
+    public DbSet<EnvironmentPolicy> EnvironmentPolicies => Set<EnvironmentPolicy>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -155,6 +158,42 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.Property(d => d.ViewKey).HasMaxLength(100).IsRequired();
             e.HasIndex(d => new { d.TenantId, d.UserId, d.TableKey }).IsUnique();
             e.HasQueryFilter(d => d.TenantId == CurrentTenantId);
+        });
+
+        // Environments (ADR 0026). Read across the workspace's tenants by naming each one, so
+        // the filters are the usual tenant ones.
+        builder.Entity<EnvironmentMigration>(e =>
+        {
+            e.ToTable("environment_migrations");
+            e.HasKey(m => m.Id);
+            e.Property(m => m.Name).HasMaxLength(200).IsRequired();
+            e.Property(m => m.Description).HasMaxLength(2000);
+            e.Property(m => m.AuthorEmail).HasMaxLength(256);
+            e.Property(m => m.ChangesJson).HasColumnType("jsonb");
+            e.Property(m => m.ResolutionsJson).HasColumnType("jsonb");
+            e.HasIndex(m => new { m.TenantId, m.Order }).IsUnique();
+            e.HasIndex(m => new { m.TenantId, m.MigrationId });
+            e.HasQueryFilter(m => m.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<EnvironmentBaseline>(e =>
+        {
+            e.ToTable("environment_baselines");
+            e.HasKey(b => b.Id);
+            e.Property(b => b.ItemsJson).HasColumnType("jsonb");
+            e.HasIndex(b => b.TenantId).IsUnique();
+            e.HasQueryFilter(b => b.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<EnvironmentPolicy>(e =>
+        {
+            e.ToTable("environment_policies");
+            e.HasKey(p => p.Id);
+            e.Property(p => p.Kind).HasMaxLength(64).IsRequired();
+            e.Property(p => p.ItemKey).HasMaxLength(256);
+            e.Property(p => p.Mode).HasConversion<string>().HasMaxLength(16);
+            e.HasIndex(p => new { p.TenantId, p.Kind, p.ItemKey }).IsUnique().AreNullsDistinct(false);
+            e.HasQueryFilter(p => p.TenantId == CurrentTenantId);
         });
     }
 

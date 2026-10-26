@@ -1,3 +1,4 @@
+using Dcms.AdminApi.Environments;
 using Dcms.Shared.Caching.Idempotency;
 using System.Security.Claims;
 using Dcms.AdminApi.Ai;
@@ -184,6 +185,18 @@ builder.Services.Configure<Dcms.AdminApi.Media.GoogleDriveOptions>(
     builder.Configuration.GetSection(Dcms.AdminApi.Media.GoogleDriveOptions.SectionName));
 builder.Services.AddJobHandler<Dcms.AdminApi.Media.DriveFileJob, Dcms.AdminApi.Media.DriveFilePayload>(
     Dcms.AdminApi.Media.DriveFileJob.Kind);
+
+// Environments (ADR 0026): the configuration kinds a workspace's environments move between them
+// as migrations, in the order a migration applies them; plugins add theirs on top.
+builder.Services.AddScoped<Dcms.AdminApi.Environments.EnvironmentMigrator>();
+builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.RolesConfigKind>();
+builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.PluginsConfigKind>();
+builder.Services.AddJobHandler<Dcms.AdminApi.Environments.EnvironmentApplyJob, Dcms.AdminApi.Environments.EnvironmentApplyPayload>(
+    Dcms.AdminApi.Environments.EnvironmentApplyJob.Kind);
+builder.Services.AddJobHandler<Dcms.AdminApi.Environments.EnvironmentRollbackJob, Dcms.AdminApi.Environments.EnvironmentRollbackPayload>(
+    Dcms.AdminApi.Environments.EnvironmentRollbackJob.Kind);
+builder.Services.AddJobHandler<Dcms.AdminApi.Environments.EnvironmentCopyJob, Dcms.AdminApi.Environments.EnvironmentCopyPayload>(
+    Dcms.AdminApi.Environments.EnvironmentCopyJob.Kind);
 
 // Permission evaluation: dynamic policy + tenancy-backed, Redis-cached resolver.
 builder.Services.AddDcmsPermissionAuthorization();
@@ -424,6 +437,7 @@ app.MapDcmsDefaultEndpoints();
 app.MapTenancyEndpoints();
 app.MapTenantAdminEndpoints();
 app.MapEnvironmentEndpoints();
+app.MapEnvironmentMigrationEndpoints();
 app.MapTenantUsageEndpoints();
 app.MapMyAccountEndpoints();
 app.MapInvitationEndpoints();
