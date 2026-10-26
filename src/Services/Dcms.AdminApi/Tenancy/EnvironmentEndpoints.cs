@@ -64,7 +64,7 @@ public static class EnvironmentEndpoints
             await db.SaveChangesAsync(ct);
             store.Evict(root);
             return Results.NoContent();
-        }).RequireAuthorization().WithAudit(AuditActions.EnvironmentsEnabled, "tenant");
+        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentsEnabled, "tenant");
 
         // Only once the root is the workspace's last environment: turning environments off must
         // never orphan one.
@@ -94,7 +94,7 @@ public static class EnvironmentEndpoints
             await db.SaveChangesAsync(ct);
             store.Evict(root);
             return Results.NoContent();
-        }).RequireAuthorization().WithAudit(AuditActions.EnvironmentsDisabled, "tenant");
+        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentsDisabled, "tenant");
 
         // A new environment goes upstream of the current most-upstream one, which may then be
         // promoted into from it: adding staging, test and development in that order builds
@@ -170,7 +170,7 @@ public static class EnvironmentEndpoints
             }
 
             return Results.Created($"/api/admin/environments/{created.TenantId}", View(created, true));
-        }).RequireAuthorization().WithAudit(AuditActions.EnvironmentCreated, "tenant");
+        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentCreated, "tenant");
 
         app.MapPatch("/api/admin/environments/{id:guid}", async (
             Guid id, UpdateEnvironmentRequest body, ITenantContext tenant, TenancyDbContext db, TenantStore store,
@@ -215,7 +215,7 @@ public static class EnvironmentEndpoints
             await db.SaveChangesAsync(ct);
             store.Evict(target);
             return Results.Ok(View(target, true));
-        }).RequireAuthorization().WithAudit(AuditActions.EnvironmentUpdated, "tenant");
+        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentUpdated, "tenant");
 
         app.MapDelete("/api/admin/environments/{id:guid}", async (
             Guid id, ITenantContext tenant, TenancyDbContext db, CurrentUser me,
@@ -235,7 +235,7 @@ public static class EnvironmentEndpoints
             audit.Declared?.For("tenant", id, target.Identifier).With("environment", target.EnvironmentName);
             var result = await deleter.DeleteAsync(id, ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
-        }).RequireAuthorization().WithAudit(AuditActions.EnvironmentDeleted, "tenant");
+        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentDeleted, "tenant");
 
         // Who owns each kind of configuration in an environment, or one item of it (ADR 0026).
         app.MapGet("/api/admin/environments/{id:guid}/policies", async (
@@ -312,7 +312,7 @@ public static class EnvironmentEndpoints
                 }
             }
             return Results.NoContent();
-        }).RequireAuthorization().WithAudit(AuditActions.EnvironmentPoliciesChanged, "tenant");
+        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentPoliciesChanged, "tenant");
 
         // Links (ADR 0026): this environment using another's resource, within the workspace.
         app.MapGet("/api/admin/environments/{id:guid}/links", async (
@@ -385,7 +385,7 @@ public static class EnvironmentEndpoints
             await db.SaveChangesAsync(ct);
             await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(id), ct);
             return Results.Created($"/api/admin/environments/{id}/links/{link.Id}", new { id = link.Id });
-        }).RequireAuthorization().WithAudit(AuditActions.EnvironmentLinkCreated, "environment_link");
+        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentLinkCreated, "environment_link");
 
         app.MapDelete("/api/admin/environments/{id:guid}/links/{linkId:guid}", async (
             Guid id, Guid linkId, ITenantContext tenant, TenancyDbContext db, CurrentUser me,
@@ -402,7 +402,7 @@ public static class EnvironmentEndpoints
             await db.SaveChangesAsync(ct);
             await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(id), ct);
             return Results.NoContent();
-        }).RequireAuthorization().WithAudit(AuditActions.EnvironmentLinkDeleted, "environment_link");
+        }).RequireAuthorization().PermissionExempt(RootGate).WithAudit(AuditActions.EnvironmentLinkDeleted, "environment_link");
 
         return app;
     }
@@ -440,6 +440,10 @@ public static class EnvironmentEndpoints
         me.IsSuperAdmin
         || (me.UserId is { } userId
             && (await permissions.GetPermissionsAsync(rootId, userId, ct)).Contains(PlatformPermissions.EnvironmentsManage));
+
+    // The gate the endpoint table cannot see: environments:manage held in the workspace's root,
+    // not in the environment the request names.
+    private const string RootGate = "environments:manage on the workspace root, checked in the handler (CanManageAsync).";
 
     // ponytail: a fixed cap; per-plan limits if environments are ever sold by the count.
     private const int MaxEnvironments = 10;

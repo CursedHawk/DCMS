@@ -93,7 +93,8 @@ public static class EnvironmentMigrationEndpoints
                 MaxAttempts: 1,
                 LinkPath: "/deployments"), ct);
             return Results.Accepted(value: new { jobId = job.Id });
-        }).RequirePermission(PlatformPermissions.EnvironmentsPromote);
+        }).RequirePermission(PlatformPermissions.EnvironmentsPromote)
+          .AuditExempt(JobAudits);
 
         app.MapGet("/api/admin/environments/migrations/{migrationId:guid}/rollback", async (
             Guid migrationId, ITenantContext tenant, EnvironmentMigrator migrator, CancellationToken ct) =>
@@ -121,7 +122,8 @@ public static class EnvironmentMigrationEndpoints
                 MaxAttempts: 1,
                 LinkPath: "/deployments"), ct);
             return Results.Accepted(value: new { jobId = job.Id });
-        }).RequirePermission(PlatformPermissions.EnvironmentsPromote);
+        }).RequirePermission(PlatformPermissions.EnvironmentsPromote)
+          .AuditExempt(JobAudits);
 
         return app;
     }
@@ -177,6 +179,9 @@ public static class EnvironmentMigrationEndpoints
         current = reviewed?.Current,
         outcome = reviewed?.Outcome.ToString().ToLowerInvariant(),
     };
+
+    private const string JobAudits = "Only queues the job, which records what it applied or rolled back "
+                                   + "(environment.migration.applied / rolled_back) with the resolutions once it runs.";
 
     private sealed record CutRequest(string? Name, string? Description);
     private sealed record ApplyRequest(Guid From, Guid UpTo, Dictionary<string, string>? Resolutions);
