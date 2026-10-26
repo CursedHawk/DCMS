@@ -68,6 +68,13 @@ metrics_generator:
       dimensions: [dcms.tenant.id]
     span_metrics:
       dimensions: [dcms.tenant.id, http.route]
+    # TraceQL metrics -- `rate()`, `histogram_over_time()` -- and so Grafana's Traces Drilldown,
+    # which is built on them. Without it every such query fails with "localblocks processor not
+    # found". It keeps the last hour of root/server spans in blocks of its own; older ranges are
+    # answered from the stored blocks instead. Bounded for the 384m container like the ingester.
+    local_blocks:
+      max_live_traces: 2000
+      max_block_bytes: 20000000
 
 storage:
   trace:
@@ -90,7 +97,7 @@ overrides:
       burst_size_bytes: 4000000
       max_traces_per_user: 2000
     metrics_generator:
-      processors: [service-graphs, span-metrics]
+      processors: [service-graphs, span-metrics, local-blocks]
 
 usage_report:
   reporting_enabled: false

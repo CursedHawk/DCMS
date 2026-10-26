@@ -96,8 +96,11 @@ otelcol.processor.tail_sampling "default" {
   //   probabilistic { sampling_percentage = 10 }
   // }
 
+  // Through the batch processor, not straight to the exporter: tail_sampling releases every
+  // trace as its own request, so a second with more than ~100 finished traces overran the
+  // exporter's 100-request queue and dropped spans ("sending queue is full").
   output {
-    traces = [otelcol.exporter.otlp.tempo.input]
+    traces = [otelcol.processor.batch.default.input]
   }
 }
 
@@ -106,6 +109,7 @@ otelcol.processor.batch "default" {
   timeout         = "5s"
 
   output {
+    traces  = [otelcol.exporter.otlp.tempo.input]
     metrics = [otelcol.exporter.prometheus.default.input]
     logs    = [otelcol.exporter.loki.default.input]
   }
@@ -235,6 +239,19 @@ loki.source.docker "containers" {
   host       = "tcp://docker-socket-proxy-ro:2375"
   targets    = discovery.relabel.containers.output
   labels     = { source = "docker" }
+  forward_to = [loki.process.docker_too_old.receiver]
+}
+
+// docker-socket-proxy-ro (HAProxy, `timeout client/server 10m`, hardcoded in the image) cuts
+// every idle follow stream every ten minutes. On reconnect the tailer re-reads from its saved
+// position, inclusive, so a container silent for weeks re-sends its last line -- which Loki
+// refuses as older than reject_old_samples_max_age, an error per batch, forever. The line is
+// already stored; drop it here. Matches loki.yaml's 168h.
+loki.process "docker_too_old" {
+  stage.drop {
+    older_than          = "168h"
+    drop_counter_reason = "too_old"
+  }
   forward_to = [loki.write.default.receiver]
 }
 
