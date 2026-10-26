@@ -1499,7 +1499,8 @@
     "auditHint": "What has been done here",
     "apiHint": "The endpoints this workspace exposes",
     "connectionsHint": "External APIs your sites read, with their keys kept on the server.",
-    "usageHint": "What this workspace stores, and where"
+    "usageHint": "What this workspace stores, and where",
+    "environmentsHint": "Development, test, staging and production, each with its own data"
   },
   "pluginReference": {
     "title": "{{name}}: API reference",
@@ -2232,5 +2233,26 @@
     "disabledNotice": "This app is switched off: your sites can't reach it, but its data and settings are still here.",
     "noPage": "Nothing to open here",
     "noPageHint": "This page isn't part of the app, or you don't have access to it."
+  },
+  "environments": {
+    "title": "Environments",
+    "description": "Separate copies of this workspace — development, test, staging, production — each with its own data. Configuration moves between them as reviewed deployments.",
+    "switch": "Environment: {{name}}. Switch environment",
+    "offTitle": "This workspace has one environment",
+    "offHint": "Turn on environments to add development, test or staging copies of this workspace beside production. Each has its own content, data and users; nothing changes for the workspace you have now.",
+    "enable": "Turn on environments",
+    "disable": "Turn off environments",
+    "pipelineHint": "Listed from the first stage to production. Each environment lists the ones allowed to deploy configuration into it.",
+    "addLabel": "New environment",
+    "add": "Add environment",
+    "addHint": "Lowercase letters, digits and dashes. A new environment starts before the first one, gets the workspace members with their current roles, and deploys into the stage after it.",
+    "name": "Environment name",
+    "root": "Main",
+    "rename": "Rename",
+    "moveUp": "Move earlier",
+    "moveDown": "Move later",
+    "receivesFrom": "Receives deployments from",
+    "deleteTitle": "Delete the {{name}} environment?",
+    "deleteHint": "Everything in it is deleted: content, media, sites, data and users. Other environments are not affected. This cannot be undone."
   }
 }

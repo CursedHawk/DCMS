@@ -14,8 +14,17 @@ export const ALL_TENANT_PERMISSIONS = [
   'tenant:settings', 'members:manage', 'roles:manage', 'domains:manage', 'plugins:manage',
   'media:read', 'media:write', 'site:edit', 'site:publish', 'ai:settings', 'analytics:read',
   'content:read', 'content:write', 'content:publish', 'chat:read', 'chat:manage',
-  'audit:read', 'audit:export',
+  'audit:read', 'audit:export', 'environments:manage', 'environments:promote',
 ];
+
+/** GET /api/admin/environments for a workspace that has not turned environments on (ADR 0026). */
+export const ENVIRONMENTS_OFF = {
+  enabled: false,
+  workspaceId: TENANT.tenantId,
+  environments: [
+    { tenantId: TENANT.tenantId, slug: TENANT.slug, name: 'production', order: 0, isRoot: true, promotesFrom: [], status: 'Active', isMember: true },
+  ],
+};
 
 /** GET /api/admin/plugin-ui: plugins with screens, where their UI lives, and their instances. */
 export const PLUGIN_UI = [

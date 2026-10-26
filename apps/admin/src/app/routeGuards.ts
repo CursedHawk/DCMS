@@ -82,6 +82,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     descriptionKey: 'settings.usageHint',
     perm: Perm.TenantSettings,
   },
+  // A workspace's development, test, staging and production (ADR 0026). Managed from the root;
+  // the server checks the permission there whichever environment this is.
+  {
+    to: '/settings/environments',
+    labelKey: 'environments.title',
+    descriptionKey: 'settings.environmentsHint',
+    perm: Perm.EnvironmentsManage,
+  },
   // No permission: the API reference describes the endpoints this workspace exposes, and every
   // member can already call them. It is also why /settings is never empty for anybody.
   { to: '/settings/api', labelKey: 'nav.openapi', descriptionKey: 'settings.apiHint' },

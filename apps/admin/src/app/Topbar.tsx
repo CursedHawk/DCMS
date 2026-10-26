@@ -21,6 +21,7 @@ import { logout, switchAccount } from '../auth';
 import { useAuth } from '../useAuth';
 import { useAi } from '../features/assistant/context';
 import { modifierLabel } from '../features/ide/commands';
+import { EnvironmentSwitcher } from './EnvironmentSwitcher';
 import { TenantSwitcher } from './TenantSwitcher';
 
 export function Topbar({
@@ -65,6 +66,7 @@ export function Topbar({
         <>
           {menuButton}
           <TenantSwitcher />
+          <EnvironmentSwitcher />
 
           <button
             type="button"

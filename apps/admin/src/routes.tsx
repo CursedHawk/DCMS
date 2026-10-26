@@ -51,6 +51,7 @@ const TenantsPage = page(() => import('./features/tenants/TenantsPage'), 'Tenant
 const SettingsIndex = page(() => import('./features/settings/SettingsIndex'), 'SettingsIndex');
 const SettingsLayout = page(() => import('./features/settings/SettingsLayout'), 'SettingsLayout');
 const UsagePage = page(() => import('./features/usage/UsagePage'), 'UsagePage');
+const EnvironmentsPage = page(() => import('./features/environments/EnvironmentsPage'), 'EnvironmentsPage');
 const WorkspacePage = page(() => import('./features/workspace/WorkspacePage'), 'WorkspacePage');
 
 // These take a prop, so they cannot use the helper above.
@@ -246,6 +247,7 @@ const settingsAuditRoute = settingsChild('audit', AuditPage);
 const settingsApiRoute = settingsChild('api', OpenApiPage);
 const settingsConnectionsRoute = settingsChild('connections', ConnectionsPage);
 const settingsUsageRoute = settingsChild('usage', UsagePage);
+const settingsEnvironmentsRoute = settingsChild('environments', EnvironmentsPage);
 
 /*
  * The old top-level URLs, kept alive as redirects.
@@ -325,6 +327,7 @@ export const routeTree = rootRoute.addChildren([
       settingsAuditRoute,
       settingsConnectionsRoute,
       settingsUsageRoute,
+      settingsEnvironmentsRoute,
       settingsApiRoute,
     ]),
     ...legacyRoutes,

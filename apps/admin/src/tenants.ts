@@ -9,6 +9,27 @@ export interface TenantSummary {
   tenantId: string;
   slug: string;
   name: string;
+  /** The workspace root's id when the workspace has environments (ADR 0026), else null. */
+  workspaceId?: string | null;
+  /** The environment's name; `production` on the root. Null while environments are off. */
+  environment?: string | null;
+  environmentOrder?: number;
+}
+
+/** What groups a tenant with its environments: the workspace root's id, or its own. */
+export const workspaceOf = (t: TenantSummary): string => t.workspaceId ?? t.tenantId;
+
+/**
+ * Switches tenant with a full load, because permissions and almost every query are tenant-scoped.
+ *
+ * <p>Between environments of one workspace the section is kept (`/sites/abc/settings` lands on
+ * `/sites`): the same screens exist there, but the ids in the rest of the path are the other
+ * environment's. Anywhere else it is home, since the other workspace may have nothing alike.</p>
+ */
+export function switchTenant(slug: string, keepSection = false): void {
+  setCurrentTenantSlug(slug);
+  const section = window.location.pathname.split('/')[1];
+  window.location.assign(keepSection && section ? `/${section}` : '/');
 }
 
 /**

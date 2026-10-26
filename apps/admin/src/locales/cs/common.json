@@ -1533,7 +1533,8 @@
     "auditHint": "Co se tu dělo",
     "apiHint": "Endpointy, které tento prostor nabízí",
     "connectionsHint": "Externí API, ze kterých weby čtou; klíče zůstávají na serveru.",
-    "usageHint": "Co tento prostor ukládá a kde"
+    "usageHint": "Co tento prostor ukládá a kde",
+    "environmentsHint": "Vývoj, test, staging a produkce, každé s vlastními daty"
   },
   "pluginReference": {
     "title": "{{name}}: referenční příručka API",
@@ -2278,5 +2279,26 @@
     "disabledNotice": "Tato aplikace je vypnutá: vaše weby se k ní nedostanou, ale její data a nastavení tu zůstávají.",
     "noPage": "Tady nic není",
     "noPageHint": "Tato stránka do aplikace nepatří, nebo k ní nemáte přístup."
+  },
+  "environments": {
+    "title": "Prostředí",
+    "description": "Oddělené kopie tohoto pracovního prostoru — vývoj, test, staging, produkce — každá s vlastními daty. Konfigurace se mezi nimi přenáší schválenými nasazeními.",
+    "switch": "Prostředí: {{name}}. Přepnout prostředí",
+    "offTitle": "Tento pracovní prostor má jedno prostředí",
+    "offHint": "Zapněte prostředí a přidejte vedle produkce vývojovou, testovací nebo staging kopii tohoto pracovního prostoru. Každá má vlastní obsah, data a uživatele; pro současný pracovní prostor se nic nemění.",
+    "enable": "Zapnout prostředí",
+    "disable": "Vypnout prostředí",
+    "pipelineHint": "Seřazeno od první fáze po produkci. U každého prostředí je uvedeno, která do něj smějí nasazovat konfiguraci.",
+    "addLabel": "Nové prostředí",
+    "add": "Přidat prostředí",
+    "addHint": "Malá písmena, číslice a pomlčky. Nové prostředí začíná před prvním, dostane členy pracovního prostoru s jejich současnými rolemi a nasazuje do fáze za sebou.",
+    "name": "Název prostředí",
+    "root": "Hlavní",
+    "rename": "Přejmenovat",
+    "moveUp": "Posunout dřív",
+    "moveDown": "Posunout později",
+    "receivesFrom": "Přijímá nasazení z",
+    "deleteTitle": "Smazat prostředí {{name}}?",
+    "deleteHint": "Smaže se vše, co obsahuje: obsah, média, weby, data i uživatelé. Ostatní prostředí zůstanou beze změny. Akci nelze vrátit."
   }
 }
