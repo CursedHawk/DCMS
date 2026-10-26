@@ -157,6 +157,7 @@ builder.Services.AddScoped<Dcms.AdminApi.Views.ViewContext>();
 // Who may act on platform-wide state: a SuperAdmin here, or the console's API acting for one.
 builder.Services.AddScoped<ConsoleCaller>();
 builder.Services.AddScoped<TenantProvisioning>();
+builder.Services.AddScoped<WorkspaceMembers>();
 builder.Services.AddHostedService<TenancyMigrator>();
 
 // Plugins, hosted in full (docs/adr/0016): their admin-plane routes in the api role, their event

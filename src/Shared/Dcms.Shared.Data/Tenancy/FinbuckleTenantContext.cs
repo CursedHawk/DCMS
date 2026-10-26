@@ -30,4 +30,6 @@ public sealed class FinbuckleTenantContext(
     // Free: Finbuckle already loaded the whole tenant row to resolve the identifier, so this
     // costs no query. Reading the status from a second lookup would add one to every request.
     public bool IsSuspended => Current?.Status == TenantStatus.Suspended;
+
+    public bool HasEnvironments => Current?.WorkspaceId is not null;
 }

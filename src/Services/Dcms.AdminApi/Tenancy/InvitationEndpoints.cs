@@ -134,7 +134,8 @@ public static class InvitationEndpoints
                 link,
                 expiresAt = invitation.ExpiresAt,
             });
-        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberInvited, "invitation");
+        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberInvited, "invitation")
+            .InWorkspaceRootOnly();
 
         // Resend: mint a fresh token and push the expiry out. The old link dies with
         // the old hash, which is what an admin resending after "I lost the email"

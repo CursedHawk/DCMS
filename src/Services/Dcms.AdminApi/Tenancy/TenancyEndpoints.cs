@@ -31,7 +31,7 @@ public static class TenancyEndpoints
             var memberships = await db.Memberships
                 .IgnoreQueryFilters()
                 .Where(m => m.UserId == userId)
-                .Select(m => new { m.TenantId, RoleIds = m.Roles.Select(r => r.TenantRoleId) })
+                .Select(m => new { m.TenantId, HasRoles = m.Roles.Any() })
                 .ToListAsync(ct);
 
             var tenantIds = memberships.Select(m => m.TenantId.ToString()).ToList();
@@ -39,8 +39,9 @@ public static class TenancyEndpoints
                 .Where(t => tenantIds.Contains(t.Id))
                 .ToDictionaryAsync(t => t.TenantId, ct);
 
+            // An environment the caller holds no role in is one they cannot open (ADR 0026).
             var result = memberships
-                .Where(m => tenants.ContainsKey(m.TenantId))
+                .Where(m => tenants.TryGetValue(m.TenantId, out var t) && (m.HasRoles || t.WorkspaceId is null))
                 .Select(m => tenants[m.TenantId])
                 .Select(t => new
                 {
@@ -538,7 +539,8 @@ public static class TenancyEndpoints
             await repoAccess.ReconcileUserAsync(tenantId, userId, email, ct);
 
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRemoved, "membership");
+        }).RequirePermission(PlatformPermissions.MembersManage).WithAudit(AuditActions.MemberRemoved, "membership")
+            .InWorkspaceRootOnly();
 
         // Effective permission catalog: platform keys ∪ installed plugins' manifest
         // permissions ∪ per-site git repo permissions, each with a display name and

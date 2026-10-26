@@ -99,8 +99,8 @@ public static class EnvironmentEndpoints
         // development -> test -> staging -> production with no further setup.
         app.MapPost("/api/admin/environments", async (
             CreateEnvironmentRequest body, ITenantContext tenant, TenancyDbContext db, CurrentUser me,
-            IPermissionResolver permissions, TenantProvisioning provisioning, IAuditRecorder audit,
-            CancellationToken ct) =>
+            IPermissionResolver permissions, TenantProvisioning provisioning, WorkspaceMembers members,
+            IAuditRecorder audit, CancellationToken ct) =>
         {
             var current = await CurrentAsync(db, tenant, ct);
             if (current is null) return Results.BadRequest(new { error = "Select a workspace first." });
@@ -113,6 +113,10 @@ public static class EnvironmentEndpoints
                 return Results.BadRequest(new { error = "The name must be 1-32 lowercase letters, digits or dashes." });
             }
             var all = await WorkspaceAsync(db, current, ct);
+            if (all.Count >= MaxEnvironments)
+            {
+                return Results.Conflict(new { error = $"A workspace can have at most {MaxEnvironments} environments." });
+            }
             if (all.Any(t => t.EnvironmentName == name))
             {
                 return Results.Conflict(new { error = "The workspace already has an environment of that name." });
@@ -132,8 +136,17 @@ public static class EnvironmentEndpoints
             // Before the provisioning save, which is what writes the record (stamped with the new
             // tenant, see TenantProvisioning).
             audit.Declared?.With("environment", name).With("workspace", root.Identifier);
+            // Owned by the workspace's owner, not the caller. environments:manage can be delegated,
+            // and a delegate who became Owner of every environment they created would hold there
+            // what they were never given in the root. Everyone, the caller included, then gets the
+            // roles they hold in the root (SeedAsync).
+            var owner = await RootOwnerAsync(db, root.TenantId, ct);
+            if (owner is null && !me.IsSuperAdmin)
+            {
+                return Results.Conflict(new { error = "The workspace has no owner to own the new environment." });
+            }
             var created = await provisioning.CreateTenantAsync(
-                slug, root.Name, me.RequireUserId(), me.Email ?? "unknown", ct,
+                slug, root.Name, owner?.UserId ?? me.RequireUserId(), owner?.Email ?? me.Email ?? "unknown", ct,
                 t =>
                 {
                     t.WorkspaceId = root.TenantId;
@@ -142,6 +155,7 @@ public static class EnvironmentEndpoints
                 });
             upstream.PromotesFrom.Add(created.TenantId);
             await db.SaveChangesAsync(ct);
+            await members.SeedAsync(created.TenantId, root.TenantId, ct);
 
             return Results.Created($"/api/admin/environments/{created.TenantId}", View(created, true));
         }).RequireAuthorization().WithAudit(AuditActions.EnvironmentCreated, "tenant");
@@ -247,6 +261,19 @@ public static class EnvironmentEndpoints
         me.IsSuperAdmin
         || (me.UserId is { } userId
             && (await permissions.GetPermissionsAsync(rootId, userId, ct)).Contains(PlatformPermissions.EnvironmentsManage));
+
+    // ponytail: a fixed cap; per-plan limits if environments are ever sold by the count.
+    private const int MaxEnvironments = 10;
+
+    private static async Task<TenantMembership?> RootOwnerAsync(TenancyDbContext db, Guid rootId, CancellationToken ct)
+    {
+        using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(rootId);
+        return await db.Memberships.IgnoreQueryFilters().AsNoTracking()
+            .Where(m => m.TenantId == rootId
+                        && m.Roles.Any(r => r.Role!.IsSystem && r.Role.Name == TenantProvisioning.OwnerRole))
+            .OrderBy(m => m.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+    }
 
     private static bool IsEnvironmentName(string value) =>
         value.Length is > 0 and <= 32

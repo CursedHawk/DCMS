@@ -8,12 +8,14 @@ namespace Dcms.AdminApi.Tenancy;
 
 /// <summary>
 /// Invalidates the Redis permission cache on membership.changed events from any
-/// instance/service (the local mutation path also clears it directly). Resilient
+/// instance/service (the local mutation path also clears it directly), and mirrors the change
+/// into the workspace's other environments (<see cref="WorkspaceMembers"/>). Resilient
 /// to NATS being unavailable at startup — retries without crashing the host.
 /// </summary>
 public sealed class MembershipChangedConsumer(
     INatsJSContext jetStream,
     ICacheService cache,
+    IServiceScopeFactory scopes,
     ILogger<MembershipChangedConsumer> logger) : BackgroundService
 {
     private const string DurableName = "admin-api-perm-invalidation";
@@ -41,6 +43,10 @@ public sealed class MembershipChangedConsumer(
                         {
                             await cache.RemoveAsync(
                                 TenancyPermissionResolver.CacheKey(evt.TenantId, evt.UserId), stoppingToken);
+                            // The workspace's other environments follow the root's member list.
+                            await using var scope = scopes.CreateAsyncScope();
+                            await scope.ServiceProvider.GetRequiredService<WorkspaceMembers>()
+                                .SyncUserAsync(evt.TenantId, evt.UserId, stoppingToken);
                         }
                         await msg.AckAsync(cancellationToken: stoppingToken);
                     }
