@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using System.Text;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
@@ -85,7 +86,8 @@ public static class ApiConnectionEndpoints
             // Fetched now, so the author sees at once whether the settings work.
             await fetcher.RefreshAsync(row, ct);
             return Results.Ok(View(row));
-        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.ApiConnectionSaved, "api_connection");
+        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.ApiConnectionSaved, "api_connection")
+            .ManagedByDeployments("api-connections");
 
         app.MapPost("/api/admin/connections/{slug}/refresh", async (
             string slug, CmsDbContext db, ApiConnectionFetcher fetcher, CancellationToken ct) =>
@@ -109,7 +111,8 @@ public static class ApiConnectionEndpoints
             db.ApiConnections.Remove(row);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.ApiConnectionDeleted, "api_connection");
+        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.ApiConnectionDeleted, "api_connection")
+            .ManagedByDeployments("api-connections");
 
         return app;
     }

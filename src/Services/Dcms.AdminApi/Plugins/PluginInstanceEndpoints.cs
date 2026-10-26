@@ -110,7 +110,8 @@ public static class PluginInstanceEndpoints
             await PublishChange(events, cache, metrics, instance, PluginInstanceChangeKind.Created, ct);
 
             return Results.Created($"/api/admin/plugins/instances/{instance.Id}", new { id = instance.Id });
-        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceCreated, "plugin_instance");
+        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceCreated, "plugin_instance")
+            .ManagedByDeployments("plugins");
 
         app.MapPut("/api/admin/plugins/instances/{id:guid}", async (
             Guid id, UpdateInstanceRequest body, IPluginCatalog catalog, PluginConfigValidator validator,
@@ -138,7 +139,8 @@ public static class PluginInstanceEndpoints
             await db.SaveChangesAsync(ct);
             await PublishChange(events, cache, metrics, instance, PluginInstanceChangeKind.Updated, ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceUpdated, "plugin_instance");
+        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceUpdated, "plugin_instance")
+            .ManagedByDeployments("plugins");
 
         app.MapPost("/api/admin/plugins/instances/{id:guid}/{action}", async (
             Guid id, string action, CmsDbContext db, PluginRegistry registry, IEventPublisher events, ICacheService cache, DcmsMetrics metrics,
@@ -182,7 +184,8 @@ public static class PluginInstanceEndpoints
             await PublishChange(events, cache, metrics, instance,
                 instance.Enabled ? PluginInstanceChangeKind.Enabled : PluginInstanceChangeKind.Disabled, ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceActioned, "plugin_instance");
+        }).RequirePermission(PlatformPermissions.PluginsManage).WithAudit(AuditActions.PluginInstanceActioned, "plugin_instance")
+            .ManagedByDeployments("plugins");
 
         return app;
     }

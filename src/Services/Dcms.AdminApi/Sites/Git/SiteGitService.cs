@@ -228,6 +228,16 @@ public sealed partial class SiteGitService(
     /// commits from external CLI pushes in the webhook).</summary>
     public string CommitterEmail => _opts.CommitterEmail;
 
+    /// <summary>
+    /// Whether people may push to a site's <c>release</c> themselves: not where the environment
+    /// leaves the site to deployments (ADR 0026), whose code arrives only by a deployment's push.
+    /// </summary>
+    public Task LockReleaseAsync(string repoFullName, bool locked, CancellationToken ct)
+    {
+        var (org, repo) = Split(repoFullName);
+        return forgejo.ProtectBranchAsync(org, repo, ReleaseBranch, locked, ct);
+    }
+
     /// <summary>HTTP + SSH clone URLs for the IDE clone panel.</summary>
     public (string Http, string Ssh) CloneUrls(string repoFullName)
     {

@@ -43,6 +43,13 @@ public sealed class ContentQueryOptions
 /// <param name="Permission">One of the plugin's own actions (<c>"moderate"</c>) or a full key (<c>"content:read"</c>).</param>
 public sealed record PluginPermissionMetadata(string Permission);
 
+/// <summary>
+/// The route writes configuration of <paramref name="Kind"/> (an <see cref="IEnvironmentConfigKind"/>):
+/// in an environment whose policy leaves that configuration to deployments, the host refuses it
+/// (ADR 0026). Reads are never refused.
+/// </summary>
+public sealed record EnvironmentManagedMetadata(string Kind);
+
 /// <summary>The route is deliberately not gated by a permission (a public site route), and why.</summary>
 public sealed record PluginPublicRouteMetadata(string Reason);
 
@@ -91,6 +98,17 @@ public static class PluginEndpointConventions
         where TBuilder : IEndpointConventionBuilder
     {
         builder.WithMetadata(new PluginPermissionMetadata(permission));
+        return builder;
+    }
+
+    /// <summary>
+    /// Marks a route that changes configuration of <paramref name="kind"/>, so an environment
+    /// that leaves it to deployments refuses it: <c>.ManagedByDeployments("dynamic-apps")</c>.
+    /// </summary>
+    public static TBuilder ManagedByDeployments<TBuilder>(this TBuilder builder, string kind)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        builder.WithMetadata(new EnvironmentManagedMetadata(kind));
         return builder;
     }
 }

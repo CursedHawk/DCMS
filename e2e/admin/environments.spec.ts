@@ -41,6 +41,11 @@ test('the pipeline lists environments in order and adds one', async ({ page, api
   await expect(names).toHaveText(['development', 'production']);
   await expect(page.getByRole('checkbox', { name: 'development' })).toBeChecked();
 
+  // Production is locked to the pipeline in one go.
+  await page.getByRole('button', { name: 'Lock to pipeline' }).last().click();
+  await expect.poll(() => api.requestsTo('PUT', `/api/admin/environments/${TENANT.tenantId}/policies`).map((r) => (r.body as { mode: string }[]).map((p) => p.mode)))
+    .toEqual([['Managed', 'Managed', 'Managed', 'Managed', 'Managed', 'Managed']]);
+
   await page.getByLabel('New environment').fill('test');
   await page.getByRole('button', { name: 'Add environment' }).click();
   await expect.poll(() => api.requestsTo('POST', '/api/admin/environments').map((c) => c.body)).toEqual([{ name: 'test' }]);

@@ -230,6 +230,7 @@ public sealed class ConfigurationService(
     /// </summary>
     public async Task<PublishResult> PublishAsync(string expectedHash, CancellationToken ct, AiTrace? ai = null)
     {
+        await EnsureNotManagedAsync(ct);
         using var rls = RlsScope.Tenant(context.TenantId);
         var (app, tx) = await LockAsync(ct);
         await using var _ = tx;
@@ -313,6 +314,7 @@ public sealed class ConfigurationService(
     /// </summary>
     public async Task<PublishResult> RollbackAsync(RollbackRequest request, AppChangeSource source, CancellationToken ct, AiTrace? ai = null)
     {
+        await EnsureNotManagedAsync(ct);
         using var rls = RlsScope.Tenant(context.TenantId);
         var (app, tx) = await LockAsync(ct);
         await using var _ = tx;
@@ -837,6 +839,24 @@ public sealed class ConfigurationService(
     /// a plane that knows no member permissions at all (content-api, where a site user starts a
     /// flow): there the policy does not exist, and nobody holds it.
     /// </summary>
+    /// <summary>
+    /// Refuses making a configuration live here when this environment leaves the application to
+    /// deployments (ADR 0026): it changes in the environment that deploys here, and arrives by
+    /// <see cref="ImportAsync"/>. Here, not on the routes, so the assistant's contract is held to it too.
+    /// </summary>
+    private async Task EnsureNotManagedAsync(CancellationToken ct)
+    {
+        var slug = context.Instance?.Slug;
+        if (slug is null) return;
+        using var rls = RlsScope.Tenant(context.TenantId);
+        var tenancy = services.GetRequiredService<Dcms.Shared.Data.Tenancy.TenancyDbContext>();
+        if (await Dcms.Shared.Data.Tenancy.EnvironmentPolicies.IsManagedAsync(tenancy, context.TenantId, "dynamic-apps", slug, ct))
+        {
+            throw new ContractConflictException(
+                "This application is managed by deployments: change it in the environment that deploys here, and deploy it.");
+        }
+    }
+
     /// <summary>Permissions an import was given as already checked; null outside one.</summary>
     private IReadOnlySet<string>? _vouched;
 

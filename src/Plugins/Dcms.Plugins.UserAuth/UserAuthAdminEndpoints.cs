@@ -174,7 +174,8 @@ internal static partial class UserAuthAdminEndpoints
                 return Results.Created($"roles/{role.Id}", new { role.Id, role.Key, role.Name, role.Description, role.Permissions, role.BypassRowAccess });
             })
             .RequirePluginPermission("access-manage")
-            .AuditAs("role.created");
+            .AuditAs("role.created")
+            .ManagedByDeployments("user-auth");
 
         endpoints.MapPut("/roles/{roleId:guid}", async (Guid roleId, RoleWrite body, UserAuthDbContext db, CancellationToken ct) =>
             {
@@ -197,7 +198,8 @@ internal static partial class UserAuthAdminEndpoints
                 return Results.Ok(new { role.Id, role.Key, role.Name, role.Description, role.Permissions, role.BypassRowAccess });
             })
             .RequirePluginPermission("access-manage")
-            .AuditAs("role.updated");
+            .AuditAs("role.updated")
+            .ManagedByDeployments("user-auth");
 
         endpoints.MapDelete("/roles/{roleId:guid}", async (Guid roleId, UserAuthDbContext db, CancellationToken ct) =>
             {
@@ -212,7 +214,8 @@ internal static partial class UserAuthAdminEndpoints
                 return Results.NoContent();
             })
             .RequirePluginPermission("access-manage")
-            .AuditAs("role.deleted");
+            .AuditAs("role.deleted")
+            .ManagedByDeployments("user-auth");
 
         endpoints.MapPost("/roles/{roleId:guid}/grants", async (Guid roleId, GrantWrite body, IPluginContext context, UserAuthDbContext db, CancellationToken ct) =>
             {
@@ -335,7 +338,8 @@ internal static partial class UserAuthAdminEndpoints
                 return Results.NoContent();
             })
             .RequirePluginPermission("access-manage")
-            .AuditAs("api_access.updated");
+            .AuditAs("api_access.updated")
+            .ManagedByDeployments("user-auth");
 
         // ---- site rules ----
 

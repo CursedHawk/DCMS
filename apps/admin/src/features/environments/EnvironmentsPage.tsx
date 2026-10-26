@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Layers, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Layers, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
@@ -15,6 +15,11 @@ import {
   LoadFailed,
   Page,
   PageHeader,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   toastApiError,
   useConfirm,
 } from '@dcms/ui';
@@ -24,8 +29,13 @@ import {
   useDisableEnvironments,
   useEnableEnvironments,
   useEnvironments,
+  usePolicies,
+  useSavePolicies,
   useUpdateEnvironment,
+  CONFIG_KINDS,
   type Environment,
+  type Ownership,
+  type Policy,
 } from './api';
 
 // Typed as a plain string: the router's route union is built from routes.tsx, which imports this page.
@@ -202,6 +212,8 @@ function EnvironmentCard({
           </div>
         </div>
 
+        {all.length > 1 ? <OwnershipGrid environmentId={env.tenantId} /> : null}
+
         {all.length > 1 ? (
           <fieldset className="flex flex-col gap-1.5">
             <legend className="mb-1 text-xs font-medium text-muted-foreground">{t('environments.receivesFrom')}</legend>
@@ -226,5 +238,56 @@ function EnvironmentCard({
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Who owns each kind of configuration here: edited here and deployed into (mixed), edited here
+ * only (local), or deployments only (managed). Item-level exceptions set through the API are kept.
+ */
+function OwnershipGrid({ environmentId }: { environmentId: string }) {
+  const { t } = useTranslation();
+  const policies = usePolicies(environmentId);
+  const save = useSavePolicies(environmentId);
+  const list = policies.data ?? [];
+  const modeOf = (kind: string): Ownership => list.find((p) => p.kind === kind && p.itemKey == null)?.mode ?? 'Mixed';
+  const write = (next: Policy[]) => save.mutate(next, { onError: (err) => toastApiError(err, t) });
+  const set = (kind: string, mode: Ownership) =>
+    write([...list.filter((p) => !(p.kind === kind && p.itemKey == null)), { kind, itemKey: null, mode }]);
+  const lockAll = () =>
+    write([
+      ...list.filter((p) => p.itemKey != null),
+      ...CONFIG_KINDS.map((kind): Policy => ({ kind, itemKey: null, mode: 'Managed' })),
+    ]);
+
+  if (policies.isError) return <LoadFailed onRetry={() => void policies.refetch()} />;
+  return (
+    <fieldset className="flex flex-col gap-1.5" disabled={!policies.data || save.isPending}>
+      <legend className="mb-1 text-xs font-medium text-muted-foreground">{t('environments.ownership')}</legend>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {CONFIG_KINDS.map((kind) => (
+          <label key={kind} className="flex items-center justify-between gap-2 text-sm">
+            <span className="min-w-0 truncate">{t(`deployments.kinds.${kind}`)}</span>
+            <Select value={modeOf(kind)} onValueChange={(mode) => set(kind, mode as Ownership)}>
+              <SelectTrigger className="w-40" aria-label={t('environments.ownershipOf', { kind: t(`deployments.kinds.${kind}`) })}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(['Mixed', 'Local', 'Managed'] as const).map((mode) => (
+                  <SelectItem key={mode} value={mode}>
+                    {t(`environments.modes.${mode}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        ))}
+      </div>
+      <div>
+        <Button variant="outline" size="sm" onClick={lockAll}>
+          <Lock className="h-4 w-4" /> {t('environments.lockToPipeline')}
+        </Button>
+      </div>
+    </fieldset>
   );
 }

@@ -494,13 +494,8 @@ public sealed class EnvironmentMigrator(
             .ToListAsync(ct);
     }
 
-    /// <summary>The item's own policy, else its kind's, else <see cref="EnvironmentOwnership.Mixed"/>.</summary>
-    public static EnvironmentOwnership Ownership(IEnumerable<EnvironmentPolicy> policies, string kind, string key)
-    {
-        var mine = policies.Where(p => p.Kind == kind).ToList();
-        return (mine.FirstOrDefault(p => p.ItemKey == key) ?? mine.FirstOrDefault(p => p.ItemKey == null))?.Mode
-               ?? EnvironmentOwnership.Mixed;
-    }
+    public static EnvironmentOwnership Ownership(IEnumerable<EnvironmentPolicy> policies, string kind, string key) =>
+        EnvironmentPolicies.Ownership(policies, kind, key);
 
     private async Task<long> NextOrderAsync(Guid tenantId, CancellationToken ct) =>
         (await db.EnvironmentMigrations.IgnoreQueryFilters()

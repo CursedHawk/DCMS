@@ -63,3 +63,24 @@ public enum EnvironmentOwnership
     /// <summary>Only migrations write it; they also delete what the source removed.</summary>
     Managed,
 }
+
+public static class EnvironmentPolicies
+{
+    /// <summary>The item's own policy, else its kind's, else <see cref="EnvironmentOwnership.Mixed"/>.</summary>
+    public static EnvironmentOwnership Ownership(IEnumerable<EnvironmentPolicy> policies, string kind, string key)
+    {
+        var mine = policies.Where(p => p.Kind == kind).ToList();
+        return (mine.FirstOrDefault(p => p.ItemKey == key) ?? mine.FirstOrDefault(p => p.ItemKey == null))?.Mode
+               ?? EnvironmentOwnership.Mixed;
+    }
+
+    /// <summary>Whether <paramref name="kind"/>'s item <paramref name="key"/> is left to deployments in this tenant.</summary>
+    public static async Task<bool> IsManagedAsync(TenancyDbContext db, Guid tenantId, string kind, string key, CancellationToken ct)
+    {
+        // rls: names the tenant; the caller is in its scope.
+        var policies = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+            Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.IgnoreQueryFilters(db.EnvironmentPolicies)
+                .Where(p => p.TenantId == tenantId && p.Kind == kind), ct);
+        return Ownership(policies, kind, key) == EnvironmentOwnership.Managed;
+    }
+}

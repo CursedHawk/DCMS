@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using Dcms.AdminApi.Sites.Git;
@@ -173,7 +174,8 @@ public static class SiteDeletionEndpoints
         {
             var result = await deleter.DeleteAsync(id, ct);
             return result is null ? Results.NotFound() : Results.Ok(result);
-        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteDeleted, "site");
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteDeleted, "site")
+            .ManagedByDeployments("sites");
 
         return app;
     }

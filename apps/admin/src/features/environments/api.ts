@@ -128,3 +128,28 @@ export const useRollback = () =>
   useEnvironmentMutation(({ migrationId, resolutions }: { migrationId: string; resolutions: Resolutions }) =>
     api.post<{ jobId: string }>(`/admin/environments/migrations/${migrationId}/rollback`, { resolutions }),
   );
+
+export type Ownership = 'Mixed' | 'Local' | 'Managed';
+
+export interface Policy {
+  kind: string;
+  itemKey: string | null;
+  mode: Ownership;
+}
+
+/** The kinds of configuration that move between environments, in the order a deployment applies them. */
+export const CONFIG_KINDS = ['roles', 'plugins', 'api-connections', 'sites', 'user-auth', 'dynamic-apps'] as const;
+
+export const usePolicies = (environmentId: string) =>
+  useQuery({
+    queryKey: ['environments', 'policies', environmentId],
+    queryFn: () => api.get<Policy[]>(`/admin/environments/${environmentId}/policies`),
+  });
+
+export function useSavePolicies(environmentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (policies: Policy[]) => api.put(`/admin/environments/${environmentId}/policies`, policies),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['environments', 'policies', environmentId] }),
+  });
+}

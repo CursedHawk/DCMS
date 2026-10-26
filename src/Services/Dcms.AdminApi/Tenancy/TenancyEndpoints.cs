@@ -248,7 +248,8 @@ public static class TenancyEndpoints
             db.TenantRoles.Add(role);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/admin/roles/{role.Id}", new { id = role.Id });
-        }).RequirePermission(PlatformPermissions.RolesManage).WithAudit(AuditActions.RoleCreated, "role");
+        }).RequirePermission(PlatformPermissions.RolesManage).WithAudit(AuditActions.RoleCreated, "role")
+            .ManagedByDeployments("roles");
 
         // Update a role's name and replace its permission set wholesale. System
         // roles keep their name fixed but their permissions may still be tuned.
@@ -338,7 +339,8 @@ public static class TenancyEndpoints
                 await repoAccess.ReconcileUserAsync(tenantId, m.UserId, m.Email, ct);
             }
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.RolesManage).WithAudit(AuditActions.RoleUpdated, "role");
+        }).RequirePermission(PlatformPermissions.RolesManage).WithAudit(AuditActions.RoleUpdated, "role")
+            .ManagedByDeployments("roles");
 
         app.MapDelete("/api/admin/roles/{id:guid}", async (
             Guid id, TenancyDbContext db, CancellationToken ct) =>
@@ -359,7 +361,8 @@ public static class TenancyEndpoints
             db.TenantRoles.Remove(role);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.RolesManage).WithAudit(AuditActions.RoleDeleted, "role");
+        }).RequirePermission(PlatformPermissions.RolesManage).WithAudit(AuditActions.RoleDeleted, "role")
+            .ManagedByDeployments("roles");
 
         // ---- Tenant-scoped: members ----
         app.MapGet("/api/admin/members", async (TenancyDbContext db, CancellationToken ct) =>

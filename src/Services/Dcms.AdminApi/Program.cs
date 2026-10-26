@@ -422,6 +422,8 @@ app.UseMultiTenant();
 // checked, and the endpoints that survive still see a tenant context. Without this, an
 // endpoint guarded by a bare RequireAuthorization() trusts X-Dcms-Tenant outright.
 app.UseTenantMembership();
+// Configuration an environment leaves to deployments is not changed directly (ADR 0026).
+app.UseMiddleware<Dcms.AdminApi.Environments.EnvironmentOwnershipMiddleware>();
 // Beside the membership check, and for the same reason: a client-credentials token has no user
 // behind it, so the membership check waves it through and a bare RequireAuthorization() then
 // accepts it. This confines a service token to the endpoints that named its scope.

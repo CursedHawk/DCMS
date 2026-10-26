@@ -34,6 +34,7 @@ public static class AuditActions
     public const string EnvironmentCreated = "environment.created";
     public const string EnvironmentUpdated = "environment.updated";
     public const string EnvironmentDeleted = "environment.deleted";
+    public const string EnvironmentPoliciesChanged = "environment.policies.changed";
     public const string EnvironmentMigrationCreated = "environment.migration.created";
     public const string EnvironmentMigrationApplied = "environment.migration.applied";
     public const string EnvironmentMigrationRolledBack = "environment.migration.rolled_back";

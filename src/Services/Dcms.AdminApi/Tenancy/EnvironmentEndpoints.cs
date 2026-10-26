@@ -237,6 +237,72 @@ public static class EnvironmentEndpoints
             return result is null ? Results.NotFound() : Results.Ok(result);
         }).RequireAuthorization().WithAudit(AuditActions.EnvironmentDeleted, "tenant");
 
+        // Who owns each kind of configuration in an environment, or one item of it (ADR 0026).
+        app.MapGet("/api/admin/environments/{id:guid}/policies", async (
+            Guid id, ITenantContext tenant, TenancyDbContext db, CancellationToken ct) =>
+        {
+            var current = await CurrentAsync(db, tenant, ct);
+            if (current?.WorkspaceId is null || !(await WorkspaceAsync(db, current, ct)).Any(t => t.TenantId == id)) return Results.NotFound();
+            using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
+            var policies = await db.EnvironmentPolicies.IgnoreQueryFilters().AsNoTracking()
+                .Where(p => p.TenantId == id)
+                .Select(p => new { kind = p.Kind, itemKey = p.ItemKey, mode = p.Mode.ToString() })
+                .ToListAsync(ct);
+            return Results.Ok(policies);
+        }).RequireAuthorization();
+
+        // Replaces the environment's policies with the given set; anything left out is Mixed.
+        app.MapPut("/api/admin/environments/{id:guid}/policies", async (
+            Guid id, List<PolicyRequest> body, ITenantContext tenant, TenancyDbContext db, CurrentUser me,
+            IPermissionResolver permissions, Dcms.AdminApi.Sites.Git.SiteGitService git, Dcms.Shared.Data.Sites.SitesDbContext sites,
+            IAuditRecorder audit, ILoggerFactory logs, CancellationToken ct) =>
+        {
+            var current = await CurrentAsync(db, tenant, ct);
+            if (current?.WorkspaceId is null || !(await WorkspaceAsync(db, current, ct)).Any(t => t.TenantId == id)) return Results.NotFound();
+            if (!await CanManageAsync(current.RootId, me, permissions, ct)) return Results.Forbid();
+            var wanted = new List<EnvironmentPolicy>();
+            foreach (var p in body)
+            {
+                if (string.IsNullOrWhiteSpace(p.Kind) || p.Kind.Length > 64 || p.ItemKey?.Length > 256
+                    || !Enum.TryParse<EnvironmentOwnership>(p.Mode, ignoreCase: true, out var mode))
+                {
+                    return Results.BadRequest(new { error = "Each policy names a kind and a mode (mixed, local or managed)." });
+                }
+                if (mode != EnvironmentOwnership.Mixed && wanted.All(w => w.Kind != p.Kind || w.ItemKey != p.ItemKey))
+                {
+                    wanted.Add(new EnvironmentPolicy { Id = Guid.NewGuid(), TenantId = id, Kind = p.Kind, ItemKey = p.ItemKey, Mode = mode });
+                }
+            }
+
+            using (Dcms.Shared.Data.Rls.RlsScope.Tenant(id))
+            {
+                db.EnvironmentPolicies.RemoveRange(await db.EnvironmentPolicies.IgnoreQueryFilters().Where(p => p.TenantId == id).ToListAsync(ct));
+                db.EnvironmentPolicies.AddRange(wanted);
+                audit.Declared?.For("tenant", id, null).With("policies", wanted.Select(w => $"{w.Kind}/{w.ItemKey ?? "*"}={w.Mode}"));
+                await db.SaveChangesAsync(ct);
+
+                // A site left to deployments takes code from them only, at the git server too.
+                if (git.Enabled)
+                {
+                    var repos = await sites.Sites.IgnoreQueryFilters().AsNoTracking()
+                        .Where(s => s.TenantId == id && s.GitRepoFullName != null).ToListAsync(ct);
+                    foreach (var site in repos)
+                    {
+                        var locked = EnvironmentPolicies.Ownership(wanted, "sites", site.KeyAcrossEnvironments) == EnvironmentOwnership.Managed;
+                        try
+                        {
+                            await git.LockReleaseAsync(site.GitRepoFullName!, locked, ct);
+                        }
+                        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
+                        {
+                            logs.CreateLogger("Environments").LogWarning(ex, "Could not set release protection on {Repo}.", site.GitRepoFullName);
+                        }
+                    }
+                }
+            }
+            return Results.NoContent();
+        }).RequireAuthorization().WithAudit(AuditActions.EnvironmentPoliciesChanged, "tenant");
+
         return app;
     }
 
@@ -295,4 +361,5 @@ public static class EnvironmentEndpoints
     /// <param name="Empty">True for an environment without the root's configuration.</param>
     private sealed record CreateEnvironmentRequest(string? Name, bool? Empty);
     private sealed record UpdateEnvironmentRequest(string? Name, int? Order, List<Guid>? PromotesFrom);
+    private sealed record PolicyRequest(string Kind, string? ItemKey, string Mode);
 }

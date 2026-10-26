@@ -1,3 +1,4 @@
+using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Audit;
 using Dcms.Shared.Audit.Http;
 using System.Security.Cryptography;
@@ -74,7 +75,8 @@ public static class SiteEndpoints
             db.Sites.Add(site);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/admin/sites/{site.Id}", new { id = site.Id });
-        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.SiteCreated, "site");
+        }).RequirePermission(PlatformPermissions.SiteEdit).WithAudit(AuditActions.SiteCreated, "site")
+            .ManagedByDeployments("sites");
 
         app.MapGet("/api/admin/sites/{id:guid}", async (Guid id, SitesDbContext db, CancellationToken ct) =>
         {
@@ -262,7 +264,8 @@ public static class SiteEndpoints
             site.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
-        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteBuildActivated, "site");
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SiteBuildActivated, "site")
+            .ManagedByDeployments("sites");
 
         // Whole-map replace. Used for a full flush (publish) and as a fallback. An
         // optional `If-Match: <version>` guards against overwriting a newer draft:
@@ -566,7 +569,8 @@ public static class SiteEndpoints
             await live.BuildQueuedAsync(tenantId, build, user.UserId, ct);
 
             return Results.Accepted($"/api/admin/sites/{site.Id}/builds/{build.Id}", new { buildId = build.Id });
-        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SitePublishRequested, "site");
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.SitePublishRequested, "site")
+            .ManagedByDeployments("sites");
 
         // --- Git backend (Forgejo): provision a repo for a Mode B site and seed it. ---
         // Provisioning is idempotent: ensures the tenant org + site repo exist and, on
@@ -918,7 +922,8 @@ public static class SiteEndpoints
                     baseContent = f.BaseContent,
                 }),
             });
-        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.GitMerged, "site");
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.GitMerged, "site")
+            .ManagedByDeployments("sites");
 
         // Complete a conflicted merge of `head` into `base` (defaults to release): apply the
         // caller's per-file resolutions onto the auto-merged tree and commit the two-parent
@@ -941,7 +946,8 @@ public static class SiteEndpoints
                 site.GitRepoFullName, @base, body.Head!.Trim(), resolutions, user.Name, user.Email, ct);
             await AnnounceCommitAsync(live, site, @base, sha, $"Merge {body.Head!.Trim()} into {@base}", user, ct);
             return Results.Ok(new { merged = true, sha });
-        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.GitMergeResolved, "site");
+        }).RequirePermission(PlatformPermissions.SitePublish).WithAudit(AuditActions.GitMergeResolved, "site")
+            .ManagedByDeployments("sites");
 
         // Restore an earlier commit's tree into the current user's working draft on a
         // branch (does not commit — the user reviews the diff and commits explicitly).

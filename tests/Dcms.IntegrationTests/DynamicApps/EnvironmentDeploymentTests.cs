@@ -69,5 +69,18 @@ public sealed class EnvironmentDeploymentTests(ContentFlowFixture fixture)
         published.GetProperty("config").GetProperty("tables").EnumerateArray()
             .Select(t => t.GetProperty("apiName").GetString()).Should().Equal("companies");
         published.GetProperty("revision").GetProperty("source").GetString().Should().BeEquivalentTo("import");
+
+        // Once production leaves the application to deployments, it is not published there directly.
+        await As(HttpMethod.Put, $"/api/admin/environments/{prod}/policies", app.Tenant,
+            new[] { new { kind = "dynamic-apps", itemKey = (string?)null, mode = "managed" } });
+        var prodHash = (await As(HttpMethod.Get, "/api/admin/plugins/crm/_model", app.Tenant)).GetProperty("hash").GetString();
+        var prodDraft = await As(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/changes", app.Tenant, new
+        {
+            expectedHash = prodHash,
+            operations = AppHarness.Operations("""[ { "op": "update", "type": "table", "target": "companies", "value": { "displayName": "Firm" } } ]"""),
+        });
+        var publish = await app.Admin.SendAsync(AppHarness.Req(HttpMethod.Post, "/api/admin/plugins/crm/_model/draft/publish", app.Owner, app.Tenant,
+            body: new { expectedHash = prodDraft.GetProperty("draft").GetProperty("hash").GetString() }), ct);
+        publish.StatusCode.Should().Be(System.Net.HttpStatusCode.Conflict);
     }
 }

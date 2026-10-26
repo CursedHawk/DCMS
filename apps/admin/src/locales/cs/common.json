@@ -2319,6 +2319,14 @@
       "pluginInstanceRemoved": "Ve zdroji byla odebrána aplikace; aplikace se vypínají, neodebírají.",
       "slugTakenByOtherPlugin": "Aplikace zde už tuto adresu používá pro jiný plugin.",
       "cannotApply": "Změnu zde nelze v současné podobě použít. Podrobnosti úlohy říkají kterou a proč."
+    },
+    "ownership": "Kdo zde co mění",
+    "ownershipOf": "Kdo zde mění: {{kind}}",
+    "lockToPipeline": "Uzamknout na pipeline",
+    "modes": {
+      "Mixed": "Zde i nasazení",
+      "Local": "Jen zde",
+      "Managed": "Jen nasazení"
     }
   },
   "deployments": {

@@ -222,6 +222,8 @@ export function adminApi(
     .on('POST', '/api/admin/environments/enable', {})
     .on('GET', '/api/admin/environments/changes', [])
     .on('GET', '/api/admin/environments/migrations', [])
+    .on('GET', '/api/admin/environments/:id/policies', [])
+    .on('PUT', '/api/admin/environments/:id/policies', {})
     .on('GET', '/api/admin/media/:id', ({ params }) => {
       const asset = data.MEDIA_ASSETS.find((a) => a.id === params.id);
       return { ...asset, contentType: 'image/png', originalDeletedAt: null, variants: [] };

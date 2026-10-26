@@ -291,6 +291,31 @@ public sealed class ForgejoClient(HttpClient http, IOptions<ForgejoOptions> opti
         if (res.StatusCode != HttpStatusCode.Created) await ThrowFor(res, ct);
     }
 
+    // ---------- branch protection ----------
+
+    /// <summary>
+    /// Lets only the bot push to <paramref name="branch"/> (on), or anyone with write access again
+    /// (off). Idempotent both ways.
+    /// </summary>
+    public async Task ProtectBranchAsync(string owner, string repo, string branch, bool on, CancellationToken ct)
+    {
+        using (var removed = await http.DeleteAsync($"/api/v1/repos/{owner}/{repo}/branch_protections/{Uri.EscapeDataString(branch)}", ct))
+        {
+            if (removed.StatusCode is not (HttpStatusCode.NoContent or HttpStatusCode.NotFound)) await ThrowFor(removed, ct);
+        }
+        if (!on) return;
+        var bot = await http.GetFromJsonAsync<UserInfo>("/api/v1/user", Json, ct)
+                  ?? throw new InvalidOperationException("Forgejo did not say who the bot is.");
+        using var res = await http.PostAsJsonAsync($"/api/v1/repos/{owner}/{repo}/branch_protections", new
+        {
+            rule_name = branch,
+            enable_push = true,
+            enable_push_whitelist = true,
+            push_whitelist_usernames = new[] { bot.Login },
+        }, Json, ct);
+        if (res.StatusCode != HttpStatusCode.Created) await ThrowFor(res, ct);
+    }
+
     // ---------- users / collaborators (repo authorization) ----------
 
     /// <summary>Resolve a Forgejo username from an exact email match, or null if no

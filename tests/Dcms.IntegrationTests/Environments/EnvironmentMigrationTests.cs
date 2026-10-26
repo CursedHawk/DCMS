@@ -341,4 +341,43 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
         (await ProdSites()).Should().Equal(("Marketing 2026", prodSites[0].Id));
     }
+
+    [DockerFact]
+    public async Task Configuration_left_to_deployments_is_refused_directly_and_local_items_are_skipped()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        await Role(client, ws.Owner, ws.Dev, "Editors", ["content:read"]);
+        await Role(client, ws.Owner, ws.Dev, "Reviewers", ["content:read"]);
+        await Role(client, ws.Owner, ws.Prod, "Reviewers", ["media:read"]);
+
+        // Production: roles come from the pipeline, except Reviewers, which is production's own.
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/environments/{ws.ProdId}/policies", ws.Owner, ws.Prod, new[]
+        {
+            new { kind = "roles", itemKey = (string?)null, mode = "managed" },
+            new { kind = "roles", itemKey = (string?)"Reviewers", mode = "local" },
+        }), ct)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var refused = await client.SendAsync(Req(HttpMethod.Post, "/api/admin/roles", ws.Owner, ws.Prod, new { name = "Ad hoc", permissions = new[] { "content:read" } }), ct);
+        refused.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await refused.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("code").GetString().Should().Be("environment_managed");
+        (await Role(client, ws.Owner, ws.Dev, "Ad hoc", ["content:read"])).StatusCode.Should().Be(HttpStatusCode.Created, "development is not locked");
+
+        var migration = await CutAsync(client, ws, "Roles", ct);
+        var pending = await PendingAsync(client, ws, ct);
+        pending[0].GetProperty("changes").EnumerateArray()
+            .ToDictionary(c => c.GetProperty("key").GetString()!, c => c.GetProperty("outcome").GetString())
+            .Should().Contain("Reviewers", "local").And.Contain("Editors", "apply");
+
+        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("content:read");
+        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Reviewers", ct)).Should().BeEquivalentTo(["media:read"], "production keeps its own");
+
+        // Reviewers is production's own, so editing it there is still allowed.
+        var prodRoles = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", ws.Owner, ws.Prod), ct), ct);
+        var reviewers = prodRoles.EnumerateArray().First(r => r.GetProperty("name").GetString() == "Reviewers").GetProperty("id").GetGuid();
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/roles/{reviewers}", ws.Owner, ws.Prod,
+            new { name = "Reviewers", permissions = new[] { "media:read", "analytics:read" } }), ct)).IsSuccessStatusCode.Should().BeTrue();
+    }
 }
