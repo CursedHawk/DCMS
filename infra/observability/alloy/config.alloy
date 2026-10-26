@@ -242,10 +242,10 @@ loki.source.docker "containers" {
   forward_to = [loki.process.docker_too_old.receiver]
 }
 
-// docker-socket-proxy-ro (HAProxy, `timeout client/server 10m`, hardcoded in the image) cuts
-// every idle follow stream every ten minutes. On reconnect the tailer re-reads from its saved
-// position, inclusive, so a container silent for weeks re-sends its last line -- which Loki
-// refuses as older than reject_old_samples_max_age, an error per batch, forever. The line is
+// On every reconnect -- an Alloy or proxy restart, and every ten minutes until
+// docker-socket-proxy-ro got a long timeout for log follows -- the tailer re-reads from its
+// saved position, inclusive, so a container silent for weeks re-sends its last line, which
+// Loki refuses as older than reject_old_samples_max_age: an error per batch. The line is
 // already stored; drop it here. Matches loki.yaml's 168h.
 loki.process "docker_too_old" {
   stage.drop {

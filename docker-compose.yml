@@ -1130,8 +1130,29 @@ services:
   # Read-only half of the socket proxy pattern already used for the build sandbox. POST is
   # off, so this API can list and inspect containers and can start nothing.
   docker-socket-proxy-ro:
-    image: tecnativa/docker-socket-proxy:latest
+    # Pinned: the entrypoint below appends to this image's HAProxy template, and was tested
+    # against exactly this one.
+    image: tecnativa/docker-socket-proxy@sha256:1f5038b54f06c3e18422902cf00ba21803d1c97805aae032e5e6673d532d3459
     restart: unless-stopped
+    # The image hardcodes `timeout server 10m`, so every followed log stream that stays quiet
+    # for ten minutes is cut -- Alloy's loki.source.docker logged "unexpected EOF" for every
+    # container every ten minutes and re-sent each one's last line on reconnect. Log follows
+    # get their own backend with a long timeout, the same way the image already treats
+    # /events; every other call keeps 10m. The frontend is the template's last section, so
+    # the appended `use_backend` lands in it. 24d is near HAProxy's ceiling (2^31 ms).
+    entrypoint:
+      - sh
+      - -c
+      - |
+        F=/usr/local/etc/haproxy/haproxy.cfg.template
+        grep -q docker-logs $$F || cat >> $$F <<'CFG'
+            use_backend docker-logs if { path,url_dec -m reg -i ^(/v[\d\.]+)?/containers/[a-zA-Z0-9_.-]+/logs }
+
+        backend docker-logs
+            server dockersocket $$SOCKET_PATH
+            timeout server 24d
+        CFG
+        exec docker-entrypoint.sh haproxy -f /tmp/haproxy.cfg
     logging: *default-logging
     # 64m: it is a HAProxy in front of a socket and should need almost nothing, but two
     # clients poll it continuously (Alloy's log discovery and its cAdvisor), and it measured
