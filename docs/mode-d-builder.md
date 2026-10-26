@@ -109,7 +109,7 @@ in the file).
   submit-form, open-modal, show-toast.
 - **Forms**: `dcms.form` posts its fields to the Forms plugin.
 - On the canvas, data comes from the **preview proxy** (`/api/admin/sites/{id}/preview/api/*`)
-  — real content, sandboxed writes. Published sites read same-origin `/api/*`.
+  — the environment's live content and data (ADR 0026). Published sites read same-origin `/api/*`.
 
 `checkVisualSite` checks sources and bound fields against the tenant's content types, so a
 renamed field or a removed plugin shows up in Problems, not as an empty card.
@@ -183,9 +183,8 @@ who is signed in with each, and three components draw it. Each takes `accounts`:
 - **Preview.** The toolbar's User Authentication menu (Sign in, View as, Sign out) serves the page's
   buttons too. A visitor's token cannot ride `Authorization` through the console (it is the
   member's), so the preview's data client sends `X-Dcms-Visitor-Token` and the preview proxy
-  forwards it as the bearer to content-api — with `X-Dcms-Sandbox`, so preview visitors are
-  sandbox accounts. The visitor menu shows and signs out the visitor and resets the sandbox. No
-  View as for visitors: real ones are not in the sandbox.
+  forwards it as the bearer to content-api. Preview visitors are real visitors of the environment
+  (ADR 0026). The visitor menu shows and signs out the visitor. No View as for visitors.
 - **Checks.** A Forms form with a password field is an error (it would store the password in the
   inbox), one named like a login a warning; a visitor sign-in without `instance`, and
   registration for site users, are errors. The agent's `describe_sign_in` says which plugins

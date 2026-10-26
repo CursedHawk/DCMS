@@ -739,9 +739,6 @@
     "buildError": "Chyba sestavení",
     "showPreview": "Náhled",
     "hidePreview": "Skrýt náhled",
-    "resetSandbox": "Vyčistit sandbox",
-    "resetSandboxHint": "Smaže testovací data náhledu (odeslané formuláře, registrace, chaty). Ostrá data zůstanou nedotčena.",
-    "sandboxReset": "Sandbox náhledu vyčištěn",
     "conflictWarning": "Tyto soubory někdo změnil, zatímco jste je upravovali: {{files}}. Načtěte nejnovější verzi (vaše neuložené změny těchto souborů budou ztraceny).",
     "reloadLatest": "Načíst nejnovější",
     "git": {
@@ -2197,10 +2194,8 @@
     "visitorMenu": "Za kterého návštěvníka je náhled přihlášen",
     "noVisitor": "Žádný návštěvník",
     "visitorAs": "Návštěvník: {{name}}",
-    "visitorHint": "Návštěvníci, kteří se zde na stránce přihlásí nebo zaregistrují, jsou testovací účty v sandboxu náhledu, nikdy skutečné účty webu.",
-    "visitorSignOut": "Odhlásit návštěvníka",
-    "resetSandbox": "Smazat testovací data",
-    "sandboxReset": "Testovací data náhledu smazána: testovací návštěvníci, odeslané formuláře a chaty."
+    "visitorHint": "Návštěvníci, kteří se zde na stránce přihlásí nebo zaregistrují, jsou skuteční návštěvníci tohoto prostředí. Chcete-li zkoušet bez dopadu na skutečné účty, použijte náhled ve vývojovém prostředí.",
+    "visitorSignOut": "Odhlásit návštěvníka"
   },
   "views": {
     "matchAll": "všem",

@@ -393,6 +393,10 @@ public static class TenancyEndpoints
             {
                 return Results.BadRequest(new { error = "Unknown role." });
             }
+            if (await WorkspaceMembers.IsMirroredOwnerRoleAsync(db, tenant, body.RoleId, ct))
+            {
+                return Results.Conflict(new { error = WorkspaceMembers.OwnerIsTheWorkspaces });
+            }
 
             // SEC-06: a caller may only assign a role whose permissions are a subset of their
             // own. This is what stops a members:manage holder from assigning themselves Owner.
@@ -452,6 +456,10 @@ public static class TenancyEndpoints
                 // Owner — otherwise a members:manage holder could lock the real owner out, or
                 // strip the last Owner and orphan the workspace.
                 var role = await db.TenantRoles.FirstOrDefaultAsync(r => r.Id == roleId, ct);
+                if (await WorkspaceMembers.IsMirroredOwnerRoleAsync(db, tenant, roleId, ct))
+                {
+                    return Results.Conflict(new { error = WorkspaceMembers.OwnerIsTheWorkspaces });
+                }
                 if (role is { IsSystem: true } && role.Name == TenantProvisioning.OwnerRole)
                 {
                     var grantable = await GrantGuard.GrantableAsync(me, tenant, permissions, ct);

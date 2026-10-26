@@ -50,7 +50,6 @@ public static class AuditPropagation
     /// <summary>Vendor-specific trace state, carried verbatim when present.</summary>
     public const string TraceState = "tracestate";
     public const string Tenant = "Dcms-Tenant";
-    public const string Sandbox = "Dcms-Sandbox";
     public const string ActorKind = "Dcms-Actor-Kind";
     public const string ActorId = "Dcms-Actor-Id";
     public const string ActorRef = "Dcms-Actor-Ref";
@@ -108,11 +107,6 @@ public static class AuditPropagation
             headers[Tenant] = tenant.ToString();
         }
 
-        if (scope.IsSandbox)
-        {
-            headers[Sandbox] = "1";
-        }
-
         var actor = scope.ResolveActor();
         if (actor.Kind != Kernel.Abstractions.ActorKind.Anonymous)
         {
@@ -152,8 +146,6 @@ public static class AuditPropagation
         scope.TenantId = Guid.TryParse(header(Tenant), out var tenant) && tenant != Guid.Empty
             ? tenant
             : tenantFallback ?? scope.TenantId;
-
-        scope.IsSandbox = header(Sandbox) == "1" || scope.IsSandbox;
 
         if (header(ActorKind) is { Length: > 0 } kindText
             && Enum.TryParse<ActorKind>(kindText, ignoreCase: true, out var kind))

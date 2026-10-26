@@ -31,7 +31,7 @@ import { api } from '../../../lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { ALL_TOOLS, formatProblems } from './checkTools';
 import { DEFAULT_SCOPE, toolsFor, rememberScope, type AgentScope } from '../../agent/scope';
-import { SANDBOX_TOOLS, SKILL_TOOLS, TENANT_TOOLS, type TenantToolContext } from './tenantTools';
+import { PREVIEW_TOOLS, SKILL_TOOLS, TENANT_TOOLS, type TenantToolContext } from './tenantTools';
 import { buildSystemPrompt, type SiteAgentKind } from './systemPrompt';
 
 /**
@@ -640,7 +640,7 @@ export function useAgentSession(opts: {
                 ),
                 ...(opts.tools ?? []),
                 ...SKILL_TOOLS,
-                ...SANDBOX_TOOLS,
+                ...PREVIEW_TOOLS,
                 ...TENANT_TOOLS,
               ],
               scopeRef.current,

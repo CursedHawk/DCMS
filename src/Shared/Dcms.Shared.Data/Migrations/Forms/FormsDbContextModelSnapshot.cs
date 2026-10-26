@@ -76,9 +76,6 @@ namespace Dcms.Shared.Data.Migrations.Forms
                     b.Property<DateTimeOffset?>("HandledAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<bool>("IsSandbox")
-                        .HasColumnType("boolean");
-
                     b.Property<Guid>("PluginInstanceId")
                         .HasColumnType("uuid");
 
@@ -97,7 +94,7 @@ namespace Dcms.Shared.Data.Migrations.Forms
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "IsSandbox", "PluginInstanceId", "FormName", "SubmittedAt");
+                    b.HasIndex("TenantId", "PluginInstanceId", "FormName", "SubmittedAt");
 
                     b.ToTable("form_submissions", "forms");
                 });

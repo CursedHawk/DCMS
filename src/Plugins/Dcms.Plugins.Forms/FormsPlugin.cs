@@ -79,7 +79,7 @@ public sealed class FormsPlugin : IPlugin
                   "notify": {
                     "type": "object",
                     "title": "Email notification",
-                    "description": "Optionally email a copy of every submission. Submissions are stored either way, and preview (sandbox) submissions never send mail.",
+                    "description": "Optionally email a copy of every submission. Submissions are stored either way.",
                     "properties": {
                       "enabled": {
                         "type": "boolean",

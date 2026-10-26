@@ -53,13 +53,13 @@ public static class HeaderScrubbing
     private static readonly string[] SiteAttributionHeaders = ["X-Dcms-Site", "X-Dcms-Site-Host"];
 
     /// <summary>
-    /// Headers that select a tenant or a data space. These are legitimate <b>client</b> headers
+    /// Headers that select a tenant or mark a site preview. These are legitimate <b>client</b> headers
     /// on the operator plane — the admin SPA sends <c>X-Dcms-Tenant</c> and
     /// <c>TenantMembershipMiddleware</c> authorises the caller's membership of whatever it names
     /// — so they are scrubbed only on public-plane routes, where the caller is an anonymous
     /// visitor and the tenant is determined by the Host header instead.
     /// </summary>
-    private static readonly string[] TenantSelectionHeaders = ["X-Dcms-Tenant", "X-Dcms-Sandbox"];
+    private static readonly string[] TenantSelectionHeaders = ["X-Dcms-Tenant", "X-Dcms-Preview"];
 
     /// <summary>
     /// Strips the always-untrusted headers from every request. Register first, before routing.
@@ -87,10 +87,9 @@ public static class HeaderScrubbing
     /// inside the reverse-proxy pipeline, which is the first point at which the matched route —
     /// and therefore whether this request belongs to an operator or a visitor — is known.
     ///
-    /// <para>Closes a hole that predates the edge: on a tenant's public domain today, a visitor
-    /// can send <c>X-Dcms-Sandbox: 1</c> and content-api routes their writes to the tenant's
-    /// sandbox space. Their form submission, chat message or visitor account then never reaches
-    /// the tenant's live records, and nothing about the response says so.</para>
+    /// <para>A visitor naming a tenant would be answered as that tenant instead of the one their
+    /// Host header belongs to, and one marking itself a preview would drop out of the site's
+    /// analytics.</para>
     /// </summary>
     public static void UsePublicPlaneHeaderScrubbing(this IReverseProxyApplicationBuilder app)
         => app.Use(async (context, next) =>

@@ -5,7 +5,7 @@ import type { CheckToolContext } from './checkTools';
 import { SKILLS, readSkill } from './skills';
 
 /**
- * The tools that reach outside the site's own files: tenant content, the sandbox, and the
+ * The tools that reach outside the site's own files: tenant content, the site's API, and the
  * on-demand knowledge library.
  *
  * <p>These are what make the IDE agent more than a code editor — a site that fetches content
@@ -56,18 +56,18 @@ export function fromAssistantTool(tool: AssistantTool): ToolSpec<TenantToolConte
 export const TENANT_TOOLS: ToolSpec<TenantToolContext>[] = ASSISTANT_TOOLS.map(fromAssistantTool);
 
 /**
- * Tools for trying something against the tenant's sandbox rather than its live data.
+ * Calling the site's own API the way the running site does.
  *
- * <p>The preview already proxies the site's API calls through a per-tenant sandbox
- * (`X-Dcms-Sandbox`), so a preview that submits a form or creates a record never touches real
- * content. These expose that same path deliberately, so the agent can verify an integration
- * works instead of writing it and hoping.</p>
+ * <p>The preview proxies the site's API calls to its environment's live data (ADR 0026: there is
+ * no sandbox — safe experiments belong in a development environment). This exposes that same path
+ * so the agent can verify an integration works instead of writing it and hoping; a POST is a real
+ * write and is approved as one.</p>
  */
-export const SANDBOX_TOOLS: ToolSpec<TenantToolContext>[] = [
+export const PREVIEW_TOOLS: ToolSpec<TenantToolContext>[] = [
   {
-    name: 'sandbox_request',
+    name: 'preview_request',
     description:
-      'Call the tenant content API exactly as the running site would, against the SANDBOX — never live data. Use to check that an endpoint exists and what it returns before writing code against it, or to verify a form submission works end to end.',
+      "Call the site's content API exactly as the running site would, in this environment. GET to check that an endpoint exists and what it returns before writing code against it; POST writes real data in this environment (a form submission, a record), so use it only when asked to verify a write end to end.",
     input_schema: {
       type: 'object',
       properties: {
@@ -81,11 +81,9 @@ export const SANDBOX_TOOLS: ToolSpec<TenantToolContext>[] = [
       required: ['path'],
       additionalProperties: false,
     },
-    // Safe: by construction these writes land in the sandbox, which a reset discards.
-    risk: 'safe',
+    riskFor: (input) => (input.method === 'POST' ? 'dangerous' : 'safe'),
     describe: (input) => `${String(input.method ?? 'GET')} ${String(input.path ?? '')}`,
-    summarize: (input) =>
-      `Call ${String(input.method ?? 'GET')} ${String(input.path ?? '')} in the sandbox`,
+    summarize: (input) => `Call ${String(input.method ?? 'GET')} ${String(input.path ?? '')}`,
     maxResultChars: 6000,
     run: async (input, ctx) => {
       const method = input.method === 'POST' ? 'POST' : 'GET';
@@ -93,8 +91,8 @@ export const SANDBOX_TOOLS: ToolSpec<TenantToolContext>[] = [
       if (!path.startsWith('/')) {
         return { content: 'path must start with "/".', isError: true };
       }
-      // Routed through the same same-origin preview proxy the iframe uses, so the sandbox
-      // header and tenant resolution are applied server-side exactly as they are for the site.
+      // Routed through the same same-origin preview proxy the iframe uses, so tenant resolution
+      // is applied server-side exactly as it is for the site.
       const url = `/admin/sites/${ctx.siteId}/preview${path}`;
       try {
         const result =
@@ -108,20 +106,6 @@ export const SANDBOX_TOOLS: ToolSpec<TenantToolContext>[] = [
           isError: true,
         };
       }
-    },
-  },
-
-  {
-    name: 'sandbox_reset',
-    description:
-      'Discard everything written to the tenant sandbox, returning it to a copy of live content. Use before a clean test run, or to clear records left behind by earlier experiments.',
-    input_schema: { type: 'object', properties: {}, additionalProperties: false },
-    risk: 'safe',
-    describe: () => 'reset sandbox',
-    summarize: () => 'Reset the tenant sandbox',
-    run: async (_input, ctx) => {
-      await api.post(`/admin/sites/${ctx.siteId}/preview/sandbox/reset`, {});
-      return { content: 'The sandbox has been reset to a copy of live content.' };
     },
   },
 ];

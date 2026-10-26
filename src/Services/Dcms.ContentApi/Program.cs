@@ -78,10 +78,7 @@ builder.Services.AddDcmsDataProtection(builder.Configuration);
 
 builder.Services.AddDcmsTenantResolutionByHeader();
 
-// Preview sandbox: the admin-api preview proxy sets X-Dcms-Sandbox so a site
-// preview's writes (forms, visitors, chat) land in the per-tenant sandbox space.
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<Dcms.Shared.Kernel.Abstractions.ISandboxContext, Dcms.ContentApi.HeaderSandboxContext>();
 
 // Platform-user authentication for the chat hub's agent role. Visitors connect anonymously and
 // always did; only an agent presents a platform JWT.

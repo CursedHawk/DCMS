@@ -132,13 +132,8 @@ export function VisualPreview({ siteId, initialPath, width }: { siteId: string; 
       >
         {auth.identity?.available ? <PreviewIdentityMenu auth={auth} /> : null}
         <PreviewVisitorMenu
-          siteId={siteId}
           visitor={visitor}
           onSignOut={signOutVisitor}
-          onReset={() => {
-            signOutVisitor();
-            setReloads((n) => n + 1);
-          }}
         />
       </PreviewAddressBar>
     <div className="relative flex min-h-0 flex-1 justify-center overflow-auto bg-muted/40">

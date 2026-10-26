@@ -307,9 +307,6 @@ namespace Dcms.Shared.Data.Migrations.Cms
                     b.Property<Guid?>("InstanceId")
                         .HasColumnType("uuid");
 
-                    b.Property<bool>("IsSandbox")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("Key")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -337,10 +334,10 @@ namespace Dcms.Shared.Data.Migrations.Cms
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("DataJson"), "gin");
                     NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("DataJson"), new[] { "jsonb_path_ops" });
 
-                    b.HasIndex("TenantId", "IsSandbox", "PluginId", "InstanceId", "Collection", "Key")
+                    b.HasIndex("TenantId", "PluginId", "InstanceId", "Collection", "Key")
                         .IsUnique();
 
-                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "IsSandbox", "PluginId", "InstanceId", "Collection", "Key"), false);
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "PluginId", "InstanceId", "Collection", "Key"), false);
 
                     b.ToTable("plugin_data", "plugins");
                 });

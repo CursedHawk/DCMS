@@ -55,9 +55,9 @@ Consequences:
 - Media fields hold asset ids: \`api.media.url(id, 'webp-960')\`.
 - \`src/api/\`, \`src/dcms/\` and \`openapi.json\` are regenerated when plugins change. Never edit
   them; if a call is missing, the tenant's plugins do not offer it.
-- In the preview, API calls are proxied same-origin and forced into the tenant SANDBOX, so preview
-  writes never touch live content. In production they hit live content.
-- \`sandbox_request\` shows an endpoint's real response when API.md is not enough to be sure.`,
+- In the preview, API calls are proxied same-origin to this environment's live data, exactly as the
+  published site's are. Safe experiments belong in a development environment, not the preview.
+- \`preview_request\` shows an endpoint's real response when API.md is not enough to be sure.`,
 
   frontend: `# Front-end judgement for generated pages
 

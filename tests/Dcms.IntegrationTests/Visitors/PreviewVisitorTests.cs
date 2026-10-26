@@ -7,7 +7,8 @@ using Dcms.IntegrationTests.DynamicApps;
 namespace Dcms.IntegrationTests.Visitors;
 
 /// <summary>
-/// A builder preview signs visitors in to the tenant's sandbox, and the preview proxy carries the
+/// A builder preview signs visitors in to the environment it previews (ADR 0026: no sandbox), and
+/// the preview proxy carries the
 /// visitor's token (<c>X-Dcms-Visitor-Token</c>; Authorization is the console's) to content-api,
 /// so the preview's next calls know who it is — as the site's would.
 /// </summary>
@@ -15,7 +16,7 @@ namespace Dcms.IntegrationTests.Visitors;
 public sealed class PreviewVisitorTests(ContentFlowFixture fixture)
 {
     [DockerFact]
-    public async Task A_preview_visitor_registers_in_the_sandbox_and_is_known_on_the_next_call()
+    public async Task A_preview_visitor_is_a_real_visitor_and_is_known_on_the_next_call()
     {
         var ct = TestContext.Current.CancellationToken;
         var app = await AppHarness.CreateAsync(fixture, ct);
@@ -45,10 +46,10 @@ public sealed class PreviewVisitorTests(ContentFlowFixture fixture)
         (await app.Admin.SendAsync(Preview(HttpMethod.Get, "/me", token + " other"), ct)).StatusCode
             .Should().Be(HttpStatusCode.Unauthorized, "a header that is not a token is not passed on");
 
-        // The account is a sandbox one: the site itself does not know it.
+        // The account is the environment's own: the site knows it too.
         var content = fixture.Content.CreateClient();
         var live = new HttpRequestMessage(HttpMethod.Post, "/api/members/login") { Content = JsonContent.Create(new { email = "pre@view.test", password = "correct horse battery staple" }) };
         live.Headers.Add("X-Dcms-Tenant", app.Tenant);
-        (await content.SendAsync(live, ct)).StatusCode.Should().Be(HttpStatusCode.Unauthorized, "preview visitors live in the sandbox");
+        (await content.SendAsync(live, ct)).StatusCode.Should().Be(HttpStatusCode.OK, "a preview acts on the environment's live data");
     }
 }

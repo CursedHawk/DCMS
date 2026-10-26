@@ -64,14 +64,10 @@ internal static class PublicEndpoints
                     : NotFound(table, id)))
             .WithoutPermission(Public);
 
-        endpoints.MapPost("/data/{table}", (string table, JsonObject values, RecordService records, IPluginContext context, ISandboxContext sandbox,
+        endpoints.MapPost("/data/{table}", (string table, JsonObject values, RecordService records, IPluginContext context,
                 HttpContext http, CancellationToken ct) =>
                 Write(records, context, http, ct, async () =>
                 {
-                    if (sandbox.IsSandbox)
-                    {
-                        return Preview();
-                    }
                     var record = await records.CreateAsync(table, values, RecordPlane.Public, ct);
                     return Results.Created($"data/{table}/{record["id"]}", record);
                 }))
@@ -82,17 +78,13 @@ internal static class PublicEndpoints
         // app. It runs as any manual flow does (definer's rights, ADR 0021); one that uses an action
         // needing a member permission cannot be started from here at all, since a site user holds none.
         endpoints.MapPost("/flows/{flow}/run", (string flow, StartFlowRequest? body, RecordService records, FlowRunService runs,
-                IPluginContext context, ISandboxContext sandbox, HttpContext http, CancellationToken ct) =>
+                IPluginContext context, HttpContext http, CancellationToken ct) =>
                 Write(records, context, http, ct, async () =>
                 {
                     if (!records.Members.Contains($"flow:{flow}:run"))
                     {
                         return Results.Json(new { error = $"Starting '{flow}' needs a role that allows it." },
                             statusCode: records.Visitor is null ? StatusCodes.Status401Unauthorized : StatusCodes.Status403Forbidden);
-                    }
-                    if (sandbox.IsSandbox)
-                    {
-                        return Preview();
                     }
                     var input = body?.Input ?? [];
                     if (input.ToJsonString().Length > MaxFlowInput)
@@ -105,18 +97,16 @@ internal static class PublicEndpoints
             .AuditAs("flow.started");
 
         endpoints.MapPatch("/data/{table}/{id:guid}", (string table, Guid id, JsonObject values, RecordService records, IPluginContext context,
-                ISandboxContext sandbox, HttpContext http, CancellationToken ct) =>
-                Write(records, context, http, ct, async () => sandbox.IsSandbox
-                    ? Preview()
-                    : await records.UpdateAsync(table, id, values, RecordPlane.Public, ct) is { } record ? Results.Ok(record) : NotFound(table, id)))
+                HttpContext http, CancellationToken ct) =>
+                Write(records, context, http, ct, async () =>
+                    await records.UpdateAsync(table, id, values, RecordPlane.Public, ct) is { } record ? Results.Ok(record) : NotFound(table, id)))
             .WithoutPermission(Public)
             .AuditAs("record.updated");
 
         endpoints.MapDelete("/data/{table}/{id:guid}", (string table, Guid id, int? version, RecordService records, IPluginContext context,
-                ISandboxContext sandbox, HttpContext http, CancellationToken ct) =>
-                Write(records, context, http, ct, async () => sandbox.IsSandbox
-                    ? Preview()
-                    : await records.DeleteAsync(table, id, version, RecordPlane.Public, ct) ? Results.NoContent() : NotFound(table, id)))
+                HttpContext http, CancellationToken ct) =>
+                Write(records, context, http, ct, async () =>
+                    await records.DeleteAsync(table, id, version, RecordPlane.Public, ct) ? Results.NoContent() : NotFound(table, id)))
             .WithoutPermission(Public)
             .AuditAs("record.deleted");
     }
@@ -227,9 +217,6 @@ internal static class PublicEndpoints
         var held = await access.ListPermissionsAsync(ct);
         return (Ours(held.Permissions), Ours(held.BypassRowAccess ?? []));
     }
-
-    // A preview of the site is not the site: its writes would land in the real application.
-    private static IResult Preview() => Results.Json(new { error = "A site preview cannot change the app's records." }, statusCode: 403);
 
     private static IReadOnlyList<string> List(string? csv) =>
         string.IsNullOrWhiteSpace(csv) ? [] : csv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

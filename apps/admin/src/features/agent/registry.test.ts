@@ -3,7 +3,7 @@ import { capResult } from './runtime';
 import { riskOf, type ToolSpec } from './contracts';
 import { AI_MODES, decide } from './modes';
 import { ALL_TOOLS } from '../ide/agent/checkTools';
-import { SANDBOX_TOOLS, SKILL_TOOLS, TENANT_TOOLS } from '../ide/agent/tenantTools';
+import { PREVIEW_TOOLS, SKILL_TOOLS, TENANT_TOOLS } from '../ide/agent/tenantTools';
 import { STATIC_TOOLS } from '../builder/agent/staticTools';
 import { VISUAL_TOOLS } from '../visual/agent/visualTools';
 
@@ -24,7 +24,7 @@ import { VISUAL_TOOLS } from '../visual/agent/visualTools';
 const REGISTRY: ToolSpec<unknown>[] = [
   ...(ALL_TOOLS as unknown as ToolSpec<unknown>[]),
   ...(SKILL_TOOLS as unknown as ToolSpec<unknown>[]),
-  ...(SANDBOX_TOOLS as unknown as ToolSpec<unknown>[]),
+  ...(PREVIEW_TOOLS as unknown as ToolSpec<unknown>[]),
   ...(TENANT_TOOLS as unknown as ToolSpec<unknown>[]),
   ...(STATIC_TOOLS as unknown as ToolSpec<unknown>[]),
   ...(VISUAL_TOOLS as unknown as ToolSpec<unknown>[]),
@@ -170,12 +170,19 @@ describe('dependencies (P7.4)', () => {
   it('asks before any file tool changes package.json, and only then', () => {
     // The build installs what package.json declares: a dependency is third-party code in the
     // site and in the build, which no draft revert takes back out of a deploy.
-    const writers = REGISTRY.filter((t) => t.riskFor);
+    const writers = REGISTRY.filter((t) => t.riskFor && t.name !== 'preview_request');
     expect(writers.map((t) => t.name).sort()).toEqual(['create_file', 'delete_lines', 'edit_file', 'insert_lines', 'rename_file', 'replace_lines']);
     for (const tool of writers) {
       const input = tool.name === 'rename_file' ? { from: 'deps.json', to: 'package.json' } : { path: 'package.json' };
       expect(riskOf(tool, input), tool.name).toBe('dangerous');
       expect(riskOf(tool, tool.name === 'rename_file' ? { from: 'a.ts', to: 'b.ts' } : { path: 'src/App.tsx' }), tool.name).toBe('safe');
     }
+  });
+
+  it('asks before a preview POST, which writes the environment\'s live data', () => {
+    // ADR 0026: there is no sandbox behind the preview any more.
+    const preview = REGISTRY.find((t) => t.name === 'preview_request')!;
+    expect(riskOf(preview, { method: 'POST', path: '/forms/contact' })).toBe('dangerous');
+    expect(riskOf(preview, { path: '/content/articles' })).toBe('safe');
   });
 });

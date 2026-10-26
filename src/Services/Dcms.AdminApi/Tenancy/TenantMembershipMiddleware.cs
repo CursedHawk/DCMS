@@ -128,12 +128,10 @@ public sealed class TenantMembershipMiddleware(RequestDelegate next)
         // rls: request tenant. tenantId is the one Finbuckle resolved for this request, so the
         // database's app.tenant_id already names it and no RlsScope is needed (ADR 0015).
         var db = context.RequestServices.GetRequiredService<TenancyDbContext>();
-        var memberships = db.Memberships.AsNoTracking()
+        var isMember = await db.Memberships.AsNoTracking()
             .IgnoreQueryFilters()
-            .Where(m => m.TenantId == tenantId && m.UserId == userId);
-        var isMember = tenant.HasEnvironments
-            ? await memberships.AnyAsync(m => m.Roles.Any(), context.RequestAborted)
-            : await memberships.AnyAsync(context.RequestAborted);
+            .ThatOpen(tenant.HasEnvironments)
+            .AnyAsync(m => m.TenantId == tenantId && m.UserId == userId, context.RequestAborted);
 
         if (isMember)
         {

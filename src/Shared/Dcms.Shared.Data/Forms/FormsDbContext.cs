@@ -14,12 +14,9 @@ namespace Dcms.Shared.Data.Forms;
 /// payload is stored as jsonb exactly as submitted (after per-field validation),
 /// so changing a form's fields never invalidates historical submissions.
 /// </summary>
-public sealed class FormSubmission : TenantEntity, ISandboxScoped
+public sealed class FormSubmission : TenantEntity
 {
     public Guid PluginInstanceId { get; set; }
-
-    /// <summary>True for submissions made from a site preview's sandbox.</summary>
-    public bool IsSandbox { get; set; }
 
     /// <summary>The form's config name, e.g. "booking".</summary>
     public string FormName { get; set; } = string.Empty;
@@ -41,26 +38,11 @@ public sealed class FormSubmission : TenantEntity, ISandboxScoped
 /// <summary>Owns the "forms" schema. Written by content-api, read by admin-api.</summary>
 public class FormsDbContext(DbContextOptions<FormsDbContext> options) : ScopedDbContext(options)
 {
-
-    private ISandboxContext? _sandbox;
-
-    protected override void OnBind(IServiceProvider scope) => _sandbox = scope.GetService<ISandboxContext>();
-
-    protected override void OnRelease() => _sandbox = null;
-
-    /// <summary>For a context built by hand: whether it acts for a site preview's sandbox.</summary>
-    public FormsDbContext WithSandbox(ISandboxContext sandbox)
-    {
-        _sandbox = sandbox;
-        return this;
-    }
-
     public const string Schema = "forms";
 
     // An enclosing RlsScope.Tenant wins, as for CmsDbContext: forms.submissions@1 is read by
     // plugin event handlers and jobs with no request behind them.
     private Guid CurrentTenantId => RlsScope.TenantOverride ?? TenantContext?.TenantId ?? Guid.Empty;
-    private bool CurrentSandbox => _sandbox?.IsSandbox ?? false;
 
     public DbSet<FormSubmission> Submissions => Set<FormSubmission>();
 
@@ -79,8 +61,8 @@ public class FormsDbContext(DbContextOptions<FormsDbContext> options) : ScopedDb
             e.Property(s => s.FormName).HasMaxLength(64).IsRequired();
             e.Property(s => s.DataJson).HasColumnType("jsonb");
             e.Property(s => s.UserAgent).HasMaxLength(512);
-            e.HasIndex(s => new { s.TenantId, s.IsSandbox, s.PluginInstanceId, s.FormName, s.SubmittedAt });
-            e.HasQueryFilter(s => s.TenantId == CurrentTenantId && s.IsSandbox == CurrentSandbox);
+            e.HasIndex(s => new { s.TenantId, s.PluginInstanceId, s.FormName, s.SubmittedAt });
+            e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
         });
     }
 
@@ -103,7 +85,6 @@ public class FormsDbContext(DbContextOptions<FormsDbContext> options) : ScopedDb
         {
             return;
         }
-        var sandbox = CurrentSandbox;
         foreach (var entry in ChangeTracker.Entries<TenantEntity>())
         {
             if (entry.State != EntityState.Added)
@@ -113,10 +94,6 @@ public class FormsDbContext(DbContextOptions<FormsDbContext> options) : ScopedDb
             if (entry.Entity.TenantId == Guid.Empty)
             {
                 entry.Entity.TenantId = tenantId;
-            }
-            if (entry.Entity is ISandboxScoped sandboxed)
-            {
-                sandboxed.IsSandbox = sandbox;
             }
         }
     }
@@ -131,7 +108,7 @@ public sealed class FormsDbContextFactory : IDesignTimeDbContextFactory<FormsDbC
                 "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev",
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", FormsDbContext.Schema))
             .Options;
-        return new FormsDbContext(options).WithTenant(new NullTenantContext()).WithSandbox(Sandbox.DisabledSandboxContext.Instance);
+        return new FormsDbContext(options).WithTenant(new NullTenantContext());
     }
 
     private sealed class NullTenantContext : ITenantContext
@@ -150,7 +127,6 @@ public static class FormsServiceCollectionExtensions
 
         services.AddDcmsDbContext<FormsDbContext>(connectionString, FormsDbContext.Schema);
 
-        services.TryAddScoped<ISandboxContext>(_ => Sandbox.DisabledSandboxContext.Instance);
         return services;
     }
 }

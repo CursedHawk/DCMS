@@ -85,9 +85,6 @@ namespace Dcms.Shared.Data.Migrations.Visitors
                     b.Property<DateTimeOffset?>("EmailVerifiedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<bool>("IsSandbox")
-                        .HasColumnType("boolean");
-
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("text");
@@ -97,7 +94,7 @@ namespace Dcms.Shared.Data.Migrations.Visitors
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "IsSandbox", "Email")
+                    b.HasIndex("TenantId", "Email")
                         .IsUnique();
 
                     b.ToTable("visitor_accounts", "visitors");
@@ -111,9 +108,6 @@ namespace Dcms.Shared.Data.Migrations.Visitors
 
                     b.Property<DateTimeOffset>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsSandbox")
-                        .HasColumnType("boolean");
 
                     b.Property<DateTimeOffset?>("RevokedAt")
                         .HasColumnType("timestamp with time zone");

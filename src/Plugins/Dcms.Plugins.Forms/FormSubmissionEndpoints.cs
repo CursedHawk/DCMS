@@ -87,12 +87,9 @@ internal static class FormSubmissionEndpoints
             metrics.FormSubmission(context.TenantId);
 
             // Everything below is after the write and best effort: the submission is already
-            // safe and visible in the admin, so a mail or bus problem must never cost it. Preview
-            // (sandbox) submissions are test data and stay silent.
-            if (!submission.IsSandbox)
-            {
-                await AfterSubmitAsync(context, instance, definition, payload, submission, logger, ct);
-            }
+            // safe and visible in the admin, so a mail or bus problem must never cost it. A
+            // submission from a site preview is a real one and notifies like one (ADR 0026).
+            await AfterSubmitAsync(context, instance, definition, payload, submission, logger, ct);
 
             return Results.Accepted(value: new
             {

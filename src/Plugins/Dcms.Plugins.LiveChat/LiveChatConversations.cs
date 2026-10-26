@@ -44,7 +44,7 @@ internal sealed class LiveChatConversations(IPluginContext context, ChatDbContex
 
     private IQueryable<ChatConversation> Conversations() =>
         db.Conversations.AsNoTracking().IgnoreQueryFilters()
-            .Where(c => c.TenantId == context.TenantId && !c.IsSandbox);
+            .Where(c => c.TenantId == context.TenantId);
 }
 
 /// <summary>

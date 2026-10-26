@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ToolSpec } from './contracts';
-import { DEFAULT_SCOPE, isSandboxTool, isTenantTool, storedScope, toolsFor } from './scope';
+import { DEFAULT_SCOPE, isTenantTool, storedScope, toolsFor } from './scope';
 
 const spec = (name: string, permission?: string): ToolSpec<unknown> => ({
   name,
@@ -14,7 +14,7 @@ const REGISTRY = [
   spec('read_file'),
   spec('edit_file'),
   spec('check_build'),
-  spec('sandbox_request'),
+  spec('preview_request'),
   spec('list_content'),
   spec('publish_content', 'content:publish'),
 ];
@@ -31,10 +31,9 @@ describe('classification', () => {
     expect(isTenantTool('read_file')).toBe(false);
   });
 
-  it('recognises sandbox tools by prefix', () => {
-    expect(isSandboxTool('sandbox_request')).toBe(true);
-    expect(isSandboxTool('sandbox_reset')).toBe(true);
-    expect(isSandboxTool('check_build')).toBe(false);
+  it('counts calling the site API as reaching the workspace', () => {
+    // A preview writes the environment's live data (ADR 0026), so it is no longer harmless.
+    expect(isTenantTool('preview_request')).toBe(true);
   });
 });
 
@@ -47,14 +46,10 @@ describe('toolsFor', () => {
     ]);
   });
 
-  it('adds tenant and sandbox tools when the scope widens', () => {
+  it('adds tenant tools when the scope widens', () => {
     const widened = names(toolsFor(REGISTRY, 'site+tenant', ALL_PERMS));
     expect(widened).toContain('list_content');
-    expect(widened).toContain('sandbox_request');
-  });
-
-  it('offers sandbox tools in sandbox scope', () => {
-    expect(names(toolsFor(REGISTRY, 'sandbox', ALL_PERMS))).toContain('sandbox_request');
+    expect(widened).toContain('preview_request');
   });
 
   it('removes a tool the caller has no permission for, rather than letting it fail', () => {
@@ -68,7 +63,7 @@ describe('toolsFor', () => {
   });
 
   it('never gates site tools on scope', () => {
-    for (const s of ['site', 'site+tenant', 'sandbox'] as const) {
+    for (const s of ['site', 'site+tenant'] as const) {
       expect(names(toolsFor(REGISTRY, s, ALL_PERMS))).toContain('edit_file');
     }
   });

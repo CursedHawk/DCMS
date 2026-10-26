@@ -30,7 +30,7 @@ public sealed record AnalyticsSummary(
 [DcmsContract("analytics.tracking", 1, Description = "Record events into, and summarise, the tenant's site analytics.")]
 public interface IAnalytics
 {
-    /// <summary>Queued, not written inline; a preview (sandbox) request records nothing.</summary>
+    /// <summary>Queued, not written inline; a site preview's request records nothing.</summary>
     [Operation(OpRisk.Safe, Description = "Record one analytics event.")]
     Task TrackAsync(TrackEvent input, CancellationToken ct);
 

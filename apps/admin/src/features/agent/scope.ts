@@ -9,9 +9,9 @@ import type { ToolSpec } from './contracts';
  * familiar mess where turning up autonomy silently widens reach — an operator who wanted the
  * agent to stop asking about edits does not thereby want it publishing articles.</p>
  */
-export type AgentScope = 'site' | 'site+tenant' | 'sandbox';
+export type AgentScope = 'site' | 'site+tenant';
 
-export const AGENT_SCOPES: readonly AgentScope[] = ['site', 'site+tenant', 'sandbox'];
+export const AGENT_SCOPES: readonly AgentScope[] = ['site', 'site+tenant'];
 
 /** The default: the agent edits code and nothing else. */
 export const DEFAULT_SCOPE: AgentScope = 'site';
@@ -35,16 +35,11 @@ const TENANT_PREFIXES = [
   'create_media_folder',
   'move_media',
   'delete_media',
+  'preview_request',
 ];
-
-const SANDBOX_PREFIXES = ['sandbox_'];
 
 export function isTenantTool(name: string): boolean {
   return TENANT_PREFIXES.includes(name);
-}
-
-export function isSandboxTool(name: string): boolean {
-  return SANDBOX_PREFIXES.some((p) => name.startsWith(p));
 }
 
 /**
@@ -67,10 +62,6 @@ export function toolsFor<T>(
 ): ToolSpec<T>[] {
   return tools.filter((tool) => {
     if (isTenantTool(tool.name) && scope === 'site') return false;
-    // Sandbox tools are the point of sandbox scope and harmless elsewhere, so they are offered
-    // in both widened scopes — trying an integration against throwaway data is exactly what an
-    // agent building a data-driven page should do before writing the real call.
-    if (isSandboxTool(tool.name) && scope === 'site') return false;
     if (tool.permission && !can(permissions, tool.permission)) return false;
     return true;
   });

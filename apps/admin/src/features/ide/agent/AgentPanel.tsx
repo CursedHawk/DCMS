@@ -93,7 +93,6 @@ const MODE_LABEL: Record<AiMode, string> = {
 const SCOPE_LABEL: Record<AgentScope, string> = {
   site: 'This site only',
   'site+tenant': 'Site + workspace content',
-  sandbox: 'Site + sandbox',
 };
 
 export function AgentPanel({

@@ -152,7 +152,6 @@ public sealed class AuditRecorder(
             SpanId = scope.SpanId,
 
             Http = scope.Http,
-            IsSandbox = scope.IsSandbox,
 
             Metadata = BuildMetadata(entry),
             Changes = entry.Changes,

@@ -200,10 +200,8 @@ export function PreviewPane({ preview, siteId }: { preview: PreviewControls; sit
       >
         <PreviewIdentityMenu auth={auth} />
         <PreviewVisitorMenu
-          siteId={siteId}
           visitor={visitorOfToken(lent['dcms.visitor'])}
           onSignOut={signOutVisitor}
-          onReset={signOutVisitor}
         />
       </PreviewAddressBar>
       <div className="relative min-h-0 flex-1">

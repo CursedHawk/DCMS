@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, cn } from '@dcms/ui';
 import type { ApprovalDecision, ToolCall, ToolSpec } from '../../agent/contracts';
 import { ALL_TOOLS } from './checkTools';
-import { SANDBOX_TOOLS, SKILL_TOOLS, TENANT_TOOLS } from './tenantTools';
+import { PREVIEW_TOOLS, SKILL_TOOLS, TENANT_TOOLS } from './tenantTools';
 import { useVfs } from '../../site-source/vfs';
 import { countLines, previewOf, previewTitle, PREVIEW_LINES, type ChangePreview } from './approval';
 
@@ -33,7 +33,7 @@ const SPECS = new Map<string, ToolSpec<unknown>>(
   [
     ...(ALL_TOOLS as unknown as ToolSpec<unknown>[]),
     ...(SKILL_TOOLS as unknown as ToolSpec<unknown>[]),
-    ...(SANDBOX_TOOLS as unknown as ToolSpec<unknown>[]),
+    ...(PREVIEW_TOOLS as unknown as ToolSpec<unknown>[]),
     ...(TENANT_TOOLS as unknown as ToolSpec<unknown>[]),
   ].map((spec) => [spec.name, spec]),
 );

@@ -75,6 +75,7 @@ public sealed class NotificationHub(IServiceProvider services, ILogger<Notificat
         using var rls = RlsScope.Tenant(tenantId);
         var tenancy = scope.ServiceProvider.GetRequiredService<TenancyDbContext>();
         var isMember = await tenancy.Memberships.IgnoreQueryFilters()
+            .ThatOpen(tenant.WorkspaceId is not null)
             .AnyAsync(m => m.TenantId == tenantId && m.UserId == userId);
         if (!isMember)
         {

@@ -43,10 +43,10 @@ public static class PluginDataSets
 /// <summary>
 /// A plugin's <c>dcms.storage</c> documents, for this instance and plugin-wide. Read straight
 /// from <c>plugins.plugin_data</c> because the contract lists one collection at a time; scoped
-/// the way <see cref="PluginStorage"/> scopes it — tenant, plugin and sandbox from the context,
+/// the way <see cref="PluginStorage"/> scopes it — tenant and plugin from the context,
 /// never from input. Rows are addressed by their row id.
 /// </summary>
-internal sealed class StoredDocumentsDataSet(IPluginContext context, CmsDbContext db, ISandboxContext sandbox) : IPluginDataSet
+internal sealed class StoredDocumentsDataSet(IPluginContext context, CmsDbContext db) : IPluginDataSet
 {
     private const string Instance = "instance";
     private const string Plugin = "plugin";
@@ -179,7 +179,7 @@ internal sealed class StoredDocumentsDataSet(IPluginContext context, CmsDbContex
     {
         var instanceId = context.Instance?.InstanceId;
         return db.PluginData.IgnoreQueryFilters().Where(d =>
-            d.TenantId == context.TenantId && d.IsSandbox == sandbox.IsSandbox && d.PluginId == context.PluginId
+            d.TenantId == context.TenantId && d.PluginId == context.PluginId
             && (d.InstanceId == null || d.InstanceId == instanceId));
     }
 

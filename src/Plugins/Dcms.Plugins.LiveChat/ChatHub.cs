@@ -313,18 +313,14 @@ public sealed class ChatHub(
             botResponder.Trigger(tenantId, conversationId, body);
         }
 
-        if (!conversation.IsSandbox)
-        {
-            await PublishAsync(scope.ServiceProvider, tenantId, logger,
-                firstFromVisitor ? new ChatConversationStarted(conversationId, conversation.VisitorName) : null,
-                new ChatMessageReceived(conversationId, message.Id, sender.ToString()));
-        }
+        await PublishAsync(scope.ServiceProvider, tenantId, logger,
+            firstFromVisitor ? new ChatConversationStarted(conversationId, conversation.VisitorName) : null,
+            new ChatMessageReceived(conversationId, message.Id, sender.ToString()));
     }
 
     /// <summary>
     /// Publishes the plugin's events after a message is stored. Best effort: realtime delivery
-    /// already happened, and a bus problem must never cost a chat line. Previews (sandbox
-    /// conversations) are test data and publish nothing — the callers check.
+    /// already happened, and a bus problem must never cost a chat line.
     /// </summary>
     internal static async Task PublishAsync(IServiceProvider scope, Guid tenantId, ILogger logger, params IPluginEvent?[] events)
     {

@@ -719,9 +719,6 @@
     "buildError": "Build error",
     "showPreview": "Preview",
     "hidePreview": "Hide preview",
-    "resetSandbox": "Reset sandbox",
-    "resetSandboxHint": "Clear the preview's test data (form submissions, sign-ups, chats). Live data is untouched.",
-    "sandboxReset": "Preview sandbox cleared",
     "conflictWarning": "Someone else changed these files while you were editing: {{files}}. Reload to get the latest version (your unsaved changes to those files will be lost).",
     "reloadLatest": "Reload latest",
     "git": {
@@ -2151,10 +2148,8 @@
     "visitorMenu": "Which visitor the preview is signed in as",
     "noVisitor": "No visitor",
     "visitorAs": "Visitor: {{name}}",
-    "visitorHint": "Visitors who sign in or register on the page here are test accounts in the preview's sandbox, never the site's real ones.",
-    "visitorSignOut": "Sign the visitor out",
-    "resetSandbox": "Reset test data",
-    "sandboxReset": "Preview test data cleared: test visitors, form submissions and chats."
+    "visitorHint": "Visitors who sign in or register on the page here are real visitors of this environment. To experiment without touching real accounts, preview in a development environment.",
+    "visitorSignOut": "Sign the visitor out"
   },
   "views": {
     "matchAll": "all",

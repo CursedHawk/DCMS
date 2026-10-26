@@ -37,11 +37,11 @@ internal static class AnalyticsIngestEndpoints
     public static void MapInstanceRoutes(IPluginEndpointBuilder endpoints)
     {
         endpoints.MapPost("/collect", async (
-            CollectRequest body, HttpContext http, IPluginContext context, ISandboxContext sandbox,
+            CollectRequest body, HttpContext http, IPluginContext context,
             IEventPublisher events, HeaderGeoIpResolver geo, CancellationToken ct) =>
         {
-            // Preview sandbox: swallow the beacon so real analytics stay clean.
-            if (!sandbox.IsSandbox)
+            // A site preview: swallow the beacon so the site's analytics stay the visitors'.
+            if (!http.Request.Headers.ContainsKey(PreviewRequest.Header))
             {
                 await PublishAsync(events, context.TenantId, body, http, geo, ct);
             }
@@ -56,7 +56,7 @@ internal static class AnalyticsIngestEndpoints
         // instance slug. Returns 202 even when analytics is disabled so the beacon never logs a
         // client-side error.
         app.MapPost("/api/collect", async (
-            CollectRequest body, HttpContext http, ITenantContext tenant, ISandboxContext sandbox,
+            CollectRequest body, HttpContext http, ITenantContext tenant,
             CmsDbContext cms, ICacheService cache, IEventPublisher events, HeaderGeoIpResolver geo, CancellationToken ct) =>
         {
             if (tenant.TenantId is not { } tenantId)
@@ -65,7 +65,7 @@ internal static class AnalyticsIngestEndpoints
             }
             // Cached like the status route: uncached, every page view on every site cost Postgres
             // a round trip before the beacon could answer (load test 2026-10-21, finding 4).
-            if (await CachedEnabledAsync(tenantId, cms, cache, ct) && !sandbox.IsSandbox)
+            if (!http.Request.Headers.ContainsKey(PreviewRequest.Header) && await CachedEnabledAsync(tenantId, cms, cache, ct))
             {
                 await PublishAsync(events, tenantId, body, http, geo, ct);
             }

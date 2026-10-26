@@ -178,7 +178,11 @@ public sealed record AuditEvent : IDcmsEvent
 
     public AuditHttpInfo? Http { get; init; }
 
-    /// <summary>Preview traffic is flagged, never hidden — a sandbox action is still an action.</summary>
+    /// <summary>
+    /// Written from the retired preview sandbox (ADR 0026). Nothing sets it any more; it stays
+    /// because it is part of the canonical form hashed into the audit chain, and records written
+    /// with it must keep verifying.
+    /// </summary>
     public bool IsSandbox { get; init; }
 
     /// <summary>Free-form per-action facts: bulk counts, commit shas, permission keys, reasons.</summary>

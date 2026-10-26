@@ -14,16 +14,13 @@ namespace Dcms.Shared.Data.Visitors;
 /// A website visitor account — a separate identity pool per tenant, distinct
 /// from the platform (admin) users in the identity service.
 /// </summary>
-public sealed class VisitorAccount : TenantEntity, ISandboxScoped
+public sealed class VisitorAccount : TenantEntity
 {
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
     public string? DisplayName { get; set; }
     public DateTimeOffset? EmailVerifiedAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-
-    /// <summary>True for accounts created from a site preview's sandbox.</summary>
-    public bool IsSandbox { get; set; }
 
     /// <summary>
     /// Profile attribute values as a JSON object, keyed by the attribute definitions in the
@@ -34,38 +31,22 @@ public sealed class VisitorAccount : TenantEntity, ISandboxScoped
 
 // Rotated every few minutes by every signed-in visitor: high volume, no signal. The sign-in itself is recorded.
 [AuditIgnore]
-public sealed class VisitorRefreshToken : TenantEntity, ISandboxScoped
+public sealed class VisitorRefreshToken : TenantEntity
 {
     public Guid VisitorId { get; set; }
     public string TokenHash { get; set; } = string.Empty;
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }
-    public bool IsSandbox { get; set; }
 }
 
 /// <summary>Owns the "visitors" schema. Used by content-api's VisitorAuth endpoints.</summary>
 public class VisitorsDbContext(DbContextOptions<VisitorsDbContext> options) : ScopedDbContext(options)
 {
-
-    private ISandboxContext? _sandbox;
-
-    protected override void OnBind(IServiceProvider scope) => _sandbox = scope.GetService<ISandboxContext>();
-
-    protected override void OnRelease() => _sandbox = null;
-
-    /// <summary>For a context built by hand: whether it acts for a site preview's sandbox.</summary>
-    public VisitorsDbContext WithSandbox(ISandboxContext sandbox)
-    {
-        _sandbox = sandbox;
-        return this;
-    }
-
     public const string Schema = "visitors";
 
     // An enclosing RlsScope.Tenant wins, as for CmsDbContext and the RLS GUC: plugin event
     // handlers and jobs read visitor profiles with no request behind them.
     private Guid CurrentTenantId => RlsScope.TenantOverride ?? TenantContext?.TenantId ?? Guid.Empty;
-    private bool CurrentSandbox => _sandbox?.IsSandbox ?? false;
 
     public DbSet<VisitorAccount> Accounts => Set<VisitorAccount>();
     public DbSet<VisitorRefreshToken> RefreshTokens => Set<VisitorRefreshToken>();
@@ -85,8 +66,8 @@ public class VisitorsDbContext(DbContextOptions<VisitorsDbContext> options) : Sc
             e.Property(a => a.Email).HasMaxLength(256).IsRequired();
             e.Property(a => a.DisplayName).HasMaxLength(256);
             e.Property(a => a.AttributesJson).HasColumnType("jsonb").HasDefaultValueSql("'{}'::jsonb");
-            e.HasIndex(a => new { a.TenantId, a.IsSandbox, a.Email }).IsUnique();
-            e.HasQueryFilter(a => a.TenantId == CurrentTenantId && a.IsSandbox == CurrentSandbox);
+            e.HasIndex(a => new { a.TenantId, a.Email }).IsUnique();
+            e.HasQueryFilter(a => a.TenantId == CurrentTenantId);
         });
 
         builder.Entity<VisitorRefreshToken>(e =>
@@ -95,7 +76,7 @@ public class VisitorsDbContext(DbContextOptions<VisitorsDbContext> options) : Sc
             e.HasKey(t => t.Id);
             e.Property(t => t.TokenHash).HasMaxLength(128).IsRequired();
             e.HasIndex(t => t.TokenHash);
-            e.HasQueryFilter(t => t.TenantId == CurrentTenantId && t.IsSandbox == CurrentSandbox);
+            e.HasQueryFilter(t => t.TenantId == CurrentTenantId);
         });
     }
 
@@ -118,7 +99,6 @@ public class VisitorsDbContext(DbContextOptions<VisitorsDbContext> options) : Sc
         {
             return;
         }
-        var sandbox = CurrentSandbox;
         foreach (var entry in ChangeTracker.Entries<TenantEntity>())
         {
             if (entry.State != EntityState.Added)
@@ -128,10 +108,6 @@ public class VisitorsDbContext(DbContextOptions<VisitorsDbContext> options) : Sc
             if (entry.Entity.TenantId == Guid.Empty)
             {
                 entry.Entity.TenantId = tenantId;
-            }
-            if (entry.Entity is ISandboxScoped sandboxed)
-            {
-                sandboxed.IsSandbox = sandbox;
             }
         }
     }
@@ -146,7 +122,7 @@ public sealed class VisitorsDbContextFactory : IDesignTimeDbContextFactory<Visit
                 "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev",
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", VisitorsDbContext.Schema))
             .Options;
-        return new VisitorsDbContext(options).WithTenant(new NullTenantContext()).WithSandbox(Sandbox.DisabledSandboxContext.Instance);
+        return new VisitorsDbContext(options).WithTenant(new NullTenantContext());
     }
 
     private sealed class NullTenantContext : ITenantContext
@@ -165,7 +141,6 @@ public static class VisitorsServiceCollectionExtensions
 
         services.AddDcmsDbContext<VisitorsDbContext>(connectionString, VisitorsDbContext.Schema);
 
-        services.TryAddScoped<ISandboxContext>(_ => Sandbox.DisabledSandboxContext.Instance);
         return services;
     }
 }

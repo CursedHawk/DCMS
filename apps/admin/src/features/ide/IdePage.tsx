@@ -6,7 +6,6 @@ import {
   EyeOff,
   RefreshCw,
   Rocket,
-  RotateCcw,
   Terminal,
   X,
 } from 'lucide-react';
@@ -77,7 +76,6 @@ export function IdePage({ siteId }: { siteId: string }) {
   // Shown for a brand-new (empty) site so the user picks what to scaffold.
   const [pickStarter, setPickStarter] = useState(false);
   const [starterFailed, setStarterFailed] = useState(false);
-  const [previewNonce, setPreviewNonce] = useState(0);
   const [palette, setPalette] = useState<{ open: boolean; mode: PaletteMode }>({
     open: false,
     mode: 'files',
@@ -85,7 +83,7 @@ export function IdePage({ siteId }: { siteId: string }) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // Driven here rather than inside PreviewPane: the Problems view lists the messages from this
   // same build, and a second usePreview would be a second worker bundling the same project.
-  const preview = usePreview(showPreview, siteId, previewNonce);
+  const preview = usePreview(showPreview, siteId);
   // Type problems come from Monaco's worker, which is attached whether or not the preview is,
   // so the Problems panel has something true to say even with the preview closed.
   const typeProblems = useTypeProblems();
@@ -213,21 +211,6 @@ export function IdePage({ siteId }: { siteId: string }) {
     if (!session.ready || restoredFor.current !== siteId) return;
     saveOpenDocs(siteId, branch, { openTabs, activePath });
   }, [openTabs, activePath, session.ready, siteId, branch]);
-
-  // Wipe the tenant's preview sandbox (test form submissions, visitors, chats),
-  // then force the iframe to rebuild so it reflects the cleared state.
-  const resetSandbox = useMutation({
-    mutationFn: () => api.post(`/admin/sites/${siteId}/preview/sandbox/reset`),
-    onSuccess: () => {
-      setPreviewNonce((n) => n + 1);
-      toast.success(t('ide.sandboxReset'));
-      appendOutput('workspace', t('ide.sandboxReset'));
-    },
-    onError: () => {
-      toast.error(t('errors.generic'));
-      appendOutput('workspace', t('ide.resetSandbox'), 'error');
-    },
-  });
 
   // Switching branches flushes the branch being left; the shared session handles
   // that. An unresolved conflict blocks the switch, because the draft the switch
@@ -380,13 +363,6 @@ export function IdePage({ siteId }: { siteId: string }) {
         run: () => publish.mutate(),
       },
       {
-        id: 'sandbox.reset',
-        label: t('ide.resetSandbox'),
-        keywords: 'clear test data',
-        disabled: resetSandbox.isPending,
-        run: () => resetSandbox.mutate(),
-      },
-      {
         id: 'shortcuts',
         label: t('ide.shortcuts.title'),
         shortcut: `${mod} ?`,
@@ -405,7 +381,6 @@ export function IdePage({ siteId }: { siteId: string }) {
     preview,
     generated,
     publish,
-    resetSandbox,
   ]);
 
   useIdeShortcuts(
@@ -483,14 +458,6 @@ export function IdePage({ siteId }: { siteId: string }) {
           title={t('ide.refreshGeneratedHint')}
         >
           <RefreshCw className="h-4 w-4" /> {t('ide.refreshGenerated')}
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={() => resetSandbox.mutate()}
-          disabled={resetSandbox.isPending}
-          title={t('ide.resetSandboxHint')}
-        >
-          <RotateCcw className="h-4 w-4" /> {t('ide.resetSandbox')}
         </Button>
         <Button
           variant="ghost"

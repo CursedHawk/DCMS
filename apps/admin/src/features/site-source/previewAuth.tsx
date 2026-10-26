@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Eraser, LogIn, LogOut, UserRound, Users } from 'lucide-react';
+import { Check, LogIn, LogOut, UserRound, Users } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -111,32 +111,20 @@ export type PreviewAuth = ReturnType<typeof usePreviewAuth>;
 
 /**
  * The visitor a preview is signed in as (Visitor Authentication). The page's own sign-in and
- * registration forms make test visitors in the preview's sandbox, never the site's real accounts,
- * so there is no "View as" here — register one. Nothing when no instance is switched on.
+ * registration forms make real visitors of this environment (ADR 0026: a preview acts on its
+ * environment's live data), so there is no "View as" here — register one, preferably in a
+ * development environment. Nothing when no instance is switched on.
  */
 export function PreviewVisitorMenu({
-  siteId,
   visitor,
   onSignOut,
-  onReset,
 }: {
-  siteId: string;
   visitor: { name?: string | null; email?: string | null } | null | undefined;
   onSignOut: () => void;
-  /** After the sandbox was reset: the visitor is gone, and the preview should draw again. */
-  onReset: () => void;
 }) {
   const { t } = useTranslation();
   const ui = usePluginUi();
   const installed = !!ui.data?.find((p) => p.pluginId === 'visitor-auth')?.instances.some((i) => i.enabled);
-  const reset = useMutation({
-    mutationFn: () => api.post(`/admin/sites/${siteId}/preview/sandbox/reset`),
-    onSuccess: () => {
-      onReset();
-      toast.success(t('previewAuth.sandboxReset'));
-    },
-    onError: () => toast.error(t('errors.generic')),
-  });
   if (!installed) return null;
   const label = visitor ? t('previewAuth.visitorAs', { name: visitor.name || visitor.email || '' }) : t('previewAuth.noVisitor');
   return (
@@ -155,9 +143,6 @@ export function PreviewVisitorMenu({
             <LogOut className="h-4 w-4" /> {t('previewAuth.visitorSignOut')}
           </DropdownMenuItem>
         ) : null}
-        <DropdownMenuItem disabled={reset.isPending} onSelect={() => reset.mutate()}>
-          <Eraser className="h-4 w-4" /> {t('previewAuth.resetSandbox')}
-        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

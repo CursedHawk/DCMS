@@ -160,7 +160,7 @@ Asking permission to save a draft is what teaches an operator to click Allow
 without reading — precisely the habit you do not want when the card says
 *publish*.
 
-Scope is `site` (default), `site+tenant`, or `sandbox`. **Full auto is never
+Scope is `site` (default) or `site+tenant`. **Full auto is never
 remembered across sessions** (`modes.ts:storedMode`): every other mode is a
 preference, that one is a decision to let publishing happen with nobody watching.
 
@@ -171,9 +171,8 @@ preference, that one is a decision to let publishing happen with nobody watching
 | Workspace | `project_overview` `list_files` `search` `read_file` `edit_file` `replace_lines` `insert_lines` `delete_lines` `create_file` `delete_file` `rename_file` |
 | Checks | `check_build` `check_types` `last_build` `dependencies` `preview_console` `preview_dom` `preview_text` |
 | Git | `git_status` `git_diff` `git_history` `git_branches` |
-| Sandbox | `sandbox_request` `sandbox_reset` |
 | Skills | `read_skill` |
-| Tenant | content, media, plugins, analytics — the console assistant's registry, reused |
+| Tenant | content, media, plugins, analytics — the console assistant's registry, reused — and `preview_request` (the site's own API; a POST is a real write, approved as one) |
 
 ### Plugin contract tools
 
@@ -428,9 +427,10 @@ Settled during the rework; not up for re-litigation without a new ADR.
 - **D7 — The existing four-mode risk model is the base** (`features/assistant/modes.ts`);
   the IDE's `auto`/`manual` pair is retired into it.
 - **D8 — No unrestricted shell.** Curated tools; sandboxed execution is specific tools.
-- **D9 — Sandbox = preview sandbox + real SiteBuilder build.** The agent can exercise tenant
-  APIs against `X-Dcms-Sandbox` and trigger a real sandboxed build and read its log. No scratch
-  branch — it works on the user's draft like the user does.
+- **D9 — Real SiteBuilder build, no data sandbox.** The agent can call the site's API through the
+  preview proxy (live data of the environment it is in — ADR 0026 retired the preview sandbox, so
+  safe experiments belong in a development environment) and trigger a real sandboxed build and
+  read its log. No scratch branch — it works on the user's draft like the user does.
 - **D10 — All `refetchInterval` polling goes.** The hub plus a refetch on reconnect and on window
   focus replaces it, everywhere including `apps/platform`.
 - **D11 — The index is a browser worker.** Hand-rolled TS/TSX scanner (imports, exports,

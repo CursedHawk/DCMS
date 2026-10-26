@@ -45,8 +45,6 @@ public sealed class AuditMiddleware(RequestDelegate next)
     /// </summary>
     public const string TraceHeader = "X-Dcms-Trace-Id";
 
-    private const string SandboxHeader = "X-Dcms-Sandbox";
-
     public async Task InvokeAsync(
         HttpContext context,
         IAuditRecorder recorder,
@@ -71,7 +69,6 @@ public sealed class AuditMiddleware(RequestDelegate next)
         // parented to it when the dispatcher publishes minutes later, with no current activity.
         scope.TraceParent = Activity.Current?.Id;
         scope.TraceState = Activity.Current?.TraceStateString;
-        scope.IsSandbox = context.Request.Headers.ContainsKey(SandboxHeader);
 
         // Echoed before the response starts, so a caller can quote it in a support ticket even
         // when the request goes on to fail.

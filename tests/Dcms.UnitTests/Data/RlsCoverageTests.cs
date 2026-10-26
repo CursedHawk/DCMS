@@ -41,7 +41,6 @@ public class RlsCoverageTests
     private const string Unused = "Host=localhost;Database=unused;Username=unused;Password=unused";
 
     private static readonly ITenantContext Tenant = Substitute.For<ITenantContext>();
-    private static readonly ISandboxContext Sandbox = Substitute.For<ISandboxContext>();
 
     private static DbContextOptions<T> Options<T>() where T : DbContext =>
         new DbContextOptionsBuilder<T>().UseNpgsql(Unused).Options;
@@ -55,9 +54,9 @@ public class RlsCoverageTests
         new AiDbContext(Options<AiDbContext>()),
         new SearchDbContext(Options<SearchDbContext>()).WithTenant(Tenant),
         new AnalyticsDbContext(Options<AnalyticsDbContext>()),
-        new VisitorsDbContext(Options<VisitorsDbContext>()).WithTenant(Tenant).WithSandbox(Sandbox),
-        new ChatDbContext(Options<ChatDbContext>()).WithTenant(Tenant).WithSandbox(Sandbox),
-        new FormsDbContext(Options<FormsDbContext>()).WithTenant(Tenant).WithSandbox(Sandbox),
+        new VisitorsDbContext(Options<VisitorsDbContext>()).WithTenant(Tenant),
+        new ChatDbContext(Options<ChatDbContext>()).WithTenant(Tenant),
+        new FormsDbContext(Options<FormsDbContext>()).WithTenant(Tenant),
         new SocialDbContext(Options<SocialDbContext>()).WithTenant(Tenant),
         new AppsDbContext(Options<AppsDbContext>()).WithTenant(Tenant),
         new UserAuthDbContext(Options<UserAuthDbContext>()).WithTenant(Tenant),

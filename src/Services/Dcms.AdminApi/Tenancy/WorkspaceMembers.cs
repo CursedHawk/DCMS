@@ -14,9 +14,8 @@ namespace Dcms.AdminApi.Tenancy;
 /// <para>The root holds the members: invitations, removals and departures happen there. Every
 /// other environment mirrors each root membership as a bare one, and the roles granted in that
 /// environment are what let the member in -- <see cref="TenantMembershipMiddleware"/> refuses a
-/// role-less membership in a workspace with environments. A root Owner is made an Owner in every
-/// environment; that is additive only, because an environment can have owners of its own (whoever
-/// created it, for one) and nothing tells the two apart.</para>
+/// role-less membership in a workspace with environments. Owner is the one role that is not the
+/// environment's own: an environment's owners are exactly the root's.</para>
 ///
 /// <para>Driven by <c>membership.changed</c> (<see cref="MembershipChangedConsumer"/>), which every
 /// membership write already publishes, so no path that changes a membership can forget this. Each
@@ -29,6 +28,20 @@ public sealed class WorkspaceMembers(
     IEventPublisher events,
     RepoAccessReconciler repoAccess)
 {
+    public const string OwnerIsTheWorkspaces =
+        "An environment's owners are the workspace's: grant or revoke Owner in the production environment.";
+
+    /// <summary>The Owner role of an environment other than the root, which only the mirror may grant.</summary>
+    public static async Task<bool> IsMirroredOwnerRoleAsync(
+        TenancyDbContext db, Dcms.Shared.Kernel.Abstractions.ITenantContext tenant, Guid roleId, CancellationToken ct)
+    {
+        if (!tenant.HasEnvironments || tenant.TenantId is not { } tenantId) return false;
+        var isRoot = await db.Tenants.AsNoTracking()
+            .AnyAsync(t => t.Id == tenantId.ToString() && t.WorkspaceId == tenantId, ct);
+        return !isRoot && await db.TenantRoles.AnyAsync(
+            r => r.Id == roleId && r.IsSystem && r.Name == TenantProvisioning.OwnerRole, ct);
+    }
+
     public async Task SyncUserAsync(Guid tenantId, Guid userId, CancellationToken ct)
     {
         // tenancy.tenants carries no policy.
@@ -161,15 +174,24 @@ public sealed class WorkspaceMembers(
             db.Memberships.Add(existing);
             changed = true;
         }
-        if (isOwner)
+        // Owner mirrors the root exactly, both ways: a root owner who is demoted or transferred
+        // away stops owning every environment at the same moment. Owner cannot be granted or
+        // revoked inside an environment for the same reason (TenancyEndpoints).
+        var ownerRoleId = await db.TenantRoles.IgnoreQueryFilters()
+            .Where(r => r.TenantId == environment && r.IsSystem && r.Name == TenantProvisioning.OwnerRole)
+            .Select(r => (Guid?)r.Id)
+            .FirstOrDefaultAsync(ct);
+        if (ownerRoleId is { } roleId)
         {
-            var ownerRoleId = await db.TenantRoles.IgnoreQueryFilters()
-                .Where(r => r.TenantId == environment && r.IsSystem && r.Name == TenantProvisioning.OwnerRole)
-                .Select(r => (Guid?)r.Id)
-                .FirstOrDefaultAsync(ct);
-            if (ownerRoleId is { } roleId && existing.Roles.All(r => r.TenantRoleId != roleId))
+            var held = existing.Roles.FirstOrDefault(r => r.TenantRoleId == roleId);
+            if (isOwner && held is null)
             {
                 existing.Roles.Add(new MemberRole { Id = Guid.NewGuid(), TenantId = environment, MembershipId = existing.Id, TenantRoleId = roleId });
+                changed = true;
+            }
+            else if (!isOwner && held is not null)
+            {
+                db.MemberRoles.Remove(held);
                 changed = true;
             }
         }

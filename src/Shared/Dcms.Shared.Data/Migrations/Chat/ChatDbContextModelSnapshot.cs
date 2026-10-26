@@ -18,10 +18,45 @@ namespace Dcms.Shared.Data.Migrations.Chat
 #pragma warning disable 612, 618
             modelBuilder
                 .HasDefaultSchema("chat")
-                .HasAnnotation("ProductVersion", "10.0.9")
+                .HasAnnotation("ProductVersion", "10.0.11")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("Dcms.Shared.Data.Audit.AuditOutboxMessage", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset?>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("audit_outbox", "audit", t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
 
             modelBuilder.Entity("Dcms.Shared.Data.Chat.ChatConversation", b =>
                 {
@@ -31,9 +66,6 @@ namespace Dcms.Shared.Data.Migrations.Chat
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsSandbox")
-                        .HasColumnType("boolean");
 
                     b.Property<DateTimeOffset>("LastMessageAt")
                         .HasColumnType("timestamp with time zone");
@@ -54,7 +86,7 @@ namespace Dcms.Shared.Data.Migrations.Chat
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "IsSandbox", "Status", "LastMessageAt");
+                    b.HasIndex("TenantId", "Status", "LastMessageAt");
 
                     b.ToTable("conversations", "chat");
                 });
@@ -73,9 +105,6 @@ namespace Dcms.Shared.Data.Migrations.Chat
                     b.Property<Guid>("ConversationId")
                         .HasColumnType("uuid");
 
-                    b.Property<bool>("IsSandbox")
-                        .HasColumnType("boolean");
-
                     b.Property<DateTimeOffset?>("ReadAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -93,7 +122,7 @@ namespace Dcms.Shared.Data.Migrations.Chat
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TenantId", "IsSandbox", "ConversationId", "SentAt");
+                    b.HasIndex("TenantId", "ConversationId", "SentAt");
 
                     b.ToTable("messages", "chat");
                 });

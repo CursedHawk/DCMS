@@ -17,13 +17,12 @@ namespace Dcms.AdminApi.Sites;
 /// public domain. The preview iframe runs the site's own code, which fetches
 /// <c>/api/...</c> with no admin token — so this is a site:edit-gated,
 /// same-origin reverse proxy to content-api's delivery API that resolves the
-/// tenant from the site id and forces the per-tenant sandbox (X-Dcms-Sandbox)
-/// so preview writes never touch live data.
+/// tenant from the site id. A preview acts on its environment's live data, as the
+/// site does (ADR 0026); it is marked only so analytics can leave it out.
 ///
 /// It only ever proxies as the caller's own tenant: the site is resolved under
 /// the tenant query filter, so a siteId owned by another tenant is a 404.
-/// (SEC-14 — it was previously anonymous and cross-tenant.) A companion
-/// endpoint resets the tenant's sandbox.
+/// (SEC-14 — it was previously anonymous and cross-tenant.)
 /// </summary>
 public static class SitePreviewEndpoints
 {
@@ -38,12 +37,12 @@ public static class SitePreviewEndpoints
         app.MapMethods("/api/admin/sites/{siteId:guid}/preview/api/{**path}", ProxyMethods, ProxyAsync)
             // SEC-14: this was unauthenticated and resolved the target tenant from the siteId
             // with IgnoreQueryFilters(), so an anonymous caller could proxy to content-api as any
-            // tenant's sandbox. It now requires site:edit and resolves the site under the tenant
+            // tenant. It now requires site:edit and resolves the site under the tenant
             // filter, so a foreign or unknown siteId is a 404 and the proxy only ever acts as the
             // caller's own tenant.
             .RequirePermission(PlatformPermissions.SiteEdit)
             .AuditExempt("Transparent proxy to content-api. The real action is recorded there, "
-                       + "against the sandbox tenant; recording it here too would double every "
+                       + "against the tenant; recording it here too would double every "
                        + "preview interaction.");
 
         /*
@@ -69,63 +68,6 @@ public static class SitePreviewEndpoints
             return Results.Ok(new { tenantId, host });
         }).RequirePermission(PlatformPermissions.SiteEdit);
 
-        // Wipe the tenant's preview sandbox (forms / visitors / chat / plugin documents). Destructive, so it
-        // takes site:edit like every other site endpoint — a bare RequireAuthorization() here
-        // let any authenticated account, member or not, delete another tenant's sandbox rows.
-        app.MapPost("/api/admin/sites/{siteId:guid}/preview/sandbox/reset", async (
-            Guid siteId, SitesDbContext sites, FormsDbContext forms,
-            VisitorsDbContext visitors, ChatDbContext chat, CmsDbContext cms,
-            ITenantContext tenant, IAuditRecorder audit, AuditScope scope, CancellationToken ct) =>
-        {
-            if (tenant.TenantId is not { } tenantId)
-            {
-                return Results.Unauthorized();
-            }
-            // The tenant query filter confirms the site belongs to the caller's tenant.
-            if (!await sites.Sites.AsNoTracking().AnyAsync(s => s.Id == siteId, ct))
-            {
-                return Results.NotFound();
-            }
-
-            // Six statements, one act. The per-table breakdown is what a tenant asking
-            // "what did reset actually remove?" wants, so it is recorded here rather than
-            // left to five records that never mention the sandbox.
-            using var _ = scope.SuppressBulkCapture();
-
-            // rls: request tenant. tenantId is the request's own; IgnoreQueryFilters() here is for the
-            // sandbox filter, not the tenant one, so the database's narrowing already matches (ADR 0015).
-            var submissions = await forms.Submissions.IgnoreQueryFilters()
-                .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
-            var messages = await chat.Messages.IgnoreQueryFilters()
-                .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
-            var conversations = await chat.Conversations.IgnoreQueryFilters()
-                .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
-            var tokens = await visitors.RefreshTokens.IgnoreQueryFilters()
-                .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
-            var accounts = await visitors.Accounts.IgnoreQueryFilters()
-                .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
-
-            // Documents plugins wrote through dcms.storage@1 while running in a preview.
-            var pluginData = await cms.PluginData.IgnoreQueryFilters()
-                .Where(x => x.TenantId == tenantId && x.IsSandbox).ExecuteDeleteAsync(ct);
-
-            var deleted = submissions + messages + conversations + tokens + accounts + pluginData;
-
-            audit.Declared?
-                .With("deleted", deleted)
-                .With("rows", new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["forms.submissions"] = submissions,
-                    ["chat.messages"] = messages,
-                    ["chat.conversations"] = conversations,
-                    ["visitors.refresh_tokens"] = tokens,
-                    ["visitors.accounts"] = accounts,
-                    ["plugins.plugin_data"] = pluginData,
-                });
-
-            return Results.Ok(new { deleted });
-        }).RequirePermission(PlatformPermissions.SiteEdit)
-          .WithAudit(AuditActions.SitePreviewReset, "site");
 
         return app;
     }
@@ -159,7 +101,7 @@ public static class SitePreviewEndpoints
             }
         }
         request.Headers.TryAddWithoutValidation("X-Dcms-Tenant", slug);
-        request.Headers.TryAddWithoutValidation("X-Dcms-Sandbox", "1");
+        request.Headers.TryAddWithoutValidation(PreviewRequest.Header, "1");
         // The site user the preview is signed in as (#269). Only the edge sets this header — it
         // strips any copy a browser sends — from the preview session it holds for this browser;
         // content-api accepts it only for this tenant's realm.
@@ -167,10 +109,9 @@ public static class SitePreviewEndpoints
         {
             request.Headers.TryAddWithoutValidation(RealmTokenHeader, realmToken.ToArray());
         }
-        // The visitor the preview signed in (Visitor Authentication, in the sandbox): their own
-        // bearer, which cannot travel as Authorization here — that header is the console's. It
-        // grants nothing the caller could not get by calling the site's API directly, and the
-        // sandbox header keeps it to sandbox accounts.
+        // The visitor the preview signed in (Visitor Authentication): their own bearer, which
+        // cannot travel as Authorization here — that header is the console's. It grants nothing
+        // the caller could not get by calling the site's API directly.
         if (http.Request.Headers.TryGetValue(VisitorTokenHeader, out var visitorToken)
             && visitorToken.ToString() is { Length: > 0 and < 4096 } token
             && token.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.'))
@@ -185,7 +126,7 @@ public static class SitePreviewEndpoints
         var client = httpClientFactory.CreateClient("content-api");
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
 
-        // content-api recorded any refusal itself, against the sandbox tenant.
+        // content-api recorded any refusal itself, against the tenant.
         audit.StatusRelayed = true;
         http.Response.StatusCode = (int)response.StatusCode;
         if (response.Content.Headers.ContentType is { } responseType)

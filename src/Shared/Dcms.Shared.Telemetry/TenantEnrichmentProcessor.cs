@@ -29,7 +29,6 @@ public sealed class TenantEnrichmentProcessor(AuditAmbient ambient) : BaseProces
     public const string TenantIdTag = "dcms.tenant.id";
     public const string ActorKindTag = "dcms.actor.kind";
     public const string CorrelationIdTag = "dcms.correlation_id";
-    public const string SandboxTag = "dcms.sandbox";
 
     public override void OnEnd(Activity activity)
     {
@@ -52,11 +51,6 @@ public sealed class TenantEnrichmentProcessor(AuditAmbient ambient) : BaseProces
         // ResolveActor() runs the middleware's lazy resolver, which reads the principal. Safe
         // here and not at start: authentication has run by the time any span ends.
         activity.SetTag(ActorKindTag, scope.ResolveActor().Kind.ToString());
-
-        if (scope.IsSandbox)
-        {
-            activity.SetTag(SandboxTag, true);
-        }
 
         base.OnEnd(activity);
     }

@@ -18,7 +18,8 @@ internal sealed class AnalyticsTracking(IPluginContext context, IServiceProvider
         {
             throw new ContractValidationException("Type is required, at most 64 characters.");
         }
-        if (services.GetService<ISandboxContext>() is { IsSandbox: true })
+        if (services.GetService<Microsoft.AspNetCore.Http.IHttpContextAccessor>()?.HttpContext?.Request.Headers
+                .ContainsKey(PreviewRequest.Header) == true)
         {
             return;
         }

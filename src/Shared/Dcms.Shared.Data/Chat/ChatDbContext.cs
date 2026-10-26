@@ -29,19 +29,16 @@ public enum ChatConversationStatus
 /// The visitor may be authenticated (VisitorId set) or anonymous (identified
 /// only by the client-supplied display name + the SignalR connection).
 /// </summary>
-public sealed class ChatConversation : TenantEntity, ISandboxScoped
+public sealed class ChatConversation : TenantEntity
 {
     public Guid? VisitorId { get; set; }
     public string VisitorName { get; set; } = "Visitor";
     public ChatConversationStatus Status { get; set; } = ChatConversationStatus.Open;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset LastMessageAt { get; set; } = DateTimeOffset.UtcNow;
-
-    /// <summary>True for conversations started from a site preview's sandbox.</summary>
-    public bool IsSandbox { get; set; }
 }
 
-public sealed class ChatMessage : TenantEntity, ISandboxScoped
+public sealed class ChatMessage : TenantEntity
 {
     public Guid ConversationId { get; set; }
     public ChatSender Sender { get; set; }
@@ -51,30 +48,14 @@ public sealed class ChatMessage : TenantEntity, ISandboxScoped
     public string Body { get; set; } = string.Empty;
     public DateTimeOffset SentAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ReadAt { get; set; }
-    public bool IsSandbox { get; set; }
 }
 
 /// <summary>Owns the "chat" schema. Read/written by content-api (visitor hub) and admin-api (agent console).</summary>
 public class ChatDbContext(DbContextOptions<ChatDbContext> options) : ScopedDbContext(options)
 {
-
-    private ISandboxContext? _sandbox;
-
-    protected override void OnBind(IServiceProvider scope) => _sandbox = scope.GetService<ISandboxContext>();
-
-    protected override void OnRelease() => _sandbox = null;
-
-    /// <summary>For a context built by hand: whether it acts for a site preview's sandbox.</summary>
-    public ChatDbContext WithSandbox(ISandboxContext sandbox)
-    {
-        _sandbox = sandbox;
-        return this;
-    }
-
     public const string Schema = "chat";
 
     private Guid CurrentTenantId => TenantContext?.TenantId ?? Guid.Empty;
-    private bool CurrentSandbox => _sandbox?.IsSandbox ?? false;
 
     public DbSet<ChatConversation> Conversations => Set<ChatConversation>();
     public DbSet<ChatMessage> Messages => Set<ChatMessage>();
@@ -93,8 +74,8 @@ public class ChatDbContext(DbContextOptions<ChatDbContext> options) : ScopedDbCo
             e.HasKey(c => c.Id);
             e.Property(c => c.VisitorName).HasMaxLength(256).IsRequired();
             e.Property(c => c.Status).HasConversion<int>();
-            e.HasIndex(c => new { c.TenantId, c.IsSandbox, c.Status, c.LastMessageAt });
-            e.HasQueryFilter(c => c.TenantId == CurrentTenantId && c.IsSandbox == CurrentSandbox);
+            e.HasIndex(c => new { c.TenantId, c.Status, c.LastMessageAt });
+            e.HasQueryFilter(c => c.TenantId == CurrentTenantId);
         });
 
         builder.Entity<ChatMessage>(e =>
@@ -103,8 +84,8 @@ public class ChatDbContext(DbContextOptions<ChatDbContext> options) : ScopedDbCo
             e.HasKey(m => m.Id);
             e.Property(m => m.Sender).HasConversion<int>();
             e.Property(m => m.Body).HasMaxLength(8000).IsRequired();
-            e.HasIndex(m => new { m.TenantId, m.IsSandbox, m.ConversationId, m.SentAt });
-            e.HasQueryFilter(m => m.TenantId == CurrentTenantId && m.IsSandbox == CurrentSandbox);
+            e.HasIndex(m => new { m.TenantId, m.ConversationId, m.SentAt });
+            e.HasQueryFilter(m => m.TenantId == CurrentTenantId);
         });
     }
 
@@ -127,7 +108,6 @@ public class ChatDbContext(DbContextOptions<ChatDbContext> options) : ScopedDbCo
         {
             return;
         }
-        var sandbox = CurrentSandbox;
         foreach (var entry in ChangeTracker.Entries<TenantEntity>())
         {
             if (entry.State != EntityState.Added)
@@ -137,10 +117,6 @@ public class ChatDbContext(DbContextOptions<ChatDbContext> options) : ScopedDbCo
             if (entry.Entity.TenantId == Guid.Empty)
             {
                 entry.Entity.TenantId = tenantId;
-            }
-            if (entry.Entity is ISandboxScoped sandboxed)
-            {
-                sandboxed.IsSandbox = sandbox;
             }
         }
     }
@@ -155,7 +131,7 @@ public sealed class ChatDbContextFactory : IDesignTimeDbContextFactory<ChatDbCon
                 "Host=localhost;Port=5432;Database=dcms;Username=dcms;Password=dcms-dev",
                 npgsql => npgsql.MigrationsHistoryTable("__ef_migrations_history", ChatDbContext.Schema))
             .Options;
-        return new ChatDbContext(options).WithTenant(new NullTenantContext()).WithSandbox(Sandbox.DisabledSandboxContext.Instance);
+        return new ChatDbContext(options).WithTenant(new NullTenantContext());
     }
 
     private sealed class NullTenantContext : ITenantContext
@@ -174,7 +150,6 @@ public static class ChatServiceCollectionExtensions
 
         services.AddDcmsDbContext<ChatDbContext>(connectionString, ChatDbContext.Schema);
 
-        services.TryAddScoped<ISandboxContext>(_ => Sandbox.DisabledSandboxContext.Instance);
         return services;
     }
 }

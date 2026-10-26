@@ -44,9 +44,6 @@ public sealed class AuditScope
     /// </summary>
     public Guid? TenantId { get; set; }
 
-    /// <summary>Preview traffic. Recorded, never dropped — a sandbox action is still an action.</summary>
-    public bool IsSandbox { get; set; }
-
     /// <summary>
     /// Explicit actor for a unit of work whose caller cannot be read from claims: the
     /// HMAC-verified git webhook, a worker, or a consumer replaying a user's action. Null

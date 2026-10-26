@@ -144,18 +144,14 @@ public sealed class ChatBotResponder(
             SenderId = null,
             Body = reply,
             SentAt = now,
-            IsSandbox = conversation.IsSandbox,
         };
         chat.Messages.Add(message);
         conversation.LastMessageAt = now;
         await chat.SaveChangesAsync(ct);
 
         metrics.ChatMessage(tenantId, ChatSender.Bot.ToString());
-        if (!conversation.IsSandbox)
-        {
-            await ChatHub.PublishAsync(sp, tenantId, logger,
-                new Api.ChatMessageReceived(conversationId, message.Id, ChatSender.Bot.ToString()));
-        }
+        await ChatHub.PublishAsync(sp, tenantId, logger,
+            new Api.ChatMessageReceived(conversationId, message.Id, ChatSender.Bot.ToString()));
 
         var dto = new
         {
