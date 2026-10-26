@@ -340,27 +340,45 @@ public static class EnvironmentEndpoints
             {
                 return Results.BadRequest(new { error = "A link names another environment of this workspace." });
             }
-            if (body.Kind != EnvironmentLinkKinds.App || string.IsNullOrWhiteSpace(body.TargetKey)
-                || !Enum.TryParse<EnvironmentLinkAccess>(body.Access, ignoreCase: true, out var access))
+            EnvironmentLinkAccess access;
+            if (body.Kind == EnvironmentLinkKinds.Users)
             {
-                return Results.BadRequest(new { error = "An app link names the app's address and read or readWrite access." });
-            }
-            // Only an app the target has: anything else under /api is the platform's own routes.
-            using (Dcms.Shared.Data.Rls.RlsScope.Tenant(body.TargetTenantId))
-            {
-                if (!await cms.PluginInstances.IgnoreQueryFilters().AnyAsync(p => p.TenantId == body.TargetTenantId && p.Slug == body.TargetKey, ct))
+                // Sign-in through the target's realm. One realm per environment, and never a
+                // chain: the target signs its own people in, and nobody signs in through this one.
+                access = EnvironmentLinkAccess.Read;
+                using var platform = Dcms.Shared.Data.Rls.RlsScope.Platform();
+                if (await db.EnvironmentLinks.IgnoreQueryFilters().AnyAsync(l => l.Kind == EnvironmentLinkKinds.Users
+                        && (l.TenantId == id || l.TenantId == body.TargetTenantId || l.TargetTenantId == id), ct))
                 {
-                    return Results.BadRequest(new { error = "That environment has no app at this address." });
+                    return Results.Conflict(new { error = "An environment takes its users from one other environment, which keeps its own." });
                 }
             }
-            using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
-            if (await db.EnvironmentLinks.IgnoreQueryFilters().AnyAsync(l => l.TenantId == id && l.Kind == body.Kind && l.TargetKey == body.TargetKey, ct))
+            else
             {
-                return Results.Conflict(new { error = "This app is already linked." });
+                if (body.Kind != EnvironmentLinkKinds.App || string.IsNullOrWhiteSpace(body.TargetKey)
+                    || !Enum.TryParse(body.Access, ignoreCase: true, out access))
+                {
+                    return Results.BadRequest(new { error = "An app link names the app's address and read or readWrite access." });
+                }
+                // Only an app the target has: anything else under /api is the platform's own routes.
+                using (Dcms.Shared.Data.Rls.RlsScope.Tenant(body.TargetTenantId))
+                {
+                    if (!await cms.PluginInstances.IgnoreQueryFilters().AnyAsync(p => p.TenantId == body.TargetTenantId && p.Slug == body.TargetKey, ct))
+                    {
+                        return Results.BadRequest(new { error = "That environment has no app at this address." });
+                    }
+                }
+                using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
+                if (await db.EnvironmentLinks.IgnoreQueryFilters().AnyAsync(l => l.TenantId == id && l.Kind == body.Kind && l.TargetKey == body.TargetKey, ct))
+                {
+                    return Results.Conflict(new { error = "This app is already linked." });
+                }
             }
+            using var scope = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
             var link = new EnvironmentLink
             {
-                Id = Guid.NewGuid(), TenantId = id, TargetTenantId = body.TargetTenantId, Kind = body.Kind, TargetKey = body.TargetKey.Trim(), Access = access,
+                Id = Guid.NewGuid(), TenantId = id, TargetTenantId = body.TargetTenantId, Kind = body.Kind,
+                TargetKey = body.Kind == EnvironmentLinkKinds.Users ? null : body.TargetKey!.Trim(), Access = access,
             };
             db.EnvironmentLinks.Add(link);
             audit.Declared?.For("environment_link", link.Id, link.TargetKey).With("target", link.TargetTenantId).With("access", access.ToString());
@@ -445,5 +463,5 @@ public static class EnvironmentEndpoints
     private sealed record CreateEnvironmentRequest(string? Name, bool? Empty);
     private sealed record UpdateEnvironmentRequest(string? Name, int? Order, List<Guid>? PromotesFrom);
     private sealed record PolicyRequest(string Kind, string? ItemKey, string Mode);
-    private sealed record LinkRequest(string Kind, Guid TargetTenantId, string? TargetKey, string Access);
+    private sealed record LinkRequest(string Kind, Guid TargetTenantId, string? TargetKey, string? Access);
 }

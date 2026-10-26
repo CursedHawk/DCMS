@@ -156,7 +156,7 @@ export function useSavePolicies(environmentId: string) {
 
 export interface EnvironmentLink {
   id: string;
-  kind: 'app';
+  kind: 'app' | 'users';
   targetTenantId: string;
   targetKey: string | null;
   access: 'Read' | 'ReadWrite';
@@ -173,8 +173,11 @@ export function useLinkMutations(environmentId: string) {
   const onSuccess = () => void qc.invalidateQueries({ queryKey: ['environments', 'links', environmentId] });
   return {
     add: useMutation({
-      mutationFn: (body: { targetTenantId: string; targetKey: string; access: 'read' | 'readWrite' }) =>
-        api.post(`/admin/environments/${environmentId}/links`, { kind: 'app', ...body }),
+      mutationFn: (
+        body:
+          | { kind: 'app'; targetTenantId: string; targetKey: string; access: 'read' | 'readWrite' }
+          | { kind: 'users'; targetTenantId: string },
+      ) => api.post(`/admin/environments/${environmentId}/links`, body),
       onSuccess,
     }),
     remove: useMutation({

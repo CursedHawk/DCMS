@@ -296,9 +296,9 @@ function OwnershipGrid({ environmentId }: { environmentId: string }) {
 }
 
 /**
- * Apps this environment uses from another one (ADR 0026): its site's /api/{address} is served by
- * that environment's app — production's real articles in development, say — read only, or read
- * and write.
+ * What this environment uses from another one (ADR 0026): apps — its site's /api/{address} is
+ * served by that environment's app, production's real articles in development, say — read only, or
+ * read and write; and site users — its sites sign people in through that environment's users.
  */
 function Links({ env, all }: { env: Environment; all: Environment[] }) {
   const { t } = useTranslation();
@@ -308,13 +308,55 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
   const [target, setTarget] = useState(others[0]?.tenantId ?? '');
   const [address, setAddress] = useState('');
   const [access, setAccess] = useState<'read' | 'readWrite'>('read');
+  const [usersFrom, setUsersFrom] = useState(others[0]?.tenantId ?? '');
   const nameOf = (id: string) => all.find((e) => e.tenantId === id)?.name ?? id;
   const onError = (err: unknown) => toastApiError(err, t);
+  const usersLink = (links.data ?? []).find((l) => l.kind === 'users');
 
   return (
     <fieldset className="flex flex-col gap-1.5">
       <legend className="mb-1 text-xs font-medium text-muted-foreground">{t('environments.links')}</legend>
-      {(links.data ?? []).map((l) => (
+      {usersLink ? (
+        <div className="flex items-center gap-2 text-sm">
+          <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="min-w-0 truncate">{t('environments.usersLinkRow', { name: nameOf(usersLink.targetTenantId) })}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto"
+            aria-label={t('environments.usersUnlink')}
+            onClick={() => remove.mutate(usersLink.id, { onError })}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      ) : (
+        <form
+          className="flex flex-col gap-2 sm:flex-row sm:items-center"
+          onSubmit={(e) => {
+            e.preventDefault();
+            add.mutate({ kind: 'users', targetTenantId: usersFrom }, { onError });
+          }}
+        >
+          <span className="text-sm text-muted-foreground sm:flex-1">{t('environments.usersLinkHint')}</span>
+          <Select value={usersFrom} onValueChange={setUsersFrom}>
+            <SelectTrigger className="sm:w-40" aria-label={t('environments.linkFrom')}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {others.map((o) => (
+                <SelectItem key={o.tenantId} value={o.tenantId}>
+                  {o.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button type="submit" variant="outline" disabled={!usersFrom || add.isPending}>
+            <Link2 className="h-4 w-4" /> {t('environments.usersLink')}
+          </Button>
+        </form>
+      )}
+      {(links.data ?? []).filter((l) => l.kind === 'app').map((l) => (
         <div key={l.id} className="flex items-center gap-2 text-sm">
           <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
           <span className="min-w-0 truncate">
@@ -336,7 +378,10 @@ function Links({ env, all }: { env: Environment; all: Environment[] }) {
         className="flex flex-col gap-2 sm:flex-row sm:items-center"
         onSubmit={(e) => {
           e.preventDefault();
-          add.mutate({ targetTenantId: target, targetKey: address.trim(), access }, { onSuccess: () => setAddress(''), onError });
+          add.mutate(
+            { kind: 'app', targetTenantId: target, targetKey: address.trim(), access },
+            { onSuccess: () => setAddress(''), onError },
+          );
         }}
       >
         <Input

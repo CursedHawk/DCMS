@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Dcms.Plugins.UserAuth.Api;
+using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Kernel.Abstractions;
 using Dcms.Shared.Security;
 using Microsoft.AspNetCore.Authentication;
@@ -16,7 +17,8 @@ namespace Dcms.Plugins.UserAuth;
 /// forwards for a signed-in site session, in <see cref="TokenHeader"/>. Signed by identity like
 /// every DCMS token, and accepted only for the request's tenant — its audience is
 /// <c>dcms.realm:{tenantId}</c> and its <c>realm</c> claim that tenant — so a token from one
-/// tenant's site is nobody on another's. Never the default scheme, like <c>DcmsVisitor</c>.
+/// tenant's site is nobody on another's. An environment whose sites take their users from another
+/// (ADR 0026) accepts that environment's tokens instead of its own. Never the default scheme, like <c>DcmsVisitor</c>.
 ///
 /// <para>The principal keeps that audience, which is what <c>HttpCurrentActor</c> reads to
 /// report <see cref="ActorKind.EndUser"/>, so the audit log names the user.</para>
@@ -72,17 +74,23 @@ public static class UserAuthentication
                     }
                     return Task.CompletedTask;
                 },
-                OnTokenValidated = context =>
+                OnTokenValidated = async context =>
                 {
-                    var tenant = context.HttpContext.RequestServices.GetRequiredService<ITenantContext>().TenantId;
+                    var services = context.HttpContext.RequestServices;
+                    var tenant = services.GetRequiredService<ITenantContext>();
                     var principal = context.Principal!;
-                    if (tenant is not { } tenantId
-                        || !principal.HasClaim("aud", Audience(tenantId))
-                        || principal.FindFirstValue("realm") != tenantId.ToString())
+                    // The realm the tenant's sites sign in through: its own, or — for an environment
+                    // that takes its users from another (ADR 0026) — that one's, and then only that one's.
+                    // ponytail: one indexed read per signed-in request in a workspace with environments; cache it if that shows.
+                    Guid? realm = tenant.TenantId is not { } tenantId ? null
+                        : tenant.HasEnvironments ? await EnvironmentRealm.OfAsync(services.GetRequiredService<TenancyDbContext>(), tenantId, context.HttpContext.RequestAborted)
+                        : tenantId;
+                    if (realm is not { } realmId
+                        || !principal.HasClaim("aud", Audience(realmId))
+                        || principal.FindFirstValue("realm") != realmId.ToString())
                     {
                         context.Fail("The user token belongs to another tenant.");
                     }
-                    return Task.CompletedTask;
                 },
             };
         });

@@ -289,6 +289,12 @@ public sealed class EdgeSiteGate
     public string RealmSlug { get; set; } = string.Empty;
 
     /// <summary>
+    /// Whose realm that is, when not the tenant's own: an environment whose sites sign people in
+    /// through another environment's users (ADR 0026). The row stays the host's tenant's.
+    /// </summary>
+    public Guid? RealmTenantId { get; set; }
+
+    /// <summary>
     /// The site's ordered rules as JSON: <c>[{ "prefix": "/portal", "access": "groups", "groups": ["…"] }]</c>.
     /// The first rule whose prefix matches decides; a path no rule matches is public.
     /// </summary>

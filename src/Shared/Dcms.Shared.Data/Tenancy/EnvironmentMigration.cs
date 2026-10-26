@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 namespace Dcms.Shared.Data.Tenancy;
 
 /// <summary>
@@ -91,6 +93,9 @@ public static class EnvironmentPolicies
 /// <list type="bullet">
 /// <item><c>app</c>: the consumer's <c>/api/{TargetKey}</c> is served by the target's app of that
 /// slug — its published content, its Dynamic Apps data — read only, or read and write.</item>
+/// <item><c>users</c>: the consumer's sites sign people in through the target's realm — its users
+/// and groups — while who may do what stays the consumer's own (its roles, grants and site rules,
+/// which then name the target's people). One per consumer, and never a chain.</item>
 /// </list>
 /// </summary>
 public sealed class EnvironmentLink : TenantEntity
@@ -105,9 +110,32 @@ public sealed class EnvironmentLink : TenantEntity
 public static class EnvironmentLinkKinds
 {
     public const string App = "app";
+    public const string Users = "users";
 
     /// <summary>The cached links of one consuming environment: read by content-api, cleared by admin-api on any change.</summary>
     public static string CacheKey(Guid tenantId) => $"t:{tenantId}:environment-links";
+}
+
+/// <summary>Whose realm signs people in for an environment's sites: a <c>users</c> link's target, or its own.</summary>
+public static class EnvironmentRealm
+{
+    public static async Task<Guid> OfAsync(TenancyDbContext db, Guid tenantId, CancellationToken ct)
+    {
+        using var rls = Rls.RlsScope.Tenant(tenantId);
+        return await db.EnvironmentLinks.IgnoreQueryFilters().AsNoTracking()
+            .Where(l => l.TenantId == tenantId && l.Kind == EnvironmentLinkKinds.Users)
+            .Select(l => (Guid?)l.TargetTenantId).FirstOrDefaultAsync(ct) ?? tenantId;
+    }
+
+    /// <summary>The environments whose sites sign people in through <paramref name="realmTenantId"/>'s realm.</summary>
+    public static async Task<List<Guid>> ConsumersAsync(TenancyDbContext db, Guid realmTenantId, CancellationToken ct)
+    {
+        // rls: platform -- the links are rows of the consumers, which are what is being looked for.
+        using var rls = Rls.RlsScope.Platform();
+        return await db.EnvironmentLinks.IgnoreQueryFilters().AsNoTracking()
+            .Where(l => l.TargetTenantId == realmTenantId && l.Kind == EnvironmentLinkKinds.Users)
+            .Select(l => l.TenantId).ToListAsync(ct);
+    }
 }
 
 /// <summary>A link as content-api caches it.</summary>

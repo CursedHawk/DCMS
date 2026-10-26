@@ -20,7 +20,11 @@ public enum SiteAccess
 /// <summary>One access rule of a tenant site (ADR 0022): paths under <see cref="Prefix"/> need <see cref="Access"/>.</summary>
 public sealed record SiteRule(string Prefix, SiteAccess Access, IReadOnlyList<Guid>? Groups = null);
 
-/// <summary>A tenant host the edge signs people in on: whose realm, and its rules in order.</summary>
+/// <summary>
+/// A tenant host the edge signs people in on: whose realm, and its rules in order.
+/// <see cref="TenantId"/> is the realm's tenant — the host's own, or the environment it takes its
+/// users from (ADR 0026) — and everything signing in here is checked against it.
+/// </summary>
 public sealed record SiteGateEntry(Guid TenantId, string RealmSlug, IReadOnlyList<SiteRule> Rules)
 {
     public string ClientId => $"site:{TenantId:N}";
@@ -123,7 +127,7 @@ public sealed class SiteGates
     /// </summary>
     public SiteGateEntry? For(string host) => _hosts?.GetValueOrDefault(host.TrimEnd('.').ToLowerInvariant());
 
-    /// <summary>Whether the tenant has site sign-in at all: User Authentication publishes a row for each of its hosts.</summary>
+    /// <summary>Whether the realm's tenant has site sign-in at all: User Authentication publishes a row for each of its hosts.</summary>
     public bool HasTenant(Guid tenantId) => _hosts?.Values.Any(e => e.TenantId == tenantId) == true;
 
     public void Replace(IReadOnlyDictionary<string, SiteGateEntry> hosts) => _hosts = hosts;
@@ -156,13 +160,13 @@ public sealed class SiteGateLoader(SiteGates gates, IServiceScopeFactory scopes,
                 try
                 {
                     var rules = JsonSerializer.Deserialize<List<SiteRule>>(row.RulesJson, SiteGates.Json) ?? [];
-                    hosts[row.Hostname] = new SiteGateEntry(row.TenantId, row.RealmSlug, rules);
+                    hosts[row.Hostname] = new SiteGateEntry(row.RealmTenantId ?? row.TenantId, row.RealmSlug, rules);
                 }
                 catch (JsonException ex)
                 {
                     // Fail closed for that host: everything behind sign-in, rather than public.
                     logger.LogError(ex, "Unreadable site gate rules for {Host}; requiring sign-in for the whole site.", row.Hostname);
-                    hosts[row.Hostname] = new SiteGateEntry(row.TenantId, row.RealmSlug, [new SiteRule("/", SiteAccess.SignedIn)]);
+                    hosts[row.Hostname] = new SiteGateEntry(row.RealmTenantId ?? row.TenantId, row.RealmSlug, [new SiteRule("/", SiteAccess.SignedIn)]);
                 }
             }
             gates.Replace(hosts);

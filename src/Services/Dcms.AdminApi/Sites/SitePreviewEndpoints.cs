@@ -65,7 +65,8 @@ public static class SitePreviewEndpoints
                 .ThenBy(d => d.Hostname)
                 .Select(d => d.Hostname)
                 .FirstOrDefaultAsync(ct);
-            return Results.Ok(new { tenantId, host });
+            // The realm the preview signs in through: another environment's, when this one takes its users from it (ADR 0026).
+            return Results.Ok(new { tenantId = await EnvironmentRealm.OfAsync(tenancy, tenantId, ct), host });
         }).RequirePermission(PlatformPermissions.SiteEdit);
 
 

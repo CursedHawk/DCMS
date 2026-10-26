@@ -5,6 +5,7 @@ using Dcms.PluginSdk.Abstractions.Contracts;
 using Dcms.PluginSdk.Abstractions.Platform;
 using Dcms.Shared.Contracts.Realms;
 using Dcms.Shared.Data.Rls;
+using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Data.UserAuth;
 using Dcms.Shared.Security.Realms;
 using Microsoft.AspNetCore.Http;
@@ -102,33 +103,55 @@ public sealed class UserDirectory(IPluginContext context, IServiceProvider servi
     {
         var query = $"/users?page={Math.Max(input.Page, 1)}&pageSize={Math.Clamp(input.PageSize, 1, 100)}"
                     + (string.IsNullOrWhiteSpace(input.Search) ? "" : $"&search={Uri.EscapeDataString(input.Search)}");
-        var page = await Call(() => Realms.CallAsync<RealmUserPage>(context.TenantId, HttpMethod.Get, query, null, ct));
+        var realm = await RealmAsync(ct);
+        var page = await Call(() => Realms.CallAsync<RealmUserPage>(realm, HttpMethod.Get, query, null, ct));
         return new DirectoryUserPage(page.Items.Select(ToUser).ToList(), page.Total);
     }
 
     public async Task<DirectoryGroupList> ListGroupsAsync(CancellationToken ct)
     {
-        var groups = await Call(() => Realms.CallAsync<List<RealmGroupInfo>>(context.TenantId, HttpMethod.Get, "/groups", null, ct));
+        var realm = await RealmAsync(ct);
+        var groups = await Call(() => Realms.CallAsync<List<RealmGroupInfo>>(realm, HttpMethod.Get, "/groups", null, ct));
         return new DirectoryGroupList(groups.Select(g => new DirectoryGroup(g.Id, g.Name, g.Description, g.Members)).ToList());
     }
 
     public async Task<DirectoryUser> InviteAsync(UserInvite input, CancellationToken ct)
     {
-        var result = await Call(() => Realms.CallAsync<RealmInviteResult>(context.TenantId, HttpMethod.Post, "/users/invite",
+        var realm = await OwnRealmAsync(ct);
+        var result = await Call(() => Realms.CallAsync<RealmInviteResult>(realm, HttpMethod.Post, "/users/invite",
             new RealmInvite(input.Email, input.DisplayName, input.Groups), ct));
         await UserEvents.InvitedAsync(context, result.User, logger, ct);
         return ToUser(result.User);
     }
 
-    public async Task<DirectoryUser> SetEnabledAsync(UserEnabledChange input, CancellationToken ct) =>
-        ToUser(await Call(() => Realms.CallAsync<RealmUserInfo>(context.TenantId, HttpMethod.Patch, $"/users/{input.UserId}",
+    public async Task<DirectoryUser> SetEnabledAsync(UserEnabledChange input, CancellationToken ct)
+    {
+        var realm = await OwnRealmAsync(ct);
+        return ToUser(await Call(() => Realms.CallAsync<RealmUserInfo>(realm, HttpMethod.Patch, $"/users/{input.UserId}",
             new RealmUserPatch(null, input.Enabled ? "active" : "disabled"), ct)));
+    }
 
-    public Task AddToGroupAsync(GroupMembership input, CancellationToken ct) =>
-        Call(() => Realms.CallAsync(context.TenantId, HttpMethod.Put, $"/groups/{input.GroupId}/members/{input.UserId}", null, ct));
+    public async Task AddToGroupAsync(GroupMembership input, CancellationToken ct)
+    {
+        var realm = await OwnRealmAsync(ct);
+        await Call(() => Realms.CallAsync(realm, HttpMethod.Put, $"/groups/{input.GroupId}/members/{input.UserId}", null, ct));
+    }
 
-    public Task RemoveFromGroupAsync(GroupMembership input, CancellationToken ct) =>
-        Call(() => Realms.CallAsync(context.TenantId, HttpMethod.Delete, $"/groups/{input.GroupId}/members/{input.UserId}", null, ct));
+    public async Task RemoveFromGroupAsync(GroupMembership input, CancellationToken ct)
+    {
+        var realm = await OwnRealmAsync(ct);
+        await Call(() => Realms.CallAsync(realm, HttpMethod.Delete, $"/groups/{input.GroupId}/members/{input.UserId}", null, ct));
+    }
+
+    /// <summary>Whose users these are: another environment's, when this one's sites sign in through it (ADR 0026).</summary>
+    private Task<Guid> RealmAsync(CancellationToken ct) =>
+        EnvironmentRealm.OfAsync(services.GetRequiredService<TenancyDbContext>(), context.TenantId, ct);
+
+    /// <summary>The realm to change: only this environment's own. Another's people are managed there.</summary>
+    private async Task<Guid> OwnRealmAsync(CancellationToken ct) =>
+        await RealmAsync(ct) == context.TenantId
+            ? context.TenantId
+            : throw new ContractValidationException("This environment's users are another environment's; manage them there.");
 
     private static DirectoryUser ToUser(RealmUserInfo u) =>
         new(u.Id, u.Email, u.DisplayName, u.Status, u.Groups, u.CreatedAt, u.LastSignInAt);

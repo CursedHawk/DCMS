@@ -45,14 +45,16 @@ internal static partial class UserAuthAdminEndpoints
     {
         // ---- realm ----
 
-        endpoints.MapGet("/realm", async (IPluginContext context, SiteGatePublisher publisher, CancellationToken ct) =>
-                await Guarded(async () => await publisher.SyncRealmAsync(context.TenantId, null, ct) is { } realm
+        endpoints.MapGet("/realm", async (IPluginContext context, SiteGatePublisher publisher, RealmRelay relay, CancellationToken ct) =>
+                await Guarded(async () => await publisher.SyncRealmAsync(await relay.RealmTenantAsync(ct), null, ct) is { } realm
                     ? Results.Ok(realm)
                     : Results.NotFound(new { error = "The plugin is not enabled for this tenant." })))
             .RequirePluginPermission("users-read");
 
-        endpoints.MapPut("/realm", async (RealmSettings body, IPluginContext context, SiteGatePublisher publisher, CancellationToken ct) =>
-                await Guarded(async () => Results.Ok(await publisher.SyncRealmAsync(context.TenantId, body.PasswordEnabled, ct))))
+        endpoints.MapPut("/realm", async (RealmSettings body, IPluginContext context, SiteGatePublisher publisher, RealmRelay relay, CancellationToken ct) =>
+                await relay.RealmTenantAsync(ct) != context.TenantId
+                    ? RealmRelay.Linked
+                    : await Guarded(async () => Results.Ok(await publisher.SyncRealmAsync(context.TenantId, body.PasswordEnabled, ct))))
             .RequirePluginPermission("providers-manage")
             .AuditAs("realm.updated");
 
@@ -489,20 +491,40 @@ internal static partial class UserAuthAdminEndpoints
 /// A console call passed to identity's realm admin API for this tenant, answered with what
 /// identity said. The realm is made on first use: a 404 for a realm identity does not have yet
 /// (the plugin was just enabled) creates it and asks once more.
+///
+/// <para>An environment whose sites take their users from another (ADR 0026) reads that realm,
+/// and changes nothing in it: its people are managed where they live.</para>
 /// </summary>
-public sealed class RealmRelay(RealmAdminClient realms, SiteGatePublisher publisher, IPluginContext context)
+public sealed class RealmRelay(RealmAdminClient realms, SiteGatePublisher publisher, IPluginContext context, TenancyDbContext tenancy)
 {
+    public static readonly IResult Linked = Results.Conflict(new
+    {
+        error = "This environment's sites sign people in through another environment's users. Manage them there.",
+        code = "environment_users_linked",
+    });
+
+    private Guid? _realmTenant;
+
+    public async Task<Guid> RealmTenantAsync(CancellationToken ct) =>
+        _realmTenant ??= await EnvironmentRealm.OfAsync(tenancy, context.TenantId, ct);
+
     /// <param name="then">Run after identity said yes, with what it answered.</param>
     public async Task<IResult> SendAsync(HttpMethod method, string path, object? body, CancellationToken ct, Func<string, Task>? then = null)
     {
-        var response = await realms.SendAsync(context.TenantId, method, path, body, ct);
+        var realmTenant = await RealmTenantAsync(ct);
+        // A preview "view as" token is asked for with a POST, and changes nothing.
+        if (realmTenant != context.TenantId && method != HttpMethod.Get && !path.EndsWith("/preview-token", StringComparison.Ordinal))
+        {
+            return Linked;
+        }
+        var response = await realms.SendAsync(realmTenant, method, path, body, ct);
         try
         {
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound && await realms.GetRealmAsync(context.TenantId, ct) is null
-                && await publisher.SyncRealmAsync(context.TenantId, null, ct) is not null)
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound && await realms.GetRealmAsync(realmTenant, ct) is null
+                && await publisher.SyncRealmAsync(realmTenant, null, ct) is not null)
             {
                 response.Dispose();
-                response = await realms.SendAsync(context.TenantId, method, path, body, ct);
+                response = await realms.SendAsync(realmTenant, method, path, body, ct);
             }
             var status = (int)response.StatusCode;
             if (status is 401 or 403 || status >= 500)

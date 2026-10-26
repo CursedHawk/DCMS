@@ -2282,7 +2282,11 @@
       "Local": "Here only",
       "Managed": "Deployments only"
     },
-    "links": "Apps used from other environments",
+    "links": "Used from other environments",
+    "usersLinkRow": "Site users from {{name}}",
+    "usersUnlink": "Stop using site users from another environment",
+    "usersLink": "Use site users",
+    "usersLinkHint": "Sites here can sign people in through another environment's users and groups. Takes effect within five minutes.",
     "linkRow": "/api/{{address}} from {{name}}",
     "unlink": "Stop using /api/{{address}} from another environment",
     "linkAddress": "App address",

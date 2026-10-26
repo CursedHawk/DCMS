@@ -93,6 +93,20 @@ target environment's published content, site users (its realm), Dynamic Apps tab
 service. The linked operation runs under the target tenant, caches under the target's keys, and is
 audited with both ids.
 
+- **App** (`app`, one per app address): content-api names the target as the request's tenant for
+  `/api/{slug}`, so the app's routes, API access rules, caches and row rules are simply the
+  target's. A read link refuses writes (403) rather than letting them land in the consumer's app.
+  This covers published content and Dynamic Apps data.
+- **Site users** (`users`, at most one per environment, never a chain): the consumer's sites sign
+  people in through the target's realm. The consumer's `edge.site_gates` rows stay its own and
+  carry its rules, but they name the target's realm (`RealmTenantId`). The target's realm takes the
+  consumer's hosts as redirect hosts before the edge sends anyone there, and content-api in the
+  consumer accepts only the target's realm tokens. **Who may do what stays the consumer's**: its
+  roles, grants and group-gated rules, which name the target's people and groups. The consumer's
+  User Authentication screens read the target's users and groups and change none of them
+  (`409 environment_users_linked`). The gate reconciler applies a link change within five minutes.
+- **Plugin services**: not built.
+
 ### The preview sandbox is deleted
 
 Its rows are deleted and its columns dropped. A preview acts on the environment it belongs to;

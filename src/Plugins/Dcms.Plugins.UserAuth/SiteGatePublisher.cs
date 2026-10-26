@@ -37,20 +37,39 @@ public sealed class SiteGatePublisher(
     /// <summary>Brings the tenant's rows in line with its rules; true when anything changed (and the edge was told).</summary>
     public async Task<bool> PublishAsync(Guid tenantId, CancellationToken ct, bool announce = true)
     {
+        // An environment that takes its users from another (ADR 0026) keeps its rows — its hosts,
+        // its rules — but they name that realm, and that realm, not its own, answers its hosts.
+        var realmTenant = await EnvironmentRealm.OfAsync(tenancy, tenantId, ct);
         Dictionary<string, (string Slug, string Rules)> wanted;
         Wanted target;
         using (RlsScope.Tenant(tenantId))
         {
             target = await TargetAsync(tenantId, ct);
-            wanted = await WantedAsync(tenantId, target, ct);
+        }
+        var realmSlug = target.Slug;
+        if (realmTenant != tenantId)
+        {
+            using (RlsScope.Tenant(realmTenant))
+            {
+                realmSlug = (await TargetAsync(realmTenant, ct)).Slug;
+            }
+        }
+        using (RlsScope.Tenant(tenantId))
+        {
+            wanted = await WantedAsync(tenantId, target with { Slug = realmSlug }, ct);
         }
         // Identity first: if it cannot be told, the edge is not changed either, and the next
-        // pass tries both again.
-        await SyncRealmAsync(tenantId, target, wanted.Keys, null, ct);
+        // pass tries both again. The realm takes the hosts before the edge sends anyone to it.
+        await SyncRealmAsync(realmTenant, null, ct);
+        if (realmTenant != tenantId)
+        {
+            await SyncRealmAsync(tenantId, null, ct);
+        }
 
         // The edge's table is host-keyed and outside tenant RLS: this tenant's rows, and any row
         // for a hostname that has since moved to it from another tenant.
         var hosts = wanted.Keys.ToList();
+        Guid? realmOf = realmTenant == tenantId ? null : realmTenant;
         var existing = await edge.SiteGates.Where(r => r.TenantId == tenantId || hosts.Contains(r.Hostname)).ToListAsync(ct);
         var changed = false;
         foreach (var row in existing.Where(r => r.TenantId == tenantId && !wanted.ContainsKey(r.Hostname)))
@@ -63,12 +82,12 @@ public sealed class SiteGatePublisher(
             var row = existing.FirstOrDefault(r => r.Hostname == host);
             if (row is null)
             {
-                edge.SiteGates.Add(new EdgeSiteGate { Hostname = host, TenantId = tenantId, RealmSlug = slug, RulesJson = rules });
+                edge.SiteGates.Add(new EdgeSiteGate { Hostname = host, TenantId = tenantId, RealmSlug = slug, RealmTenantId = realmOf, RulesJson = rules });
                 changed = true;
             }
-            else if (row.TenantId != tenantId || row.RealmSlug != slug || !SameJson(row.RulesJson, rules))
+            else if (row.TenantId != tenantId || row.RealmSlug != slug || row.RealmTenantId != realmOf || !SameJson(row.RulesJson, rules))
             {
-                (row.TenantId, row.RealmSlug, row.RulesJson, row.UpdatedAt) = (tenantId, slug, rules, DateTimeOffset.UtcNow);
+                (row.TenantId, row.RealmSlug, row.RealmTenantId, row.RulesJson, row.UpdatedAt) = (tenantId, slug, realmOf, rules, DateTimeOffset.UtcNow);
                 changed = true;
             }
         }
@@ -104,17 +123,29 @@ public sealed class SiteGatePublisher(
     /// <summary>
     /// The tenant's realm as it should be, after any change to the realm's own settings, and
     /// returned as identity now has it — creating it if the plugin is enabled and it does not exist.
+    /// Its hosts are those of every environment signing in through it (ADR 0026); one that signs
+    /// in through another's has none.
     /// </summary>
     public async Task<RealmInfo?> SyncRealmAsync(Guid tenantId, bool? passwordEnabled, CancellationToken ct)
     {
         Wanted target;
-        Dictionary<string, (string Slug, string Rules)> wanted;
+        var hosts = new List<string>();
         using (RlsScope.Tenant(tenantId))
         {
             target = await TargetAsync(tenantId, ct);
-            wanted = await WantedAsync(tenantId, target, ct);
         }
-        return await SyncRealmAsync(tenantId, target, wanted.Keys, passwordEnabled, ct);
+        if (await EnvironmentRealm.OfAsync(tenancy, tenantId, ct) == tenantId)
+        {
+            foreach (var environment in (await EnvironmentRealm.ConsumersAsync(tenancy, tenantId, ct)).Prepend(tenantId))
+            {
+                using (RlsScope.Tenant(environment))
+                {
+                    var own = environment == tenantId ? target : await TargetAsync(environment, ct);
+                    hosts.AddRange((await WantedAsync(environment, own, ct)).Keys);
+                }
+            }
+        }
+        return await SyncRealmAsync(tenantId, target, hosts.Distinct(), passwordEnabled, ct);
     }
 
     private async Task<RealmInfo?> SyncRealmAsync(Guid tenantId, Wanted target, IEnumerable<string> hosts, bool? passwordEnabled, CancellationToken ct)

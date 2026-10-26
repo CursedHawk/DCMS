@@ -2328,7 +2328,11 @@
       "Local": "Jen zde",
       "Managed": "Jen nasazení"
     },
-    "links": "Aplikace používané z jiných prostředí",
+    "links": "Používáno z jiných prostředí",
+    "usersLinkRow": "Uživatelé webů z prostředí {{name}}",
+    "usersUnlink": "Přestat používat uživatele webů z jiného prostředí",
+    "usersLink": "Použít uživatele",
+    "usersLinkHint": "Weby zde mohou přihlašovat lidi přes uživatele a skupiny jiného prostředí. Projeví se do pěti minut.",
     "linkRow": "/api/{{address}} z {{name}}",
     "unlink": "Přestat používat /api/{{address}} z jiného prostředí",
     "linkAddress": "Adresa aplikace",

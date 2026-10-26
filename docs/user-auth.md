@@ -137,6 +137,15 @@ Under the hood: the edge's `/.edge/preview/{workspace}/{site}/…` (`signin`, `s
 - The assistant can list, invite, enable or disable users and change their groups
   (`users.directory@1`), when the instance's AI tools are on. Disabling is marked dangerous.
 
+## Environments
+
+In a workspace with environments, each environment has its own realm: development's site users
+are not production's. To test with real accounts instead, link development's **site users** to
+production (Settings → Environments → Links). Development's sites then sign people in through
+production's realm. Development keeps its own roles, grants and page rules, which now name
+production's people and groups. Its Users and Groups screens show production's, read only. The
+link takes effect within five minutes; see ADR 0026.
+
 ## How long changes take
 
 | Change | Reaches |

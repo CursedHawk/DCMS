@@ -247,6 +247,9 @@ namespace Dcms.Shared.Data.Migrations.Edge
                         .HasMaxLength(63)
                         .HasColumnType("character varying(63)");
 
+                    b.Property<Guid?>("RealmTenantId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("RulesJson")
                         .IsRequired()
                         .HasColumnType("jsonb");
