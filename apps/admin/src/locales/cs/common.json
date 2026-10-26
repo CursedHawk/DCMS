@@ -2317,7 +2317,8 @@
       "unknownKind": "Tento druh konfigurace zde není podporován.",
       "unknownPlugin": "Plugin z tohoto nasazení zde není nainstalován.",
       "pluginInstanceRemoved": "Ve zdroji byla odebrána aplikace; aplikace se vypínají, neodebírají.",
-      "slugTakenByOtherPlugin": "Aplikace zde už tuto adresu používá pro jiný plugin."
+      "slugTakenByOtherPlugin": "Aplikace zde už tuto adresu používá pro jiný plugin.",
+      "cannotApply": "Změnu zde nelze v současné podobě použít. Podrobnosti úlohy říkají kterou a proč."
     }
   },
   "deployments": {

@@ -160,6 +160,11 @@ public sealed class DynamicAppsPlugin : IPlugin
         services.AddScoped<FlowExecutor>();
         services.AddScoped<FlowRunService>();
         services.AddScoped<FlowComposer>();
+        if (host.IsAdmin)
+        {
+            // Applications' configuration moves between a workspace's environments (ADR 0026).
+            services.AddScoped<IEnvironmentConfigKind, Metadata.DynamicAppsConfigKind>();
+        }
         if (host.IsAdmin && host.RunsBackgroundWork)
         {
             services.AddHostedService<AutomationWorker>();

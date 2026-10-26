@@ -244,6 +244,37 @@ public sealed class ConfigurationService(
                 "The live revision changed after this draft was opened. Discard the draft and open a new one.");
         }
 
+        return await GoLiveAsync(app, draft, tx, ct, ai);
+    }
+
+    /// <summary>
+    /// Makes <paramref name="snapshot"/> the live configuration in one step, as a new revision
+    /// (source Import): what a deployment between environments does (ADR 0026). Held to every
+    /// check publishing a draft is; refused while a draft is open, which is someone's unfinished
+    /// work in this environment and not the deployment's to throw away.
+    /// </summary>
+    /// <param name="vouched">Permissions the deployer was checked to hold (<c>IEnvironmentConfigKind.PermissionsForAsync</c>):
+    /// a job has no signed-in person for the flows' actions to be vouched by.</param>
+    public async Task<PublishResult> ImportAsync(string snapshot, string? description, IReadOnlySet<string> vouched, CancellationToken ct)
+    {
+        _vouched = vouched;
+        using var rls = RlsScope.Tenant(context.TenantId);
+        var (app, tx) = await LockAsync(ct);
+        await using var _ = tx;
+        if (app.DraftRevisionId is not null)
+        {
+            throw new ContractConflictException("A draft is open here. Publish or discard it before deploying this application.");
+        }
+        var config = ConfigJson.Parse(snapshot);
+        var draft = await OpenDraftAsync(app, description, AppChangeSource.Import, ct);
+        draft.Snapshot = ConfigJson.Canonical(config);
+        draft.Hash = ConfigJson.Hash(config);
+        return await GoLiveAsync(app, draft, tx, ct, null);
+    }
+
+    /// <summary>Checks the draft against what is live and, when nothing is an error, makes it live.</summary>
+    private async Task<PublishResult> GoLiveAsync(DynamicApp app, AppRevision draft, IDbContextTransaction tx, CancellationToken ct, AiTrace? ai)
+    {
         var config = ConfigJson.Parse(draft.Snapshot);
         var liveConfig = await PublishedConfigAsync(app, ct);
         var (issues, vouched) = await CheckAsync(config, liveConfig, ct);
@@ -806,8 +837,21 @@ public sealed class ConfigurationService(
     /// a plane that knows no member permissions at all (content-api, where a site user starts a
     /// flow): there the policy does not exist, and nobody holds it.
     /// </summary>
+    /// <summary>Permissions an import was given as already checked; null outside one.</summary>
+    private IReadOnlySet<string>? _vouched;
+
+    /// <summary>Every permission the configuration's flows need their publisher to hold.</summary>
+    public async Task<IReadOnlyCollection<string>> NeededPermissionsAsync(string snapshot, CancellationToken ct)
+    {
+        var config = ConfigJson.Parse(snapshot);
+        if (config.Flows.SelectMany(f => f.Steps).All(s => ActionCatalog.Keys.Contains(s.Action))) return [];
+        var offered = (await ActionCatalog.WithProvidersAsync(context, ct)).ToDictionary(ActionCatalog.Key, StringComparer.Ordinal);
+        return ActionCatalog.PermissionsByFlow(config, offered).Values.SelectMany(p => p).Distinct(StringComparer.Ordinal).ToList();
+    }
+
     private async Task<bool> HoldsAsync(string permission)
     {
+        if (_vouched?.Contains(permission) == true) return true;
         var user = services.GetService<IHttpContextAccessor>()?.HttpContext?.User;
         var authz = services.GetService<IAuthorizationService>();
         var policy = PermissionPolicyProvider.PolicyName(permission);

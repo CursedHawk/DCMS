@@ -2271,7 +2271,8 @@
       "unknownKind": "This kind of configuration is not supported here.",
       "unknownPlugin": "A plugin in this deployment is not installed here.",
       "pluginInstanceRemoved": "An app was removed in the source; apps are switched off, not removed.",
-      "slugTakenByOtherPlugin": "An app here already uses that address for another plugin."
+      "slugTakenByOtherPlugin": "An app here already uses that address for another plugin.",
+      "cannotApply": "A change could not be applied here as it stands. The job's details say which and why."
     }
   },
   "deployments": {

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Dcms.AdminApi.Connections;
 using Dcms.PluginSdk.Abstractions;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Security;
@@ -14,7 +15,7 @@ namespace Dcms.AdminApi.Environments.Kinds;
 /// </summary>
 // rls: EnvironmentMigrator calls every kind inside RlsScope.Tenant(tenantId), the tenant each
 // query names; IgnoreQueryFilters only drops the request's own, which is another environment.
-public sealed class ApiConnectionsConfigKind(CmsDbContext db) : IEnvironmentConfigKind
+public sealed class ApiConnectionsConfigKind(CmsDbContext db, IConfiguration config) : IEnvironmentConfigKind
 {
     public string Kind => "api-connections";
 
@@ -40,13 +41,24 @@ public sealed class ApiConnectionsConfigKind(CmsDbContext db) : IEnvironmentConf
         else
         {
             var wanted = value.Value.Deserialize<Value>()!;
+            // The rules the connection screen holds a person to, held here too.
+            if (ApiConnectionRules.Problem(key, wanted.Name, wanted.BaseUrl, wanted.AuthKind, wanted.AuthName,
+                    wanted.Operations, wanted.RefreshMinutes, config.GetValue("Connections:AllowLocal", false)) is { } problem)
+            {
+                throw new EnvironmentConfigException(problem);
+            }
             if (row is null)
             {
                 row = new ApiConnection { Id = Guid.CreateVersion7(), TenantId = tenantId, Slug = key };
                 db.ApiConnections.Add(row);
             }
-            // A different authentication scheme cannot use the key this environment had.
-            if (row.AuthKind != wanted.AuthKind || wanted.AuthKind == "none") row.SecretCiphertext = null;
+            // The key this environment had stays only for the same origin and the same way of
+            // sending it: a deployment re-pointing the connection must never carry the key along.
+            if (wanted.AuthKind == "none" || row.AuthKind != wanted.AuthKind || row.AuthName != wanted.AuthName
+                || Origin(row.BaseUrl) != Origin(wanted.BaseUrl))
+            {
+                row.SecretCiphertext = null;
+            }
             (row.Name, row.BaseUrl, row.AuthKind, row.AuthName, row.Operations, row.RefreshMinutes) =
                 (wanted.Name, wanted.BaseUrl, wanted.AuthKind, wanted.AuthName, wanted.Operations.ToList(), wanted.RefreshMinutes);
             row.UpdatedAt = DateTimeOffset.UtcNow;
@@ -54,4 +66,7 @@ public sealed class ApiConnectionsConfigKind(CmsDbContext db) : IEnvironmentConf
         }
         await db.SaveChangesAsync(ct);
     }
+
+    private static string? Origin(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.GetLeftPart(UriPartial.Authority).ToLowerInvariant() : null;
 }

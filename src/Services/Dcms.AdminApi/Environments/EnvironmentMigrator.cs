@@ -301,9 +301,18 @@ public sealed class EnvironmentMigrator(
         var state = await ExportAsync(targetId, ct);
         foreach (var w in writes)
         {
-            if (KindOf(w.Change.Kind).Permission is { } needed && !held.Contains(needed))
+            var kind = KindOf(w.Change.Kind);
+            if (kind.Permission is { } needed && !held.Contains(needed))
             {
                 throw new EnvironmentMigrationException("environments.errors.notAllowed", needed);
+            }
+            if (w.Change.After is { } after)
+            {
+                using var rls = RlsScope.Tenant(targetId);
+                if ((await kind.PermissionsForAsync(targetId, w.Change.Key, after, ct)).FirstOrDefault(p => !held.Contains(p)) is { } lacking)
+                {
+                    throw new EnvironmentMigrationException("environments.errors.notAllowed", lacking);
+                }
             }
             if (w.Change.Kind == "roles")
             {
@@ -322,7 +331,14 @@ public sealed class EnvironmentMigrator(
         foreach (var w in writes)
         {
             using var rls = RlsScope.Tenant(targetId);
-            await KindOf(w.Change.Kind).ApplyAsync(targetId, w.Change.Key, w.Change.After, ct);
+            try
+            {
+                await KindOf(w.Change.Kind).ApplyAsync(targetId, w.Change.Key, w.Change.After, ct);
+            }
+            catch (EnvironmentConfigException ex)
+            {
+                throw new EnvironmentMigrationException("environments.errors.cannotApply", $"{w.Change.Id}: {ex.Message}");
+            }
         }
     }
 

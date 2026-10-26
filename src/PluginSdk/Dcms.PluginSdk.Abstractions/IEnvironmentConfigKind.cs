@@ -36,6 +36,15 @@ public interface IEnvironmentConfigKind
     /// </summary>
     int Order => 100;
 
+    /// <summary>
+    /// What applying <paramref name="value"/> needs its applier to hold beyond
+    /// <see cref="Permission"/>: an item that acts with its publisher's authority — a Dynamic Apps
+    /// flow using a permissioned action — must be deployed by someone who holds it. The engine
+    /// checks before anything is written; <see cref="ApplyAsync"/> may then take them as vouched.
+    /// </summary>
+    Task<IReadOnlyCollection<string>> PermissionsForAsync(Guid tenantId, string key, JsonElement value, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyCollection<string>>([]);
+
     /// <summary>Every item of this kind the tenant has.</summary>
     Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct);
 
@@ -54,3 +63,10 @@ public sealed record EnvironmentConfigItem(string Key, JsonElement Value)
     /// <summary>What a person calls it, for the review screen; the key when absent.</summary>
     public string? Label { get; init; }
 }
+
+/// <summary>
+/// An item a kind cannot apply in this environment as it stands — what it depends on is missing,
+/// or the value breaks this environment's rules. Fails the deployment with
+/// <paramref name="reason"/> rather than leaving the item silently different from what was reviewed.
+/// </summary>
+public sealed class EnvironmentConfigException(string reason) : Exception(reason);

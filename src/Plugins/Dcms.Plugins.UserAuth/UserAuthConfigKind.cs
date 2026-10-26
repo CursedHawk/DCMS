@@ -68,8 +68,8 @@ internal sealed class UserAuthConfigKind(UserAuthDbContext db, CmsDbContext cms)
         {
             var slug = key["api:".Length..];
             var instanceId = (await SlugsAsync(tenantId, ct)).FirstOrDefault(s => s.Value == slug).Key;
-            // The app is not here (switched off, or skipped): its API rule has nothing to guard.
-            if (instanceId == Guid.Empty) return;
+            // Not silently: an API rule that cannot land leaves the app open in a way nobody reviewed.
+            if (instanceId == Guid.Empty) throw new EnvironmentConfigException($"there is no app '{slug}' here for its API access rule");
             var rule = await db.ApiRules.IgnoreQueryFilters().FirstOrDefaultAsync(r => r.TenantId == tenantId && r.InstanceId == instanceId, ct);
             if (value is null)
             {
