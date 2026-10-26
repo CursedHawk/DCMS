@@ -44,7 +44,15 @@ public sealed class EnvironmentOwnershipMiddleware(RequestDelegate next)
         // The item as it is, and as the request would name it: renaming an item of one's own onto
         // the name of one the pipeline owns, or creating one under that name, is refused as well.
         var key = await KeyAsync(managed.Kind, http, tenantId, services);
-        var renamed = await BodyKeyAsync(managed.Kind, http);
+        var (renamed, ambiguous) = await BodyKeyAsync(managed.Kind, http);
+        if (ambiguous)
+        {
+            // Which of the duplicates a handler binds is its serializer's business; checking one
+            // and writing another would walk round the policy.
+            http.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await http.Response.WriteAsJsonAsync(new { error = "The request names the item more than once." }, http.RequestAborted);
+            return;
+        }
         if (EnvironmentMigrator.Ownership(policies, managed.Kind, key ?? "") != EnvironmentOwnership.Managed
             && (renamed is null || EnvironmentMigrator.Ownership(policies, managed.Kind, renamed) != EnvironmentOwnership.Managed))
         {
@@ -67,8 +75,11 @@ public sealed class EnvironmentOwnershipMiddleware(RequestDelegate next)
         }, http.RequestAborted);
     }
 
-    /// <summary>The key a request body gives the item (a role's new name, a new app's slug), when it can.</summary>
-    private static async Task<string?> BodyKeyAsync(string kind, HttpContext http)
+    /// <summary>
+    /// The key a request body gives the item (a role's new name, a new app's slug), when it can;
+    /// ambiguous when the body names it more than once, in any casing.
+    /// </summary>
+    private static async Task<(string? Key, bool Ambiguous)> BodyKeyAsync(string kind, HttpContext http)
     {
         var property = kind switch
         {
@@ -77,20 +88,22 @@ public sealed class EnvironmentOwnershipMiddleware(RequestDelegate next)
             "user-auth" => "key",
             _ => null,
         };
-        if (property is null || http.Request.ContentType?.Contains("json", StringComparison.OrdinalIgnoreCase) != true) return null;
+        if (property is null || http.Request.ContentType?.Contains("json", StringComparison.OrdinalIgnoreCase) != true) return (null, false);
         http.Request.EnableBuffering();
         try
         {
             using var doc = await System.Text.Json.JsonDocument.ParseAsync(http.Request.Body, cancellationToken: http.RequestAborted);
-            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return null;
-            var value = doc.RootElement.EnumerateObject()
-                .FirstOrDefault(p => p.Name.Equals(property, StringComparison.OrdinalIgnoreCase)).Value;
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return (null, false);
+            var matches = doc.RootElement.EnumerateObject()
+                .Where(p => p.Name.Equals(property, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (matches.Count > 1) return (null, true);
+            var value = matches.FirstOrDefault().Value;
             var text = value.ValueKind == System.Text.Json.JsonValueKind.String ? value.GetString()?.Trim() : null;
-            return text is null ? null : kind == "user-auth" ? $"role:{text}" : text;
+            return (text is null ? null : kind == "user-auth" ? $"role:{text}" : text, false);
         }
         catch (System.Text.Json.JsonException)
         {
-            return null; // the handler answers a malformed body itself
+            return (null, false); // the handler answers a malformed body itself
         }
         finally
         {

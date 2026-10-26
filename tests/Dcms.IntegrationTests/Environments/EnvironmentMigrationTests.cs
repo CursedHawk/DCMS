@@ -382,5 +382,10 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         // But not renamed onto a name the pipeline owns.
         (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/roles/{reviewers}", ws.Owner, ws.Prod,
             new { name = "Editors 2", permissions = new[] { "media:read" } }), ct)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        // Nor by naming it twice, so the check reads one name and the handler binds the other.
+        var twice = Req(HttpMethod.Put, $"/api/admin/roles/{reviewers}", ws.Owner, ws.Prod);
+        twice.Content = new StringContent("""{"name":"Reviewers","Name":"Editors 2","permissions":["media:read"]}""",
+            System.Text.Encoding.UTF8, "application/json");
+        (await client.SendAsync(twice, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }
