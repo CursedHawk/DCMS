@@ -311,7 +311,11 @@ internal static class ObservabilityViews
             (SELECT count(*) FROM media.media_assets x         WHERE x."TenantId" = t."Id"::uuid) AS media_assets,
             (SELECT count(*) FROM plugins.plugin_instances x   WHERE x."TenantId" = t."Id"::uuid AND x."Enabled") AS enabled_plugins,
             (SELECT count(*) FROM visitors.visitor_accounts x  WHERE x."TenantId" = t."Id"::uuid) AS visitor_accounts,
-            (SELECT count(*) FROM forms.form_submissions x     WHERE x."TenantId" = t."Id"::uuid) AS form_submissions
+            (SELECT count(*) FROM forms.form_submissions x     WHERE x."TenantId" = t."Id"::uuid) AS form_submissions,
+            -- Last: CREATE OR REPLACE VIEW only appends columns. ADR 0026: an environment is a
+            -- tenant, grouped under its workspace's root.
+            t."WorkspaceId"                                                                    AS workspace_id,
+            t."EnvironmentName"                                                                AS environment
         FROM tenancy.tenants t
         """,
 

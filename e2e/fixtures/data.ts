@@ -347,6 +347,8 @@ const tenantRow = (t: typeof TENANT, status: string, createdAt: string) => ({
   storageBytes: 83_968,
   quotaBytes: 5 * 1024 ** 3,
   usageBytes: 6 * 1024 ** 2,
+  workspaceId: null,
+  environment: null,
 });
 
 export const PLATFORM_TENANTS = [

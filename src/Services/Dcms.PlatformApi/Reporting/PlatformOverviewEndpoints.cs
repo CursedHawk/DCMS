@@ -48,7 +48,10 @@ public static class PlatformOverviewEndpoints
         long StorageBytes,
         long QuotaBytes,
         // Everything the tenant stores, from its latest usage snapshot; 0 before the first one.
-        long UsageBytes);
+        long UsageBytes,
+        // The workspace it is an environment of, and which (ADR 0026); null while environments are off.
+        Guid? WorkspaceId,
+        string? Environment);
 
     /// <summary>The usage snapshot as admin-api measured it; <c>Categories</c> is passed through.</summary>
     public sealed record TenantUsage(DateTimeOffset? MeasuredAt, long TotalBytes, JsonElement Categories);
@@ -63,7 +66,7 @@ public static class PlatformOverviewEndpoints
             i.tenant_id, i.tenant_slug, i.tenant_name, i.status, i.created_at,
             i.members, i.domains, i.verified_domains, i.sites, i.content_items,
             i.published_items, i.media_assets, i.enabled_plugins, i.visitor_accounts,
-            i.form_submissions,
+            i.form_submissions, i.workspace_id, i.environment,
             COALESCE(s.total_bytes, 0) AS storage_bytes,
             s.quota_bytes,
             s.original_bytes, s.variant_bytes,
@@ -91,7 +94,9 @@ public static class PlatformOverviewEndpoints
         r.GetInt32OrZero("form_submissions"),
         r.GetInt64OrZero("storage_bytes"),
         r.GetInt64OrZero("quota_bytes"),
-        r.GetInt64OrZero("usage_bytes"));
+        r.GetInt64OrZero("usage_bytes"),
+        r.GetGuidOrNull("workspace_id"),
+        r.GetStringOrNull("environment"));
 
     public static IEndpointRouteBuilder MapPlatformOverviewEndpoints(this IEndpointRouteBuilder app)
     {

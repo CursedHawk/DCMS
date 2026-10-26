@@ -23,6 +23,9 @@ export interface TenantRow {
   quotaBytes: number;
   /** Everything the tenant stores, from its latest usage snapshot; 0 before the first one. */
   usageBytes: number;
+  /** The workspace this tenant is an environment of (ADR 0026); null while environments are off. */
+  workspaceId: string | null;
+  environment: string | null;
 }
 
 /** One tenant for its page: the directory row, the media split and the usage snapshot. */

@@ -27,7 +27,12 @@ export function TenantsPage() {
             className="flex flex-col rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className="font-mono">{r.slug}</span>
-            {r.name && <span className="text-xs text-muted-foreground">{r.name}</span>}
+            {r.name && (
+              <span className="text-xs text-muted-foreground">
+                {r.name}
+                {r.environment ? ` · ${r.environment}` : ''}
+              </span>
+            )}
           </Link>
         ),
       },
