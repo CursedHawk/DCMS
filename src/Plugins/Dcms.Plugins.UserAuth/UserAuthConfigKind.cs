@@ -40,7 +40,7 @@ internal sealed class UserAuthConfigKind(UserAuthDbContext db, CmsDbContext cms)
             .ToList();
     }
 
-    public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, CancellationToken ct)
+    public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, EnvironmentApplyContext context, CancellationToken ct)
     {
         if (key.StartsWith("role:", StringComparison.Ordinal))
         {

@@ -38,7 +38,7 @@ public sealed class RolesConfigKind(TenancyDbContext db, TenancyPermissionResolv
             .ToList();
     }
 
-    public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, CancellationToken ct)
+    public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, EnvironmentApplyContext context, CancellationToken ct)
     {
         if (key == TenantProvisioning.OwnerRole) throw new EnvironmentMigrationException("environments.errors.notAllowed", key);
         var role = await db.TenantRoles.IgnoreQueryFilters()

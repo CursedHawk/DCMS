@@ -53,8 +53,17 @@ public interface IEnvironmentConfigKind
     /// when missing; a null value deletes it. Must be idempotent: a migration interrupted halfway
     /// is applied again from the start.
     /// </summary>
-    Task ApplyAsync(Guid tenantId, string key, JsonElement? value, CancellationToken ct);
+    Task ApplyAsync(Guid tenantId, string key, JsonElement? value, EnvironmentApplyContext context, CancellationToken ct);
 }
+
+/// <summary>Who an item is being applied for.</summary>
+/// <param name="Held">
+/// The permissions the deployer was checked to hold in the receiving environment; null when no
+/// person is behind the write (a platform administrator, or a new environment copying its source).
+/// What an item vouches for must come from here, never be worked out afresh at write time: an
+/// earlier write in the same deployment can change what that would say.
+/// </param>
+public sealed record EnvironmentApplyContext(IReadOnlySet<string>? Held);
 
 /// <param name="Key">The natural key, the same in every environment.</param>
 /// <param name="Value">What moves between environments.</param>

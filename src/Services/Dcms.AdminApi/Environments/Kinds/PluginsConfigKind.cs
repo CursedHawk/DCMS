@@ -45,7 +45,7 @@ public sealed class PluginsConfigKind(
             .ToList();
     }
 
-    public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, CancellationToken ct)
+    public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, EnvironmentApplyContext context, CancellationToken ct)
     {
         // The console cannot delete an instance either, only switch it off: its data would be
         // left without an owner.

@@ -31,7 +31,7 @@ public sealed class ApiConnectionsConfigKind(CmsDbContext db, IConfiguration con
             new Value(c.Name, c.BaseUrl, c.AuthKind, c.AuthName, c.Operations.ToArray(), c.RefreshMinutes))) { Label = c.Name })
         .ToList();
 
-    public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, CancellationToken ct)
+    public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, EnvironmentApplyContext context, CancellationToken ct)
     {
         var row = await db.ApiConnections.IgnoreQueryFilters().FirstOrDefaultAsync(c => c.TenantId == tenantId && c.Slug == key, ct);
         if (value is null)

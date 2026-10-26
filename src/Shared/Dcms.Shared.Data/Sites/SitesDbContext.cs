@@ -40,6 +40,9 @@ public class SitesDbContext(DbContextOptions<SitesDbContext> options)
             e.Property(s => s.StaticBundleName).HasMaxLength(512);
             e.Property(s => s.GitRepoFullName).HasMaxLength(512);
             e.Property(s => s.GitDefaultBranch).HasMaxLength(256);
+            e.Property(s => s.EnvironmentKey).HasMaxLength(64);
+            e.HasIndex(s => new { s.TenantId, s.EnvironmentKey });
+            e.Ignore(s => s.KeyAcrossEnvironments);
             e.HasMany(s => s.Builds).WithOne().HasForeignKey(b => b.SiteId);
             e.HasQueryFilter(s => s.TenantId == CurrentTenantId);
         });

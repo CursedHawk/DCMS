@@ -96,6 +96,40 @@ public sealed partial class SiteGitService
         }
     }
 
+    /// <summary>
+    /// Puts commit <paramref name="sha"/> on <paramref name="targetRepo"/>'s <paramref name="branch"/>,
+    /// fetching it from the first of <paramref name="sourceRepos"/> that has it: how a site's code
+    /// moves between a workspace's environments (ADR 0026), whose repositories live side by side on
+    /// the same Forgejo. Forced, because what the branch held was reviewed before this was asked
+    /// for. Returns false when no source has the commit.
+    /// </summary>
+    public async Task<bool> TransplantAsync(
+        IReadOnlyList<string> sourceRepos, string targetRepo, string sha, string branch, CancellationToken ct)
+    {
+        if (!Enabled) return false;
+        var work = Path.Combine(Path.GetTempPath(), "dcms-transplant-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(work);
+        try
+        {
+            await RunGitAsync(work, null, ct, "init", "--bare", "--quiet", ".");
+            foreach (var (org, repo) in sourceRepos.Prepend(targetRepo).Select(Split))
+            {
+                await RunGitRawAsync(work, null, ct, "fetch", "--no-tags", "--quiet", CloneUrl(org, repo), "+refs/heads/*:refs/remotes/x/*");
+                if ((await RunGitRawAsync(work, null, ct, "cat-file", "-e", sha + "^{commit}")).ExitCode == 0)
+                {
+                    var (targetOrg, targetName) = Split(targetRepo);
+                    await RunGitAsync(work, null, ct, "push", "--force", "--quiet", CloneUrl(targetOrg, targetName), $"{sha}:refs/heads/{branch}");
+                    return true;
+                }
+            }
+            return false;
+        }
+        finally
+        {
+            TryDeleteDir(work);
+        }
+    }
+
     /// <summary>Content of a conflicted file at a merge stage (1=base, 2=ours, 3=theirs),
     /// or null if the file is absent at that stage (add/add, delete/modify, …).</summary>
     private async Task<string?> ShowStageAsync(string workDir, int stage, string path, CancellationToken ct)

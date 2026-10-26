@@ -309,4 +309,36 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
             role.Permissions.Should().Equal("crm:read");
         }
     }
+
+    [DockerFact]
+    public async Task A_site_keeps_its_identity_across_environments()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        var created = await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/sites", ws.Owner, ws.Dev,
+            new { name = "Marketing", renderMode = "StaticPrerender" }), ct), ct);
+        var devSite = created.GetProperty("id").GetGuid();
+        var first = await CutAsync(client, ws, "Marketing site", ct);
+        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, first, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+
+        async Task<List<(string Name, Guid Id)>> ProdSites() =>
+            (await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/sites", ws.Owner, ws.Prod), ct), ct))
+            .EnumerateArray().Select(x => (x.GetProperty("name").GetString()!, x.GetProperty("id").GetGuid())).ToList();
+        var prodSites = await ProdSites();
+        prodSites.Select(x => x.Name).Should().Equal("Marketing");
+        prodSites[0].Id.Should().NotBe(devSite, "each environment's rows have ids of their own");
+
+        // A rename later finds the same site, not a second one.
+        using (var scope = fixture.Factory.Services.CreateScope())
+        using (RlsScope.Tenant(ws.DevId))
+        {
+            var sites = scope.ServiceProvider.GetRequiredService<Dcms.Shared.Data.Sites.SitesDbContext>();
+            (await sites.Sites.IgnoreQueryFilters().SingleAsync(x => x.Id == devSite, ct)).Name = "Marketing 2026";
+            await sites.SaveChangesAsync(ct);
+        }
+        var second = await CutAsync(client, ws, "Rename", ct);
+        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+        (await ProdSites()).Should().Equal(("Marketing 2026", prodSites[0].Id));
+    }
 }

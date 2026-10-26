@@ -121,7 +121,7 @@ public sealed class EnvironmentMigrator(
             foreach (var item in source[kind.Kind].Values.OrderBy(i => i.Key, StringComparer.Ordinal))
             {
                 using var scope = RlsScope.Tenant(targetId);
-                await kind.ApplyAsync(targetId, item.Key, item.Value, ct);
+                await kind.ApplyAsync(targetId, item.Key, item.Value, new EnvironmentApplyContext(null), ct);
             }
         }
 
@@ -237,11 +237,11 @@ public sealed class EnvironmentMigrator(
             foreach (var w in Writes(reviewed, chosen)) SetItem(state, w.Change.Kind, w.Change.Key, w.Change.Label, w.Change.After);
             plans.Add((p.Migration, reviewed, chosen));
         }
-        await AuthorizeAsync(targetId, applier, plans.SelectMany(p => Writes(p.Changes, p.Chosen)), ct);
+        var context = await AuthorizeAsync(targetId, applier, plans.SelectMany(p => Writes(p.Changes, p.Chosen)), ct);
 
         foreach (var (migration, reviewed, chosen) in plans)
         {
-            await WriteAsync(targetId, Writes(reviewed, chosen), ct);
+            await WriteAsync(targetId, Writes(reviewed, chosen), context, ct);
             await RecordAsync(targetId, migration, reviewed, chosen, applier.UserId, forward: true, ct);
         }
         return plans.Count;
@@ -255,8 +255,8 @@ public sealed class EnvironmentMigrator(
         var (row, reviewed) = await RollbackPlanAsync(targetId, migrationId, ct);
         // A rollback restores what the migration replaced; no item is the target's to keep here.
         var chosen = Choose(row.MigrationId, reviewed, resolutions, []);
-        await AuthorizeAsync(targetId, applier, Writes(reviewed, chosen), ct);
-        await WriteAsync(targetId, Writes(reviewed, chosen), ct);
+        var context = await AuthorizeAsync(targetId, applier, Writes(reviewed, chosen), ct);
+        await WriteAsync(targetId, Writes(reviewed, chosen), context, ct);
         await RecordAsync(targetId, row, reviewed, chosen, applier.UserId, forward: false, ct);
         return row;
     }
@@ -291,9 +291,9 @@ public sealed class EnvironmentMigrator(
     /// in the target: each kind's own permission, and for roles every permission a change adds —
     /// the rule that stops a role editor from minting a role beyond their own (SEC-06).
     /// </summary>
-    private async Task AuthorizeAsync(Guid targetId, EnvironmentApplier applier, IEnumerable<ReviewedChange> writes, CancellationToken ct)
+    private async Task<EnvironmentApplyContext> AuthorizeAsync(Guid targetId, EnvironmentApplier applier, IEnumerable<ReviewedChange> writes, CancellationToken ct)
     {
-        if (applier.IsSuperAdmin) return;
+        if (applier.IsSuperAdmin) return new EnvironmentApplyContext(null);
         var held = applier.UserId is { } userId
             ? await permissions.GetPermissionsAsync(targetId, userId, ct)
             : new HashSet<string>();
@@ -324,16 +324,17 @@ public sealed class EnvironmentMigrator(
             }
             SetItem(state, w.Change.Kind, w.Change.Key, w.Change.Label, w.Change.After);
         }
+        return new EnvironmentApplyContext(held);
     }
 
-    private async Task WriteAsync(Guid targetId, IEnumerable<ReviewedChange> writes, CancellationToken ct)
+    private async Task WriteAsync(Guid targetId, IEnumerable<ReviewedChange> writes, EnvironmentApplyContext context, CancellationToken ct)
     {
         foreach (var w in writes)
         {
             using var rls = RlsScope.Tenant(targetId);
             try
             {
-                await KindOf(w.Change.Kind).ApplyAsync(targetId, w.Change.Key, w.Change.After, ct);
+                await KindOf(w.Change.Kind).ApplyAsync(targetId, w.Change.Key, w.Change.After, context, ct);
             }
             catch (EnvironmentConfigException ex)
             {

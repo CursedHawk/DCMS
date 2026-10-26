@@ -75,6 +75,15 @@ public sealed class Site : TenantEntity
     // site's React source. Null until the repo has been provisioned. The IDE's
     // saves are mirrored as commits on GitDefaultBranch. ---
     public string? GitRepoFullName { get; set; }
+
+    /// <summary>
+    /// The site's identity across a workspace's environments (ADR 0026): set on a site a
+    /// deployment created, to the key it had where it came from. Null on a site made here, whose
+    /// key is its own id.
+    /// </summary>
+    public string? EnvironmentKey { get; set; }
+
+    public string KeyAcrossEnvironments => EnvironmentKey ?? Id.ToString();
     public string? GitDefaultBranch { get; set; }
     public DateTimeOffset? GitProvisionedAt { get; set; }
 

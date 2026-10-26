@@ -77,6 +77,10 @@ namespace Dcms.Shared.Data.Migrations.Sites
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<string>("EnvironmentKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("GitDefaultBranch")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
@@ -122,6 +126,8 @@ namespace Dcms.Shared.Data.Migrations.Sites
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "EnvironmentKey");
 
                     b.ToTable("sites", "sites");
                 });

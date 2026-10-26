@@ -52,7 +52,7 @@ internal sealed class DynamicAppsConfigKind(
         return await scope.ServiceProvider.GetRequiredService<ConfigurationService>().NeededPermissionsAsync(value.GetRawText(), ct);
     }
 
-    public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, CancellationToken ct)
+    public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, EnvironmentApplyContext context, CancellationToken ct)
     {
         // An application is never unpublished; its instance is switched off instead.
         if (value is null) throw new EnvironmentConfigException($"application '{key}' cannot be unpublished");
@@ -60,8 +60,10 @@ internal sealed class DynamicAppsConfigKind(
         using var scope = await ScopeAsync(tenantId, key, ct);
         var config = scope.ServiceProvider.GetRequiredService<ConfigurationService>();
         var snapshot = value.Value.GetRawText();
-        // The engine checked the deployer holds every one of these before calling here.
-        var vouched = (await config.NeededPermissionsAsync(snapshot, ct)).ToHashSet(StringComparer.Ordinal);
+        // Only what the deployer was checked to hold: a need that appears only now (an earlier
+        // write in this deployment offered a new action) is not vouched, and the import refuses it.
+        var needed = await config.NeededPermissionsAsync(snapshot, ct);
+        var vouched = needed.Where(p => context.Held?.Contains(p) ?? true).ToHashSet(StringComparer.Ordinal);
         PublishResult result;
         try
         {
