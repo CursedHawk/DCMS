@@ -211,7 +211,7 @@ public sealed class EnvironmentMigrator(
     /// Applies the pending migrations from <paramref name="sourceId"/> up to and including
     /// <paramref name="upTo"/>, in order, each recorded in the target's history once all of its
     /// changes are in. A conflict needs a resolution in <paramref name="resolutions"/>
-    /// (<c>overwrite</c> or <c>skip</c>, keyed by change id), except in an item the target lets
+    /// (<c>overwrite</c> or <c>skip</c>, keyed <c>{migrationId}/{changeId}</c>), except in an item the target lets
     /// migrations own, where overwrite is the rule. Every write is authorised for
     /// <paramref name="applier"/> before the first one is made.
     /// </summary>
@@ -224,10 +224,19 @@ public sealed class EnvironmentMigrator(
         var last = pending.FindIndex(p => p.Migration.MigrationId == upTo);
         if (last < 0) throw new EnvironmentMigrationException("environments.errors.migrationNotPending");
 
+        // Reviewed again here, in order, against what the target really holds and will hold: the
+        // review screen assumed every conflict overwritten, and a skipped one leaves the item as it
+        // was for every later change — to the outcome of those changes and to what they add.
         var policies = await PoliciesAsync(targetId, ct);
-        var plans = pending.Take(last + 1)
-            .Select(p => (p.Migration, p.Changes, Chosen: Choose(p.Changes, resolutions, policies)))
-            .ToList();
+        var state = await ExportAsync(targetId, ct);
+        var plans = new List<(EnvironmentMigration Migration, List<ReviewedChange> Changes, Dictionary<string, string> Chosen)>();
+        foreach (var p in pending.Take(last + 1))
+        {
+            var reviewed = Review(Changes(p.Migration), state, policies, forward: true);
+            var chosen = Choose(p.Migration.MigrationId, reviewed, resolutions, policies);
+            foreach (var w in Writes(reviewed, chosen)) SetItem(state, w.Change.Kind, w.Change.Key, w.Change.Label, w.Change.After);
+            plans.Add((p.Migration, reviewed, chosen));
+        }
         await AuthorizeAsync(targetId, applier, plans.SelectMany(p => Writes(p.Changes, p.Chosen)), ct);
 
         foreach (var (migration, reviewed, chosen) in plans)
@@ -245,21 +254,26 @@ public sealed class EnvironmentMigrator(
     {
         var (row, reviewed) = await RollbackPlanAsync(targetId, migrationId, ct);
         // A rollback restores what the migration replaced; no item is the target's to keep here.
-        var chosen = Choose(reviewed, resolutions, []);
+        var chosen = Choose(row.MigrationId, reviewed, resolutions, []);
         await AuthorizeAsync(targetId, applier, Writes(reviewed, chosen), ct);
         await WriteAsync(targetId, Writes(reviewed, chosen), ct);
         await RecordAsync(targetId, row, reviewed, chosen, applier.UserId, forward: false, ct);
         return row;
     }
 
-    /// <summary>The reviewer's choice for every conflict; overwrite where the target lets migrations own the item.</summary>
+    /// <summary>
+    /// The reviewer's choice for every conflict, keyed <c>{migrationId}/{changeId}</c> — one item can
+    /// change in several pending migrations, and each is decided on its own; overwrite where the
+    /// target lets migrations own the item. Returned keyed by change id, as the history records it.
+    /// </summary>
     private static Dictionary<string, string> Choose(
-        IEnumerable<ReviewedChange> reviewed, IReadOnlyDictionary<string, string> resolutions, List<EnvironmentPolicy> policies)
+        Guid migrationId, IEnumerable<ReviewedChange> reviewed, IReadOnlyDictionary<string, string> resolutions,
+        List<EnvironmentPolicy> policies)
     {
         var chosen = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var r in reviewed.Where(r => r.Outcome == ChangeOutcome.Conflict))
         {
-            var choice = resolutions.GetValueOrDefault(r.Change.Id)
+            var choice = resolutions.GetValueOrDefault($"{migrationId}/{r.Change.Id}")
                 ?? (Ownership(policies, r.Change.Kind, r.Change.Key) == EnvironmentOwnership.Managed ? "overwrite" : null)
                 ?? throw new EnvironmentMigrationException("environments.errors.conflictUnresolved", r.Change.Id);
             if (choice is not ("overwrite" or "skip")) throw new EnvironmentMigrationException("environments.errors.conflictUnresolved", r.Change.Id);
@@ -283,16 +297,23 @@ public sealed class EnvironmentMigrator(
         var held = applier.UserId is { } userId
             ? await permissions.GetPermissionsAsync(targetId, userId, ct)
             : new HashSet<string>();
+        // What each role really holds as the writes go in: the live export, moved only by them.
+        var state = await ExportAsync(targetId, ct);
         foreach (var w in writes)
         {
             if (KindOf(w.Change.Kind).Permission is { } needed && !held.Contains(needed))
             {
                 throw new EnvironmentMigrationException("environments.errors.notAllowed", needed);
             }
-            if (w.Change.Kind == "roles" && Kinds.RolesConfigKind.Added(w.Current, w.Change.After).FirstOrDefault(p => !held.Contains(p)) is { } beyond)
+            if (w.Change.Kind == "roles")
             {
-                throw new EnvironmentMigrationException("environments.errors.notAllowed", beyond);
+                JsonElement? now = state.TryGetValue("roles", out var roles) && roles.TryGetValue(w.Change.Key, out var role) ? role.Value : null;
+                if (Kinds.RolesConfigKind.Added(now, w.Change.After).FirstOrDefault(p => !held.Contains(p)) is { } beyond)
+                {
+                    throw new EnvironmentMigrationException("environments.errors.notAllowed", beyond);
+                }
             }
+            SetItem(state, w.Change.Kind, w.Change.Key, w.Change.Label, w.Change.After);
         }
     }
 

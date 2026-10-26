@@ -79,7 +79,7 @@ test('the IDE refuses the screen instead of rendering badly on it', async ({ pag
 const PAGES = [
   '/', '/content', '/media', '/sites', '/plugins', '/apps/press-room/content/post', '/marketplace',
   '/marketplace/forms', '/notifications', '/settings/members', '/settings/roles',
-  '/settings/domains', '/settings/usage', '/settings/environments', '/apps/contact/inbox',
+  '/settings/domains', '/settings/usage', '/settings/environments', '/deployments', '/apps/contact/inbox',
   '/account', '/assistant', '/jobs', '/settings/general', '/settings/ai', '/settings/audit',
   '/settings/api', '/settings/connections', '/apps/press-room/data',
   '/apps/press-room/settings', '/apps/press-room/integration',

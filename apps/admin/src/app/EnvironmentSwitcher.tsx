@@ -1,6 +1,7 @@
-import { Check, ChevronsUpDown, Layers } from 'lucide-react';
+import { Check, ChevronsUpDown, GitCommitHorizontal, Layers } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from '@tanstack/react-router';
 import { Button, cn, Popover, PopoverContent, PopoverTrigger } from '@dcms/ui';
 import { getCurrentTenantSlug, switchTenant, useMyTenants, workspaceOf } from '../tenants';
 
@@ -15,6 +16,7 @@ export function EnvironmentSwitcher() {
   const { t } = useTranslation();
   const tenants = useMyTenants(true);
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
   const current = getCurrentTenantSlug();
   const active = tenants.data?.find((x) => x.slug === current);
   if (!active?.workspaceId) return null;
@@ -63,6 +65,20 @@ export function EnvironmentSwitcher() {
             {env.slug === current ? <Check className="h-4 w-4 text-primary" /> : null}
           </button>
         ))}
+        <div className="mt-1 border-t pt-1">
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              const to: string = '/deployments';
+              void navigate({ to });
+            }}
+            className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent"
+          >
+            <GitCommitHorizontal className="h-4 w-4" aria-hidden />
+            {t('deployments.title')}
+          </button>
+        </div>
       </PopoverContent>
     </Popover>
   );

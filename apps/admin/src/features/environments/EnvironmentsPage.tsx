@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, Layers, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from '@tanstack/react-router';
 import {
   Badge,
   Button,
@@ -27,6 +28,8 @@ import {
   type Environment,
 } from './api';
 
+// Typed as a plain string: the router's route union is built from routes.tsx, which imports this page.
+const DEPLOYMENTS: string = '/deployments';
 const NAME = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
 
 /**
@@ -37,6 +40,7 @@ const NAME = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
 export function EnvironmentsPage() {
   const { t } = useTranslation();
   const environments = useEnvironments();
+  const navigate = useNavigate();
   const enable = useEnableEnvironments();
   const disable = useDisableEnvironments();
   const add = useAddEnvironment();
@@ -51,7 +55,17 @@ export function EnvironmentsPage() {
 
   return (
     <Page>
-      <PageHeader title={t('environments.title')} description={t('environments.description')} />
+      <PageHeader
+        title={t('environments.title')}
+        description={t('environments.description')}
+        actions={
+          data?.enabled ? (
+            <Button variant="outline" onClick={() => void navigate({ to: DEPLOYMENTS })}>
+              {t('deployments.title')}
+            </Button>
+          ) : undefined
+        }
+      />
       {environments.isLoading ? <CenteredSpinner /> : null}
       {environments.isError ? <LoadFailed onRetry={() => void environments.refetch()} /> : null}
 

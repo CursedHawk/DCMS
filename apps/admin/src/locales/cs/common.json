@@ -1401,6 +1401,15 @@
       },
       "flowRun": {
         "title": "Běh {{flow}}"
+      },
+      "environmentApply": {
+        "title": "Nasazování konfigurace"
+      },
+      "environmentRollback": {
+        "title": "Vracení migrace"
+      },
+      "environmentCopy": {
+        "title": "Příprava prostředí {{environment}}"
       }
     },
     "stages": {
@@ -2299,6 +2308,78 @@
     "moveDown": "Posunout později",
     "receivesFrom": "Přijímá nasazení z",
     "deleteTitle": "Smazat prostředí {{name}}?",
-    "deleteHint": "Smaže se vše, co obsahuje: obsah, média, weby, data i uživatelé. Ostatní prostředí zůstanou beze změny. Akci nelze vrátit."
+    "deleteHint": "Smaže se vše, co obsahuje: obsah, média, weby, data i uživatelé. Ostatní prostředí zůstanou beze změny. Akci nelze vrátit.",
+    "errors": {
+      "conflictUnresolved": "Konflikt ještě nemá rozhodnutí.",
+      "migrationNotPending": "Tato migrace už nečeká na nasazení.",
+      "rollbackNotLast": "Vrátit lze jen nejnovější migraci.",
+      "notAllowed": "Některou z těchto změn zde nesmíte provést.",
+      "unknownKind": "Tento druh konfigurace zde není podporován.",
+      "unknownPlugin": "Plugin z tohoto nasazení zde není nainstalován.",
+      "pluginInstanceRemoved": "Ve zdroji byla odebrána aplikace; aplikace se vypínají, neodebírají.",
+      "slugTakenByOtherPlugin": "Aplikace zde už tuto adresu používá pro jiný plugin."
+    }
+  },
+  "deployments": {
+    "title": "Nasazení",
+    "description": "Změny konfigurace v prostředí {{name}}, nasazení čekající na příchod a jejich historie. Každá změna se zobrazí před použitím.",
+    "off": "Tento pracovní prostor nemá prostředí",
+    "unpublished": "Změny, které ještě nejsou v migraci",
+    "nothingChanged": "Od poslední migrace se nic nezměnilo.",
+    "migrationName": "Název migrace",
+    "migrationDescription": "Co dělá (nepovinné)",
+    "createMigration_one": "Vytvořit migraci z {{count}} změny",
+    "createMigration_few": "Vytvořit migraci z {{count}} změn",
+    "createMigration_many": "Vytvořit migraci z {{count}} změn",
+    "createMigration_other": "Vytvořit migraci z {{count}} změn",
+    "cut": "Migrace vytvořena. Prostředí, která odsud nasazují, ji uvidí jako čekající.",
+    "pendingFrom": "Čeká na nasazení z {{name}}",
+    "upToDate": "Aktuální: nic nečeká.",
+    "deploy": "Nasadit",
+    "deployUpTo_one": "Nasadit až sem",
+    "deployUpTo_few": "Nasadit tyto {{count}} migrace",
+    "deployUpTo_many": "Nasadit těchto {{count}} migrací",
+    "deployUpTo_other": "Nasadit těchto {{count}} migrací",
+    "resolveFirst": "Nejdřív u každého konfliktu zvolte, co s ním.",
+    "queued": "Nasazení začalo. Během běhu je vidět v Úlohách.",
+    "history": "Historie",
+    "noHistory": "Zatím žádné migrace.",
+    "rolledBack": "Vráceno",
+    "rollBack": "Vrátit",
+    "rollBackTitle": "Vrátit {{name}}?",
+    "rollbackQueued": "Vracení začalo. Během běhu je vidět v Úlohách.",
+    "appliedAt": "Použito {{when}}",
+    "from": "z {{name}}",
+    "changes_one": "{{count}} změna",
+    "changes_few": "{{count}} změny",
+    "changes_many": "{{count}} změn",
+    "changes_other": "{{count}} změn",
+    "before": "Před",
+    "after": "Po",
+    "current": "Teď v tomto prostředí",
+    "resolve": "Co s tímto konfliktem",
+    "resolutions": {
+      "overwrite": "Přepsat nasazovanou verzí",
+      "skip": "Ponechat verzi tohoto prostředí"
+    },
+    "ops": {
+      "add": "přidáno",
+      "update": "změněno",
+      "delete": "odebráno"
+    },
+    "outcomes": {
+      "apply": "Použije se",
+      "already": "Už je zde",
+      "conflict": "Konflikt",
+      "local": "Ponecháno místně"
+    },
+    "kinds": {
+      "roles": "Role",
+      "plugins": "Aplikace",
+      "sites": "Web",
+      "api-connections": "Připojení API",
+      "user-auth": "Přístup uživatelů",
+      "dynamic-apps": "Dynamická aplikace"
+    }
   }
 }

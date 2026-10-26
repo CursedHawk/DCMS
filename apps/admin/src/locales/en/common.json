@@ -1370,6 +1370,15 @@
       },
       "flowRun": {
         "title": "Running {{flow}}"
+      },
+      "environmentApply": {
+        "title": "Deploying configuration"
+      },
+      "environmentRollback": {
+        "title": "Rolling back a migration"
+      },
+      "environmentCopy": {
+        "title": "Setting up {{environment}}"
       }
     },
     "stages": {
@@ -2253,6 +2262,72 @@
     "moveDown": "Move later",
     "receivesFrom": "Receives deployments from",
     "deleteTitle": "Delete the {{name}} environment?",
-    "deleteHint": "Everything in it is deleted: content, media, sites, data and users. Other environments are not affected. This cannot be undone."
+    "deleteHint": "Everything in it is deleted: content, media, sites, data and users. Other environments are not affected. This cannot be undone.",
+    "errors": {
+      "conflictUnresolved": "A conflict has no decision yet.",
+      "migrationNotPending": "That migration is no longer waiting to deploy.",
+      "rollbackNotLast": "Only the most recent migration can be rolled back.",
+      "notAllowed": "You are not allowed to make one of these changes here.",
+      "unknownKind": "This kind of configuration is not supported here.",
+      "unknownPlugin": "A plugin in this deployment is not installed here.",
+      "pluginInstanceRemoved": "An app was removed in the source; apps are switched off, not removed.",
+      "slugTakenByOtherPlugin": "An app here already uses that address for another plugin."
+    }
+  },
+  "deployments": {
+    "title": "Deployments",
+    "description": "Configuration changes in {{name}}, deployments waiting to come in, and its history. Every change is shown before it is applied.",
+    "off": "This workspace has no environments",
+    "unpublished": "Changes not in a migration yet",
+    "nothingChanged": "Nothing has changed since the last migration.",
+    "migrationName": "Migration name",
+    "migrationDescription": "What it does (optional)",
+    "createMigration_one": "Create migration of {{count}} change",
+    "createMigration_other": "Create migration of {{count}} changes",
+    "cut": "Migration created. Environments that deploy from here will see it as pending.",
+    "pendingFrom": "Waiting to deploy from {{name}}",
+    "upToDate": "Up to date: nothing is waiting.",
+    "deploy": "Deploy",
+    "deployUpTo_one": "Deploy up to here",
+    "deployUpTo_other": "Deploy these {{count}} migrations",
+    "resolveFirst": "Choose what to do with each conflict first.",
+    "queued": "Deployment started. It shows in Jobs while it runs.",
+    "history": "History",
+    "noHistory": "No migrations yet.",
+    "rolledBack": "Rolled back",
+    "rollBack": "Roll back",
+    "rollBackTitle": "Roll back {{name}}?",
+    "rollbackQueued": "Rollback started. It shows in Jobs while it runs.",
+    "appliedAt": "Applied {{when}}",
+    "from": "from {{name}}",
+    "changes_one": "{{count}} change",
+    "changes_other": "{{count}} changes",
+    "before": "Before",
+    "after": "After",
+    "current": "In this environment now",
+    "resolve": "What to do with this conflict",
+    "resolutions": {
+      "overwrite": "Overwrite with the deployed version",
+      "skip": "Keep this environment's version"
+    },
+    "ops": {
+      "add": "added",
+      "update": "changed",
+      "delete": "removed"
+    },
+    "outcomes": {
+      "apply": "Applies",
+      "already": "Already here",
+      "conflict": "Conflict",
+      "local": "Kept locally"
+    },
+    "kinds": {
+      "roles": "Role",
+      "plugins": "App",
+      "sites": "Site",
+      "api-connections": "API connection",
+      "user-auth": "User access",
+      "dynamic-apps": "Dynamic app"
+    }
   }
 }

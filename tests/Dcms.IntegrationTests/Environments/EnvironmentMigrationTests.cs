@@ -152,7 +152,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("media:read");
 
         await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, second,
-            new Dictionary<string, string> { ["roles/Editors"] = "overwrite" }, new EnvironmentApplier(ws.Owner, false), ct));
+            new Dictionary<string, string> { [$"{second}/roles/Editors"] = "overwrite" }, new EnvironmentApplier(ws.Owner, false), ct));
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("content:publish", "content:read");
 
         // Only the last one rolls back, and it puts back what the migration replaced.
@@ -228,5 +228,45 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(),
             new EnvironmentApplier(ws.Owner, false), ct));
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Member", ct)).Should().Contain("members:manage");
+    }
+
+    [DockerFact]
+    public async Task A_skipped_conflict_is_not_counted_as_applied_when_a_later_change_is_authorised()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        async Task SetMember(string tenant, params string[] permissions)
+        {
+            var roles = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", ws.Owner, tenant), ct), ct);
+            var id = roles.EnumerateArray().First(r => r.GetProperty("name").GetString() == "Member").GetProperty("id").GetGuid();
+            (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/roles/{id}", ws.Owner, tenant,
+                new { name = "Member", permissions }), ct)).IsSuccessStatusCode.Should().BeTrue();
+        }
+
+        // Production narrows Member by hand, so every change to it from development conflicts.
+        await SetMember(ws.Prod, "media:read");
+        await SetMember(ws.Dev, "media:read", "analytics:read", "members:manage");
+        var first = await CutAsync(client, ws, "Members manage members", ct);
+        await SetMember(ws.Dev, "media:read", "analytics:read", "members:manage", "content:read");
+        var second = await CutAsync(client, ws, "Members read content", ct);
+
+        // A deployer who holds the second change's addition but not the first's.
+        var deployer = Guid.NewGuid();
+        var role = await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/roles", ws.Owner, ws.Prod,
+            new { name = "Deployer", permissions = new[] { "environments:promote", "roles:manage", "content:read", "analytics:read" } }), ct), ct);
+        var invite = await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/invitations", ws.Owner, ws.Prod,
+            new { email = $"{deployer:N}@dcms.test", roleIds = new[] { role.GetProperty("id").GetString() } }), ct), ct);
+        await client.SendAsync(Req(HttpMethod.Post, "/api/admin/invitations/accept", deployer, body: new { token = invite.GetProperty("token").GetString() }), ct);
+
+        // Skipping the first and overwriting with the second would still put members:manage in.
+        var resolutions = new Dictionary<string, string>
+        {
+            [$"{first}/roles/Member"] = "skip",
+            [$"{second}/roles/Member"] = "overwrite",
+        };
+        var refused = () => Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, second, resolutions, new EnvironmentApplier(deployer, false), ct));
+        (await refused.Should().ThrowAsync<EnvironmentMigrationException>()).Which.Detail.Should().Be("members:manage");
+        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Member", ct)).Should().Equal("media:read");
     }
 }
