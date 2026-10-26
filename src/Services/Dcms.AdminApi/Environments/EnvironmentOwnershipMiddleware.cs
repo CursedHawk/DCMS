@@ -41,8 +41,12 @@ public sealed class EnvironmentOwnershipMiddleware(RequestDelegate next)
             await next(http);
             return;
         }
+        // The item as it is, and as the request would name it: renaming an item of one's own onto
+        // the name of one the pipeline owns, or creating one under that name, is refused as well.
         var key = await KeyAsync(managed.Kind, http, tenantId, services);
-        if (EnvironmentMigrator.Ownership(policies, managed.Kind, key ?? "") != EnvironmentOwnership.Managed)
+        var renamed = await BodyKeyAsync(managed.Kind, http);
+        if (EnvironmentMigrator.Ownership(policies, managed.Kind, key ?? "") != EnvironmentOwnership.Managed
+            && (renamed is null || EnvironmentMigrator.Ownership(policies, managed.Kind, renamed) != EnvironmentOwnership.Managed))
         {
             await next(http);
             return;
@@ -61,6 +65,37 @@ public sealed class EnvironmentOwnershipMiddleware(RequestDelegate next)
             code = "environment_managed",
             kind = managed.Kind,
         }, http.RequestAborted);
+    }
+
+    /// <summary>The key a request body gives the item (a role's new name, a new app's slug), when it can.</summary>
+    private static async Task<string?> BodyKeyAsync(string kind, HttpContext http)
+    {
+        var property = kind switch
+        {
+            "roles" => "name",
+            "plugins" => "slug",
+            "user-auth" => "key",
+            _ => null,
+        };
+        if (property is null || http.Request.ContentType?.Contains("json", StringComparison.OrdinalIgnoreCase) != true) return null;
+        http.Request.EnableBuffering();
+        try
+        {
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(http.Request.Body, cancellationToken: http.RequestAborted);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return null;
+            var value = doc.RootElement.EnumerateObject()
+                .FirstOrDefault(p => p.Name.Equals(property, StringComparison.OrdinalIgnoreCase)).Value;
+            var text = value.ValueKind == System.Text.Json.JsonValueKind.String ? value.GetString()?.Trim() : null;
+            return text is null ? null : kind == "user-auth" ? $"role:{text}" : text;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null; // the handler answers a malformed body itself
+        }
+        finally
+        {
+            http.Request.Body.Position = 0;
+        }
     }
 
     /// <summary>The item a route touches, keyed as its kind exports it; null for a new one.</summary>

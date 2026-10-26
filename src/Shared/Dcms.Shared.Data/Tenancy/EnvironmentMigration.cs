@@ -84,3 +84,37 @@ public static class EnvironmentPolicies
         return Ownership(policies, kind, key) == EnvironmentOwnership.Managed;
     }
 }
+
+/// <summary>
+/// One environment using another's resource (ADR 0026), set up in the consuming environment
+/// (<see cref="TenantEntity.TenantId"/>) and only ever within one workspace.
+/// <list type="bullet">
+/// <item><c>app</c>: the consumer's <c>/api/{TargetKey}</c> is served by the target's app of that
+/// slug — its published content, its Dynamic Apps data — read only, or read and write.</item>
+/// </list>
+/// </summary>
+public sealed class EnvironmentLink : TenantEntity
+{
+    public Guid TargetTenantId { get; set; }
+    public string Kind { get; set; } = EnvironmentLinkKinds.App;
+    public string? TargetKey { get; set; }
+    public EnvironmentLinkAccess Access { get; set; } = EnvironmentLinkAccess.Read;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public static class EnvironmentLinkKinds
+{
+    public const string App = "app";
+
+    /// <summary>The cached links of one consuming environment: read by content-api, cleared by admin-api on any change.</summary>
+    public static string CacheKey(Guid tenantId) => $"t:{tenantId}:environment-links";
+}
+
+/// <summary>A link as content-api caches it.</summary>
+public sealed record EnvironmentLinkEntry(string Kind, string? TargetKey, Guid TargetTenantId, EnvironmentLinkAccess Access);
+
+public enum EnvironmentLinkAccess
+{
+    Read,
+    ReadWrite,
+}

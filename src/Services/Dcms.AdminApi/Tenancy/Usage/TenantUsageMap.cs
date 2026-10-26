@@ -42,6 +42,7 @@ public static class TenantUsageMap
             [("tenancy", "environment_migrations")] = new("workspace", "settings"),
             [("tenancy", "environment_baselines")] = new("workspace", "settings"),
             [("tenancy", "environment_policies")] = new("workspace", "settings"),
+            [("tenancy", "environment_links")] = new("workspace", "settings"),
             [("plugins", "plugin_instances")] = new("plugins", "", Group: "x.\"PluginId\""),
             [("plugins", "plugin_data")] = new("plugins", "", Group: "x.\"PluginId\""),
             [("plugins", "plugin_secrets")] = new("plugins", "", Group: "x.\"PluginId\""),

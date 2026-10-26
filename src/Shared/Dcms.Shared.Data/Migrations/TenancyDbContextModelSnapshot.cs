@@ -127,6 +127,47 @@ namespace Dcms.Shared.Data.Migrations
                     b.ToTable("environment_baselines", "tenancy");
                 });
 
+            modelBuilder.Entity("Dcms.Shared.Data.Tenancy.EnvironmentLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Access")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("TargetKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<Guid>("TargetTenantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TargetTenantId");
+
+                    b.HasIndex("TenantId", "Kind", "TargetKey")
+                        .IsUnique();
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("TenantId", "Kind", "TargetKey"), false);
+
+                    b.ToTable("environment_links", "tenancy");
+                });
+
             modelBuilder.Entity("Dcms.Shared.Data.Tenancy.EnvironmentMigration", b =>
                 {
                     b.Property<Guid>("Id")

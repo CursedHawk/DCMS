@@ -299,21 +299,28 @@ public sealed class ForgejoClient(HttpClient http, IOptions<ForgejoOptions> opti
     /// </summary>
     public async Task ProtectBranchAsync(string owner, string repo, string branch, bool on, CancellationToken ct)
     {
-        using (var removed = await http.DeleteAsync($"/api/v1/repos/{owner}/{repo}/branch_protections/{Uri.EscapeDataString(branch)}", ct))
+        var rule = $"/api/v1/repos/{owner}/{repo}/branch_protections/{Uri.EscapeDataString(branch)}";
+        if (!on)
         {
+            using var removed = await http.DeleteAsync(rule, ct);
             if (removed.StatusCode is not (HttpStatusCode.NoContent or HttpStatusCode.NotFound)) await ThrowFor(removed, ct);
+            return;
         }
-        if (!on) return;
         var bot = await http.GetFromJsonAsync<UserInfo>("/api/v1/user", Json, ct)
                   ?? throw new InvalidOperationException("Forgejo did not say who the bot is.");
-        using var res = await http.PostAsJsonAsync($"/api/v1/repos/{owner}/{repo}/branch_protections", new
+        var body = new
         {
             rule_name = branch,
             enable_push = true,
             enable_push_whitelist = true,
             push_whitelist_usernames = new[] { bot.Login },
-        }, Json, ct);
-        if (res.StatusCode != HttpStatusCode.Created) await ThrowFor(res, ct);
+        };
+        // In place when it exists: no moment in which the branch is open.
+        using var updated = await http.PatchAsJsonAsync(rule, body, Json, ct);
+        if (updated.StatusCode == HttpStatusCode.OK) return;
+        if (updated.StatusCode != HttpStatusCode.NotFound) await ThrowFor(updated, ct);
+        using var created = await http.PostAsJsonAsync($"/api/v1/repos/{owner}/{repo}/branch_protections", body, Json, ct);
+        if (created.StatusCode != HttpStatusCode.Created) await ThrowFor(created, ct);
     }
 
     // ---------- users / collaborators (repo authorization) ----------

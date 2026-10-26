@@ -2327,6 +2327,17 @@
       "Mixed": "Zde i nasazení",
       "Local": "Jen zde",
       "Managed": "Jen nasazení"
+    },
+    "links": "Aplikace používané z jiných prostředí",
+    "linkRow": "/api/{{address}} z {{name}}",
+    "unlink": "Přestat používat /api/{{address}} z jiného prostředí",
+    "linkAddress": "Adresa aplikace",
+    "linkFrom": "Z prostředí",
+    "linkAccess": "Přístup",
+    "link": "Použít aplikaci",
+    "access": {
+      "Read": "Jen čtení",
+      "ReadWrite": "Čtení i zápis"
     }
   },
   "deployments": {

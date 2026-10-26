@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Layers, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Layers, Link2, Lock, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
@@ -29,6 +29,8 @@ import {
   useDisableEnvironments,
   useEnableEnvironments,
   useEnvironments,
+  useLinkMutations,
+  useLinks,
   usePolicies,
   useSavePolicies,
   useUpdateEnvironment,
@@ -213,6 +215,7 @@ function EnvironmentCard({
         </div>
 
         {all.length > 1 ? <OwnershipGrid environmentId={env.tenantId} /> : null}
+        {all.length > 1 ? <Links env={env} all={all} /> : null}
 
         {all.length > 1 ? (
           <fieldset className="flex flex-col gap-1.5">
@@ -288,6 +291,85 @@ function OwnershipGrid({ environmentId }: { environmentId: string }) {
           <Lock className="h-4 w-4" /> {t('environments.lockToPipeline')}
         </Button>
       </div>
+    </fieldset>
+  );
+}
+
+/**
+ * Apps this environment uses from another one (ADR 0026): its site's /api/{address} is served by
+ * that environment's app — production's real articles in development, say — read only, or read
+ * and write.
+ */
+function Links({ env, all }: { env: Environment; all: Environment[] }) {
+  const { t } = useTranslation();
+  const links = useLinks(env.tenantId);
+  const { add, remove } = useLinkMutations(env.tenantId);
+  const others = all.filter((e) => e.tenantId !== env.tenantId);
+  const [target, setTarget] = useState(others[0]?.tenantId ?? '');
+  const [address, setAddress] = useState('');
+  const [access, setAccess] = useState<'read' | 'readWrite'>('read');
+  const nameOf = (id: string) => all.find((e) => e.tenantId === id)?.name ?? id;
+  const onError = (err: unknown) => toastApiError(err, t);
+
+  return (
+    <fieldset className="flex flex-col gap-1.5">
+      <legend className="mb-1 text-xs font-medium text-muted-foreground">{t('environments.links')}</legend>
+      {(links.data ?? []).map((l) => (
+        <div key={l.id} className="flex items-center gap-2 text-sm">
+          <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="min-w-0 truncate">
+            {t('environments.linkRow', { address: l.targetKey, name: nameOf(l.targetTenantId) })}
+          </span>
+          <Badge tone="outline">{t(`environments.access.${l.access}`)}</Badge>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto"
+            aria-label={t('environments.unlink', { address: l.targetKey })}
+            onClick={() => remove.mutate(l.id, { onError })}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      ))}
+      <form
+        className="flex flex-col gap-2 sm:flex-row sm:items-center"
+        onSubmit={(e) => {
+          e.preventDefault();
+          add.mutate({ targetTenantId: target, targetKey: address.trim(), access }, { onSuccess: () => setAddress(''), onError });
+        }}
+      >
+        <Input
+          aria-label={t('environments.linkAddress')}
+          placeholder={t('environments.linkAddress')}
+          value={address}
+          onChange={(e) => setAddress(e.target.value.toLowerCase())}
+        />
+        <Select value={target} onValueChange={setTarget}>
+          <SelectTrigger className="sm:w-40" aria-label={t('environments.linkFrom')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {others.map((o) => (
+              <SelectItem key={o.tenantId} value={o.tenantId}>
+                {o.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={access} onValueChange={(v) => setAccess(v as 'read' | 'readWrite')}>
+          <SelectTrigger className="sm:w-40" aria-label={t('environments.linkAccess')}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="read">{t('environments.access.Read')}</SelectItem>
+            <SelectItem value="readWrite">{t('environments.access.ReadWrite')}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Button type="submit" variant="outline" disabled={!address.trim() || !target || add.isPending}>
+          <Link2 className="h-4 w-4" /> {t('environments.link')}
+        </Button>
+      </form>
     </fieldset>
   );
 }

@@ -144,6 +144,8 @@ app.UseCors();
 app.UseDcmsAudit();
 // Before the tenant is resolved: a tenant domain's request arrives naming none, only its Host.
 app.UseSiteHostResolution();
+// An app another environment serves for this one (ADR 0026), named before the tenant is resolved.
+app.UseEnvironmentLinks();
 app.UseMultiTenant();
 app.UseAuthentication();
 // One Idempotency-Key, one operation (ADR 0024): honoured when a caller sends one, never required.

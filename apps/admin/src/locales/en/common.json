@@ -2281,6 +2281,17 @@
       "Mixed": "Here and deployments",
       "Local": "Here only",
       "Managed": "Deployments only"
+    },
+    "links": "Apps used from other environments",
+    "linkRow": "/api/{{address}} from {{name}}",
+    "unlink": "Stop using /api/{{address}} from another environment",
+    "linkAddress": "App address",
+    "linkFrom": "From environment",
+    "linkAccess": "Access",
+    "link": "Use app",
+    "access": {
+      "Read": "Read only",
+      "ReadWrite": "Read and write"
     }
   },
   "deployments": {

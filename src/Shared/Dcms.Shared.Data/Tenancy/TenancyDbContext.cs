@@ -37,6 +37,7 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
     public DbSet<EnvironmentMigration> EnvironmentMigrations => Set<EnvironmentMigration>();
     public DbSet<EnvironmentBaseline> EnvironmentBaselines => Set<EnvironmentBaseline>();
     public DbSet<EnvironmentPolicy> EnvironmentPolicies => Set<EnvironmentPolicy>();
+    public DbSet<EnvironmentLink> EnvironmentLinks => Set<EnvironmentLink>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -183,6 +184,18 @@ public class TenancyDbContext(DbContextOptions<TenancyDbContext> options)
             e.Property(b => b.ItemsJson).HasColumnType("jsonb");
             e.HasIndex(b => b.TenantId).IsUnique();
             e.HasQueryFilter(b => b.TenantId == CurrentTenantId);
+        });
+
+        builder.Entity<EnvironmentLink>(e =>
+        {
+            e.ToTable("environment_links");
+            e.HasKey(l => l.Id);
+            e.Property(l => l.Kind).HasMaxLength(32).IsRequired();
+            e.Property(l => l.TargetKey).HasMaxLength(256);
+            e.Property(l => l.Access).HasConversion<string>().HasMaxLength(16);
+            e.HasIndex(l => new { l.TenantId, l.Kind, l.TargetKey }).IsUnique().AreNullsDistinct(false);
+            e.HasIndex(l => l.TargetTenantId);
+            e.HasQueryFilter(l => l.TenantId == CurrentTenantId);
         });
 
         builder.Entity<EnvironmentPolicy>(e =>

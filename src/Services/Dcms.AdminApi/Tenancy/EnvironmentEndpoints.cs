@@ -282,6 +282,7 @@ public static class EnvironmentEndpoints
                 await db.SaveChangesAsync(ct);
 
                 // A site left to deployments takes code from them only, at the git server too.
+                var unprotected = new List<string>();
                 if (git.Enabled)
                 {
                     var repos = await sites.Sites.IgnoreQueryFilters().AsNoTracking()
@@ -296,12 +297,94 @@ public static class EnvironmentEndpoints
                         catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
                         {
                             logs.CreateLogger("Environments").LogWarning(ex, "Could not set release protection on {Repo}.", site.GitRepoFullName);
+                            unprotected.Add(site.GitRepoFullName!);
                         }
                     }
+                }
+                if (unprotected.Count > 0)
+                {
+                    // Not quietly: the policy says only deployments push here, and git does not yet agree.
+                    return Results.Json(new
+                    {
+                        error = "The policy is saved, but the git server did not take it for these repositories. Save again to retry.",
+                        repositories = unprotected,
+                    }, statusCode: StatusCodes.Status502BadGateway);
                 }
             }
             return Results.NoContent();
         }).RequireAuthorization().WithAudit(AuditActions.EnvironmentPoliciesChanged, "tenant");
+
+        // Links (ADR 0026): this environment using another's resource, within the workspace.
+        app.MapGet("/api/admin/environments/{id:guid}/links", async (
+            Guid id, ITenantContext tenant, TenancyDbContext db, CancellationToken ct) =>
+        {
+            var current = await CurrentAsync(db, tenant, ct);
+            if (current?.WorkspaceId is null || !(await WorkspaceAsync(db, current, ct)).Any(t => t.TenantId == id)) return Results.NotFound();
+            using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
+            return Results.Ok(await db.EnvironmentLinks.IgnoreQueryFilters().AsNoTracking()
+                .Where(l => l.TenantId == id)
+                .Select(l => new { id = l.Id, kind = l.Kind, targetTenantId = l.TargetTenantId, targetKey = l.TargetKey, access = l.Access.ToString() })
+                .ToListAsync(ct));
+        }).RequireAuthorization();
+
+        app.MapPost("/api/admin/environments/{id:guid}/links", async (
+            Guid id, LinkRequest body, ITenantContext tenant, TenancyDbContext db, Dcms.Shared.Data.Cms.CmsDbContext cms,
+            CurrentUser me, IPermissionResolver permissions, Dcms.Shared.Caching.ICacheService cache, IAuditRecorder audit, CancellationToken ct) =>
+        {
+            var current = await CurrentAsync(db, tenant, ct);
+            if (current?.WorkspaceId is null) return Results.NotFound();
+            var all = await WorkspaceAsync(db, current, ct);
+            if (!all.Any(t => t.TenantId == id)) return Results.NotFound();
+            if (!await CanManageAsync(current.RootId, me, permissions, ct)) return Results.Forbid();
+            if (body.TargetTenantId == id || !all.Any(t => t.TenantId == body.TargetTenantId))
+            {
+                return Results.BadRequest(new { error = "A link names another environment of this workspace." });
+            }
+            if (body.Kind != EnvironmentLinkKinds.App || string.IsNullOrWhiteSpace(body.TargetKey)
+                || !Enum.TryParse<EnvironmentLinkAccess>(body.Access, ignoreCase: true, out var access))
+            {
+                return Results.BadRequest(new { error = "An app link names the app's address and read or readWrite access." });
+            }
+            // Only an app the target has: anything else under /api is the platform's own routes.
+            using (Dcms.Shared.Data.Rls.RlsScope.Tenant(body.TargetTenantId))
+            {
+                if (!await cms.PluginInstances.IgnoreQueryFilters().AnyAsync(p => p.TenantId == body.TargetTenantId && p.Slug == body.TargetKey, ct))
+                {
+                    return Results.BadRequest(new { error = "That environment has no app at this address." });
+                }
+            }
+            using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
+            if (await db.EnvironmentLinks.IgnoreQueryFilters().AnyAsync(l => l.TenantId == id && l.Kind == body.Kind && l.TargetKey == body.TargetKey, ct))
+            {
+                return Results.Conflict(new { error = "This app is already linked." });
+            }
+            var link = new EnvironmentLink
+            {
+                Id = Guid.NewGuid(), TenantId = id, TargetTenantId = body.TargetTenantId, Kind = body.Kind, TargetKey = body.TargetKey.Trim(), Access = access,
+            };
+            db.EnvironmentLinks.Add(link);
+            audit.Declared?.For("environment_link", link.Id, link.TargetKey).With("target", link.TargetTenantId).With("access", access.ToString());
+            await db.SaveChangesAsync(ct);
+            await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(id), ct);
+            return Results.Created($"/api/admin/environments/{id}/links/{link.Id}", new { id = link.Id });
+        }).RequireAuthorization().WithAudit(AuditActions.EnvironmentLinkCreated, "environment_link");
+
+        app.MapDelete("/api/admin/environments/{id:guid}/links/{linkId:guid}", async (
+            Guid id, Guid linkId, ITenantContext tenant, TenancyDbContext db, CurrentUser me,
+            IPermissionResolver permissions, Dcms.Shared.Caching.ICacheService cache, IAuditRecorder audit, CancellationToken ct) =>
+        {
+            var current = await CurrentAsync(db, tenant, ct);
+            if (current?.WorkspaceId is null || !(await WorkspaceAsync(db, current, ct)).Any(t => t.TenantId == id)) return Results.NotFound();
+            if (!await CanManageAsync(current.RootId, me, permissions, ct)) return Results.Forbid();
+            using var rls = Dcms.Shared.Data.Rls.RlsScope.Tenant(id);
+            var link = await db.EnvironmentLinks.IgnoreQueryFilters().FirstOrDefaultAsync(l => l.TenantId == id && l.Id == linkId, ct);
+            if (link is null) return Results.NotFound();
+            db.EnvironmentLinks.Remove(link);
+            audit.Declared?.For("environment_link", link.Id, link.TargetKey);
+            await db.SaveChangesAsync(ct);
+            await cache.RemoveAsync(EnvironmentLinkKinds.CacheKey(id), ct);
+            return Results.NoContent();
+        }).RequireAuthorization().WithAudit(AuditActions.EnvironmentLinkDeleted, "environment_link");
 
         return app;
     }
@@ -362,4 +445,5 @@ public static class EnvironmentEndpoints
     private sealed record CreateEnvironmentRequest(string? Name, bool? Empty);
     private sealed record UpdateEnvironmentRequest(string? Name, int? Order, List<Guid>? PromotesFrom);
     private sealed record PolicyRequest(string Kind, string? ItemKey, string Mode);
+    private sealed record LinkRequest(string Kind, Guid TargetTenantId, string? TargetKey, string Access);
 }

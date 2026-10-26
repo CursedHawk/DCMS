@@ -379,5 +379,8 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var reviewers = prodRoles.EnumerateArray().First(r => r.GetProperty("name").GetString() == "Reviewers").GetProperty("id").GetGuid();
         (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/roles/{reviewers}", ws.Owner, ws.Prod,
             new { name = "Reviewers", permissions = new[] { "media:read", "analytics:read" } }), ct)).IsSuccessStatusCode.Should().BeTrue();
+        // But not renamed onto a name the pipeline owns.
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/roles/{reviewers}", ws.Owner, ws.Prod,
+            new { name = "Editors 2", permissions = new[] { "media:read" } }), ct)).StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 }

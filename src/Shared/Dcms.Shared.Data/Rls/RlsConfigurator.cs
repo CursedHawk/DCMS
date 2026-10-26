@@ -46,6 +46,7 @@ public static class RlsConfigurator
         ("tenancy", "environment_migrations"),
         ("tenancy", "environment_baselines"),
         ("tenancy", "environment_policies"),
+        ("tenancy", "environment_links"),
         ("plugins", "plugin_instances"),
         // Every plugin's private documents and Transit-encrypted credentials, all tenants in
         // two tables: the policy is the only thing between one tenant's plugin state and another's.

@@ -425,7 +425,14 @@ public sealed class TenantDeleter(
             ("tenancy.EnvironmentMigrations", () => tenancy.EnvironmentMigrations.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.EnvironmentBaselines", () => tenancy.EnvironmentBaselines.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.EnvironmentPolicies", () => tenancy.EnvironmentPolicies.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
+            ("tenancy.EnvironmentLinks", () => tenancy.EnvironmentLinks.IgnoreQueryFilters().Where(e => e.TenantId == tenantId).ExecuteDeleteAsync(ct)),
             ("tenancy.Tenants", () => tenancy.Tenants.Where(t => t.Id == key).ExecuteDeleteAsync(ct)));
+        // Nor use it: links to it are rows of the environments that made them (ADR 0026).
+        using (RlsScope.Platform())
+        {
+            manifest["tenancy.EnvironmentLinksToIt"] = await tenancy.EnvironmentLinks.IgnoreQueryFilters()
+                .Where(l => l.TargetTenantId == tenantId).ExecuteDeleteAsync(ct);
+        }
         // The other environments of its workspace may no longer be promoted into from it.
         if (tenant.WorkspaceId is { } workspaceId && workspaceId != tenantId)
         {

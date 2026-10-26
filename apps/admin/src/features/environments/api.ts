@@ -153,3 +153,33 @@ export function useSavePolicies(environmentId: string) {
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['environments', 'policies', environmentId] }),
   });
 }
+
+export interface EnvironmentLink {
+  id: string;
+  kind: 'app';
+  targetTenantId: string;
+  targetKey: string | null;
+  access: 'Read' | 'ReadWrite';
+}
+
+export const useLinks = (environmentId: string) =>
+  useQuery({
+    queryKey: ['environments', 'links', environmentId],
+    queryFn: () => api.get<EnvironmentLink[]>(`/admin/environments/${environmentId}/links`),
+  });
+
+export function useLinkMutations(environmentId: string) {
+  const qc = useQueryClient();
+  const onSuccess = () => void qc.invalidateQueries({ queryKey: ['environments', 'links', environmentId] });
+  return {
+    add: useMutation({
+      mutationFn: (body: { targetTenantId: string; targetKey: string; access: 'read' | 'readWrite' }) =>
+        api.post(`/admin/environments/${environmentId}/links`, { kind: 'app', ...body }),
+      onSuccess,
+    }),
+    remove: useMutation({
+      mutationFn: (linkId: string) => api.del(`/admin/environments/${environmentId}/links/${linkId}`),
+      onSuccess,
+    }),
+  };
+}
