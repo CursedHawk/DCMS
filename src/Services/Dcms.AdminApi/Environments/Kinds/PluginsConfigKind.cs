@@ -7,6 +7,7 @@ using Dcms.Shared.Contracts.Events;
 using Dcms.Shared.Data.Cms;
 using Dcms.Shared.Data.Tenancy;
 using Dcms.Shared.Messaging;
+using Dcms.Shared.Security;
 using Dcms.Shared.Telemetry;
 using Microsoft.EntityFrameworkCore;
 
@@ -24,6 +25,8 @@ public sealed class PluginsConfigKind(
     IEventPublisher events, ICacheService cache, DcmsMetrics metrics) : IEnvironmentConfigKind
 {
     public string Kind => "plugins";
+
+    public string? Permission => PlatformPermissions.PluginsManage;
 
     private sealed record Value(string PluginId, string Name, string Description, JsonNode? Config, bool Enabled, bool AiToolsEnabled);
 

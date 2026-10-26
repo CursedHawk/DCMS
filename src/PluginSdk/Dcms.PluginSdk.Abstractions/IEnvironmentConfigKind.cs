@@ -23,6 +23,12 @@ public interface IEnvironmentConfigKind
     /// <summary>Stable id, e.g. <c>roles</c>, <c>plugins</c>, <c>dynamic-apps</c>.</summary>
     string Kind { get; }
 
+    /// <summary>
+    /// The permission whoever applies a change of this kind must hold in the receiving environment
+    /// — the one its own screens require. A deployment is not a way round them.
+    /// </summary>
+    string? Permission => null;
+
     /// <summary>Every item of this kind the tenant has.</summary>
     Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct);
 

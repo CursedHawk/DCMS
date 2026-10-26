@@ -29,6 +29,9 @@ public enum ChangeOutcome
 
 public sealed record ReviewedChange(ConfigChange Change, ChangeOutcome Outcome, JsonElement? Current);
 
+/// <summary>Who a deployment runs for, captured when it was asked for; checked again when it runs.</summary>
+public sealed record EnvironmentApplier(Guid? UserId, bool IsSuperAdmin);
+
 public sealed record PendingMigration(EnvironmentMigration Migration, IReadOnlyList<ReviewedChange> Changes);
 
 /// <summary>
@@ -41,7 +44,8 @@ public sealed record PendingMigration(EnvironmentMigration Migration, IReadOnlyL
 /// <para>Every query names its tenant and runs inside that tenant's database scope: this reads and
 /// writes environments other than the request's.</para>
 /// </summary>
-public sealed class EnvironmentMigrator(IEnumerable<IEnvironmentConfigKind> kinds, TenancyDbContext db)
+public sealed class EnvironmentMigrator(
+    IEnumerable<IEnvironmentConfigKind> kinds, TenancyDbContext db, Dcms.Shared.Security.Authorization.IPermissionResolver permissions)
 {
     private readonly IReadOnlyList<IEnvironmentConfigKind> _kinds = kinds.ToList();
 
@@ -208,67 +212,97 @@ public sealed class EnvironmentMigrator(IEnumerable<IEnvironmentConfigKind> kind
     /// <paramref name="upTo"/>, in order, each recorded in the target's history once all of its
     /// changes are in. A conflict needs a resolution in <paramref name="resolutions"/>
     /// (<c>overwrite</c> or <c>skip</c>, keyed by change id), except in an item the target lets
-    /// migrations own, where overwrite is the rule.
+    /// migrations own, where overwrite is the rule. Every write is authorised for
+    /// <paramref name="applier"/> before the first one is made.
     /// </summary>
     /// <returns>How many migrations were applied.</returns>
     public async Task<int> ApplyAsync(
-        Guid targetId, Guid sourceId, Guid upTo, IReadOnlyDictionary<string, string> resolutions, Guid? userId,
-        CancellationToken ct)
+        Guid targetId, Guid sourceId, Guid upTo, IReadOnlyDictionary<string, string> resolutions,
+        EnvironmentApplier applier, CancellationToken ct)
     {
         var pending = await PendingAsync(targetId, sourceId, ct);
         var last = pending.FindIndex(p => p.Migration.MigrationId == upTo);
         if (last < 0) throw new EnvironmentMigrationException("environments.errors.migrationNotPending");
 
         var policies = await PoliciesAsync(targetId, ct);
-        var count = 0;
-        foreach (var (migration, reviewed) in pending.Take(last + 1))
+        var plans = pending.Take(last + 1)
+            .Select(p => (p.Migration, p.Changes, Chosen: Choose(p.Changes, resolutions, policies)))
+            .ToList();
+        await AuthorizeAsync(targetId, applier, plans.SelectMany(p => Writes(p.Changes, p.Chosen)), ct);
+
+        foreach (var (migration, reviewed, chosen) in plans)
         {
-            var chosen = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var r in reviewed)
-            {
-                if (r.Outcome is ChangeOutcome.Already or ChangeOutcome.Local) continue;
-                if (r.Outcome == ChangeOutcome.Conflict)
-                {
-                    var choice = resolutions.GetValueOrDefault(r.Change.Id)
-                        ?? (Ownership(policies, r.Change.Kind, r.Change.Key) == EnvironmentOwnership.Managed ? "overwrite" : null)
-                        ?? throw new EnvironmentMigrationException("environments.errors.conflictUnresolved", r.Change.Id);
-                    chosen[r.Change.Id] = choice;
-                    if (choice != "overwrite") continue;
-                }
-                using (RlsScope.Tenant(targetId))
-                {
-                    await KindOf(r.Change.Kind).ApplyAsync(targetId, r.Change.Key, r.Change.After, ct);
-                }
-            }
-            await RecordAsync(targetId, migration, reviewed, chosen, userId, forward: true, ct);
-            count++;
+            await WriteAsync(targetId, Writes(reviewed, chosen), ct);
+            await RecordAsync(targetId, migration, reviewed, chosen, applier.UserId, forward: true, ct);
         }
-        return count;
+        return plans.Count;
     }
 
     /// <summary>Reverts the target's most recent migration, change by change in reverse, the same way.</summary>
     public async Task<EnvironmentMigration> RollbackAsync(
-        Guid targetId, Guid migrationId, IReadOnlyDictionary<string, string> resolutions, CancellationToken ct)
+        Guid targetId, Guid migrationId, IReadOnlyDictionary<string, string> resolutions,
+        EnvironmentApplier applier, CancellationToken ct)
     {
         var (row, reviewed) = await RollbackPlanAsync(targetId, migrationId, ct);
+        // A rollback restores what the migration replaced; no item is the target's to keep here.
+        var chosen = Choose(reviewed, resolutions, []);
+        await AuthorizeAsync(targetId, applier, Writes(reviewed, chosen), ct);
+        await WriteAsync(targetId, Writes(reviewed, chosen), ct);
+        await RecordAsync(targetId, row, reviewed, chosen, applier.UserId, forward: false, ct);
+        return row;
+    }
+
+    /// <summary>The reviewer's choice for every conflict; overwrite where the target lets migrations own the item.</summary>
+    private static Dictionary<string, string> Choose(
+        IEnumerable<ReviewedChange> reviewed, IReadOnlyDictionary<string, string> resolutions, List<EnvironmentPolicy> policies)
+    {
         var chosen = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var r in reviewed)
+        foreach (var r in reviewed.Where(r => r.Outcome == ChangeOutcome.Conflict))
         {
-            if (r.Outcome is ChangeOutcome.Already or ChangeOutcome.Local) continue;
-            if (r.Outcome == ChangeOutcome.Conflict)
+            var choice = resolutions.GetValueOrDefault(r.Change.Id)
+                ?? (Ownership(policies, r.Change.Kind, r.Change.Key) == EnvironmentOwnership.Managed ? "overwrite" : null)
+                ?? throw new EnvironmentMigrationException("environments.errors.conflictUnresolved", r.Change.Id);
+            if (choice is not ("overwrite" or "skip")) throw new EnvironmentMigrationException("environments.errors.conflictUnresolved", r.Change.Id);
+            chosen[r.Change.Id] = choice;
+        }
+        return chosen;
+    }
+
+    private static IEnumerable<ReviewedChange> Writes(IEnumerable<ReviewedChange> reviewed, Dictionary<string, string> chosen) =>
+        reviewed.Where(r => r.Outcome == ChangeOutcome.Apply
+                            || (r.Outcome == ChangeOutcome.Conflict && chosen.GetValueOrDefault(r.Change.Id) == "overwrite"));
+
+    /// <summary>
+    /// Refuses the whole deployment unless the applier could make every one of its writes by hand
+    /// in the target: each kind's own permission, and for roles every permission a change adds —
+    /// the rule that stops a role editor from minting a role beyond their own (SEC-06).
+    /// </summary>
+    private async Task AuthorizeAsync(Guid targetId, EnvironmentApplier applier, IEnumerable<ReviewedChange> writes, CancellationToken ct)
+    {
+        if (applier.IsSuperAdmin) return;
+        var held = applier.UserId is { } userId
+            ? await permissions.GetPermissionsAsync(targetId, userId, ct)
+            : new HashSet<string>();
+        foreach (var w in writes)
+        {
+            if (KindOf(w.Change.Kind).Permission is { } needed && !held.Contains(needed))
             {
-                var choice = resolutions.GetValueOrDefault(r.Change.Id)
-                    ?? throw new EnvironmentMigrationException("environments.errors.conflictUnresolved", r.Change.Id);
-                chosen[r.Change.Id] = choice;
-                if (choice != "overwrite") continue;
+                throw new EnvironmentMigrationException("environments.errors.notAllowed", needed);
             }
-            using (RlsScope.Tenant(targetId))
+            if (w.Change.Kind == "roles" && Kinds.RolesConfigKind.Added(w.Current, w.Change.After).FirstOrDefault(p => !held.Contains(p)) is { } beyond)
             {
-                await KindOf(r.Change.Kind).ApplyAsync(targetId, r.Change.Key, r.Change.After, ct);
+                throw new EnvironmentMigrationException("environments.errors.notAllowed", beyond);
             }
         }
-        await RecordAsync(targetId, row, reviewed, chosen, null, forward: false, ct);
-        return row;
+    }
+
+    private async Task WriteAsync(Guid targetId, IEnumerable<ReviewedChange> writes, CancellationToken ct)
+    {
+        foreach (var w in writes)
+        {
+            using var rls = RlsScope.Tenant(targetId);
+            await KindOf(w.Change.Kind).ApplyAsync(targetId, w.Change.Key, w.Change.After, ct);
+        }
     }
 
     /// <summary>What rolling back the target's last migration would do: its changes inverted, reviewed.</summary>

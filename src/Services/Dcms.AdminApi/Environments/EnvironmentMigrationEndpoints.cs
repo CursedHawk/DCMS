@@ -49,8 +49,15 @@ public static class EnvironmentMigrationEndpoints
           .WithAudit(AuditActions.EnvironmentMigrationCreated, "environment_migration");
 
         app.MapGet("/api/admin/environments/migrations", async (
-            ITenantContext tenant, EnvironmentMigrator migrator, TenancyDbContext db, CancellationToken ct) =>
+            ITenantContext tenant, CurrentUser me, IPermissionResolver permissions, EnvironmentMigrator migrator,
+            TenancyDbContext db, CancellationToken ct) =>
         {
+            // Whoever cuts migrations here or deploys into here, like the screens around it.
+            var held = me.IsSuperAdmin ? null : await permissions.GetPermissionsAsync(tenant.TenantId!.Value, me.RequireUserId(), ct);
+            if (held is not null && !held.Contains(PlatformPermissions.EnvironmentsManage) && !held.Contains(PlatformPermissions.EnvironmentsPromote))
+            {
+                return Results.Forbid();
+            }
             var history = await migrator.HistoryAsync(tenant.TenantId!.Value, ct);
             var names = await EnvironmentNamesAsync(db, tenant.TenantId!.Value, ct);
             return Results.Ok(history.Select(m => Row(m, names)));
@@ -79,7 +86,7 @@ public static class EnvironmentMigrationEndpoints
             if (await RefusedSourceAsync(db, targetId, body.From, ct) is { } refused) return refused;
             var job = await jobs.EnqueueAsync(new JobSpec(
                 EnvironmentApplyJob.Kind, targetId,
-                new EnvironmentApplyPayload(body.From, body.UpTo, body.Resolutions ?? [], me.UserId),
+                new EnvironmentApplyPayload(body.From, body.UpTo, body.Resolutions ?? [], me.UserId, me.IsSuperAdmin),
                 "jobs.kinds.environmentApply.title",
                 RequiredPermission: PlatformPermissions.EnvironmentsPromote,
                 DedupeKey: $"{EnvironmentApplyJob.Kind}:{body.UpTo:N}",
@@ -107,7 +114,7 @@ public static class EnvironmentMigrationEndpoints
         {
             var job = await jobs.EnqueueAsync(new JobSpec(
                 EnvironmentRollbackJob.Kind, tenant.TenantId!.Value,
-                new EnvironmentRollbackPayload(migrationId, body.Resolutions ?? []),
+                new EnvironmentRollbackPayload(migrationId, body.Resolutions ?? [], me.UserId, me.IsSuperAdmin),
                 "jobs.kinds.environmentRollback.title",
                 RequiredPermission: PlatformPermissions.EnvironmentsPromote,
                 DedupeKey: $"{EnvironmentRollbackJob.Kind}:{migrationId:N}",

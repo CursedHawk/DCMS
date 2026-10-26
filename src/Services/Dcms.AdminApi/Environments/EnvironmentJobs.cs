@@ -5,9 +5,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Dcms.AdminApi.Environments;
 
-public sealed record EnvironmentApplyPayload(Guid Source, Guid UpTo, Dictionary<string, string> Resolutions, Guid? AppliedBy);
+public sealed record EnvironmentApplyPayload(Guid Source, Guid UpTo, Dictionary<string, string> Resolutions, Guid? AppliedBy, bool IsSuperAdmin = false);
 
-public sealed record EnvironmentRollbackPayload(Guid MigrationId, Dictionary<string, string> Resolutions);
+public sealed record EnvironmentRollbackPayload(Guid MigrationId, Dictionary<string, string> Resolutions, Guid? By = null, bool IsSuperAdmin = false);
 
 public sealed record EnvironmentCopyPayload(Guid Source);
 
@@ -41,7 +41,8 @@ public sealed class EnvironmentApplyJob(EnvironmentMigrator migrator, TenancyDbC
     {
         var target = context.TenantId!.Value;
         var applied = await EnvironmentLock.RunAsync(db, target, context.Cancellation, () =>
-            migrator.ApplyAsync(target, payload.Source, payload.UpTo, payload.Resolutions, payload.AppliedBy, context.Cancellation));
+            migrator.ApplyAsync(target, payload.Source, payload.UpTo, payload.Resolutions,
+                new EnvironmentApplier(payload.AppliedBy, payload.IsSuperAdmin), context.Cancellation));
         audit.Record(AuditActions.EnvironmentMigrationApplied)
             .InTenant(target)
             .For("environment_migration", payload.UpTo, null)
@@ -63,7 +64,8 @@ public sealed class EnvironmentRollbackJob(EnvironmentMigrator migrator, Tenancy
     {
         var target = context.TenantId!.Value;
         var row = await EnvironmentLock.RunAsync(db, target, context.Cancellation, () =>
-            migrator.RollbackAsync(target, payload.MigrationId, payload.Resolutions, context.Cancellation));
+            migrator.RollbackAsync(target, payload.MigrationId, payload.Resolutions,
+                new EnvironmentApplier(payload.By, payload.IsSuperAdmin), context.Cancellation));
         audit.Record(AuditActions.EnvironmentMigrationRolledBack)
             .InTenant(target)
             .For("environment_migration", payload.MigrationId, row.Name)

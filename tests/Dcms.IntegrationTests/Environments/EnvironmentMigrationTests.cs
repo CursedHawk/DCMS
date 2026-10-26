@@ -111,7 +111,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         // Applying is a job; the request only queues it.
         (await client.SendAsync(Req(HttpMethod.Post, "/api/admin/environments/pending/apply", ws.Owner, ws.Prod,
             new { from = ws.DevId, upTo = migration }), ct)).StatusCode.Should().Be(HttpStatusCode.Accepted);
-        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(), ws.Owner, ct));
+        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
 
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("content:read", "content:write");
         (await PendingAsync(client, ws, ct)).Should().BeEmpty();
@@ -131,7 +131,7 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var ws = await WorkspaceAsync(client, ct);
         await Role(client, ws.Owner, ws.Dev, "Editors", ["content:read"]);
         var first = await CutAsync(client, ws, "Add editors", ct);
-        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, first, new Dictionary<string, string>(), ws.Owner, ct));
+        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, first, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
 
         // Both sides change the role: development widens it, production narrows it by hand.
         var devRoles = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", ws.Owner, ws.Dev), ct), ct);
@@ -147,18 +147,18 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var pending = await PendingAsync(client, ws, ct);
         pending[0].GetProperty("changes")[0].GetProperty("outcome").GetString().Should().Be("conflict");
 
-        var unresolved = () => Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, second, new Dictionary<string, string>(), ws.Owner, ct));
+        var unresolved = () => Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
         (await unresolved.Should().ThrowAsync<EnvironmentMigrationException>()).Which.Key.Should().Be("environments.errors.conflictUnresolved");
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("media:read");
 
         await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, second,
-            new Dictionary<string, string> { ["roles/Editors"] = "overwrite" }, ws.Owner, ct));
+            new Dictionary<string, string> { ["roles/Editors"] = "overwrite" }, new EnvironmentApplier(ws.Owner, false), ct));
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("content:publish", "content:read");
 
         // Only the last one rolls back, and it puts back what the migration replaced.
-        var older = () => Engine(m => m.RollbackAsync(ws.ProdId, first, new Dictionary<string, string>(), ct));
+        var older = () => Engine(m => m.RollbackAsync(ws.ProdId, first, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
         (await older.Should().ThrowAsync<EnvironmentMigrationException>()).Which.Key.Should().Be("environments.errors.rollbackNotLast");
-        await Engine(m => m.RollbackAsync(ws.ProdId, second, new Dictionary<string, string>(), ct));
+        await Engine(m => m.RollbackAsync(ws.ProdId, second, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Editors", ct)).Should().Equal("content:read");
         (await PendingAsync(client, ws, ct)).Should().ContainSingle("a rolled-back migration is pending again");
     }
@@ -188,9 +188,45 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
             new { pluginId = "blog", slug = "news", name = "News", config = "{}" }), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
         var migration = await CutAsync(client, ws, "News blog", ct);
 
-        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(), ws.Owner, ct));
+        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
 
         var instances = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/plugins/instances", ws.Owner, ws.Prod), ct), ct);
         instances.EnumerateArray().Select(i => i.GetProperty("slug").GetString()).Should().Contain("news");
+    }
+
+    [DockerFact]
+    public async Task A_deployment_cannot_grant_what_its_deployer_could_not()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+
+        // Development widens Member, the role everyone holds, to members:manage.
+        var devRoles = await JsonAsync(await client.SendAsync(Req(HttpMethod.Get, "/api/admin/roles", ws.Owner, ws.Dev), ct), ct);
+        var member = devRoles.EnumerateArray().First(r => r.GetProperty("name").GetString() == "Member");
+        var widened = member.GetProperty("permissions").EnumerateArray().Select(p => p.GetString()!).Append("members:manage").ToArray();
+        (await client.SendAsync(Req(HttpMethod.Put, $"/api/admin/roles/{member.GetProperty("id").GetGuid()}", ws.Owner, ws.Dev,
+            new { name = "Member", permissions = widened }), ct)).IsSuccessStatusCode.Should().BeTrue();
+        var migration = await CutAsync(client, ws, "Members manage members", ct);
+
+        // A deployer who may deploy and edit roles in production, and nothing else.
+        var deployer = Guid.NewGuid();
+        var role = await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/roles", ws.Owner, ws.Prod,
+            new { name = "Deployer", permissions = new[] { "environments:promote", "roles:manage" } }), ct), ct);
+        var invite = await JsonAsync(await client.SendAsync(Req(HttpMethod.Post, "/api/admin/invitations", ws.Owner, ws.Prod,
+            new { email = $"{deployer:N}@dcms.test", roleIds = new[] { role.GetProperty("id").GetString() } }), ct), ct);
+        await client.SendAsync(Req(HttpMethod.Post, "/api/admin/invitations/accept", deployer, body: new { token = invite.GetProperty("token").GetString() }), ct);
+
+        var refused = () => Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(),
+            new EnvironmentApplier(deployer, false), ct));
+        var error = (await refused.Should().ThrowAsync<EnvironmentMigrationException>()).Which;
+        error.Key.Should().Be("environments.errors.notAllowed");
+        error.Detail.Should().Be("members:manage");
+        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Member", ct)).Should().NotContain("members:manage");
+
+        // The owner, who holds it, may.
+        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(),
+            new EnvironmentApplier(ws.Owner, false), ct));
+        (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Member", ct)).Should().Contain("members:manage");
     }
 }

@@ -18,6 +18,8 @@ public sealed class RolesConfigKind(TenancyDbContext db, TenancyPermissionResolv
 {
     public string Kind => "roles";
 
+    public string? Permission => PlatformPermissions.RolesManage;
+
     private sealed record Value(bool System, string[] Permissions);
 
     public async Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct)
@@ -26,7 +28,9 @@ public sealed class RolesConfigKind(TenancyDbContext db, TenancyPermissionResolv
             .Where(r => r.TenantId == tenantId)
             .Include(r => r.Permissions)
             .ToListAsync(ct);
-        return roles.Select(r => new EnvironmentConfigItem(r.Name, JsonSerializer.SerializeToElement(new Value(
+        // Owner is every permission in every environment (OwnerPermissionBackfill), and the role
+        // a deployment must never be able to narrow or forge.
+        return roles.Where(r => !IsOwner(r)).Select(r => new EnvironmentConfigItem(r.Name, JsonSerializer.SerializeToElement(new Value(
                 r.IsSystem,
                 r.Permissions.Select(p => p.Permission).Where(Moves).Distinct().Order(StringComparer.Ordinal).ToArray()))))
             .ToList();
@@ -34,6 +38,7 @@ public sealed class RolesConfigKind(TenancyDbContext db, TenancyPermissionResolv
 
     public async Task ApplyAsync(Guid tenantId, string key, JsonElement? value, CancellationToken ct)
     {
+        if (key == TenantProvisioning.OwnerRole) throw new EnvironmentMigrationException("environments.errors.notAllowed", key);
         var role = await db.TenantRoles.IgnoreQueryFilters()
             .Include(r => r.Permissions)
             .FirstOrDefaultAsync(r => r.TenantId == tenantId && r.Name == key, ct);
@@ -51,7 +56,8 @@ public sealed class RolesConfigKind(TenancyDbContext db, TenancyPermissionResolv
             var wanted = value.Value.Deserialize<Value>()!;
             if (role is null)
             {
-                role = new TenantRole { Id = Guid.NewGuid(), TenantId = tenantId, Name = key, IsSystem = wanted.System };
+                // Never system: a system role is one provisioning made, not one a migration names.
+                role = new TenantRole { Id = Guid.NewGuid(), TenantId = tenantId, Name = key };
                 db.TenantRoles.Add(role);
             }
             var keep = role.Permissions.Where(p => !Moves(p.Permission) || wanted.Permissions.Contains(p.Permission)).ToList();
@@ -71,6 +77,16 @@ public sealed class RolesConfigKind(TenancyDbContext db, TenancyPermissionResolv
             .Where(m => m.TenantId == tenantId).Select(m => m.UserId).ToListAsync(ct);
         foreach (var user in users) await permissions.InvalidateAsync(tenantId, user, ct);
     }
+
+    /// <summary>The permissions <paramref name="value"/> grants that <paramref name="current"/> does not: what the applier must be able to grant.</summary>
+    public static IEnumerable<string> Added(JsonElement? current, JsonElement? value)
+    {
+        if (value is null) return [];
+        var had = current?.Deserialize<Value>()?.Permissions ?? [];
+        return value.Value.Deserialize<Value>()!.Permissions.Except(had);
+    }
+
+    private static bool IsOwner(TenantRole r) => r.IsSystem && r.Name == TenantProvisioning.OwnerRole;
 
     private static bool Moves(string permission) =>
         !permission.StartsWith(PlatformPermissions.RepoPrefix, StringComparison.Ordinal);
