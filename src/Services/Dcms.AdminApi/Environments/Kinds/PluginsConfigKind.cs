@@ -28,6 +28,8 @@ public sealed class PluginsConfigKind(
 
     public string? Permission => PlatformPermissions.PluginsManage;
 
+    public int Order => 20;
+
     private sealed record Value(string PluginId, string Name, string Description, JsonNode? Config, bool Enabled, bool AiToolsEnabled);
 
     public async Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct)

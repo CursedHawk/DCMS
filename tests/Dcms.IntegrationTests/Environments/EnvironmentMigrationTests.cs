@@ -5,6 +5,10 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using AdminApiApp::Dcms.AdminApi.Environments;
 using Dcms.IntegrationTests.Tenancy;
+using Dcms.Shared.Data.Cms;
+using Dcms.Shared.Data.Rls;
+using Dcms.Shared.Data.UserAuth;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Dcms.IntegrationTests.Environments;
@@ -268,5 +272,41 @@ public class EnvironmentMigrationTests(AdminApiFixture fixture)
         var refused = () => Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, second, resolutions, new EnvironmentApplier(deployer, false), ct));
         (await refused.Should().ThrowAsync<EnvironmentMigrationException>()).Which.Detail.Should().Be("members:manage");
         (await RolePermissionsAsync(client, ws.Owner, ws.Prod, "Member", ct)).Should().Equal("media:read");
+    }
+
+    [DockerFact]
+    public async Task Api_connections_move_without_their_key_and_user_roles_move_by_key()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.Factory.CreateClient();
+        var ws = await WorkspaceAsync(client, ct);
+        using (var scope = fixture.Factory.Services.CreateScope())
+        using (RlsScope.Tenant(ws.DevId))
+        {
+            var cms = scope.ServiceProvider.GetRequiredService<CmsDbContext>();
+            cms.ApiConnections.Add(new ApiConnection
+            {
+                Id = Guid.NewGuid(), TenantId = ws.DevId, Slug = "events", Name = "Events", BaseUrl = "https://api.example.test",
+                AuthKind = "bearer", SecretCiphertext = "vault:v1:dev-only", Operations = ["/events"],
+            });
+            await cms.SaveChangesAsync(ct);
+            var userAuth = scope.ServiceProvider.GetRequiredService<UserAuthDbContext>();
+            userAuth.Roles.Add(new UserRole { Id = Guid.NewGuid(), TenantId = ws.DevId, Key = "sales", Name = "Sales", Permissions = ["crm:read"] });
+            await userAuth.SaveChangesAsync(ct);
+        }
+        var migration = await CutAsync(client, ws, "Events feed and sales role", ct);
+        await Engine(m => m.ApplyAsync(ws.ProdId, ws.DevId, migration, new Dictionary<string, string>(), new EnvironmentApplier(ws.Owner, false), ct));
+
+        using (var scope = fixture.Factory.Services.CreateScope())
+        using (RlsScope.Tenant(ws.ProdId))
+        {
+            var connection = await scope.ServiceProvider.GetRequiredService<CmsDbContext>().ApiConnections.IgnoreQueryFilters()
+                .SingleAsync(c => c.TenantId == ws.ProdId && c.Slug == "events", ct);
+            connection.BaseUrl.Should().Be("https://api.example.test");
+            connection.SecretCiphertext.Should().BeNull("a key is each environment's own");
+            var role = await scope.ServiceProvider.GetRequiredService<UserAuthDbContext>().Roles.IgnoreQueryFilters()
+                .SingleAsync(r => r.TenantId == ws.ProdId && r.Key == "sales", ct);
+            role.Permissions.Should().Equal("crm:read");
+        }
     }
 }

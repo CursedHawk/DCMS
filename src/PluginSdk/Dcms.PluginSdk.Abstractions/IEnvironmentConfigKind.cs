@@ -29,6 +29,13 @@ public interface IEnvironmentConfigKind
     /// </summary>
     string? Permission => null;
 
+    /// <summary>
+    /// Where a migration applies this kind among the others, lowest first. The host's own kinds
+    /// sit below 100 — roles, then plugin instances — so a plugin's kind (100 by default) finds
+    /// the instance it configures already there.
+    /// </summary>
+    int Order => 100;
+
     /// <summary>Every item of this kind the tenant has.</summary>
     Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct);
 

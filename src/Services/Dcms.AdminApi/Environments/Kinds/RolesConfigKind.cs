@@ -20,6 +20,8 @@ public sealed class RolesConfigKind(TenancyDbContext db, TenancyPermissionResolv
 
     public string? Permission => PlatformPermissions.RolesManage;
 
+    public int Order => 10;
+
     private sealed record Value(bool System, string[] Permissions);
 
     public async Task<IReadOnlyList<EnvironmentConfigItem>> ExportAsync(Guid tenantId, CancellationToken ct)

@@ -47,7 +47,7 @@ public sealed record PendingMigration(EnvironmentMigration Migration, IReadOnlyL
 public sealed class EnvironmentMigrator(
     IEnumerable<IEnvironmentConfigKind> kinds, TenancyDbContext db, Dcms.Shared.Security.Authorization.IPermissionResolver permissions)
 {
-    private readonly IReadOnlyList<IEnvironmentConfigKind> _kinds = kinds.ToList();
+    private readonly IReadOnlyList<IEnvironmentConfigKind> _kinds = kinds.OrderBy(k => k.Order).ToList();
 
     /// <summary><c>{kind: {key: item}}</c>, in kind registration order.</summary>
     public async Task<Dictionary<string, Dictionary<string, EnvironmentConfigItem>>> ExportAsync(Guid tenantId, CancellationToken ct)

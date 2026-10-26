@@ -191,6 +191,7 @@ builder.Services.AddJobHandler<Dcms.AdminApi.Media.DriveFileJob, Dcms.AdminApi.M
 builder.Services.AddScoped<Dcms.AdminApi.Environments.EnvironmentMigrator>();
 builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.RolesConfigKind>();
 builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.PluginsConfigKind>();
+builder.Services.AddScoped<Dcms.PluginSdk.Abstractions.IEnvironmentConfigKind, Dcms.AdminApi.Environments.Kinds.ApiConnectionsConfigKind>();
 builder.Services.AddJobHandler<Dcms.AdminApi.Environments.EnvironmentApplyJob, Dcms.AdminApi.Environments.EnvironmentApplyPayload>(
     Dcms.AdminApi.Environments.EnvironmentApplyJob.Kind);
 builder.Services.AddJobHandler<Dcms.AdminApi.Environments.EnvironmentRollbackJob, Dcms.AdminApi.Environments.EnvironmentRollbackPayload>(
